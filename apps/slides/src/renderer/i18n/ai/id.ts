@@ -44,6 +44,7 @@ export const id = {
   aiMsgError: 'Kesalahan: {error}',
   aiCopied: 'Disalin',
   aiCopyReply: 'Salin balasan',
+  aiCopyCode: 'Salin kode',
   aiRegenerate: 'Buat ulang',
   aiScopeSelection: '{count} elemen dipilih',
   aiScopeSlide: 'Slide {n}',

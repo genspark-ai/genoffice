@@ -82,6 +82,7 @@ export const pt = {
   aiErrorPrefix: 'Erro: {error}',
   aiCopyReplyTitle: 'Copiar resposta',
   aiCopied: 'Copiado',
+  aiCopyCode: 'Copiar código',
   aiRegenerateTitle: 'Gerar novamente',
   aiSnapshotsTitle: 'Instantâneos de versão',
   aiRollback: 'Reverter',

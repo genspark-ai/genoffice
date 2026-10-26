@@ -80,6 +80,7 @@ export const ja = {
   aiErrorPrefix: 'エラー: {error}',
   aiCopyReplyTitle: '返信をコピー',
   aiCopied: 'コピーしました',
+  aiCopyCode: 'コードをコピー',
   aiRegenerateTitle: '再生成',
   aiSnapshotsTitle: 'バージョンスナップショット',
   aiRollback: 'ロールバック',

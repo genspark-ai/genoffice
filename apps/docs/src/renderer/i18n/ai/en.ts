@@ -80,6 +80,7 @@ export const en = {
   aiErrorPrefix: 'Error: {error}',
   aiCopyReplyTitle: 'Copy reply',
   aiCopied: 'Copied',
+  aiCopyCode: 'Copy code',
   aiRegenerateTitle: 'Regenerate',
   aiSnapshotsTitle: 'Snapshots',
   aiRollback: 'Roll back',

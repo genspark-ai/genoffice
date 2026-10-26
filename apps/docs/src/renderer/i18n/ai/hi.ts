@@ -81,6 +81,7 @@ export const hi = {
   aiErrorPrefix: 'त्रुटि: {error}',
   aiCopyReplyTitle: 'जवाब कॉपी करें',
   aiCopied: 'कॉपी हो गया',
+  aiCopyCode: 'कोड कॉपी करें',
   aiRegenerateTitle: 'फिर से जनरेट करें',
   aiSnapshotsTitle: 'संस्करण स्नैपशॉट',
   aiRollback: 'रोलबैक',

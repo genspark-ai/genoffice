@@ -43,6 +43,7 @@ export const ko = {
   aiMsgError: '오류: {error}',
   aiCopied: '복사됨',
   aiCopyReply: '답변 복사',
+  aiCopyCode: '코드 복사',
   aiRegenerate: '다시 생성',
   aiScopeSelection: '요소 {count}개 선택됨',
   aiScopeSlide: '슬라이드 {n}',

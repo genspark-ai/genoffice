@@ -4,6 +4,7 @@ export const de = {
   aiCollapsePanel: 'Panel einklappen',
   aiComposerPlaceholder: 'KI schreiben oder bearbeiten lassen…',
   aiCopyReplyTitle: 'Antwort kopieren',
+  aiCopyCode: 'Code kopieren',
   aiCreditsExhausted: 'Guthaben aufgebraucht — bei genspark.ai aufladen',
   aiEmptyTitle: 'Eine Seite mit KI gestalten',
   aiEmptyBody:

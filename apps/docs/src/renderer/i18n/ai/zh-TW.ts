@@ -79,6 +79,7 @@ export const zhTW = {
   aiErrorPrefix: '出錯: {error}',
   aiCopyReplyTitle: '複製回覆',
   aiCopied: '已複製',
+  aiCopyCode: '複製程式碼',
   aiRegenerateTitle: '重新產生',
   aiSnapshotsTitle: '版本快照',
   aiRollback: '還原',

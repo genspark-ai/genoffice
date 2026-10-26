@@ -43,6 +43,7 @@ export const pt = {
   aiMsgError: 'Erro: {error}',
   aiCopied: 'Copiado',
   aiCopyReply: 'Copiar resposta',
+  aiCopyCode: 'Copiar código',
   aiRegenerate: 'Gerar novamente',
   aiScopeSelection: '{count} elementos selecionados',
   aiScopeSlide: 'Slide {n}',

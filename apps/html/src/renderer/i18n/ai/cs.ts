@@ -4,6 +4,7 @@ export const cs = {
   aiCollapsePanel: 'Sbalit panel',
   aiComposerPlaceholder: 'Požádejte AI o napsání nebo úpravu dokumentu…',
   aiCopyReplyTitle: 'Kopírovat odpověď',
+  aiCopyCode: 'Kopírovat kód',
   aiCreditsExhausted: 'Došly kredity — dobijte na genspark.ai',
   aiEmptyTitle: 'Navrhněte stránku s AI',
   aiEmptyBody:

@@ -81,6 +81,7 @@ export const id = {
   aiErrorPrefix: 'Kesalahan: {error}',
   aiCopyReplyTitle: 'Salin balasan',
   aiCopied: 'Disalin',
+  aiCopyCode: 'Salin kode',
   aiRegenerateTitle: 'Buat ulang',
   aiSnapshotsTitle: 'Snapshot versi',
   aiRollback: 'Kembalikan',

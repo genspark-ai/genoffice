@@ -4,6 +4,7 @@ export const nl = {
   aiCollapsePanel: 'Paneel inklappen',
   aiComposerPlaceholder: 'Vraag AI te schrijven of bewerken…',
   aiCopyReplyTitle: 'Antwoord kopiëren',
+  aiCopyCode: 'Code kopiëren',
   aiCreditsExhausted: 'Credits op — waardeer op via genspark.ai',
   aiEmptyTitle: 'Ontwerp een pagina met AI',
   aiEmptyBody:

@@ -44,6 +44,7 @@ export const cs = {
   aiMsgError: 'Chyba: {error}',
   aiCopied: 'Zkopírováno',
   aiCopyReply: 'Kopírovat odpověď',
+  aiCopyCode: 'Kopírovat kód',
   aiRegenerate: 'Vygenerovat znovu',
   aiScopeSelection: 'Vybráno prvků: {count}',
   aiScopeSlide: 'Snímek {n}',

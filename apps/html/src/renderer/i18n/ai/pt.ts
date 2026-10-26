@@ -4,6 +4,7 @@ export const pt = {
   aiCollapsePanel: 'Recolher painel',
   aiComposerPlaceholder: 'Peça à IA para escrever ou editar…',
   aiCopyReplyTitle: 'Copiar resposta',
+  aiCopyCode: 'Copiar código',
   aiCreditsExhausted: 'Créditos esgotados — recarregue em genspark.ai',
   aiEmptyTitle: 'Crie uma página com IA',
   aiEmptyBody:

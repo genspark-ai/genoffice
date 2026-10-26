@@ -79,6 +79,7 @@ export const ar = {
   aiErrorPrefix: 'خطأ: {error}',
   aiCopyReplyTitle: 'نسخ الرد',
   aiCopied: 'تم النسخ',
+  aiCopyCode: 'نسخ الكود',
   aiRegenerateTitle: 'إعادة الإنشاء',
   aiSnapshotsTitle: 'لقطات الإصدارات',
   aiRollback: 'استرجاع',

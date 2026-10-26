@@ -81,6 +81,7 @@ export const ru = {
   aiErrorPrefix: 'Ошибка: {error}',
   aiCopyReplyTitle: 'Копировать ответ',
   aiCopied: 'Скопировано',
+  aiCopyCode: 'Копировать код',
   aiRegenerateTitle: 'Создать заново',
   aiSnapshotsTitle: 'Снимки версий',
   aiRollback: 'Откатить',

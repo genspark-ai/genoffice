@@ -82,6 +82,7 @@ export const nl = {
   aiErrorPrefix: 'Fout: {error}',
   aiCopyReplyTitle: 'Antwoord kopiëren',
   aiCopied: 'Gekopieerd',
+  aiCopyCode: 'Code kopiëren',
   aiRegenerateTitle: 'Opnieuw genereren',
   aiSnapshotsTitle: 'Versiesnapshots',
   aiRollback: 'Terugdraaien',

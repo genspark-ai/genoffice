@@ -43,6 +43,7 @@ export const hi = {
   aiMsgError: 'त्रुटि: {error}',
   aiCopied: 'कॉपी किया गया',
   aiCopyReply: 'उत्तर कॉपी करें',
+  aiCopyCode: 'कोड कॉपी करें',
   aiRegenerate: 'फिर से जनरेट करें',
   aiScopeSelection: '{count} तत्व चयनित',
   aiScopeSlide: 'स्लाइड {n}',

@@ -43,6 +43,7 @@ export const ru = {
   aiMsgError: 'Ошибка: {error}',
   aiCopied: 'Скопировано',
   aiCopyReply: 'Копировать ответ',
+  aiCopyCode: 'Копировать код',
   aiRegenerate: 'Сгенерировать заново',
   aiScopeSelection: 'Выбрано элементов: {count}',
   aiScopeSlide: 'Слайд {n}',

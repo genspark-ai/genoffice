@@ -4,6 +4,7 @@ export const hi = {
   aiCollapsePanel: 'पैनल संक्षिप्त करें',
   aiComposerPlaceholder: 'AI से लिखने या संपादित करने को कहें…',
   aiCopyReplyTitle: 'जवाब कॉपी करें',
+  aiCopyCode: 'कोड कॉपी करें',
   aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
   aiEmptyTitle: 'AI से पेज डिज़ाइन करें',
   aiEmptyBody:

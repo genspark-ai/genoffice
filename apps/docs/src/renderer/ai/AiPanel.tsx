@@ -9,6 +9,7 @@ import {
   AI_QUEUE_LABELS,
   AiUsageChip,
   addTokenUsage,
+  copyMarkdownRich,
   type AiTokenUsageView,
   useChatRunQueue,
 } from '@genoffice/ui'
@@ -1337,9 +1338,11 @@ export function AiPanel({
   }
 
   const copyMessage = (text: string, idx: number) => {
-    void navigator.clipboard.writeText(text)
-    setCopiedIdx(idx)
-    window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1200)
+    // rich clipboard first (text/html + text/plain), plain-text fallback inside
+    void copyMarkdownRich(text).finally(() => {
+      setCopiedIdx(idx)
+      window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1200)
+    })
   }
 
   const mergeAttachments = (result: AttachmentAddResult | null) => {
@@ -1540,7 +1543,11 @@ export function AiPanel({
                 {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.text && (
                   <div dir="auto">
-                    <Markdown text={entry.text} navs={[docNav, fileNav]} />
+                    <Markdown
+                      text={entry.text}
+                      navs={[docNav, fileNav]}
+                      codeCopyLabel={t('aiCopyCode')}
+                    />
                   </div>
                 )}
               </div>
@@ -1627,7 +1634,11 @@ export function AiPanel({
                 </span>
               ) : entry.role === 'assistant' ? (
                 <div dir="auto">
-                  <Markdown text={entry.text} navs={[docNav, fileNav]} />
+                  <Markdown
+                    text={entry.text}
+                    navs={[docNav, fileNav]}
+                    codeCopyLabel={t('aiCopyCode')}
+                  />
                 </div>
               ) : (
                 <span dir="auto">{entry.text}</span>

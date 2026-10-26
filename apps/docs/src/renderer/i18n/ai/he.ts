@@ -79,6 +79,7 @@ export const he = {
   aiErrorPrefix: 'שגיאה: {error}',
   aiCopyReplyTitle: 'העתקת התשובה',
   aiCopied: 'הועתק',
+  aiCopyCode: 'העתקת הקוד',
   aiRegenerateTitle: 'יצירה מחדש',
   aiSnapshotsTitle: 'תמונות מצב של גרסאות',
   aiRollback: 'שחזור',

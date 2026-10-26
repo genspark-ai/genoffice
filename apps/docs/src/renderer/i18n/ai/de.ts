@@ -82,6 +82,7 @@ export const de = {
   aiErrorPrefix: 'Fehler: {error}',
   aiCopyReplyTitle: 'Antwort kopieren',
   aiCopied: 'Kopiert',
+  aiCopyCode: 'Code kopieren',
   aiRegenerateTitle: 'Neu generieren',
   aiSnapshotsTitle: 'Versionsschnappschüsse',
   aiRollback: 'Zurücksetzen',

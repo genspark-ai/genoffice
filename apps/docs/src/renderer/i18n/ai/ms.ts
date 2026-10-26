@@ -81,6 +81,7 @@ export const ms = {
   aiErrorPrefix: 'Ralat: {error}',
   aiCopyReplyTitle: 'Salin balasan',
   aiCopied: 'Disalin',
+  aiCopyCode: 'Salin kod',
   aiRegenerateTitle: 'Jana semula',
   aiSnapshotsTitle: 'Snapshot versi',
   aiRollback: 'Kembalikan',

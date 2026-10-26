@@ -22,6 +22,7 @@ import {
   AiUsageChip,
   addTokenUsage,
   createFileNav,
+  copyMarkdownRich,
   Markdown,
   useChatRunQueue,
   type AiScopeQuoteData,
@@ -1138,9 +1139,11 @@ export function AiPanel({
   }, [preset])
 
   const copyMessage = (text: string, idx: number): void => {
-    void navigator.clipboard.writeText(text)
-    setCopiedIdx(idx)
-    window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1200)
+    // rich clipboard first (text/html + text/plain), plain-text fallback inside
+    void copyMarkdownRich(text).finally(() => {
+      setCopiedIdx(idx)
+      window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1200)
+    })
   }
 
   const rollback = (snapshot: Snapshot): void => {
@@ -1379,7 +1382,11 @@ export function AiPanel({
               ) : (
                 entry.text && (
                   <div dir="auto">
-                    <Markdown text={entry.text} navs={[docNav, fileNav]} />
+                    <Markdown
+                      text={entry.text}
+                      navs={[docNav, fileNav]}
+                      codeCopyLabel={t('aiCopyCode')}
+                    />
                   </div>
                 )
               )}

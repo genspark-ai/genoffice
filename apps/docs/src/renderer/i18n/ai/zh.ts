@@ -78,6 +78,7 @@ export const zh = {
   aiErrorPrefix: '出错: {error}',
   aiCopyReplyTitle: '复制回复',
   aiCopied: '已复制',
+  aiCopyCode: '复制代码',
   aiRegenerateTitle: '重新生成',
   aiSnapshotsTitle: '版本快照',
   aiRollback: '回滚',

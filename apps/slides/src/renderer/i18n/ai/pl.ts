@@ -42,6 +42,7 @@ export const pl = {
   aiMsgError: 'Błąd: {error}',
   aiCopied: 'Skopiowano',
   aiCopyReply: 'Kopiuj odpowiedź',
+  aiCopyCode: 'Kopiuj kod',
   aiRegenerate: 'Wygeneruj ponownie',
   aiScopeSelection: 'Zaznaczono elementy: {count}',
   aiScopeSlide: 'Slajd {n}',

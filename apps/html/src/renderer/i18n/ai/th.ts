@@ -4,6 +4,7 @@ export const th = {
   aiCollapsePanel: 'ยุบแผง',
   aiComposerPlaceholder: 'ให้ AI เขียนหรือแก้ไขเอกสาร…',
   aiCopyReplyTitle: 'คัดลอกคำตอบ',
+  aiCopyCode: 'คัดลอกโค้ด',
   aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
   aiEmptyTitle: 'ออกแบบหน้าเว็บด้วย AI',
   aiEmptyBody:

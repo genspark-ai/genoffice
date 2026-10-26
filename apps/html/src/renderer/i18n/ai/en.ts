@@ -4,6 +4,7 @@ export const en = {
   aiCollapsePanel: 'Collapse panel',
   aiComposerPlaceholder: 'Ask AI to write or edit the document…',
   aiCopyReplyTitle: 'Copy reply',
+  aiCopyCode: 'Copy code',
   aiCreditsExhausted: 'Out of credits — top up at genspark.ai',
   aiEmptyTitle: 'Design a page with AI',
   aiEmptyBody:

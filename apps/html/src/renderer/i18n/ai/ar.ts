@@ -4,6 +4,7 @@ export const ar = {
   aiCollapsePanel: 'طي اللوحة',
   aiComposerPlaceholder: 'اطلب من الذكاء الاصطناعي الكتابة أو التعديل…',
   aiCopyReplyTitle: 'نسخ الرد',
+  aiCopyCode: 'نسخ الكود',
   aiCreditsExhausted: 'نفدت الأرصدة — أعد الشحن على genspark.ai',
   aiEmptyTitle: 'صمّم صفحة بالذكاء الاصطناعي',
   aiEmptyBody:

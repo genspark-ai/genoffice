@@ -81,6 +81,7 @@ export const cs = {
   aiErrorPrefix: 'Chyba: {error}',
   aiCopyReplyTitle: 'Kopírovat odpověď',
   aiCopied: 'Zkopírováno',
+  aiCopyCode: 'Kopírovat kód',
   aiRegenerateTitle: 'Vygenerovat znovu',
   aiSnapshotsTitle: 'Snímky',
   aiRollback: 'Vrátit zpět',

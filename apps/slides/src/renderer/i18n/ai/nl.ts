@@ -44,6 +44,7 @@ export const nl = {
   aiMsgError: 'Fout: {error}',
   aiCopied: 'Gekopieerd',
   aiCopyReply: 'Antwoord kopiëren',
+  aiCopyCode: 'Code kopiëren',
   aiRegenerate: 'Opnieuw genereren',
   aiScopeSelection: '{count} elementen geselecteerd',
   aiScopeSlide: 'Dia {n}',

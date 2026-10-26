@@ -43,6 +43,7 @@ export const vi = {
   aiMsgError: 'Lỗi: {error}',
   aiCopied: 'Đã sao chép',
   aiCopyReply: 'Sao chép phản hồi',
+  aiCopyCode: 'Sao chép mã',
   aiRegenerate: 'Tạo lại',
   aiScopeSelection: 'Đã chọn {count} phần tử',
   aiScopeSlide: 'Trang chiếu {n}',

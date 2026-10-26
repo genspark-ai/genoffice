@@ -80,6 +80,7 @@ export const vi = {
   aiErrorPrefix: 'Lỗi: {error}',
   aiCopyReplyTitle: 'Sao chép câu trả lời',
   aiCopied: 'Đã sao chép',
+  aiCopyCode: 'Sao chép mã',
   aiRegenerateTitle: 'Tạo lại',
   aiSnapshotsTitle: 'Bản chụp nhanh',
   aiRollback: 'Khôi phục',

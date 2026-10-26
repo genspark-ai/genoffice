@@ -41,6 +41,7 @@ export const he = {
   aiMsgError: 'שגיאה: {error}',
   aiCopied: 'הועתק',
   aiCopyReply: 'העתק תשובה',
+  aiCopyCode: 'העתקת הקוד',
   aiRegenerate: 'צור מחדש',
   aiScopeSelection: 'נבחרו {count} רכיבים',
   aiScopeSlide: 'שקופית {n}',

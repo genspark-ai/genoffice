@@ -4,6 +4,7 @@ export const ja = {
   aiCollapsePanel: 'パネルを折りたたむ',
   aiComposerPlaceholder: 'AI に執筆・編集を依頼…',
   aiCopyReplyTitle: '返信をコピー',
+  aiCopyCode: 'コードをコピー',
   aiCreditsExhausted: 'クレジット不足です。genspark.ai でチャージしてください',
   aiEmptyTitle: 'AI でページをデザイン',
   aiEmptyBody:

@@ -39,6 +39,7 @@ export const zh = {
   aiMsgError: '出错: {error}',
   aiCopied: '已复制',
   aiCopyReply: '复制回复',
+  aiCopyCode: '复制代码',
   aiRegenerate: '重新生成',
   aiScopeSelection: '已选中 {count} 个元素',
   aiScopeSlide: '第 {n} 张',

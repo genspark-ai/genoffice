@@ -80,6 +80,7 @@ export const ko = {
   aiErrorPrefix: '오류: {error}',
   aiCopyReplyTitle: '답변 복사',
   aiCopied: '복사됨',
+  aiCopyCode: '코드 복사',
   aiRegenerateTitle: '다시 생성',
   aiSnapshotsTitle: '버전 스냅샷',
   aiRollback: '롤백',

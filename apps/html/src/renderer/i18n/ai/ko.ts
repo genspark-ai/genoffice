@@ -4,6 +4,7 @@ export const ko = {
   aiCollapsePanel: '패널 접기',
   aiComposerPlaceholder: 'AI에게 작성·수정을 요청하세요…',
   aiCopyReplyTitle: '답변 복사',
+  aiCopyCode: '코드 복사',
   aiCreditsExhausted: '크레딧이 부족합니다. genspark.ai에서 충전하세요',
   aiEmptyTitle: 'AI로 페이지 디자인하기',
   aiEmptyBody:

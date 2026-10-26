@@ -44,6 +44,7 @@ export const es = {
   aiMsgError: 'Error: {error}',
   aiCopied: 'Copiado',
   aiCopyReply: 'Copiar respuesta',
+  aiCopyCode: 'Copiar código',
   aiRegenerate: 'Volver a generar',
   aiScopeSelection: '{count} elementos seleccionados',
   aiScopeSlide: 'Diapositiva {n}',

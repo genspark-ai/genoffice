@@ -81,6 +81,7 @@ export const pl = {
   aiErrorPrefix: 'Błąd: {error}',
   aiCopyReplyTitle: 'Kopiuj odpowiedź',
   aiCopied: 'Skopiowano',
+  aiCopyCode: 'Kopiuj kod',
   aiRegenerateTitle: 'Wygeneruj ponownie',
   aiSnapshotsTitle: 'Migawki wersji',
   aiRollback: 'Przywróć',

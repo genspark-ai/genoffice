@@ -43,6 +43,7 @@ export const ms = {
   aiMsgError: 'Ralat: {error}',
   aiCopied: 'Disalin',
   aiCopyReply: 'Salin balasan',
+  aiCopyCode: 'Salin kod',
   aiRegenerate: 'Jana semula',
   aiScopeSelection: '{count} elemen dipilih',
   aiScopeSlide: 'Slaid {n}',

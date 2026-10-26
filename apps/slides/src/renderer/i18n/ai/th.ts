@@ -41,6 +41,7 @@ export const th = {
   aiMsgError: 'ข้อผิดพลาด: {error}',
   aiCopied: 'คัดลอกแล้ว',
   aiCopyReply: 'คัดลอกคำตอบ',
+  aiCopyCode: 'คัดลอกโค้ด',
   aiRegenerate: 'สร้างใหม่',
   aiScopeSelection: 'เลือกอยู่ {count} องค์ประกอบ',
   aiScopeSlide: 'สไลด์ {n}',

@@ -79,6 +79,7 @@ export const th = {
   aiErrorPrefix: 'ข้อผิดพลาด: {error}',
   aiCopyReplyTitle: 'คัดลอกคำตอบ',
   aiCopied: 'คัดลอกแล้ว',
+  aiCopyCode: 'คัดลอกโค้ด',
   aiRegenerateTitle: 'สร้างใหม่',
   aiSnapshotsTitle: 'สแนปช็อตของเวอร์ชัน',
   aiRollback: 'ย้อนกลับ',

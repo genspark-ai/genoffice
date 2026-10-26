@@ -43,6 +43,7 @@ export const en = {
   aiMsgError: 'Error: {error}',
   aiCopied: 'Copied',
   aiCopyReply: 'Copy reply',
+  aiCopyCode: 'Copy code',
   aiRegenerate: 'Regenerate',
   aiScopeSelection: '{count} elements selected',
   aiScopeSlide: 'Slide {n}',

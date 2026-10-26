@@ -4,6 +4,7 @@ export const fr = {
   aiCollapsePanel: 'Réduire le panneau',
   aiComposerPlaceholder: "Demandez à l'IA d'écrire ou de modifier…",
   aiCopyReplyTitle: 'Copier la réponse',
+  aiCopyCode: 'Copier le code',
   aiCreditsExhausted: 'Crédits épuisés — rechargez sur genspark.ai',
   aiEmptyTitle: 'Concevoir une page avec l’IA',
   aiEmptyBody:
