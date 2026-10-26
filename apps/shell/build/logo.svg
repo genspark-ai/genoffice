@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- GenOffice logo: hovering hummingbird, geometric minimal.
+       Master for icon.png / icon.ico / icon.icns — regenerate with:
+       node_modules/.bin/electron tools/build-icons.mjs -->
+  <rect width="64" height="64" rx="14" fill="#000"/>
+  <g fill="#fff">
+    <!-- beak -->
+    <path d="M26.5 30.5 L6 13.5 L28.5 27 Z"/>
+    <!-- head -->
+    <circle cx="30" cy="32" r="6.8"/>
+    <!-- body -->
+    <path d="M34.5 27 C42 23 51 25.5 54 33 C50.5 42.5 40.5 46.5 33 43 C27.5 39.5 28 31 34.5 27.5 Z"/>
+    <!-- wing -->
+    <path d="M38 26 C40 13 49 5 61 4.5 C58.5 17 50 26.5 40.5 30.5 Z"/>
+    <!-- tail feathers: fanned, not crossed -->
+    <path d="M31.5 43.5 L19 55.5 L31 48.5 Z"/>
+    <path d="M36.5 44.5 L31.5 59.5 L40.5 48.5 Z"/>
+    <circle cx="28" cy="30" r="1.6" fill="#000"/>
+  </g>
+</svg>
