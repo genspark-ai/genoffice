@@ -100,6 +100,12 @@ describe('resolveGlobalShortcut routing', () => {
       [keyEvent('PageDown'), GRID, cmd('page-row:1')],
       [keyEvent('PageUp'), GRID, cmd('page-row:-1')],
       [keyEvent('PageDown', alt), GRID, cmd('page-col:1')],
+      [keyEvent('KeyY', ctrl), GRID, cmd('redo')],
+      [keyEvent('Quote', ctrl), GRID, cmd('copy-above:formula')],
+      [keyEvent('Quote', metaShift), MAC, cmd('copy-above:value')],
+      [keyEvent('ArrowDown', alt), GRID, cmd('dv-dropdown-open')],
+      [keyEvent('Backspace', ctrl), GRID, cmd('scroll-to-active')],
+      [keyEvent('Backspace', ctrl), MAC, cmd('scroll-to-active')],
     ]
     for (const [event, guards, action] of cases) {
       expect(resolveGlobalShortcut(event, guards), event.code).toEqual(action)
@@ -119,6 +125,10 @@ describe('resolveGlobalShortcut routing', () => {
     expect(
       resolveGlobalShortcut(keyEvent('Equal', { altKey: true, metaKey: true }), MAC),
     ).toBeNull()
+  })
+
+  it('keeps Cmd+Backspace (mac clear) away from scroll-to-active', () => {
+    expect(resolveGlobalShortcut(keyEvent('Backspace', meta), MAC)).toBeNull()
   })
 
   it('binds the Excel-for-Mac Cmd variant of the filter on mac only', () => {

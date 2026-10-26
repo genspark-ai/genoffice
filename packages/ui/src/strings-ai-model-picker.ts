@@ -31,4 +31,5 @@ export const AI_MODEL_PICKER_STRINGS: Record<Lang, AiModelPickerStrings> = {
   hi: { title: 'मॉडल', choose: 'मॉडल चुनें', manage: 'मॉडल प्रबंधित करें…' },
   'zh-TW': { title: '模型', choose: '選擇模型', manage: '管理模型…' },
   vi: { title: 'Mô hình', choose: 'Chọn mô hình', manage: 'Quản lý mô hình…' },
+  tr: { title: 'Model', choose: 'Model seç', manage: 'Modelleri yönet…' },
 }

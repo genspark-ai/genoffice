@@ -10,7 +10,7 @@ AI model configuration has its own article; **AI Media & Search** is where you t
 
 ## Language
 
-- The settings offer **21 UI languages**: English, Simplified Chinese, Japanese, Korean, French, German, Spanish, Thai, Indonesian, Russian, Arabic, Portuguese, Italian, Polish, Czech, Dutch, Malay, Hebrew, Hindi, Traditional Chinese, Vietnamese.
+- The settings offer **22 UI languages**: English, Simplified Chinese, Japanese, Korean, French, German, Spanish, Thai, Indonesian, Russian, Arabic, Portuguese, Italian, Polish, Czech, Dutch, Malay, Hebrew, Hindi, Traditional Chinese, Vietnamese, Turkish.
 - Switching applies immediately and persists; the native menu bar rebuilds with the language.
 
 ## Theme

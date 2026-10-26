@@ -3,8 +3,8 @@
  * (the same breadth-first listing the resolver matches against), arrow keys
  * and Enter complete the link in place, `![[` completes the same list for an
  * embed. A query nothing matches still offers to create that note, and the
- * completion then carries the created file's stem — the spelling that
- * resolves. Completion inserts REAL wiki syntax — a marked run for links, an
+ * completion then carries the created file's own target — the spelling
+ * that resolves. Completion inserts REAL wiki syntax — a marked run for links, an
  * embed node for `![[` — because live typing does not re-run the markdown
  * tokenizers: plain text would stay plain text until the next reparse.
  */
@@ -33,17 +33,11 @@ function embedPrefixBefore(editor: Editor, range: Range): string {
   return editor.state.doc.textBetween(Math.max(0, range.from - 1), range.from, undefined, '\ufffc')
 }
 
-/** the file name without its directory or extension: `/vault/Folder/Note.md` -> `Note` */
-function stemOf(path: string): string {
-  const file = path.split(/[\\/]/).pop() ?? ''
-  const dot = file.lastIndexOf('.')
-  return dot > 0 ? file.slice(0, dot) : file
-}
-
 /**
  * Create the note the query names, then finish the link in place with the
- * created file's stem — the spelling that resolves, even where a sanitized
- * character changed the name. The vault listing is dropped so the next
+ * created file's own target — the spelling that resolves, even where a
+ * sanitized character changed the name, directories kept so `[[folder/Note]]`
+ * cannot resolve to another `Note.md` nearer in the lookup order. The vault listing is dropped so the next
  * keystroke offers the new note like any other.
  */
 async function createNoteAndComplete(
@@ -63,7 +57,7 @@ async function createNoteAndComplete(
   if (!result.ok || props.editor.isDestroyed) return
   invalidateWikiNotes()
   const open = embed ? '![[' : '[['
-  const text = `${open}${stemOf(result.path)}${querySuffixPart(props.query)}]]`
+  const text = `${open}${result.target}${querySuffixPart(props.query)}]]`
   insertCompletion(props.editor, props.range, text, embed)
 }
 

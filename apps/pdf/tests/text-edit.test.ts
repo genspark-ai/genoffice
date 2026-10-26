@@ -1675,7 +1675,7 @@ describe('eraseTextRuns', () => {
     return withDocument(m, bytes, async (doc) => {
       const page = m._FPDF_LoadPage(doc, 0)
       try {
-        const erased = await eraseTextRuns(m, doc, page, probes)
+        const erased = await eraseTextRuns(m, doc, page, 0, bytes, probes)
         return { erased, bytes: saveDoc(m, doc) }
       } finally {
         m._FPDF_ClosePage(page)

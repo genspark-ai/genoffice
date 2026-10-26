@@ -47,7 +47,7 @@ const MARKS: SheetRedactionState[] = [
   },
 ]
 
-function ctx(redactionStates: readonly SheetRedactionState[], dirty = true): SaveContext {
+function ctx(redactionStates: readonly SheetRedactionState[] | null, dirty = true): SaveContext {
   const journal = createEditJournal()
   if (dirty) recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { v: 'edited' } } })
   return {
@@ -103,6 +103,20 @@ describe('the save carries the withheld cells', () => {
     // file claiming nothing is hidden while the session says otherwise.
     await handleSave(ctx(MARKS, false), 'save')
     expect(saveWorkbookEdits).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends null, not an empty list, while the marks are still unknown', async () => {
+    // A save before the part was read (or by a caller that never loads it)
+    // must leave the part alone; an empty list would clear it.
+    await handleSave(ctx(null), 'save')
+    const request = saveWorkbookEdits.mock.calls[0]![0] as { redactionStates: unknown }
+    expect(request.redactionStates).toBeNull()
+    expect(workbookSaveRequestSchema.safeParse(request).success).toBe(true)
+  })
+
+  it('does not count unknown marks as a pending change', async () => {
+    await handleSave(ctx(null, false), 'save')
+    expect(saveWorkbookEdits).not.toHaveBeenCalled()
   })
 
   it('sends nothing when the workbook withholds nothing', async () => {

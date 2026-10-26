@@ -427,6 +427,18 @@ export function onlyOleFields(xml: string): boolean {
   return instrs.every((text) => /^\s*(EMBED|LINK)\b/.test(text))
 }
 
+function fieldsNested(xml: string): boolean {
+  let depth = 0
+  const re = /<w:fldChar\b[^>]*\bw:fldCharType=["'](begin|end)["']/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    if (m[1] === 'begin') {
+      if (++depth > 1) return true
+    } else depth--
+  }
+  return false
+}
+
 /** Complex-field instructions, one string per field: Word splits a long
  * instruction (Mendeley/Zotero JSON) over several w:instrText runs, so the
  * fragments must be joined before any instruction regex sees them. Nested
@@ -467,6 +479,9 @@ export function onlyXeFields(xml: string): boolean {
   const instrs = fieldInstructions(xml)
   if (instrs.length === 0 && simple.length === 0) return false
   if (!fieldCharsBalanced(xml)) return false
+  // an instruction-less field stays editable unless it nests another field,
+  // which the empty-instruction run could not carry through a save
+  if (instrs.some((text) => text.trim() === '') && fieldsNested(xml)) return false
   const simpleOk = simple.every((raw) => {
     const text = decodeEntities(raw!)
     return (
@@ -484,6 +499,7 @@ export function onlyXeFields(xml: string): boolean {
       return true
     }
     return (
+      text.trim() === '' ||
       /^\s*XE[\s"]/.test(text) ||
       /^\s*REF\s/.test(text) ||
       ZOTERO_INLINE_FIELD_RE.test(text) ||

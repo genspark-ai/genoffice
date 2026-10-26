@@ -74,7 +74,7 @@ export interface SaveContext {
    * to be written, and a save that dropped the marks would leave the file
    * claiming nothing is hidden.
    */
-  redactionStates?: () => readonly SheetRedactionState[]
+  redactionStates?: () => readonly SheetRedactionState[] | null
   /**
    * Slicer/timeline panels to persist as OOXML parts on this save, null when
    * the session changed nothing slicer-related (any file parts stay
@@ -263,10 +263,11 @@ export async function handleSave(
   // Withheld cells travel in a package part of their own, so they ride with
   // this save rather than in the journal. Copied into the request's own shape
   // so the renderer never hands main a readonly view of its state.
-  const redactionStates = (ctx.redactionStates?.() ?? []).map((state) => ({
-    sheetName: state.sheetName,
-    marks: state.marks.map((mark) => ({ ...mark })),
-  }))
+  const redactionStates =
+    (ctx.redactionStates?.() ?? null)?.map((state) => ({
+      sheetName: state.sheetName,
+      marks: state.marks.map((mark) => ({ ...mark })),
+    })) ?? null
   // Slicer panels only ride the save when the session changed something
   // slicer-related (create/edit/delete); null keeps every file part raw.
   const slicerState = ctx.slicerState?.() ?? null
@@ -337,7 +338,7 @@ export async function handleSave(
     sparklineAdditions.length +
     // A save with nothing else pending but newly withheld cells or a slicer
     // change is still a save: skipping it would drop the change.
-    redactionStates.length +
+    (redactionStates?.length ?? 0) +
     (slicerState === null ? 0 : 1)
   // A restored crash-recovery session carries its changes in the workbook
   // bytes themselves, not the journal: a plain Save with nothing pending must
@@ -604,7 +605,7 @@ export async function handleSave(
         // Phase one already wrote the marks, re-keyed for the renames it
         // performed. Sending them again would rewrite the part under the names
         // this session loaded — the pre-rename ones — and orphan it.
-        redactionStates: [],
+        redactionStates: null,
       })
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {

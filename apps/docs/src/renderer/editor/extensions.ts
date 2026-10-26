@@ -363,6 +363,8 @@ const anchorAttrs = {
   paraMarkDel: { default: null as string | null },
   /** JSON {author,date?,id?} when the paragraph mark is a tracked insertion (w:pPr/w:rPr/w:ins) */
   paraMarkIns: { default: null as string | null },
+  /** JSON {author,date?,id?,resolved?} for a tracked format change of the paragraph mark (w:pPr/w:rPr/w:rPrChange) */
+  paraMarkRPrChange: { default: null as string | null },
   /** top-level insertion/deletion revision ({kind,author,date?}) */
   blockRevision: { default: null as Record<string, string> | null },
   /** JSON marks snapshot for an empty block's caret (Word's pilcrow
@@ -7478,6 +7480,25 @@ export const TextboxParagraph = Node.create({
  * pass runs on every doc change but only dispatches when a marker text actually
  * moved, and its own dispatches carry a meta guard so it never loops.
  */
+/** Per-box ordered marker texts in document order (null = not an ordered
+ * item). Any item restarts the levels below its own, as Word does. */
+export function textboxOrderedMarkerTexts(
+  markers: ReadonlyArray<TextboxListMarker | null | undefined>,
+): Array<string | null> {
+  const counters = new Map<string, number>()
+  return markers.map((marker) => {
+    if (!marker || marker.kind !== 'ordered' || marker.numId == null) return null
+    const ilvl = marker.ilvl ?? 0
+    for (const k of Array.from(counters.keys())) {
+      if (k.startsWith(`${marker.numId}:`) && Number(k.split(':')[1]) > ilvl) counters.delete(k)
+    }
+    const key = `${marker.numId}:${ilvl}`
+    const next = (counters.get(key) ?? 0) + 1
+    counters.set(key, next)
+    return `${next}.`
+  })
+}
+
 export const TextboxListRenumber = Extension.create({
   name: 'textboxListRenumber',
   addProseMirrorPlugins() {
@@ -7488,25 +7509,15 @@ export const TextboxListRenumber = Extension.create({
           const ours = transactions.some((tr) => tr.getMeta('textboxListRenumber'))
           const structural = transactions.some((tr) => tr.docChanged)
           if (!structural || ours) return null
-          const counters = new Map<string, number>()
-          const fixes: Array<{ pos: number; text: string }> = []
+          const markers: Array<TextboxListMarker | null> = []
+          const positions: number[] = []
           newState.doc.forEach((node, pos) => {
-            const marker = node.attrs.listMarker as TextboxListMarker | null
-            if (!marker || marker.kind !== 'ordered' || marker.numId == null) return
-            const key = `${marker.numId}:${marker.ilvl ?? 0}`
-            const below = Array.from(counters.keys()).filter((k) =>
-              k.startsWith(`${marker.numId}:`),
-            )
-            // a deeper or shallower item restarts the levels below it (Word)
-            if (marker.ilvl === 0 || !counters.has(key)) {
-              for (const k of below) {
-                if (Number(k.split(':')[1]) > (marker.ilvl ?? 0)) counters.delete(k)
-              }
-            }
-            const next = (counters.get(key) ?? 0) + 1
-            counters.set(key, next)
-            const text = `${next}.`
-            if (marker.text !== text) fixes.push({ pos, text })
+            markers.push(node.attrs.listMarker as TextboxListMarker | null)
+            positions.push(pos)
+          })
+          const fixes: Array<{ pos: number; text: string }> = []
+          textboxOrderedMarkerTexts(markers).forEach((text, i) => {
+            if (text !== null && markers[i]?.text !== text) fixes.push({ pos: positions[i], text })
           })
           if (fixes.length === 0) return null
           const tr = newState.tr

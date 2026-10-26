@@ -26,7 +26,12 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@genoffice/docx-engine', '@genoffice/electron-utils', '@genoffice/font-metrics'],
+        exclude: [
+          '@genoffice/docx-engine',
+          '@genoffice/electron-utils',
+          '@genoffice/font-metrics',
+          '@genoffice/xlsx-gateway',
+        ],
       }),
     ],
     resolve: { alias: localAlias },

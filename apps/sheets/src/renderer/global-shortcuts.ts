@@ -51,6 +51,8 @@ interface Chord {
   readonly cmdMac?: boolean
   /** Excel-for-Mac binding: Cmd+Ctrl together, mac only */
   readonly cmdCtrlMac?: boolean
+  /** real Ctrl on every platform (Cmd+Backspace is the mac clear key) */
+  readonly ctrlOnly?: boolean
 }
 
 interface Binding {
@@ -160,12 +162,28 @@ const BINDINGS: readonly Binding[] = [
   { code: 'PageUp', chord: {}, gate: 'grid', action: command('page-row:-1') },
   { code: 'PageDown', chord: { alt: true }, gate: 'grid', action: command('page-col:1') },
   { code: 'PageUp', chord: { alt: true }, gate: 'grid', action: command('page-col:-1') },
+  { code: 'KeyY', chord: { mod: true }, gate: 'sheet', action: command('redo') },
+  { code: 'Quote', chord: { mod: true }, gate: 'sheet', action: command('copy-above:formula') },
+  {
+    code: 'Quote',
+    chord: { mod: true, shift: true },
+    gate: 'sheet',
+    action: command('copy-above:value'),
+  },
+  { code: 'ArrowDown', chord: { alt: true }, gate: 'sheet', action: command('dv-dropdown-open') },
+  {
+    code: 'Backspace',
+    chord: { ctrlOnly: true },
+    gate: 'sheet',
+    action: command('scroll-to-active'),
+  },
 ]
 
 function chordMatches(event: GlobalShortcutKeyEvent, chord: Chord, isMac: boolean): boolean {
   if (event.shiftKey !== Boolean(chord.shift) || event.altKey !== Boolean(chord.alt)) return false
   if (chord.cmdMac) return isMac && event.metaKey && !event.ctrlKey
   if (chord.cmdCtrlMac) return isMac && event.metaKey && event.ctrlKey
+  if (chord.ctrlOnly) return event.ctrlKey && !event.metaKey
   return (event.metaKey || event.ctrlKey) === Boolean(chord.mod)
 }
 

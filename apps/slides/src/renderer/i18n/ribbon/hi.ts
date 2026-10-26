@@ -445,6 +445,7 @@ export const hi = {
   ribbonLangHebrew: 'हिब्रू',
   ribbonLangHindi: 'हिंदी',
   ribbonLangVietnamese: 'वियतनामी',
+  ribbonLangTurkish: 'तुर्की',
   ribbonNewComment: 'नई टिप्पणी',
   ribbonCommentsPane: 'टिप्पणी फलक',
   ribbonCommentsPaneTip: 'टिप्पणी फलक दिखाएँ या छिपाएँ',

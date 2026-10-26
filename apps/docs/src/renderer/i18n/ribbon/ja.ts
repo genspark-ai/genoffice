@@ -718,6 +718,7 @@ export const ja = {
   ribbonLangHindi: 'ヒンディー語',
   ribbonLangTraditionalChinese: '繁体字中国語',
   ribbonLangVietnamese: 'ベトナム語',
+  ribbonLangTurkish: 'トルコ語',
   ribbonGroupLanguage: '言語',
   ribbonNewComment: '新しいコメント',
   ribbonNewCommentTip: '選択範囲にコメントを追加',

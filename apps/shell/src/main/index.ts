@@ -1202,6 +1202,136 @@ const tMain = createI18n({
     dlgPickSaveDir: 'Chọn vị trí lưu mặc định',
     errSaveDirUnusable: 'Thư mục đã chọn không thể ghi và không thể dùng làm vị trí lưu mặc định',
   },
+  tr: {
+    menuTabSave: 'Kaydet',
+    menuTabSaveAs: 'Farklı Kaydet…',
+    menuTabPrint: 'Yazdır…',
+    menuTabRename: 'Yeniden Adlandır',
+    menuTabDuplicate: 'Çoğalt (kayıtlı dosyayı kopyala)',
+    menuTabSplitBeside: 'Yan yana böl',
+    menuTabCopyPath: 'Yolu kopyala',
+    menuTabCopyName: 'Dosya adını kopyala',
+    menuTabReveal: 'Klasörde göster',
+    menuTabOpenDefault: 'Varsayılan uygulamayla aç',
+    menuTabMoveLeft: 'Sola taşı',
+    menuTabMoveRight: 'Sağa taşı',
+    menuTabCloseOthers: 'Diğer sekmeleri kapat',
+    menuTabCloseRight: 'Sağdaki sekmeleri kapat',
+    menuTabCloseAll: 'Tüm sekmeleri kapat',
+    menuTabReopen: 'Kapatılan sekmeyi yeniden aç',
+    menuTabPin: 'Sekmeyi sabitle (yüklü tut)',
+    menuTabUnpin: 'Sekme sabitlemesini kaldır',
+    dlgAddFolderRoot: 'Ana Sayfaya Klasör Ekle',
+    watchdogTitle: 'Belge çok fazla kaynak kullanıyor',
+    watchdogBody:
+      '"{title}" birkaç dakikadır çok fazla bellek veya CPU kullanıyor ({memory} MB, %{cpu} CPU). Beklemeye devam edebilir ya da belgeyi kapatabilirsiniz (önce kaydedilmemiş değişiklikleri kaydetmeniz istenecek). Tanılama bilgileri kaydedildi.',
+    watchdogWait: 'Beklemeye Devam Et',
+    watchdogClose: 'Belgeyi Kapat',
+    watchdogIgnore: 'Bir Daha Hatırlatma',
+    errFolderRootUnusable: 'Seçilen klasör okunamıyor',
+    menuFile: 'Dosya',
+    menuSectionNew: 'Yeni',
+    menuView: 'Görünüm',
+    menuUiZoomIn: 'Arayüzü Yakınlaştır',
+    menuUiZoomOut: 'Arayüzü Uzaklaştır',
+    menuUiZoomReset: 'Arayüz Yakınlaştırmasını Sıfırla',
+    menuOpenInNewWindow: 'Yeni Pencerede Aç',
+    menuNewDoc: 'AI Docs',
+    menuNewSheet: 'AI Sheets',
+    untitledSheet: 'Adsız Elektronik Tablo',
+    untitledDoc: 'Adsız Belge',
+    untitledDeck: 'Adsız Sunu',
+    untitledMarkdown: 'Adsız Markdown',
+    untitledHtml: 'Adsız HTML',
+    untitledPdf: 'Adsız PDF',
+    menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuNewHtml: 'AI HTML',
+    menuNewPdf: 'AI PDF',
+    menuExportPdf: 'PDF Olarak Dışa Aktar…',
+    menuExportImages: 'Görüntü Olarak Dışa Aktar…',
+    menuExportHtml: 'Tek Dosyalı HTML Olarak Dışa Aktar…',
+    menuOpenInDocs: 'Dönüştür ve Docs ile Aç',
+    menuPrint: 'Yazdır…',
+    menuOpen: 'Aç…',
+    menuSave: 'Kaydet',
+    menuSaveAs: 'Farklı Kaydet…',
+    menuClose: 'Kapat',
+    menuEdit: 'Düzenle',
+    menuWindow: 'Pencere',
+    menuHome: 'Ana Sayfa',
+    backToHome: 'Ana Sayfaya Dön',
+    dlgOpenTitle: 'Dosya Aç',
+    filterSupported: 'Desteklenen Dosyalar',
+    filterWord: 'Word Belgeleri',
+    filterExcel: 'Excel Çalışma Kitapları',
+    filterPpt: 'PowerPoint Sunuları',
+    filterMarkdown: 'Metin Dosyaları (Markdown, TXT, JSON)',
+    filterHtml: 'HTML Belgeleri',
+    filterPdf: 'PDF Belgeleri',
+    errBadArgs: 'Geçersiz bağımsız değişkenler',
+    errBadName: 'Geçersiz dosya adı',
+    errBadExtension: 'Bu uzantı desteklenmiyor ve dosya bir daha açılamaz',
+    errMissing: 'Dosya bulunamadı',
+    errExists: 'Bu adda bir dosya zaten var',
+    errRenameFailed: 'Yeniden adlandırma başarısız oldu',
+    errPdfSaveAsFailed: 'PDF kopyası kaydedilemedi',
+    errNewTabFailed: 'Yeni belge oluşturulamadı',
+    errDuplicateFailed: 'Dosya çoğaltılamadı',
+    errUnsupportedExt: '.{ext} dosyaları desteklenmiyor',
+    copySuffix: 'kopya',
+    menuHelp: 'Yardım',
+    menuUserGuide: 'Kullanım Kılavuzu',
+    thirdPartyNotices: 'Üçüncü Taraf Bildirimleri',
+    menuExportDocx: 'Word Olarak Dışa Aktar…',
+    btnCancel: 'İptal',
+    pdfDocxFailedMsg: 'Word olarak dışa aktarma başarısız oldu',
+    pdfConvertFailedMsg: 'Markdown / HTML olarak dışa aktarma başarısız oldu',
+    pdfDocxBusyMsg: 'Zaten bir Word dışa aktarma işlemi sürüyor. Lütfen bitmesini bekleyin.',
+    menuExportPptx: 'PowerPoint Olarak Dışa Aktar…',
+    pdfPptxFailedMsg: 'PowerPoint olarak dışa aktarma başarısız oldu',
+    pdfPptxBusyMsg: 'Zaten bir dışa aktarma işlemi sürüyor. Lütfen bitmesini bekleyin.',
+    pdfPptxLocalScannedDetail:
+      'Her sayfa tam sayfa görüntü olarak dışa aktarıldı; slaytlardaki metin düzenlenemez.',
+    menuExportXlsx: 'Excel Olarak Dışa Aktar…',
+    pdfXlsxFailedMsg: 'Excel olarak dışa aktarma başarısız oldu',
+    pdfXlsxBusyMsg: 'Zaten bir dışa aktarma işlemi sürüyor. Lütfen bitmesini bekleyin.',
+    pdfXlsxLocalScannedDetail:
+      'Taranmış sayfalar hücrelere dönüştürülemez; bunun yerine her sayfanın çalışma sayfasında bir bildirim satırı bulunur.',
+    pdfXlsxLocalSkippedMsg: 'Bazı sayfalar hücrelere dönüştürülmedi',
+    pdfXlsxLocalSkippedDetail:
+      '{pages} numaralı sayfalar hücrelere dönüştürülemedi; bunun yerine çalışma sayfalarında bir bildirim satırı bulunur.',
+    pdfDocxLocalScannedMsg: 'Taranmış belge algılandı',
+    pdfMdLocalMissingMsg: 'Markdown dosyasında bazı içerikler eksik',
+    pdfMdLocalScannedDetail:
+      'Düzenlenebilir metin tanınamadığından Markdown dosyasında kullanılabilir içerik yok.',
+    pdfMdLocalDroppedDetail:
+      '{pages} numaralı sayfa(lar) güvenilir biçimde yeniden oluşturulamadı; Markdown görüntü taşıyamadığından içerikleri eksik.',
+    pdfDocxLocalScannedDetail:
+      'Sayfalar görünümlerini korumak için görüntü olarak dışa aktarıldı; düzenlenebilir metin tanınamadı.',
+    pdfDocxLocalDegradedMsg: 'Bazı sayfalar görüntü olarak dışa aktarıldı',
+    pdfDocxLocalDegradedDetail:
+      '{pages} numaralı sayfa(lar) güvenilir biçimde yeniden oluşturulamadı ve tam sayfa görüntü olarak dışa aktarıldı.',
+    pdfDocxLocalOcrMsg: 'Taranmış sayfalar düzenlenebilir metne dönüştürüldü',
+    pdfDocxLocalOcrDetail:
+      '{pages} numaralı sayfa(lar) taramaydı; metinleri cihaz üzerinde OCR ile kurtarıldı. Lütfen sonucu gözden geçirin.',
+    pdfDocxLocalEncryptedDetail: 'Bu PDF şifreli ve doğru parola olmadan açılamadı.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Bu PDF sertifika tabanlı veya desteklenmeyen başka bir şifreleme kullanıyor ve dönüştürülemez.',
+    pdfPwdTitle: 'Parola Girin',
+    pdfPwdPrompt: 'Bu PDF şifreli. Açmak için parolayı girin:',
+    pdfPwdRetryPrompt: 'Parola yanlış. Lütfen yeniden deneyin.',
+    pdfPwdOk: 'Tamam',
+    pdfPwdVerifying: 'Parola doğrulanıyor…',
+    pdfPwdLabel: 'Parola',
+    pdfPwdPlaceholder: 'Açma parolasını girin',
+    pdfPwdShow: 'Parolayı göster',
+    pdfPwdHide: 'Parolayı gizle',
+    pdfDocxLocalCorruptDetail: 'Dosya bozuk veya geçerli bir PDF değil ve dönüştürülemez.',
+    dlgPickSaveDir: 'Varsayılan Kayıt Konumunu Seçin',
+    errSaveDirUnusable:
+      'Seçilen klasör yazılabilir değil ve varsayılan kayıt konumu olarak kullanılamaz',
+  },
   ja: {
     menuTabSave: '保存',
     menuTabSaveAs: '名前を付けて保存…',
@@ -7139,9 +7269,18 @@ app.whenReady().then(async () => {
     })
   }
 
-  openLaunchPaths(
-    launchPathsWithLastSession(readAppSettings(APP_SETTINGS_PATH()), pendingLaunchPaths),
-  )
+  const launchSettings = readAppSettings(APP_SETTINGS_PATH())
+  const launchPaths = launchPathsWithLastSession(launchSettings, pendingLaunchPaths)
+  if (launchSettings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
+    // consumed before opening: a document that crashes the app during restore
+    // must not be restored again at the next launch
+    try {
+      writeAppSettings(APP_SETTINGS_PATH(), { [LAST_SESSION_DOCUMENTS_KEY]: undefined })
+    } catch (err) {
+      console.warn('[shell] could not clear the session documents:', err)
+    }
+  }
+  openLaunchPaths(launchPaths)
   pendingLaunchPaths = []
   for (const recoverAs of pendingUnsavedNewRecoveries()) void newSheetTab(recoverAs)
 

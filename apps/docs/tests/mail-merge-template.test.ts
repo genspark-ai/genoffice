@@ -112,4 +112,21 @@ describe('mergeAllRecords', () => {
     expect(merged.content?.[0]?.attrs?.pageBreakBefore).toBeUndefined()
     expect(merged.content?.[1]?.attrs?.pageBreakBefore).toBe(true)
   })
+
+  it('keeps bookmarks, comment anchors and note references in the first letter only', () => {
+    const block = para(
+      text('Dear ', [{ type: 'comment', attrs: { ids: 'c1' } }]),
+      text('«FirstName»', [mergeMark('FirstName')]),
+      { type: 'docNoteRef', attrs: { id: '1', kind: 'footnote' } },
+    )
+    block.attrs = { ...(block.attrs ?? {}), bookmarks: ['intro'] }
+    const merged = mergeAllRecords(doc(block), [record, { FirstName: 'Grace' }])
+    const [first, second] = merged.content ?? []
+    expect(first?.attrs?.bookmarks).toEqual(['intro'])
+    expect(first?.content?.[0]?.marks?.map((m) => m.type)).toEqual(['comment'])
+    expect(first?.content?.some((n) => n.type === 'docNoteRef')).toBe(true)
+    expect(second?.attrs?.bookmarks).toBeNull()
+    expect(second?.content?.[0]?.marks ?? []).toEqual([])
+    expect(second?.content?.some((n) => n.type === 'docNoteRef')).toBe(false)
+  })
 })

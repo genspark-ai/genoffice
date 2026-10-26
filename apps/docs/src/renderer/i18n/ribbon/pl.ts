@@ -702,6 +702,7 @@ export const pl = {
   ribbonLangHindi: 'hindi',
   ribbonLangTraditionalChinese: 'tradycyjny chiński',
   ribbonLangVietnamese: 'wietnamski',
+  ribbonLangTurkish: 'turecki',
   ribbonGroupLanguage: 'Język',
   ribbonNewComment: 'Nowy komentarz',
   ribbonNewCommentTip: 'Dodaj komentarz do zaznaczenia',
