@@ -421,6 +421,7 @@ export const zhTW = {
   ribbonLangHebrew: '希伯來文',
   ribbonLangHindi: '印地文',
   ribbonLangVietnamese: '越南文',
+  ribbonLangTurkish: '土耳其文',
   ribbonNewComment: '新增註解',
   ribbonCommentsPane: '註解窗格',
   ribbonCommentsPaneTip: '顯示/隱藏註解窗格',

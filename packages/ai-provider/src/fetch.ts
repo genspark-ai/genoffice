@@ -8,6 +8,8 @@
  * stack. Renderers never inject one (their fetch already is Chromium's).
  */
 
+import { nativeAdmission } from './native-admission'
+
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
 let rescueFetch: FetchLike | null = null
@@ -55,7 +57,7 @@ function isBlockPage(response: Response): boolean {
 }
 
 export async function aiFetch(url: string, rawInit: RequestInit): Promise<Response> {
-  const init = withUserAgent(rawInit)
+  const init = await nativeAdmission.prepare(url, withUserAgent(rawInit), (u, i) => fetch(u, i))
   const signal = init.signal as AbortSignal | null | undefined
   let response: Response
   try {

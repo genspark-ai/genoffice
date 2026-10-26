@@ -251,4 +251,15 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     moveTitle: 'Kéo để đổi thứ tự (hoặc Alt+↑/↓)',
     queuePlaceholder: 'Enter để xếp hàng · Esc để dừng',
   },
+  tr: {
+    queuedCount: (n) => `${n} sırada`,
+    clearTitle: 'Sıradaki iletileri temizle',
+    editTitle: 'Sıradaki iletiyi düzenle',
+    removeTitle: 'Sıradaki iletiyi kaldır',
+    pauseTitle: 'Sırayı duraklat',
+    resumeTitle: 'Sırayı sürdür',
+    pausedHint: 'Duraklatıldı',
+    moveTitle: 'Yeniden sıralamak için sürükleyin (veya Alt+↑/↓)',
+    queuePlaceholder: 'Sıraya almak için Enter · Durdurmak için Esc',
+  },
 }

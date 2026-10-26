@@ -79,4 +79,5 @@ export const tableStrings = defineStrings({
   hi: en,
   'zh-TW': en,
   vi: en,
+  tr: en,
 })

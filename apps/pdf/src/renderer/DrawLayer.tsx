@@ -64,7 +64,7 @@ function drawingShape(
     // Pending link boxes preview as dashed rects; saved links render in LinkLayer
     const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
     const [bx, by] = toView(geom, scale, d.rect[2], d.rect[3])
-    const stroke = hit ? 'transparent' : '#3b82f6'
+    const stroke = hit ? 'transparent' : 'var(--accent)'
     const w = hit ? Math.max(16, 2 * scale * 4) : Math.max(1, 1.5 * scale)
     return (
       <rect

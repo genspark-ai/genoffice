@@ -98,6 +98,7 @@ import {
   journalCellContentAt,
   isSheetRemoved,
   journalEntriesInRange,
+  NO_BORDER_STYLE,
   NO_FILL_STYLE,
   notePicturesFor,
   ooxmlTextRotationToUniver,
@@ -3216,6 +3217,10 @@ async function loadRange(
       mapped.indexedThroughScreen === null
         ? null
         : Math.min(mapped.indexedThroughScreen, range.endRow)
+    // Merges before cells: shrinkToFit measures its budget from Univer's
+    // merge data, so a merged label patched first would shrink to its
+    // anchor column.
+    keepActiveSheet(worksheet, () => applyMerges(worksheet, state, sheetId, mapped.screen.merges))
     let patchedRange: IRange | undefined
     if (availableEndRow !== null && availableEndRow >= range.startRow) {
       const availableRange = { ...range, endRow: availableEndRow }
@@ -3282,10 +3287,9 @@ async function loadRange(
     // file-cached results are only known once their chunk streams in.
     if (!hasStructuralOps) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
     recordHyperlinks(state, sheetId, mapped.screen.hyperlinks)
-    keepActiveSheet(worksheet, () => {
-      applyRowProperties(runtime, worksheet, state, sheetId, mapped.screen.rows)
-      applyMerges(worksheet, state, sheetId, mapped.screen.merges)
-    })
+    keepActiveSheet(worksheet, () =>
+      applyRowProperties(runtime, worksheet, state, sheetId, mapped.screen.rows),
+    )
     // After merges (merged-only rows never auto-fit) and stored heights.
     // Bulk AI reads skip it: the measure is a real canvas text layout over
     // every wrap row × the full sheet width, and only non-final chunks load
@@ -3723,8 +3727,8 @@ export function recordRowStyleKeys(
 /// Concrete "absent property" values per bleed key. Explicit nulls would be
 /// the natural block, but Univer's set-range-values merge strips them
 /// (Tools.removeNull), so the override must be a real value that renders
-/// exactly like the missing property. pd/bd have no such value and their
-/// (rare) bleed is left alone. Document data: hardcoded colors stay
+/// exactly like the missing property. pd has no such value and its (rare)
+/// bleed is left alone. Document data: hardcoded colors stay
 /// theme-independent by design.
 function bleedOverrideValue(key: string, normal: WorkbookCellStyle | undefined): unknown {
   switch (key) {
@@ -3732,6 +3736,8 @@ function bleedOverrideValue(key: string, normal: WorkbookCellStyle | undefined):
       return { rgb: '#000000' } // automatic font color
     case 'bg':
       return { rgb: '#FFFFFF' } // fillId 0 on the white page surface
+    case 'bd':
+      return { t: { ...NO_BORDER_STYLE.t } }
     case 'ul':
     case 'st':
       return { s: BooleanNumber.FALSE }
@@ -5920,6 +5926,8 @@ async function preloadEntireWorkbookInner(
         sheet.tables,
         sheet.pivotTables,
       )
+      // Merges before cells (see loadRange): shrinkToFit budgets read them.
+      keepActiveSheet(worksheet, () => applyMerges(worksheet, state, sheetId, screen.merges))
       if (installRange) {
         patchWorksheetRange(
           worksheet,
@@ -5948,10 +5956,9 @@ async function preloadEntireWorkbookInner(
       // equals result here when no ops exist).
       storeFormulaText(state, sheetId, result.cells)
       recordHyperlinks(state, sheetId, screen.hyperlinks)
-      keepActiveSheet(worksheet, () => {
-        applyRowProperties(runtime, worksheet, state, sheetId, screen.rows)
-        applyMerges(worksheet, state, sheetId, screen.merges)
-      })
+      keepActiveSheet(worksheet, () =>
+        applyRowProperties(runtime, worksheet, state, sheetId, screen.rows),
+      )
       const qualifying = wrapAutoFitRows(
         screen.cells,
         state.file.styles,

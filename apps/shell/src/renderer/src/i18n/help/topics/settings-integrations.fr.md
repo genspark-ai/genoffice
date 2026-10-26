@@ -10,7 +10,7 @@ La configuration des modèles a son propre article ; dans **Médias IA et recher
 
 ## Langue
 
-- Les paramètres proposent **21 langues d’interface** : anglais, chinois simplifié, japonais, coréen, français, allemand, espagnol, thaï, indonésien, russe, arabe, portugais, italien, polonais, tchèque, néerlandais, malais, hébreu, hindi, chinois traditionnel, vietnamien.
+- Les paramètres proposent **22 langues d’interface** : anglais, chinois simplifié, japonais, coréen, français, allemand, espagnol, thaï, indonésien, russe, arabe, portugais, italien, polonais, tchèque, néerlandais, malais, hébreu, hindi, chinois traditionnel, vietnamien, turc.
 - Le changement s’applique immédiatement et est conservé ; la barre de menus native est reconstruite dans la langue choisie.
 
 ## Thème

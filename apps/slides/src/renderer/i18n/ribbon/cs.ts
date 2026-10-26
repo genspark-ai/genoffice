@@ -442,6 +442,7 @@ export const cs = {
   ribbonLangHebrew: 'hebrejština',
   ribbonLangHindi: 'hindi',
   ribbonLangVietnamese: 'vietnamština',
+  ribbonLangTurkish: 'turečtina',
   ribbonNewComment: 'Nový komentář',
   ribbonCommentsPane: 'Podokno komentářů',
   ribbonCommentsPaneTip: 'Zobrazit nebo skrýt podokno komentářů',

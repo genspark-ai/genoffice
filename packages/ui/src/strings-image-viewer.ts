@@ -24,4 +24,5 @@ export const IMAGE_VIEWER_TITLES: Record<Lang, string> = {
   hi: 'चित्र व्यूअर',
   'zh-TW': '圖片檢視器',
   vi: 'Trình xem ảnh',
+  tr: 'Görüntü görüntüleyici',
 }

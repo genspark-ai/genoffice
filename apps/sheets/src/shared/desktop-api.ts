@@ -2279,7 +2279,7 @@ export const workbookSaveRequestSchema = z
      * session loaded onto the name the file ends up with. Main passes them
      * through without a translation step.
      */
-    redactionStates: redactionStatesSchema.default([]),
+    redactionStates: redactionStatesSchema.nullable().default(null),
   })
   .strict()
   .refine(
@@ -2314,7 +2314,7 @@ export const workbookSaveRequestSchema = z
       (request.tableEdits?.length ?? 0) > 0 ||
       request.pivotAdditions.length > 0 ||
       request.sparklineAdditions.length > 0 ||
-      request.redactionStates.length > 0,
+      (request.redactionStates?.length ?? 0) > 0,
     { message: 'A save needs at least one edit.' },
   )
   .refine((request) => request.sheetOps.length === 0 || request.sheetOrder.length > 0, {

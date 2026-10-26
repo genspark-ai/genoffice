@@ -698,6 +698,7 @@ export const vi = {
   ribbonLangHindi: 'Tiếng Hindi',
   ribbonLangTraditionalChinese: 'Tiếng Trung (Phồn thể)',
   ribbonLangVietnamese: 'Tiếng Việt',
+  ribbonLangTurkish: 'Tiếng Thổ Nhĩ Kỳ',
   ribbonGroupLanguage: 'Ngôn ngữ',
   ribbonNewComment: 'Nhận xét mới',
   ribbonNewCommentTip: 'Thêm nhận xét vào vùng chọn',

@@ -54,6 +54,8 @@ const WRITES: Record<string, (op: Record<string, unknown>) => RangeBounds | null
   clear_range: (op) => rangeOf(op.range),
   fill_range: (op) => rangeOf(op.target),
   copy_range: (op) => rangeOf(op.target),
+  // a move clears its source and writes its target; both are checked
+  move_range: (op) => rangeOf(op.target),
   convert_to_values: (op) => rangeOf(op.range),
   sort_range: (op) => rangeOf(op.range),
   find_replace: (op) => rangeOf(op.range),
@@ -76,6 +78,76 @@ const WRITES: Record<string, (op: Record<string, unknown>) => RangeBounds | null
   // A duplicate copies the withheld values into a new sheet that carries no
   // marks, which publishes them.
   duplicate_sheet: () => ENTIRE_SHEET,
+}
+
+/**
+ * Where an op takes its values from. A withheld value copied, moved or
+ * referenced by a formula lands in an unmarked cell (or in the readback of
+ * the formula's result), which publishes it — so the source is refused too.
+ */
+interface ReadSite {
+  /** the sheet the read happens on; undefined = the op's own sheet */
+  sheetId?: string | undefined
+  /** a sheet named in a formula, resolved by the caller */
+  sheetName?: string | undefined
+  bounds: RangeBounds
+}
+
+const READS: Record<string, (op: Record<string, unknown>) => ReadSite[]> = {
+  copy_range: (op) => sourceOf(op),
+  move_range: (op) => sourceOf(op),
+  fill_range: (op) => sourceOf(op),
+  set_formula: (op) => formulaRefs(op.formula),
+  set_cell: (op) => formulaRefs(op.value),
+  set_range: (op) => {
+    const values = Array.isArray(op.values) ? op.values : []
+    return values.flatMap((row) => (Array.isArray(row) ? row.flatMap(formulaRefs) : []))
+  },
+}
+
+function sourceOf(op: Record<string, unknown>): ReadSite[] {
+  const bounds = rangeOf(op.source)
+  if (!bounds) return []
+  return [{ sheetId: typeof op.sourceSheetId === 'string' ? op.sourceSheetId : undefined, bounds }]
+}
+
+/** A1 references of a formula, string literals set aside; a sheet prefix stays a name */
+const FORMULA_REF =
+  /(?:(?:'((?:[^']|'')+)'|([A-Za-z_][\w.]*))!)?(\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|\$?[A-Z]{1,3}:\$?[A-Z]{1,3}|\$?\d+:\$?\d+)(?![\w(])/g
+
+function formulaRefs(value: unknown): ReadSite[] {
+  if (typeof value !== 'string' || !value.startsWith('=')) return []
+  const bare = value.replace(/"(?:[^"]|"")*"/g, '""')
+  const out: ReadSite[] = []
+  for (const m of bare.matchAll(FORMULA_REF)) {
+    const ref = m[3]!.replace(/\$/g, '')
+    const bounds = refBounds(ref)
+    if (!bounds) continue
+    const sheetName = m[1]?.replace(/''/g, "'") ?? m[2]
+    out.push({ sheetName, bounds })
+  }
+  return out
+}
+
+function refBounds(ref: string): RangeBounds | null {
+  const cols = /^([A-Z]{1,3}):([A-Z]{1,3})$/.exec(ref)
+  if (cols) {
+    const a = columnIndex(cols[1]!)
+    const b = columnIndex(cols[2]!)
+    return { startRow: 0, endRow: MAX_ROW, startColumn: Math.min(a, b), endColumn: Math.max(a, b) }
+  }
+  const rows = /^(\d+):(\d+)$/.exec(ref)
+  if (rows) {
+    const a = Number(rows[1]) - 1
+    const b = Number(rows[2]) - 1
+    return {
+      startRow: Math.min(a, b),
+      endRow: Math.max(a, b),
+      startColumn: 0,
+      endColumn: MAX_COLUMN,
+    }
+  }
+  return ref.includes(':') ? rangeOf(ref) : cellOf(ref)
 }
 
 /**
@@ -229,6 +301,7 @@ export function redactGuardForOps(
   ops: readonly unknown[],
   index: RedactionIndex,
   sheetNameOf: (sheetId: string) => string | undefined = () => undefined,
+  sheetIdOf: (sheetName: string) => string | undefined = () => undefined,
 ): RedactionRefusal | null {
   if (index.isEmpty) return null
   for (const raw of ops) {
@@ -238,6 +311,26 @@ export function redactGuardForOps(
     if (!name) continue
     const sheetId = typeof op.sheetId === 'string' ? op.sheetId : ''
     if (!sheetId) continue
+
+    const reads = READS[name]
+    if (reads) {
+      for (const site of reads(op)) {
+        const readSheetId =
+          site.sheetId ?? (site.sheetName !== undefined ? sheetIdOf(site.sheetName) : sheetId)
+        if (!readSheetId) continue
+        for (const mark of index.marksFor(readSheetId)) {
+          if (!intersects(mark, site.bounds)) continue
+          return refusalAt(
+            mark,
+            site.bounds,
+            sheetNameOf(readSheetId),
+            `${name} reads a cell withheld from the model — copying, moving or referencing ` +
+              `it would put its value where the model can see it; leave it out`,
+          )
+        }
+      }
+    }
+
     const marks = index.marksFor(sheetId)
     if (marks.length === 0) continue
     const sheetName = sheetNameOf(sheetId)

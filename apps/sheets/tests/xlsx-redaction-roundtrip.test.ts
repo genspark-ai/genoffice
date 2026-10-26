@@ -70,7 +70,7 @@ const STATES: SheetRedactionState[] = [{ sheetName: 'Sheet1', marks: [MARK] }]
  */
 function argumentsFor(
   source: Buffer,
-  redactionStates: readonly SheetRedactionState[],
+  redactionStates: readonly SheetRedactionState[] | null,
   plan?: SheetEditPlan,
   structuralOps: readonly SheetStructuralOps[] = [],
 ) {
@@ -168,6 +168,18 @@ describe('the redaction part survives a real save', () => {
     expect(parseRedactionPart(parts.get(REDACTION_PART_PATH)!)).toEqual([
       { ...STATES[0], sheetName: 'Q3' },
     ])
+  })
+
+  it('keeps the part when the save does not know the marks', async () => {
+    // The CLI and the second phase of a split save never load the marks; an
+    // empty list there cleared the part, un-hiding everything on any edit.
+    const first = await save(STATES)
+    const second = await applyCellEditsToXlsx(...argumentsFor(first.buffer, null))
+    expect(() => assertOnlyTouchedEntriesChanged(second)).not.toThrow()
+    const parts = await savedParts(second.buffer)
+    expect(parseRedactionPart(parts.get(REDACTION_PART_PATH)!)).toEqual(STATES)
+    const cleared = await applyCellEditsToXlsx(...argumentsFor(first.buffer, []))
+    expect((await savedParts(cleared.buffer)).has(REDACTION_PART_PATH)).toBe(false)
   })
 
   it('adds no part at all when nothing is withheld', async () => {
