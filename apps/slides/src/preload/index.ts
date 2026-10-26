@@ -224,6 +224,8 @@ const api: SlidesApi = {
   batchEditTransform: (op: BatchEditTransformOp) =>
     ipcRenderer.invoke('slides:batch-edit-transform', op),
   getRenderSlides: () => ipcRenderer.invoke('slides:get-render-slides'),
+  readDeckImage: (op: { slideIndex: number; elementId: string }) =>
+    ipcRenderer.invoke('slides:read-deck-image', op),
   addElement: (op: AddElementOp) => ipcRenderer.invoke('slides:add-element', op),
   deleteElement: (op: DeleteElementOp) => ipcRenderer.invoke('slides:delete-element', op),
   deleteElements: (op: DeleteElementsOp) => ipcRenderer.invoke('slides:delete-elements', op),

@@ -66,7 +66,7 @@ import {
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { buildPagePptx, parsePageSpec } from '@genoffice/pipelines/slides'
 import { convertOdpToPptx } from '../../../../packages/odf2ooxml/src'
-import { sniffImageMime } from './media-mime'
+import { displayMime, sniffImageMime } from './media-mime'
 import {
   newPasteCascade,
   pageKey,
@@ -247,6 +247,7 @@ import type {
   ApplyEditScriptOp,
   ApplyTxnOp,
   ApplyTxnResult,
+  DeckImageResult,
   AnimationItem,
   ShapeKey,
   SetEffectsPatch,
@@ -257,6 +258,7 @@ import { buildPrintDocumentHtml } from '../shared/print-html'
 
 import { tm } from './i18n-main'
 import { tiffToPng } from './tiff-decode'
+import { neutralizeJpegOrientation } from './jpeg-orientation'
 import {
   attachedIds,
   editorAttachedIds,
@@ -1780,6 +1782,33 @@ export function registerSlidesIpc(): void {
     if (!session) return null
     return session.opened.deck.slides.map((_, i) => rebuildSlide(session, i))
   })
+
+  // Read-only: one picture's bytes as base64 for the AI panel's multimodal input
+  // (doc vision injection). Resolves through the same media resolver the render
+  // tree uses, so magic-byte sniffing and TIFF→PNG transcoding behave identically.
+  ipcMain.handle(
+    'slides:read-deck-image',
+    (e, op: { slideIndex: number; elementId: string }): DeckImageResult => {
+      const session = sessions.get(e.sender.id)
+      const slide = session?.opened.deck.slides[op.slideIndex]
+      const el = slide?.elements.find((x) => matchesElementRef(x, op.elementId))
+      if (!el || el.type !== 'picture')
+        return { ok: false, error: 'Picture element not found' }
+      const mediaRef = el.mediaRef
+      const bytes = session!.opened.archive.readBytes(mediaRef)
+      if (!bytes) return { ok: false, error: `Media part not found: ${mediaRef}` }
+      const mime = displayMime(mediaRef, bytes)
+      if (mime === 'image/tiff') {
+        const decoded = tiffToPng(bytes)
+        if (!decoded) return { ok: false, error: `TIFF decode failed: ${mediaRef}` }
+        return { ok: true, base64: Buffer.from(decoded.png).toString('base64'), mime: 'image/png' }
+      }
+      // Same EXIF-orientation neutralization the display path applies, so the
+      // bytes the model sees match the pixels the user sees.
+      const served = mime === 'image/jpeg' ? neutralizeJpegOrientation(bytes) : bytes
+      return { ok: true, base64: Buffer.from(served).toString('base64'), mime }
+    },
+  )
 
   // Shim: the whole selection is one atomic transaction of setTransform ops — the
   // executor's plan step reproduces the legacy "every element must exist" gate.

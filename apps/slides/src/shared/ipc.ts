@@ -137,6 +137,16 @@ export interface AttachmentImageResult {
   error?: string
 }
 
+/** Deck picture raw-byte read for multimodal vision input (slides:read-deck-image) */
+export interface DeckImageResult {
+  ok: boolean
+  /** raw base64 (without the data: prefix) */
+  base64?: string
+  /** sniffed display mime; TIFF is transcoded to image/png by the resolver */
+  mime?: string
+  error?: string
+}
+
 /** Attachment bridge (window.desktop): same names/signatures as docs' DesktopApi attachment subset, so files-skill can be copied wholesale */
 export interface DesktopFilesApi {
   /** Multi-select attachment file dialog */
@@ -1415,6 +1425,9 @@ export interface SlidesApi {
   batchEditTransform: (op: BatchEditTransformOp) => Promise<RenderSlide | null>
   /** Read-only: RenderSlide for every page of the current session (E2E driver/debug use) */
   getRenderSlides: () => Promise<RenderSlide[] | null>
+  /** Read one deck picture's bytes as base64 for multimodal vision input
+   *  (resolves via the session's media resolver: magic-byte sniff, TIFF → PNG) */
+  readDeckImage(op: { slideIndex: number; elementId: string }): Promise<DeckImageResult>
   /** Update the picture crop srcRect (0..1 ratios; null = full image); returns the updated page */
   editPictureSrcRect: (op: EditPictureSrcRectOp) => Promise<RenderSlide | null>
   /** Whole-picture opacity */

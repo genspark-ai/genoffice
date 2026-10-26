@@ -24,8 +24,10 @@ import {
   type DeckAccess,
   type ClarifyQuestion,
   type DeckProgressEvent,
+  setDeckImageAttachment,
 } from './slides-skill'
 import { extractJsonObject, parseOutlineJson } from './outline-json'
+import { collectDeckImages } from './deck-images'
 import { EditQueueCard } from './EditQueueCard'
 import { deriveDeckProgressView, type DeckProgressSnapshot } from './deck-progress-view'
 import {
@@ -1451,6 +1453,9 @@ export function AiPanel({
             }
             return next
           })
+          // The run's images are gone with it: later QC/queue runs must not
+          // keep quoting "attached as image #K" for pixels no longer attached
+          setDeckImageAttachment(null)
           void finishHistoryBatch().finally(() => {
             setBusy(false)
             // Post-generation layout QC: only after a completed run that landed generated pages
@@ -1472,6 +1477,8 @@ export function AiPanel({
         },
         onError: (error) => {
           logRunFailure('error', error)
+          // The failed run's images were rolled back with it; same cleanup as onDone
+          setDeckImageAttachment(null)
           qcPagesRef.current = []
           setChat((prev) => {
             const next = [...prev]
@@ -1737,6 +1744,25 @@ export function AiPanel({
             modelInstruction += `\n\n(${NO_SCREENSHOT_NOTE})`
           }
         }
+        // Vision-capable endpoints also receive the deck's own pictures: the
+        // outline annotates each collected one as "attached as image #K". The
+        // shot above (when present) takes the last slot, so it doesn't shift
+        // the deck pictures' ordinals — attachment images hold the earlier
+        // slots and are counted by the offset passed to the collector.
+        if (settingsSupportVision(settingsRef.current)) {
+          const deckPlan = await collectDeckImages(
+            slidesRef.current,
+            (op) => window.slidesApi.readDeckImage(op),
+            images.length,
+          )
+          if (deckPlan.images.length > 0) images.push(...deckPlan.images)
+          setDeckImageAttachment({
+            ordinals: deckPlan.ordinalsBySlide,
+            skipped: deckPlan.skipped,
+          })
+        } else {
+          setDeckImageAttachment(null)
+        }
         // Clear the flag before run: loop.run sets running synchronously, leaving no re-entry window
         runStartingRef.current = false
         await onBeforeRunRef.current?.()
@@ -1806,6 +1832,9 @@ export function AiPanel({
         .then((ok) => {
           if (ok) historyBatchActiveRef.current = true
           runStartingRef.current = false
+          // Queue pages run without images: no deck pictures attached, so the
+          // outline must not quote ordinals from the previous send
+          setDeckImageAttachment(null)
           loop.run(instruction)
         })
         .catch(() => {

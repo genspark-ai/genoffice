@@ -980,11 +980,57 @@ function buildDeckOutline(slides: RenderSlide[], current: number, selectedIds: s
       .map(([c, count]) => (count > 1 ? `${c}×${count}` : c))
     if (mainFills.length > 0) lines.push(`  main fills: ${mainFills.join(' ')}`)
     for (const n of infos) {
-      lines.push(`  - ${n.id} | ${n.type}${n.text ? ` | "${preview(n.text)}"` : ''}`)
+      lines.push(
+        `  - ${n.id} | ${n.type}${n.text ? ` | "${preview(n.text)}"` : ''}${deckImageNote(i, n.id)}`,
+      )
     }
   })
+  const skippedNote = deckImageSkippedNote()
+  if (skippedNote) lines.push(skippedNote)
   lines.push('(Use read_slide to see element positions/sizes/colors)')
   return lines.join('\n')
+}
+
+// ── Deck-picture vision annotation ─────────────────────────────────────────
+
+/**
+ * The last send's deck-picture attachment state, for buildDeckOutline to read.
+ *
+ * Null by default: a text-only endpoint never collects, so the outline stays
+ * byte-identical to the pre-vision behavior. The send path sets it right
+ * before loop.run (buildContext runs inside run) and clears it when the run
+ * settles, so a later re-run between user messages cannot quote ordinals for
+ * pixels that are no longer attached.
+ */
+interface DeckImageAttachment {
+  /** slideIndex -> [{elementId, ordinal}] in collection order */
+  ordinals: Map<number, Array<{ elementId: string; ordinal: number }>>
+  /** Pictures seen but not attached (over budget / bad mime / failed read) */
+  skipped: number
+}
+
+let deckImageAttachment: DeckImageAttachment | null = null
+
+/** Record the current send's deck-picture attachment state (null = none). */
+export function setDeckImageAttachment(attachment: DeckImageAttachment | null): void {
+  deckImageAttachment = attachment
+}
+
+/**
+ * The picture-attachment note for an element line: "— attached as image #K"
+ * when this send attached that picture's pixels. Picture elements only.
+ */
+function deckImageNote(slideIndex: number, elementId: string): string {
+  const list = deckImageAttachment?.ordinals.get(slideIndex)
+  if (!list) return ''
+  const hit = list.find((e) => e.elementId === elementId)
+  return hit ? ` — attached as image #${hit.ordinal}` : ''
+}
+
+/** Tail note counting pictures that exceeded the attachment budget, '' when none */
+function deckImageSkippedNote(): string {
+  const skipped = deckImageAttachment?.skipped ?? 0
+  return skipped > 0 ? `(${skipped} more pictures not attached)` : ''
 }
 
 /**
