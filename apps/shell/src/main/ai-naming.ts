@@ -80,6 +80,11 @@ export function sanitizeFileStem(raw: string): string {
         ? head.slice(0, lastSpace).trim()
         : head.slice(0, MAX_NAME_LENGTH).trim()
   }
+  // Windows also forbids a name that ends in a dot or a space: a stem left
+  // punctuated would double up the extension ("notes..docx") in an app that
+  // appends one, or become a file the platform refuses to create. A name that
+  // was only dots and spaces collapses to the empty, "no name" answer.
+  name = name.replace(/[.\s]+$/, '')
   // a Windows device name is illegal even with an extension appended
   if (RESERVED_STEMS.has(name.toLowerCase())) name = `${name}-file`
   return name

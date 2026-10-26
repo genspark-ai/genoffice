@@ -57,6 +57,15 @@ describe('sanitizeFileStem', () => {
     expect(sanitizeFileStem('CONTENT')).toBe('CONTENT')
   })
 
+  it('drops a trailing dot or space, which Windows also forbids', () => {
+    expect(sanitizeFileStem('Meeting notes.')).toBe('Meeting notes')
+    expect(sanitizeFileStem('Strategy 2026. ')).toBe('Strategy 2026')
+    expect(sanitizeFileStem('Review.')).toBe('Review')
+    // a stem that was only dots and spaces still collapses to the empty, "no
+    // name" answer rather than to a bare dot
+    expect(sanitizeFileStem('. . .')).toBe('')
+  })
+
   it('caps the length without cutting mid-word when it can avoid it', () => {
     const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ')
     const out = sanitizeFileStem(long)
