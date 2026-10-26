@@ -76,6 +76,7 @@ const LANG_OPTIONS = [
   { value: 'pt', label: 'Português' },
   { value: 'ru', label: 'Русский' },
   { value: 'th', label: 'ไทย' },
+  { value: 'tr', label: 'Türkçe' },
   { value: 'vi', label: 'Tiếng Việt' },
   { value: 'zh', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },

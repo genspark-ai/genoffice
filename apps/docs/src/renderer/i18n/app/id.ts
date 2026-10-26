@@ -389,6 +389,7 @@ export const id = {
   appLangHindi: 'Hindi',
   appLangTraditionalChinese: 'Tionghoa Tradisional',
   appLangVietnamese: 'Vietnam',
+  appLangTurkish: 'Turki',
   appWrapTextMenu: 'Bungkus Teks',
   appViewImage: 'Lihat Gambar',
   appSaveImageAs: 'Simpan Gambar Sebagai…',

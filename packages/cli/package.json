@@ -39,8 +39,8 @@
     "jszip": "^3.10.1",
     "numfmt": "^3.2.6",
     "pngjs": "^7.0.0",
-    "undici": "^6.29.0",
-    "zod": "^4.3.6"
+    "undici": "^6.29.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

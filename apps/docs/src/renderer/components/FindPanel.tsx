@@ -487,7 +487,9 @@ export function FindPanel({
             className={`find-tab ${tab === k ? 'on' : ''}`}
             onClick={() => {
               setTab(k)
-              focusTabInput(k)
+              // Word/Excel parity: entering Replace keeps the caret in the
+              // find field — the search term comes before its replacement
+              focusTabInput(k === 'replace' ? 'find' : k)
             }}
           >
             {t(

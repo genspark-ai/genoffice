@@ -452,6 +452,7 @@ export const nl = {
   ribbonLangHebrew: 'Hebreeuws',
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnamees',
+  ribbonLangTurkish: 'Turks',
   ribbonNewComment: 'Nieuwe opmerking',
   ribbonCommentsPane: 'Opmerkingenvenster',
   ribbonCommentsPaneTip: 'Het opmerkingenvenster weergeven of verbergen',

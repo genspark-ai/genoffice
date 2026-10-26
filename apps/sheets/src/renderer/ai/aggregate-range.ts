@@ -447,10 +447,16 @@ export async function aggregateWorkbookRange(
   }
   // Fills and journal values land after the reads so file-hidden rows are known.
   const fillOverrideCounts = new Map<FillSegment, number>()
+  // overrides on withheld cells, separately: only those shrink the withheld share
+  const withheldOverrideCounts = new Map<FillSegment, number>()
   for (const entry of journalValues.values()) {
     if (hiddenRows.has(entry.row)) continue
     const segment = fillSegmentAt(fillBands, entry.row, entry.column)
-    if (segment) fillOverrideCounts.set(segment, (fillOverrideCounts.get(segment) ?? 0) + 1)
+    if (!segment) continue
+    fillOverrideCounts.set(segment, (fillOverrideCounts.get(segment) ?? 0) + 1)
+    if (redactions.labelAt(sheetId, entry.row, entry.column) !== null) {
+      withheldOverrideCounts.set(segment, (withheldOverrideCounts.get(segment) ?? 0) + 1)
+    }
   }
   for (const band of fillBands) {
     let rowCount = band.endRow - band.startRow + 1
@@ -470,7 +476,7 @@ export async function aggregateWorkbookRange(
           endRow: Math.min(band.endRow, clamped.endRow),
           startColumn: Math.max(segment.startColumn, clamped.startColumn),
           endColumn: Math.min(segment.endColumn, clamped.endColumn),
-        }) - (fillOverrideCounts.get(segment) ?? 0),
+        }) - (withheldOverrideCounts.get(segment) ?? 0),
       )
       aggregator.addWithheld(Math.max(0, withheldHere))
       aggregator.addRepeated(segment.value, repetitions - Math.max(0, withheldHere))

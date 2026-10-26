@@ -454,6 +454,7 @@ export const de = {
   ribbonLangHebrew: 'Hebräisch',
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnamesisch',
+  ribbonLangTurkish: 'Türkisch',
   ribbonNewComment: 'Neuer Kommentar',
   ribbonCommentsPane: 'Kommentarbereich',
   ribbonCommentsPaneTip: 'Kommentarbereich ein-/ausblenden',

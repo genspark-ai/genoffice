@@ -382,6 +382,7 @@ export const ar = {
   appLangHindi: 'الهندية',
   appLangTraditionalChinese: 'الصينية التقليدية',
   appLangVietnamese: 'الفيتنامية',
+  appLangTurkish: 'التركية',
   appWrapTextMenu: 'التفاف النص',
   appViewImage: 'عرض الصورة',
   appSaveImageAs: 'حفظ الصورة باسم…',

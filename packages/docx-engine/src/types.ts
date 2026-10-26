@@ -1791,6 +1791,8 @@ export interface Block {
   paraMarkDel?: { author: string; date?: string; dateUtc?: string; id?: string }
   /** Tracked insertion of the paragraph mark (w:pPr/w:rPr/w:ins): rejecting joins the paragraph into the next one. */
   paraMarkIns?: { author: string; date?: string; dateUtc?: string; id?: string }
+  /** Tracked formatting change of the paragraph mark (w:pPr/w:rPr/w:rPrChange). */
+  paraMarkRPrChange?: { author: string; date?: string; dateUtc?: string; id?: string }
 }
 
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
@@ -2016,6 +2018,8 @@ export interface GeneratedBlock {
   /** JSON paragraph-mark revision; null = accepted/rejected, strip the w:del / w:ins from the mark's rPr */
   paraMarkDel?: string | null
   paraMarkIns?: string | null
+  /** null = accepted (record dropped); JSON with resolved:'reject' = the old mark rPr comes back */
+  paraMarkRPrChange?: string | null
   /** Used by editor dirty detection; SaveBlock carries the actual wrapper metadata. */
   blockRevision?: ({ kind: 'ins' | 'del' } & RevisionInfo) | null
 }

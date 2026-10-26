@@ -447,6 +447,7 @@ export const id = {
   ribbonLangHebrew: 'Ibrani',
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnam',
+  ribbonLangTurkish: 'Turki',
   ribbonNewComment: 'Komentar Baru',
   ribbonCommentsPane: 'Panel Komentar',
   ribbonCommentsPaneTip: 'Tampilkan/sembunyikan panel Komentar',

@@ -125,4 +125,23 @@ describe('content control unwrapping', () => {
     expect(textsOf(reparsed)).toEqual(['Before', 'Caption text', 'Signature block', 'After'])
     expect(reparsed.blocks[1]?.sdtShell).toBeUndefined()
   })
+
+  it('strips the shell from a block the editor saved as its original xml', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: PLAIN_P('Before') + LOCKED_SDT + PLAIN_P('After') }),
+    )
+    const saved = await saveDocx(
+      doc,
+      [
+        { kind: 'original' as const, docxIndex: 0 },
+        { kind: 'xml' as const, xml: doc.blocks[1]!.originalXml!, docxIndex: 1 },
+        { kind: 'xml' as const, xml: doc.blocks[2]!.originalXml! },
+        { kind: 'original' as const, docxIndex: 3 },
+      ],
+      { contentControls: { unwrap: [{ tag: 'example:caption' }] } },
+    )
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.internal.documentXml).not.toContain('<w:sdt>')
+    expect(textsOf(reparsed)).toEqual(['Before', 'Caption text', 'Signature block', 'After'])
+  })
 })

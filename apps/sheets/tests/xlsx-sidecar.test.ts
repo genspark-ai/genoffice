@@ -72,6 +72,7 @@ describe('XLSX Rust sidecar', () => {
     }
   })
 
+  // six agile-encryption key derivations (100k SHA-512 rounds each) in pure JS
   it('rejects encrypted OOXML and preserves workbook data through host-side password rotation', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xlsx-password-rotation-test-'))
     const firstEncryptedPath = join(directory, 'first-password.xlsx')
@@ -123,7 +124,7 @@ describe('XLSX Rust sidecar', () => {
       client.stop()
       await rm(directory, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('skips a queued request whose out-of-band cancel arrived first', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xlsx-cancel-test-'))
