@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildNamingInstruction,
-  excerptForNaming,
-  sanitizeFileStem,
-} from '../src/main/ai-naming'
+import { buildNamingInstruction, excerptForNaming, sanitizeFileStem } from '../src/main/ai-naming'
 
 describe('sanitizeFileStem', () => {
   it('keeps a plain name unchanged', () => {

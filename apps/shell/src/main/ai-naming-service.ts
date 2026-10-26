@@ -75,7 +75,10 @@ async function askModel(content: string, lang: string): Promise<string> {
 export function registerAiNamingIpc(lang: () => string): void {
   ipcMain.handle(
     AI_NAMING_SUGGEST_CHANNEL,
-    async (_event, input: { content?: unknown }): Promise<{ ok: boolean; name?: string; reason?: string }> => {
+    async (
+      _event,
+      input: { content?: unknown },
+    ): Promise<{ ok: boolean; name?: string; reason?: string }> => {
       const content = typeof input?.content === 'string' ? input.content : ''
       if (!content.trim()) return { ok: false, reason: 'empty-content' }
       const name = await askModel(content, lang())
