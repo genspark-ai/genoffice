@@ -153,6 +153,10 @@ function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
     const flat = normalizeCustomProfile(e) ?? {}
     const nested: AiCustomProfile = config.profile ?? {}
     const profile: AiCustomProfile = { ...flat, ...nested }
+    const modelsFetchedAt =
+      typeof e.modelsFetchedAt === 'number' && Number.isFinite(e.modelsFetchedAt)
+        ? e.modelsFetchedAt
+        : undefined
     const endpoint: AiCustomEndpoint = {
       id,
       name: String(e.name ?? '').slice(0, MAX_ENDPOINT_NAME_LENGTH),
@@ -160,6 +164,7 @@ function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
       apiKey: config.apiKey,
       model: config.model,
       ...(models && models.length > 0 ? { models } : {}),
+      ...(modelsFetchedAt !== undefined ? { modelsFetchedAt } : {}),
     }
     for (const key of [
       'api',

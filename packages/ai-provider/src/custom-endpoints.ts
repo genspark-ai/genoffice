@@ -64,6 +64,9 @@ function normalizeEndpoints(raw: unknown): AiCustomEndpoint[] {
       model: str(e.model),
       ...profileFieldsOf(e),
       ...(models && models.length > 0 ? { models } : {}),
+      ...(typeof e.modelsFetchedAt === 'number' && Number.isFinite(e.modelsFetchedAt)
+        ? { modelsFetchedAt: e.modelsFetchedAt }
+        : {}),
     })
   }
   return out

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listCustomModels, listCustomModelsForIpc } from '../src/custom-models'
+import { listCustomModels, listCustomModelsForIpc, probeCustomModels } from '../src/custom-models'
 import { AI_DEFAULT_USER_AGENT, setRescueFetch } from '../src/fetch'
 
 /**
@@ -354,5 +354,61 @@ describe('OpenRouter asks for the account-filtered catalog first', () => {
     mock = stubFetch(jsonBody(PUBLIC_BODY))
     await listCustomModels(BASE_URL, 'key')
     expect(requestedUrl(mock)).toBe(`${BASE_URL}/models`)
+  })
+})
+
+// ── probeCustomModels: the classified twin ────────────────
+
+describe('probeCustomModels classifies what listCustomModels swallows', () => {
+  it('ok: identical catalog, no error', async () => {
+    stubFetch(jsonBody(OMLX_BODY))
+    const probe = await probeCustomModels(BASE_URL, 'a-key')
+    expect(probe.error).toBeUndefined()
+    expect(probe.models).toHaveLength(16)
+  })
+
+  it('http: the status code travels in detail', async () => {
+    stubFetch(jsonBody(OMLX_401_BODY, 401))
+    const probe = await probeCustomModels(BASE_URL)
+    expect(probe.error).toBe('http')
+    expect(probe.detail).toBe('HTTP 401')
+    expect(probe.models).toEqual([])
+  })
+
+  it('bad-json: a 200 that is not JSON', async () => {
+    stubFetch(new Response('<html>proxy login</html>', { status: 200 }))
+    const probe = await probeCustomModels(BASE_URL)
+    expect(probe.error).toBe('bad-json')
+  })
+
+  it('bad-shape: JSON without the list key', async () => {
+    stubFetch(jsonBody('{"object":"list"}'))
+    const probe = await probeCustomModels(BASE_URL)
+    expect(probe.error).toBe('bad-shape')
+  })
+
+  it('network: a refused connection', async () => {
+    stubFetch(() => Promise.reject(new TypeError('fetch failed')))
+    const probe = await probeCustomModels(BASE_URL)
+    expect(probe.error).toBe('network')
+  })
+
+  it('timeout: the watchdog aborting reads as timeout', async () => {
+    stubFetch(() =>
+      Promise.reject(
+        (() => {
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          return e
+        })(),
+      ),
+    )
+    const probe = await probeCustomModels(BASE_URL)
+    expect(probe.error).toBe('timeout')
+  })
+
+  it('the silent twin still answers the same failures with an empty catalog', async () => {
+    stubFetch(jsonBody(OMLX_401_BODY, 401))
+    expect(await listCustomModels(BASE_URL)).toEqual({ models: [], defaultModel: '' })
   })
 })

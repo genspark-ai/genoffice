@@ -137,6 +137,8 @@ export interface AiCustomEndpoint extends AiCustomProfile {
   model: string
   /** ids the server advertised on the last `/models` probe, so the composer chip can list them offline */
   models?: string[] | undefined
+  /** Date.now() of the probe that produced `models`; absent on caches written before the stamp existed */
+  modelsFetchedAt?: number | undefined
 }
 
 /** Live picker data returned by Codex app-server's model/list method. */

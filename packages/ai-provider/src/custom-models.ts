@@ -32,6 +32,18 @@ function emptyCatalog(): CodexModelCatalog {
   return { models: [], defaultModel: '' }
 }
 
+/**
+ * The catalog plus a machine-classified failure when the endpoint did not
+ * answer with a model list. `error` is absent exactly when the list is real
+ * (possibly legitimately empty: a 200 with zero entries). The settings screen
+ * shows the reason; the silent `listCustomModels` contract is unchanged.
+ */
+export type CustomModelProbe = CodexModelCatalog & {
+  error?: 'timeout' | 'network' | 'http' | 'bad-json' | 'bad-shape'
+  /** extra context for http errors (the status code) */
+  detail?: string
+}
+
 /** Pull the id out of one list entry in any of the three protocols' shapes. */
 function entryId(entry: unknown): string | undefined {
   if (typeof entry === 'string') return entry
@@ -164,6 +176,26 @@ export async function listCustomModels(
   apiKey?: string,
   api?: AiCustomProtocol,
 ): Promise<CodexModelCatalog> {
+  const { error: _error, detail: _detail, ...catalog } = await probeCustomModels(
+    baseUrl,
+    apiKey,
+    api,
+  )
+  return catalog
+}
+
+/**
+ * `listCustomModels` with the failure classified instead of swallowed. Same
+ * route, same timeout, same parsing — the only difference is that a refused,
+ * unreachable, slow, oversized, non-JSON or misshapen answer comes back as
+ * `error` (+ `detail`) instead of vanishing, so the settings screen can say
+ * why the picker did not appear.
+ */
+export async function probeCustomModels(
+  baseUrl: string,
+  apiKey?: string,
+  api?: AiCustomProtocol,
+): Promise<CustomModelProbe> {
   if (!baseUrl.trim()) return emptyCatalog()
   const key = (apiKey ?? '').trim()
 
@@ -188,12 +220,19 @@ export async function listCustomModels(
         (api ?? 'openai-compatible') === 'openai-compatible' && keyedCatalogUrl(base, key)
       let response = keyedUrl ? await get(keyedUrl) : undefined
       if (!response?.ok) response = await get(probe.url)
-      if (!response.ok) return emptyCatalog()
+      if (!response.ok) {
+        return { ...emptyCatalog(), error: 'http' as const, detail: `HTTP ${response.status}` }
+      }
       const text = await readCappedResponseText(response, { maxBytes: MAX_BODY_BYTES })
-      const body = JSON.parse(text) as { data?: unknown; models?: unknown } | null
+      let body: { data?: unknown; models?: unknown } | null
+      try {
+        body = JSON.parse(text) as { data?: unknown; models?: unknown } | null
+      } catch {
+        return { ...emptyCatalog(), error: 'bad-json' as const }
+      }
       // OpenAI and Anthropic answer { data: [...] }; Gemini answers { models: [...] }
       const list = body?.[probe.listKey]
-      if (!Array.isArray(list)) return emptyCatalog()
+      if (!Array.isArray(list)) return { ...emptyCatalog(), error: 'bad-shape' as const }
       const seen = new Set<string>()
       const profiles: AiCustomModelProfile[] = []
       for (const entry of list) {
@@ -211,8 +250,12 @@ export async function listCustomModels(
         ...(profiles.length > 0 ? { profiles } : {}),
       }
     })
-  } catch {
-    return emptyCatalog()
+  } catch (err) {
+    const name = err instanceof Error ? err.name : ''
+    return {
+      ...emptyCatalog(),
+      error: name === 'AbortError' || name === 'TimeoutError' ? ('timeout' as const) : ('network' as const),
+    }
   }
 }
 
@@ -230,6 +273,20 @@ export function listCustomModelsForIpc(input: unknown): Promise<CodexModelCatalo
       ? raw.api
       : undefined
   return listCustomModels(
+    typeof raw.baseUrl === 'string' ? raw.baseUrl : '',
+    typeof raw.apiKey === 'string' ? raw.apiKey : undefined,
+    api,
+  )
+}
+
+/** `probeCustomModels` behind the same payload validation, for the settings screen's status pill */
+export function probeCustomModelsForIpc(input: unknown): Promise<CustomModelProbe> {
+  const raw = (input ?? {}) as { baseUrl?: unknown; apiKey?: unknown; api?: unknown }
+  const api =
+    raw.api === 'anthropic' || raw.api === 'gemini' || raw.api === 'openai-compatible'
+      ? raw.api
+      : undefined
+  return probeCustomModels(
     typeof raw.baseUrl === 'string' ? raw.baseUrl : '',
     typeof raw.apiKey === 'string' ? raw.apiKey : undefined,
     api,
