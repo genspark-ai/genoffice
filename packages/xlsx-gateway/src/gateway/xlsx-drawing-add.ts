@@ -65,6 +65,37 @@ export interface ChartAdd {
   readonly holeSizePct?: number | undefined
   readonly altText?: string | undefined
   readonly editAs?: 'twoCell' | 'oneCell' | 'absolute' | undefined
+  /// Part path of the PivotTable this chart is bound to
+  /// (`xl/pivotTables/pivotTableN.xml`). The save resolves it against the
+  /// package (resolveChartPivotSource); an unresolvable path degrades to a
+  /// regular chart rather than failing the save.
+  readonly pivotTablePath?: string | undefined
+  /// Resolved `<c:pivotSource>/<c:name>` value (`[]Sheet!PivotTable`), set by
+  /// resolveChartPivotSource; buildChartXml writes the pivotSource block (and
+  /// the matching c:pivotFmts) only when it is present.
+  readonly pivotSourceName?: string | undefined
+}
+
+/// Resolves a chart addition's pivotTablePath against the package into the
+/// final pivotSource name. c:name grammar (per real Excel PivotChart parts,
+/// e.g. `[files.xlsx]PIVOT!PivotTable1`): `[workbook]sheet!pivotTable`, where
+/// the workbook bracket may be empty — EPPlus ships `[]Sheet!PivotTable` and
+/// Excel accepts it, so the file-name-independent empty form is used (the
+/// save does not know the eventual file name). Missing part, non-pivot path,
+/// or a definition without a name degrades to a regular chart (writing a
+/// pivotSource Excel cannot resolve would make it refuse the file).
+export async function resolveChartPivotSource(
+  pkg: MutablePackage,
+  sheetName: string,
+  chart: ChartAdd,
+): Promise<ChartAdd> {
+  const path = chart.pivotTablePath
+  if (path === undefined || !/^xl\/pivotTables\/[^/]+\.xml$/.test(path)) return chart
+  if (!(await pkg.has(path))) return chart
+  const name =
+    /<pivotTableDefinition\b[^>]*\bname="([^"]+)"/.exec(await pkg.readText(path))?.[1] ?? undefined
+  if (name === undefined || name === '') return chart
+  return { ...chart, pivotSourceName: `[]${sheetName}!${name}` }
 }
 
 /// Anchor-level properties a session visual carries into the file:
@@ -618,12 +649,32 @@ export function buildChartXml(chart: ChartAdd): string {
       : chart.series.length > 1 || isPieLike
         ? '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>'
         : ''
+  // PivotChart wiring, mirroring real Excel-produced chart parts. CT_ChartSpace
+  // order (ECMA-376 dml-chart): …roundedCorners, style, clrMapOvr, pivotSource,
+  // protection, chart… — we write none of the earlier members, so pivotSource
+  // leads. CT_PivotSource requires name + fmtId (there is no fmtType member;
+  // both Excel and EPPlus write fmtId val="0"). pivotFmts is Excel's own first
+  // child of c:chart (ECMA-376 1st edition CT_Chart order; EPPlus prepends it
+  // the same way), with a single empty pivotFmt.
+  const pivotSource =
+    chart.pivotSourceName === undefined
+      ? ''
+      : '<c:pivotSource>' +
+        `<c:name>${escapeXmlText(chart.pivotSourceName)}</c:name>` +
+        '<c:fmtId val="0"/>' +
+        '</c:pivotSource>'
+  const pivotFmts =
+    chart.pivotSourceName === undefined
+      ? ''
+      : '<c:pivotFmts><c:pivotFmt><c:idx val="0"/></c:pivotFmt></c:pivotFmts>'
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"' +
     ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
     ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    pivotSource +
     '<c:chart>' +
+    pivotFmts +
     '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>' +
     `<a:t>${escapeXmlText(chart.title)}</a:t>` +
     '</a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>' +

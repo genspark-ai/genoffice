@@ -30,6 +30,7 @@ import {
   type DrawingAnchor,
   type ImageAdd,
   relsPathFor,
+  resolveChartPivotSource,
   resolveRelTarget,
   type ShapeAdd,
 } from './xlsx-drawing-add'
@@ -1391,7 +1392,12 @@ export async function planCellEditsToXlsx(
           additionPaths.get(addition.sheetName) ??
           (await resolveWorksheetPath(pkg, addition.sheetName)),
         anchor: addition.anchor,
-        chart: addition.chart,
+        // A pivot-bound chart resolves its pivotTable part into the
+        // chartSpace pivotSource name here, where the sheet name is known.
+        chart:
+          addition.chart === undefined
+            ? undefined
+            : await resolveChartPivotSource(pkg, addition.sheetName, addition.chart),
         shape: addition.shape,
         image: addition.image,
       })

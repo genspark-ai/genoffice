@@ -662,6 +662,11 @@ const visualObjectSchema = z
         /// c:chartSpace/c:spPr and c:plotArea/c:spPr fills (flat colors).
         chartAreaFill: z.string().optional(),
         plotAreaFill: z.string().optional(),
+        /// Session-added charts only: part path of the PivotTable the chart
+        /// was created from (`xl/pivotTables/…`). The save resolves it into a
+        /// chartSpace <c:pivotSource> so Excel recognizes the PivotChart.
+        /// The sidecar never emits this field.
+        pivotTablePath: z.string().min(1).max(255).optional(),
       })
       .strict()
       .optional(),
@@ -1676,6 +1681,9 @@ export const workbookVisualAddSchema = z
           .optional(),
         gapWidthPct: z.number().int().min(0).max(500).optional(),
         holeSizePct: z.number().int().min(10).max(90).optional(),
+        /// PivotChart marker: part path of the PivotTable the chart is bound
+        /// to; the save writes chartSpace <c:pivotSource> from it.
+        pivotTablePath: z.string().min(1).max(255).optional(),
         altText: visualAddPropertiesShape.altText,
         editAs: visualAddPropertiesShape.editAs,
       })
