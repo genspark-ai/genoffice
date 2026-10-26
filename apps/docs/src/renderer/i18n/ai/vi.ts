@@ -69,6 +69,7 @@ export const vi = {
   aiEmptyTitle: 'Để AI giúp bạn viết và chỉnh sửa',
   aiEmptyBody1: 'Đưa ra yêu cầu hoặc chỉ cần đặt câu hỏi;',
   aiEmptyBody2: 'khi có văn bản được chọn, các lệnh viết lại sẽ áp dụng cho phần đã chọn.',
+  aiSetupNeeded: 'Chưa có mô hình AI nào được cấu hình — hãy thiết lập một mô hình hoặc đăng nhập bằng Genspark.',
   aiStarterWeeklyReport: 'Viết báo cáo dự án hàng tuần cho tôi',
   aiStarterLaunchPost: 'Soạn thảo thông báo ra mắt sản phẩm',
   aiStarterEventOutline: 'Lập dàn ý kế hoạch sự kiện',

@@ -68,6 +68,7 @@ export const he = {
   aiEmptyTitle: 'תנו ל-AI לעזור לכם לכתוב ולערוך',
   aiEmptyBody1: 'אפשר לתת הוראה או פשוט לשאול שאלה;',
   aiEmptyBody2: 'כאשר טקסט מסומן, פקודות שכתוב חלות על הקטע המסומן.',
+  aiSetupNeeded: 'עדיין לא הוגדר מודל AI — הגדר אחד או התחבר עם Genspark.',
   aiStarterWeeklyReport: 'כתוב לי דוח שבועי על הפרויקט',
   aiStarterLaunchPost: 'נסח הודעה על השקת מוצר',
   aiStarterEventOutline: 'הכן ראשי פרקים לתוכנית אירוע',

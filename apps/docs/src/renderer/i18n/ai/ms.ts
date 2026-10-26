@@ -70,6 +70,7 @@ export const ms = {
   aiEmptyTitle: 'Biarkan AI membantu anda menulis dan menyunting',
   aiEmptyBody1: 'Beri arahan atau terus ajukan soalan;',
   aiEmptyBody2: 'dengan teks dipilih, perintah tulis semula digunakan pada pilihan.',
+  aiSetupNeeded: 'Belum ada model AI dikonfigurasikan — sediakan satu, atau log masuk dengan Genspark.',
   aiStarterWeeklyReport: 'Tuliskan laporan mingguan projek untuk saya',
   aiStarterLaunchPost: 'Sediakan pengumuman pelancaran produk',
   aiStarterEventOutline: 'Sediakan rangka rancangan acara',

@@ -8107,6 +8107,24 @@ body.docs-crop-active
   text-align: center;
 }
 
+/* unconfigured-AI prompt in the empty state: an obvious action, not a hint */
+.ai-setup-needed {
+  display: block;
+  margin: 0 auto 14px;
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--color-text-primary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.ai-setup-needed:hover {
+  background: var(--hover);
+}
+
 .ai-chat-empty-title {
   font-size: var(--text-body-lg);
   font-weight: 600;

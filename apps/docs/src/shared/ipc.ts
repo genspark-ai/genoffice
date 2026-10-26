@@ -648,6 +648,8 @@ export interface DesktopApi {
     requirements: string
   }): Promise<{ text?: string; error?: string }>
   fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
+  /** bytes of a lazily-served document picture (docs:read-image-bytes), for vision input */
+  readImageBytes(src: string): Promise<{ base64?: string; mime?: string; error?: string }>
   /** AI image generation via the Genspark cloud channel (requires login + cloud tools) */
   aiGenerateImage(op: {
     prompt: string

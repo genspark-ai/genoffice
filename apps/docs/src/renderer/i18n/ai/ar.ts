@@ -68,6 +68,7 @@ export const ar = {
   aiEmptyTitle: 'دع الذكاء الاصطناعي يساعدك في الكتابة والتحرير',
   aiEmptyBody1: 'يمكنك إعطاء تعليمات أو طرح سؤال مباشرة؛',
   aiEmptyBody2: 'عند تحديد نص، تُطبَّق أوامر إعادة الكتابة على التحديد.',
+  aiSetupNeeded: 'لم يتم تكوين نموذج ذكاء اصطناعي بعد — قم بإعداده أو سجّل الدخول بحساب Genspark.',
   aiStarterWeeklyReport: 'اكتب لي تقريرًا أسبوعيًا عن المشروع',
   aiStarterLaunchPost: 'اكتب إعلانًا عن إطلاق منتج',
   aiStarterEventOutline: 'أعدّ مخططًا لخطة فعالية',

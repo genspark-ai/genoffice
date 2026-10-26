@@ -70,6 +70,7 @@ export const pl = {
   aiEmptyTitle: 'Pozwól AI pomóc Ci pisać i edytować',
   aiEmptyBody1: 'Wydaj polecenie lub po prostu zadaj pytanie;',
   aiEmptyBody2: 'przy zaznaczonym tekście polecenia przepisania dotyczą zaznaczenia.',
+  aiSetupNeeded: 'Nie skonfigurowano jeszcze żadnego modelu AI — skonfiguruj go lub zaloguj się przez Genspark.',
   aiStarterWeeklyReport: 'Napisz tygodniowy raport z projektu',
   aiStarterLaunchPost: 'Napisz ogłoszenie o premierze produktu',
   aiStarterEventOutline: 'Przygotuj konspekt planu wydarzenia',

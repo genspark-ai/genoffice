@@ -28,6 +28,10 @@ const IMAGE_GEN_OFF_NOTE =
 const MEDIA_ANALYSIS_OFF_NOTE =
   '\n\nNote: analyze_media is currently unavailable (no media provider: signed out of Genspark or cloud tools off, and no media API key in Settings). You cannot see what a picture inside the document shows — tell the user that instead of guessing at its content.'
 
+/** softer variant when the chat model itself has vision: document pictures still arrive attached */
+const MEDIA_ANALYSIS_OFF_VISION_NOTE =
+  '\n\nNote: analyze_media is currently unavailable (no media provider configured), but the chat endpoint accepts images, so document pictures are attached to your messages directly (the block list marks them "image #N"). analyze_media stays off for anything that was not attached (over the image budget, or non-picture media).'
+
 /**
  * The docx capability as an AgentSkill: document skeleton context, the five
  * document tools, and the local executor. Future apps register their own
@@ -49,6 +53,8 @@ export function createDocsSkill(
   getNotes?: () => AiNotesAccess | undefined,
   /** same as imageGenAvailable, for analyze_media (seeing pictures that are in the document) */
   mediaAnalysisAvailable?: () => boolean,
+  /** the chat endpoint itself takes images, so document pictures arrive attached (softens the analyze_media-off note) */
+  docImagesAttached?: () => boolean,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,
   // not on wherever the user's live selection has wandered mid-run. The doc
@@ -63,7 +69,10 @@ export function createDocsSkill(
   }
   const mediaOffNote = (): string =>
     [...mediaToolsOff()]
-      .map((name) => (name === 'generate_image' ? IMAGE_GEN_OFF_NOTE : MEDIA_ANALYSIS_OFF_NOTE))
+      .map((name) => {
+        if (name === 'generate_image') return IMAGE_GEN_OFF_NOTE
+        return docImagesAttached?.() ? MEDIA_ANALYSIS_OFF_VISION_NOTE : MEDIA_ANALYSIS_OFF_NOTE
+      })
       .join('')
   return {
     id: 'docx',

@@ -69,6 +69,7 @@ export const ko = {
   aiEmptyTitle: 'AI에게 작성과 편집을 맡겨 보세요',
   aiEmptyBody1: '지시를 내리거나 바로 질문할 수 있습니다.',
   aiEmptyBody2: '텍스트를 선택하면 고쳐 쓰기 지시는 선택 영역에 적용됩니다.',
+  aiSetupNeeded: '아직 구성된 AI 모델이 없습니다 — 모델을 설정하거나 Genspark로 로그인하세요.',
   aiStarterWeeklyReport: '프로젝트 주간 보고서 작성해 줘',
   aiStarterLaunchPost: '제품 출시 공지문 작성해 줘',
   aiStarterEventOutline: '행사 기획 개요 만들어 줘',

@@ -72,6 +72,7 @@ export const it = {
   aiEmptyTitle: "Lascia che l'IA ti aiuti a scrivere e modificare",
   aiEmptyBody1: "Dai un'istruzione o fai semplicemente una domanda;",
   aiEmptyBody2: 'con del testo selezionato, i comandi di riscrittura si applicano alla selezione.',
+  aiSetupNeeded: 'Nessun modello AI ancora configurato — configuralo oppure accedi con Genspark.',
   aiStarterWeeklyReport: 'Scrivi un report settimanale del progetto',
   aiStarterLaunchPost: 'Scrivi un annuncio di lancio di un prodotto',
   aiStarterEventOutline: 'Prepara la scaletta di un evento',

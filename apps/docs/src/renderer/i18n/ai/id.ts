@@ -70,6 +70,7 @@ export const id = {
   aiEmptyTitle: 'Biarkan AI membantu Anda menulis dan mengedit',
   aiEmptyBody1: 'Berikan instruksi atau langsung ajukan pertanyaan;',
   aiEmptyBody2: 'dengan teks terpilih, perintah penulisan ulang berlaku pada pilihan.',
+  aiSetupNeeded: 'Belum ada model AI yang dikonfigurasi — siapkan satu, atau masuk dengan Genspark.',
   aiStarterWeeklyReport: 'Tuliskan laporan mingguan proyek',
   aiStarterLaunchPost: 'Buat pengumuman peluncuran produk',
   aiStarterEventOutline: 'Buat kerangka rencana acara',

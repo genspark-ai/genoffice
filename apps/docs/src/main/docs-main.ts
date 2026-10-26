@@ -116,7 +116,10 @@ import {
 } from '@genoffice/ai-provider'
 import { listCodexModels, shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { startAiTrace } from '@genoffice/ai-provider/trace'
-import { listCustomModelsForIpc } from '@genoffice/ai-provider/custom-models'
+import {
+  listCustomModelsForIpc,
+  probeCustomModelsForIpc,
+} from '@genoffice/ai-provider/custom-models'
 import {
   ensureGenofficeLogin,
   noteGskCallFailure,
@@ -4168,6 +4171,12 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:custom-models', (_event, input: unknown) => listCustomModelsForIpc(input))
 
+  // same probe with the failure classified (settings screen status pill); the
+  // silent variant above stays for callers that only want the picker list
+  ipcMain.handle('ai:custom-models-probe', (_event, input: unknown) =>
+    probeCustomModelsForIpc(input),
+  )
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     // per-request settings get the same schema check as the persisted ones: a
     // compromised renderer could otherwise hand cliPath/baseUrl straight to
@@ -4319,6 +4328,14 @@ export function registerAiIpc(): void {
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }
     }
+  })
+
+  // bytes of a lazily-served document picture, so the chat model's own vision can see
+  // it (docs AI multimodal injection); data URLs parse renderer-side and never land here
+  ipcMain.handle('docs:read-image-bytes', async (_event, src: string) => {
+    const media = await readLazyMedia(String(src ?? '')).catch(() => null)
+    if (!media) return { error: 'not a resolvable document image' }
+    return { base64: media.body.toString('base64'), mime: media.mime }
   })
 
   // media understanding (pictures in the document, attachments, local files): BYOK media

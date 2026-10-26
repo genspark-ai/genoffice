@@ -70,6 +70,7 @@ export const hi = {
   aiEmptyTitle: 'AI को लिखने और संपादित करने में आपकी मदद करने दें',
   aiEmptyBody1: 'निर्देश दें या सीधे प्रश्न पूछें;',
   aiEmptyBody2: 'टेक्स्ट चुने होने पर, पुनर्लेखन निर्देश चयन पर लागू होते हैं।',
+  aiSetupNeeded: 'अभी कोई AI मॉडल कॉन्फ़िगर नहीं है — एक सेट अप करें या Genspark से साइन इन करें।',
   aiStarterWeeklyReport: 'मेरे लिए प्रोजेक्ट की साप्ताहिक रिपोर्ट लिखें',
   aiStarterLaunchPost: 'उत्पाद लॉन्च की घोषणा लिखें',
   aiStarterEventOutline: 'कार्यक्रम योजना की रूपरेखा बनाएँ',

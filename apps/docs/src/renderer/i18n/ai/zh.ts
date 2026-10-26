@@ -67,6 +67,7 @@ export const zh = {
   aiEmptyTitle: '让 AI 帮你写作和修改',
   aiEmptyBody1: '可以下达指令,也可以直接提问;',
   aiEmptyBody2: '选中文字后,改写类指令默认作用于选区。',
+  aiSetupNeeded: '尚未配置 AI 模型——点这里设置,或登录 Genspark。',
   aiStarterWeeklyReport: '帮我写一份项目周报',
   aiStarterLaunchPost: '写一篇产品发布公告',
   aiStarterEventOutline: '列一个活动策划提纲',

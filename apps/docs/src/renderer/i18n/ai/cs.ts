@@ -70,6 +70,7 @@ export const cs = {
   aiEmptyTitle: 'Nechte si od AI pomoci s psaním a úpravami',
   aiEmptyBody1: 'Zadejte pokyn nebo jen položte otázku;',
   aiEmptyBody2: 'při vybraném textu se příkazy k přepsání vztahují na výběr.',
+  aiSetupNeeded: 'Zatím není nakonfigurován žádný AI model — nastavte ho, nebo se přihlaste přes Genspark.',
   aiStarterWeeklyReport: 'Napište mi týdenní zprávu o projektu',
   aiStarterLaunchPost: 'Připravte oznámení o uvedení produktu',
   aiStarterEventOutline: 'Sestavte osnovu plánu akce',

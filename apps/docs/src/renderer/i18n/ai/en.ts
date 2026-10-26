@@ -69,6 +69,7 @@ export const en = {
   aiEmptyTitle: 'Let AI help you write and edit',
   aiEmptyBody1: 'Give an instruction or just ask a question;',
   aiEmptyBody2: 'with text selected, rewrite commands apply to the selection.',
+  aiSetupNeeded: 'No AI model configured yet — set one up, or sign in with Genspark.',
   aiStarterWeeklyReport: 'Write a weekly project report for me',
   aiStarterLaunchPost: 'Draft a product launch announcement',
   aiStarterEventOutline: 'Outline an event plan',

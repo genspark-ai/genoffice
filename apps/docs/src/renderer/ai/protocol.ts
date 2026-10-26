@@ -322,6 +322,38 @@ export type ImageSrcMapper = (src: string) => string | null
 export const IMAGE_REF_PREFIX = 'doc:'
 const IMAGE_REF_RE = /^doc:(\d+)\.(\d+)$/
 
+/**
+ * Which document pictures ride the current user message as vision input.
+ * Set by the panel right before loop.run (the images array and this plan are
+ * built from the same doc snapshot, so ordinal K here is images[K-1] there);
+ * buildDocumentContext reads it to annotate picture blocks. Null on
+ * text-only endpoints: previews then keep the analyze_media fallback wording.
+ */
+export interface DocImagePlan {
+  /** block index → 1-based ordinals into the message's images array */
+  ordinalsByBlock: ReadonlyMap<number, readonly number[]>
+  /** pictures collected but dropped by the budget */
+  skipped: number
+}
+
+let currentDocImagePlan: DocImagePlan | null = null
+
+export function setDocImagePlan(plan: DocImagePlan | null): void {
+  currentDocImagePlan = plan
+}
+
+export function getDocImagePlan(): DocImagePlan | null {
+  return currentDocImagePlan
+}
+
+/** "(picture — attached as image #K)" / "(picture, no text — use analyze_media…)" per plan */
+function picturePreview(blockIndex: number, fallback: string): string {
+  const ords = currentDocImagePlan?.ordinalsByBlock.get(blockIndex)
+  if (!ords || ords.length === 0) return fallback
+  const list = ords.map((o) => `#${o}`).join(', ')
+  return `(picture${ords.length === 1 ? '' : 's'} — attached as ${ords.length === 1 ? 'image' : 'images'} ${list})`
+}
+
 /** per-block counter handing out picture ordinals while a block serializes */
 interface ImageRefs {
   block: number
@@ -680,7 +712,10 @@ export function buildDocumentContext(
       // A picture carries no text of its own: an empty preview reads as "this
       // content is invisible to me", so name the way to actually see it.
       if (node.attrs.blockType === 'image' && !preview) {
-        preview = `(picture, no text — use analyze_media with blockIndex ${index} to see it)`
+        preview = picturePreview(
+          index,
+          `(picture, no text — use analyze_media with blockIndex ${index} to see it)`,
+        )
       }
       if (deleted) hasPendingDeletions = true
       else if (node.textContent !== '') appendFullText(node.textContent)
@@ -692,7 +727,14 @@ export function buildDocumentContext(
       preview = deleted ? node.textContent : live
       if (!deleted && !live.trim()) {
         const pictures = inlineImagesOf(node).length
-        if (pictures > 0) preview = `(${pictures} picture${pictures === 1 ? '' : 's'}, no text)`
+        if (pictures > 0)
+          preview = picturePreview(index, `(${pictures} picture${pictures === 1 ? '' : 's'}, no text)`)
+      } else if (!deleted) {
+        // mixed paragraph: text previews normally, but the model still cannot see an
+        // attached picture's placement unless the line says so
+        const ords = currentDocImagePlan?.ordinalsByBlock.get(index)
+        if (ords && ords.length > 0)
+          preview += ` (+${ords.length} attached ${ords.length === 1 ? `image #${ords[0]}` : `images ${ords.map((o) => `#${o}`).join(', ')}`})`
       }
       if (!deleted)
         appendFullText(
@@ -1213,7 +1255,7 @@ function parseBlockquote(el: Element): PmNode | null {
 const IMAGE_REF_NODE = '__imageRef'
 
 /** the pictures read_blocks showed for this block, in the same order: no rules, no pending deletions, no withheld pictures */
-function inlineImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
+export function inlineImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
   const out: ProseMirrorNode[] = []
   block.descendants((n) => {
     if (

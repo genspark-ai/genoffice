@@ -26,7 +26,12 @@ import {
   type MindMapTreeNode,
 } from '@genoffice/agent-core'
 import { redactTextBetween, type RedactableNode } from './redact-view'
-import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
+import {
+  activeProvider,
+  endpointSupportsVision,
+  imageGenerationAvailable,
+  mediaAnalysisAvailable,
+} from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -42,6 +47,8 @@ import {
 import type { AiPageSetupAccess } from './page-setup'
 import type { AiNotesAccess } from './note-ops'
 import { createDocsSkill } from './docs-skill'
+import { collectDocImages, withImageOffset } from './doc-images'
+import { setDocImagePlan } from './protocol'
 import { MindMapCard } from './MindMapCard'
 import {
   buildDocWriterRequest,
@@ -549,6 +556,8 @@ export function AiPanel({
   settingsRef.current = settings
   /** gsk login state for the generate_image gate (refreshed on mount and window focus) */
   const gskLoggedInRef = useRef(false)
+  /** reactive mirror of gskLoggedInRef for the empty-state setup CTA */
+  const [gskLoggedIn, setGskLoggedIn] = useState(false)
   useEffect(() => {
     let alive = true
     const refresh = () => {
@@ -556,7 +565,9 @@ export function AiPanel({
       void window.desktop
         ?.aiGskStatus?.()
         .then((s) => {
-          if (alive) gskLoggedInRef.current = !!s?.loggedIn
+          if (!alive) return
+          gskLoggedInRef.current = !!s?.loggedIn
+          setGskLoggedIn(!!s?.loggedIn)
         })
         .catch(() => {})
     }
@@ -567,6 +578,16 @@ export function AiPanel({
       window.removeEventListener('focus', refresh)
     }
   }, [])
+  /**
+   * No usable chat provider and no Genspark login: the empty state shows a
+   * setup CTA. activeProvider() falls back to genspark for half-filled BYOK
+   * configs, so a non-genspark answer means something is actually usable.
+   */
+  const aiSetupNeeded =
+    !gskLoggedIn &&
+    (settings == null ||
+      (activeProvider(settings) === 'genspark' &&
+        !(settings.customEndpoints ?? []).some((e) => e.baseUrl?.trim() && e.model?.trim())))
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
   const numIdFallbackRef = useRef(numIdFallback)
@@ -860,6 +881,7 @@ export function AiPanel({
           () => docExtrasRef.current,
           () => notesAccessRef.current,
           () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
+          () => settingsRef.current != null && endpointSupportsVision(settingsRef.current),
         ),
         createFilesSkill(availableAttachments),
         createSkillsSkill(),
@@ -1201,7 +1223,16 @@ export function AiPanel({
           setBusy(false)
           return
         }
-        return loop.run(await withSkillBodies(instruction, sentSkills), images)
+        // document pictures ride the message on vision-capable endpoints (text-only
+        // endpoints: collectDocImages returns null and the block list keeps the
+        // analyze_media wording); the plan is set before loop.run because
+        // buildContext runs synchronously inside it
+        const docImages = await collectDocImages(editor, settingsRef.current).catch(() => null)
+        const plan = docImages ? withImageOffset(docImages, images.length) : null
+        setDocImagePlan(plan)
+        const merged =
+          docImages && docImages.images.length > 0 ? [...images, ...docImages.images] : images
+        return loop.run(await withSkillBodies(instruction, sentSkills), merged)
       })
   }
 
@@ -1519,6 +1550,18 @@ export function AiPanel({
         )}
         {chat.length === 0 && historicChat.length === 0 && (
           <div className="ai-chat-empty">
+            {/* first-run discovery: when nothing can serve a chat request, the
+                starter prompts would only bounce off an API error, so point at
+                the fix instead (mirrors the Home banner's aiSetupNeeded rule) */}
+            {aiSetupNeeded && (
+              <button
+                type="button"
+                className="ai-setup-needed"
+                onClick={() => void window.desktop?.openAiModelSettings?.().catch(() => {})}
+              >
+                {t('aiSetupNeeded')}
+              </button>
+            )}
             <div className="ai-chat-empty-title">
               {t(docEmpty ? 'aiEmptyDraftTitle' : 'aiEmptyTitle')}
             </div>

@@ -71,6 +71,7 @@ export const de = {
   aiEmptyTitle: 'Lassen Sie sich von der KI beim Schreiben und Bearbeiten helfen',
   aiEmptyBody1: 'Geben Sie eine Anweisung oder stellen Sie einfach eine Frage;',
   aiEmptyBody2: 'bei markiertem Text wirken Umschreibbefehle auf die Auswahl.',
+  aiSetupNeeded: 'Noch kein KI-Modell konfiguriert — richten Sie eines ein oder melden Sie sich mit Genspark an.',
   aiStarterWeeklyReport: 'Schreibe einen wöchentlichen Projektbericht',
   aiStarterLaunchPost: 'Entwirf eine Produktankündigung',
   aiStarterEventOutline: 'Erstelle eine Gliederung für eine Veranstaltungsplanung',
