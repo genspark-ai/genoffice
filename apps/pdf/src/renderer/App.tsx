@@ -127,7 +127,12 @@ import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import { CommentsPanel, type CommentEntry } from './CommentsPanel'
 import type { OutlineNode } from './OutlinePanel'
-import { buildHeadingOutline, destTop, remapOutlinePages } from './heading-outline'
+import {
+  buildHeadingOutline,
+  destTop,
+  remapOutlinePages,
+  remapOutlineTree,
+} from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
 import type { PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { PasswordDialog } from './PasswordDialog'
@@ -1431,11 +1436,13 @@ export default function App() {
         setStampCfg((prev) => (prev === saved.stampCfg ? null : prev))
         setMetadata((prev) => (prev === saved.metadata ? null : prev))
         // The tree this save wrote is in the file now: an open editing session keeps it
-        // as its clean base, a committed one is done
+        // as its clean base, a committed one is done. The save may have deleted or
+        // reordered pages, so the tree's page indices are the ones from before it —
+        // re-point them at the pages the file has now.
         setPendingOutline((prev) =>
           prev && saved.outline !== null && prev.tree === saved.outline
             ? prev.editing
-              ? { ...prev, edited: false }
+              ? { ...prev, edited: false, tree: remapOutlineTree(prev.tree ?? [], remap) }
               : null
             : prev,
         )

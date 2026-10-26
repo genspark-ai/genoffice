@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { OutlineNode } from './OutlinePanel'
+import type { OutlineEntryInput } from '../shared/ipc'
 
 /**
  * Fallback navigation for PDFs without embedded bookmarks: text lines set
@@ -232,5 +233,26 @@ export function remapOutlinePages(
     const page = pageMap.get(dest[0])
     if (page === undefined) return items ?? []
     return [{ ...node, dest: [page, ...dest.slice(1)], ...(items ? { items } : {}) }]
+  })
+}
+
+/**
+ * Re-point an edited bookmark tree after a save that deleted or reordered
+ * pages (`pageMap`: old index → new index).
+ *
+ * A page the file no longer has takes its bookmark with it — the same entries
+ * the writer drops, so what the pane still shows and what the file holds
+ * agree. A bookmark whose page survived keeps pointing at it, under the index
+ * that page now has.
+ */
+export function remapOutlineTree(
+  entries: readonly OutlineEntryInput[],
+  pageMap: ReadonlyMap<number, number>,
+): OutlineEntryInput[] {
+  return entries.flatMap((entry) => {
+    const page = pageMap.get(entry.pageIndex)
+    if (page === undefined) return []
+    const children = entry.children?.length ? remapOutlineTree(entry.children, pageMap) : undefined
+    return [{ ...entry, pageIndex: page, children }]
   })
 }

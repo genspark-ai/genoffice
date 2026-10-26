@@ -6,6 +6,7 @@ import {
   destTop,
   outlineFromLines,
   remapOutlinePages,
+  remapOutlineTree,
   type TextLine,
 } from '../src/renderer/heading-outline'
 
@@ -177,6 +178,46 @@ describe('remapOutlinePages', () => {
       { title: 'A.1', dest: [1, { name: 'XYZ' }, null, 600, null] },
       { title: 'B', dest: [0, { name: 'XYZ' }, null, 700, null] },
       { title: 'Bookmark', dest: 'named-dest' },
+    ])
+  })
+})
+
+describe('remapOutlineTree', () => {
+  it('follows the save page map and drops the entries whose page is gone', () => {
+    const tree = [
+      { title: 'A', pageIndex: 0, children: [{ title: 'A.1', pageIndex: 1 }] },
+      { title: 'B', pageIndex: 2 },
+    ]
+    // Page 0 deleted, pages 1 and 2 swapped
+    const out = remapOutlineTree(
+      tree,
+      new Map([
+        [1, 1],
+        [2, 0],
+      ]),
+    )
+    // A went with its page, and with the child that hung off it
+    expect(out).toEqual([{ title: 'B', pageIndex: 0, children: undefined }])
+  })
+
+  it('keeps a surviving entry on the page it named, under the index that page has now', () => {
+    const out = remapOutlineTree(
+      [
+        { title: 'Cover', pageIndex: 0 },
+        { title: 'Back', pageIndex: 2, children: [{ title: 'Back.1', pageIndex: 2 }] },
+      ],
+      new Map([
+        [0, 0],
+        [2, 1],
+      ]),
+    )
+    expect(out).toEqual([
+      { title: 'Cover', pageIndex: 0, children: undefined },
+      {
+        title: 'Back',
+        pageIndex: 1,
+        children: [{ title: 'Back.1', pageIndex: 1, children: undefined }],
+      },
     ])
   })
 })
