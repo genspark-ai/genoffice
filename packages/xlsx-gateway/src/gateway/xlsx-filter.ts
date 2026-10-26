@@ -1,6 +1,9 @@
 /// Writes a declarative filter snapshot into worksheet XML: the
 /// `<autoFilter>` element (with per-column value / custom criteria) plus row
 /// visibility inside the filter's row span. Unsupported criteria fail closed.
+/// A filter whose range sits inside an Excel table is routed into the table
+/// part instead (Excel stores table filters there, never on the worksheet) —
+/// see `applyTableFilterState` and `applyRowVisibilityState`.
 
 export class FilterEditError extends Error {}
 
@@ -59,21 +62,83 @@ export function applyFilterState(worksheetXml: string, state: SheetFilterState):
   } else if (element !== '') {
     xml = insertAfterSheetData(worksheetXml, element)
   }
-  return applyRowVisibility(xml, state.visibilityRange, new Set(state.hiddenRows))
+  return applyRowVisibilityState(xml, state)
+}
+
+/// The worksheet half of a table-routed filter: row visibility only. The
+/// `<autoFilter>` element itself lives in the table part, and a worksheet
+/// element overlapping a table is invalid OOXML that Excel repairs away.
+export function applyRowVisibilityState(worksheetXml: string, state: SheetFilterState): string {
+  return applyRowVisibility(worksheetXml, state.visibilityRange, new Set(state.hiddenRows))
+}
+
+/// Geometry of the table part a filter routed into, in final (post-shift)
+/// coordinates: the full table ref including the totals band.
+export interface TableFilterRoute {
+  readonly area: CellArea
+  /// headerRowCount/@headerRowCount of the table part (Excel default 1).
+  readonly headerRowCount: number
+  /// totalsRowCount/@totalsRowCount of the table part (Excel default 0).
+  readonly totalsRowCount: number
+}
+
+/// Rewrites the `<autoFilter>` element inside a table part from the
+/// declarative snapshot. Excel keeps the table's filter here, spanning the
+/// header row through the last data row (the totals band is excluded), with
+/// filterColumn/@colId offsets from the table's left edge. `filter: null`
+/// (or a snapshot without criteria) leaves the bare element — Clear Filter
+/// semantics; a headerless table cannot carry filter buttons, so its element
+/// is dropped like the table-add/table-edit paths do.
+export function applyTableFilterState(
+  tableXml: string,
+  route: TableFilterRoute,
+  filter: SheetFilterState['filter'],
+): string {
+  const filterPattern = /<autoFilter\b[^>]*\/>|<autoFilter\b[^>]*>[\s\S]*?<\/autoFilter>/
+  if (route.headerRowCount === 0) {
+    return tableXml.replace(filterPattern, '')
+  }
+  const ref = toRef({ ...route.area, endRow: route.area.endRow - route.totalsRowCount })
+  let element = `<autoFilter ref="${ref}"/>`
+  if (filter !== null) {
+    const offset = filter.range.startColumn - route.area.startColumn
+    const width = route.area.endColumn - route.area.startColumn + 1
+    for (const column of filter.columns) {
+      const colId = column.colId + offset
+      if (colId < 0 || colId > width - 1) {
+        throw new FilterEditError('A filter column falls outside its table and cannot be saved.')
+      }
+    }
+    const columns = [...filter.columns]
+      .sort((left, right) => left.colId - right.colId)
+      .map((column) => serializeFilterColumn(column, offset))
+      .join('')
+    if (columns !== '') element = `<autoFilter ref="${ref}">${columns}</autoFilter>`
+  }
+  if (filterPattern.test(tableXml)) {
+    return tableXml.replace(filterPattern, () => element)
+  }
+  return tableXml.replace(/<table\b[^>]*>/, (open) => `${open}${element}`)
 }
 
 function serializeAutoFilter(filter: NonNullable<SheetFilterState['filter']>): string {
   const ref = toRef(filter.range)
   const columns = [...filter.columns]
     .sort((left, right) => left.colId - right.colId)
-    .map(serializeFilterColumn)
+    .map((column) => serializeFilterColumn(column, 0))
     .join('')
   return columns === ''
     ? `<autoFilter ref="${ref}"/>`
     : `<autoFilter ref="${ref}">${columns}</autoFilter>`
 }
 
-function serializeFilterColumn(column: FilterColumnState): string {
+/// `columnOffset` re-bases wire colIds (relative to the snapshot range's
+/// first column) onto the element's own left edge; worksheet snapshots pass 0.
+function serializeFilterColumn(column: FilterColumnState, columnOffset: number): string {
+  const colId = column.colId + columnOffset
+  if (colId < 0) {
+    throw new FilterEditError('A filter column falls outside its range and cannot be saved.')
+  }
   const parts: string[] = []
   if (column.values !== undefined || column.blank) {
     const blank = column.blank ? ' blank="1"' : ''
@@ -103,7 +168,7 @@ function serializeFilterColumn(column: FilterColumnState): string {
     parts.push(`<customFilters${and}>${filters}</customFilters>`)
   }
   if (parts.length === 0) return ''
-  return `<filterColumn colId="${column.colId}">${parts.join('')}</filterColumn>`
+  return `<filterColumn colId="${colId}">${parts.join('')}</filterColumn>`
 }
 
 /// Schema order places autoFilter after sheetData (and after the protection

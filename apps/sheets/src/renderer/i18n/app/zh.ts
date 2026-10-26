@@ -296,7 +296,6 @@ export const zh = {
   appDialogCancel: '取消',
   appPivotSheetNoMove: '该工作表含数据透视表——暂不支持移动区域。',
   appMergeOverTable: '所选区域位于 Excel 表格内——暂不支持合并表格中的单元格。',
-  appTableFilterNoEdit: '该工作表的筛选属于 Excel 表格——编辑后暂时无法保存。',
   appAutofillStreaming: '暂不允许向仍在流式加载的区域自动填充。',
   appDvNeedsIndexed: '编辑数据验证需要该工作表先完成索引——稍后再试。',
   appPivotSheetNoDuplicate: '该工作表含数据透视表——暂不支持复制该表。',

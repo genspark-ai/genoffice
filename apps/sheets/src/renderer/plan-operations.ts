@@ -1056,12 +1056,8 @@ export function lazyGateFailure(
               'Filter changes need the fully-loaded mode — this workbook is too large and streams partially, so filters cannot be edited.',
           }
     }
-    if (state.filterOrigins.get(sheetId)?.origin === 'table') {
-      return {
-        reason: "This sheet's auto-filter belongs to a table — table filters cannot be edited yet.",
-        messageKey: 'appTableFilterNoEdit',
-      }
-    }
+    // Table filters are no longer gated here: the save routes them into the
+    // table part (applyRoutedFilterState in the gateway).
     return null
   }
   if (
