@@ -4,7 +4,6 @@ import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './i18n/locale'
 import {
   collectSheetTextCells,
-  isWhiteListed,
   replaceSuggestion,
   runSheetSpellCheck,
   type SpellFinding,
