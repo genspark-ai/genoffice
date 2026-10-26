@@ -127,7 +127,7 @@ import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import { CommentsPanel, type CommentEntry } from './CommentsPanel'
 import type { OutlineNode } from './OutlinePanel'
-import { buildHeadingOutline, remapOutlinePages } from './heading-outline'
+import { buildHeadingOutline, destTop, remapOutlinePages } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
 import type { PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { PasswordDialog } from './PasswordDialog'
@@ -194,6 +194,7 @@ import type {
   MarkupType,
   MetadataInput,
   NoteEditInput,
+  OutlineEntryInput,
   PageImageRef,
   PdfConvertFormat,
   PdfSignatureInfo,
@@ -483,15 +484,12 @@ export default function App() {
    * edit unresolvable and the panel offers no save path for it (fail closed:
    * the file's own /Outlines stay untouched). */
   const [pendingOutline, setPendingOutline] = useState<{
-    tree:
-      | {
-          title: string
-          pageIndex: number
-          top?: number | null
-          children?: { title: string; pageIndex: number; top?: number | null }[]
-        }[]
-      | null
+    tree: OutlineEntryInput[] | null
     unresolvable: boolean
+    /** the tree differs from the file's outline: what Save writes, and what makes the document dirty */
+    edited: boolean
+    /** the pane shows the add / rename / delete affordances */
+    editing: boolean
   } | null>(null)
   const outlineDocRef = useRef<PDFDocumentProxy | null>(null)
   const [markups, setMarkups] = useState<LocalMarkup[]>([])
@@ -1432,6 +1430,15 @@ export default function App() {
         // it is in the file now, a new object means the user changed it during the save
         setStampCfg((prev) => (prev === saved.stampCfg ? null : prev))
         setMetadata((prev) => (prev === saved.metadata ? null : prev))
+        // The tree this save wrote is in the file now: an open editing session keeps it
+        // as its clean base, a committed one is done
+        setPendingOutline((prev) =>
+          prev && saved.outline !== null && prev.tree === saved.outline
+            ? prev.editing
+              ? { ...prev, edited: false }
+              : null
+            : prev,
+        )
         setFormEdits((prev) => {
           const next = new Map<string, FormValueInput>()
           for (const [k, v] of prev) if (saved.formEdits.get(k) !== v) next.set(k, v)
@@ -1988,7 +1995,8 @@ export default function App() {
     rotations.size > 0 ||
     deleted.size > 0 ||
     order !== null ||
-    metadata !== null
+    metadata !== null ||
+    (pendingOutline?.edited ?? false)
   const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
   const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
   const dirty = redactions.length > 0 || ordinaryDirty
@@ -4291,7 +4299,7 @@ export default function App() {
     deletedPages: [...deleted],
     ...(order ? { pageOrder: visList } : {}),
     ...(metadata ? { metadata } : {}),
-    ...(pendingOutline?.tree ? { outline: pendingOutline.tree } : {}),
+    ...(pendingOutline?.edited && pendingOutline.tree ? { outline: pendingOutline.tree } : {}),
   })
 
   /** Resolved when the running save() lands; queued saves and Save As serialize behind it */
@@ -4362,6 +4370,7 @@ export default function App() {
       formWidgetEdits,
       rotations,
       metadata,
+      outline: pendingOutline?.edited ? pendingOutline.tree : null,
       pageMap: new Map(visList.map((origIdx, i) => [origIdx, i])),
     }
     inFlightNoteWritesRef.current = snapshot.noteEditWritten
@@ -6716,8 +6725,7 @@ export default function App() {
               typeof ref === 'number'
                 ? ref
                 : await doc!.getPageIndex(ref as Parameters<PDFDocumentProxy['getPageIndex']>[0])
-            const maybeTop = node.dest[2]
-            top = typeof maybeTop === 'number' ? maybeTop : null
+            top = destTop(node.dest)
           } catch {
             pageIndex = null
           }
@@ -6730,8 +6738,7 @@ export default function App() {
                 typeof ref === 'number'
                   ? ref
                   : await doc!.getPageIndex(ref as Parameters<PDFDocumentProxy['getPageIndex']>[0])
-              const maybeTop = arr[2]
-              top = typeof maybeTop === 'number' ? maybeTop : null
+              top = destTop(arr)
             }
           } catch {
             pageIndex = null
@@ -6753,23 +6760,39 @@ export default function App() {
   }
 
   const startBookmarkEdit = (): void => {
+    // A committed (unsaved) tree reopens as is; the file's outline is only the
+    // starting point when nothing is pending
+    if (pendingOutline?.tree) {
+      setPendingOutline({ ...pendingOutline, editing: true })
+      return
+    }
     if (!outline || outlineGenerated || !doc) return
     void resolveOutlineForEdit(outline).then((resolved) =>
-      setPendingOutline({ ...resolved, tree: resolved.unresolvable ? null : resolved.tree }),
+      setPendingOutline({
+        ...resolved,
+        tree: resolved.unresolvable ? null : resolved.tree,
+        edited: false,
+        editing: true,
+      }),
     )
+  }
+
+  /** ✓: leave edit mode and keep an edited tree for Save; an untouched one is simply dropped */
+  const finishBookmarkEdit = (): void => {
+    setPendingOutline((prev) => (prev?.edited && prev.tree ? { ...prev, editing: false } : null))
   }
 
   const addBookmarkForCurrentPage = (): void => {
     const base = pendingOutline
     if (!base || base.tree === null) return
-    const title = t('outlineNewTitle', { n: currentPage })
+    const title = t('outlineNewTitle')
     const entry = {
       title,
       pageIndex: visList[currentPage - 1] ?? 0,
       top: null,
       children: [],
     }
-    setPendingOutline({ ...base, tree: [...base.tree, { ...entry, children: [] }] })
+    setPendingOutline({ ...base, edited: true, tree: [...base.tree, { ...entry, children: [] }] })
   }
 
   type BookmarkNode = {
@@ -6811,6 +6834,7 @@ export default function App() {
     if (!base?.tree) return
     setPendingOutline({
       ...base,
+      edited: true,
       tree: mutateBookmark(base.tree, path.split('.').map(Number), () => null),
     })
   }
@@ -6822,6 +6846,7 @@ export default function App() {
     if (trimmed === '') return
     setPendingOutline({
       ...base,
+      edited: true,
       tree: mutateBookmark(base.tree, path.split('.').map(Number), (entry) => ({
         ...entry,
         title: trimmed,
@@ -8518,11 +8543,11 @@ export default function App() {
                       data-tip={t('outlineEdit')}
                       disabled={status !== 'ready' || readOnly}
                       onClick={() =>
-                        pendingOutline === null ? startBookmarkEdit() : setPendingOutline(null)
+                        pendingOutline?.editing ? finishBookmarkEdit() : startBookmarkEdit()
                       }
                     >
                       <span style={{ fontSize: 12, fontWeight: 600 }} aria-hidden="true">
-                        {pendingOutline === null ? '✎' : '✓'}
+                        {pendingOutline?.editing ? '✓' : '✎'}
                       </span>
                     </button>
                   )}
@@ -8550,17 +8575,12 @@ export default function App() {
                 </div>
                 <OutlinePanel
                   outline={outline}
-                  note={
-                    outlineGenerated
-                      ? t('outlineGenerated')
-                      : pendingOutline === null
-                        ? undefined
-                        : undefined
-                  }
+                  note={outlineGenerated ? t('outlineGenerated') : undefined}
                   label={t('outline')}
                   emptyLabel={t('searchNoResults')}
                   onGoToDest={(dest) => void goToDest(dest)}
                   pending={pendingOutline?.tree ?? null}
+                  editing={pendingOutline?.editing ?? false}
                   labels={{
                     add: t('outlineAdd'),
                     rename: t('outlineRename'),

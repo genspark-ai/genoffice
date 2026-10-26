@@ -3,6 +3,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   buildHeadingOutline,
   collectLines,
+  destTop,
   outlineFromLines,
   remapOutlinePages,
   type TextLine,
@@ -177,5 +178,37 @@ describe('remapOutlinePages', () => {
       { title: 'B', dest: [0, { name: 'XYZ' }, null, 700, null] },
       { title: 'Bookmark', dest: 'named-dest' },
     ])
+  })
+})
+
+describe('destTop', () => {
+  const page = { num: 7, gen: 0 }
+  it('reads top from the slot its fit type puts it in', () => {
+    // [page /XYZ left top zoom]: index 2 is left
+    expect(destTop([page, { name: 'XYZ' }, 72, 700, null])).toBe(700)
+    expect(destTop([page, { name: 'XYZ' }, null, 650.5, 1.25])).toBe(650.5)
+    // [page /FitH top] and [page /FitBH top]
+    expect(destTop([page, { name: 'FitH' }, 500])).toBe(500)
+    expect(destTop([page, { name: 'FitBH' }, 480])).toBe(480)
+    // pdf.js may hand the fit type over as a plain string too
+    expect(destTop([page, 'XYZ', 0, 300, 0])).toBe(300)
+  })
+
+  it('carries no top for fits that only know a left offset or none at all', () => {
+    // [page /FitV left] / [page /FitBV left]: index 2 is left, not top
+    expect(destTop([page, { name: 'FitV' }, 72])).toBeNull()
+    expect(destTop([page, { name: 'FitBV' }, 72])).toBeNull()
+    expect(destTop([page, { name: 'Fit' }])).toBeNull()
+    expect(destTop([page, { name: 'FitB' }])).toBeNull()
+    expect(destTop([page, { name: 'FitR' }, 0, 0, 200, 300])).toBeNull()
+  })
+
+  it('treats a missing, null or non-numeric slot as no offset', () => {
+    expect(destTop([page, { name: 'XYZ' }, 0, null, null])).toBeNull()
+    expect(destTop([page, { name: 'XYZ' }, 0])).toBeNull()
+    expect(destTop([page, { name: 'XYZ' }, 0, '700', null])).toBeNull()
+    expect(destTop([page, { name: 'FitH' }, Number.NaN])).toBeNull()
+    expect(destTop([page])).toBeNull()
+    expect(destTop([page, null, 0, 700])).toBeNull()
   })
 })

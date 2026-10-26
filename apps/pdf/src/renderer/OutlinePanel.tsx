@@ -69,6 +69,7 @@ function PendingItem({
   node,
   path,
   depth,
+  editable,
   labels,
   onGoToPage,
   onRename,
@@ -77,6 +78,8 @@ function PendingItem({
   node: PendingBookmarkNode
   path: string
   depth: number
+  /** rename / delete affordances shown; a committed (unsaved) tree lists read-only */
+  editable: boolean
   labels: { rename: string; delete: string }
   onGoToPage: (pageIndex: number) => void
   onRename: (path: string, title: string) => void
@@ -114,26 +117,28 @@ function PendingItem({
             >
               {node.title}
             </button>
-            <span className="pdf-bookmark-actions">
-              <button
-                type="button"
-                className="rb-icon"
-                aria-label={labels.rename}
-                data-tip={labels.rename}
-                onClick={() => setEditing(true)}
-              >
-                ✎
-              </button>
-              <button
-                type="button"
-                className="rb-icon"
-                aria-label={labels.delete}
-                data-tip={labels.delete}
-                onClick={() => onDelete(path)}
-              >
-                ✕
-              </button>
-            </span>
+            {editable && (
+              <span className="pdf-bookmark-actions">
+                <button
+                  type="button"
+                  className="rb-icon"
+                  aria-label={labels.rename}
+                  data-tip={labels.rename}
+                  onClick={() => setEditing(true)}
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="rb-icon"
+                  aria-label={labels.delete}
+                  data-tip={labels.delete}
+                  onClick={() => onDelete(path)}
+                >
+                  ✕
+                </button>
+              </span>
+            )}
           </>
         )}
       </div>
@@ -143,6 +148,7 @@ function PendingItem({
           node={child}
           path={`${path}.${i}`}
           depth={depth + 1}
+          editable={editable}
           labels={labels}
           onGoToPage={onGoToPage}
           onRename={onRename}
@@ -154,8 +160,9 @@ function PendingItem({
 }
 
 /** Outline (bookmark) tree: click jumps to internal destinations; url entries open external links.
-    While a pending (edited) tree is handed in, it renders instead, with rename/delete affordances
-    and an add button; jumps go straight to the page the entry targets. */
+    While a pending (edited) tree is handed in, it renders instead — with rename/delete affordances
+    and an add button while editing, read-only once the edit is committed but not yet saved;
+    jumps go straight to the page the entry targets. */
 export function OutlinePanel({
   outline,
   note,
@@ -164,6 +171,7 @@ export function OutlinePanel({
   currentDest,
   onGoToDest,
   pending,
+  editing = false,
   labels,
   onGoToPage,
   onAdd,
@@ -180,8 +188,10 @@ export function OutlinePanel({
   /** Destination of the current location, when known; matching item gets aria-current */
   currentDest?: unknown
   onGoToDest: (dest: unknown) => void
-  /** Edited tree taking over the pane while bookmark editing is on */
+  /** Edited tree taking over the pane: being edited, or committed and waiting for Save */
   pending?: PendingBookmarkNode[] | null
+  /** Bookmark editing is on: the add button and the per-row affordances show */
+  editing?: boolean
   /** Action labels for the edit affordances */
   labels?: { add: string; rename: string; delete: string }
   onGoToPage?: (pageIndex: number) => void
@@ -204,9 +214,11 @@ export function OutlinePanel({
   ) {
     return (
       <div className="pdf-outline" role="tree" aria-label={label ?? 'Outline'}>
-        <button type="button" className="pdf-bookmark-add" onClick={onAdd}>
-          {labels.add}
-        </button>
+        {editing && (
+          <button type="button" className="pdf-bookmark-add" onClick={onAdd}>
+            {labels.add}
+          </button>
+        )}
         {pending.length === 0 ? (
           <div className="pdf-outline-empty" role="status">
             {emptyLabel ?? 'No results'}
@@ -218,6 +230,7 @@ export function OutlinePanel({
               node={node}
               path={String(i)}
               depth={0}
+              editable={editing}
               labels={labels}
               onGoToPage={onGoToPage}
               onRename={onRename}

@@ -22,6 +22,26 @@ export interface TextLine {
   y: number
 }
 
+/**
+ * The vertical offset an explicit destination array carries, by its fit type
+ * (PDF 32000-1 table 151): `[page /XYZ left top zoom]` keeps it at index 3,
+ * `[page /FitH top]` and `[page /FitBH top]` at index 2; `/FitV` and `/FitBV`
+ * carry a *left* offset at index 2 instead, and `/Fit`, `/FitB`, `/FitR` carry
+ * no top at all. pdf.js hands the fit type over as a Name object ({ name }).
+ */
+export function destTop(dest: readonly unknown[]): number | null {
+  const fit = dest[1]
+  const name =
+    typeof fit === 'string'
+      ? fit
+      : fit !== null && typeof fit === 'object'
+        ? (fit as { name?: unknown }).name
+        : undefined
+  const index = name === 'XYZ' ? 3 : name === 'FitH' || name === 'FitBH' ? 2 : -1
+  const value = index >= 0 ? dest[index] : undefined
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 const MAX_PAGES = 400
 const MIN_HEADINGS = 2
 const MAX_HEADINGS = 1500
