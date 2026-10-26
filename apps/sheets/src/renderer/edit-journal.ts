@@ -1,4 +1,4 @@
-import { CellValueType } from '@univerjs/core'
+import { BorderStyleTypes, CellValueType } from '@univerjs/core'
 
 import type {
   WorkbookCellEdit,
@@ -2290,6 +2290,14 @@ const UNIVER_VERTICAL: Record<number, WorkbookStyleEdit['verticalAlignment']> = 
 /// for every painter that checks bg.rgb. Shared by the file installer, the
 /// journal overlay replay, and the ribbon's No Fill.
 export const NO_FILL_STYLE: { readonly rgb: '' } = { rgb: '' }
+
+/// "No border" as a Univer bd value, the border twin of NO_FILL_STYLE: an
+/// empty bd is dropped by the set-range-values sanitizer, so one NONE edge
+/// keeps the key defined (blocks a <col style=> border at compose time) while
+/// the renderer skips NONE edges and the save path has no xlsx name for it.
+export const NO_BORDER_STYLE: {
+  readonly t: { readonly s: BorderStyleTypes.NONE; readonly cl: { readonly rgb: '#000000' } }
+} = { t: { s: BorderStyleTypes.NONE, cl: { rgb: '#000000' } } }
 
 /// Converts a Univer IStyleData delta (from a set-range-values mutation) to
 /// the renderer-neutral wire format. Unknown keys are ignored; `null` values

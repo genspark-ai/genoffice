@@ -459,6 +459,25 @@ describe('buildChartSpaceXml style options (generate → parse round-trip)', () 
     expect(m.gapWidthPct).toBe(80)
   })
 
+  it('an empty axis <c:title> (no c:tx) reads as the "Axis Title" placeholder', () => {
+    const xml = buildChartSpaceXml({ ...BASE, valAxisTitle: 'Sales' }).replace(
+      /(<c:valAx>.*?<c:title>)<c:tx>.*?<\/c:tx>/s,
+      '$1',
+    )
+    expect(xml).toContain('<c:title>')
+    const m = parseChartXml(xml)!
+    expect(m.valAxis?.title).toBe('Axis Title')
+    expect(m.catAxis?.title).toBeUndefined()
+  })
+
+  it('a cell-linked axis title (c:tx/c:strRef) keeps its cached text', () => {
+    const xml = buildChartSpaceXml({ ...BASE, valAxisTitle: 'Sales' }).replace(
+      /(<c:valAx>.*?<c:title>)<c:tx>.*?<\/c:tx>/s,
+      '$1<c:tx><c:strRef><c:f>Sheet1!$$A$$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Linked</c:v></c:pt></c:strCache></c:strRef></c:tx>',
+    )
+    expect(parseChartXml(xml)!.valAxis?.title).toBe('Linked')
+  })
+
   it('legendPos none writes no c:legend', () => {
     const xml = buildChartSpaceXml({ ...BASE, legendPos: 'none' })
     expect(xml).not.toContain('<c:legend>')

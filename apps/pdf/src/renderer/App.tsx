@@ -7325,7 +7325,6 @@ export default function App() {
         </button>
         <button
           className={`rb-big${sidebar === 'comments' ? ' active' : ''}`}
-          disabled={readOnly}
           onClick={() => setSidebar((v) => (v === 'comments' ? null : 'comments'))}
         >
           <span className="rb-big-icon">
@@ -10334,7 +10333,9 @@ export default function App() {
                         kind: 'link',
                         pageIndex: draft.pageIndex,
                         rect: draft.rect,
-                        ...target,
+                        ...('destPage' in target
+                          ? { destPage: (visList[target.destPage - 1] ?? target.destPage - 1) + 1 }
+                          : target),
                       },
                     },
                   ])

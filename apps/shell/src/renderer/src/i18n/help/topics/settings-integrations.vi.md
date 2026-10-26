@@ -10,7 +10,7 @@ Việc cấu hình mô hình có bài riêng; trong **Phương tiện AI & Tìm 
 
 ## Ngôn ngữ
 
-- Cài đặt có **21 ngôn ngữ giao diện**: tiếng Anh, Trung giản thể, Nhật, Hàn, Pháp, Đức, Tây Ban Nha, Thái, Indonesia, Nga, Ả Rập, Bồ Đào Nha, Ý, Ba Lan, Séc, Hà Lan, Mã Lai, Hebrew, Hindi, Trung Quốc Phồn thể, Việt.
+- Cài đặt có **22 ngôn ngữ giao diện**: tiếng Anh, Trung giản thể, Nhật, Hàn, Pháp, Đức, Tây Ban Nha, Thái, Indonesia, Nga, Ả Rập, Bồ Đào Nha, Ý, Ba Lan, Séc, Hà Lan, Mã Lai, Hebrew, Hindi, Trung Quốc Phồn thể, Việt, Thổ Nhĩ Kỳ.
 - Việc đổi có hiệu lực ngay và được ghi nhớ; dải menu gốc được dựng lại theo ngôn ngữ đó.
 
 ## Chủ đề

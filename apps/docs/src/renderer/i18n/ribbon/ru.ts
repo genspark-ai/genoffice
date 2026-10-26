@@ -702,6 +702,7 @@ export const ru = {
   ribbonLangHindi: 'хинди',
   ribbonLangTraditionalChinese: 'китайский (традиционный)',
   ribbonLangVietnamese: 'вьетнамский',
+  ribbonLangTurkish: 'турецкий',
   ribbonGroupLanguage: 'Язык',
   ribbonNewComment: 'Создать примечание',
   ribbonNewCommentTip: 'Добавить примечание к выделенному фрагменту',

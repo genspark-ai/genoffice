@@ -704,6 +704,7 @@ export const ms = {
   ribbonLangHindi: 'Hindi',
   ribbonLangTraditionalChinese: 'Cina Tradisional',
   ribbonLangVietnamese: 'Vietnam',
+  ribbonLangTurkish: 'Turki',
   ribbonGroupLanguage: 'Bahasa',
   ribbonNewComment: 'Komen Baharu',
   ribbonNewCommentTip: 'Tambah komen pada pilihan',

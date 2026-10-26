@@ -398,6 +398,8 @@ export interface SaveOptions {
     wrap?: Array<{ docxIndexes: number[]; spec: ContentControlSpec }>
     unwrap?: Array<{ tag: string }>
   }
+  /** first revision id the save may mint; a caller that assigned ids itself passes the one after its last */
+  revisionIdFloor?: number
   /** total page count at save time: the cached result written into NUMPAGES fields (viewers that do not recompute fields show it); default 1 */
   pageCount?: number
   /** bytes of pictures the editor placed inside existing paragraphs (table cells),
@@ -842,7 +844,7 @@ export async function saveDocx(
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
     allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
-    allocateRevisionId: nextRevisionIdAllocator(documentXml),
+    allocateRevisionId: nextRevisionIdAllocator(documentXml, options.revisionIdFloor),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -1602,6 +1604,19 @@ export async function saveDocx(
   // an unwrap drops the wrapper of the control with that tag. Both work on the
   // emitted bytes, so the blocks inside stay individually editable.
   const unwrapTags = new Set((options.contentControls?.unwrap ?? []).map((u) => u.tag))
+  // an edited block saves as its original xml (shell bytes included), so the
+  // shell is stripped by content, whichever block kind carries it
+  const unwrapShells = parsed.blocks
+    .map((b) => b.sdtShell)
+    .filter((shell): shell is NonNullable<typeof shell> => !!shell && unwrapTags.has(shell.tag))
+  const stripUnwrappedShell = (xml: string): string => {
+    for (const shell of unwrapShells) {
+      if (shell.openXml && xml.startsWith(shell.openXml)) xml = xml.slice(shell.openXml.length)
+      if (shell.closeXml && xml.endsWith(shell.closeXml))
+        xml = xml.slice(0, xml.length - shell.closeXml.length)
+    }
+    return xml
+  }
   let nextControlId = nextContentControlId(documentXml)
   const controlWraps = (options.contentControls?.wrap ?? []).map((w) => {
     const shell = buildContentControlXml({
@@ -1631,13 +1646,7 @@ export async function saveDocx(
       if (!el) throw new Error(`invalid docxIndex ${fb.docxIndex}`)
       xml = documentXml.slice(el.start, el.end)
       fbDocxIndex = fb.docxIndex
-      // unwrapping a content control drops the shell bytes around the block
-      const shell = parsed.blocks[fb.docxIndex]?.sdtShell
-      if (shell && unwrapTags.has(shell.tag)) {
-        if (shell.openXml && xml.startsWith(shell.openXml)) xml = xml.slice(shell.openXml.length)
-        if (shell.closeXml && xml.endsWith(shell.closeXml))
-          xml = xml.slice(0, xml.length - shell.closeXml.length)
-      }
+      if (unwrapShells.length > 0) xml = stripUnwrappedShell(xml)
     } else if (fb.kind === 'generated') {
       if (fb.docxIndex !== undefined) fbDocxIndex = fb.docxIndex
       xml = generateParagraphXml(fb.block, genCtx)
@@ -1647,7 +1656,7 @@ export async function saveDocx(
         xml = shell.openXml + xml + shell.closeXml
       }
     } else if (fb.kind === 'xml') {
-      xml = fb.xml
+      xml = unwrapShells.length > 0 ? stripUnwrappedShell(fb.xml) : fb.xml
       fbDocxIndex = fb.docxIndex
       if (fb.replaceImage) xml = retargetImageBlip(xml, embedImageMedia(fb.replaceImage))
     } else if (fb.kind === 'chart') {
@@ -2955,8 +2964,8 @@ function nextBookmarkIdAllocator(documentXml: string): (name: string) => number 
 }
 
 /** revision w:id is unique across every annotation in the part, so start above all existing ids */
-function nextRevisionIdAllocator(documentXml: string): () => string {
-  let next = 9001
+function nextRevisionIdAllocator(documentXml: string, floor = 0): () => string {
+  let next = Math.max(9001, floor)
   for (const m of documentXml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/g))
     next = Math.max(next, parseInt(m[1], 10) + 1)
   return () => String(next++)

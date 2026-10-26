@@ -10,7 +10,7 @@
 
 ## 語言
 
-- 設定中提供 **21 種介面語言**：English、简体中文、日本語、한국어、Français、Deutsch、Español、ไทย、Bahasa Indonesia、Русский、العربية、Português、Italiano、Polski、Čeština、Nederlands、Bahasa Melayu、עברית、हिन्दी、繁體中文、Tiếng Việt。
+- 設定中提供 **22 種介面語言**：English、简体中文、日本語、한국어、Français、Deutsch、Español、ไทย、Bahasa Indonesia、Русский、العربية、Português、Italiano、Polski、Čeština、Nederlands、Bahasa Melayu、עברית、हिन्दी、繁體中文、Tiếng Việt、Türkçe。
 - 切換後立即生效並會保留；原生選單列也會隨語言重建。
 
 ## 主題

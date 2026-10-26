@@ -160,3 +160,57 @@ describe('shrinkToFit on numeric cells', () => {
     expect(row?.[1]?.custom).toBeUndefined()
   })
 })
+
+describe('shrinkToFit on a merged anchor', () => {
+  const label: WorkbookCellStyle = {
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+    wrapText: false,
+    diagonalUp: false,
+    diagonalDown: false,
+    fontSize: 10,
+    shrinkToFit: true,
+  }
+  const merge = { startRow: 0, endRow: 0, startColumn: 0, endColumn: 2 }
+
+  beforeAll(installHalfEmMeasure)
+
+  function patchedAnchor(merged: boolean): ICellData | undefined {
+    let captured: ICellData[][] = []
+    const worksheet = {
+      getRange: () => ({
+        setValues: (matrix: ICellData[][]) => {
+          captured = matrix
+        },
+      }),
+      getSheet: () => ({
+        getMergedCell: () => (merged ? merge : null),
+        getColumnWidth: (column: number) => (column === 2 ? 20 : 60),
+      }),
+    }
+    patchWorksheetRangeInner(
+      worksheet as never,
+      undefined,
+      merge,
+      // 15 glyphs * 6.67px = 100px: over one 60px column, inside the 140px span.
+      [{ row: 0, column: 0, value: 'ABCDEFGHIJKLMNO', styleIndex: 0 }],
+      [label],
+      [],
+      [],
+      null,
+      false,
+    )
+    return captured[0]?.[0]
+  }
+
+  it('budgets the merged span once Univer knows the merge', () => {
+    expect((patchedAnchor(true)?.s as IStyleData).fs).toBe(10)
+  })
+
+  it('shrinks to the anchor column when the merge is not applied yet', () => {
+    // Why loaders must apply merges before patching cells.
+    expect((patchedAnchor(false)?.s as IStyleData).fs).toBe(5)
+  })
+})

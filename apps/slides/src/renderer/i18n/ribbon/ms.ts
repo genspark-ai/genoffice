@@ -450,6 +450,7 @@ export const ms = {
   ribbonLangHebrew: 'Ibrani',
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnam',
+  ribbonLangTurkish: 'Turki',
   ribbonNewComment: 'Komen Baharu',
   ribbonCommentsPane: 'Anak Tetingkap Komen',
   ribbonCommentsPaneTip: 'Tunjukkan atau sembunyikan anak tetingkap Komen',

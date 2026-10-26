@@ -233,6 +233,17 @@ function revertPropChange(els: El[], xml: string, change: El): Edit[] {
       .join('')
     return [{ start: holder.innerStart, end: holder.innerEnd, text: refs + oldInner }]
   }
+  // the holder's own tracked markers (paragraph-mark / row ins, del, move) are
+  // separate revisions: edit around them so their own removal in the same pass
+  // is not swallowed by a whole-holder replacement
+  const isMarker = (c: El) => c.selfClosing && /^w:(?:ins|del|moveFrom|moveTo)$/.test(c.name)
+  const kids = children(els, holder)
+  if (kids.some(isMarker)) {
+    return [
+      ...kids.filter((c) => !isMarker(c)).map(remove),
+      { start: holder.innerEnd, end: holder.innerEnd, text: oldInner },
+    ]
+  }
   if (!oldInner.trim() && holderName !== 'w:tblPr' && holderName !== 'w:tblGrid')
     return [remove(holder)]
   return [{ start: holder.innerStart, end: holder.innerEnd, text: oldInner }]
@@ -355,6 +366,7 @@ export function applyTrackedChangesXml(
   if (countTrackedChangesXml(xml) === 0) return { xml, applied: 0, remaining: 0 }
   const els = scan(xml)
   const { edits, applied } = planEdits(els, xml, mode, filter)
-  const out = edits.length ? applyEdits(xml, edits) : xml
+  // a property holder emptied by independent edits (markers and record both resolved) goes
+  const out = edits.length ? applyEdits(xml, edits).replace(/<w:(rPr|trPr)><\/w:\1>/g, '') : xml
   return { xml: out, applied, remaining: countTrackedChangesXml(out) }
 }

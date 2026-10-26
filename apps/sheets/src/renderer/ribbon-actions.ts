@@ -89,6 +89,7 @@ import { requestCellsAction } from './insert-delete-cells'
 import { applyRightToLeftView, sheetIsRightToLeft } from './sheet-rtl-view'
 import type { CellsMode } from './insert-delete-cells'
 import { mergeWorkbooksIntoCurrent } from './merge-workbooks'
+import { openActiveDataValidationDropdown } from './data-validation-dropdown'
 import {
   handleOpenSlicerPicker,
   handleOpenTimelinePicker,
@@ -393,6 +394,14 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     case 'find':
       void runtime.univerAPI.executeCommand('ui.operation.open-find-dialog')
       return
+    case 'dv-dropdown-open':
+      openActiveDataValidationDropdown(runtime)
+      return
+    case 'scroll-to-active': {
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveCell()
+      if (worksheet && active) worksheet.scrollToCell(active.getRow(), active.getColumn())
+      return
+    }
     case 'copy':
     case 'cut':
     case 'paste':
@@ -1867,6 +1876,25 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
           const dayShift = ctx.lazyWorkbookRef.current?.file.date1904 === true ? 1462 : 0
           cell.setValue(Math.floor(serial) - dayShift)
           cell.setNumberFormat('yyyy/m/d')
+        }
+        return
+      }
+      case 'copy-above': {
+        // Excel's Ctrl+' / Ctrl+Shift+": the cell above's formula text verbatim
+        // (no reference shift) or its value only, into the ACTIVE cell.
+        if (!worksheet) return
+        const active = runtime.univerAPI.getActiveWorkbook()?.getActiveCell()
+        const row = active?.getRow() ?? range.getRow()
+        const column = active?.getColumn() ?? range.getColumn()
+        if (row <= 0) return
+        const above = worksheet.getRange(row - 1, column).getCellData()
+        const target = worksheet.getRange(row, column)
+        if (argument === 'formula') {
+          const formula = above?.f
+          if (typeof formula === 'string' && formula.length > 0) target.setValue({ f: formula })
+          else if (above?.v !== undefined && above.v !== null) target.setValue(above.v)
+        } else if (above?.v !== undefined && above.v !== null) {
+          target.setValue(above.v)
         }
         return
       }

@@ -93,6 +93,23 @@ const tUpd = createI18n({
     updCheckFailed: 'Không thể kiểm tra bản cập nhật. Kiểm tra mạng của bạn và thử lại.',
     updOpenDownload: 'Mở trang tải xuống',
   },
+  tr: {
+    updTitle: 'Yazılım Güncellemesi',
+    updHeadline: 'Yeni bir sürüm mevcut',
+    updDesc:
+      'Bu güncelleme performans iyileştirmeleri ve hata düzeltmeleri içerir. Şimdi güncellemenizi öneririz.',
+    updDownload: 'Şimdi Güncelle',
+    updLater: 'Simge Durumuna Küçült',
+    updInstall: 'Yeniden Başlat ve Yükle',
+    updDownloading: 'Güncelleme indiriliyor…',
+    updFailed: 'Güncelleme indirilemedi. Ağ bağlantınızı kontrol edip yeniden deneyin.',
+    updRetry: 'Yeniden Dene',
+    updManual:
+      'Otomatik güncelleme başarısız oldu. Lütfen en son sürümü indirme sayfasından alıp elle yükleyin.',
+    updUpToDate: 'Güncel sürümü kullanıyorsunuz (sürüm {version}).',
+    updCheckFailed: 'Güncellemeler denetlenemedi. Ağ bağlantınızı kontrol edip yeniden deneyin.',
+    updOpenDownload: 'İndirme Sayfasını Aç',
+  },
   ja: {
     updTitle: 'ソフトウェアアップデート',
     updHeadline: '新しいバージョンがあります',

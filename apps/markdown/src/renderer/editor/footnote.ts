@@ -264,8 +264,15 @@ export const FootnoteNav = Extension.create({
     return [
       new Plugin({
         props: {
-          handleClickOn: (view, _pos, node, _nodePos) => {
+          handleClickOn: (view, _pos, node, _nodePos, event) => {
             if (node.type.name !== 'footnoteReference' && node.type.name !== 'footnoteDefinition') {
+              return false
+            }
+            // clicks into the definition body are edits, only the label jumps back
+            if (
+              node.type.name === 'footnoteDefinition' &&
+              !(event.target as Element | null)?.closest?.('.md-footnote-def-label')
+            ) {
               return false
             }
             const target = firstOfType(

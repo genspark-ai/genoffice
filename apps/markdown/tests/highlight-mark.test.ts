@@ -60,10 +60,22 @@ describe('==highlight== mark', () => {
     expect(open(saved).getMarkdown()).toBe(saved)
   })
 
+  it('keeps text beside a nested mark inside the run, and text around it outside', () => {
+    for (const md of ['==hello **bold**==', 'see ==**x**== here', 'see ==a **b** c== here']) {
+      // the mark sits on each text node it spans, so count the text instead
+      const editor = open(md)
+      const saved = editor.getMarkdown()
+      expect(saved.replace(/\*\*/g, '')).toBe(md.replace(/\*\*/g, ''))
+      expect(hlCount(open(saved))).toBe(hlCount(editor))
+      expect(hlCount(editor)).toBeGreaterThan(0)
+    }
+  })
+
   it('keeps plain equations like a == b unhighlighted across saves', () => {
-    const md = 'if a == b then c'
-    const editor = open(md)
-    expect(hlCount(editor)).toBe(0)
-    expect(editor.getMarkdown()).toBe(md)
+    for (const md of ['if a == b then c', 'if a == **b** == c', 'x == *y* and z == w']) {
+      const editor = open(md)
+      expect(hlCount(editor)).toBe(0)
+      expect(editor.getMarkdown()).toBe(md)
+    }
   })
 })

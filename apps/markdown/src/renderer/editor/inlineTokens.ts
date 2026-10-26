@@ -157,8 +157,14 @@ function dropNewlineAfterHardBreak(nodes: JSONContent[]): JSONContent[] {
  * and re-running it on the inner tokens would decode twice.
  */
 const HIGHLIGHT_SAME_RE = /==([^=\n]+)==/g
-const HIGHLIGHT_OPEN_RE = /(?:^|[^=\n])==$/
-const HIGHLIGHT_CLOSE_RE = /^==(?:[^=\n]|$)/
+/**
+ * the last `==` of a text token, the run's opener; what precedes it stays
+ * outside. Like `**`, it must be left-flanking: followed by non-space or
+ * by the next token, so `a == **b** == c` keeps its comparison operators
+ */
+const HIGHLIGHT_OPEN_RE = /^((?:[^=]|=(?!=))*?)==(?!\s)([^=\n]*)$/
+/** the first `==` of a text token, the run's closer; right-flanking, what follows stays outside */
+const HIGHLIGHT_CLOSE_RE = /^([^=\n]*)(?<!\s)==(?!=)/
 
 /** complete runs inside single text tokens; other tokens pass through */
 function highlightSameTokenRuns(tokens: InlineToken[]): InlineToken[] {
@@ -184,48 +190,57 @@ function highlightSameTokenRuns(tokens: InlineToken[]): InlineToken[] {
   return out
 }
 
-/** runs opened in one text token and closed in a later one (delimiters around sibling tokens) */
-function highlightTokenStreams(tokens: InlineToken[]): InlineToken[] {
+const plainText = (token: InlineToken): string | null =>
+  token.type === 'text' && !token.tokens && token.text !== undefined && !token.text.includes('\n')
+    ? token.text
+    : null
+
+/**
+ * runs opened in one text token and closed in a later one (delimiters around
+ * sibling tokens: `==hello **bold**==`, `see ==**x**== here`). The same-token
+ * pass ran first, so any `==` left in a text token is unpaired within it.
+ */
+function highlightTokenStreams(input: InlineToken[]): InlineToken[] {
+  const tokens = [...input]
   const out: InlineToken[] = []
   let i = 0
   while (i < tokens.length) {
     const token = tokens[i]!
-    const opens =
-      token.type === 'text' &&
-      token.text !== undefined &&
-      !token.text.includes('\n') &&
-      HIGHLIGHT_OPEN_RE.test(token.text)
-    if (!opens) {
+    const text = plainText(token)
+    const open = text === null ? null : HIGHLIGHT_OPEN_RE.exec(text)
+    if (!open) {
       out.push(token)
       i += 1
       continue
     }
     let close = -1
+    let closeMatch: RegExpExecArray | null = null
     for (let j = i + 1; j < tokens.length; j++) {
-      const t = tokens[j]!
-      if (
-        t.type === 'text' &&
-        t.text !== undefined &&
-        !t.text.includes('\n') &&
-        HIGHLIGHT_CLOSE_RE.test(t.text)
-      ) {
+      const t = plainText(tokens[j]!)
+      const m = t === null ? null : HIGHLIGHT_CLOSE_RE.exec(t)
+      if (m) {
         close = j
+        closeMatch = m
         break
       }
     }
-    if (close === -1) {
+    if (close === -1 || !closeMatch) {
       out.push(token)
       i += 1
       continue
     }
-    const opener = token.text!.slice(0, token.text!.length - 2)
+    const before = open[1]!
+    const innerHead = open[2]!
+    const innerTail = closeMatch[1]!
+    const after = tokens[close]!.text!.slice(closeMatch[0].length)
+    if (before) out.push({ type: 'text', text: before })
     const inner: InlineToken[] = []
-    if (opener) inner.push({ type: 'text', text: opener })
+    if (innerHead) inner.push({ type: 'text', text: innerHead })
     inner.push(...tokens.slice(i + 1, close))
-    const rest = tokens[close]!.text!.slice(2)
-    if (rest) inner.push({ type: 'text', text: rest })
+    if (innerTail) inner.push({ type: 'text', text: innerTail })
     out.push({ type: 'highlight', tokens: inner })
-    i = close + 1
+    if (after) tokens[close] = { ...tokens[close]!, text: after }
+    i = after ? close : close + 1
   }
   return out
 }

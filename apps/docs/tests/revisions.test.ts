@@ -1261,4 +1261,55 @@ describe('moves and paragraph marks (genoffice#2086)', () => {
     expect(collectRevisions(again.editor.state.doc)).toEqual([])
     again.editor.destroy()
   })
+
+  it('a format change on inserted text is its own revision and is accepted with the insertion', async () => {
+    const xml =
+      `<w:p>${R('P1 plain ')}<w:ins w:id="1" ${AT}><w:r><w:rPr><w:i/><w:rPrChange w:id="2" ${AT}><w:rPr/></w:rPrChange></w:rPr><w:t>inserted italic</w:t></w:r></w:ins></w:p>` +
+      `<w:p><w:r><w:rPr><w:b/><w:rPrChange w:id="4" ${AT}><w:rPr/></w:rPrChange></w:rPr><w:t>P3 now bold</w:t></w:r></w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual([
+      'ins',
+      'rPrChange',
+      'rPrChange',
+    ])
+    acceptAllRevisions(editor)
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(paragraphs(editor)).toEqual(['P1 plain inserted italic', 'P3 now bold'])
+    const accepted = await savedXml(editor, parsed)
+    expect(accepted).not.toMatch(/<w:ins\b|<w:rPrChange/)
+    expect(accepted).toContain('<w:i/>')
+    editor.destroy()
+
+    const again = await openEditor(xml)
+    rejectAllRevisions(again.editor)
+    expect(paragraphs(again.editor)).toEqual(['P1 plain ', 'P3 now bold'])
+    expect(collectRevisions(again.editor.state.doc)).toEqual([])
+    const rejected = await savedXml(again.editor, again.parsed)
+    expect(rejected).not.toMatch(/<w:ins\b|<w:rPrChange|<w:b\/>/)
+    again.editor.destroy()
+  })
+
+  it('a paragraph-mark format change is a pending revision; accept drops the record, reject restores the old mark', async () => {
+    const xml =
+      `<w:p><w:pPr><w:rPr><w:caps/><w:rPrChange w:id="3" ${AT}><w:rPr><w:b/></w:rPr></w:rPrChange></w:rPr></w:pPr>${R('P2 mark')}</w:p>` +
+      `<w:p>${R('after')}</w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(parsed.blocks[0].paraMarkRPrChange).toMatchObject({ author: 'X', id: '3' })
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkRPrChange'])
+    acceptAllRevisions(editor)
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(paragraphs(editor)).toEqual(['P2 mark', 'after'])
+    const accepted = await savedXml(editor, parsed)
+    expect(accepted).not.toMatch(/<w:rPrChange/)
+    expect(accepted).toContain('<w:pPr><w:rPr><w:caps/></w:rPr></w:pPr>')
+    editor.destroy()
+
+    const again = await openEditor(xml)
+    rejectAllRevisions(again.editor)
+    expect(collectRevisions(again.editor.state.doc)).toEqual([])
+    const rejected = await savedXml(again.editor, again.parsed)
+    expect(rejected).not.toMatch(/<w:rPrChange|<w:caps/)
+    expect(rejected).toContain('<w:pPr><w:rPr><w:b/></w:rPr></w:pPr>')
+    again.editor.destroy()
+  })
 })
