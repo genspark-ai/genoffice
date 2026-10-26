@@ -104,8 +104,51 @@ export interface StyleUpsert {
   next?: string | null
   /** w:qFormat (quick style gallery); new styles default to true */
   quickFormat?: boolean
+  /** one of Word's built-in styles (by name): created without w:customStyle */
+  builtIn?: boolean
   rPr?: StyleRunProps
   pPr?: StyleParaProps
+}
+
+/** half-point sizes of the built-in headings, as the blank template defines them */
+const BUILT_IN_HEADING_SIZES: Readonly<Record<number, number>> = {
+  1: 32,
+  2: 28,
+  3: 26,
+  4: 24,
+  5: 22,
+  6: 22,
+}
+
+/**
+ * Word's built-in "heading N" for a document that defines none: the same
+ * definition the blank template ships (bold, keep-with-next, outline level,
+ * quick-style), based on the document's default paragraph style so its fonts
+ * show through. The id is HeadingN — parse-styles reads that id as the level
+ * even without the name, so the saved heading survives reopen.
+ */
+export function builtInHeadingStyleUpsert(
+  level: number,
+  defaultParagraphStyleId: string | undefined,
+): StyleUpsert {
+  const lvl = Math.min(Math.max(Math.round(level) || 1, 1), 9)
+  return {
+    styleId: `Heading${lvl}`,
+    type: 'paragraph',
+    name: `heading ${lvl}`,
+    ...(defaultParagraphStyleId
+      ? { basedOn: defaultParagraphStyleId, next: defaultParagraphStyleId }
+      : {}),
+    quickFormat: true,
+    builtIn: true,
+    pPr: {
+      keepNext: true,
+      spaceBeforeTwips: lvl <= 2 ? 240 : 160,
+      spaceAfterTwips: 120,
+      outlineLevel: lvl,
+    },
+    rPr: { bold: true, sizeHalfPoints: BUILT_IN_HEADING_SIZES[lvl] ?? 22 },
+  }
 }
 
 const STYLE_CHILD_ORDER = [
@@ -340,7 +383,7 @@ export function mergeStyleXml(existing: string | null, up: StyleUpsert): string 
     ? new Map([
         ['w:type', up.type ?? 'paragraph'],
         ['w:styleId', escapeXmlAttr(up.styleId)],
-        ['w:customStyle', '1'],
+        ...(up.builtIn ? [] : [['w:customStyle', '1'] as const]),
       ])
     : parseTag(existing).attrs
   const children = new Children(
