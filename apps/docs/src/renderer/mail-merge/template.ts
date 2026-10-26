@@ -149,12 +149,31 @@ export function mergeAllRecords(doc: PmNode, records: readonly MergeRecord[]): P
   records.forEach((record, index) => {
     const merged = substituteContent(blocks, record) ?? []
     merged.forEach((block, blockIndex) => {
+      // a bookmark, a comment anchor or a note reference exists once in the
+      // package, so only the first letter keeps it
+      const copy = index === 0 ? block : withoutUniqueAnchors(block)
       if (index === 0 || blockIndex !== 0) {
-        content.push(block)
+        content.push(copy)
         return
       }
-      content.push({ ...block, attrs: { ...(block.attrs ?? {}), pageBreakBefore: true } })
+      content.push({ ...copy, attrs: { ...(copy.attrs ?? {}), pageBreakBefore: true } })
     })
   })
   return { ...doc, content }
+}
+
+function withoutUniqueAnchors(node: PmNode): PmNode {
+  const out: PmNode = { ...node }
+  if (out.attrs && 'bookmarks' in out.attrs && out.attrs.bookmarks) {
+    out.attrs = { ...out.attrs, bookmarks: null }
+  }
+  if (out.marks?.some((m) => m.type === 'comment')) {
+    out.marks = out.marks.filter((m) => m.type !== 'comment')
+  }
+  if (node.content) {
+    out.content = node.content
+      .filter((child) => child.type !== 'docNoteRef')
+      .map(withoutUniqueAnchors)
+  }
+  return out
 }

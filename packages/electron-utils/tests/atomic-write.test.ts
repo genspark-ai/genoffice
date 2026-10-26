@@ -134,8 +134,8 @@ describe('atomicWriteFile', () => {
     // the fallback failed, so the completed temp is kept as the rescue copy
     const leftovers = readdirSync(dir).sort()
     expect(leftovers).toHaveLength(2)
-    expect(leftovers[0]).toMatch(/^\.a\.docx\..{12}\.tmp$/)
-    expect(leftovers[1]).toBe('a.docx')
+    expect(leftovers[0]).toBe('a.docx')
+    expect(leftovers[1]).toMatch(/^a\.docx\..{12}\.tmp$/)
   })
 })
 
@@ -269,7 +269,7 @@ describe('atomicWriteVia', () => {
     expect(readdirSync(dir)).toEqual(['a.pptx'])
   })
 
-  // Same fallback contract as atomicWriteFile (#1878): a mount that refuses
+  // Same fallback contract as atomicWriteFile (genoffice#1878): a mount that refuses
   // rename-over-existing still receives the completed temp, copied in place.
   it('falls back to an in-place copy when the mount refuses the rename', async () => {
     dir = mkdtempSync(join(tmpdir(), 'eu-av-'))

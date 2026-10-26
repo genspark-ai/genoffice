@@ -40,6 +40,12 @@ export interface CreateNoteOptions {
 export interface CreatedNote {
   /** absolute path of the note, created or already there */
   path: string
+  /**
+   * the spelling a link to it resolves by: the sanitized stem, with its
+   * directories kept (`folder/Note`) so a bare name cannot land on a
+   * same-named note found earlier in the lookup order
+   */
+  target: string
   /** the `#Heading` part of the target, for the caller to open on */
   fragment: string
   /** false when a file already occupied the path and nothing was written */
@@ -85,9 +91,10 @@ export async function createWikiNote(
       : options.fromDir || options.root
   if (!dir) return null
   const path = join(dir, fileName)
+  const linkTarget = [...segments.slice(0, -1), base].join('/')
   // already there: opening it is the whole job, a second write would clobber it
-  if (await fileExists(path)) return { path, fragment, created: false }
+  if (await fileExists(path)) return { path, target: linkTarget, fragment, created: false }
   await mkdir(dirname(path), { recursive: true })
   await atomicWriteFile(path, Buffer.alloc(0))
-  return { path, fragment, created: true }
+  return { path, target: linkTarget, fragment, created: true }
 }

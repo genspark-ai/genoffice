@@ -195,6 +195,19 @@ describe('FindPanel', () => {
     editor.destroy()
   })
 
+  it('keeps focus in the find field when switching to the Replace tab', () => {
+    const editor = createEditor('hello world')
+    const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
+    act(() => {
+      container.querySelectorAll<HTMLButtonElement>('.find-tab')[1].click()
+    })
+    const [find, replace] = Array.from(container.querySelectorAll<HTMLInputElement>('.find-input'))
+    expect(replace).toBeTruthy()
+    expect(document.activeElement).toBe(find)
+    unmount()
+    editor.destroy()
+  })
+
   it('labels both inputs and announces the match count', () => {
     const editor = createEditor('hello world')
     const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))

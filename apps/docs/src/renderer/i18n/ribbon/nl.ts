@@ -705,6 +705,7 @@ export const nl = {
   ribbonLangHindi: 'Hindi',
   ribbonLangTraditionalChinese: 'Traditioneel Chinees',
   ribbonLangVietnamese: 'Vietnamees',
+  ribbonLangTurkish: 'Turks',
   ribbonGroupLanguage: 'Taal',
   ribbonNewComment: 'Nieuwe opmerking',
   ribbonNewCommentTip: 'Een opmerking bij de selectie toevoegen',

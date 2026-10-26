@@ -447,6 +447,7 @@ export const ru = {
   ribbonLangHebrew: 'иврит',
   ribbonLangHindi: 'хинди',
   ribbonLangVietnamese: 'вьетнамский',
+  ribbonLangTurkish: 'турецкий',
   ribbonNewComment: 'Создать примечание',
   ribbonCommentsPane: 'Область примечаний',
   ribbonCommentsPaneTip: 'Показать или скрыть область примечаний',

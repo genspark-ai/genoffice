@@ -29,3 +29,11 @@ describe('textboxParaSignature list identity', () => {
     expect(textboxParaSignature(a)).not.toEqual(textboxParaSignature(d))
   })
 })
+
+describe('textboxParaSignature indent', () => {
+  it('reacts to a moved left indent on otherwise identical paragraphs', () => {
+    expect(textboxParaSignature(para())).not.toEqual(
+      textboxParaSignature(para({ indentLeft: 720 })),
+    )
+  })
+})

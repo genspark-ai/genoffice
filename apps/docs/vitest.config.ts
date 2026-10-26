@@ -34,7 +34,6 @@ export default defineConfig({
       '@genoffice/ai-provider': local('../../packages/ai-provider/src/index.ts'),
       '@genoffice/i18n': local('../../packages/i18n/src/index.ts'),
       '@genoffice/ui': local('../../packages/ui/src/index.ts'),
-      '@genoffice/xlsx-gateway/*': local('../../packages/xlsx-gateway/src/*'),
     },
   },
   test: {

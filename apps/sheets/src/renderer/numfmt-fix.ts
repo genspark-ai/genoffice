@@ -37,6 +37,12 @@ import type { UniverRuntime } from './univer-state'
 /// budget, #### overflow, `*x` fill) measures against `width - CELL_INSET_PX`.
 export const CELL_INSET_PX = 5
 
+/// Excel lets a number spill into the cell margins before hashing — only the
+/// gridline is off limits (Calibri 11 "123456789", 63px, shows in the 64px
+/// default column; an Aptos Narrow "2026/8/10", 66px GDI, shows in
+/// the 69px default column).
+export const HASH_INSET_PX = 1
+
 /// Shares the per-workbook max-digit-width with characterWidthToPixels
 /// (univer-sync.ts), so a column imported as N chars yields a budget of
 /// floor(N) regardless of the render font.
@@ -405,27 +411,31 @@ export function overflowHashes(
   calibrated = scale !== 1,
 ): string | null {
   if (display === '') return null
-  const available = columnWidthPx - CELL_INSET_PX
-  // A calibrated (GDI-normalized) measurement follows Excel's real rule — a
-  // digit width of slack before hashing (prod refs pin it in both
-  // directions: 36.3px content hashes in a 42px cell, 75.5px shows in 98px).
-  // A genuine local face measuring at its GDI width counts as calibrated:
-  // its scale clamps to exactly 1 but the numbers are true. Uncalibrated
-  // measurements keep a 5% noise band instead: macOS glyph advances run a
-  // few percent wide of Excel's GDI metrics (Arial bold "2026/8/30"
-  // measures 65.2px here vs ≤63px in Excel), and a borderline spurious ####
-  // loses the whole value while a clip loses a few pixels.
-  const limit = calibrated ? available - measure('0') * scale : available * 1.05
-  if (measure(display) * scale <= limit) return null
+  const available = columnWidthPx - HASH_INSET_PX
+  // Calibrated measurements follow Excel's rule exactly, with GDI's
+  // whole-pixel advances. Uncalibrated ones keep a 5% noise band: macOS
+  // advances run a few percent wide of GDI, and a spurious #### loses the
+  // whole value while a clip loses a few pixels.
+  const fits = calibrated
+    ? gdiWidth(display, measure, scale) <= available
+    : measure(display) * scale <= available * 1.05
+  if (fits) return null
   return hashFill(columnWidthPx, measure)
+}
+
+/// Excel's width of a numeric display: GDI advances per glyph, each rounded
+/// to whole pixels (numbers do not kern, so the sum equals the run width).
+export function gdiWidth(display: string, measure: (text: string) => number, scale = 1): number {
+  let total = 0
+  for (const glyph of display) total += Math.round(measure(glyph) * scale)
+  return total
 }
 
 /// True for the faces whose GDI digit width is pinned em-exactly: when
 /// the genuine face is installed the scale clamps to exactly 1, but the
-/// measurement still matches Excel, so the digit-slack rule (not the noise
-/// band) applies. Deliberately NOT the wider MDW table — extending Excel's
-/// digit-slack semantics to every Calibri cell needs more calibration
-/// samples than the one Yu Gothic ref that pinned it.
+/// measurement still matches Excel, so the exact GDI rule (not the noise
+/// band) applies. Deliberately NOT the wider MDW table — extending the
+/// exact rule to every Calibri cell needs more calibration samples.
 export function hasGdiDigitCalibration(family: string | undefined): boolean {
   return family !== undefined && SUBSTITUTED_DIGIT_PER_PT[family] !== undefined
 }

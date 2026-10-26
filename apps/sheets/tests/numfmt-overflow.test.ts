@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   excelWidthScale,
   formatForMeasure,
+  gdiWidth,
   hasGdiDigitCalibration,
   hashFill,
   overflowHashes,
@@ -16,7 +17,7 @@ describe('overflowHashes', () => {
   })
 
   it('fills the available width with hashes on overflow', () => {
-    // 16 chars * 8px = 128 > 85 - 5; fill = floor(80 / 8) = 10.
+    // 16 chars * 8px = 128 > 85 - 1; fill = floor(80 / 8) = 10.
     expect(overflowHashes('2015-12-15 22:50', 85, measure)).toBe('##########')
   })
 
@@ -70,22 +71,33 @@ describe('excelWidthScale', () => {
   it('tolerates overflow within the GDI measurement noise band', () => {
     // 10 chars * 8px = 80 > 77 available, but 77 * 1.05 = 80.85 fits —
     // Excel's own (GDI) metrics would show the value, so clip, not hash.
-    expect(overflowHashes('2026/8/30x', 82, measure)).toBeNull()
+    expect(overflowHashes('2026/8/30x', 78, measure)).toBeNull()
+    expect(overflowHashes('2026/8/30x', 76, measure)).not.toBeNull()
   })
 
-  it('hashes a calibrated measurement past Excel’s digit-width slack (prod_023)', () => {
-    // Genuine Yu Gothic measures at its GDI width (live probe: digit 8.14px,
-    // "1,225" 36.34px) so the scale clamps to 1, but the family is
-    // table-calibrated: 36.34 > (47−5) − 8.14 → Excel hashes.
-    const m = (text: string): number => (text === '1,225' ? 36.34 : 8.14)
-    expect(overflowHashes('1,225', 47, m, 1, true)).not.toBeNull()
-    // The same numbers under the uncalibrated noise band keep the value.
-    expect(overflowHashes('1,225', 47, m, 1, false)).toBeNull()
+  it('rounds Yu Gothic glyph advances like GDI before deciding ####', () => {
+    // Yu Gothic 11 via the width-corrected alias: digit 8.15px, slash
+    // 4.11px, so "2026/8/10" measures 65.3px fractional — but GDI rounds
+    // every advance to whole pixels (7×8 + 2×4 = 64) and Excel shows it up
+    // to the gridline of a 65px column.
+    const m = (text: string): number => (text === '/' ? 4.11 : text.length * 8.15)
+    expect(gdiWidth('2026/8/10', m)).toBe(64)
+    expect(overflowHashes('2026/8/10', 65, m, 1, true)).toBeNull()
+    expect(overflowHashes('2026/8/10', 64, m, 1, true)).not.toBeNull()
+    expect(overflowHashes('2026/10/10', 69, m, 1, true)).not.toBeNull()
+  })
+
+  it('shows a calibrated value that only overlaps the margins', () => {
+    // Genuine Yu Gothic "1,225" (digit 8.14px, comma 4.1px) is 36.6px
+    // fractional but 36px in GDI, inside the 46px a 47px column offers.
+    const m = (text: string): number => (text === ',' ? 4.1 : text.length * 8.14)
+    expect(overflowHashes('1,225', 47, m, 1, true)).toBeNull()
+    expect(overflowHashes('1,225', 36, m, 1, true)).not.toBeNull()
   })
 
   it('keeps a calibrated measurement inside the slack (prod_037)', () => {
     // MS PGothic date via the substitute: 91px, digit 9.64px, scale 0.76 →
-    // true 69.2px vs limit (103−5) − 7.33 = 90.7 → the date shows.
+    // 10 glyphs × round(7.33) = 70px vs 102 available → the date shows.
     const m = (text: string): number => (text === '2017/08/22' ? 91 : 9.64)
     expect(overflowHashes('2017/08/22', 103, m, 0.76)).toBeNull()
   })
@@ -106,13 +118,13 @@ describe('excelWidthScale', () => {
     const m = (text: string): number => (text === '2,867,943.93' ? 85.6 : 8.15)
     expect(overflowHashes('2,867,943.93', 84, m, scale, true)).toBeNull()
     // The unscaled fallback measurement tripped the hash rule.
-    expect(overflowHashes('2,867,943.93', 84, m)).not.toBeNull()
+    expect(overflowHashes('2,867,943.93', 82, m)).not.toBeNull()
   })
 
   it('treats the width-corrected Thai and JP aliases as calibrated substitutes', () => {
     // Every family with a size-adjusted alias carries its em-exact digit
     // width, so the corrected canvas digit lands on the table value (scale
-    // ~1) and the digit-slack rule applies instead of the noise band.
+    // ~1) and the exact GDI rule applies instead of the noise band.
     for (const family of [
       'MS UI Gothic',
       '游ゴシック体',
@@ -146,9 +158,25 @@ describe('excelWidthScale', () => {
   })
 
   it('hashes a too-wide boolean label (prod_074)', () => {
-    // Arial FALSE 42.2px in a 33px column: (33−5)×1.05 = 29.4 < 42.2.
+    // Arial FALSE 42.2px in a 33px column: (33−1)×1.05 = 33.6 < 42.2.
     const m = (text: string): number => (text === 'FALSE' ? 42.2 : 8)
     expect(overflowHashes('FALSE', 33, m)).toBe('###')
+  })
+
+  it('lets a date spill into the margins of the default column', () => {
+    // Aptos Narrow 11 via the 96% Carlito alias: digit 7.14px, slash
+    // 5.44px, GDI digit 8px (scale 1.121). "2026/8/10" estimates 68.2px in
+    // a 69.33px default column: inside the margins, so Excel shows it;
+    // "2026/10/10" (76px) does not fit and hashes.
+    const m = (text: string): number => {
+      let total = 0
+      for (const glyph of text) total += glyph === '/' ? 5.44 : 7.14
+      return total
+    }
+    const scale = excelWidthScale('Aptos Narrow', 11, () => 7.14, true)
+    expect(scale).toBeCloseTo(8 / 7.14, 3)
+    expect(overflowHashes('2026/8/10', 69.33, m, scale, false)).toBeNull()
+    expect(overflowHashes('2026/10/10', 69.33, m, scale, false)).not.toBeNull()
   })
 })
 

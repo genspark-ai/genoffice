@@ -2,18 +2,18 @@
  * A vertically merged group crossing a page boundary must not inflate its row.
  *
  * genoffice#2114: a table with rowspan groups over many rows rendered later
- * group-head rows at page-tall heights — one line of text and then blank
+ * group-head rows at page-tall heights \u2014 one line of text and then blank
  * space. Three defects fed one another: an in-cell gap band anchored inside a
  * merged row's cell (its height shifted every row the merge covers), the
- * vMerge continuation rows never charged to the column, and — the amplifier —
+ * vMerge continuation rows never charged to the column, and \u2014 the amplifier \u2014
  * the measure pass's display:none on gap table rows removed them from the
  * table grid, so a rowspan crossing one extended over more rendered rows and
  * every later row's cells shifted a column, collapsing a fixed-layout column
  * to zero width (one character per line, ~20 lines per list item, a page-tall
  * row) which the row-fill then patched into the DOM.
  *
- * This drives the real editor with the issue's shape — rowspan-7 groups,
- * ordered-list description cells — and asserts what a reader would check:
+ * This drives the real editor with the issue's shape \u2014 rowspan-7 groups,
+ * ordered-list description cells \u2014 and asserts what a reader would check:
  * every row stays at its content height, no page-tall row appears, and no
  * full-height gap band is inserted inside a merged table's cells.
  */
@@ -132,9 +132,9 @@ test.describe('a vertically merged table crossing pages', () => {
           {
             type: 'docTableRow',
             content: [
-              cell([para('模块')], { colwidth: [120] }),
-              cell([para('建设功能')], { colwidth: [170] }),
-              cell([para('功能描述')], { colwidth: [700] }),
+              cell([para('\u6a21\u5757')], { colwidth: [120] }),
+              cell([para('\u5efa\u8bbe\u529f\u80fd')], { colwidth: [170] }),
+              cell([para('\u529f\u80fd\u63cf\u8ff0')], { colwidth: [700] }),
             ],
           },
         ]
@@ -143,24 +143,32 @@ test.describe('a vertically merged table crossing pages', () => {
             i % 3 === 0
               ? [
                   li(
-                    `1. 支持按区域、线路、时段多维度查询第 ${i} 项业务数据，支持按条件筛选与组合查询。`,
+                    `1. \u652f\u6301\u6309\u533a\u57df\u3001\u7ebf\u8def\u3001\u65f6\u6bb5\u591a\u7ef4\u5ea6\u67e5\u8be2\u7b2c ${i} \u9879\u4e1a\u52a1\u6570\u636e\uff0c\u652f\u6301\u6309\u6761\u4ef6\u7b5b\u9009\u4e0e\u7ec4\u5408\u67e5\u8be2\u3002`,
                   ),
                   li(
-                    `2. 提供新增、编辑、删除、启用、停用等操作，操作全程留痕，支持按操作人与时间检索。`,
+                    `2. \u63d0\u4f9b\u65b0\u589e\u3001\u7f16\u8f91\u3001\u5220\u9664\u3001\u542f\u7528\u3001\u505c\u7528\u7b49\u64cd\u4f5c\uff0c\u64cd\u4f5c\u5168\u7a0b\u7559\u75d5\uff0c\u652f\u6301\u6309\u64cd\u4f5c\u4eba\u4e0e\u65f6\u95f4\u68c0\u7d22\u3002`,
                   ),
                   li(
-                    `3. 支持按日、周、月自动汇总统计，异常数据自动标红提醒，并推送至责任人确认处理。`,
+                    `3. \u652f\u6301\u6309\u65e5\u3001\u5468\u3001\u6708\u81ea\u52a8\u6c47\u603b\u7edf\u8ba1\uff0c\u5f02\u5e38\u6570\u636e\u81ea\u52a8\u6807\u7ea2\u63d0\u9192\uff0c\u5e76\u63a8\u9001\u81f3\u8d23\u4efb\u4eba\u786e\u8ba4\u5904\u7406\u3002`,
                   ),
                   li(
-                    `4. 支持批量导入导出 Excel 模板，导入时自动校验必填项与数据格式，错误行退回。`,
+                    `4. \u652f\u6301\u6279\u91cf\u5bfc\u5165\u5bfc\u51fa Excel \u6a21\u677f\uff0c\u5bfc\u5165\u65f6\u81ea\u52a8\u6821\u9a8c\u5fc5\u586b\u9879\u4e0e\u6570\u636e\u683c\u5f0f\uff0c\u9519\u8bef\u884c\u9000\u56de\u3002`,
                   ),
-                  li(`5. 支持与第三方系统对接，提供标准 API 接口与调用凭证管理，调用日志可查。`),
+                  li(
+                    `5. \u652f\u6301\u4e0e\u7b2c\u4e09\u65b9\u7cfb\u7edf\u5bf9\u63a5\uff0c\u63d0\u4f9b\u6807\u51c6 API \u63a5\u53e3\u4e0e\u8c03\u7528\u51ed\u8bc1\u7ba1\u7406\uff0c\u8c03\u7528\u65e5\u5fd7\u53ef\u67e5\u3002`,
+                  ),
                 ]
-              : [li(`${i}. 支持数据采集、治理、可视化与推送。`)]
+              : [
+                  li(
+                    `${i}. \u652f\u6301\u6570\u636e\u91c7\u96c6\u3001\u6cbb\u7406\u3001\u53ef\u89c6\u5316\u4e0e\u63a8\u9001\u3002`,
+                  ),
+                ]
           const cells: unknown[] = []
           if (i % 7 === 1)
-            cells.push(cell([para(`模块${Math.ceil(i / 7)}`)], { rowspan: 7, colwidth: [120] }))
-          cells.push(cell([para(`功能项${i}`)]))
+            cells.push(
+              cell([para(`\u6a21\u5757${Math.ceil(i / 7)}`)], { rowspan: 7, colwidth: [120] }),
+            )
+          cells.push(cell([para(`\u529f\u80fd\u9879${i}`)]))
           cells.push(cell(desc))
           body.push({ type: 'docTableRow', content: cells })
         }
@@ -176,8 +184,8 @@ test.describe('a vertically merged table crossing pages', () => {
       const tallest = Math.max(...heights)
       expect(tallest).toBeLessThan(900)
 
-      // the table spans several pages, so groups do cross page boundaries —
-      // the shape the bug needs — and no row may be left page-tall by the fill
+      // the table spans several pages, so groups do cross page boundaries \u2014
+      // the shape the bug needs \u2014 and no row may be left page-tall by the fill
       const pages = await page.evaluate(() => {
         const gaps = document.querySelectorAll(
           '.page-gap:not(.page-gap-carry):not(.page-cut-overlay), .page-gap-cut:not(.page-cut-overlay)',

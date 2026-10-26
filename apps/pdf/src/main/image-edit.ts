@@ -8,6 +8,15 @@ import {
   withDocument,
 } from './text-edit'
 import type { Pdfium } from './text-edit'
+import {
+  SHARED_TEMPLATE_IMAGE_REASON,
+  chainIsExclusive,
+  formDrawTree,
+  liftOutOfForms,
+  transformRect,
+  walkPageText,
+} from './form-text'
+import type { FormChain, FormDrawTree } from './form-text'
 import type {
   ImageEditFailure,
   ImageEditInput,
@@ -26,6 +35,16 @@ interface PageObj {
   index: number
   type: number
   bounds: [number, number, number, number]
+}
+
+/** An image object, page-owned or drawn inside a Form XObject (bounds in page space) */
+interface ImageObj {
+  obj: number
+  /** Page object index; for template images, their top-level ancestor's */
+  index: number
+  bounds: [number, number, number, number]
+  chain: FormChain
+  ordinals: readonly number[]
 }
 
 function collectObjects(m: Pdfium, page: number): PageObj[] {
@@ -49,15 +68,40 @@ function collectObjects(m: Pdfium, page: number): PageObj[] {
   return out
 }
 
+function collectImages(m: Pdfium, page: number): ImageObj[] {
+  const out: ImageObj[] = []
+  const bl = m._malloc(4)
+  const bb = m._malloc(4)
+  const br = m._malloc(4)
+  const bt = m._malloc(4)
+  walkPageText(m, page, FPDF_PAGEOBJ_IMAGE, ({ obj, chain, ordinals, topIndex, toPage }) => {
+    if (!m._FPDFPageObj_GetBounds(obj, bl, bb, br, bt)) return
+    const local: [number, number, number, number] = [
+      m.HEAPF32[bl >> 2]!,
+      m.HEAPF32[bb >> 2]!,
+      m.HEAPF32[br >> 2]!,
+      m.HEAPF32[bt >> 2]!,
+    ]
+    out.push({
+      obj,
+      index: topIndex,
+      bounds: chain.length > 0 ? transformRect(local, toPage) : local,
+      chain,
+      ordinals,
+    })
+  })
+  for (const p of [bl, bb, br, bt]) m._free(p)
+  return out
+}
+
 /** Bounds travel renderer→main unchanged, so matching is tight; the tolerance only
     absorbs float32 round-trips. Closest candidate within tolerance wins. */
 const MATCH_TOL = 2
 
-function matchImage(objects: PageObj[], rect: Rect): PageObj | null {
-  let best: PageObj | null = null
+function matchImage(objects: ImageObj[], rect: Rect): ImageObj | null {
+  let best: ImageObj | null = null
   let bestD = Infinity
   for (const o of objects) {
-    if (o.type !== FPDF_PAGEOBJ_IMAGE) continue
     const d = Math.max(
       Math.abs(o.bounds[0] - rect[0]),
       Math.abs(o.bounds[1] - rect[1]),
@@ -74,6 +118,44 @@ function matchImage(objects: PageObj[], rect: Rect): PageObj | null {
 
 const firstTextIndex = (objects: PageObj[]): number | undefined =>
   objects.find((o) => o.type === FPDF_PAGEOBJ_TEXT)?.index
+
+/** Lazy per-document census of how often each Form XObject is painted */
+type FormExclusive = (pageIndex: number, img: ImageObj) => Promise<boolean>
+
+function formExclusivity(bytes: Uint8Array): FormExclusive {
+  let tree: Promise<FormDrawTree> | null = null
+  return async (pageIndex, img) => {
+    if (img.chain.length === 0) return true
+    tree ??= formDrawTree(bytes)
+    return chainIsExclusive(await tree, pageIndex, img.ordinals)
+  }
+}
+
+interface EditGuard {
+  exclusive: FormExclusive
+  pageIndex: number
+}
+
+/** Locate the image under `rect`; a template image is lifted to page level first (as
+    the text path does) so the page-owned ops below apply unchanged. Without an
+    exclusivity check (preview/render on an in-memory copy) the lift is unconditional. */
+async function resolveImage(
+  m: Pdfium,
+  page: number,
+  rect: Rect,
+  guard?: EditGuard,
+): Promise<ImageObj> {
+  const target = matchImage(collectImages(m, page), rect)
+  if (!target) throw new Error('the image could not be located on the page')
+  if (target.chain.length > 0) {
+    if (guard && !(await guard.exclusive(guard.pageIndex, target))) {
+      throw new Error(SHARED_TEMPLATE_IMAGE_REASON)
+    }
+    liftOutOfForms(m, page, target.obj, target.chain)
+    target.chain = []
+  }
+  return target
+}
 
 /** Decode a PNG/JPEG into straight-alpha BGRA (pdfium splits alpha into an SMask itself) */
 function decodeImage(b64: string): { width: number; height: number; bgra: Buffer } {
@@ -202,10 +284,14 @@ function applyImageGeometry(
   }
 }
 
-function transformImage(m: Pdfium, page: number, edit: ImageEditInput): void {
+async function transformImage(
+  m: Pdfium,
+  page: number,
+  edit: ImageEditInput,
+  guard: EditGuard,
+): Promise<void> {
   if (edit.kind !== 'transformImage') return
-  const target = matchImage(collectObjects(m, page), edit.oldRect)
-  if (!target) throw new Error('the image could not be located on the page')
+  const target = await resolveImage(m, page, edit.oldRect, guard)
   // Layer move first: it is the only part that can fail, so a skipped edit is
   // reported before any geometry has been touched
   if (edit.layer) moveToLayer(m, page, target.obj, edit.layer)
@@ -214,10 +300,14 @@ function transformImage(m: Pdfium, page: number, edit: ImageEditInput): void {
 
 /** Swap the image object's pixels for a new bitmap (matrix untouched: the footprint,
     z-order and any original rotation stay), then apply the shared geometry pass */
-function replaceImage(m: Pdfium, page: number, edit: ImageEditInput): void {
+async function replaceImage(
+  m: Pdfium,
+  page: number,
+  edit: ImageEditInput,
+  guard: EditGuard,
+): Promise<void> {
   if (edit.kind !== 'replaceImage') return
-  const target = matchImage(collectObjects(m, page), edit.oldRect)
-  if (!target) throw new Error('the image could not be located on the page')
+  const target = await resolveImage(m, page, edit.oldRect, guard)
   if (edit.layer) moveToLayer(m, page, target.obj, edit.layer)
   const { width, height, bgra } = decodeImage(edit.image)
   const bufPtr = m._malloc(bgra.length)
@@ -238,10 +328,14 @@ function replaceImage(m: Pdfium, page: number, edit: ImageEditInput): void {
   applyImageGeometry(m, target.obj, target.bounds, edit.rect, edit.quarterTurns)
 }
 
-function deleteImage(m: Pdfium, page: number, edit: ImageEditInput): void {
+async function deleteImage(
+  m: Pdfium,
+  page: number,
+  edit: ImageEditInput,
+  guard: EditGuard,
+): Promise<void> {
   if (edit.kind !== 'deleteImage') return
-  const target = matchImage(collectObjects(m, page), edit.oldRect)
-  if (!target) throw new Error('the image could not be located on the page')
+  const target = await resolveImage(m, page, edit.oldRect, guard)
   if (!m._FPDFPage_RemoveObject(page, target.obj)) throw new Error('FPDFPage_RemoveObject failed')
   m._FPDFPageObj_Destroy(target.obj)
 }
@@ -259,6 +353,7 @@ export function applyImageEdits(
   return chainPdfium(async () => {
     const m = await loadPdfium()
     const skipped: ImageEditFailure[] = []
+    const exclusive = formExclusivity(bytes)
     return withDocument(m, bytes, async (doc) => {
       const pageCount = m._FPDF_GetPageCount(doc)
       const byPage = new Map<number, { edit: ImageEditInput; editIndex: number }[]>()
@@ -275,13 +370,14 @@ export function applyImageEdits(
         if (!page) throw new Error(`could not load page ${pageIndex + 1}`)
         try {
           let applied = 0
+          const guard = { exclusive, pageIndex }
           // Objects are re-collected inside each op: every mutation shifts indices
           for (const { edit, editIndex } of pageEdits) {
             try {
               if (edit.kind === 'insertImage') insertImage(m, doc, page, edit)
-              else if (edit.kind === 'transformImage') transformImage(m, page, edit)
-              else if (edit.kind === 'replaceImage') replaceImage(m, page, edit)
-              else deleteImage(m, page, edit)
+              else if (edit.kind === 'transformImage') await transformImage(m, page, edit, guard)
+              else if (edit.kind === 'replaceImage') await replaceImage(m, page, edit, guard)
+              else await deleteImage(m, page, edit, guard)
               applied++
             } catch (err) {
               skipped.push({
@@ -315,10 +411,8 @@ export function listPageImages(bytes: Uint8Array): Promise<PageImageRef[]> {
         const page = m._FPDF_LoadPage(doc, pageIndex)
         if (!page) continue
         try {
-          const objects = collectObjects(m, page)
-          const textIdx = firstTextIndex(objects)
-          for (const o of objects) {
-            if (o.type !== FPDF_PAGEOBJ_IMAGE) continue
+          const textIdx = firstTextIndex(collectObjects(m, page))
+          for (const o of collectImages(m, page)) {
             // Sub-3pt objects are decoration/artifacts; not worth an edit target
             if (o.bounds[2] - o.bounds[0] < 3 || o.bounds[3] - o.bounds[1] < 3) continue
             out.push({
@@ -355,7 +449,7 @@ export function renderImagePng(
       const page = m._FPDF_LoadPage(doc, pageIndex)
       if (!page) return null
       try {
-        const target = matchImage(collectObjects(m, page), rect)
+        const target = await resolveImage(m, page, rect).catch(() => null)
         if (!target) return null
         const side = Math.max(
           target.bounds[2] - target.bounds[0],
@@ -408,7 +502,7 @@ export function renderPagePreviewPng(
       if (!page) return null
       try {
         for (const rect of excludeRects) {
-          const target = matchImage(collectObjects(m, page), rect)
+          const target = await resolveImage(m, page, rect).catch(() => null)
           if (target && m._FPDFPage_RemoveObject(page, target.obj)) {
             m._FPDFPageObj_Destroy(target.obj)
           }
@@ -419,7 +513,7 @@ export function renderPagePreviewPng(
         }
         const textErased =
           excludeText && excludeText.length > 0
-            ? await eraseTextRuns(m, doc, page, excludeText)
+            ? await eraseTextRuns(m, doc, page, pageIndex, bytes, excludeText)
             : []
         // Page size in display orientation (pdfium already applies /Rotate; the
         // unsaved delta passed as quarter turns swaps the axes again when odd)
@@ -498,7 +592,7 @@ export function verifyImageEdits(
           continue
         }
         try {
-          const objects = collectObjects(m, page)
+          const objects = collectImages(m, page)
           for (const rect of rects) {
             if (!matchImage(objects, rect)) {
               failures.push({ pageIndex, reason: 'image missing from saved output' })

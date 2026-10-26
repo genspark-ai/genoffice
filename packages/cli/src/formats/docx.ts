@@ -319,6 +319,9 @@ function setContentControl(
   if (name === 'unwrap_content_control') {
     const tag = typeof op.tag === 'string' ? op.tag.trim() : ''
     if (!tag) return { error: 'unwrap_content_control needs a tag' }
+    if (!doc.parsed.blocks.some((b) => b.sdtShell?.tag === tag)) {
+      return { error: `no content control is tagged ${tag}` }
+    }
     side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
     return { output: `unwrap the content control tagged ${tag}` }
   }
@@ -341,6 +344,19 @@ function setContentControl(
       return { error: `block ${i} has no original document index, so it cannot be wrapped` }
     }
     docxIndexes.push(docxIndex)
+  }
+  const inRange = new Set(docxIndexes)
+  for (const docxIndex of docxIndexes) {
+    const group = doc.parsed.blocks[docxIndex]?.sdtShell?.group
+    if (group === undefined) continue
+    const straddles = doc.parsed.blocks.some(
+      (b, i) => b.sdtShell?.group === group && !inRange.has(i),
+    )
+    if (straddles) {
+      return {
+        error: `blocks ${start}-${end} cut through an existing content control; wrap all of it or none of it`,
+      }
+    }
   }
   const spec: ContentControlSpec = {}
   if (typeof op.tag === 'string' && op.tag.trim()) spec.tag = op.tag.trim()

@@ -263,3 +263,62 @@ describe('data table layout edge cases', () => {
     ).toBe(true)
   })
 })
+
+describe('horizontal bar chart data table', () => {
+  const hbar = (extra: Partial<ChartModel> = {}): ChartModel => ({
+    kind: 'bar',
+    barDir: 'bar',
+    grouping: 'percentStacked',
+    categories: ['Medicare', 'Commercial', 'Total'],
+    series: [
+      { name: 'Low', values: [24151816, 53975913, 78127729], valFmt: '#,##0' },
+      { name: 'Medium', values: [15952444, 53847915, 69800359], valFmt: '#,##0' },
+    ],
+    valAxis: { hidden: true, numFmt: '0%' },
+    catAxis: { labelSizePt: 12 },
+    ...extra,
+  })
+  const dataTable = {
+    showKeys: true,
+    horzBorder: true,
+    vertBorder: true,
+    outline: true,
+    sizePt: 12,
+  }
+
+  it('draws a category header row and series rows under the plot, in category order', () => {
+    const plain = buildChartNode('r', 'e', hbar(), box, vp, metrics)!
+    const node = buildChartNode('r', 'e', hbar({ dataTable }), box, vp, metrics)!
+    const plotBottom = (n: typeof node) => Math.max(...n.bars.map((b) => b.y + b.h))
+    expect(plotBottom(node)).toBeLessThan(plotBottom(plain) - 40)
+    const header = node.labels.filter((l) => ['Medicare', 'Commercial', 'Total'].includes(l.text))
+    // axis labels on the left plus one header cell each below the plot
+    const cells = header.filter((l) => l.y > plotBottom(node))
+    expect(cells.map((l) => l.text)).toEqual(['Medicare', 'Commercial', 'Total'])
+    expect(cells[0]!.x).toBeLessThan(cells[1]!.x)
+    expect(cells[1]!.x).toBeLessThan(cells[2]!.x)
+    const low = node.labels.find((l) => l.text === 'Low')!
+    const v = node.labels.find((l) => l.text === '24,151,816')!
+    expect(low.y).toBeGreaterThan(cells[0]!.y)
+    // overlong cells shrink to the slot and shift down a little
+    expect(Math.abs(v.y - low.y)).toBeLessThan(10)
+    expect(low.x).toBeLessThan(Math.min(...node.bars.map((b) => b.x)))
+    expect(node.swatches.length).toBeGreaterThanOrEqual(2)
+    expect(node.gridLines.length).toBeGreaterThan(plain.gridLines.length)
+  })
+})
+
+describe('charts without a category cache', () => {
+  it('label the slots 1..N like PowerPoint (axis labels and the data table header)', () => {
+    const model: ChartModel = {
+      kind: 'bar',
+      barDir: 'col',
+      categories: ['', '', ''],
+      series: [{ values: [20, 27, 12] }],
+      dataTable: { showKeys: true, horzBorder: true, vertBorder: true, outline: true },
+    }
+    const node = buildChartNode('r', 'e', model, box, vp, metrics)!
+    const texts = node.labels.map((l) => l.text)
+    expect(texts).toEqual(expect.arrayContaining(['1', '2', '3', 'Series1']))
+  })
+})

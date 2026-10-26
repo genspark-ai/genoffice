@@ -37,6 +37,7 @@ export const TRANSLATE_LANGS = [
   { code: 'hi', key: 'Hindi' },
   { code: 'zh-TW', key: 'TraditionalChinese' },
   { code: 'vi', key: 'Vietnamese' },
+  { code: 'tr', key: 'Turkish' },
 ] as const
 
 export type TranslateLang = (typeof TRANSLATE_LANGS)[number]['code']

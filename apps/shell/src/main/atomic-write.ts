@@ -18,10 +18,7 @@ export function atomicWriteFile(filePath: string, data: Uint8Array): Promise<voi
 }
 
 async function viaTemp(filePath: string, fill: (tmp: string) => Promise<void>): Promise<void> {
-  const tmp = join(
-    dirname(filePath),
-    `.${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`,
-  )
+  const tmp = join(dirname(filePath), `${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
   try {
     await fill(tmp)
     await fsyncPath(tmp)
