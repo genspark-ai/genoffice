@@ -67,6 +67,7 @@ export const zh = {
   ribbonOpen: '打开…',
   ribbonSave: '保存',
   ribbonSaveAs: '另存为…',
+  ribbonNameWithAi: '以 AI 命名…',
   ribbonConvert: '转换',
   ribbonConvertTip: '转换为 PDF、HTML、Markdown 或图片',
   ribbonConvertPdf: '转换为 PDF…',

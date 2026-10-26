@@ -56,6 +56,7 @@ function ribbonProps(editor: Editor) {
     onSave: noop,
     onSaveAs: noop,
     onConvert: noop,
+    onNameWithAi: noop,
     showAi: false,
     onToggleAi: noop,
     section: null,

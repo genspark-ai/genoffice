@@ -64,6 +64,7 @@ export const zhTW = {
   ribbonOpen: '開啟…',
   ribbonSave: '儲存',
   ribbonSaveAs: '另存新檔…',
+  ribbonNameWithAi: '以 AI 命名…',
   ribbonConvert: '轉換',
   ribbonConvertTip: '轉換為 PDF、HTML、Markdown 或圖片',
   ribbonConvertPdf: '轉換為 PDF…',

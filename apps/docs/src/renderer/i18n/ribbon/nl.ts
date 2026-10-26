@@ -67,6 +67,7 @@ export const nl = {
   ribbonOpen: 'Openen…',
   ribbonSave: 'Opslaan',
   ribbonSaveAs: 'Opslaan als…',
+  ribbonNameWithAi: 'Naam geven met AI…',
   ribbonConvert: 'Converteren',
   ribbonConvertTip: 'Converteren naar PDF, HTML, Markdown of afbeeldingen',
   ribbonConvertPdf: 'Converteren naar PDF…',
