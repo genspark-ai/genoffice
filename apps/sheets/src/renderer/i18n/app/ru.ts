@@ -1221,6 +1221,7 @@ export const ru = {
   appGroupForecast: 'Прогноз',
   appWhatIfAnalysis: 'Анализ «что если»',
   appGoalSeek: 'Подбор параметра',
+  appDataTable: 'Таблица данных',
   appWhatIfTitle: 'Найти вход для целевого значения',
   appGoalSeekNeedsFormula: 'Целевая ячейка должна содержать формулу.',
   appGoalSeekByCellNotNumber: 'Изменяемая ячейка должна содержать число или быть пустой.',

@@ -1115,6 +1115,7 @@ export const zhTW = {
   appGroupForecast: '預測',
   appWhatIfAnalysis: '模擬分析',
   appGoalSeek: '目標搜尋',
+  appDataTable: '資料表',
   appWhatIfTitle: '對目標值反解輸入',
   appGoalSeekNeedsFormula: '目標儲存格需要包含公式。',
   appGoalSeekByCellNotNumber: '變數儲存格需要是數字或空白。',

@@ -23,6 +23,28 @@ export const es = {
   dlgGoalSeekNotFound: 'Sin solución; valor original restaurado (último {reached}).',
   dlgGoalSeekSolve: 'Resolver',
   dlgGoalSeekSolving: 'Resolviendo…',
+  dlgDataTableTitle: 'Tabla de datos',
+  dlgDataTableRange: 'Rango de la tabla',
+  dlgDataTableRowInput: 'Celda de entrada de fila',
+  dlgDataTableColumnInput: 'Celda de entrada de columna',
+  dlgDataTableNote:
+    'Los resultados se escriben como valores normales y no se actualizan al recalcular (a diferencia de las tablas con fórmula matricial de Excel); toda la tabla se deshace en un solo paso.',
+  dlgDataTableNeedInput:
+    'Rellene al menos una celda de entrada: solo una es una variable, ambas son dos variables.',
+  dlgDataTableBadRange: 'El rango de la tabla debe ser una referencia tipo A1 o A1:B4.',
+  dlgDataTableBadShape:
+    'Forma del rango incorrecta: una variable en columna exige 2 columnas y 2+ filas, en fila 2 filas y 2+ columnas, dos variables al menos 2×2.',
+  dlgDataTableTooManyCells: 'La tabla supera el límite de {limit} celdas de resultado.',
+  dlgDataTableInputInside: 'Las celdas de entrada no pueden estar dentro del rango de la tabla.',
+  dlgDataTableSameInput: 'Las celdas de entrada de fila y columna deben ser distintas.',
+  dlgDataTableNeedsFormula: 'La celda de fórmula debe contener una fórmula.',
+  dlgDataTableInputNotNumber:
+    'Las celdas de entrada deben contener un número simple o estar vacías.',
+  dlgDataTableValuesNotNumber: 'Los valores de sustitución deben ser números.',
+  dlgDataTableRunning: 'Calculando… {done}/{total}',
+  dlgDataTableRunningShort: 'Calculando…',
+  dlgDataTableDone:
+    'Se escribieron {count} resultados (valores normales; no se actualizan al recalcular).',
   dlgApply: 'Aplicar',
   dlgCreate: 'Crear',
 

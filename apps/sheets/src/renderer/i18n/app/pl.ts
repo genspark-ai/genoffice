@@ -1229,6 +1229,7 @@ export const pl = {
   appGroupForecast: 'Prognoza',
   appWhatIfAnalysis: 'Analiza warunkowa',
   appGoalSeek: 'Szukaj wyniku',
+  appDataTable: 'Tabela danych',
   appWhatIfTitle: 'Znajdź wejście dla wartości docelowej',
   appGoalSeekNeedsFormula: 'Komórka musi zawierać formułę.',
   appGoalSeekByCellNotNumber: 'Zmieniana komórka musi zawierać liczbę lub być pusta.',

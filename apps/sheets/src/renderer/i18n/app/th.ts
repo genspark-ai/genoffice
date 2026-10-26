@@ -1168,6 +1168,7 @@ export const th = {
   appGroupForecast: 'การพยากรณ์',
   appWhatIfAnalysis: 'การวิเคราะห์แบบ What-If',
   appGoalSeek: 'ค้นหาค่าเป้าหมาย',
+  appDataTable: 'ตารางข้อมูล',
   appWhatIfTitle: 'หาค่าป้อนเข้าจากค่าเป้าหมาย',
   appGoalSeekNeedsFormula: 'เซลล์เป้าหมายต้องมีสูตร',
   appGoalSeekByCellNotNumber: 'เซลล์ที่จะเปลี่ยนต้องเป็นตัวเลขหรือว่าง',

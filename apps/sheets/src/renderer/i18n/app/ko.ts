@@ -1224,6 +1224,7 @@ export const ko = {
   appGroupForecast: '예측',
   appWhatIfAnalysis: '가상 분석',
   appGoalSeek: '목표값 찾기',
+  appDataTable: '데이터 테이블',
   appWhatIfTitle: '목표값에 맞는 입력 찾기',
   appGoalSeekNeedsFormula: '수식 셀에는 수식이 있어야 합니다.',
   appGoalSeekByCellNotNumber: '값을 바꿀 셀은 숫자이거나 비어 있어야 합니다.',

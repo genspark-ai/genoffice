@@ -23,6 +23,28 @@ export const it = {
   dlgGoalSeekNotFound: 'Nessuna soluzione; valore originale ripristinato (ultimo {reached}).',
   dlgGoalSeekSolve: 'Risolvi',
   dlgGoalSeekSolving: 'Risoluzione…',
+  dlgDataTableTitle: 'Tabella dati',
+  dlgDataTableRange: 'Intervallo della tabella',
+  dlgDataTableRowInput: 'Cella di input di riga',
+  dlgDataTableColumnInput: 'Cella di input di colonna',
+  dlgDataTableNote:
+    "I risultati vengono scritti come valori semplici e non si aggiornano al ricalcolo (a differenza delle tabelle con formula matrice di Excel); l'intera tabella si annulla in un solo passaggio.",
+  dlgDataTableNeedInput:
+    'Compilare almeno una cella di input: una sola è una variabile, entrambe sono due variabili.',
+  dlgDataTableBadRange: "L'intervallo della tabella deve essere un riferimento tipo A1 o A1:B4.",
+  dlgDataTableBadShape:
+    "Forma dell'intervallo errata: una variabile in colonna richiede 2 colonne e 2+ righe, in riga 2 righe e 2+ colonne, due variabili almeno 2×2.",
+  dlgDataTableTooManyCells: 'La tabella supera il limite di {limit} celle di risultato.',
+  dlgDataTableInputInside:
+    "Le celle di input non possono trovarsi dentro l'intervallo della tabella.",
+  dlgDataTableSameInput: 'Le celle di input di riga e colonna devono essere diverse.',
+  dlgDataTableNeedsFormula: 'La cella della formula deve contenere una formula.',
+  dlgDataTableInputNotNumber:
+    'Le celle di input devono contenere un numero semplice o essere vuote.',
+  dlgDataTableValuesNotNumber: 'I valori di sostituzione devono essere numeri.',
+  dlgDataTableRunning: 'Calcolo… {done}/{total}',
+  dlgDataTableRunningShort: 'Calcolo…',
+  dlgDataTableDone: 'Scritti {count} risultati (valori semplici; non aggiornati al ricalcolo).',
   dlgApply: 'Applica',
   dlgCreate: 'Crea',
 

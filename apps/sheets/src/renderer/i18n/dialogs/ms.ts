@@ -24,6 +24,27 @@ export const ms = {
   dlgGoalSeekNotFound: 'Tiada penyelesaian; nilai asal dipulihkan (terakhir {reached}).',
   dlgGoalSeekSolve: 'Selesaikan',
   dlgGoalSeekSolving: 'Menyelesaikan…',
+  dlgDataTableTitle: 'Jadual Data',
+  dlgDataTableRange: 'Julat jadual',
+  dlgDataTableRowInput: 'Sel input baris',
+  dlgDataTableColumnInput: 'Sel input lajur',
+  dlgDataTableNote:
+    'Keputusan ditulis sebagai nilai biasa dan tidak dikemas kini semasa pengiraan semula (berbeza daripada jadual formula tatasusunan Excel); seluruh jadual boleh dibatalkan dalam satu langkah.',
+  dlgDataTableNeedInput:
+    'Isi sekurang-kurangnya satu sel input: satu sahaja bermaksud satu pemboleh ubah, kedua-duanya bermaksud dua pemboleh ubah.',
+  dlgDataTableBadRange: 'Julat jadual mesti rujukan seperti A1 atau A1:B4.',
+  dlgDataTableBadShape:
+    'Bentuk julat salah: satu pemboleh ubah mengikut lajur perlu 2 lajur dan 2+ baris, mengikut baris 2 baris dan 2+ lajur, dua pemboleh ubah sekurang-kurangnya 2×2.',
+  dlgDataTableTooManyCells: 'Jadual melebihi had {limit} sel keputusan.',
+  dlgDataTableInputInside: 'Sel input tidak boleh berada dalam julat jadual.',
+  dlgDataTableSameInput: 'Sel input baris dan lajur mesti berbeza.',
+  dlgDataTableNeedsFormula: 'Sel formula mesti mengandungi formula.',
+  dlgDataTableInputNotNumber: 'Sel input mesti mengandungi nombor biasa atau kosong.',
+  dlgDataTableValuesNotNumber: 'Nilai penggantian mesti nombor.',
+  dlgDataTableRunning: 'Mengira… {done}/{total}',
+  dlgDataTableRunningShort: 'Mengira…',
+  dlgDataTableDone:
+    '{count} keputusan ditulis (nilai biasa; tidak dikemas kini semasa pengiraan semula).',
   dlgApply: 'Guna',
   dlgCreate: 'Cipta',
 

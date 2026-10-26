@@ -23,6 +23,26 @@ export const ko = {
   dlgGoalSeekNotFound: '해를 찾지 못했습니다. 원래 값으로 복원했습니다(마지막 {reached}).',
   dlgGoalSeekSolve: '찾기',
   dlgGoalSeekSolving: '계산 중…',
+  dlgDataTableTitle: '데이터 테이블',
+  dlgDataTableRange: '테이블 범위',
+  dlgDataTableRowInput: '행 입력 셀',
+  dlgDataTableColumnInput: '열 입력 셀',
+  dlgDataTableNote:
+    '결과는 일반 값으로 입력되며 다시 계산해도 업데이트되지 않습니다(Excel의 배열 수식 형태와 다름). 전체 테이블은 한 번에 실행 취소할 수 있습니다.',
+  dlgDataTableNeedInput:
+    '입력 셀을 하나 이상 입력하세요. 하나만 입력하면 단일 변수, 둘 다 입력하면 이중 변수입니다.',
+  dlgDataTableBadRange: '테이블 범위는 A1 또는 A1:B4 형식의 참조여야 합니다.',
+  dlgDataTableBadShape:
+    '영역 모양이 올바르지 않습니다. 열 방향 단일 변수는 2열·2행 이상, 행 방향 단일 변수는 2행·2열 이상, 이중 변수는 2×2 이상이어야 합니다.',
+  dlgDataTableTooManyCells: '결과 셀 수가 {limit}개를 초과했습니다.',
+  dlgDataTableInputInside: '입력 셀은 테이블 범위 안에 있을 수 없습니다.',
+  dlgDataTableSameInput: '이중 변수 테이블의 행/열 입력 셀은 서로 달라야 합니다.',
+  dlgDataTableNeedsFormula: '수식 셀에 수식이 있어야 합니다.',
+  dlgDataTableInputNotNumber: '입력 셀은 숫자이거나 비어 있어야 합니다.',
+  dlgDataTableValuesNotNumber: '대체 값은 숫자여야 합니다.',
+  dlgDataTableRunning: '계산 중… {done}/{total}',
+  dlgDataTableRunningShort: '계산 중…',
+  dlgDataTableDone: '{count}개의 결과를 입력했습니다(일반 값, 다시 계산해도 업데이트되지 않음).',
   dlgApply: '적용',
   dlgCreate: '만들기',
 

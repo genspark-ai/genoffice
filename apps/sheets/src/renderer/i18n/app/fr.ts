@@ -1267,6 +1267,7 @@ export const fr = {
   appGroupForecast: 'Prévision',
   appWhatIfAnalysis: 'Analyse de scénarios',
   appGoalSeek: 'Valeur cible',
+  appDataTable: 'Table de données',
   appWhatIfTitle: 'Trouver une entrée pour une valeur cible',
   appGoalSeekNeedsFormula: 'La cellule à définir doit contenir une formule.',
   appGoalSeekByCellNotNumber: 'La cellule à modifier doit contenir un nombre ou être vide.',

@@ -1241,6 +1241,7 @@ export const it = {
   appGroupForecast: 'Previsione',
   appWhatIfAnalysis: 'Analisi di simulazione',
   appGoalSeek: 'Ricerca obiettivo',
+  appDataTable: 'Tabella dati',
   appWhatIfTitle: 'Trova un input per un valore obiettivo',
   appGoalSeekNeedsFormula: 'La cella deve contenere una formula.',
   appGoalSeekByCellNotNumber: 'La cella da cambiare deve contenere un numero o essere vuota.',

@@ -23,6 +23,26 @@ export const th = {
   dlgGoalSeekNotFound: 'ไม่พบคำตอบ คืนค่าเดิมแล้ว (ล่าสุด {reached})',
   dlgGoalSeekSolve: 'แก้',
   dlgGoalSeekSolving: 'กำลังแก้…',
+  dlgDataTableTitle: 'ตารางข้อมูล',
+  dlgDataTableRange: 'ช่วงของตาราง',
+  dlgDataTableRowInput: 'เซลล์ป้อนแถว',
+  dlgDataTableColumnInput: 'เซลล์ป้อนคอลัมน์',
+  dlgDataTableNote:
+    'ผลลัพธ์เขียนเป็นค่าธรรมดาและจะไม่อัปเดตเมื่อคำนวณใหม่ (ต่างจากตารางสูตรอาร์เรย์ของ Excel) ย้อนกลับทั้งตารางได้ในครั้งเดียว',
+  dlgDataTableNeedInput:
+    'กรอกเซลล์ป้อนอย่างน้อยหนึ่งช่อง: ช่องเดียวคือตัวแปรเดียว ทั้งสองช่องคือสองตัวแปร',
+  dlgDataTableBadRange: 'ช่วงของตารางต้องเป็นการอ้างอิงรูปแบบ A1 หรือ A1:B4',
+  dlgDataTableBadShape:
+    'รูปร่างช่วงไม่ถูกต้อง: ตัวแปรเดียวแนวคอลัมน์ต้องมี 2 คอลัมน์และ 2+ แถว แนวแถวต้องมี 2 แถวและ 2+ คอลัมน์ สองตัวแปรต้องอย่างน้อย 2×2',
+  dlgDataTableTooManyCells: 'ตารางเกินขีดจำกัด {limit} เซลล์ผลลัพธ์',
+  dlgDataTableInputInside: 'เซลล์ป้อนห้ามอยู่ในช่วงของตาราง',
+  dlgDataTableSameInput: 'เซลล์ป้อนแถวและคอลัมน์ต้องไม่ซ้ำกัน',
+  dlgDataTableNeedsFormula: 'เซลล์สูตรต้องมีสูตร',
+  dlgDataTableInputNotNumber: 'เซลล์ป้อนต้องเป็นตัวเลขหรือว่าง',
+  dlgDataTableValuesNotNumber: 'ค่าที่ใช้แทนต้องเป็นตัวเลข',
+  dlgDataTableRunning: 'กำลังคำนวณ… {done}/{total}',
+  dlgDataTableRunningShort: 'กำลังคำนวณ…',
+  dlgDataTableDone: 'เขียนผลลัพธ์แล้ว {count} เซลล์ (ค่าธรรมดา ไม่อัปเดตเมื่อคำนวณใหม่)',
   dlgApply: 'นำไปใช้',
   dlgCreate: 'สร้าง',
 

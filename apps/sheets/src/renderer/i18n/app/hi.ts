@@ -1201,6 +1201,7 @@ export const hi = {
   appGroupForecast: 'पूर्वानुमान',
   appWhatIfAnalysis: 'क्या-यदि विश्लेषण',
   appGoalSeek: 'लक्ष्य खोज',
+  appDataTable: 'डेटा टेबल',
   appWhatIfTitle: 'लक्ष्य मान के लिए इनपुट खोजें',
   appGoalSeekNeedsFormula: 'सेट सेल में सूत्र होना चाहिए।',
   appGoalSeekByCellNotNumber: 'बदले जाने वाले सेल में संख्या हो या वह खाली हो।',

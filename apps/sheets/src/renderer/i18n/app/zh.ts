@@ -1140,6 +1140,7 @@ export const zh = {
   appGroupForecast: '预测',
   appWhatIfAnalysis: '模拟分析',
   appGoalSeek: '单变量求解',
+  appDataTable: '数据表',
   appWhatIfTitle: '对目标值反解输入',
   appGoalSeekNeedsFormula: '目标单元格需要包含公式。',
   appGoalSeekByCellNotNumber: '可变单元格需要是数字或空白。',

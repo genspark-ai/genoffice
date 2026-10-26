@@ -1238,6 +1238,7 @@ export const nl = {
   appGroupForecast: 'Prognose',
   appWhatIfAnalysis: 'Wat-als-analyse',
   appGoalSeek: 'Doelzoeken',
+  appDataTable: 'Gegevenstabel',
   appWhatIfTitle: 'Invoer bepalen voor een doelwaarde',
   appGoalSeekNeedsFormula: 'De cel moet een formule bevatten.',
   appGoalSeekByCellNotNumber: 'De te wijzigen cel moet een getal bevatten of leeg zijn.',

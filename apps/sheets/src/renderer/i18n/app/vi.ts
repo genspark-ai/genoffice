@@ -1193,6 +1193,7 @@ export const vi = {
   appGroupForecast: 'Dự báo',
   appWhatIfAnalysis: 'Phân tích What-If',
   appGoalSeek: 'Tìm kiếm mục tiêu (Goal Seek)',
+  appDataTable: 'Bảng dữ liệu',
   appWhatIfTitle: 'Giải tìm đầu vào cho một giá trị mục tiêu',
   appGoalSeekNeedsFormula: 'Ô đặt phải chứa một công thức.',
   appGoalSeekByCellNotNumber: 'Ô thay đổi phải chứa một số thuần túy hoặc để trống.',

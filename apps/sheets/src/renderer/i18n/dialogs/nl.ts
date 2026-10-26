@@ -23,6 +23,27 @@ export const nl = {
   dlgGoalSeekNotFound: 'Geen oplossing; oorspronkelijke waarde hersteld (laatst {reached}).',
   dlgGoalSeekSolve: 'Oplossen',
   dlgGoalSeekSolving: 'Bezig…',
+  dlgDataTableTitle: 'Gegevenstabel',
+  dlgDataTableRange: 'Tabelbereik',
+  dlgDataTableRowInput: 'Invoercel rij',
+  dlgDataTableColumnInput: 'Invoercel kolom',
+  dlgDataTableNote:
+    'Resultaten worden als gewone waarden geschreven en worden niet bijgewerkt bij herberekening (anders dan Excel-tabellen met matrixformules); de hele tabel is in één stap ongedaan te maken.',
+  dlgDataTableNeedInput:
+    'Vul minstens één invoercel in: alleen één is één variabele, beide zijn twee variabelen.',
+  dlgDataTableBadRange: 'Het tabelbereik moet een verwijzing zijn zoals A1 of A1:B4.',
+  dlgDataTableBadShape:
+    'Verkeerde vorm van het bereik: één variabele in een kolom vereist 2 kolommen en 2+ rijen, in een rij 2 rijen en 2+ kolommen, twee variabelen minstens 2×2.',
+  dlgDataTableTooManyCells: 'De tabel overschrijdt de limiet van {limit} resultaatcellen.',
+  dlgDataTableInputInside: 'Invoercellen mogen niet in het tabelbereik liggen.',
+  dlgDataTableSameInput: 'De invoercellen voor rij en kolom moeten verschillen.',
+  dlgDataTableNeedsFormula: 'De formulecel moet een formule bevatten.',
+  dlgDataTableInputNotNumber: 'Invoercellen moeten een gewoon getal bevatten of leeg zijn.',
+  dlgDataTableValuesNotNumber: 'De vervangingswaarden moeten getallen zijn.',
+  dlgDataTableRunning: 'Berekenen… {done}/{total}',
+  dlgDataTableRunningShort: 'Berekenen…',
+  dlgDataTableDone:
+    '{count} resultaten geschreven (gewone waarden; niet bijgewerkt bij herberekening).',
   dlgApply: 'Toepassen',
   dlgCreate: 'Maken',
 

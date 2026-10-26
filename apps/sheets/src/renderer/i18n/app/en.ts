@@ -1181,6 +1181,7 @@ export const en = {
   appGroupForecast: 'Forecast',
   appWhatIfAnalysis: 'What-If Analysis',
   appGoalSeek: 'Goal Seek',
+  appDataTable: 'Data Table',
   appWhatIfTitle: 'Solve an input for a target value',
   appGoalSeekNeedsFormula: 'Set cell must contain a formula.',
   appGoalSeekByCellNotNumber: 'By changing cell must hold a plain number or be empty.',

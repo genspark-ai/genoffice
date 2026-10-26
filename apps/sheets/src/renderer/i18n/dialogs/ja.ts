@@ -23,6 +23,26 @@ export const ja = {
   dlgGoalSeekNotFound: '収束しませんでした。元の値に戻しました(最終到達値 {reached})。',
   dlgGoalSeekSolve: '実行',
   dlgGoalSeekSolving: '計算中…',
+  dlgDataTableTitle: 'データテーブル',
+  dlgDataTableRange: 'テーブル範囲',
+  dlgDataTableRowInput: '行の代入セル',
+  dlgDataTableColumnInput: '列の代入セル',
+  dlgDataTableNote:
+    '結果は通常の値として書き込まれ、再計算では更新されません（Excel の配列数式形式とは異なります）。テーブル全体を一度に元に戻せます。',
+  dlgDataTableNeedInput:
+    '代入セルを少なくとも 1 つ入力してください。1 つだけなら 1 変数、両方なら 2 変数です。',
+  dlgDataTableBadRange: 'テーブル範囲は A1 や A1:B4 のような参照である必要があります。',
+  dlgDataTableBadShape:
+    '領域の形状が不正です。列方向の 1 変数は 2 列かつ 2 行以上、行方向の 1 変数は 2 行かつ 2 列以上、2 変数は 2×2 以上が必要です。',
+  dlgDataTableTooManyCells: '結果セル数が上限 {limit} を超えています。',
+  dlgDataTableInputInside: '代入セルをテーブル範囲内に置くことはできません。',
+  dlgDataTableSameInput: '2 変数テーブルでは行と列の代入セルを同じにできません。',
+  dlgDataTableNeedsFormula: '数式セルには数式が必要です。',
+  dlgDataTableInputNotNumber: '代入セルは数値または空白である必要があります。',
+  dlgDataTableValuesNotNumber: '代入値は数値である必要があります。',
+  dlgDataTableRunning: '計算中… {done}/{total}',
+  dlgDataTableRunningShort: '計算中…',
+  dlgDataTableDone: '{count} 個の結果を書き込みました（通常の値。再計算では更新されません）。',
   dlgApply: '適用',
   dlgCreate: '作成',
 

@@ -23,6 +23,27 @@ export const pl = {
   dlgGoalSeekNotFound: 'Brak rozwiązania; przywrócono pierwotną wartość (ostatnio {reached}).',
   dlgGoalSeekSolve: 'Rozwiąż',
   dlgGoalSeekSolving: 'Rozwiązywanie…',
+  dlgDataTableTitle: 'Tabela danych',
+  dlgDataTableRange: 'Zakres tabeli',
+  dlgDataTableRowInput: 'Komórka wejściowa wiersza',
+  dlgDataTableColumnInput: 'Komórka wejściowa kolumny',
+  dlgDataTableNote:
+    'Wyniki są zapisywane jako zwykłe wartości i nie odświeżają się przy przeliczaniu (w przeciwieństwie do tabel z formułą tablicową w Excelu); całą tabelę można cofnąć jednym krokiem.',
+  dlgDataTableNeedInput:
+    'Wypełnij co najmniej jedną komórkę wejściową: jedna to jedna zmienna, obie to dwie zmienne.',
+  dlgDataTableBadRange: 'Zakres tabeli musi być odwołaniem w stylu A1 lub A1:B4.',
+  dlgDataTableBadShape:
+    'Zły kształt zakresu: jedna zmienna w kolumnie wymaga 2 kolumn i 2+ wierszy, w wierszu 2 wierszy i 2+ kolumn, dwie zmienne co najmniej 2×2.',
+  dlgDataTableTooManyCells: 'Tabela przekracza limit {limit} komórek wynikowych.',
+  dlgDataTableInputInside: 'Komórki wejściowe nie mogą znajdować się w zakresie tabeli.',
+  dlgDataTableSameInput: 'Komórki wejściowe wiersza i kolumny muszą być różne.',
+  dlgDataTableNeedsFormula: 'Komórka formuły musi zawierać formułę.',
+  dlgDataTableInputNotNumber: 'Komórki wejściowe muszą zawierać zwykłą liczbę lub być puste.',
+  dlgDataTableValuesNotNumber: 'Wartości podstawiane muszą być liczbami.',
+  dlgDataTableRunning: 'Obliczanie… {done}/{total}',
+  dlgDataTableRunningShort: 'Obliczanie…',
+  dlgDataTableDone:
+    'Zapisano {count} wyników (zwykłe wartości; nie odświeżają się przy przeliczaniu).',
   dlgApply: 'Zastosuj',
   dlgCreate: 'Utwórz',
 

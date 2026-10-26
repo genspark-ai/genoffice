@@ -24,6 +24,26 @@ export const cs = {
     'Řešení nenalezeno; původní hodnota byla obnovena (poslední dosažená hodnota {reached}).',
   dlgGoalSeekSolve: 'Vyřešit',
   dlgGoalSeekSolving: 'Řeší se…',
+  dlgDataTableTitle: 'Datová tabulka',
+  dlgDataTableRange: 'Rozsah tabulky',
+  dlgDataTableRowInput: 'Vstupní buňka řádku',
+  dlgDataTableColumnInput: 'Vstupní buňka sloupce',
+  dlgDataTableNote:
+    'Výsledky se zapisují jako obyčejné hodnoty a při přepočtu se neaktualizují (na rozdíl od tabulek s maticovým vzorcem v Excelu); celou tabulku lze vrátit jedním krokem.',
+  dlgDataTableNeedInput:
+    'Vyplňte alespoň jednu vstupní buňku: jen jedna znamená jednu proměnnou, obě dvě proměnné.',
+  dlgDataTableBadRange: 'Rozsah tabulky musí být odkaz ve tvaru A1 nebo A1:B4.',
+  dlgDataTableBadShape:
+    'Nesprávný tvar rozsahu: jedna proměnná ve sloupci vyžaduje 2 sloupce a 2+ řádků, v řádku 2 řádky a 2+ sloupců, dvě proměnné alespoň 2×2.',
+  dlgDataTableTooManyCells: 'Tabulka překračuje limit {limit} výsledných buněk.',
+  dlgDataTableInputInside: 'Vstupní buňky nemohou ležet v rozsahu tabulky.',
+  dlgDataTableSameInput: 'Vstupní buňky řádku a sloupce musí být různé.',
+  dlgDataTableNeedsFormula: 'Buňka se vzorcem musí obsahovat vzorec.',
+  dlgDataTableInputNotNumber: 'Vstupní buňky musí obsahovat prosté číslo nebo být prázdné.',
+  dlgDataTableValuesNotNumber: 'Dosazované hodnoty musí být čísla.',
+  dlgDataTableRunning: 'Počítá se… {done}/{total}',
+  dlgDataTableRunningShort: 'Počítá se…',
+  dlgDataTableDone: 'Zapsáno {count} výsledků (obyčejné hodnoty; při přepočtu se neaktualizují).',
   dlgApply: 'Použít',
   dlgCreate: 'Vytvořit',
 

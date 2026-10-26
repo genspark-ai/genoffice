@@ -23,6 +23,27 @@ export const ru = {
   dlgGoalSeekNotFound: 'Решение не найдено; исходное значение восстановлено (последнее {reached}).',
   dlgGoalSeekSolve: 'Подобрать',
   dlgGoalSeekSolving: 'Подбор…',
+  dlgDataTableTitle: 'Таблица данных',
+  dlgDataTableRange: 'Диапазон таблицы',
+  dlgDataTableRowInput: 'Ячейка ввода для строки',
+  dlgDataTableColumnInput: 'Ячейка ввода для столбца',
+  dlgDataTableNote:
+    'Результаты записываются как обычные значения и не обновляются при пересчёте (в отличие от таблиц с формулой массива в Excel); всю таблицу можно отменить одним шагом.',
+  dlgDataTableNeedInput:
+    'Заполните хотя бы одну ячейку ввода: одна — одна переменная, обе — две переменные.',
+  dlgDataTableBadRange: 'Диапазон таблицы должен быть ссылкой вида A1 или A1:B4.',
+  dlgDataTableBadShape:
+    'Неверная форма диапазона: одна переменная по столбцу требует 2 столбца и 2+ строки, по строке — 2 строки и 2+ столбца, две переменные — минимум 2×2.',
+  dlgDataTableTooManyCells: 'Таблица превышает лимит в {limit} ячеек результатов.',
+  dlgDataTableInputInside: 'Ячейки ввода не могут находиться внутри диапазона таблицы.',
+  dlgDataTableSameInput: 'Ячейки ввода для строки и столбца должны различаться.',
+  dlgDataTableNeedsFormula: 'В ячейке формулы должна быть формула.',
+  dlgDataTableInputNotNumber: 'Ячейки ввода должны содержать простое число или быть пустыми.',
+  dlgDataTableValuesNotNumber: 'Значения подстановки должны быть числами.',
+  dlgDataTableRunning: 'Расчёт… {done}/{total}',
+  dlgDataTableRunningShort: 'Расчёт…',
+  dlgDataTableDone:
+    'Записано результатов: {count} (обычные значения; при пересчёте не обновляются).',
   dlgApply: 'Применить',
   dlgCreate: 'Создать',
 

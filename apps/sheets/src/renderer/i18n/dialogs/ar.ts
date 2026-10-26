@@ -23,6 +23,26 @@ export const ar = {
   dlgGoalSeekNotFound: 'لم يتم العثور على حل؛ تمت استعادة القيمة الأصلية (آخر قيمة {reached}).',
   dlgGoalSeekSolve: 'حل',
   dlgGoalSeekSolving: 'جارٍ الحل…',
+  dlgDataTableTitle: 'جدول البيانات',
+  dlgDataTableRange: 'نطاق الجدول',
+  dlgDataTableRowInput: 'خلية الإدخال للصف',
+  dlgDataTableColumnInput: 'خلية الإدخال للعمود',
+  dlgDataTableNote:
+    'تُكتب النتائج كقيم عادية ولا تتحدث عند إعادة الحساب (بخلاف جداول صيغ المصفوفة في Excel)؛ يمكن التراجع عن الجدول كله بخطوة واحدة.',
+  dlgDataTableNeedInput:
+    'املأ خلية إدخال واحدة على الأقل: واحدة فقط تعني متغيرًا واحدًا، وكلتاهما تعني متغيرين.',
+  dlgDataTableBadRange: 'يجب أن يكون نطاق الجدول مرجعًا بصيغة A1 أو A1:B4.',
+  dlgDataTableBadShape:
+    'شكل النطاق غير صحيح: المتغير الواحد بعمود يتطلب عمودين وصفين أو أكثر، وبصف يتطلب صفين وعمودين أو أكثر، والمتغيران 2×2 على الأقل.',
+  dlgDataTableTooManyCells: 'يتجاوز الجدول حد {limit} خلية نتائج.',
+  dlgDataTableInputInside: 'لا يمكن أن تكون خلايا الإدخال داخل نطاق الجدول.',
+  dlgDataTableSameInput: 'يجب أن تختلف خليتا الإدخال للصف والعمود.',
+  dlgDataTableNeedsFormula: 'يجب أن تحتوي خلية الصيغة على صيغة.',
+  dlgDataTableInputNotNumber: 'يجب أن تحتوي خلايا الإدخال على رقم بسيط أو تكون فارغة.',
+  dlgDataTableValuesNotNumber: 'يجب أن تكون قيم الاستبدال أرقامًا.',
+  dlgDataTableRunning: 'جارٍ الحساب… {done}/{total}',
+  dlgDataTableRunningShort: 'جارٍ الحساب…',
+  dlgDataTableDone: 'تمت كتابة {count} نتيجة (قيم عادية؛ لا تتحدث عند إعادة الحساب).',
   dlgApply: 'تطبيق',
   dlgCreate: 'إنشاء',
 
