@@ -608,8 +608,6 @@ export const it = {
   appSaveFailed: 'Impossibile salvare la cartella di lavoro.',
   appCfRuleUnsaveable:
     'Questa regola di formattazione condizionale non può essere salvata in xlsx — usa un altro tipo di regola.',
-  appSaveErrX14Dv:
-    'Questo foglio ha una convalida dati estesa (x14); la modifica delle sue regole di convalida non è ancora supportata.',
   appSaveErrMultiSelectList:
     'La convalida con elenco a selezione multipla non può essere salvata in xlsx — elimina la regola prima di salvare.',
   appSaveErrX14Cf:

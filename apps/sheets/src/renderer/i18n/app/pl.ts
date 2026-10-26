@@ -599,8 +599,6 @@ export const pl = {
   appSaveFailed: 'Nie można zapisać skoroszytu.',
   appCfRuleUnsaveable:
     'Tej reguły formatowania warunkowego nie można zapisać w xlsx — użyj innego typu reguły.',
-  appSaveErrX14Dv:
-    'Ten arkusz ma rozszerzoną (x14) poprawność danych; edytowanie jej reguł nie jest jeszcze obsługiwane.',
   appSaveErrMultiSelectList:
     'Poprawności danych z listą wielokrotnego wyboru nie można zapisać w xlsx — usuń regułę przed zapisaniem.',
   appSaveErrX14Cf:

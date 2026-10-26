@@ -613,8 +613,6 @@ export const pt = {
   appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
   appCfRuleUnsaveable:
     'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
-  appSaveErrX14Dv:
-    'Esta planilha tem validação de dados estendida (x14); editar suas regras de validação ainda não é suportado.',
   appSaveErrMultiSelectList:
     'A validação de lista de seleção múltipla não pode ser salva em xlsx — exclua a regra antes de salvar.',
   appSaveErrX14Cf:

@@ -558,8 +558,6 @@ export const en = {
   appSaveFailed: 'Unable to save the workbook.',
   appCfRuleUnsaveable:
     'This conditional formatting rule cannot be saved to xlsx — switch to another rule type.',
-  appSaveErrX14Dv:
-    'This sheet has extended (x14) data validation; editing its validation rules is not supported yet.',
   appSaveErrMultiSelectList:
     'Multi-select list validation cannot be saved to xlsx — delete the rule before saving.',
   appSaveErrX14Cf:

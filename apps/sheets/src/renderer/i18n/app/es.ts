@@ -615,8 +615,6 @@ export const es = {
   appSaveFailed: 'No se puede guardar el libro.',
   appCfRuleUnsaveable:
     'Esta regla de formato condicional no se puede guardar en xlsx — use otro tipo de regla.',
-  appSaveErrX14Dv:
-    'Esta hoja tiene validación de datos extendida (x14); editar sus reglas de validación aún no es compatible.',
   appSaveErrMultiSelectList:
     'La validación de lista de selección múltiple no se puede guardar en xlsx — elimine la regla antes de guardar.',
   appSaveErrX14Cf:

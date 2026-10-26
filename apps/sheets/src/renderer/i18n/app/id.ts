@@ -574,8 +574,6 @@ export const id = {
   appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
   appCfRuleUnsaveable:
     'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
-  appSaveErrX14Dv:
-    'Sheet ini memiliki validasi data yang diperluas (x14); mengedit aturan validasinya belum didukung.',
   appSaveErrMultiSelectList:
     'Validasi daftar pilihan ganda tidak dapat disimpan ke xlsx — hapus aturan tersebut sebelum menyimpan.',
   appSaveErrX14Cf:

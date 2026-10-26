@@ -608,8 +608,6 @@ export const nl = {
   appSaveFailed: 'Kan de werkmap niet opslaan.',
   appCfRuleUnsaveable:
     'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
-  appSaveErrX14Dv:
-    'Dit blad heeft uitgebreide (x14) gegevensvalidatie; het bewerken van de validatieregels wordt nog niet ondersteund.',
   appSaveErrMultiSelectList:
     'Validatie met een meerkeuzelijst kan niet in xlsx worden opgeslagen — verwijder de regel voordat u opslaat.',
   appSaveErrX14Cf:

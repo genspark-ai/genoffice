@@ -567,8 +567,6 @@ export const vi = {
   appSaveFailed: 'Không thể lưu sổ làm việc.',
   appCfRuleUnsaveable:
     'Quy tắc định dạng có điều kiện này không thể lưu vào xlsx — hãy chuyển sang loại quy tắc khác.',
-  appSaveErrX14Dv:
-    'Trang tính này có xác thực dữ liệu mở rộng (x14); chưa hỗ trợ chỉnh sửa quy tắc xác thực của nó.',
   appSaveErrMultiSelectList:
     'Xác thực danh sách đa lựa chọn không thể lưu vào xlsx — hãy xóa quy tắc trước khi lưu.',
   appSaveErrX14Cf: 'Vùng này có định dạng có điều kiện mở rộng (x14) và chưa thể sửa đổi.',

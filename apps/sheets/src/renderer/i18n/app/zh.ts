@@ -518,7 +518,6 @@ export const zh = {
   appSaved: '已保存。',
   appSaveFailed: '无法保存工作簿。',
   appCfRuleUnsaveable: '这种条件格式规则无法保存到 xlsx——请换用其他规则类型。',
-  appSaveErrX14Dv: '这个工作表带有扩展(x14)数据验证，暂不支持编辑它的验证规则。',
   appSaveErrMultiSelectList: '多选列表验证无法保存到 xlsx——请先删除该规则再保存。',
   appSaveErrX14Cf: '该区域带有扩展(x14)条件格式，暂时无法修改。',
   appSaveErrPivotWithSheetOps: '新建的透视表不能和工作表管理改动一起保存——请先保存透视表。',

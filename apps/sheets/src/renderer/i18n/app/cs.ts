@@ -577,8 +577,6 @@ export const cs = {
   appSaveFailed: 'Sešit nelze uložit.',
   appCfRuleUnsaveable:
     'Toto pravidlo podmíněného formátování nelze uložit do xlsx — přepněte na jiný typ pravidla.',
-  appSaveErrX14Dv:
-    'Tento list má rozšířené (x14) ověření dat; úprava jeho pravidel ověření zatím není podporována.',
   appSaveErrMultiSelectList:
     'Ověření seznamem s vícenásobným výběrem nelze uložit do xlsx — před uložením pravidlo odstraňte.',
   appSaveErrX14Cf: 'Tato oblast má rozšířené (x14) podmíněné formátování a zatím ji nelze měnit.',

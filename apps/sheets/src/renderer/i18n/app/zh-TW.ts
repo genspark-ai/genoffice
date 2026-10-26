@@ -508,7 +508,6 @@ export const zhTW = {
   appSaved: '已儲存。',
   appSaveFailed: '無法儲存活頁簿。',
   appCfRuleUnsaveable: '這種設定格式化的條件規則無法儲存到 xlsx——請改用其他規則類型。',
-  appSaveErrX14Dv: '這個工作表帶有擴充(x14)資料驗證，暫不支援編輯它的驗證規則。',
   appSaveErrMultiSelectList: '多選清單驗證無法儲存到 xlsx——請先刪除該規則再儲存。',
   appSaveErrX14Cf: '該區域帶有擴充(x14)設定格式化的條件，暫時無法修改。',
   appSaveErrPivotWithSheetOps: '新建的樞紐分析表不能和工作表管理變更一起儲存——請先儲存樞紐分析表。',

@@ -633,8 +633,6 @@ export const fr = {
   appSaveFailed: "Impossible d'enregistrer le classeur.",
   appCfRuleUnsaveable:
     'Cette règle de mise en forme conditionnelle ne peut pas être enregistrée en xlsx — utilisez un autre type de règle.',
-  appSaveErrX14Dv:
-    "Cette feuille comporte une validation des données étendue (x14) ; la modification de ses règles de validation n'est pas encore prise en charge.",
   appSaveErrMultiSelectList:
     "La validation par liste à sélection multiple ne peut pas être enregistrée en xlsx — supprimez la règle avant d'enregistrer.",
   appSaveErrX14Cf:

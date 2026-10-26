@@ -609,8 +609,6 @@ export const ja = {
   appSaveFailed: 'ブックを保存できません。',
   appCfRuleUnsaveable:
     'この条件付き書式ルールは xlsx に保存できません — 別のルールの種類をお使いください。',
-  appSaveErrX14Dv:
-    'このシートには拡張(x14)のデータの入力規則があり、その入力規則の編集はまだサポートされていません。',
   appSaveErrMultiSelectList:
     '複数選択リストの入力規則は xlsx に保存できません — 保存する前にそのルールを削除してください。',
   appSaveErrX14Cf: 'この範囲には拡張(x14)の条件付き書式があり、今のところ変更できません。',

@@ -576,8 +576,6 @@ export const ms = {
   appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
   appCfRuleUnsaveable:
     'Peraturan pemformatan bersyarat ini tidak boleh disimpan ke xlsx — gunakan jenis peraturan lain.',
-  appSaveErrX14Dv:
-    'Helaian ini mempunyai pengesahihan data lanjutan (x14); pengeditan peraturan pengesahihannya belum disokong.',
   appSaveErrMultiSelectList:
     'Pengesahihan senarai berbilang pilihan tidak boleh disimpan ke xlsx — padamkan peraturan itu sebelum menyimpan.',
   appSaveErrX14Cf:

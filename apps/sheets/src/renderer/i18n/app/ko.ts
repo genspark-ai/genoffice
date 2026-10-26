@@ -585,8 +585,6 @@ export const ko = {
   appSaveFailed: '통합 문서를 저장할 수 없습니다.',
   appCfRuleUnsaveable:
     '이 조건부 서식 규칙은 xlsx로 저장할 수 없습니다 — 다른 규칙 유형을 사용하십시오.',
-  appSaveErrX14Dv:
-    '이 시트에는 확장(x14) 데이터 유효성 검사가 있어 해당 유효성 검사 규칙 편집은 아직 지원되지 않습니다.',
   appSaveErrMultiSelectList:
     '다중 선택 목록 유효성 검사는 xlsx로 저장할 수 없습니다 — 저장하기 전에 해당 규칙을 삭제하십시오.',
   appSaveErrX14Cf: '이 영역에는 확장(x14) 조건부 서식이 있어 당분간 수정할 수 없습니다.',
