@@ -17,6 +17,7 @@ export const PDF_CHANNELS = {
   listPageImages: 'pdf:list-page-images',
   listStaticFormFills: 'pdf:list-static-form-fills',
   pageImagePng: 'pdf:page-image-png',
+  pageImageBytes: 'pdf:page-image-bytes',
   ocrPage: 'pdf:ocr-page',
   pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
@@ -550,6 +551,14 @@ export interface PageImageRef {
   aboveText: boolean
 }
 
+/** Pixels of one existing content-stream image, for the AI vision attachment pipeline.
+ *  base64 carries no data: URL prefix; mime is image/jpeg (raw DCTDecode passthrough)
+ *  or image/png (rasterized through pdfium's decoder). */
+export interface PageImageBytes {
+  mime: 'image/jpeg' | 'image/png'
+  base64: string
+}
+
 /** Editable metadata for a GenOffice static form fill embedded as a page image. */
 export interface StaticFormFillRecord {
   id: string
@@ -946,6 +955,13 @@ export interface PdfApi {
         pixel edit (crop/flip/…) so the baked result keeps print-quality resolution */
     scale?: number
   }): Promise<string | null>
+  /** Extract one existing image object's pixels for the AI vision pipeline (JPEG raw
+      passthrough or PNG raster); null when it can't be matched or decoded */
+  pageImageBytes(request: {
+    path: string
+    pageIndex: number
+    rect: [number, number, number, number]
+  }): Promise<PageImageBytes | null>
   /** Live-preview render of a page region with the given images removed (base64 PNG);
       the renderer patches it over the raster so touched images vanish before save */
   pagePreviewPng(request: PagePreviewRequest): Promise<PagePreviewResult | null>

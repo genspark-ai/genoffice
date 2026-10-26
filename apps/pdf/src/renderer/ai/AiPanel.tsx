@@ -7,7 +7,11 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop, withAttachedSkills } from '@genoffice/agent-core'
-import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
+import {
+  endpointSupportsVision,
+  imageGenerationAvailable,
+  type AiSettings,
+} from '@genoffice/ai-provider/browser'
 import {
   AiComposer,
   AiQueueStrip,
@@ -28,6 +32,12 @@ import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import { createPdfSkill } from './pdf-skill'
+import {
+  collectPageImages,
+  EMPTY_PAGE_IMAGE_PLAN,
+  pageImageAnnotation,
+  type PageImagePlan,
+} from './page-images'
 import { createElectronTransport } from './transport'
 import { PDF_NAV_SCHEME, parsePdfNavHref } from './pdf-nav'
 import type { FileOpConfirm, PdfAiDeps, PdfAppDeps } from './tools'
@@ -324,6 +334,9 @@ export function AiPanel({
   onRunDoneRef.current = onRunDone
   /** Any tool in the current run reported mutated: true */
   const runMutatedRef = useRef(false)
+  /** Annotation lines for the images attached to the in-flight run (vision injection);
+      null while the run carries none. buildContext reads it through the skill deps. */
+  const visionAttachmentRef = useRef<string | null>(null)
 
   /** Confirmation card for irreversible file operations; one at a time, a second request is refused */
   const [fileOpConfirm, setFileOpConfirm] = useState<FileOpConfirm | null>(null)
@@ -378,6 +391,7 @@ export function AiPanel({
       gotoPage: (p) => apiRef.current.gotoPage(p),
       addMarkup: (type, idx, rects, color) => apiRef.current.addMarkup(type, idx, rects, color),
       annotationSummary: () => apiRef.current.annotationSummary(),
+      pageImageAttachment: () => visionAttachmentRef.current,
       createDocument: (request) => apiRef.current.createDocument(request),
       confirmFileOp: requestFileOpConfirm,
       insertBlankPage: (afterVis) => apiRef.current.insertBlankPage(afterVis),
@@ -532,6 +546,17 @@ export function AiPanel({
     if (!el) return
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
+  /** Send-time vision collection over the open file's content-stream images.
+      Failures degrade to a no-image run: the model still gets its text context. */
+  const collectVisionPlan = (): Promise<PageImagePlan> => {
+    const path = filePath
+    if (!path) return Promise.resolve(EMPTY_PAGE_IMAGE_PLAN)
+    return collectPageImages({
+      listImages: () => window.pdfApi.listPageImages(path),
+      imageBytes: (ref) => window.pdfApi.pageImageBytes({ path, ...ref }),
+      isDeleted: (i) => apiRef.current.isDeleted(i),
+    })
+  }
 
   /** retryScope: null = a retry that had no scope; undefined = capture the live selection */
   const send = (
@@ -567,10 +592,17 @@ export function AiPanel({
     setBusy(true)
     setPhase('thinking')
     runMutatedRef.current = false
+    // Vision injection: cleared per run; set below only when the endpoint supports
+    // vision AND the collection found images — otherwise the context stays text-only
+    visionAttachmentRef.current = null
     void (async () => {
       try {
         settingsRef.current = await window.pdfApi.getAiSettings()
-        await loop.run(await withSkillBodies(instruction, sentSkills))
+        const settings = settingsRef.current
+        // Vision gate: text-only endpoints never collect (zero behavior change)
+        const plan = settings && endpointSupportsVision(settings) ? await collectVisionPlan() : null
+        visionAttachmentRef.current = plan ? pageImageAnnotation(plan) : null
+        await loop.run(await withSkillBodies(instruction, sentSkills), plan?.images)
       } catch (err) {
         patchLast({
           streaming: false,

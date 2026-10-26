@@ -64,6 +64,9 @@ export interface Pdfium {
   _FPDFPageObj_Destroy(obj: number): void
   _FPDFPageObj_GetBounds(obj: number, l: number, b: number, r: number, t: number): number
   _FPDFImageObj_GetImageDataRaw(obj: number, buffer: number, buflen: number): number
+  _FPDFImageObj_GetImageFilterCount(obj: number): number
+  /** Filter name at index (UTF-8 into buffer); returns the name's byte length */
+  _FPDFImageObj_GetImageFilter(obj: number, index: number, buffer: number, buflen: number): number
   _FPDFPageObj_GetMatrix(obj: number, matrix: number): number
   _FPDFPageObj_SetMatrix(obj: number, matrix: number): number
   _FPDFPageObj_GetFillColor(obj: number, r: number, g: number, b: number, a: number): number

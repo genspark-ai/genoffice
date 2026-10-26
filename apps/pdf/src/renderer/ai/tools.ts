@@ -182,6 +182,10 @@ export interface PdfAiDeps {
   fetchImage(url: string): Promise<{ png: string; width: number; height: number } | null>
   /** Session watermark / header-footer configuration; null when none is queued */
   stamps(): StampConfig | null
+  /** Annotation lines for the images attached to the current user turn (vision
+      injection); null when the run carries no images (non-vision endpoint or
+      empty collection) — buildContext then stays purely textual */
+  pageImageAttachment?(): string | null
   /** Replace the session stamp configuration (null clears it); rendered on every page at save */
   setStamps(cfg: StampConfig | null): void
   /** AI create_document: write a new standalone file (pdf/docx/md) into the default folder and open it in a new tab */

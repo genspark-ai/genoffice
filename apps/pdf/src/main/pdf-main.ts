@@ -1440,6 +1440,27 @@ function registerPdfIpc(): void {
     },
   )
 
+  ipcMain.handle(
+    PDF_CHANNELS.pageImageBytes,
+    async (
+      e,
+      request: { path: string; pageIndex: number; rect: [number, number, number, number] },
+    ) => {
+      const { path, pageIndex, rect } = request ?? {}
+      if (
+        typeof path !== 'string' ||
+        !allowedByWc.get(e.sender.id)?.has(path) ||
+        typeof pageIndex !== 'number' ||
+        !Array.isArray(rect)
+      ) {
+        throw new Error('pdf: path not granted to this view')
+      }
+      // Lazy like the sibling image-edit handlers: a static import would load pdfium's wasm at startup
+      const { extractPageImageBytes } = await import('./image-edit')
+      return extractPageImageBytes(new Uint8Array(await readFile(path)), pageIndex, rect)
+    },
+  )
+
   ipcMain.handle(PDF_CHANNELS.pagePreviewPng, async (e, request: PagePreviewRequest) => {
     const { path, pageIndex, excludeRects, excludeAnnots, excludeText, clip, pxWidth, rotate } =
       request ?? {}

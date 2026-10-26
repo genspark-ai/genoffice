@@ -16,6 +16,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
       annotationSummary: () => '',
       metadata: () => ({}),
       outline: () => null,
+      pageImageAttachment: () => null,
       ...over,
     } as Record<string, unknown>,
     {
@@ -78,6 +79,25 @@ describe('buildContext', () => {
   it('injects the annotation summary when present', () => {
     const line = 'The document has 3 note thread(s); use read_annotations to read them.'
     expect(contextOf({ annotationSummary: () => line })).toContain(line)
+  })
+
+  it('appends the vision attachment lines when the plan is set', () => {
+    const ctx = contextOf({
+      pageImageAttachment: () => 'page 2 has 1 picture(s) — attached as image #1',
+    })
+    expect(ctx).toContain('page 2 has 1 picture(s) — attached as image #1')
+  })
+
+  it('keeps the text-only context when the vision plan is absent (non-vision endpoint)', () => {
+    const ctx = contextOf({ pageImageAttachment: () => null })
+    expect(ctx).not.toContain('picture')
+    expect(ctx).not.toContain('attached as image')
+  })
+
+  it('skips the vision line when the deps carry no pageImageAttachment', () => {
+    // legacy deps shape: the field is optional and the skill must tolerate its absence
+    const ctx = contextOf({})
+    expect(ctx).not.toContain('picture')
   })
 })
 

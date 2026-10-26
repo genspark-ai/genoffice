@@ -11,6 +11,7 @@ import type { Pdfium } from './text-edit'
 import type {
   ImageEditFailure,
   ImageEditInput,
+  PageImageBytes,
   PageImageRef,
   PagePreviewRequest,
   PagePreviewResult,
@@ -332,6 +333,98 @@ export function listPageImages(bytes: Uint8Array): Promise<PageImageRef[]> {
         }
       }
       return out
+    })
+  })
+}
+
+/** Longest filter name pdfium knows (DCTDecode/FlateDecode/JPXDecode…); 32 with spare room */
+const FILTER_BUF = 32
+
+function imageFilters(m: Pdfium, obj: number): string[] {
+  const out: string[] = []
+  const count = m._FPDFImageObj_GetImageFilterCount(obj)
+  const buf = m._malloc(FILTER_BUF)
+  try {
+    for (let i = 0; i < count; i++) {
+      const len = m._FPDFImageObj_GetImageFilter(obj, i, buf, FILTER_BUF)
+      // pdfium writes min(buflen, len) bytes and returns the full name length
+      if (len > 0) out.push(new TextDecoder().decode(m.HEAPU8.subarray(buf, buf + len)))
+    }
+  } finally {
+    m._free(buf)
+  }
+  return out
+}
+
+/** JPEG SOI marker; DCTDecode raw streams are whole viewable JPEG files */
+const JPEG_SOI = 0xffd8
+
+/**
+ * Extract one content-stream image's pixels for the AI vision pipeline.
+ * Fast path: a DCTDecode (JPEG) image is returned as its raw stored stream — the
+ * embedded file is already a viewable JPEG, so no re-encode bloats the request.
+ * Every other encoding (Flate raw DIBs, JPX, …) has no standalone container, so
+ * the object is decoded through pdfium (GetRenderedBitmap) and re-encoded to PNG.
+ * Null = the object could not be matched or decoded; the collector skips it.
+ */
+export function extractPageImageBytes(
+  bytes: Uint8Array,
+  pageIndex: number,
+  rect: Rect,
+): Promise<PageImageBytes | null> {
+  return chainPdfium(async () => {
+    const m = await loadPdfium()
+    return withDocument(m, bytes, async (doc) => {
+      const page = m._FPDF_LoadPage(doc, pageIndex)
+      if (!page) return null
+      try {
+        const target = matchImage(collectObjects(m, page), rect)
+        if (!target) return null
+        // Raw stream (filters unapplied) + filter chain: a bare DCTDecode with a
+        // JPEG SOI can ride along byte-for-byte
+        const filters = imageFilters(m, target.obj)
+        const rawLen = m._FPDFImageObj_GetImageDataRaw(target.obj, 0, 0)
+        if (rawLen > 1 && filters.length === 1 && filters[0] === 'DCTDecode') {
+          const ptr = m._malloc(rawLen)
+          try {
+            if (m._FPDFImageObj_GetImageDataRaw(target.obj, ptr, rawLen) === rawLen) {
+              const head = (m.HEAPU8[ptr]! << 8) | m.HEAPU8[ptr + 1]!
+              if (head === JPEG_SOI) {
+                return {
+                  mime: 'image/jpeg',
+                  base64: Buffer.from(m.HEAPU8.subarray(ptr, ptr + rawLen)).toString('base64'),
+                }
+              }
+            }
+          } finally {
+            m._free(ptr)
+          }
+        }
+        // Not a passthrough JPEG: decode + rasterize through pdfium (same shape
+        // as renderImagePng at scale 1, minus the matrix enlargement)
+        const bmp = m._FPDFImageObj_GetRenderedBitmap(doc, page, target.obj)
+        if (!bmp) return null
+        try {
+          const w = m._FPDFBitmap_GetWidth(bmp)
+          const h = m._FPDFBitmap_GetHeight(bmp)
+          const stride = m._FPDFBitmap_GetStride(bmp)
+          const buf = m._FPDFBitmap_GetBuffer(bmp)
+          if (!w || !h || !buf) return null
+          const tight = Buffer.alloc(w * h * 4)
+          for (let row = 0; row < h; row++) {
+            tight.set(
+              m.HEAPU8.subarray(buf + row * stride, buf + row * stride + w * 4),
+              row * w * 4,
+            )
+          }
+          const png = nativeImage.createFromBitmap(tight, { width: w, height: h }).toPNG()
+          return { mime: 'image/png', base64: png.toString('base64') }
+        } finally {
+          m._FPDFBitmap_Destroy(bmp)
+        }
+      } finally {
+        m._FPDF_ClosePage(page)
+      }
     })
   })
 }

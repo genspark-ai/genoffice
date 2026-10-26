@@ -86,6 +86,11 @@ export function createPdfSkill(deps: PdfAiDeps): AgentSkill {
       const annots = deps.annotationSummary()
       if (annots) parts.push(annots)
       const pending = deps.pendingSummary()
+      // Vision injection: the panel plants the send-time plan before every run;
+      // a non-vision endpoint or a failed collection leaves this empty (text-only,
+      // exactly the pre-feature behavior)
+      const vision = deps.pageImageAttachment?.()
+      if (vision) parts.push(vision)
       if (pending) parts.push(pending)
       const sel = deps.selection()
       if (sel && sel.text.trim()) {
