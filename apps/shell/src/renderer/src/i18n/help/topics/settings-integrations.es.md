@@ -10,7 +10,7 @@ La configuración de modelos tiene su propio artículo; en **Medios de IA y bús
 
 ## Idioma
 
-- La configuración ofrece **21 idiomas de interfaz**: inglés, chino simplificado, japonés, coreano, francés, alemán, español, tailandés, indonesio, ruso, árabe, portugués, italiano, polaco, checo, neerlandés, malayo, hebreo, hindi, chino tradicional, vietnamita.
+- La configuración ofrece **22 idiomas de interfaz**: inglés, chino simplificado, japonés, coreano, francés, alemán, español, tailandés, indonesio, ruso, árabe, portugués, italiano, polaco, checo, neerlandés, malayo, hebreo, hindi, chino tradicional, vietnamita, turco.
 - El cambio se aplica de inmediato y se conserva; la barra de menús nativa se reconstruye con el idioma.
 
 ## Tema

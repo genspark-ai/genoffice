@@ -39,7 +39,7 @@ describe('atomicWriteFile durability', () => {
       await atomicWriteFile(target, new TextEncoder().encode('new'))
       expect(readFileSync(target, 'utf8')).toBe('new')
       expect(synced).toHaveLength(process.platform === 'win32' ? 1 : 2)
-      expect(synced[0]).toMatch(/\.report\.docx\.[0-9a-f]{12}\.tmp$/)
+      expect(synced[0]).toMatch(/report\.docx\.[0-9a-f]{12}\.tmp$/)
       if (process.platform !== 'win32') expect(synced[1]).toBe(dir)
     } finally {
       rmSync(dir, { recursive: true, force: true })

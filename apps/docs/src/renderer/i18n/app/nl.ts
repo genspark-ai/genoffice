@@ -397,6 +397,7 @@ export const nl = {
   appLangHindi: 'Hindi',
   appLangTraditionalChinese: 'Traditioneel Chinees',
   appLangVietnamese: 'Vietnamees',
+  appLangTurkish: 'Turks',
   appWrapTextMenu: 'Tekstterugloop',
   appViewImage: 'Afbeelding bekijken',
   appSaveImageAs: 'Afbeelding opslaan als…',

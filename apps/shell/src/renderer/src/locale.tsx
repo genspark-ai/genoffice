@@ -69,6 +69,7 @@ const DATE_LOCALES: Record<Lang, string> = {
   hi: 'hi-IN',
   'zh-TW': 'zh-TW',
   vi: 'vi-VN',
+  tr: 'tr-TR',
 }
 
 export function useI18n(): I18n {

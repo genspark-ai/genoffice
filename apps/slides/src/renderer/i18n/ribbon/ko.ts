@@ -447,6 +447,7 @@ export const ko = {
   ribbonLangHebrew: '히브리어',
   ribbonLangHindi: '힌디어',
   ribbonLangVietnamese: '베트남어',
+  ribbonLangTurkish: '터키어',
   ribbonNewComment: '새 메모',
   ribbonCommentsPane: '메모 창',
   ribbonCommentsPaneTip: '메모 창 표시/숨기기',

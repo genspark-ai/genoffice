@@ -448,6 +448,7 @@ export const pl = {
   ribbonLangHebrew: 'hebrajski',
   ribbonLangHindi: 'hindi',
   ribbonLangVietnamese: 'wietnamski',
+  ribbonLangTurkish: 'turecki',
   ribbonNewComment: 'Nowy komentarz',
   ribbonCommentsPane: 'Okienko komentarzy',
   ribbonCommentsPaneTip: 'Pokaż lub ukryj okienko komentarzy',

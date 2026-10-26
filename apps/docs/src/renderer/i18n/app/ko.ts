@@ -407,6 +407,7 @@ export const ko = {
   appLangHindi: '힌디어',
   appLangTraditionalChinese: '중국어 번체',
   appLangVietnamese: '베트남어',
+  appLangTurkish: '터키어',
   appWrapTextMenu: '텍스트 줄 바꿈',
   appViewImage: '이미지 보기',
   appSaveImageAs: '이미지를 다른 이름으로 저장…',

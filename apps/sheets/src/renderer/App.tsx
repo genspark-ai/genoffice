@@ -617,7 +617,7 @@ export function App({
    * alone — so without this a workbook whose only edit is a withheld cell
    * would never autosave, and closing the tab would drop the mark silently.
    */
-  const loadedRedactionStatesRef = useRef<readonly SheetRedactionState[]>([])
+  const loadedRedactionStatesRef = useRef<readonly SheetRedactionState[] | null>(null)
   /**
    * The pending "what does this stand for?" question, or null when no dialog
    * is open. State, not a ref: the dialog renders from it.
@@ -632,7 +632,8 @@ export function App({
    * in the same order, so the comparison is exact.
    */
   function redactionsPendingSave(): boolean {
-    return hasPendingRedactionChange(redactionStatesRef.current, loadedRedactionStatesRef.current)
+    const loaded = loadedRedactionStatesRef.current
+    return loaded !== null && hasPendingRedactionChange(redactionStatesRef.current, loaded)
   }
   /// Univer undo/redo stack occupancy (subscribed at mount): drives the QAT button gray states
   const [univerHist, setUniverHist] = useState({ canUndo: false, canRedo: false })
@@ -1105,7 +1106,9 @@ export function App({
       openLazyWorkbook,
       setPendingEdits,
       readCells: (addresses, sheetId) => readCellsImpl(readContext(), addresses, sheetId),
-      redactionStates: () => redactionStatesRef.current,
+      // null until the part was read: a save in that window must not clear it
+      redactionStates: () =>
+        loadedRedactionStatesRef.current === null ? null : redactionStatesRef.current,
       stashViewRestore: (view) => {
         viewRestoreRef.current = view
       },
@@ -1924,7 +1927,7 @@ export function App({
         try {
           restoreCellFill(
             univerRef.current!,
-            intent.sheetName,
+            request.sheetId,
             workbook.getSheetBySheetId(request.sheetId)!.getRange(a1Of(intent.mark)) as never,
             marked.previousFill,
             workbook.getId(),
@@ -4822,9 +4825,7 @@ export function App({
     // ai/redact-load.ts.
     redactionIndexRef.current = null
     redactionStatesRef.current = []
-    // Reset to the same empty value the current marks hold, so the previous
-    // workbook's pending marks cannot make this one look unsaved on arrival.
-    loadedRedactionStatesRef.current = []
+    loadedRedactionStatesRef.current = null
     void window.desktopApi
       .readWorkbookRedactions({ sessionId: selected.sessionId })
       .then((result) => {
@@ -4834,8 +4835,10 @@ export function App({
         redactionIndexRef.current = session.index
         redactionStatesRef.current = result.status === 'ok' ? result.states : []
         watchStructuralEditsForMarks()
-        // What the file holds is the baseline a later edit is measured against.
-        loadedRedactionStatesRef.current = redactionStatesRef.current
+        // What the file holds is the baseline a later edit is measured against;
+        // an unreadable part has no baseline, and saves leave it in place.
+        loadedRedactionStatesRef.current =
+          result.status === 'unreadable' ? null : redactionStatesRef.current
         const redactionMessage = session.error ?? session.notice
         if (redactionMessage !== null) setMessage(redactionMessage)
       })

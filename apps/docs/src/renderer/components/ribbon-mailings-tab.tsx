@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { mergeFieldInstruction } from '@genoffice/docx-engine'
 import type { MergeDataSource } from '../../shared/ipc'
@@ -45,6 +45,8 @@ export function MailingsTab({
   const { t } = useI18n()
   const [panelOpen, setPanelOpen] = useState(false)
   const [recordIndex, setRecordIndex] = useState(0)
+  // a new list starts at its first record; the old index may be past its end
+  useEffect(() => setRecordIndex(0), [source?.path])
 
   const records = source?.records ?? []
   const hasRecords = records.length > 0

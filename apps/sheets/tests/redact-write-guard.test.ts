@@ -37,8 +37,10 @@ const INDEX: RedactionIndex = buildRedactionIndex(
 const sheetName = (sheetId: string): string | undefined =>
   SHEETS.find((sheet) => sheet.id === sheetId)?.name
 
+const sheetId = (name: string): string | undefined => SHEETS.find((s) => s.name === name)?.id
+
 function guard(ops: unknown[], index: RedactionIndex = INDEX) {
-  return redactGuardForOps(ops, index, sheetName)
+  return redactGuardForOps(ops, index, sheetName, sheetId)
 }
 
 describe('a write that reaches a withheld cell is refused', () => {
@@ -121,6 +123,49 @@ describe('what stays allowed', () => {
     for (const op of ops) {
       expect(guard([op], NO_REDACTIONS), `${op.op} should be allowed`).toBeNull()
     }
+  })
+
+  it('refuses reading a withheld cell through a copy, a move or a fill source', () => {
+    expect(guard([{ op: 'copy_range', sheetId: 'sh2', source: 'A1:B3', target: 'D1' }])).toBeNull()
+    expect(
+      guard([
+        { op: 'copy_range', sheetId: 'sh2', sourceSheetId: 'sh1', source: 'A1:B3', target: 'D1' },
+      ]),
+    ).not.toBeNull()
+    expect(guard([{ op: 'move_range', sheetId: 'sh1', source: 'B2', target: 'D9' }])).not.toBeNull()
+    expect(
+      guard([{ op: 'fill_range', sheetId: 'sh1', source: 'B2', target: 'C1:C9' }]),
+    ).not.toBeNull()
+    expect(guard([{ op: 'move_range', sheetId: 'sh1', source: 'A5', target: 'B2' }])).not.toBeNull()
+  })
+
+  it('refuses a formula that references a withheld cell, by name across sheets too', () => {
+    const refused = guard([{ op: 'set_formula', sheetId: 'sh1', address: 'D1', formula: '=B2*2' }])
+    expect(refused?.reason).toMatch(/reads a cell withheld/)
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh1', address: 'D1', formula: '=SUM(A1:C3)' }]),
+    ).not.toBeNull()
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh1', address: 'D1', formula: '=SUM(B:B)' }]),
+    ).not.toBeNull()
+    expect(guard([{ op: 'set_cell', sheetId: 'sh1', address: 'D1', value: '=B2' }])).not.toBeNull()
+    expect(
+      guard([{ op: 'set_range', sheetId: 'sh1', start: 'D1', values: [['x', '=$B$2']] }]),
+    ).not.toBeNull()
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh2', address: 'A1', formula: "='Customers'!B2" }]),
+    ).not.toBeNull()
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh2', address: 'A1', formula: '=Customers!B2' }]),
+    ).not.toBeNull()
+    // a reference beside the mark, a literal that looks like one, and the other sheet's B2
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh1', address: 'D1', formula: '=C2+1' }]),
+    ).toBeNull()
+    expect(
+      guard([{ op: 'set_formula', sheetId: 'sh1', address: 'D1', formula: '="B2"' }]),
+    ).toBeNull()
+    expect(guard([{ op: 'set_formula', sheetId: 'sh2', address: 'A1', formula: '=B2' }])).toBeNull()
   })
 
   it('allows a write beside the mark, and on another sheet', () => {
