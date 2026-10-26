@@ -121,9 +121,11 @@ export const de = {
   appChartNoRepoint: 'Bei diesem Diagramm können die Datenbereiche nicht neu zugewiesen werden.',
   appKeepOneSeries: 'Behalten Sie mindestens eine Reihe.',
   appNoCategoriesToSwitch: 'Keine Kategorien zum Wechseln.',
-  appComboNoSelectData:
-    'Das Ändern der Datenquelle eines Verbunddiagramms wird noch nicht unterstützt.',
+  appSelectDataUnsupported:
+    'Das Ändern der Datenquelle dieses Diagrammtyps wird nicht unterstützt.',
   appSeriesName: 'Reihenname',
+  appSeriesType: 'Reihentyp',
+  appSecondaryAxis: 'Sekundärachse',
   appValuesRange: 'Wertebereich',
   appCategoriesRange: 'Kategoriebereich',
   appKeepUnchanged: 'Unverändert lassen',

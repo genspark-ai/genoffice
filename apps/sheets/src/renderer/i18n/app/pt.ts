@@ -121,9 +121,10 @@ export const pt = {
   appChartNoRepoint: 'Este gráfico não permite redefinir os intervalos de dados.',
   appKeepOneSeries: 'Mantenha pelo menos uma série.',
   appNoCategoriesToSwitch: 'Não há categorias para alternar.',
-  appComboNoSelectData:
-    'Alterar a fonte de dados de um gráfico de combinação ainda não é suportado.',
+  appSelectDataUnsupported: 'Não há suporte para alterar a origem de dados deste tipo de gráfico.',
   appSeriesName: 'Nome da série',
+  appSeriesType: 'Tipo de série',
+  appSecondaryAxis: 'Eixo secundário',
   appValuesRange: 'Intervalo de valores',
   appCategoriesRange: 'Intervalo de categorias',
   appKeepUnchanged: 'Manter inalterado',

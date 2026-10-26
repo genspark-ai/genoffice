@@ -122,9 +122,11 @@ export const fr = {
   appChartNoRepoint: 'Ce graphique ne permet pas de redéfinir ses plages de données.',
   appKeepOneSeries: 'Conservez au moins une série.',
   appNoCategoriesToSwitch: 'Aucune catégorie à permuter.',
-  appComboNoSelectData:
-    "La modification de la source de données d'un graphique combiné n'est pas encore prise en charge.",
+  appSelectDataUnsupported:
+    "La modification de la source de données de ce type de graphique n'est pas prise en charge.",
   appSeriesName: 'Nom de la série',
+  appSeriesType: 'Type de série',
+  appSecondaryAxis: 'Axe secondaire',
   appValuesRange: 'Plage de valeurs',
   appCategoriesRange: 'Plage de catégories',
   appKeepUnchanged: 'Conserver tel quel',

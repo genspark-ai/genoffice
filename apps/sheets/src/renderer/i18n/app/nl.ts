@@ -119,9 +119,11 @@ export const nl = {
   appChartNoRepoint: 'Deze grafiek ondersteunt het opnieuw toewijzen van gegevensbereiken niet.',
   appKeepOneSeries: 'Behoud ten minste één reeks.',
   appNoCategoriesToSwitch: 'Geen categorieën om te wisselen.',
-  appComboNoSelectData:
-    'Het wijzigen van de gegevensbron van een combinatiegrafiek wordt nog niet ondersteund.',
+  appSelectDataUnsupported:
+    'Het wijzigen van de gegevensbron van dit diagramtype wordt niet ondersteund.',
   appSeriesName: 'Reeksnaam',
+  appSeriesType: 'Serietype',
+  appSecondaryAxis: 'Secundaire as',
   appValuesRange: 'Waardenbereik',
   appCategoriesRange: 'Categoriebereik',
   appKeepUnchanged: 'Ongewijzigd laten',

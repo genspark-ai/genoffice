@@ -119,9 +119,11 @@ export const it = {
   appChartNoRepoint: 'Questo grafico non supporta la ridefinizione degli intervalli di dati.',
   appKeepOneSeries: 'Mantieni almeno una serie.',
   appNoCategoriesToSwitch: 'Nessuna categoria da scambiare.',
-  appComboNoSelectData:
-    "La modifica dell'origine dati di un grafico combinato non è ancora supportata.",
+  appSelectDataUnsupported:
+    "La modifica dell'origine dati di questo tipo di grafico non è supportata.",
   appSeriesName: 'Nome serie',
+  appSeriesType: 'Tipo di serie',
+  appSecondaryAxis: 'Asse secondario',
   appValuesRange: 'Intervallo valori',
   appCategoriesRange: 'Intervallo categorie',
   appKeepUnchanged: 'Mantieni invariato',

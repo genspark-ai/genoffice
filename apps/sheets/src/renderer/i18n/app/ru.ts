@@ -115,9 +115,10 @@ export const ru = {
   appChartNoRepoint: 'Эта диаграмма не поддерживает переназначение диапазонов данных.',
   appKeepOneSeries: 'Оставьте хотя бы один ряд.',
   appNoCategoriesToSwitch: 'Нет категорий для переключения.',
-  appComboNoSelectData:
-    'Изменение источника данных комбинированной диаграммы пока не поддерживается.',
+  appSelectDataUnsupported: 'Изменение источника данных для этого типа диаграмм не поддерживается.',
   appSeriesName: 'Имя ряда',
+  appSeriesType: 'Тип ряда',
+  appSecondaryAxis: 'Вспомогательная ось',
   appValuesRange: 'Диапазон значений',
   appCategoriesRange: 'Диапазон категорий',
   appKeepUnchanged: 'Оставить без изменений',

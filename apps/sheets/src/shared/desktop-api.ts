@@ -574,6 +574,10 @@ const visualObjectSchema = z
               marker: z.string().optional(),
               /// Parent plot group (barChart, lineChart, ...) of the series.
               plot: z.string().optional(),
+              /// Combo Select Data: the series rides the secondary axis
+              /// pair (edit-pipeline only; a reload infers it from the
+              /// group).
+              secondaryAxis: z.boolean().optional(),
               /// Label mode the series resolves to: its own `c:dLbls`, else
               /// the plot element's.
               dataLabels: z
@@ -1643,6 +1647,12 @@ export const workbookVisualAddSchema = z
                 valuesRef: z.string().max(512).optional(),
                 categoriesRef: z.string().max(512).optional(),
                 color: hexColorSchema.optional(),
+                /// Combo chart: plot group the series joins ('lineChart' =
+                /// line, anything else / absent = column). Untagged series
+                /// keep Insert Chart's combo shape.
+                plot: z.enum(['barChart', 'lineChart']).optional(),
+                /// Combo chart: the series rides the secondary axis pair.
+                secondaryAxis: z.boolean().optional(),
                 /// Per-point fills (`c:dPt`), keyed by 0-based point index.
                 pointColors: z.record(z.string().regex(/^[0-9]{1,3}$/), hexColorSchema).optional(),
                 explosionPct: z.number().int().min(0).max(400).optional(),

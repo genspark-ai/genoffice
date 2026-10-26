@@ -30,12 +30,156 @@ const TARGET_PLOTS: Record<NonNullable<WorkbookChartEdit['chartType']>, PlotElem
 const SYNTH_CAT_AXIS_ID = '900000001'
 const SYNTH_VAL_AXIS_ID = '900000002'
 
+interface PlotMatch {
+  readonly family: string
+  readonly inner: string
+  readonly whole: string
+  readonly index: number
+}
+
+const PLOT_FAMILIES =
+  'barChart|lineChart|areaChart|bar3DChart|line3DChart|area3DChart|pieChart|pie3DChart|doughnutChart|scatterChart|radarChart'
+
+/// Every plot group element of the chart part, in document order.
+function matchPlots(chartXml: string): PlotMatch[] {
+  const pattern = new RegExp(`<c:(${PLOT_FAMILIES})>([\\s\\S]*?)</c:\\1>`, 'g')
+  return [...chartXml.matchAll(pattern)].map((match) => ({
+    family: match[1] ?? '',
+    inner: match[2] ?? '',
+    whole: match[0],
+    index: match.index ?? 0,
+  }))
+}
+
+interface AxisMatch {
+  readonly kind: 'cat' | 'val'
+  readonly xml: string
+  readonly id: string | undefined
+  readonly crossAx: string | undefined
+  /// c:delete val="1" — scales its series but is not drawn.
+  readonly hidden: boolean
+  /// Value axis drawn on the right / crossing at max — the secondary scale.
+  readonly right: boolean
+}
+
+/// Every paired-open axis element of the scoped XML, in document order.
+/// (Self-closing axes carry no axId and no formatting — nothing to manage.)
+function matchAxes(scopedXml: string): AxisMatch[] {
+  const pattern = /<c:(catAx|dateAx|valAx)>([\s\S]*?)<\/c:\1>/g
+  return [...scopedXml.matchAll(pattern)].map((match) => {
+    const tag = match[1] ?? ''
+    const inner = match[2] ?? ''
+    return {
+      kind: tag === 'valAx' ? ('val' as const) : ('cat' as const),
+      xml: match[0],
+      id: /<c:axId val="([0-9]+)"\/>/.exec(inner)?.[1],
+      crossAx: /<c:crossAx val="([0-9]+)"\/>/.exec(inner)?.[1],
+      hidden: /<c:delete val="1"\/>/.test(inner),
+      right:
+        tag === 'valAx' &&
+        (/<c:axPos val="r"\/>/.test(inner) || /<c:crosses val="max"\/>/.test(inner)),
+    }
+  })
+}
+
+interface AxisPairSelection {
+  readonly primaryCat: AxisMatch | undefined
+  readonly primaryVal: AxisMatch | undefined
+  readonly secondaryVal: AxisMatch | undefined
+  readonly secondaryCat: AxisMatch | undefined
+  /// Axes outside the two managed pairs — a rebuild fails closed on them.
+  readonly leftovers: readonly AxisMatch[]
+}
+
+/// Splits a plotArea's axes into the primary pair (left value axis and the
+/// category axis crossing it), the secondary pair, and anything else.
+function classifyAxes(axes: readonly AxisMatch[]): AxisPairSelection {
+  const vals = axes.filter((axis) => axis.kind === 'val')
+  const cats = axes.filter((axis) => axis.kind === 'cat')
+  const primaryVal = vals.find((axis) => !axis.right && axis.id !== undefined) ?? vals[0]
+  const primaryCat =
+    primaryVal === undefined
+      ? undefined
+      : (cats.find((axis) => axis.crossAx === primaryVal.id) ?? cats[0])
+  const rest = axes.filter((axis) => axis !== primaryCat && axis !== primaryVal)
+  const secondaryVal = rest.find((axis) => axis.kind === 'val' && axis.right)
+  const secondaryCat =
+    secondaryVal === undefined
+      ? undefined
+      : (rest.find((axis) => axis.kind === 'cat' && axis.crossAx === secondaryVal.id) ??
+        rest.find((axis) => axis.kind === 'cat'))
+  const leftovers = rest.filter((axis) => axis !== secondaryVal && axis !== secondaryCat)
+  return { primaryCat, primaryVal, secondaryVal, secondaryCat, leftovers }
+}
+
+/// Points a kept axis's crossAx at its surviving partner (a primary axis may
+/// have crossed a dropped secondary one).
+function retagCrossAx(axisXml: string, partnerId: string): string {
+  return axisXml.replace(/<c:crossAx val="[0-9]+"\/>/, () => `<c:crossAx val="${partnerId}"/>`)
+}
+
+/// Fresh axIds above every id the plotArea already uses.
+function nextAxisIds(plotAreaInner: string, count: number): string[] {
+  let max = 0
+  for (const found of plotAreaInner.matchAll(/<c:axId val="([0-9]+)"\/>/g)) {
+    const value = Number(found[1])
+    if (Number.isFinite(value) && value > max) max = value
+  }
+  return Array.from({ length: count }, (_, index) => String(max + 1 + index))
+}
+
+/// Secondary pair synthesized when tagged series need one the file lacks —
+/// Insert Chart's shape (hidden category axis, right value axis at max).
+function hiddenCatAxisXml(catId: string, valId: string): string {
+  return (
+    `<c:catAx><c:axId val="${catId}"/>` +
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>' +
+    `<c:delete val="1"/><c:axPos val="b"/><c:crossAx val="${valId}"/></c:catAx>`
+  )
+}
+
+function rightValAxisXml(valId: string, catId: string): string {
+  return (
+    `<c:valAx><c:axId val="${valId}"/>` +
+    '<c:scaling><c:orientation val="minMax"/></c:scaling>' +
+    `<c:delete val="0"/><c:axPos val="r"/><c:crossAx val="${catId}"/><c:crosses val="max"/></c:valAx>`
+  )
+}
+
+/// The plotArea children this rebuild owns removed (plots and axes); the
+/// layout element and any dTable/spPr tail stay in `rest`.
+function plotAreaRemainder(
+  plotAreaInner: string,
+  plots: readonly PlotMatch[],
+  axes: readonly AxisMatch[],
+): { readonly layout: string; readonly rest: string } {
+  let rest = plotAreaInner
+  for (const plot of plots) rest = rest.replace(plot.whole, '')
+  for (const axis of axes) rest = rest.replace(axis.xml, '')
+  rest = rest.replace(/<c:(?:catAx|dateAx|valAx|serAx)\/>/g, '')
+  const layout = /<c:layout\/>|<c:layout>[\s\S]*?<\/c:layout>/.exec(rest)?.[0] ?? ''
+  return { layout, rest: layout === '' ? rest : rest.replace(layout, '') }
+}
+
+/// Swaps every matched plot for one element at the first plot's position.
+function replacePlots(chartXml: string, plots: readonly PlotMatch[], replacement: string): string {
+  let xml = chartXml
+  for (const plot of [...plots].sort((a, b) => b.index - a.index)) {
+    xml = xml.slice(0, plot.index) + xml.slice(plot.index + plot.whole.length)
+  }
+  const first = Math.min(...plots.map((plot) => plot.index))
+  return xml.slice(0, first) + replacement + xml.slice(first)
+}
+
 export function applyChartEdit(chartXml: string, edit: WorkbookChartEdit): string {
   let xml = chartXml
+  // Full series replacement runs BEFORE a type conversion in the same batch:
+  // a journal merges both when the user re-points data and later converts the
+  // chart, and the conversion must have the final word — a tagged (combo)
+  // series set rebuilds multiple plot groups the conversion then collapses.
+  if (edit.seriesSet !== undefined) xml = replaceSeries(xml, edit.seriesSet)
   if (edit.chartType !== undefined) xml = convertChartType(xml, edit.chartType)
   if (edit.title !== undefined) xml = setChartTitle(xml, edit.title)
-  // Full replacement first: the index-keyed edits below target the new set.
-  if (edit.seriesSet !== undefined) xml = replaceSeries(xml, edit.seriesSet)
   if (edit.seriesColors !== undefined) {
     for (const [index, color] of Object.entries(edit.seriesColors)) {
       xml = setSeriesColor(xml, Number(index), color)
@@ -324,25 +468,24 @@ const REPLACEABLE_PLOTS: readonly string[] = [
 /// Full series replacement (Select Data) on a single-plot chart: every
 /// existing c:ser (with its dPt/trendline baggage) drops, the new set is
 /// written in order at the old series slot, other plot children stay.
+/// Tagged entries (combo Select Data) regroup the plotArea instead.
 function replaceSeries(
   chartXml: string,
   entries: NonNullable<WorkbookChartEdit['seriesSet']>,
 ): string {
-  const plotPattern =
-    /<c:(barChart|lineChart|areaChart|bar3DChart|line3DChart|area3DChart|pieChart|pie3DChart|doughnutChart|scatterChart|radarChart)>([\s\S]*?)<\/c:\1>/g
-  const plots = [...chartXml.matchAll(plotPattern)]
+  const plots = matchPlots(chartXml)
   const plotMatch = plots[0]
-  if (!plotMatch?.[1] || plotMatch[2] === undefined) {
+  if (!plotMatch) {
     throw new ChartEditError('This chart type does not support series replacement.')
   }
-  if (plots.length > 1) {
-    throw new ChartEditError('Combo charts cannot have their series replaced.')
+  if (plots.length > 1 || entries.some((entry) => entry.plot !== undefined)) {
+    return replaceComboSeries(chartXml, plots, entries)
   }
-  const plot = plotMatch[1]
+  const plot = plotMatch.family
   if (!REPLACEABLE_PLOTS.includes(plot)) {
     throw new ChartEditError(`Replacing series on a ${plot} is not supported.`)
   }
-  const inner = plotMatch[2]
+  const inner = plotMatch.inner
   const firstSer = inner.search(/<c:ser>/)
   if (firstSer === -1) throw new ChartEditError('This chart has no series.')
   const built = entries
@@ -359,7 +502,132 @@ function replaceSeries(
   return (
     chartXml.slice(0, plotMatch.index) +
     `<c:${plot}>${nextInner}</c:${plot}>` +
-    chartXml.slice(plotMatch.index + plotMatch[0].length)
+    chartXml.slice(plotMatch.index + plotMatch.whole.length)
+  )
+}
+
+/// Combo series replacement: series are grouped by their tagged family and
+/// axis set into <c:barChart>/<c:lineChart> elements (c:idx/order stay
+/// global in the dialog's row order), the primary axis pair survives
+/// verbatim, and the secondary pair is kept, synthesized, or dropped to
+/// match the tags.
+function replaceComboSeries(
+  chartXml: string,
+  plots: readonly PlotMatch[],
+  entries: NonNullable<WorkbookChartEdit['seriesSet']>,
+): string {
+  for (const plot of plots) {
+    if (plot.family !== 'barChart' && plot.family !== 'lineChart') {
+      throw new ChartEditError('Only bar + line combos support series replacement.')
+    }
+  }
+  const plotAreaMatch = /<c:plotArea>([\s\S]*?)<\/c:plotArea>/.exec(chartXml)
+  if (!plotAreaMatch || plotAreaMatch[1] === undefined) {
+    throw new ChartEditError('Chart part has no plot area.')
+  }
+  const plotAreaInner = plotAreaMatch[1]
+  // A series axis (3D charts) references its own scale; this rebuild cannot
+  // re-point it, so fail closed rather than orphan it.
+  if (/<c:serAx[>/]/.test(plotAreaInner)) {
+    throw new ChartEditError('This chart has series axes this edit cannot rebuild.')
+  }
+  const axes = matchAxes(plotAreaInner)
+  const { primaryCat, primaryVal, secondaryVal, secondaryCat, leftovers } = classifyAxes(axes)
+  if (!primaryCat || !primaryVal || primaryCat.id === undefined || primaryVal.id === undefined) {
+    throw new ChartEditError('Combo chart is missing its primary axes.')
+  }
+  if (leftovers.length > 0) {
+    throw new ChartEditError('This chart has more axes than this edit can rebuild.')
+  }
+  // Untagged entries default to the first group's family.
+  const defaultFamily: 'barChart' | 'lineChart' =
+    plots[0]?.family === 'lineChart' ? 'lineChart' : 'barChart'
+  const wantsSecondary = entries.some((entry) => entry.secondaryAxis === true)
+  let secondaryValId: string | undefined
+  let secondaryCatId: string | undefined
+  let secondaryValXml = ''
+  let secondaryCatXml = ''
+  if (wantsSecondary) {
+    if (
+      secondaryVal &&
+      secondaryCat &&
+      secondaryVal.id !== undefined &&
+      secondaryCat.id !== undefined
+    ) {
+      secondaryValId = secondaryVal.id
+      secondaryCatId = secondaryCat.id
+      secondaryValXml = secondaryVal.xml
+      secondaryCatXml = secondaryCat.xml
+    } else {
+      ;[secondaryCatId, secondaryValId] = nextAxisIds(plotAreaInner, 2) as [string, string]
+      secondaryCatXml = hiddenCatAxisXml(secondaryCatId, secondaryValId)
+      secondaryValXml = rightValAxisXml(secondaryValId, secondaryCatId)
+    }
+  }
+  // Group order: primary groups before secondary, bars before lines.
+  const groupKeys: { family: 'barChart' | 'lineChart'; secondary: boolean }[] = []
+  for (const secondary of [false, true]) {
+    for (const family of ['barChart', 'lineChart'] as const) {
+      if (
+        entries.some(
+          (entry) =>
+            (entry.plot ?? defaultFamily) === family &&
+            (entry.secondaryAxis === true) === secondary,
+        )
+      ) {
+        groupKeys.push({ family, secondary })
+      }
+    }
+  }
+  // Per-family plot settings (grouping, gap width, labels) carry over from
+  // the last existing group of that family.
+  const familyInner = (family: string): string => {
+    let inner = ''
+    for (const plot of plots) if (plot.family === family) inner = plot.inner
+    return inner
+  }
+  const builtGroups = groupKeys
+    .map((group) => {
+      const sers = entries
+        .map((entry, index) => ({ entry, index }))
+        .filter(
+          ({ entry }) =>
+            (entry.plot ?? defaultFamily) === group.family &&
+            (entry.secondaryAxis === true) === group.secondary,
+        )
+        .map(({ entry, index }) => buildSeriesReplacement(entry, index))
+        .join('')
+      const inner = familyInner(group.family)
+      const labels = /<\/c:ser>(<c:dLbls>[\s\S]*?<\/c:dLbls>)/.exec(inner)?.[1] ?? ''
+      const grouping =
+        /<c:grouping val="([^"]*)"\/>/.exec(inner)?.[1] ??
+        (group.family === 'barChart' ? 'clustered' : 'standard')
+      const catId = group.secondary ? secondaryCatId : primaryCat.id
+      const valId = group.secondary ? secondaryValId : primaryVal.id
+      if (group.family === 'barChart') {
+        const barDir = /<c:barDir val="([^"]*)"\/>/.exec(inner)?.[1] ?? 'col'
+        const gapWidth = /<c:gapWidth val="[^"]*"\/>/.exec(inner)?.[0] ?? ''
+        const overlap = /<c:overlap val="[^"]*"\/>/.exec(inner)?.[0] ?? ''
+        return (
+          `<c:barChart><c:barDir val="${barDir}"/><c:grouping val="${grouping}"/>` +
+          `<c:varyColors val="0"/>${sers}${labels}${gapWidth}${overlap}` +
+          `<c:axId val="${catId}"/><c:axId val="${valId}"/></c:barChart>`
+        )
+      }
+      const marker = /<c:marker val="[^"]*"\/>/.exec(inner)?.[0] ?? '<c:marker val="1"/>'
+      return (
+        `<c:lineChart><c:grouping val="${grouping}"/><c:varyColors val="0"/>` +
+        `${sers}${labels}${marker}<c:axId val="${catId}"/><c:axId val="${valId}"/></c:lineChart>`
+      )
+    })
+    .join('')
+  const { layout, rest } = plotAreaRemainder(plotAreaInner, plots, axes)
+  const axesXml =
+    primaryCat.xml + primaryVal.xml + (wantsSecondary ? `${secondaryValXml}${secondaryCatXml}` : '')
+  return (
+    chartXml.slice(0, plotAreaMatch.index) +
+    `<c:plotArea>${layout}${builtGroups}${axesXml}${rest}</c:plotArea>` +
+    chartXml.slice(plotAreaMatch.index + plotAreaMatch[0].length)
   )
 }
 
@@ -785,34 +1053,45 @@ function builtTitle(escapedText: string): string {
 /// rewrite only c:barDir; cross-type conversion rebuilds the plot element
 /// keeping series and dropping type-specific leftovers. Axis↔pie conversions
 /// also remove or synthesize the axis pair, since pie plots reference none.
+/// A combo (bar+line+area groups) collapses into the single target family:
+/// every group's series merge onto the primary axis pair, the secondary pair
+/// drops with the old groups.
 function convertChartType(
   chartXml: string,
   target: NonNullable<WorkbookChartEdit['chartType']>,
 ): string {
-  const plotPattern =
-    /<c:(barChart|lineChart|areaChart|bar3DChart|line3DChart|area3DChart|pieChart|pie3DChart|doughnutChart|scatterChart|radarChart)>([\s\S]*?)<\/c:\1>/g
-  const plots = [...chartXml.matchAll(plotPattern)]
+  const plots = matchPlots(chartXml)
   const plotMatch = plots[0]
-  if (!plotMatch?.[1] || plotMatch[2] === undefined) {
+  if (!plotMatch) {
     throw new ChartEditError('This chart type cannot be converted.')
   }
-  if (plots.length > 1) {
-    throw new ChartEditError('Combo charts cannot be converted.')
+  const combo = plots.length > 1
+  if (combo) {
+    for (const plot of plots) {
+      if (
+        plot.family !== 'barChart' &&
+        plot.family !== 'lineChart' &&
+        plot.family !== 'areaChart'
+      ) {
+        throw new ChartEditError('Only bar, line, and area combos can be converted.')
+      }
+    }
+  } else if (!(CONVERTIBLE_PLOTS as readonly string[]).includes(plotMatch.family)) {
+    throw new ChartEditError(`Converting a ${plotMatch.family} is not supported.`)
   }
-  const current = plotMatch[1]
-  if (!(CONVERTIBLE_PLOTS as readonly string[]).includes(current)) {
-    throw new ChartEditError(`Converting a ${current} is not supported.`)
-  }
-  const inner = plotMatch[2]
+  const current = plotMatch.family
+  const inner = combo ? plots.map((plot) => plot.inner).join('') : plotMatch.inner
   const targetElement = TARGET_PLOTS[target]
-  const currentIsPie = current === 'pieChart' || current === 'doughnutChart'
+  const currentIsPie = !combo && (current === 'pieChart' || current === 'doughnutChart')
   const targetIsPie = targetElement === 'pieChart' || targetElement === 'doughnutChart'
 
-  if (current === 'barChart' && targetElement === 'barChart') {
-    const direction = target === 'column' ? 'col' : 'bar'
-    return chartXml.replace(/<c:barDir val="[^"]*"\/>/, () => `<c:barDir val="${direction}"/>`)
+  if (!combo) {
+    if (current === 'barChart' && targetElement === 'barChart') {
+      const direction = target === 'column' ? 'col' : 'bar'
+      return chartXml.replace(/<c:barDir val="[^"]*"\/>/, () => `<c:barDir val="${direction}"/>`)
+    }
+    if (targetElement === current) return chartXml
   }
-  if (targetElement === current) return chartXml
 
   const series = [...inner.matchAll(/<c:ser>[\s\S]*?<\/c:ser>/g)].map((match) =>
     sanitizeSeries(match[0], targetIsPie),
@@ -840,24 +1119,58 @@ function convertChartType(
   if (targetIsPie) {
     parts.push('<c:firstSliceAng val="0"/>')
     if (targetElement === 'doughnutChart') parts.push('<c:holeSize val="50"/>')
-    const plotReplaced = chartXml.replace(
-      plotMatch[0],
-      () => `<c:${targetElement}>${parts.join('')}</c:${targetElement}>`,
+    const plotReplaced = replacePlots(
+      chartXml,
+      plots,
+      `<c:${targetElement}>${parts.join('')}</c:${targetElement}>`,
     )
     return plotReplaced.replace(
       /<c:(catAx|valAx|dateAx|serAx)>[\s\S]*?<\/c:\1>|<c:(?:catAx|valAx|dateAx|serAx)\/>/g,
       '',
     )
   }
-  if (!currentIsPie) {
+  if (!currentIsPie && !combo) {
     const axisIds = [...inner.matchAll(/<c:axId val="[0-9]+"\/>/g)].map((match) => match[0])
     if (axisIds.length === 0) {
       throw new ChartEditError('This chart has no axes to convert.')
     }
     parts.push(...axisIds)
-    return chartXml.replace(
-      plotMatch[0],
-      () => `<c:${targetElement}>${parts.join('')}</c:${targetElement}>`,
+    return replacePlots(
+      chartXml,
+      plots,
+      `<c:${targetElement}>${parts.join('')}</c:${targetElement}>`,
+    )
+  }
+  if (combo) {
+    // Combo → single axis family: the primary pair stays (crossAx repaired
+    // in case it crossed a dropped axis), everything else goes.
+    const plotAreaMatch = /<c:plotArea>([\s\S]*?)<\/c:plotArea>/.exec(chartXml)
+    if (!plotAreaMatch || plotAreaMatch[1] === undefined) {
+      throw new ChartEditError('Chart part has no plot area.')
+    }
+    const axes = matchAxes(plotAreaMatch[1])
+    if (/<c:serAx[>/]/.test(plotAreaMatch[1])) {
+      throw new ChartEditError('This combo has series axes this conversion cannot keep.')
+    }
+    const { primaryCat, primaryVal, leftovers } = classifyAxes(axes)
+    if (
+      !primaryCat ||
+      !primaryVal ||
+      primaryCat.id === undefined ||
+      primaryVal.id === undefined ||
+      leftovers.length > 0
+    ) {
+      throw new ChartEditError('This combo has axes this conversion cannot keep.')
+    }
+    parts.push(`<c:axId val="${primaryCat.id}"/>`, `<c:axId val="${primaryVal.id}"/>`)
+    const { layout, rest } = plotAreaRemainder(plotAreaMatch[1], plots, axes)
+    const keptAxes =
+      retagCrossAx(primaryCat.xml, primaryVal.id) + retagCrossAx(primaryVal.xml, primaryCat.id)
+    return (
+      chartXml.slice(0, plotAreaMatch.index) +
+      `<c:plotArea>${layout}<c:${targetElement}>${parts.join('')}</c:${targetElement}>` +
+      `${keptAxes}${rest}</c:plotArea>` +
+      chartXml.slice(plotAreaMatch.index + plotAreaMatch[0].length)
     )
   }
   // Pie → axis chart: the plot gains a synthesized category/value axis pair
@@ -875,7 +1188,7 @@ function convertChartType(
     `<c:delete val="0"/><c:axPos val="${valPos}"/><c:majorGridlines/>` +
     `<c:crossAx val="${SYNTH_CAT_AXIS_ID}"/></c:valAx>`
   return chartXml.replace(
-    plotMatch[0],
+    plotMatch.whole,
     () => `<c:${targetElement}>${parts.join('')}</c:${targetElement}>${axes}`,
   )
 }

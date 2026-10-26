@@ -1051,3 +1051,249 @@ describe('applyChartEdit data label position and format', () => {
     expect(xml).toContain('<c:numFmt formatCode="0.0&quot; kg&quot;" sourceLinked="0"/>')
   })
 })
+
+/// Insert Chart's combo shape: bars on the primary pair, the line on a
+/// secondary right value axis plus a hidden category axis.
+const COMBO_CHART =
+  '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">' +
+  '<c:chart>' +
+  '<c:plotArea><c:layout/>' +
+  '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>' +
+  '<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Sales</c:v></c:tx>' +
+  '<c:cat/><c:val/></c:ser><c:gapWidth val="150"/>' +
+  '<c:axId val="1"/><c:axId val="2"/></c:barChart>' +
+  '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' +
+  '<c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:v>Growth</c:v></c:tx>' +
+  '<c:cat/><c:val/></c:ser><c:marker val="1"/>' +
+  '<c:axId val="3"/><c:axId val="4"/></c:lineChart>' +
+  '<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+  '<c:delete val="0"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>' +
+  '<c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+  '<c:delete val="0"/><c:axPos val="l"/><c:majorGridlines/><c:crossAx val="1"/></c:valAx>' +
+  '<c:valAx><c:axId val="4"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+  '<c:delete val="0"/><c:axPos val="r"/><c:crossAx val="3"/><c:crosses val="max"/></c:valAx>' +
+  '<c:catAx><c:axId val="3"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+  '<c:delete val="1"/><c:axPos val="b"/><c:crossAx val="4"/></c:catAx>' +
+  '</c:plotArea></c:chart></c:chartSpace>'
+
+/// Both groups on the primary pair (no secondary axes in the file).
+const COMBO_NO_SECONDARY = COMBO_CHART.replace(
+  '<c:marker val="1"/><c:axId val="3"/><c:axId val="4"/></c:lineChart>',
+  '<c:marker val="1"/><c:axId val="1"/><c:axId val="2"/></c:lineChart>',
+).replace(
+  '<c:valAx><c:axId val="4"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+    '<c:delete val="0"/><c:axPos val="r"/><c:crossAx val="3"/><c:crosses val="max"/></c:valAx>' +
+    '<c:catAx><c:axId val="3"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+    '<c:delete val="1"/><c:axPos val="b"/><c:crossAx val="4"/></c:catAx>',
+  '',
+)
+
+/// A combo the pipeline must refuse: a scatter group has no category axis.
+const SCATTER_COMBO =
+  '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">' +
+  '<c:chart><c:plotArea><c:layout/>' +
+  '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>' +
+  '<c:ser><c:idx val="0"/><c:order val="0"/><c:cat/><c:val/></c:ser>' +
+  '<c:axId val="1"/><c:axId val="2"/></c:barChart>' +
+  '<c:scatterChart><c:scatterStyle val="lineMarker"/>' +
+  '<c:ser><c:idx val="1"/><c:order val="1"/><c:xVal/><c:yVal/></c:ser>' +
+  '<c:axId val="1"/><c:axId val="2"/></c:scatterChart>' +
+  '</c:plotArea></c:chart></c:chartSpace>'
+
+describe('applyChartEdit combo series replacement', () => {
+  it('regroups a tagged set into bar and line groups on the requested axes', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'Bars', values: [10, 20], valuesRef: 'Data!$B$2:$B$3', plot: 'barChart' },
+        { name: 'Line', values: [1, 2], plot: 'lineChart', secondaryAxis: true },
+      ],
+    })
+    expect(xml.match(/<c:barChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(1)
+    const bar = /<c:barChart>[\s\S]*?<\/c:barChart>/.exec(xml)?.[0] ?? ''
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(bar).toContain('<c:idx val="0"/>')
+    expect(bar).toContain('<c:tx><c:v>Bars</c:v></c:tx>')
+    expect(bar).toContain('<c:f>Data!$B$2:$B$3</c:f>')
+    expect(bar).toContain('<c:axId val="1"/><c:axId val="2"/>')
+    expect(line).toContain('<c:idx val="1"/>')
+    // Secondary group keeps the file's secondary pair.
+    expect(line).toContain('<c:axId val="3"/><c:axId val="4"/>')
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(2)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(2)
+    expect(xml).toContain('<c:axPos val="r"/>')
+    // The primary axes survive verbatim (title-free but with gridlines).
+    expect(xml).toContain('<c:majorGridlines/>')
+    expect(xml.indexOf('<c:barChart>')).toBeLessThan(xml.indexOf('<c:lineChart>'))
+  })
+
+  it('numbers series globally in dialog row order across groups', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'First', values: [1], plot: 'lineChart', secondaryAxis: true },
+        { name: 'Second', values: [2], plot: 'barChart' },
+      ],
+    })
+    const bar = /<c:barChart>[\s\S]*?<\/c:barChart>/.exec(xml)?.[0] ?? ''
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(line).toContain('<c:idx val="0"/><c:order val="0"/>')
+    expect(bar).toContain('<c:idx val="1"/><c:order val="1"/>')
+  })
+
+  it('drops the secondary pair when no series rides it', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'B', values: [1], plot: 'barChart' },
+        { name: 'L', values: [2], plot: 'lineChart' },
+      ],
+    })
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(1)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
+    expect(xml).not.toContain('<c:axPos val="r"/>')
+    expect(xml).not.toContain('<c:delete val="1"/>')
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(line).toContain('<c:axId val="1"/><c:axId val="2"/>')
+  })
+
+  it('synthesizes a secondary pair above the file ids when the chart has none', () => {
+    const xml = applyChartEdit(COMBO_NO_SECONDARY, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'B', values: [1], plot: 'barChart' },
+        { name: 'L', values: [2], plot: 'lineChart', secondaryAxis: true },
+      ],
+    })
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(2)
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(2)
+    expect(xml).toContain('<c:axPos val="r"/>')
+    expect(xml).toContain('<c:crosses val="max"/>')
+    // Fresh ids sit above the file's 1 and 2 (hidden cat 3, right val 4).
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(line).toContain('<c:axId val="3"/><c:axId val="4"/>')
+  })
+
+  it('splits one family onto both axis pairs as two groups', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'Left', values: [1], plot: 'barChart' },
+        { name: 'Right', values: [2], plot: 'barChart', secondaryAxis: true },
+      ],
+    })
+    expect(xml.match(/<c:barChart>/g)).toHaveLength(2)
+    expect(xml).not.toContain('<c:lineChart>')
+    const groups = [...xml.matchAll(/<c:barChart>[\s\S]*?<\/c:barChart>/g)].map((m) => m[0])
+    expect(groups[0]).toContain('<c:axId val="1"/><c:axId val="2"/>')
+    expect(groups[1]).toContain('<c:axId val="3"/><c:axId val="4"/>')
+  })
+
+  it('collapses a combo into a plain chart when every tag lands on one family', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'L1', values: [1], plot: 'lineChart' },
+        { name: 'L2', values: [2], plot: 'lineChart' },
+      ],
+    })
+    expect(xml).not.toContain('<c:barChart>')
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(1)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
+  })
+
+  it('carries the bar family plot settings over to the rebuilt groups', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [{ name: 'B', values: [1], plot: 'barChart' }],
+    })
+    const bar = /<c:barChart>[\s\S]*?<\/c:barChart>/.exec(xml)?.[0] ?? ''
+    expect(bar).toContain('<c:barDir val="col"/>')
+    expect(bar).toContain('<c:grouping val="clustered"/>')
+    expect(bar).toContain('<c:gapWidth val="150"/>')
+  })
+
+  it('fails closed on a combo containing a scatter group', () => {
+    expect(() =>
+      applyChartEdit(SCATTER_COMBO, {
+        chartPath: 'xl/charts/chart1.xml',
+        seriesSet: [{ name: 'S', values: [1], plot: 'barChart' }],
+      }),
+    ).toThrow(ChartEditError)
+  })
+})
+
+describe('applyChartEdit combo type conversion', () => {
+  it('collapses a combo into a line chart on the primary axes', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      chartType: 'line',
+    })
+    expect(xml).not.toContain('<c:barChart>')
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(1)
+    const line = /<c:lineChart>[\s\S]*?<\/c:lineChart>/.exec(xml)?.[0] ?? ''
+    expect(line.match(/<c:ser>/g)).toHaveLength(2)
+    expect(line).toContain('<c:idx val="0"/>')
+    expect(line).toContain('<c:idx val="1"/>')
+    expect(line).toContain('<c:axId val="1"/><c:axId val="2"/>')
+    // The secondary pair drops with the old groups.
+    expect(xml.match(/<c:catAx>/g)).toHaveLength(1)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
+    expect(xml).not.toContain('<c:axPos val="r"/>')
+    expect(xml).toContain('<c:majorGridlines/>')
+  })
+
+  it('keeps the primary crossAx pair pointing at each other', () => {
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      chartType: 'column',
+    })
+    expect(xml).not.toContain('<c:lineChart>')
+    const bar = /<c:barChart>[\s\S]*?<\/c:barChart>/.exec(xml)?.[0] ?? ''
+    expect(bar).toContain('<c:axId val="1"/><c:axId val="2"/>')
+    expect(bar.match(/<c:ser>/g)).toHaveLength(2)
+    const catAx = /<c:catAx>[\s\S]*?<\/c:catAx>/.exec(xml)?.[0] ?? ''
+    const valAx = /<c:valAx>[\s\S]*?<\/c:valAx>/.exec(xml)?.[0] ?? ''
+    expect(catAx).toContain('<c:axId val="1"/>')
+    expect(catAx).toContain('<c:crossAx val="2"/>')
+    expect(valAx).toContain('<c:axId val="2"/>')
+    expect(valAx).toContain('<c:crossAx val="1"/>')
+  })
+
+  it('combo to pie merges every series and drops all axes', () => {
+    const xml = applyChartEdit(COMBO_CHART, { chartPath: 'xl/charts/chart1.xml', chartType: 'pie' })
+    expect(xml).toContain('<c:pieChart>')
+    expect(xml).not.toContain('<c:barChart>')
+    expect(xml).not.toContain('<c:lineChart>')
+    expect(xml).not.toContain('<c:catAx>')
+    expect(xml).not.toContain('<c:valAx>')
+    expect(xml.match(/<c:ser>/g)).toHaveLength(2)
+  })
+
+  it('refuses a combo containing a scatter group', () => {
+    expect(() =>
+      applyChartEdit(SCATTER_COMBO, { chartPath: 'xl/charts/chart1.xml', chartType: 'line' }),
+    ).toThrow(ChartEditError)
+  })
+
+  it('a batched conversion wins over a stale combo series set', () => {
+    // The journal merges a Select Data apply with a later type conversion;
+    // running the tagged series set first would rebuild the combo the
+    // conversion is supposed to collapse.
+    const xml = applyChartEdit(COMBO_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      seriesSet: [
+        { name: 'B', values: [1], plot: 'barChart' },
+        { name: 'L', values: [2], plot: 'lineChart', secondaryAxis: true },
+      ],
+      chartType: 'line',
+    })
+    expect(xml).not.toContain('<c:barChart>')
+    expect(xml.match(/<c:lineChart>/g)).toHaveLength(1)
+    expect(xml.match(/<c:valAx>/g)).toHaveLength(1)
+    expect(xml).toContain('<c:tx><c:v>B</c:v></c:tx>')
+    expect(xml).toContain('<c:tx><c:v>L</c:v></c:tx>')
+  })
+})
