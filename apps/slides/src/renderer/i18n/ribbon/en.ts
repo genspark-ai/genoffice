@@ -32,6 +32,7 @@ export const en = {
   ribbonFileOpen: 'Open…',
   ribbonFileSave: 'Save',
   ribbonFileSaveAs: 'Save As…',
+  aiNameFile: 'Name with AI…',
   ribbonFileExportPdf: 'Export as PDF…',
   ribbonFilePrint: 'Print…',
   ribbonFileExportImages: 'Export as Images…',

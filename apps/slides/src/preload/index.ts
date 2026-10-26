@@ -481,7 +481,31 @@ const api: SlidesApi = {
   },
 }
 
+/**
+ * Model file naming: the transport half of `suggestFileName`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The one `ai:` channel is
+ * registered app-wide by the shell (`registerAiNamingIpc`), not by this app, the
+ * same arrangement the `project:*` bridge below already depends on. A slides
+ * window running on its own has no such handler: the invoke rejects, and the
+ * shared client treats that as a declined naming, which leaves the deck with
+ * the name it already had.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: { content: string }) =>
+    ipcRenderer.invoke('ai:suggest-file-name', input),
+}
+
 contextBridge.exposeInMainWorld('slidesApi', api)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
 
 // Chat attachment bridge: method names/signatures match the window.desktop attachment subset in docs, so the renderer's files-skill is copied over wholesale
 const filesApi: DesktopFilesApi = {
