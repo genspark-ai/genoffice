@@ -577,8 +577,6 @@ export const tr = {
   appSaveFailed: 'Çalışma kitabı kaydedilemiyor.',
   appCfRuleUnsaveable:
     'Bu koşullu biçimlendirme kuralı xlsx’e kaydedilemez — başka bir kural türüne geçin.',
-  appSaveErrX14Dv:
-    'Bu sayfada genişletilmiş (x14) veri doğrulama var; doğrulama kurallarını düzenlemek henüz desteklenmiyor.',
   appSaveErrMultiSelectList:
     'Çoklu seçim liste doğrulaması xlsx’e kaydedilemez — kaydetmeden önce kuralı silin.',
   appSaveErrX14Cf:
