@@ -3,12 +3,15 @@
 Spike（docs，`GENOFFICE_AI_BACKEND=pi`）已验证：图片注入、工具调用、usage 上报全通。
 本章程约束剩余 app 的切换顺序、验收门与回退路径。
 
+**2026-10-26 更新：pi 已成为默认后端。** `GENOFFICE_AI_BACKEND=legacy` 显式回退旧栈。
+六个 app + shell Ask 全部验收通过；dist:win 产物（GenOffice Setup 0.12.0.exe）已验证。
+
 ## 原则
 
 1. **单开关**：每 app 的切换点只在主进程 `ai:stream` handler 里的
-   `GENOFFICE_AI_BACKEND=pi` 分支（docs-main.ts:4271 已打样）。renderer 零改动。
-2. **默认可回退**：不设环境变量 = 旧栈（`streamForProvider`）。任何 app 出问题，
-   回退 = 去掉环境变量重启，不回滚代码。
+   `GENOFFICE_AI_BACKEND` 分支（docs-main.ts:4274 已打样）。renderer 零改动。
+2. **默认可回退**：不设环境变量 = pi 栈；`GENOFFICE_AI_BACKEND=legacy` = 旧栈
+   （`streamForProvider`）。任何 app 出问题，回退 = 设环境变量重启，不回滚代码。
 3. **一门一令**：每道验收门是一条可复制运行的命令，不用形容词。
 4. **协议缺口冻结**：`codex` provider（codex-app-server 子进程协议）在 pi 后端下
    不支持——pi 的 `openai-codex-responses` 是 HTTP Responses API，与本地 CLI 子进程
@@ -18,12 +21,12 @@ Spike（docs，`GENOFFICE_AI_BACKEND=pi`）已验证：图片注入、工具调�
 
 | app | ai:stream handler | 工具数 | 特有机制 |
 |---|---|---|---|
-| docs | docs-main.ts:4271 ✅已切换 | ~35 | 图片注入 doc-images.ts |
+| docs | docs-main.ts:4274 ✅已切换 | ~35 | 图片注入 doc-images.ts |
 | markdown | 复用 docs-main.registerAiIpc | ~10 | 与 docs 同构（tiptap） |
 | html | 复用 docs-main.registerAiIpc | ~8 | streamText 旁路（brief/page-writer） |
 | slides | ai-ipc.ts:239（自有变体） | 17 | slide-qc 双循环、deck-images |
 | pdf | 复用 docs-main.registerAiIpc | ~45 | 页面图 page-images |
-| sheets | sheets-main.ts:3960（自有变体） | 13 | Rust sidecar、verifyResponse |
+| sheets | sheets-main.ts:3975（自有变体）✅已切换 | 13 | Rust sidecar、verifyResponse |
 | shell Ask | 复用 docs-main.registerAiIpc | ~6 | kb/attachments/cli/create-document |
 
 shell 聚合模式下 `registerAiIpc` 只注册一次（docs-main.ts:4119，shell/index.ts:6796）。

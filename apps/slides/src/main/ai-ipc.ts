@@ -264,7 +264,9 @@ export function registerAiIpc(): void {
           send({ requestId, type: 'usage', usage })
         },
       }
-      if (process.env.GENOFFICE_AI_BACKEND === 'pi') {
+      // pi harness is the default; GENOFFICE_AI_BACKEND=legacy opts back to the
+      // self-written provider stack.
+      if (process.env.GENOFFICE_AI_BACKEND !== 'legacy') {
         const piSettings: AiSettings = { provider, providers: { [provider]: config } } as AiSettings
         await streamViaPi(piSettings, system, messages, tools, maxTokens, callbacks)
       } else {
