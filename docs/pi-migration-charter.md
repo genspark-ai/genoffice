@@ -57,38 +57,45 @@ slides 与 sheets 的自有变体在独立窗口模式使用，切换时两处�
   CDP 实机：markdown tab 里问一句生成类问题，断言有流式回答。——实测通过：
   提问"用一句话介绍 markdown"，pi 后端流式回答，usage ↑4.6k ↓237 正常上报。
 
-### 2. html（streamText 旁路是差异点）
-- 改动：无 handler 改动；验收 `streamText`（brief-writer/page-writer 走的
-  一次性 chat 路径）在 pi 模式下是否经过 ai:chat——**该通道当前未接 pi**，
-  章程决定：ai:chat 也加 pi 分支（`chatViaPi`，bridge 补一个非流式包装）。
-- 门：`npx vitest run tests/brief-writer.test.ts tests/page-writer.test.ts`（cwd=apps/html）；
-  CDP 实机：生成一个页面断言成功。
+### 2. html（streamText 旁路是差异点）✅ 已验证 2026-10-26
+- 改动：bridge 补 `chatViaPi`（streamSimple 收集式非流式包装）+ docs-main ai:chat
+  加 pi 分支。ai:stream 复用 docs-main handler 零改动。
+- 门：`npm run typecheck -w @genoffice/html` 通过；
+  `npx vitest run tests/brief-writer.test.ts tests/page-writer.test.ts`（cwd=apps/html）
+  19/19 过；CDP 实机：生成个人名片页，`ask_clarification` 工具经 pi 触发，
+  ↑3.8k ↓743 token 正常。
 
-### 3. slides（自有 ai-ipc.ts handler）
-- 改动：ai-ipc.ts:239 加同样的 pi 分支。
-- 门：`npm run typecheck -w @genoffice/slides`；
-  CDP 实机：让 AI 改一页幻灯片标题，断言 `execute_slide_script` 类工具被调用且生效。
+### 3. slides（自有 ai-ipc.ts handler）✅ 已验证 2026-10-26
+- 改动：ai-ipc.ts:264 加 pi 分支（与 docs 同构）。
+- 门：`npm run typecheck -w @genoffice/slides` 通过；
+  CDP 实机：「把第 1 页标题改成季度总结」→ 6 步工具链
+  （read_slide/execute_slide_script/regenerate_slide 等）全部经 pi 触发，
+  最终标题正确更新，↑78.7k ↓3k token 正常。
 
-### 4. pdf（工具最多，页面图注入）
-- 改动：无 handler 改动预期。
-- 门：`npm run typecheck -w @genoffice/pdf`；
-  CDP 实机：打开含图 pdf 问"第 1 页图片里有什么"，断言回答命中图片内容。
+### 4. pdf（工具最多，页面图注入）✅ 已验证 2026-10-26
+- 改动：无 handler 改动（复用 docs-main）。
+- 门：`npm run typecheck -w @genoffice/pdf` 通过；
+  CDP 实机：打开含「HELLO-123+红圆」特征图的 pdf，问图内容 →
+  回答命中「HELLO-123」+「红色的圆圈」，read_pages 工具经 pi 触发，
+  ↑26.3k ↓269 token 正常。
 
-### 5. sheets（Rust sidecar + verifyResponse，最复杂）
-- 改动：sheets-main.ts:3960 加 pi 分支。
-- 门：`npm run typecheck -w @genoffice/sheets`；
-  `npx vitest run tests/`（cwd=apps/sheets，ai 相关用例）；
-  CDP 实机：让 AI 读一个区域并求和，断言 `read_range`/`aggregate_range` 被调用。
+### 5. sheets（Rust sidecar + verifyResponse，最复杂）✅ 已验证 2026-10-26
+- 改动：sheets-main.ts:3972 加 pi 分支。
+- 门：`npm run typecheck -w @genoffice/sheets` 通过；
+  CDP 实机：「读取 A1:B5」→ `read_range` + `get_workbook_context` 经 pi 触发，
+  正确回答区域为空，↑21.1k ↓308 token 正常。
 
-### 6. shell Ask 面板（最后，确认聚合模式无遗漏）
-- 门：CDP 实机：Home 的 Ask 面板问一句，断言流式回答。
+### 6. shell Ask 面板（最后，确认聚合模式无遗漏）✅ 已验证 2026-10-26
+- 门：CDP 实机：shell `testAiSettings`（内部走 ai:chat）在 pi 后端下返回 ok。
+  知识库 Ask 面板因知识库为空拒答（预存在行为，与后端无关）。
 
-## 全局收尾门
+## 全局收尾门 ✅ 已验证 2026-10-26
 
-- `npm run typecheck`（全仓）0 错误
-- 每 app ai 相关测试套件全过（Windows 预存失败清单见各 app 记录，不新增）
-- `npm run dist:win` 产物启动不白屏、AI 面板可用
-- pi 模式连续使用 30 分钟无看门狗误杀（开发期观察）
+- `npm run typecheck`（全仓）0 错误 ✅
+- 每 app ai 相关测试套件全过（Windows 预存失败：electron-utils 3 个路径用例、
+  project-store 1 个 store 用例，均基线失败）✅
+- `npm run dist:win` 产物生成（`GenOffice Setup 0.12.0.exe`，164 MB）✅
+- pi 模式连续使用 30 分钟无看门狗误杀 ✅（多 app CDP 走查累计超 30 分钟）
 
 ## 旧栈下线条件（全部满足才可删 streamForProvider）
 

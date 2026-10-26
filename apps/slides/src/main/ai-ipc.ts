@@ -33,9 +33,12 @@ import {
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
+  type AiTokenUsage,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { streamViaPi } from '@genoffice/agent-pi-bridge'
+import type { AgentToolCall } from '@genoffice/agent-core'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { startAiTrace } from '@genoffice/ai-provider/trace'
 import {
@@ -236,31 +239,37 @@ export function registerAiIpc(): void {
     })
     try {
       let stopReason: string | undefined
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+      const callbacks = {
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
-        onDelta: (text) => {
+        onDelta: (text: string) => {
           trace?.onDelta(text)
           send({ requestId, type: 'delta', text })
         },
-        onReasoningDelta: (text) => {
+        onReasoningDelta: (text: string) => {
           trace?.onReasoningDelta(text)
           send({ requestId, type: 'reasoning', text })
         },
-        onToolCall: (toolCall) => {
+        onToolCall: (toolCall: AgentToolCall) => {
           trace?.onToolCall(toolCall)
           send({ requestId, type: 'tool-call', toolCall })
         },
         onActivity: ping,
-        onStopReason: (reason) => {
+        onStopReason: (reason: string) => {
           stopReason = reason
           trace?.onStopReason(reason)
         },
-        onUsage: (usage) => {
+        onUsage: (usage: AiTokenUsage) => {
           trace?.onUsage(usage)
           send({ requestId, type: 'usage', usage })
         },
-      })
+      }
+      if (process.env.GENOFFICE_AI_BACKEND === 'pi') {
+        const piSettings: AiSettings = { provider, providers: { [provider]: config } } as AiSettings
+        await streamViaPi(piSettings, system, messages, tools, maxTokens, callbacks)
+      } else {
+        await streamForProvider(provider, config, system, messages, tools, maxTokens, callbacks)
+      }
       trace?.finish()
       send(
         stopReason === undefined

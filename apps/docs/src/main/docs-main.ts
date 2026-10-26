@@ -121,7 +121,7 @@ import {
   listCustomModelsForIpc,
   probeCustomModelsForIpc,
 } from '@genoffice/ai-provider/custom-models'
-import { streamViaPi } from '@genoffice/agent-pi-bridge'
+import { chatViaPi, streamViaPi } from '@genoffice/agent-pi-bridge'
 import type { AgentToolCall } from '@genoffice/agent-core'
 import {
   ensureGenofficeLogin,
@@ -4457,7 +4457,10 @@ export function registerAiIpc(): void {
     }
     if (provider !== 'codex' && !config.model) return { ok: false, error: tm('errNoModel') }
     try {
-      const result = await chatForProvider(provider, config, system, user)
+      const result =
+        process.env.GENOFFICE_AI_BACKEND === 'pi'
+          ? await chatViaPi({ provider, providers: { [provider]: config } } as AiSettings, system, user)
+          : await chatForProvider(provider, config, system, user)
       // the one-shot path reports HTTP failures as ok:false with the raw body —
       // replace capacity/rate-limit dumps with the localized "busy" message
       if (!result.ok && isAiOverloadedError(result.error)) {

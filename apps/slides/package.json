@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
+    "@genoffice/agent-pi-bridge": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
     "@genoffice/file-parse": "*",

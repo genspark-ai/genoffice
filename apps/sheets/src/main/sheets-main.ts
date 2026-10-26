@@ -85,9 +85,12 @@ import {
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
+  type AiTokenUsage,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { streamViaPi } from '@genoffice/agent-pi-bridge'
+import type { AgentToolCall } from '@genoffice/agent-core'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import {
   csvToXlsxBufferForOpen,
@@ -3957,18 +3960,24 @@ export function registerSheetsAiIpc(): void {
     }
     try {
       let stopReason: string | undefined
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+      const callbacks = {
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onDelta: (text: string) => send({ requestId, type: 'delta', text }),
+        onReasoningDelta: (text: string) => send({ requestId, type: 'reasoning', text }),
+        onToolCall: (toolCall: AgentToolCall) => send({ requestId, type: 'tool-call', toolCall }),
         onActivity: ping,
-        onStopReason: (reason) => {
+        onStopReason: (reason: string) => {
           stopReason = reason
         },
-        onUsage: (usage) => send({ requestId, type: 'usage', usage }),
-      })
+        onUsage: (usage: AiTokenUsage) => send({ requestId, type: 'usage', usage }),
+      }
+      if (process.env.GENOFFICE_AI_BACKEND === 'pi') {
+        const piSettings: AiSettings = { provider, providers: { [provider]: config } } as AiSettings
+        await streamViaPi(piSettings, system, messages, tools, maxTokens, callbacks)
+      } else {
+        await streamForProvider(provider, config, system, messages, tools, maxTokens, callbacks)
+      }
       // sheets tsconfig sets exactOptionalPropertyTypes: an explicit
       // `stopReason: undefined` is not assignable to AiStreamChunk, so only
       // include the property when a reason was actually reported.

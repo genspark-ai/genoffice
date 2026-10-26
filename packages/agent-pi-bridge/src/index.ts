@@ -174,8 +174,31 @@ export function piMessages(messages: AgentMessage[]): PiMessage[] {
 }
 
 // ---------------------------------------------------------------------------
-// pi AssistantMessageEvent → StreamCallbacks (same contract as streamForProvider)
+// One-shot chat (ai:chat channel), backed by pi-ai streamSimple collected to
+// completion. Same contract as chatForProvider: failures report as { ok:false }.
 // ---------------------------------------------------------------------------
+
+export async function chatViaPi(
+  settings: AiSettings,
+  system: string,
+  user: string,
+): Promise<{ ok: boolean; content?: string; error?: string }> {
+  try {
+    const model = piModelFor(settings)
+    const stream = modelsInstance().streamSimple(model, {
+      systemPrompt: system,
+      messages: [{ role: 'user', content: [{ type: 'text', text: user }] } as PiMessage],
+    })
+    let text = ''
+    for await (const ev of stream) {
+      if (ev.type === 'text_delta') text += ev.delta
+      else if (ev.type === 'error') throw new Error(ev.error.errorMessage ?? 'stream error')
+    }
+    return { ok: true, content: text }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Drop-in replacement for streamForProvider, backed by pi-ai.
