@@ -7,6 +7,7 @@ export type { PrintDuplex, PrintJobOptions, PrinterInfo }
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
+  decryptPdf: 'pdf:decrypt',
   save: 'pdf:save',
   requestRedactionCopy: 'pdf:request-redaction-copy',
   autoRename: 'pdf:auto-rename',
@@ -677,6 +678,23 @@ export interface BlankPageInput {
   height: number
 }
 
+/** What a reader may do with a protected document (§7.6.3.2 Table 24, grouped) */
+export interface PdfPermissions {
+  printing: boolean
+  modifying: boolean
+  annotating: boolean
+  copying: boolean
+}
+
+/** Password protection carried on a save: the source is opened with the user
+    password and the output is written back under the same configuration. */
+export interface PdfEncryptionInput {
+  userPassword: string
+  /** who may lift the limits; defaults to the user password in the UI */
+  ownerPassword: string
+  permissions: PdfPermissions
+}
+
 export interface SavePdfRequest {
   path: string
   /**
@@ -685,6 +703,13 @@ export interface SavePdfRequest {
    * Must match the target granted to the view by the main process (save dialog pick).
    */
   targetPath?: string
+  /** Present while the session works on a password-protected document: the source
+      bytes are opened with the user password and the output is re-protected. */
+  encryption?: PdfEncryptionInput
+  /** Password of the file currently on disk, when it is protected — needed even when
+      this save writes plain (protection removed): a password change makes it differ
+      from `encryption.userPassword`. */
+  decryption?: { userPassword: string }
   markups: MarkupInput[]
   /** Saved markup annotations to remove (applied before every other stage) */
   annotDeletes?: AnnotDeleteInput[]
@@ -923,6 +948,14 @@ export interface PdfApi {
   openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
+  /** Open a password-protected document for editing: plain bytes plus the /P the file carried */
+  decryptPdf(
+    bytes: Uint8Array,
+    password: string,
+  ): Promise<
+    | { ok: true; bytes: Uint8Array; permissions: PdfPermissions }
+    | { ok: false; reason: 'wrong-password' | string }
+  >
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>
   /** Creates a redacted working copy on first apply; subsequent applies save that copy in place. */

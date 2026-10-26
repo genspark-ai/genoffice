@@ -129,11 +129,12 @@ import { CommentsPanel, type CommentEntry } from './CommentsPanel'
 import type { OutlineNode } from './OutlinePanel'
 import { buildHeadingOutline, remapOutlinePages } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
-import type { PrintDuplex, PrinterInfo } from '../shared/ipc'
+import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
 import { CertSignDialog } from './CertSignDialog'
+import { ProtectionDialog } from './ProtectionDialog'
 import { SignaturesDialog, overallSignatureStatus } from './SignaturesDialog'
 import { SignatureDialog, fileToCanvas } from './SignatureDialog'
 import type { SignatureData } from './SignatureDialog'
@@ -285,6 +286,7 @@ import {
   IconSign,
   IconCertSign,
   IconSignatures,
+  IconProtect,
   IconPreviousField,
   IconNextField,
   IconCompleteForm,
@@ -856,6 +858,18 @@ export default function App() {
   const [formCatalog, setFormCatalog] = useState<FormCatalog | null>(null)
   const [formHasXfa, setFormHasXfa] = useState(false)
   const [documentEncrypted, setDocumentEncrypted] = useState(false)
+  /** false until a password-protected document has been opened for editing by the
+      session's own decryptor (pdf.js accepting the password is not the same claim) */
+  const [sessionUnlocked, setSessionUnlocked] = useState(false)
+  /** protection the next save writes; null while the document saves plain */
+  const [encryption, setEncryption] = useState<PdfEncryptionInput | null>(null)
+  /** password of the file on disk (null: it is plain) — a protection change makes it
+      differ from `encryption.userPassword` until the save lands */
+  const diskPasswordRef = useRef<string | null>(null)
+  const [protectionDlg, setProtectionDlg] = useState(false)
+  /** the protection configuration differs from the file on disk (set, changed or
+      lifted since the last load); cleared by the post-save reload */
+  const [protectionDirty, setProtectionDirty] = useState(false)
   const [activeFormWidgetId, setActiveFormWidgetId] = useState<string | null>(null)
   const formControlRefs = useRef<Map<string, HTMLElement>>(new Map())
   const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
@@ -1207,6 +1221,29 @@ export default function App() {
         const formFeatures = documentFormFeatures(documentInfo, bytes)
         setFormHasXfa(formFeatures.hasXfa)
         setDocumentEncrypted(formFeatures.encrypted)
+        if (formFeatures.encrypted) {
+          // pdf.js already accepted this password for rendering; the session's own
+          // handler must accept it too before the document counts as editable
+          const password = passwordRef.current ?? ''
+          const outcome = await window.pdfApi.decryptPdf(bytes, password)
+          if (outcome.ok) {
+            setEncryption({
+              userPassword: password,
+              ownerPassword: password,
+              permissions: outcome.permissions,
+            })
+            setSessionUnlocked(true)
+          } else {
+            setEncryption(null)
+            setSessionUnlocked(false)
+          }
+          diskPasswordRef.current = password
+        } else {
+          setEncryption(null)
+          setSessionUnlocked(false)
+          diskPasswordRef.current = null
+        }
+        setProtectionDirty(false)
         for (let i = 1; i <= loaded.numPages; i++) {
           const page = await loaded.getPage(i)
           // Unrotated size; display size is derived by geom from the total rotation
@@ -1533,8 +1570,10 @@ export default function App() {
     })()
   }, [openPath])
 
-  /** pdf-lib cannot write encrypted files, including owner-protected files that open without a password. */
-  const readOnly = status === 'ready' && (passwordRef.current !== undefined || documentEncrypted)
+  /** Editable once the session can both read and write the document: password-opened
+      files count after our own decryptor accepted them (the save pipeline re-reads the
+      protected bytes from disk, which pdf-lib alone cannot). */
+  const readOnly = status === 'ready' && documentEncrypted && !sessionUnlocked
 
   useEffect(() => {
     if (
@@ -1970,7 +2009,8 @@ export default function App() {
     rotations.size > 0 ||
     deleted.size > 0 ||
     order !== null ||
-    metadata !== null
+    metadata !== null ||
+    protectionDirty
   const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
   const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
   const dirty = redactions.length > 0 || ordinaryDirty
@@ -4273,6 +4313,10 @@ export default function App() {
     deletedPages: [...deleted],
     ...(order ? { pageOrder: visList } : {}),
     ...(metadata ? { metadata } : {}),
+    ...(diskPasswordRef.current !== null
+      ? { decryption: { userPassword: diskPasswordRef.current } }
+      : {}),
+    ...(encryption ? { encryption } : {}),
   })
 
   /** Resolved when the running save() lands; queued saves and Save As serialize behind it */
@@ -7245,6 +7289,27 @@ export default function App() {
   const firstSignatureWidget =
     formWidgets.find((widget) => widget.kind === 'signature' && !formWidgetSigned(widget)) ?? null
 
+  const applyProtection = (result: {
+    userPassword: string
+    ownerPassword: string
+    permissions: PdfPermissions
+  }): void => {
+    setEncryption(result)
+    setProtectionDirty(true)
+    // the next save writes a file that only opens with the new password
+    passwordRef.current = result.userPassword
+    diskPasswordRef.current = result.userPassword
+    setProtectionDlg(false)
+  }
+
+  const removeProtection = (): void => {
+    setEncryption(null)
+    setProtectionDirty(true)
+    // the next save writes plain; until then the disk file still needs the old password
+    passwordRef.current = undefined
+    setProtectionDlg(false)
+  }
+
   const openCertSignDialog = () => {
     if (dirty || saveInFlightRef.current !== null) {
       showNotice(t('certSaveFirst'))
@@ -7694,6 +7759,17 @@ export default function App() {
                       <IconCertSign />
                     </span>
                     <span>{t('certSign')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={readOnly || status !== 'ready'}
+                    data-tip={t('protectHint')}
+                    onClick={() => setProtectionDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconProtect />
+                    </span>
+                    <span>{t('protect')}</span>
                   </button>
                   {digitalSignatures.length > 0 && (
                     <button
@@ -10378,6 +10454,23 @@ export default function App() {
                   setPropsDlg(false)
                   applyEditOps([{ op: 'setMetadata', metadata: meta }])
                 }}
+              />
+            )}
+            {protectionDlg && (
+              <ProtectionDialog
+                t={t}
+                hasPassword={encryption !== null || documentEncrypted}
+                permissions={
+                  encryption?.permissions ?? {
+                    printing: true,
+                    modifying: true,
+                    annotating: true,
+                    copying: true,
+                  }
+                }
+                onApply={applyProtection}
+                onRemove={removeProtection}
+                onClose={() => setProtectionDlg(false)}
               />
             )}
             {certSignDlg && (

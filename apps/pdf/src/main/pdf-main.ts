@@ -32,6 +32,7 @@ import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
 import { printJobOptions } from '@genoffice/electron-utils/print-job'
+import { WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
   ExportImagesRequest,
@@ -1228,6 +1229,21 @@ function registerPdfIpc(): void {
     }
     const buf = await readFile(path)
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  })
+
+  // pdf.js has already accepted `password` for these bytes on the render side;
+  // a failure here therefore means the standard handler refused it
+  ipcMain.handle(PDF_CHANNELS.decryptPdf, async (_e, bytes: unknown, password: unknown) => {
+    if (!(bytes instanceof Uint8Array) || typeof password !== 'string') {
+      return { ok: false as const, reason: 'pdf: malformed decrypt request' }
+    }
+    try {
+      const opened = await decryptDocument(bytes, password)
+      return { ok: true as const, bytes: opened.bytes, permissions: opened.permissions }
+    } catch (err) {
+      if (err instanceof WrongPasswordError) return { ok: false as const, reason: 'wrong-password' }
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle(
