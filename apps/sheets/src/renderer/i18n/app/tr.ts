@@ -1207,6 +1207,7 @@ export const tr = {
   appGroupForecast: 'Tahmin',
   appWhatIfAnalysis: 'Durum Çözümlemesi',
   appGoalSeek: 'Hedef Ara',
+  appDataTable: 'Veri Tablosu',
   appWhatIfTitle: 'Bir hedef değer için girdiyi çöz',
   appGoalSeekNeedsFormula: 'Ayarlanacak hücre bir formül içermelidir.',
   appGoalSeekByCellNotNumber: 'Değişecek hücre düz bir sayı içermeli veya boş olmalıdır.',

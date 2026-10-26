@@ -23,6 +23,26 @@ export const tr = {
   dlgGoalSeekNotFound: 'Çözüm bulunamadı; özgün değer geri yüklendi (son ulaşılan {reached}).',
   dlgGoalSeekSolve: 'Çöz',
   dlgGoalSeekSolving: 'Çözülüyor…',
+  dlgDataTableTitle: 'Veri Tablosu',
+  dlgDataTableRange: 'Tablo aralığı',
+  dlgDataTableRowInput: 'Satır girdi hücresi',
+  dlgDataTableColumnInput: 'Sütun girdi hücresi',
+  dlgDataTableNote:
+    'Sonuçlar düz değerler olarak yazılır ve yeniden hesaplamada güncellenmez (Excel’in dizi formüllü tablolarının aksine); tablonun tamamı tek adımda geri alınır.',
+  dlgDataTableNeedInput:
+    'En az bir girdi hücresi doldurun: tek başına tek değişken, ikisi birden iki değişken demektir.',
+  dlgDataTableBadRange: 'Tablo aralığı A1 veya A1:B4 gibi A1 tarzı bir başvuru olmalıdır.',
+  dlgDataTableBadShape:
+    'Bölge biçimi hatalı: sütun boyunca tek değişken 2 sütun ve 2+ satır, satır boyunca 2 satır ve 2+ sütun, iki değişken en az 2×2 ister.',
+  dlgDataTableTooManyCells: 'Tablo, {limit} sonuç hücresi sınırını aşıyor.',
+  dlgDataTableInputInside: 'Girdi hücreleri tablo aralığının içinde olamaz.',
+  dlgDataTableSameInput: 'Satır ve sütun girdi hücreleri farklı olmalıdır.',
+  dlgDataTableNeedsFormula: 'Formül hücresi bir formül içermelidir.',
+  dlgDataTableInputNotNumber: 'Girdi hücreleri düz bir sayı tutmalı ya da boş olmalıdır.',
+  dlgDataTableValuesNotNumber: 'Değiştirme değerleri sayı olmalıdır.',
+  dlgDataTableRunning: 'Hesaplanıyor… {done}/{total}',
+  dlgDataTableRunningShort: 'Hesaplanıyor…',
+  dlgDataTableDone: '{count} sonuç yazıldı (düz değerler; yeniden hesaplamada güncellenmezler).',
   dlgApply: 'Uygula',
   dlgCreate: 'Oluştur',
 
