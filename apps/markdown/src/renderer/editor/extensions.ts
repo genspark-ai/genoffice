@@ -41,6 +41,7 @@ import type { SlashController, SlashItem } from './slashCommand'
 import { WikiSuggest } from './wikiSuggest'
 import type { WikiSuggestController } from './wikiSuggest'
 import { WikiEmbed } from './wikiEmbed'
+import { FootnoteDefinition, FootnoteNav, FootnoteReference } from './footnote'
 import { t } from '../i18n/locale'
 
 export interface BuildExtensionsOptions {
@@ -142,6 +143,10 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     ImageAwareLink.configure({ openOnClick: false }),
     WikiLink,
     WikiEmbed,
+    // GFM footnotes: `[^1]` references and `[^1]: text` definitions (see footnote.ts)
+    FootnoteDefinition,
+    FootnoteReference,
+    FootnoteNav,
     WikiLinkResolve.configure(options.wikiLink ?? {}),
     WikiSuggest.configure({ controller: options.wikiSuggestController }),
     BlockDragHandle,

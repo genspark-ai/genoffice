@@ -66,6 +66,10 @@ function runsFromInline(content: JSONContent[] | undefined): Run[] {
       runs.push(altTextRun(child))
       continue
     }
+    if (child.type === 'footnoteReference') {
+      runs.push({ text: `[^${String(child.attrs?.label ?? '')}]` })
+      continue
+    }
     if (child.type !== 'text' || !child.text) continue
     const run: Run = { text: child.text }
     for (const mark of child.marks ?? []) {
@@ -291,6 +295,24 @@ function walkBlock(ctx: WalkContext, node: JSONContent, base?: ParaFormat): void
           format: base,
         })
       }
+      break
+    }
+    case 'footnoteDefinition': {
+      // docx has its own footnote model; until it is mapped, the note stays a
+      // visible paragraph in the label's own `[^label]: ` form
+      const label = String(node.attrs?.label ?? '')
+      const runs: Run[] = [{ text: `[^${label}]: ` }]
+      let first = true
+      for (const child of node.content ?? []) {
+        if (!first) runs.push({ text: ' ' })
+        first = false
+        runs.push(...runsFromInline(child.content))
+      }
+      pushParagraph(ctx, {
+        type: 'paragraph',
+        runs,
+        format: mergeFormat(base, { indentLeft: INDENT_STEP }),
+      })
       break
     }
     default: {

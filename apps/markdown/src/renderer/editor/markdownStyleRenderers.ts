@@ -97,7 +97,8 @@ const INTERRUPTS = new Set([
  * fixed 4 spaces and only separates paragraphs, which glues a fence to the
  * image after it and turns a loose list tight.
  */
-function renderItem(
+/** shared with the footnote renderer, whose definitions indent like list items */
+export function renderItem(
   node: JSONContent,
   h: MarkdownRendererHelpers,
   prefix: string,
