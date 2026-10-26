@@ -29,6 +29,40 @@
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
+/* fenced code with a hover copy button (hosts pass Markdown codeCopyLabel) */
+.ai-md-code-wrap {
+  position: relative;
+}
+.ai-md-code-wrap .ai-md-pre {
+  margin: 0 0 16px;
+}
+.ai-md-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s;
+}
+.ai-md-code-wrap:hover .ai-md-code-copy,
+.ai-md-code-copy:focus-visible {
+  opacity: 1;
+}
+.ai-md-code-copy:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
 .ai-md .ai-md-pre code {
   padding: 0;
   border-radius: 0;

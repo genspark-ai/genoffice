@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 
 /**
  * Minimal dependency-free markdown for chat bubbles: paragraphs, ul/ol,
@@ -99,7 +99,7 @@ function renderInline(
 
 type CellAlign = 'left' | 'center' | 'right' | undefined
 
-type MdBlock =
+export type MdBlock =
   | { kind: 'p'; lines: string[] }
   | { kind: 'ul'; items: string[] }
   | { kind: 'ol'; items: string[] }
@@ -149,7 +149,8 @@ function parseDelimiterRow(line: string): CellAlign[] | null {
   })
 }
 
-function parseBlocks(text: string): MdBlock[] {
+/** exported for the copy converters (markdown-copy.ts), which walk the same block tree */
+export function parseBlocks(text: string): MdBlock[] {
   const blocks: MdBlock[] = []
   let cur: MdBlock | null = null
   const flush = (): void => {
@@ -242,16 +243,84 @@ function parseBlocks(text: string): MdBlock[] {
   return blocks
 }
 
+/** code block with a hover copy button when the host passes codeCopyLabel */
+function CodeBlock({
+  lines,
+  copyLabel,
+}: {
+  lines: string[]
+  // `| undefined` for hosts compiling with exactOptionalPropertyTypes (sheets)
+  copyLabel?: string | undefined
+}): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+  const body = lines.join('\n')
+  const pre = (
+    <pre className="ai-md-pre">
+      <code>{body}</code>
+    </pre>
+  )
+  if (!copyLabel) return pre
+  return (
+    <div className="ai-md-code-wrap">
+      {pre}
+      <button
+        type="button"
+        className="ai-md-code-copy"
+        aria-label={copyLabel}
+        data-tip={copyLabel}
+        onClick={() => {
+          void navigator.clipboard.writeText(body).then(() => {
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1200)
+          })
+        }}
+      >
+        {copied ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 export function Markdown({
   text,
   nav,
   navs,
   images,
+  codeCopyLabel,
 }: {
   text: string
   nav?: MarkdownNav
   navs?: readonly MarkdownNav[]
   images?: MarkdownImage
+  /** tooltip for the per-code-block copy button; omit to hide the button */
+  codeCopyLabel?: string
 }): React.JSX.Element {
   // the legacy single nav rides along with the newer list; first scheme
   // match wins, and hosts never pass overlapping schemes anyway
@@ -282,11 +351,7 @@ export function Markdown({
           return b.kind === 'ul' ? <ul key={i}>{items}</ul> : <ol key={i}>{items}</ol>
         }
         if (b.kind === 'code') {
-          return (
-            <pre key={i} className="ai-md-pre">
-              <code>{b.lines.join('\n')}</code>
-            </pre>
-          )
+          return <CodeBlock key={i} lines={b.lines} copyLabel={codeCopyLabel} />
         }
         if (b.kind === 'table') {
           const cellStyle = (j: number): React.CSSProperties | undefined =>
