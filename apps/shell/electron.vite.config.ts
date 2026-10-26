@@ -8,7 +8,18 @@ export default defineConfig({
   // so externalizing them would break Node ESM resolution at runtime.
   main: {
     // node:sqlite is a Node 22+ builtin the bundler's builtin list may predate
-    build: { rollupOptions: { external: ['node:sqlite'] } },
+    build: {
+      rollupOptions: { external: ['node:sqlite'] },
+      // pi packages are ESM-only; externalizing them makes the CJS main bundle
+      // require() them at runtime and crash on startup
+      externalizeDeps: {
+        exclude: [
+          '@earendil-works/pi-ai',
+          '@earendil-works/pi-agent-core',
+          '@genoffice/agent-pi-bridge',
+        ],
+      },
+    },
   },
   preload: {
     build: {

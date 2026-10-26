@@ -1,0 +1,19 @@
+{
+  "name": "@genoffice/agent-pi-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "file:../../../pi-fork/packages/ai",
+    "@earendil-works/pi-agent-core": "file:../../../pi-fork/packages/agent",
+    "@genoffice/agent-core": "*",
+    "@genoffice/ai-provider": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

@@ -23,17 +23,17 @@
     "@genoffice/agent-core": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
+    "@genoffice/cli": "*",
     "@genoffice/docs": "*",
     "@genoffice/docx-engine": "*",
     "@genoffice/electron-utils": "*",
-    "@genoffice/cli": "*",
     "@genoffice/i18n": "*",
     "@genoffice/pipelines": "*",
     "@genoffice/pptx-engine": "*",
     "@genoffice/pptx-render": "*",
+    "@genoffice/project-store": "*",
     "@genoffice/sheets": "*",
     "@genoffice/slides": "*",
-    "@genoffice/project-store": "*",
     "@genoffice/ui": "*",
     "@genoffice/xlsx-gateway": "*",
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -52,5 +52,9 @@
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
   },
-  "author": "GenOffice"
+  "author": "GenOffice",
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "file:../../../pi-fork/packages/agent",
+    "@earendil-works/pi-ai": "file:../../../pi-fork/packages/ai"
+  }
 }
