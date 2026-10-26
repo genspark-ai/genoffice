@@ -20,6 +20,7 @@ import { he } from './app/he'
 import { hi } from './app/hi'
 import { zhTW } from './app/zh-TW'
 import { vi } from './app/vi'
+import { tr } from './app/tr'
 
 /** User-visible strings for the app shell (status, errors) */
 export const appStrings = defineStrings({
@@ -44,4 +45,5 @@ export const appStrings = defineStrings({
   hi,
   'zh-TW': zhTW,
   vi,
+  tr,
 })

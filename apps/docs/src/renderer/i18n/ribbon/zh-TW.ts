@@ -687,6 +687,7 @@ export const zhTW = {
   ribbonLangHindi: '印地文',
   ribbonLangTraditionalChinese: '繁體中文',
   ribbonLangVietnamese: '越南文',
+  ribbonLangTurkish: '土耳其文',
   ribbonGroupLanguage: '語言',
   ribbonNewComment: '新增註解',
   ribbonNewCommentTip: '為選取的內容新增註解',

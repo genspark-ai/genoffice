@@ -438,6 +438,7 @@ export const en = {
   ribbonLangHebrew: 'Hebrew',
   ribbonLangHindi: 'Hindi',
   ribbonLangVietnamese: 'Vietnamese',
+  ribbonLangTurkish: 'Turkish',
   ribbonNewComment: 'New Comment',
   ribbonCommentsPane: 'Comments Pane',
   ribbonCommentsPaneTip: 'Show or hide the Comments pane',

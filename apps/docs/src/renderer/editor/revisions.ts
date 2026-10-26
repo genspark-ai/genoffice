@@ -32,6 +32,7 @@ export interface RevisionRange {
     | 'pPrChange'
     | 'paraMarkDel'
     | 'paraMarkIns'
+    | 'paraMarkRPrChange'
     | 'moveFrom'
     | 'moveTo'
     | 'rPrChange'
@@ -207,10 +208,13 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     const pPrChange = node.attrs?.pPrChange as string | null
     const paraMarkDel = node.attrs?.paraMarkDel as string | null
     const paraMarkIns = node.attrs?.paraMarkIns as string | null
+    const paraMarkRPrChange = node.attrs?.paraMarkRPrChange as string | null
     const moveRevision = node.attrs?.moveRevision as string | null
     if (pPrChange) out.push({ ...range, kind: 'pPrChange', ...credit(pPrChange) })
     if (paraMarkDel) out.push({ ...range, kind: 'paraMarkDel', ...credit(paraMarkDel) })
     if (paraMarkIns) out.push({ ...range, kind: 'paraMarkIns', ...credit(paraMarkIns) })
+    if (paraMarkRPrChange && !paraMarkRPrChange.includes('"resolved"'))
+      out.push({ ...range, kind: 'paraMarkRPrChange', ...credit(paraMarkRPrChange) })
     if (moveRevision === 'from' || moveRevision === 'to')
       moveParas.push({
         ...range,
@@ -227,20 +231,20 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     return match ? para.kind : null
   }
 
-  // Second pass: collect run-level text revisions (ins/del marks)
+  // Second pass: collect run-level text revisions (ins/del marks). A format
+  // change on inserted text is its own revision (Word lists both), so the
+  // rPrChange ranges merge among themselves and join the list at the end.
+  const formatRevs: RevisionRange[] = []
   doc.descendants((node, pos) => {
     if (!node.isText) return
-    const ins = node.marks.find((m) => m.type.name === 'ins')
-    const del = node.marks.find((m) => m.type.name === 'del')
-    if (!ins && !del) {
-      const rpr = node.marks.find((m) => m.type.name === 'rprChange')
-      if (!rpr) return
+    const rpr = node.marks.find((m) => m.type.name === 'rprChange')
+    if (rpr) {
       const author = String(rpr.attrs.author ?? '')
-      const prev = out[out.length - 1]
-      if (prev && prev.to === pos && prev.kind === 'rPrChange' && prev.author === author) {
+      const prev = formatRevs[formatRevs.length - 1]
+      if (prev && prev.to === pos && prev.author === author) {
         prev.to = pos + node.nodeSize
       } else {
-        out.push({
+        formatRevs.push({
           from: pos,
           to: pos + node.nodeSize,
           kind: 'rPrChange',
@@ -248,8 +252,10 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
           ...(rpr.attrs.date ? { date: String(rpr.attrs.date) } : {}),
         })
       }
-      return
     }
+    const ins = node.marks.find((m) => m.type.name === 'ins')
+    const del = node.marks.find((m) => m.type.name === 'del')
+    if (!ins && !del) return
     const textKind: 'ins' | 'del' | 'both' = ins && del ? 'both' : ins ? 'ins' : 'del'
     if (isSuppressed(pos, textKind)) return
     const kind = (textKind === 'both' ? null : moveKindAt(pos, textKind)) ?? textKind
@@ -271,7 +277,7 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
   // a moved paragraph with no run-level marks (empty, or the mark alone moved) is the revision itself
   for (const m of moveParas)
     if (!m.hasRuns) out.push({ from: m.from, to: m.to, kind: m.kind, author: '' })
-  out.push(...tableRevs)
+  out.push(...formatRevs, ...tableRevs)
   return out.sort((a, b) => a.from - b.from)
 }
 
@@ -351,10 +357,12 @@ export function applyRevisions(
     if (r.kind === 'rPrChange') {
       // accept = keep the current format; reject = restore the pre-revision modeled format subset.
       // Both clear the rprChange mark and strip the w:rPrChange record from rawRPr (takes effect on save)
+      // an insertion or deletion on the same text may already have moved or removed it
       state.doc.nodesBetween(r.from, r.to, (node, pos) => {
         if (!node.isText) return
-        const from = Math.max(pos, r.from)
-        const to = Math.min(pos + node.nodeSize, r.to)
+        const from = tr.mapping.map(Math.max(pos, r.from), 1)
+        const to = tr.mapping.map(Math.min(pos + node.nodeSize, r.to), -1)
+        if (from >= to) return
         const rpr = node.marks.find((m) => m.type.name === 'rprChange')
         const ts = node.marks.find((m) => m.type.name === 'docTextStyle')
         if (mode === 'reject' && rpr) {
@@ -392,7 +400,21 @@ export function applyRevisions(
           }
         }
       })
-      tr.removeMark(r.from, r.to, state.schema.marks.rprChange)
+      const mf = tr.mapping.map(r.from, 1)
+      const mt = tr.mapping.map(r.to, -1)
+      if (mf < mt) tr.removeMark(mf, mt, state.schema.marks.rprChange)
+      continue
+    }
+
+    if (r.kind === 'paraMarkRPrChange') {
+      const pos = tr.mapping.map(r.from, 1)
+      const node = tr.doc.nodeAt(pos)
+      const raw = node?.attrs?.paraMarkRPrChange as string | null | undefined
+      if (!node || !raw) continue
+      // the mark's formatting is not modeled: the save path resolves the record in the raw pPr
+      const next =
+        mode === 'accept' ? null : JSON.stringify({ ...JSON.parse(raw), resolved: 'reject' })
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, paraMarkRPrChange: next })
       continue
     }
 

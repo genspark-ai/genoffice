@@ -222,6 +222,7 @@ describe('createI18n', () => {
     hi: { hello: 'नमस्ते {name}', plain: 'फ़ाइलें' },
     'zh-TW': { hello: '你好 {name}', plain: '檔案' },
     vi: { hello: 'Xin chao {name}', plain: 'Tep' },
+    tr: { hello: 'Merhaba {name}', plain: 'Dosyalar' },
   })
 
   it('translates per language with interpolation', () => {

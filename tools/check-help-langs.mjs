@@ -87,6 +87,7 @@ const NO_HAN = new Set([
   'ms',
   'hi',
   'vi',
+  'tr',
 ])
 
 /**

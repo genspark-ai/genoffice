@@ -109,6 +109,8 @@ export type WikiCreateNoteResult =
       ok: true
       /** absolute path of the note, created or already there */
       path: string
+      /** the spelling a link resolves by: sanitized stem, directories kept (`folder/Note`) */
+      target: string
       /** the `#Heading` part of the target, '' when there was none */
       fragment: string
       /** false when a file already occupied the path and nothing was written */

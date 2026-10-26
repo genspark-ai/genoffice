@@ -387,6 +387,7 @@ export const hi = {
   appLangHindi: 'हिंदी',
   appLangTraditionalChinese: 'पारंपरिक चीनी',
   appLangVietnamese: 'वियतनामी',
+  appLangTurkish: 'तुर्की',
   appWrapTextMenu: 'टेक्स्ट रैप करें',
   appViewImage: 'छवि देखें',
   appSaveImageAs: 'छवि इस रूप में सहेजें…',

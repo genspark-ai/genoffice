@@ -17,7 +17,7 @@
     "jszip": "^3.10.1",
     "@genoffice/zip-gate": "*",
     "numfmt": "^3.2.6",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

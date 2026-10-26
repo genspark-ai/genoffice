@@ -109,7 +109,7 @@ export async function compareDocuments(
   options: CompareOptions = {},
 ): Promise<CompareResult> {
   const plan = compareBlocks(original, revised, options)
-  const bytes = await saveDocx(revised, plan.blocks)
+  const bytes = await saveDocx(revised, plan.blocks, { revisionIdFloor: plan.nextRevisionId })
   return { bytes, summary: plan.summary }
 }
 
@@ -118,7 +118,7 @@ export function compareBlocks(
   original: ParsedDocFull,
   revised: ParsedDocFull,
   options: CompareOptions = {},
-): { blocks: SaveBlock[]; summary: CompareSummary } {
+): { blocks: SaveBlock[]; summary: CompareSummary; nextRevisionId: number } {
   const rules: Rules = {
     ignoreCase: options.ignore?.includes('case') ?? false,
     ignoreWhitespace: options.ignore?.includes('whitespace') ?? false,
@@ -148,7 +148,9 @@ export function compareBlocks(
       const leftBlock = entry.left.block
       const rightBlock = entry.right.block
       if (leftBlock.runs && rightBlock.runs) {
-        const chunks = paragraphChunks(leftBlock.runs, rightBlock.runs, granularity, rules)
+        const leftRuns = comparableRuns(leftBlock.runs)
+        const rightRuns = comparableRuns(rightBlock.runs)
+        const chunks = paragraphChunks(leftRuns, rightRuns, granularity, rules)
         if (!hasRevision(chunks)) {
           summary.unchangedParagraphs++
           blocks.push(originalPassthrough(rightBlock))
@@ -158,23 +160,23 @@ export function compareBlocks(
         const runs: Run[] = []
         for (const chunk of chunks) {
           if (chunk.kind === 'keep') {
-            runs.push(...sliceRuns(rightBlock.runs, chunk.right![0], chunk.right![1]))
+            runs.push(...sliceRuns(rightRuns, chunk.right![0], chunk.right![1]).map(emittedRun))
             continue
           }
           const info: RevisionInfo = { author, date, id: ids.take() }
           if (chunk.kind === 'del') {
             summary.deletions++
             runs.push(
-              ...sliceRuns(leftBlock.runs, chunk.left![0], chunk.left![1]).map((r) => ({
-                ...r,
+              ...sliceRuns(leftRuns, chunk.left![0], chunk.left![1]).map((r) => ({
+                ...foreignRun(r),
                 del: info,
               })),
             )
           } else {
             summary.insertions++
             runs.push(
-              ...sliceRuns(rightBlock.runs, chunk.right![0], chunk.right![1]).map((r) => ({
-                ...r,
+              ...sliceRuns(rightRuns, chunk.right![0], chunk.right![1]).map((r) => ({
+                ...emittedRun(r),
                 ins: info,
               })),
             )
@@ -183,7 +185,12 @@ export function compareBlocks(
         blocks.push({ kind: 'generated', block: generatedFrom(rightBlock, runs) })
         continue
       }
-      // a table, a picture or a field: the whole block is replaced
+      // a table, a picture or a field: the whole block is kept or replaced
+      if (comparableText(entry.left.text, rules) === comparableText(entry.right.text, rules)) {
+        summary.unchangedParagraphs++
+        blocks.push(originalPassthrough(rightBlock))
+        continue
+      }
       summary.deletedParagraphs++
       summary.insertedParagraphs++
       blocks.push(deletedBlock(leftBlock, author, date, ids))
@@ -201,14 +208,14 @@ export function compareBlocks(
     blocks.push(insertedBlock(entry.right.block, author, date, ids))
   }
 
-  return { blocks, summary }
+  return { blocks, summary, nextRevisionId: ids.peek() }
 }
 
 /** the comparable units of a document, in body order */
 function unitsOf(parsed: ParsedDocFull): Unit[] {
   const out: Unit[] = []
   parsed.blocks.forEach((block, index) => {
-    if (block.hidden) return
+    if (block.hidden || block.blockRevision?.kind === 'del') return
     const textual = Array.isArray(block.runs)
     out.push({ index, block, textual, text: contentSignature(block) })
   })
@@ -217,13 +224,21 @@ function unitsOf(parsed: ParsedDocFull): Unit[] {
 
 /** the text a block is compared by: its runs, a table's cell texts, or its preview */
 function contentSignature(block: Block): string {
-  if (block.runs) return block.runs.map((r) => r.text).join('')
+  if (block.runs)
+    return comparableRuns(block.runs)
+      .map((r) => r.text)
+      .join('')
   if (block.table) {
     return block.table.rows
       .map((row) => row.map((cell) => cell.paras.join('\n')).join('\t'))
       .join('\n')
   }
-  return block.previewText ?? ''
+  // a picture is its bytes: the drawing xml names a media part by an id the
+  // other package does not share, so the data url is what two pictures are
+  // compared by. A block with nothing to compare by never matches another.
+  if (block.imageDataUrl) return `${PICTURE_TOKEN}${block.imageDataUrl}`
+  if (block.previewText) return block.previewText
+  return `${PICTURE_TOKEN}opaque:${block.originalXml ?? ''}`
 }
 
 /**
@@ -233,10 +248,9 @@ function contentSignature(block: Block): string {
  * deleted stays a deletion.
  */
 function alignUnits(left: Unit[], right: Unit[], rules: Rules): Aligned[] {
-  const anchors = lcsPairs(
-    left.map((u) => u.text),
-    right.map((u) => u.text),
-    (a, b) => textEqual(a, b, rules),
+  const anchors = anchorPairs(
+    left.map((u) => comparableText(u.text, rules)),
+    right.map((u) => comparableText(u.text, rules)),
   )
   const out: Aligned[] = []
   let li = 0
@@ -249,6 +263,85 @@ function alignUnits(left: Unit[], right: Unit[], rules: Rules): Aligned[] {
   }
   out.push(...pairRegion(left.slice(li), right.slice(ri)))
   return out
+}
+
+/** cells of the LCS table a gap between two unique anchors may cost before it is left unanchored */
+const LCS_GAP_CELLS = 4_000_000
+
+/**
+ * The unchanged paragraphs that anchor the alignment: paragraphs whose text
+ * occurs once in each document pair up first (their order is the longest
+ * increasing subsequence), and the gaps between them are aligned by LCS. That
+ * keeps the LCS table to the gaps instead of the whole document.
+ */
+function anchorPairs(left: string[], right: string[]): Array<[number, number]> {
+  const count = (texts: string[]): Map<string, number> => {
+    const m = new Map<string, number>()
+    for (const t of texts) m.set(t, (m.get(t) ?? 0) + 1)
+    return m
+  }
+  const leftCount = count(left)
+  const rightCount = count(right)
+  const rightIndex = new Map<string, number>()
+  right.forEach((t, j) => {
+    if (rightCount.get(t) === 1 && leftCount.get(t) === 1) rightIndex.set(t, j)
+  })
+  const candidates: Array<[number, number]> = []
+  left.forEach((t, i) => {
+    const j = rightIndex.get(t)
+    if (j !== undefined) candidates.push([i, j])
+  })
+  const unique = longestIncreasing(candidates)
+
+  const out: Array<[number, number]> = []
+  let li = 0
+  let ri = 0
+  const fillGap = (lEnd: number, rEnd: number): void => {
+    const n = lEnd - li
+    const m = rEnd - ri
+    if (n > 0 && m > 0 && n * m <= LCS_GAP_CELLS) {
+      for (const [l, r] of lcsPairs(left.slice(li, lEnd), right.slice(ri, rEnd), (a, b) => a === b))
+        out.push([li + l, ri + r])
+    }
+  }
+  for (const [l, r] of unique) {
+    fillGap(l, r)
+    out.push([l, r])
+    li = l + 1
+    ri = r + 1
+  }
+  fillGap(left.length, right.length)
+  return out
+}
+
+/** the longest run of candidate pairs whose right index rises with the left one (pairs come sorted by left) */
+function longestIncreasing(pairs: Array<[number, number]>): Array<[number, number]> {
+  const tails: number[] = []
+  const tailAt: number[] = []
+  const prev: number[] = new Array<number>(pairs.length).fill(-1)
+  pairs.forEach(([, r], k) => {
+    let lo = 0
+    let hi = tails.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (tails[mid]! < r) lo = mid + 1
+      else hi = mid
+    }
+    tails[lo] = r
+    tailAt[lo] = k
+    prev[k] = lo > 0 ? tailAt[lo - 1]! : -1
+  })
+  const out: Array<[number, number]> = []
+  for (let k = tailAt[tails.length - 1] ?? -1; k !== -1; k = prev[k]!) out.push(pairs[k]!)
+  return out.reverse()
+}
+
+/** the text two paragraphs are matched by, the ignored differences set aside */
+function comparableText(text: string, rules: Rules): string {
+  let x = text
+  if (rules.ignoreWhitespace) x = x.replace(/\s+/g, ' ').trim()
+  if (rules.ignoreCase) x = x.toLowerCase()
+  return x
 }
 
 /** the paragraphs between two anchors: pair the ones that resemble each other */
@@ -432,12 +525,13 @@ function lcsPairs<T>(
 ): Array<[number, number]> {
   const n = a.length
   const m = b.length
-  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  const w = m + 1
+  const lcs = new Int32Array((n + 1) * w)
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      lcs[i]![j] = eq(a[i]!, b[j]!)
-        ? lcs[i + 1]![j + 1]! + 1
-        : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!)
+      lcs[i * w + j] = eq(a[i]!, b[j]!)
+        ? lcs[(i + 1) * w + j + 1]! + 1
+        : Math.max(lcs[(i + 1) * w + j]!, lcs[i * w + j + 1]!)
     }
   }
   const out: Array<[number, number]> = []
@@ -448,25 +542,10 @@ function lcsPairs<T>(
       out.push([i, j])
       i++
       j++
-    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) i++
+    } else if (lcs[(i + 1) * w + j]! >= lcs[i * w + j + 1]!) i++
     else j++
   }
   return out
-}
-
-/** two texts are the same when the ignored differences are set aside */
-function textEqual(a: string, b: string, rules: Rules): boolean {
-  let x = a
-  let y = b
-  if (rules.ignoreWhitespace) {
-    x = x.replace(/\s+/g, ' ').trim()
-    y = y.replace(/\s+/g, ' ').trim()
-  }
-  if (rules.ignoreCase) {
-    x = x.toLowerCase()
-    y = y.toLowerCase()
-  }
-  return x === y
 }
 
 /** two tokens are the same when the ignored differences are set aside */
@@ -572,8 +651,25 @@ function generatedFrom(block: Block, runs: Run[]): GeneratedBlock {
     ...(block.hiddenBookmarks ? { hiddenBookmarks: block.hiddenBookmarks } : {}),
     ...(block.commentStarts ? { commentStarts: block.commentStarts } : {}),
     ...(block.commentEnds ? { commentEnds: block.commentEnds } : {}),
+    ...(block.sdtShell ? { sdtShell: block.sdtShell } : {}),
     runs,
   }
+}
+
+/**
+ * The block-level w:ins / w:del wrapper of a whole block, unless the block
+ * sits in a content control: the shell bytes ride on the block, and a wrapper
+ * around them would open w:del before w:sdt. The runs carry the marks there.
+ */
+function blockRevision(
+  block: Block,
+  kind: 'ins' | 'del',
+  author: string,
+  date: string,
+  ids: RevisionIds,
+): { revision?: SaveBlock['revision'] } {
+  if (block.sdtShell) return {}
+  return { revision: { kind, author, date, id: ids.take() } }
 }
 
 /** an unchanged block: the original bytes, untouched */
@@ -586,16 +682,23 @@ function originalPassthrough(block: Block): SaveBlock {
 function deletedBlock(block: Block, author: string, date: string, ids: RevisionIds): SaveBlock {
   const revision: RevisionInfo = { author, date, id: ids.take() }
   if (block.runs) {
-    const runs = block.runs.map((r) => ({ ...r, del: revision }))
+    const runs = comparableRuns(block.runs).map((r) => ({ ...foreignRun(r), del: revision }))
     return {
       kind: 'generated',
       block: generatedFrom(block, runs),
+      ...blockRevision(block, 'del', author, date, ids),
+    }
+  }
+  if (block.type === 'image') {
+    return {
+      kind: 'generated',
+      block: generatedFrom(block, [{ text: '[picture]', del: revision }]),
       revision: { kind: 'del', author, date, id: ids.take() },
     }
   }
   return {
     kind: 'xml',
-    xml: block.originalXml ?? '',
+    xml: withoutForeignObjects(block.originalXml ?? ''),
     revision: { kind: 'del', author, date, id: ids.take() },
   }
 }
@@ -604,11 +707,11 @@ function deletedBlock(block: Block, author: string, date: string, ids: RevisionI
 function insertedBlock(block: Block, author: string, date: string, ids: RevisionIds): SaveBlock {
   const revision: RevisionInfo = { author, date, id: ids.take() }
   if (block.runs) {
-    const runs = block.runs.map((r) => ({ ...r, ins: revision }))
+    const runs = comparableRuns(block.runs).map((r) => ({ ...emittedRun(r), ins: revision }))
     return {
       kind: 'generated',
       block: generatedFrom(block, runs),
-      revision: { kind: 'ins', author, date, id: ids.take() },
+      ...blockRevision(block, 'ins', author, date, ids),
     }
   }
   if (block.docxIndex !== null) {
@@ -623,6 +726,48 @@ function insertedBlock(block: Block, author: string, date: string, ids: Revision
     xml: block.originalXml ?? '',
     revision: { kind: 'ins', author, date, id: ids.take() },
   }
+}
+
+/** stands in for a picture in the compared text, so a picture is a token the diff keeps or moves */
+const PICTURE_TOKEN = '\uFFFC'
+
+/**
+ * The runs as a reader sees them with every pending change accepted: deleted
+ * text is gone, inserted text is plain. A picture becomes a one-character
+ * token so it survives slicing by character range.
+ */
+function comparableRuns(runs: Run[]): Run[] {
+  const out: Run[] = []
+  for (const run of runs) {
+    if (run.del) continue
+    const { ins: _ins, ...rest } = run
+    out.push(rest.image && !rest.text ? { ...rest, text: PICTURE_TOKEN } : rest)
+  }
+  return out
+}
+
+/** a run of the revised document, the picture token folded back into the picture run */
+function emittedRun(run: Run): Run {
+  return run.image && run.text === PICTURE_TOKEN ? { ...run, text: '' } : run
+}
+
+/**
+ * A run of the original document that ends up in the redline: its picture
+ * points at a media part the revised package does not have, so the deletion
+ * names it instead of carrying it.
+ */
+function foreignRun(run: Run): Run {
+  if (!run.image) return run
+  const { image: _image, ...rest } = run
+  return { ...rest, text: '[picture]' }
+}
+
+/** drop the drawings, VML pictures and embedded objects of a fragment from the other package */
+function withoutForeignObjects(xml: string): string {
+  return xml
+    .replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, '')
+    .replace(/<w:pict(?:\s[^>]*)?>[\s\S]*?<\/w:pict>/g, '')
+    .replace(/<w:object(?:\s[^>]*)?>[\s\S]*?<\/w:object>/g, '')
 }
 
 /**
@@ -642,5 +787,10 @@ class RevisionIds {
 
   take(): string {
     return String(this.next++)
+  }
+
+  /** the first id not handed out yet */
+  peek(): number {
+    return this.next
   }
 }

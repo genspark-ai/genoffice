@@ -400,7 +400,7 @@ describe('the defined-name mirror', () => {
   it('round-trips a label with quotes, an ampersand and non-Latin text', () => {
     // A formula string literal doubles its quotes and XML escapes five of
     // them, so a label like this exercises three escaping layers at once.
-    const label = '雇主 "Acme & Co." 的电话 +86-13800138000'
+    const label = '\u96c7\u4e3b "Acme & Co." \u7684\u7535\u8bdd +86-13800138000'
     const states: SheetRedactionState[] = [{ sheetName: 'Q3', marks: [{ ...MARK, label }] }]
     const written = applyRedactionNameMirror(WORKBOOK_XML, states, SHEET_ORDER)
     expect(mirrorMark(written, SHEET_ORDER).label).toBe(label)

@@ -25,6 +25,7 @@ import {
   NO_REDACTIONS,
   type RedactionIndex,
   type SheetRefLike,
+  type CellMark,
 } from './redact'
 import type { WorkbookRedactionsResult } from '../../shared/desktop-api'
 import type { TFunc } from '../i18n/locale'
@@ -39,12 +40,21 @@ export const UNKNOWN_REDACTION_LABEL = 'private'
  * first, and a truthful "this workbook withholds something" is what keeps them
  * from treating the session as unprotected.
  */
+/** one mark over the whole grid: the callers that count or intersect marks withhold everything too */
+const WHOLE_SHEET_MARK: CellMark = {
+  startRow: 0,
+  endRow: Number.MAX_SAFE_INTEGER,
+  startColumn: 0,
+  endColumn: Number.MAX_SAFE_INTEGER,
+  label: UNKNOWN_REDACTION_LABEL,
+}
+
 export const WITHHELD_UNKNOWN: RedactionIndex = {
   isEmpty: false,
   sheetIds: [],
   labelAt: () => UNKNOWN_REDACTION_LABEL,
-  labelsFor: () => [],
-  marksFor: () => [],
+  labelsFor: () => [UNKNOWN_REDACTION_LABEL],
+  marksFor: () => [WHOLE_SHEET_MARK],
 }
 
 /** What the open path installs for a session. */

@@ -430,6 +430,7 @@ export const he = {
   ribbonLangHebrew: 'עברית',
   ribbonLangHindi: 'הינדית',
   ribbonLangVietnamese: 'וייטנאמית',
+  ribbonLangTurkish: 'טורקית',
   ribbonNewComment: 'תגובה חדשה',
   ribbonCommentsPane: 'חלונית תגובות',
   ribbonCommentsPaneTip: 'הצגה או הסתרה של חלונית התגובות',

@@ -1351,6 +1351,8 @@ export function executeWorkbookTool(
         operations,
         deps.redactions?.() ?? NO_REDACTIONS,
         (sheetId) => deps.getActiveSheetInfo().sheets.find((sheet) => sheet.id === sheetId)?.name,
+        (sheetName) =>
+          deps.getActiveSheetInfo().sheets.find((sheet) => sheet.name === sheetName)?.id,
       )
       if (refusal) {
         return fail(
@@ -1413,11 +1415,16 @@ export function executeWorkbookTool(
             deps.getActiveSheetInfo().sheets.map((sheet) => [sheet.id, sheet.name]),
           )
           const lines: string[] = []
+          const redactions = deps.redactions?.() ?? NO_REDACTIONS
           for (const [cellSheetId, addresses] of bySheet) {
             const cells = deps.readCells(addresses, cellSheetId)
             const prefix = bySheet.size > 1 ? `${sheetNames.get(cellSheetId) ?? cellSheetId}!` : ''
             for (const addr of addresses) {
-              const v = cells[addr]?.value
+              const raw = cells[addr]?.value
+              const v =
+                raw === null || raw === undefined
+                  ? raw
+                  : modelCellValueAt(redactions, cellSheetId, addr, raw)
               lines.push(
                 `${prefix}${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`,
               )

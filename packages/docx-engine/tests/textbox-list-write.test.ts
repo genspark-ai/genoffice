@@ -71,3 +71,44 @@ describe('patchTextboxParas numPr', () => {
     expect(cleared).not.toContain('<w:numPr>')
   })
 })
+
+describe('patchTextboxParas indentLeft', () => {
+  it('adds w:ind before w:jc and keeps the paragraph-mark rPr last', () => {
+    const xml = CONTENT('<w:pPr><w:jc w:val="left"/><w:rPr><w:b/></w:rPr></w:pPr>')
+    const out = patchTextboxParas(xml, {
+      byIndex: [[{ runs: [], align: 'left', indentLeft: 720 }]],
+    })
+    expect(out).toContain(
+      '<w:pPr><w:ind w:left="720" w:leftChars="0"/><w:jc w:val="left"/><w:rPr><w:b/></w:rPr></w:pPr>',
+    )
+  })
+
+  it('replaces w:left on an existing w:ind and keeps its hanging indent', () => {
+    const xml = CONTENT('<w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr>')
+    const out = patchTextboxParas(xml, { byIndex: [[{ runs: [], indentLeft: 1440 }]] })
+    expect(out).toContain('<w:ind w:hanging="360" w:left="1440" w:leftChars="0"/>')
+  })
+
+  it('clears w:left on null and drops a w:ind left empty', () => {
+    const xml = CONTENT('<w:pPr><w:ind w:left="720"/><w:jc w:val="center"/></w:pPr>')
+    const out = patchTextboxParas(xml, {
+      byIndex: [[{ runs: [], align: 'center', indentLeft: null }]],
+    })
+    expect(out).toContain('<w:pPr><w:jc w:val="center"/></w:pPr>')
+    expect(out).not.toContain('<w:ind')
+  })
+
+  it('replaces an own character-unit left indent instead of leaving it to win', () => {
+    const xml = CONTENT('<w:pPr><w:ind w:leftChars="200" w:left="420"/></w:pPr>')
+    const out = patchTextboxParas(xml, { byIndex: [[{ runs: [], indentLeft: 720 }]] })
+    expect(out).toContain('<w:ind w:left="720" w:leftChars="0"/>')
+    const cleared = patchTextboxParas(xml, { byIndex: [[{ runs: [], indentLeft: null }]] })
+    expect(cleared).not.toContain('<w:ind')
+  })
+
+  it('leaves the original w:ind alone when the patch does not mention indentLeft', () => {
+    const xml = CONTENT('<w:pPr><w:ind w:left="720"/></w:pPr>')
+    const out = patchTextboxParas(xml, { byIndex: [[{ runs: [], align: null }]] })
+    expect(out).toContain('<w:ind w:left="720"/>')
+  })
+})
