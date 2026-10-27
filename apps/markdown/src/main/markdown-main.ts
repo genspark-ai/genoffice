@@ -63,6 +63,8 @@ import type {
   WikiCreateNoteRequest,
   WikiCreateNoteResult,
   WikiGraph,
+  WikiHeadEntry,
+  WikiHeadsRequest,
   WikiLinkResolveRequest,
   WikiLinkResolved,
   WikiNoteEntry,
@@ -70,6 +72,7 @@ import type {
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { listWikiNotes } from './wiki-notes'
 import { createWikiNote } from './wiki-create'
+import { wikiHeads } from './wiki-heads'
 import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph, wikiTags } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
@@ -870,6 +873,15 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, async (): Promise<WikiNoteEntry[]> =>
     listWikiNotes(configuredDefaultSaveDir(app), nodeFs()),
+  )
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.wikiHeads,
+    async (_e, request: WikiHeadsRequest): Promise<WikiHeadEntry[]> => {
+      const target = typeof request?.target === 'string' ? request.target : ''
+      const fromPath = typeof request?.fromPath === 'string' ? request.fromPath : ''
+      return wikiHeads(target, fromPath, configuredDefaultSaveDir(app))
+    },
   )
 
   ipcMain.handle(
