@@ -4936,3 +4936,78 @@ button {
   font-size: 12px;
   cursor: pointer;
 }
+
+/* Compare panel: summary, then one tappable row per differing page */
+.pdf-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.pdf-compare-pick {
+  align-self: flex-start;
+}
+
+.pdf-compare-swap {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.pdf-compare-other {
+  color: var(--pdf-prop-bg);
+}
+
+.pdf-compare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: start;
+  color: inherit;
+  font: inherit;
+}
+
+.pdf-compare-row:hover {
+  background: var(--hover);
+}
+
+.pdf-compare-page {
+  min-width: 72px;
+  font-size: 0.88em;
+}
+
+.pdf-compare-added {
+  color: var(--pdf-ok);
+  font-size: 0.82em;
+}
+
+.pdf-compare-removed {
+  color: var(--pdf-error);
+  font-size: 0.82em;
+}
+
+.pdf-compare-truncated {
+  color: var(--pdf-sig-warn);
+  font-size: 0.82em;
+}
