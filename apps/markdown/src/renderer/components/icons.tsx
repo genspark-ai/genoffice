@@ -249,3 +249,13 @@ export function IconGraph(props: IconProps) {
     </Svg>
   )
 }
+
+/** A block with a link on it: text lines and a chain link */
+export function IconBlockLink(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 4h8M2.5 7.5h5.5M2.5 11h4" />
+      <path d="M9.3 12.6h-.8a2.1 2.1 0 0 1 0-4.2h.8M12.2 8.4h.8a2.1 2.1 0 0 1 0 4.2h-.8M9.6 10.5h3.1" />
+    </Svg>
+  )
+}

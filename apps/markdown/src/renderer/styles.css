@@ -397,6 +397,14 @@ html[data-doc-theme='light'] .doc-page {
   display: none;
 }
 
+/* A `^id` block marker is document text that other notes link to; it reads as
+ * an address, not as prose, so the view dims it the way Obsidian does. */
+.md-block-id {
+  color: var(--text-muted);
+  font-size: 0.82em;
+  opacity: 0.8;
+}
+
 /* GFM footnotes. The reference shows the label as written and jumps to its
  * definition; the definition keeps its label in a fixed slot beside the body
  * column. A separator opens the first definition of a run, echoing GitHub's

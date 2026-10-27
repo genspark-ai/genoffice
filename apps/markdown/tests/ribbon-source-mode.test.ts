@@ -95,8 +95,8 @@ describe('Ribbon source mode', () => {
     // use for it), plus the image-host button, which is not a formatting
     // control and so renders in either mode, plus the paper-theme picker and
     // the backlinks and graph buttons, which are markdown-only views like the
-    // source-view toggle.
-    expect(markdown.iconButtons).toBe(22)
+    // source-view toggle, plus the copy-block-link button beside the link one.
+    expect(markdown.iconButtons).toBe(23)
     // source mode keeps exactly two: the spellcheck toggle (the withhold
     // toggle gates the block editor's marks, which source mode does not carry)
     // and the paper-theme picker, disabled there (source text sits outside
@@ -154,6 +154,6 @@ describe('Ribbon source mode', () => {
     // 20 here too: the source-view toggle is present here and absent above,
     // the withhold toggle, the image-host button, the paper-theme picker and
     // the backlinks and graph buttons are present in both
-    expect(iconButtons).toBe(22)
+    expect(iconButtons).toBe(23)
   })
 })
