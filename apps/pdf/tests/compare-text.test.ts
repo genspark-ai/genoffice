@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { readPdfText } from '../src/main/read-text'
+import type { PdfTextDoc } from '../src/main/read-text'
 import {
   compareDocuments,
   diffLines,
@@ -73,5 +76,34 @@ describe('compareDocuments', () => {
     expect(result.pages[0]!.removedCount).toBe(4001)
     expect(result.pages[0]!.addedCount).toBe(1)
     expect(result.pages[0]!.removed).toEqual([])
+  })
+})
+
+describe('one engine on both sides', () => {
+  it('a document compared against itself through readPdfText reports equal', async () => {
+    // The two sides of a compare are extracted by two independent readPdfText
+    // calls now (the open document via the renderer asking main for its own
+    // path). Two engines split lines differently and normalizePageText cannot
+    // repair a different split — this is the regression the split protected.
+    const doc = await PDFDocument.create()
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    for (const [index, heading] of ['Quarterly summary', 'Appendix'].entries()) {
+      const page = doc.addPage([300, 300])
+      page.drawText(heading, { x: 24, y: 260, size: 14, font })
+      page.drawText(`Body line one of page ${index + 1}.`, { x: 24, y: 240, size: 10, font })
+      page.drawText(`Body line two of page ${index + 1}.`, { x: 24, y: 226, size: 10, font })
+    }
+    const bytes = await doc.save()
+
+    const mine = await readPdfText(new Uint8Array(bytes))
+    const theirs = await readPdfText(new Uint8Array(bytes))
+    expect(mine.pages.every((p) => p.hasTextLayer)).toBe(true)
+    expect(theirs.pages).toHaveLength(mine.pages.length)
+
+    const toSide = (doc0: PdfTextDoc): PageText[] =>
+      doc0.pages.map((p) => ({ pageIndex: p.page - 1, text: p.text }))
+    const result = compareDocuments(toSide(mine), toSide(theirs))
+    expect(result.equal).toBe(true)
+    expect(result.pages.every((p) => p.addedCount === 0 && p.removedCount === 0)).toBe(true)
   })
 })

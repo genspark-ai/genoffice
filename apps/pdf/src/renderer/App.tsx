@@ -4232,6 +4232,13 @@ export default function App() {
   /** Show a transient toast; the save-failure badge alone hides the actual reason */
   const runCompare = async (): Promise<void> => {
     if (!doc || compareBusy) return
+    // Both sides must come from the same extraction engine — pdf.js and pdfium
+    // break lines differently, and a cross-engine diff reports phantom changes
+    // on identical files. The open document therefore needs a file on disk.
+    if (!filePath) {
+      showNotice(t('compareNeedsSaved'))
+      return
+    }
     setCompareBusy(true)
     try {
       const picked = await window.pdfApi.compareReadPdf()
@@ -4239,19 +4246,14 @@ export default function App() {
         if (!('canceled' in picked)) showNotice(picked.reason)
         return
       }
-      const mine: PageText[] = []
-      for (let i = 0; i < doc.numPages; i++) {
-        const page = await doc.getPage(i + 1)
-        const content = await page.getTextContent()
-        let text = ''
-        for (const item of content.items) {
-          if ('str' in item) text += item.str
-          if ('hasEOL' in item && item.hasEOL) text += '\n'
-        }
-        mine.push({ pageIndex: i, text })
+      const mine = await window.pdfApi.compareReadOpen(filePath)
+      if (!mine.ok) {
+        showNotice(mine.reason)
+        return
       }
+      const mineSide: PageText[] = mine.pages.map((text, pageIndex) => ({ pageIndex, text }))
       const theirs: PageText[] = picked.pages.map((text, pageIndex) => ({ pageIndex, text }))
-      const [oldSide, newSide] = compareSwapped ? [theirs, mine] : [mine, theirs]
+      const [oldSide, newSide] = compareSwapped ? [theirs, mineSide] : [mineSide, theirs]
       setCompareName(picked.name)
       setCompareResult(compareDocuments(oldSide, newSide))
     } catch (err) {
