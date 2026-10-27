@@ -44,6 +44,7 @@ import type { WikiSuggestController } from './wikiSuggest'
 import { WikiEmbed } from './wikiEmbed'
 import { BlockLink } from './blockId'
 import type { BlockLinkOptions } from './blockId'
+import { WikiPasteLive } from './wikiPaste'
 import { FootnoteDefinition, FootnoteNav, FootnoteReference } from './footnote'
 import { t } from '../i18n/locale'
 
@@ -162,6 +163,8 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     WikiAliasDisplay,
     // `^id` block markers: written on demand, dimmed in the view, plain text in the file
     BlockLink.configure(options.blockLink ?? {}),
+    // pasted `[[links]]` and `![[embeds]]` take their live shape at once
+    WikiPasteLive,
     WikiSuggest.configure({ controller: options.wikiSuggestController }),
     BlockDragHandle,
     BlockKeymap,
