@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
+  agentConfigDir,
   agentTarget,
   buildSkillZip,
   bundledSkillFrom,
@@ -33,13 +34,42 @@ describe('detectAgents', () => {
     mkdirSync(join(h, 'codex-elsewhere'))
     mkdirSync(join(h, '.config', 'opencode'), { recursive: true })
     const found = detectAgents({ CODEX_HOME: join(h, 'codex-elsewhere') }, h)
-    expect(found.map((a) => a.id)).toEqual(['claude-code', 'codex', 'cursor', 'opencode'])
+    expect(found.map((a) => a.id)).toEqual(['claude-code', 'agents', 'codex', 'cursor'])
     expect(found[0]!.skillsDir).toBe(join(h, '.claude', 'skills'))
-    expect(found[1]!.skillsDir).toBe(join(h, 'codex-elsewhere', 'skills'))
-    expect(found[3]!.skillsDir).toBe(join(h, '.config', 'opencode', 'skills'))
+    expect(found[1]!.skillsDir).toBe(join(h, '.agents', 'skills'))
+    expect(found[2]!.skillsDir).toBe(join(h, 'codex-elsewhere', 'skills'))
+    expect(found[1]!.label).toBe('.agents (OpenCode / Copilot / dsh …)')
     expect(agentTarget('windsurf', {}, h)!.skillsDir).toBe(
       join(h, '.codeium', 'windsurf', 'skills'),
     )
+  })
+
+  it('routes the tools that read ~/.agents/skills into the shared row, and keeps a probe for their dotfolder', () => {
+    const h = home()
+    mkdirSync(join(h, '.copilot'))
+    const found = detectAgents({}, h)
+    expect(found.map((a) => a.id)).toEqual(['agents'])
+    expect(found[0]!.skillsDir).toBe(join(h, '.agents', 'skills'))
+    // `genoffice mcp` still reaches the per-tool dotfolders
+    expect(agentConfigDir('copilot', {}, h)).toBe(join(h, '.copilot'))
+    expect(agentTarget('copilot', {}, h)).toBeNull()
+    expect(agentTarget('opencode', {}, h)).toBeNull()
+  })
+
+  it('shows the shared row for ~/.agents itself and keeps OpenClaw a row of its own', () => {
+    const h = home()
+    mkdirSync(join(h, '.agents', 'skills'), { recursive: true })
+    mkdirSync(join(h, '.openclaw'))
+    const found = detectAgents({}, h)
+    expect(found.map((a) => a.id)).toEqual(['agents', 'openclaw'])
+    expect(found[0]!.skillsDir).toBe(join(h, '.agents', 'skills'))
+    expect(found[1]!.skillsDir).toBe(join(h, '.openclaw', 'skills'))
+  })
+
+  it('keeps dsh a reader of the shared row', () => {
+    const h = home()
+    mkdirSync(join(h, '.dsh'))
+    expect(detectAgents({}, h).map((a) => a.id)).toEqual(['agents'])
   })
 })
 
