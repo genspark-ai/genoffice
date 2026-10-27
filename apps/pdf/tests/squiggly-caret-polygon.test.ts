@@ -186,7 +186,10 @@ describe('caret drawings', () => {
     expect(annots.map(subtypeOf)).toEqual(['Caret'])
     expect(numberArray(annots[0]!, 'Rect')).toEqual([140, 390, 160, 410])
     expect(annots[0]!.lookup(PDFName.of('F'), PDFNumber).asNumber()).toBe(4)
-    expect(annots[0]!.has(PDFName.of('AP'))).toBe(false)
+    // the appearance stream is the wedge a viewer draws: pdf.js has no
+    // default appearance for a Caret, so without it the mark is in the file
+    // and nothing draws it
+    expect(annots[0]!.has(PDFName.of('AP'))).toBe(true)
 
     const loadingTask = getDocument({ data: saved.slice() })
     try {
@@ -225,9 +228,10 @@ describe('polygon drawings', () => {
     expect(numberArray(annots[0]!, 'Rect')).toEqual([20, 100, 250, 300])
     expect(numberArray(annots[0]!, 'Vertices')).toEqual(VERTICES.flat())
     expect(numberArray(annots[0]!, 'C')).toEqual([0.17, 0.4, 1])
-    // Stroke-only: no interior color, no appearance stream (viewers draw natively)
+    // Stroke-only: no interior color. The appearance stream is the shape's
+    // own, so a viewer that does not synthesise one still draws the mark.
     expect(annots[0]!.has(PDFName.of('IC'))).toBe(false)
-    expect(annots[0]!.has(PDFName.of('AP'))).toBe(false)
+    expect(annots[0]!.has(PDFName.of('AP'))).toBe(true)
 
     const loadingTask = getDocument({ data: saved.slice() })
     try {
