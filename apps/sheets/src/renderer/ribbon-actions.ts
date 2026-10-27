@@ -666,7 +666,15 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       const lazy = ctx.lazyWorkbookRef.current
       const stillLoading = lazy !== null && !lazy.flags.preloadComplete
       void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter').then((ok) => {
-        if (ok === false && !stillLoading) ctx.setMessage(t('appFilterToggleFailed'))
+        if (ok !== false || stillLoading) return
+        // A canceling guard also answers `false`: when the sheet's protection
+        // has already spoken — blocked outright, or unknown while still being
+        // indexed — this notice would overwrite it with the wrong advice.
+        const state = ctx.lazyWorkbookRef.current
+        const sheetId = worksheet?.getSheetId()
+        const protection = state && sheetId ? effectiveSheetProtection(state, sheetId) : null
+        if (!protection || (protection.protected && !protection.allow.autoFilter)) return
+        ctx.setMessage(t('appFilterToggleFailed'))
       })
       return
     }

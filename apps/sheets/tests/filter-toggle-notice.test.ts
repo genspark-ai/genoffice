@@ -9,31 +9,50 @@
  *
  * While the sheet is still loading, the gate in App.tsx has its own answer
  * (a footer note, a "load it all" prompt, or the column-projection path's
- * progress), so the ribbon stays quiet rather than talking over it.
+ * progress), so the ribbon stays quiet rather than talking over it. A
+ * canceling protection guard also answers false, and it has already said
+ * why — the toggle stays quiet there too rather than overwriting it.
  */
 import { describe, expect, it } from 'vitest'
 import { handleRibbonCommand, type RibbonCommandContext } from '../src/renderer/ribbon-actions'
+import {
+  UNPROTECTED_SHEET,
+  mergeSheetProtectionAllow,
+  type SheetProtectionInfo,
+} from '../src/renderer/sheet-protection'
 
 interface Harness {
   ctx: RibbonCommandContext
   messages: string[]
 }
 
-function makeFilterHarness(options: { ok: boolean; preloadComplete?: boolean }): Harness {
+function makeFilterHarness(options: {
+  ok: boolean
+  preloadComplete?: boolean
+  /** the effective protection of the active sheet; `'unknown'` = not indexed yet */
+  sheetProtection?: SheetProtectionInfo | 'unknown'
+}): Harness {
   const messages: string[] = []
+  const sheetId = 'sh1'
+  const protection =
+    options.sheetProtection === undefined ? UNPROTECTED_SHEET : options.sheetProtection
+  const state = {
+    flags: { preloadComplete: options.preloadComplete ?? true },
+    sheetProtections:
+      protection && protection !== 'unknown' ? new Map([[sheetId, protection]]) : new Map(),
+    editJournal: { sheetProtection: new Map(), sheets: { added: new Set() } },
+  }
   const ctx = {
     univerRef: {
       current: {
         univerAPI: {
           executeCommand: () => Promise.resolve(options.ok),
-          getActiveWorkbook: () => undefined,
+          getActiveWorkbook: () => ({ getActiveSheet: () => ({ getSheetId: () => sheetId }) }),
           getActiveSheet: () => undefined,
         },
       },
     },
-    lazyWorkbookRef: {
-      current: { flags: { preloadComplete: options.preloadComplete ?? true } },
-    },
+    lazyWorkbookRef: { current: state },
     setMessage: (message: string) => {
       messages.push(message)
     },
@@ -50,7 +69,7 @@ describe('the Filter toggle', () => {
     handleRibbonCommand(ctx, 'filter-toggle')
     await settle()
     expect(messages).toHaveLength(1)
-    expect(messages[0]).toMatch(/filter|筛选/i)
+    expect(messages[0]).toMatch(/filter|\u7b5b\u9009/i)
   })
 
   it('stays quiet when the filter went on', async () => {
@@ -65,5 +84,46 @@ describe('the Filter toggle', () => {
     handleRibbonCommand(ctx, 'filter-toggle')
     await settle()
     expect(messages).toHaveLength(0)
+  })
+
+  it('stays quiet when the protection guard blocked the command, because the guard says why', async () => {
+    // The guard cancels through the same `false` and has already toasted
+    // `appProtectedSheetCommandBlocked`; the toggle's own advice (select a
+    // range with data first) would overwrite it with the wrong reason.
+    const { ctx, messages } = makeFilterHarness({
+      ok: false,
+      sheetProtection: {
+        protected: true,
+        hasPassword: false,
+        allow: mergeSheetProtectionAllow({ autoFilter: false }),
+        password: null,
+      },
+    })
+    handleRibbonCommand(ctx, 'filter-toggle')
+    await settle()
+    expect(messages).toHaveLength(0)
+  })
+
+  it('stays quiet while the protection is still unknown, because the guard says why', async () => {
+    // Not indexed yet: the guard fails closed with `appProtectionNeedsIndexed`.
+    const { ctx, messages } = makeFilterHarness({ ok: false, sheetProtection: 'unknown' })
+    handleRibbonCommand(ctx, 'filter-toggle')
+    await settle()
+    expect(messages).toHaveLength(0)
+  })
+
+  it('speaks on a genuine decline of a protected sheet that allows filters', async () => {
+    const { ctx, messages } = makeFilterHarness({
+      ok: false,
+      sheetProtection: {
+        protected: true,
+        hasPassword: false,
+        allow: mergeSheetProtectionAllow({ autoFilter: true }),
+        password: null,
+      },
+    })
+    handleRibbonCommand(ctx, 'filter-toggle')
+    await settle()
+    expect(messages).toHaveLength(1)
   })
 })
