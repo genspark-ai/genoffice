@@ -4893,20 +4893,29 @@ export default function App() {
 
   const applyBates = (config: BatesConfig): void => {
     const fontOf = (size: number) => `${size}px ${getComputedStyle(document.body).fontFamily}`
+    // Visible order, not the original file order: a reordered page takes the
+    // number of the position it now occupies, deleted pages get none, and
+    // inserted blank pages are numbered with everyone else. The page index is
+    // mapped back so the insert lands on the page the reader sees there.
     const inserts = buildBatesInserts(
-      sizes.map((_, i) => {
-        const geom = pageGeom(i)
+      visList.map((origIdx) => {
+        const geom = pageGeom(origIdx)
         return { width: geom.pw, height: geom.ph, rotate: geom.rot, x0: geom.x0, y0: geom.y0 }
       }),
       config,
       (text, size) => measureTextWidth(text, fontOf(size)),
-    )
+    ).map((input) => ({ ...input, pageIndex: visList[input.pageIndex] ?? input.pageIndex }))
     if (inserts.length === 0) {
       setBatesDlg(false)
       return
     }
-    applyEditOps(inserts.map((input) => ({ op: 'addTextInsert' as const, input })))
+    const plan = applyEditOps(inserts.map((input) => ({ op: 'addTextInsert' as const, input })))
     setBatesDlg(false)
+    if (plan.failures.length > 0) {
+      // say what went wrong instead of "applied N pages" over an empty plan
+      showNotice(plan.failures[0]!.error)
+      return
+    }
     showNotice(t('batesApplied', { count: inserts.length }))
   }
 

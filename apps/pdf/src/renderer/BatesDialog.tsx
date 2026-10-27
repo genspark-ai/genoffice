@@ -180,7 +180,7 @@ export function BatesDialog({
                   height: 22,
                   borderRadius: 11,
                   background: css(choice),
-                  border: color === choice ? '2px solid var(--md-link)' : '1px solid var(--border)',
+                  border: color === choice ? '2px solid var(--accent)' : '1px solid var(--border)',
                 }}
               />
             ))}

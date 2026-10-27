@@ -86,12 +86,13 @@ describe('buildBatesInserts', () => {
   })
 
   it('keeps the number upright on a rotated page by mapping the display corner back', () => {
-    // /Rotate 90 displays the 595×842 page as 842×595; the display's bottom-right
-    // corner (814, 567) is user-space (y_d, h − x_d) = (567, 28), and rotate makes
-    // the insertion matrix counter-rotate the glyphs
+    // /Rotate 90 displays the 595x842 page as 842x595: the page's +y axis points
+    // right on screen and +x points down, so display (814, 567) is user space
+    // (y_d, x_d) = (567, 814). This is viewToPdf's mapping, the one every other
+    // layer uses; a hand-rolled copy used h - x_d and landed in the wrong corner.
     const rotated = { ...A4, rotate: 90 }
     const inserts = buildBatesInserts([rotated], base, measure)
     expect(inserts[0]!.rotate).toBe(90)
-    expect(inserts[0]!.origin).toEqual([567, 28])
+    expect(inserts[0]!.origin).toEqual([567, 814])
   })
 })

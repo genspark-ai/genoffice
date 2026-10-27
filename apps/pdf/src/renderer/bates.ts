@@ -1,4 +1,5 @@
 import type { TextInsertInput } from '../shared/ipc'
+import { viewToPdf } from './annotations'
 
 /**
  * Bates numbering as plain text inserts: one real, searchable text object per
@@ -47,26 +48,6 @@ export function validateBates(cfg: Omit<BatesConfig, 'color' | 'position'>): Bat
   return null
 }
 
-/** user-space origin of a display point (x right, y down from the top-left of the displayed page) */
-function userFromDisplay(
-  xDisplay: number,
-  yDisplay: number,
-  width: number,
-  height: number,
-  rotate: number,
-): [number, number] {
-  switch (((rotate % 360) + 360) % 360) {
-    case 90:
-      return [yDisplay, height - xDisplay]
-    case 180:
-      return [width - xDisplay, height - yDisplay]
-    case 270:
-      return [width - yDisplay, xDisplay]
-    default:
-      return [xDisplay, height - yDisplay]
-  }
-}
-
 /**
  * One insert per stamped page. `measure` is the renderer's canvas text width —
  * center/right alignment travels as `lineXOffsets`, the same convention the
@@ -106,10 +87,13 @@ export function buildBatesInserts(
     const yDisplay = cfg.position.startsWith('top')
       ? BATES_MARGIN + cfg.fontSize
       : displayHeight - BATES_MARGIN
-    const [ux, uy] = userFromDisplay(xDisplay, yDisplay, width, height, rotate)
+    // The one display→user transform the app owns: a hand-rolled copy agreed
+    // with it only for 0°, and viewToPdf also carries the CropBox origin and
+    // /UserUnit.
+    const [ux, uy] = viewToPdf({ pw: width, ph: height, rot: rotate, x0, y0 }, xDisplay, yDisplay)
     out.push({
       pageIndex: index,
-      origin: [x0 + ux, y0 + uy],
+      origin: [ux, uy],
       text,
       fontSize: cfg.fontSize,
       color: cfg.color,
