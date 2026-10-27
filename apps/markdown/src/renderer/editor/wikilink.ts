@@ -142,12 +142,17 @@ export function wikiFragmentPosition(doc: PmNode, fragment: string): number | nu
   return found
 }
 
-/** the top-level block whose text ends with `^blockid`; position at the block */
+/** The textblock whose text ends with `^blockid`, as Obsidian writes it.
+ *  `descendants`, not `forEach`: a list item's marker sits inside the item's
+ *  paragraph, and resolving to the list would land the reader on the wrong
+ *  line. Case-insensitive because the fragment was lower-cased above. */
 function blockRefPosition(doc: PmNode, id: string): number | null {
   let found: number | null = null
-  doc.forEach((node, offset) => {
-    if (found !== null) return
-    if (new RegExp(`(?:^|\\s)\\^${escapeRegex(id)}\\s*$`).test(node.textContent)) found = offset + 1
+  const re = new RegExp(`(?:^|\\s)\\^${escapeRegex(id)}\\s*$`, 'i')
+  doc.descendants((node, pos) => {
+    if (found !== null) return false
+    if (node.isTextblock && re.test(node.textContent)) found = pos + 1
+    return true
   })
   return found
 }
