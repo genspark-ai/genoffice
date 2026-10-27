@@ -325,6 +325,18 @@ export type DrawingInput =
       destPage?: number
     }
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
+  | {
+      /** Calibrated measurement: a Line annotation whose label shows the real-world
+          length the session computed (the file stays geometry-only). */
+      kind: 'measure'
+      pageIndex: number
+      color: [number, number, number]
+      width: number
+      from: [number, number]
+      to: [number, number]
+      /** Displayed text, e.g. "2.35 m" — non-empty, ≤ 64 chars */
+      label: string
+    }
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
   | {
       /** Text insertion mark placed by a click; written as a Caret annotation with

@@ -752,6 +752,23 @@ function addDrawing(
     ops.push(`${num(fx)} ${num(fy)} m ${num(tx)} ${num(ty)} l S`)
     xs = [fx, tx]
     ys = [fy, ty]
+    if (d.kind === 'measure') {
+      // the label rides the line's own angle at its midpoint, flipped into
+      // left-to-right when the line runs right-to-left; the whole appearance
+      // rotates with the page like any other annotation's
+      const mx = (fx + tx) / 2
+      const my = (fy + ty) / 2
+      const ang = Math.atan2(ty - fy, tx - fx)
+      const flip = Math.abs(ang) > Math.PI / 2
+      const tilt = flip ? ang + Math.PI : ang
+      ops.push('BT 0.35 0.35 0.35 rg /Helvetica 9 Tf')
+      ops.push(`${num(mx)} ${num(my + 6)} ${num(Math.cos(tilt))} ${num(Math.sin(tilt))} Tm`)
+      const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+      ops.push(`(${esc}) Tj ET`)
+      const halfW = (d.label.length * 2.6) / 2
+      xs.push(mx - halfW, mx + halfW)
+      ys.push(my - 8, my + 10)
+    }
     if (d.kind === 'arrow') {
       const ang = Math.atan2(ty - fy, tx - fx)
       const len = Math.max(9, d.width * 4.5)
@@ -786,6 +803,10 @@ function addDrawing(
   if (d.kind === 'ink') annot.set(PDFName.of('InkList'), pdfDoc.context.obj(d.paths))
   if (d.kind === 'line' || d.kind === 'arrow') {
     annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+  }
+  if (d.kind === 'measure') {
+    annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(d.label))
   }
   annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
   if (d.kind === 'ink') setVisualSignatureMetadata(annot, d.formFieldName)

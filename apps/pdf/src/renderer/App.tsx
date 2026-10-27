@@ -143,6 +143,8 @@ import { LinkDialog, type LinkDraft } from './LinkDialog'
 import { CertSignDialog } from './CertSignDialog'
 import { BatesDialog } from './BatesDialog'
 import { buildBatesInserts, type BatesConfig } from './bates'
+import { MeasureScaleDialog } from './MeasureScaleDialog'
+import { formatLength, type MeasureScale } from './measure'
 import { SignaturesDialog, overallSignatureStatus } from './SignaturesDialog'
 import { SignatureDialog, fileToCanvas } from './SignatureDialog'
 import type { SignatureData } from './SignatureDialog'
@@ -300,6 +302,7 @@ import {
   IconCertSign,
   IconSignatures,
   IconBates,
+  IconMeasure,
   IconPreviousField,
   IconNextField,
   IconCompleteForm,
@@ -372,6 +375,7 @@ GlobalWorkerOptions.workerSrc = workerUrl
 
 const DRAW_TOOLS = [
   { tool: 'ink' as const, icon: IconInk, key: 'drawInk' as const },
+  { tool: 'measure' as const, icon: IconMeasure, key: 'drawMeasure' as const },
   { tool: 'rect' as const, icon: IconRect, key: 'drawRect' as const },
   { tool: 'ellipse' as const, icon: IconEllipse, key: 'drawEllipse' as const },
   { tool: 'arrow' as const, icon: IconArrow, key: 'drawArrow' as const },
@@ -547,6 +551,9 @@ export default function App() {
   const drawingsRef = useRef(drawings)
   drawingsRef.current = drawings
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null)
+  /** real-world scale for the measure tool; lives in the session only */
+  const measureScaleRef = useRef<MeasureScale | null>(null)
+  const [measureScaleDlg, setMeasureScaleDlg] = useState(false)
   const [redactions, setRedactions] = useState<LocalRedaction[]>([])
   const redactionApplyConfirmedRef = useRef(false)
   const redactionRequestInFlightRef = useRef(false)
@@ -4775,6 +4782,12 @@ export default function App() {
       setLinkDraft({ pageIndex: origIdx, rect: input.rect })
       return
     }
+    if (input.kind === 'measure') {
+      const scale = measureScaleRef.current
+      if (!scale) return
+      const pts = Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1])
+      input = { ...input, label: formatLength(pts, scale) }
+    }
     applyEditOps([{ op: 'addDrawing', drawing: { ...input, pageIndex: origIdx } }])
   }
 
@@ -7977,6 +7990,10 @@ export default function App() {
                         setPendingTextInsert(null)
                         setImagePick(null)
                         setEditImageMode(false)
+                        if (tool === 'measure' && measureScaleRef.current === null) {
+                          setMeasureScaleDlg(true)
+                          return
+                        }
                         setDrawTool((v) => (v === tool ? null : tool))
                       }}
                     >
@@ -10825,6 +10842,18 @@ export default function App() {
                 pageCount={sizes.length}
                 onApply={applyBates}
                 onClose={() => setBatesDlg(false)}
+              />
+            )}
+            {measureScaleDlg && (
+              <MeasureScaleDialog
+                t={t}
+                onApply={(unitsPerPt, unit) => {
+                  measureScaleRef.current = { unitsPerPt, unit }
+                  setMeasureScaleDlg(false)
+                  setDrawTool('measure')
+                  showNotice(t('measureCalibrated', { unit }))
+                }}
+                onClose={() => setMeasureScaleDlg(false)}
               />
             )}
             {certSignDlg && (
