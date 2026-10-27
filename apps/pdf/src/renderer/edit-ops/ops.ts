@@ -170,12 +170,13 @@ register({
         'image',
         'note',
         'link',
+        'measure',
         'caret',
         'polygon',
       ].includes(d.kind)
     )
       throw new GuidedError(
-        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link | caret | polygon',
+        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link | measure | caret | polygon',
       )
     if (d.kind === 'note' && typeof d.contents !== 'string')
       throw new GuidedError('a note drawing needs string contents')
@@ -281,6 +282,7 @@ register({
             }
           case 'line':
           case 'arrow':
+          case 'measure':
             return {
               ...d,
               input: {

@@ -6,8 +6,6 @@ export interface MeasureScale {
   unit: string
 }
 
-export const MEASURE_MIN_FONT = undefined as never
-
 /** `235 pt` at 100 pt/m → `2.35 m`, always two decimals like measuring tools do */
 export function formatLength(pts: number, scale: MeasureScale): string {
   const value = pts / scale.unitsPerPt

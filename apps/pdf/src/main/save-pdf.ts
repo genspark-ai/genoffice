@@ -13,6 +13,7 @@ import {
   PDFRef,
   PDFSignature,
   PDFString,
+  StandardFonts,
   TextAlignment,
   degrees,
   rgb,
@@ -620,6 +621,8 @@ function addDrawing(
   d: DrawingInput,
   /** localId → registered ref of notes written earlier in this request (reply parenting) */
   noteRefs?: Map<string, PDFRef>,
+  /** the label font's ref for measure drawings (their appearance names /F1) */
+  measureFontRef?: PDFRef,
 ): void {
   if (d.kind === 'image') return // handled by addImageStamp (needs async embed)
   if (d.kind === 'link') return // handled by addLinkAnnot (needs the page list)
@@ -755,19 +758,22 @@ function addDrawing(
     if (d.kind === 'measure') {
       // the label rides the line's own angle at its midpoint, flipped into
       // left-to-right when the line runs right-to-left; the whole appearance
-      // rotates with the page like any other annotation's
+      // rotates with the page like any other annotation's. The label takes the
+      // drawing's own colour, matching the on-screen preview.
       const mx = (fx + tx) / 2
       const my = (fy + ty) / 2
       const ang = Math.atan2(ty - fy, tx - fx)
       const flip = Math.abs(ang) > Math.PI / 2
       const tilt = flip ? ang + Math.PI : ang
-      ops.push('BT 0.35 0.35 0.35 rg /Helvetica 9 Tf')
+      ops.push(`BT ${r} ${g} ${b} rg /Helvetica 9 Tf`)
       ops.push(`${num(mx)} ${num(my + 6)} ${num(Math.cos(tilt))} ${num(Math.sin(tilt))} Tm`)
       const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
       ops.push(`(${esc}) Tj ET`)
-      const halfW = (d.label.length * 2.6) / 2
-      xs.push(mx - halfW, mx + halfW)
-      ys.push(my - 8, my + 10)
+      // Helvetica 9pt averages ~4.5pt per glyph, and the extent follows the
+      // label's tilt — an axis-aligned half-width clipped steep lines
+      const halfW = (d.label.length * 4.5) / 2
+      xs.push(mx + Math.cos(tilt) * halfW, mx - Math.cos(tilt) * halfW)
+      ys.push(my + 6 + Math.sin(tilt) * halfW, my + 6 - Math.sin(tilt) * halfW)
     }
     if (d.kind === 'arrow') {
       const ang = Math.atan2(ty - fy, tx - fx)
@@ -789,7 +795,16 @@ function addDrawing(
     Math.max(...xs) + pad,
     Math.max(...ys) + pad,
   ]
-  const ap = pdfDoc.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', BBox: rect })
+  // Preview and Acrobat synthesize nothing for an unresolvable font reference:
+  // the label's /Helvetica must be reachable through the form's /Resources
+  const ap = pdfDoc.context.stream(ops.join('\n'), {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: rect,
+    ...(d.kind === 'measure' && measureFontRef
+      ? { Resources: { Font: { F1: measureFontRef } } }
+      : {}),
+  })
   const annot = pdfDoc.context.obj({
     Type: 'Annot',
     Subtype: subtype,
@@ -1576,12 +1591,14 @@ export async function applySaveRequest(
     if (page && validMarkup(m)) addMarkup(pdfDoc, page, m)
   }
   const noteRefs = new Map<string, PDFRef>()
+  // the measure label's font: standard-14 Helvetica, no bytes to embed, one dict per save
+  const measureFontRef = (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
   for (const d of request.drawings ?? []) {
     const page = pages[d.pageIndex]
     if (!page) continue
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
     else if (d.kind === 'link') addLinkAnnot(pdfDoc, pages, page, d)
-    else addDrawing(pdfDoc, page, d, noteRefs)
+    else addDrawing(pdfDoc, page, d, noteRefs, measureFontRef)
   }
   // Note content edits go after the drawings: replies added above locate their /IRT
   // parent by its old contents, which an earlier in-place rewrite would break. An

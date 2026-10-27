@@ -554,6 +554,15 @@ export default function App() {
   /** real-world scale for the measure tool; lives in the session only */
   const measureScaleRef = useRef<MeasureScale | null>(null)
   const [measureScaleDlg, setMeasureScaleDlg] = useState(false)
+  /** the drawn line waiting for its real length while the scale dialog is open */
+  const pendingMeasureRef = useRef<
+    (Extract<DrawingInput, { kind: 'measure' }> & { pageIndex: number }) | null
+  >(null)
+  /** the drawn line's PDF length, shown as the calibration ruler */
+  const [measureDrawnPts, setMeasureDrawnPts] = useState(0)
+  /** set when the user re-clicks the armed measure tool: the next drawn line
+      re-calibrates instead of measuring */
+  const measureRecalibrateRef = useRef(false)
   const [redactions, setRedactions] = useState<LocalRedaction[]>([])
   const redactionApplyConfirmedRef = useRef(false)
   const redactionRequestInFlightRef = useRef(false)
@@ -4784,11 +4793,26 @@ export default function App() {
     }
     if (input.kind === 'measure') {
       const scale = measureScaleRef.current
-      if (!scale) return
-      const pts = Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1])
-      input = { ...input, label: formatLength(pts, scale) }
+      // First draw calibrates, and a re-calibration request turns the next line
+      // into the new reference: the dialog derives the scale from its real
+      // length, and the line itself becomes the first measurement.
+      if (!scale || measureRecalibrateRef.current) {
+        pendingMeasureRef.current = { ...input, pageIndex: origIdx }
+        setMeasureDrawnPts(Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1]))
+        setMeasureScaleDlg(true)
+        return
+      }
+      input = {
+        ...input,
+        label: formatLength(
+          Math.hypot(input.to[0] - input.from[0], input.to[1] - input.from[1]),
+          scale,
+        ),
+      }
     }
-    applyEditOps([{ op: 'addDrawing', drawing: { ...input, pageIndex: origIdx } }])
+    const plan = applyEditOps([{ op: 'addDrawing', drawing: { ...input, pageIndex: origIdx } }])
+    // a dropped op used to vanish on mouse-up with nothing on screen
+    if (plan.failures.length > 0) showNotice(plan.failures[0]!.error)
   }
 
   /** Render stamps in current page order; page numbers depend on visList, so both preview and save compute fresh */
@@ -7990,8 +8014,11 @@ export default function App() {
                         setPendingTextInsert(null)
                         setImagePick(null)
                         setEditImageMode(false)
-                        if (tool === 'measure' && measureScaleRef.current === null) {
-                          setMeasureScaleDlg(true)
+                        if (tool === 'measure' && drawTool === 'measure') {
+                          // a second click re-calibrates: the next drawn line
+                          // opens the dialog again, so a wrong first entry is
+                          // never stuck for the session
+                          measureRecalibrateRef.current = true
                           return
                         }
                         setDrawTool((v) => (v === tool ? null : tool))
@@ -10847,13 +10874,32 @@ export default function App() {
             {measureScaleDlg && (
               <MeasureScaleDialog
                 t={t}
+                drawnPts={measureDrawnPts}
                 onApply={(unitsPerPt, unit) => {
                   measureScaleRef.current = { unitsPerPt, unit }
                   setMeasureScaleDlg(false)
-                  setDrawTool('measure')
+                  measureRecalibrateRef.current = false
+                  const pending = pendingMeasureRef.current
+                  pendingMeasureRef.current = null
+                  if (pending) {
+                    const pts = Math.hypot(
+                      pending.to[0] - pending.from[0],
+                      pending.to[1] - pending.from[1],
+                    )
+                    commitDrawing(pending.pageIndex, {
+                      ...pending,
+                      label: formatLength(pts, measureScaleRef.current),
+                    })
+                  }
                   showNotice(t('measureCalibrated', { unit }))
                 }}
-                onClose={() => setMeasureScaleDlg(false)}
+                onClose={() => {
+                  // cancelling drops the reference line: committing it would
+                  // label it with a scale the user just refused to set
+                  pendingMeasureRef.current = null
+                  measureRecalibrateRef.current = false
+                  setMeasureScaleDlg(false)
+                }}
               />
             )}
             {certSignDlg && (

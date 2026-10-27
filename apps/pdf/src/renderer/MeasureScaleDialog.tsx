@@ -9,10 +9,13 @@ import type { TFunc } from './i18n/locale'
  */
 export function MeasureScaleDialog({
   t,
+  drawnPts,
   onApply,
   onClose,
 }: {
   t: TFunc
+  /** the reference line's PDF length: the ruler the real length is measured against */
+  drawnPts: number
   onApply: (unitsPerPt: number, unit: string) => void
   onClose: () => void
 }): React.JSX.Element {
@@ -26,7 +29,9 @@ export function MeasureScaleDialog({
       setError(t('measureScaleErr'))
       return
     }
-    onApply(parsed, unit.trim())
+    // the drawn line is the ruler: points per real-world unit is its PDF
+    // length divided by what the user says it is
+    onApply(drawnPts / parsed, unit.trim())
   }
 
   return (
