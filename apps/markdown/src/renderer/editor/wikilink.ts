@@ -125,18 +125,35 @@ export function collectWikiTargets(doc: PmNode): string[] {
 
 /**
  * Where a `#fragment` lands in a note: inside the heading it names, or null
- * when the note has no such heading. A `#^block` ref needs block ids, which
- * this schema does not carry yet, so it opens the note without a position.
+ * when the note has no such heading. A `#^block` ref resolves to the block
+ * whose last line ends with the `^blockid` marker as Obsidian writes it — the
+ * marker is plain text at the line end, so ids authored by other tools land
+ * without this schema carrying them.
  */
 export function wikiFragmentPosition(doc: PmNode, fragment: string): number | null {
   const want = fragment.trim().replace(/\s+/g, ' ').toLowerCase()
   if (!want) return null
+  if (want.startsWith('^')) return blockRefPosition(doc, want.slice(1))
   let found: number | null = null
   doc.descendants((node, pos) => {
     if (found !== null || node.type.name !== 'heading') return
     if (node.textContent.replace(/\s+/g, ' ').trim().toLowerCase() === want) found = pos + 1
   })
   return found
+}
+
+/** the top-level block whose text ends with `^blockid`; position at the block */
+function blockRefPosition(doc: PmNode, id: string): number | null {
+  let found: number | null = null
+  doc.forEach((node, offset) => {
+    if (found !== null) return
+    if (new RegExp(`(?:^|\\s)\\^${escapeRegex(id)}\\s*$`).test(node.textContent)) found = offset + 1
+  })
+  return found
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?${}()|[\]\\]/g, '\\$&')
 }
 
 export interface WikiLinkOptions {
