@@ -333,6 +333,7 @@ export const en = {
   appMergeOverTable:
     'The selection overlaps an Excel table — merging cells inside a table is not supported yet.',
   appAutofillStreaming: 'Autofill into an area that is still streaming in is not allowed yet.',
+  appFilterToggleFailed: 'The filter was not applied — select the range with your data first.',
   appDvNeedsIndexed:
     'Editing data validation needs this sheet fully indexed first — try again in a moment.',
   appPivotSheetNoDuplicate:

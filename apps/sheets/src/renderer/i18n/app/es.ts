@@ -366,6 +366,7 @@ export const es = {
     'La selección se superpone con una tabla de Excel — combinar celdas dentro de una tabla aún no es compatible.',
   appAutofillStreaming:
     'Aún no se permite el autorrelleno hacia un área que todavía se está cargando por streaming.',
+  appFilterToggleFailed: 'No se aplicó el filtro: seleccione primero el rango con los datos.',
   appDvNeedsIndexed:
     'Editar la validación de datos requiere que esta hoja esté totalmente indexada — inténtelo de nuevo en un momento.',
   appPivotSheetNoDuplicate:

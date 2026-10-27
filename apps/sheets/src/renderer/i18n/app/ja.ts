@@ -359,6 +359,7 @@ export const ja = {
   appMergeOverTable:
     '選択範囲が Excel テーブルと重なっています — テーブル内のセル結合は現時点では対応していません。',
   appAutofillStreaming: 'ストリーミング読み込み中の範囲へのオートフィルはまだ許可されていません。',
+  appFilterToggleFailed: 'フィルターを適用できませんでした — 先にデータを含む範囲を選択してください。',
   appDvNeedsIndexed:
     'データの入力規則を編集するには、このシートのインデックス作成が完了している必要があります — しばらくしてからお試しください。',
   appPivotSheetNoDuplicate:

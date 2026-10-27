@@ -369,6 +369,7 @@ export const it = {
     'La selezione si sovrappone a una tabella di Excel — l’unione di celle in una tabella non è ancora supportata.',
   appAutofillStreaming:
     "Il riempimento automatico in un'area ancora in streaming non è ancora consentito.",
+  appFilterToggleFailed: 'Il filtro non è stato applicato — seleziona prima l’intervallo con i tuoi dati.',
   appDvNeedsIndexed:
     "La modifica della convalida dati richiede prima l'indicizzazione completa di questo foglio — riprova tra poco.",
   appPivotSheetNoDuplicate:

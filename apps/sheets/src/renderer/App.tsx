@@ -367,6 +367,7 @@ import { installMenuInputEnter } from './menu-input-enter'
 import { installCellContextMenu } from './cell-context-menu'
 import { installClipboardAnchorTile } from './clipboard-anchor-tile'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
+import { installFilterToggleCommand } from './filter-toggle-command-fix'
 import { sharedFormulaResolverFor } from './shared-formula-journal'
 import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
 import { installBorderOverflowExclusionFix } from './border-overflow-exclusion'
@@ -2318,6 +2319,10 @@ export function App({
     // Arrows on a multi-cell selection collapse to the active cell first,
     // then move one step (Excel), instead of stepping past the range edge.
     const arrowCollapseDisposable = installArrowCollapse(runtime)
+    // Univer defines the filter-toggle command but never registers it, so
+    // Sort & Filter ▸ Filter reaches a command that does not exist and the
+    // sheet keeps exactly the state it had.
+    const filterToggleCommandDisposable = installFilterToggleCommand(runtime)
     const sheetProtectionDisposable = installSheetProtectionGuard(runtime, {
       getState: () => lazyWorkbookRef.current,
       notify: (message) => {
@@ -3722,6 +3727,7 @@ export function App({
       sheetRenameFixDisposable.dispose()
       selectionWrapGuardDisposable.dispose()
       arrowCollapseDisposable.dispose()
+      filterToggleCommandDisposable.dispose()
       sheetProtectionDisposable.dispose()
       ctrlDragFillDisposable.dispose()
       redactMenuDisposable.dispose()

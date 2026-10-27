@@ -302,6 +302,7 @@ export const zhTW = {
   appPivotSheetNoMove: '該工作表含樞紐分析表——暫不支援移動範圍。',
   appMergeOverTable: '所選範圍位於 Excel 表格內——暫不支援合併表格中的儲存格。',
   appAutofillStreaming: '暫不允許向仍在串流載入的範圍自動填入。',
+  appFilterToggleFailed: '未能套用篩選——請先選取包含資料的範圍。',
   appDvNeedsIndexed: '編輯資料驗證需要該工作表先完成索引——請稍後再試。',
   appPivotSheetNoDuplicate: '該工作表含樞紐分析表——暫不支援複製該表。',
   appDuplicateScopedNames: '該工作表含表級定義名稱——暫不支援複製該表。',

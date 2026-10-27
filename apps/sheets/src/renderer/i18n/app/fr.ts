@@ -378,6 +378,7 @@ export const fr = {
     'La sélection chevauche un tableau Excel — la fusion de cellules dans un tableau n’est pas encore prise en charge.',
   appAutofillStreaming:
     "La recopie automatique vers une zone encore en cours de chargement en flux n'est pas encore autorisée.",
+  appFilterToggleFailed: 'Le filtre n’a pas été appliqué — sélectionnez d’abord la plage qui contient vos données.',
   appDvNeedsIndexed:
     "La modification de la validation des données nécessite que cette feuille soit d'abord entièrement indexée — réessayez dans un instant.",
   appPivotSheetNoDuplicate:

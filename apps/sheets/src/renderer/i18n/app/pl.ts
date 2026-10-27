@@ -361,6 +361,7 @@ export const pl = {
     'Zaznaczenie nachodzi na tabelę programu Excel — scalanie komórek w tabeli nie jest jeszcze obsługiwane.',
   appAutofillStreaming:
     'Autouzupełnianie do obszaru, który wciąż jest ładowany strumieniowo, nie jest jeszcze dozwolone.',
+  appFilterToggleFailed: 'Filtr nie został zastosowany — najpierw zaznacz zakres z danymi.',
   appDvNeedsIndexed:
     'Edycja poprawności danych wymaga najpierw pełnego zaindeksowania tego arkusza — spróbuj ponownie za chwilę.',
   appPivotSheetNoDuplicate:

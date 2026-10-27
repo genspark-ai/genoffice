@@ -346,6 +346,7 @@ export const cs = {
     'Výběr se překrývá s tabulkou Excelu — slučování buněk v tabulce zatím není podporováno.',
   appAutofillStreaming:
     'Automatické vyplnění do oblasti, která se stále načítá, zatím není povoleno.',
+  appFilterToggleFailed: 'Filtr nebyl použit — nejprve vyberte oblast s daty.',
   appDvNeedsIndexed:
     'Úprava ověření dat vyžaduje nejprve úplné indexování tohoto listu — zkuste to za chvíli znovu.',
   appPivotSheetNoDuplicate:

@@ -361,6 +361,7 @@ export const nl = {
     'De selectie overlapt een Excel-tabel — cellen samenvoegen in een tabel wordt nog niet ondersteund.',
   appAutofillStreaming:
     'Automatisch doorvoeren naar een gebied dat nog streamend wordt geladen, is nog niet toegestaan.',
+  appFilterToggleFailed: 'Het filter is niet toegepast — selecteer eerst het bereik met uw gegevens.',
   appDvNeedsIndexed:
     'Voor het bewerken van gegevensvalidatie moet dit werkblad eerst volledig geïndexeerd zijn — probeer het zo opnieuw.',
   appPivotSheetNoDuplicate:

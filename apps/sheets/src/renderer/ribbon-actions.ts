@@ -658,7 +658,12 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       stepSelectionDecimals(runtime, command === 'decimal-inc' ? 1 : -1)
       return
     case 'filter-toggle':
-      void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter')
+      void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter').then((ok) => {
+        // A command that refuses — nothing selected, or a range that is one
+        // row — says nothing on its own, and a filter that never appeared
+        // reads as a dead button.
+        if (ok === false) ctx.setMessage(t('appFilterToggleFailed'))
+      })
       return
     case 'autofit-row-height':
     case 'autofit-col-width': {

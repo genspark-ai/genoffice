@@ -349,6 +349,7 @@ export const tr = {
     'Seçim bir Excel tablosuyla çakışıyor — tablo içinde hücre birleştirme henüz desteklenmiyor.',
   appTableFilterNoEdit:
     'Bu sayfanın filtresi bir Excel tablosuna ait — düzenlenmesi henüz kaydedilemiyor.',
+  appFilterToggleFailed: 'Filtre uygulanmadı — önce verilerinizin bulunduğu aralığı seçin.',
   appAutofillStreaming: 'Hâlâ akışla yüklenen bir alana otomatik doldurmaya henüz izin verilmiyor.',
   appDvNeedsIndexed:
     'Veri doğrulamayı düzenlemek için önce bu sayfanın tamamen dizinlenmesi gerekir — birazdan yeniden deneyin.',

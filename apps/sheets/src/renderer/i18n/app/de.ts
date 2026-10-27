@@ -368,6 +368,7 @@ export const de = {
     'Die Auswahl überschneidet sich mit einer Excel-Tabelle — das Verbinden von Zellen in einer Tabelle wird noch nicht unterstützt.',
   appAutofillStreaming:
     'Automatisches Ausfüllen in einen noch per Streaming geladenen Bereich ist noch nicht erlaubt.',
+  appFilterToggleFailed: 'Der Filter wurde nicht angewendet — wählen Sie zuerst den Bereich mit den Daten aus.',
   appDvNeedsIndexed:
     'Das Bearbeiten der Datenüberprüfung erfordert, dass dieses Blatt zuerst vollständig indiziert ist — versuchen Sie es gleich noch einmal.',
   appPivotSheetNoDuplicate:
