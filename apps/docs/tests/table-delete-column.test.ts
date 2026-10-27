@@ -77,7 +77,7 @@ afterEach(() => {
   editors.clear()
 })
 
-function createEditor(content: JsonNode[]): Editor {
+function createEditor(content: JsonNode): Editor {
   const editor = new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
@@ -101,7 +101,7 @@ function caretInto(editor: Editor, label: string): void {
 const deleteColumnOf = (editor: Editor, label: string): void => {
   caretInto(editor, label)
   expect(selectTablePart('column')(editor.state, editor.view.dispatch)).toBe(true)
-  expect(deleteTableColumn()(editor.state, editor.view.dispatch)).toBe(true)
+  expect(deleteTableColumn(editor.state, editor.view.dispatch)).toBe(true)
 }
 
 const tableNode = (editor: Editor) => editor.state.doc.child(1)
@@ -160,7 +160,7 @@ describe('table delete column keeps the width grid', () => {
     // caret delete (no column selection): with the merge in the first row a
     // column selection would span both grid columns, which deletes wider
     caretInto(editor, 'B2')
-    expect(deleteTableColumn()(editor.state, editor.view.dispatch)).toBe(true)
+    expect(deleteTableColumn(editor.state, editor.view.dispatch)).toBe(true)
     expect(rowTexts(editor)).toEqual([
       ['X', 'C1'],
       ['A2', 'C2'],
