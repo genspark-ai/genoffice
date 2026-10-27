@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PDFDocument, PDFName } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFRawStream, PDFString } from 'pdf-lib'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { applyAttachments, attachmentLabels, AttachmentsError } from '../src/main/pdf-attachments'
 import { applySaveRequest } from '../src/main/save-pdf'
@@ -74,6 +74,39 @@ describe('embedded files through the save pipeline', () => {
       }),
     ).rejects.toBeInstanceOf(AttachmentsError)
     expect(await attachmentsOf(seeded)).toBeInstanceOf(Map)
+  })
+
+  it('keys a seeded attachment by its name-tree key even when /F is a literal string', async () => {
+    // Most producers write the key and /F as literal strings; keying by /UF
+    // turned the label into "(report.xlsx)" (parentheses and all), which no
+    // longer matched what pdf.js reports and made removing it throw.
+    const doc = await PDFDocument.create()
+    doc.addPage([300, 300])
+    const context = doc.context
+    const streamDict = context.obj({ Type: 'EmbeddedFile', Length: 5 })
+    const streamRef = context.nextRef()
+    context.assign(streamRef, PDFRawStream.of(streamDict, new Uint8Array(Buffer.from('bytes'))))
+    const spec = context.obj({
+      Type: 'Filespec',
+      F: PDFString.of('report.xlsx'),
+      UF: PDFString.of('report.xlsx'),
+      EF: context.obj({ F: streamRef, UF: streamRef }),
+    })
+    const names = context.obj({
+      Names: context.obj([PDFString.of('report.xlsx'), context.register(spec)]),
+    })
+    doc.catalog.set(
+      PDFName.of('Names'),
+      context.register(context.obj({ EmbeddedFiles: context.register(names) })),
+    )
+    expect(attachmentLabels(doc)).toEqual(['report.xlsx'])
+    const seeded = await doc.save()
+
+    const { bytes } = await applySaveRequest(seeded, {
+      ...emptyRequest(),
+      attachments: { remove: ['report.xlsx'] },
+    })
+    expect((await attachmentsOf(bytes)).size).toBe(0)
   })
 })
 

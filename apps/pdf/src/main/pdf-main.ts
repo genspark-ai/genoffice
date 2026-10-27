@@ -1358,6 +1358,9 @@ function registerPdfIpc(): void {
   // An attachment to embed: the open dialog is main-side, the bytes travel base64
   // over the same IPC the stamp images already use
   ipcMain.handle(PDF_CHANNELS.pickAttachmentFile, async (e) => {
+    if (!allowedByWc.has(e.sender.id)) {
+      return { ok: false as const, reason: 'pdf: sender is not a registered PDF view' }
+    }
     const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
     const picked = await showOpenDialogWithMemory(dialog, win ?? undefined, {
       properties: ['openFile'],

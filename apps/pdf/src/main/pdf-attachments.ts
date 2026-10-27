@@ -1,4 +1,12 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream } from 'pdf-lib'
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFRawStream,
+  PDFString,
+} from 'pdf-lib'
 import type { PDFObject } from 'pdf-lib'
 import type { PdfAttachmentOps } from '../shared/ipc'
 
@@ -24,7 +32,11 @@ function embeddedTree(doc: PDFDocument): PDFDict | null {
 }
 
 function decodeText(value: unknown): string {
-  return value instanceof PDFHexString ? value.decodeText() : String(value)
+  // Most producers write /F and /UF as literal strings; PDFString.toString()
+  // returns the value with its parentheses, which is not a name.
+  return value instanceof PDFHexString || value instanceof PDFString
+    ? value.decodeText()
+    : String(value)
 }
 
 /** label → the tree slot of one attachment (its name object and filespec value) */
@@ -40,8 +52,10 @@ function existingSlots(doc: PDFDocument, tree: PDFDict): Map<string, Slot> {
   for (let i = 0; i + 1 < array.size(); i += 2) {
     const spec = doc.context.lookup(array.get(i + 1))
     if (!(spec instanceof PDFDict)) continue
-    const label = decodeText(spec.get(PDFName.of('UF')) ?? spec.get(PDFName.of('F')))
-    if (label) out.set(label, { nameObject: array.get(i), filespec: array.get(i + 1) })
+    // The name-tree key is what pdf.js reports as the attachment's id — keying
+    // by /UF or /F drifts the moment a producer writes them differently.
+    const key = decodeText(array.get(i))
+    if (key) out.set(key, { nameObject: array.get(i), filespec: array.get(i + 1) })
   }
   return out
 }
@@ -128,10 +142,9 @@ export function attachmentLabels(doc: PDFDocument): string[] {
   if (!array) return out
   for (let i = 0; i + 1 < array.size(); i += 2) {
     const spec = doc.context.lookup(array.get(i + 1))
-    if (spec instanceof PDFDict) {
-      const label = decodeText(spec.get(PDFName.of('UF')) ?? spec.get(PDFName.of('F')))
-      if (label) out.push(label)
-    }
+    if (!(spec instanceof PDFDict)) continue
+    const key = decodeText(array.get(i))
+    if (key) out.push(key)
   }
   return out
 }

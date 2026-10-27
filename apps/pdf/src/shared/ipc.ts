@@ -771,7 +771,6 @@ export interface OutlineEntryInput {
   /** Vertical position on the page, PDF user space; null keeps the default */
   top?: number | null
   children?: OutlineEntryInput[]
-
 }
 
 /** A text edit that could not be matched to the document at save time and was skipped */
