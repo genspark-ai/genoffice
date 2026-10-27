@@ -6,8 +6,10 @@ import type { AnnotDeleteInput } from '../shared/ipc'
 const SUBTYPE_CODE: Record<AnnotDeleteInput['subtype'], number> = {
   highlight: 9,
   underline: 10,
+  squiggly: 11,
   strikeout: 12,
   note: 1, // FPDF_ANNOT_TEXT (sticky-note comments)
+  polygon: 7, // FPDF_ANNOT_POLYGON
 }
 
 /** Match tolerance for the rect fallback (float32 round-trips only; rects travel unchanged) */

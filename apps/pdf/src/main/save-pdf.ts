@@ -118,7 +118,8 @@ const quadBounds = (q: number[]) => {
  * Acrobat/Preview/pdfjs all render from AP for consistent results.
  * Highlight uses Multiply blending to mimic a highlighter; underline/strikeout are stroked
  * segments drawn along the "visual bottom edge" (pageRot is the page's final /Rotate;
- * at 90/270 line height runs along the x axis).
+ * at 90/270 line height runs along the x axis); squiggly is a repeating wave on the
+ * same edge.
  */
 function markupAppearance(
   pdfDoc: PDFDocument,
@@ -133,6 +134,24 @@ function markupAppearance(
     for (const q of m.quads) {
       const [x1, y1, x2, y2] = quadBounds(q)
       ops.push(`${num(x1)} ${num(y1)} ${num(x2 - x1)} ${num(y2 - y1)} re f`)
+    }
+  } else if (m.type === 'squiggly') {
+    const t = 0.08 // same visual bottom-edge offset as underline
+    ops.push(`${r} ${g} ${b} RG`)
+    for (const q of m.quads) {
+      const [x1, y1, x2, y2] = quadBounds(q)
+      const h = pageRot % 180 === 0 ? y2 - y1 : x2 - x1
+      ops.push(`${Math.max(0.8, num(h * 0.06))} w`)
+      // The perpendicular points the way the wave bulges: from the visual bottom
+      // edge into the text, which is -x at rot 90 and -y at rot 180
+      if (pageRot === 90) {
+        squigglyOps(ops, x2 - h * t, y1, 0, 1, -1, 0, y2 - y1)
+      } else if (pageRot === 270) {
+        squigglyOps(ops, x1 + h * t, y1, 0, 1, 1, 0, y2 - y1)
+      } else {
+        const y = pageRot === 180 ? y2 - h * t : y1 + h * t
+        squigglyOps(ops, x1, y, 1, 0, 0, pageRot === 180 ? -1 : 1, x2 - x1)
+      }
     }
   } else {
     const t = m.type === 'underline' ? 0.08 : 0.46
@@ -168,6 +187,7 @@ const SUBTYPE: Record<MarkupInput['type'], string> = {
   highlight: 'Highlight',
   underline: 'Underline',
   strikeout: 'StrikeOut',
+  squiggly: 'Squiggly',
 }
 
 /**
@@ -216,6 +236,39 @@ function appendAnnot(pdfDoc: PDFDocument, page: PDFPage, annotRef: PDFRef): void
   } else {
     page.node.set(PDFName.of('Annots'), pdfDoc.context.obj([annotRef]))
   }
+}
+
+/**
+ * One squiggly (wavy underline) stroke: repeating quadratic Bezier humps along a
+ * baseline, started and ended on the wave's midline — period ≈ 4 user units,
+ * amplitude ≈ 1.5. The midline sits one amplitude above the underline position so
+ * troughs stay inside the quad (the /AP BBox clips). (dx,dy) walks the line, (px,py)
+ * is its unit perpendicular; a quadratic's control offset is 2× the apex it produces.
+ */
+function squigglyOps(
+  ops: string[],
+  ax: number,
+  ay: number,
+  dx: number,
+  dy: number,
+  px: number,
+  py: number,
+  length: number,
+): void {
+  const half = 2 // half period
+  const amp = 1.5
+  const at = (d: number, off: number) =>
+    `${num(ax + dx * d + px * off)} ${num(ay + dy * d + py * off)}`
+  ops.push(`${at(0, amp)} m`)
+  let side = 1
+  let from = 0
+  while (from < length) {
+    const to = Math.min(from + half, length)
+    ops.push(`${at(from + (to - from) / 2, amp + side * 2 * amp)} ${at(to, amp)} v`)
+    from = to
+    side = -side
+  }
+  ops.push('S')
 }
 
 /** 4-segment Bezier approximation of an ellipse */
@@ -436,7 +489,8 @@ function noteAppearance(
 }
 
 /** Drawing annots: hand-written AP for Ink/Square/Circle/Line; notes get an AP
- *  icon so Preview (Quartz) draws them instead of nothing. */
+ *  icon so Preview (Quartz) draws them instead of nothing. Caret and Polygon are
+ *  AP-less: every viewer renders them natively from their own entries. */
 function addDrawing(
   pdfDoc: PDFDocument,
   page: PDFPage,
@@ -480,6 +534,39 @@ function addDrawing(
     const ref = pdfDoc.context.register(annot)
     if (d.localId) noteRefs?.set(d.localId, ref)
     appendAnnot(pdfDoc, page, ref)
+    return
+  }
+
+  if (d.kind === 'caret') {
+    const [x, y] = d.point
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Caret',
+      Rect: [num(x - 10), num(y - 10), num(x + 10), num(y + 10)],
+      F: 4,
+      P: page.ref,
+      C: d.color,
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+    appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+    return
+  }
+
+  if (d.kind === 'polygon') {
+    const xs = d.vertices.map((v) => v[0])
+    const ys = d.vertices.map((v) => v[1])
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Polygon',
+      Rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(num),
+      Vertices: d.vertices.flat().map(num),
+      F: 4,
+      P: page.ref,
+      C: d.color,
+      BS: { W: d.width },
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+    appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
     return
   }
 

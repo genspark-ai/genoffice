@@ -63,6 +63,22 @@ const rect = (v: unknown, field: string): Rect => {
   return v as Rect
 }
 
+// The PDF spec caps user-space coordinates at 14400 units per axis; anything beyond
+// cannot land on a page and would poison the writer's bbox math.
+const MAX_COORD = 14400
+
+const point = (v: unknown, field: string): [number, number] => {
+  if (
+    !Array.isArray(v) ||
+    v.length !== 2 ||
+    v.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+  )
+    throw new GuidedError(`"${field}" must be [x, y] in PDF user space`)
+  if ((v as number[]).some((n) => Math.abs(n) > MAX_COORD))
+    throw new GuidedError(`"${field}" must be within the PDF coordinate range (±${MAX_COORD})`)
+  return v as [number, number]
+}
+
 const id = (op: Op): string => str(op.id, 'id')
 
 // ── annotate ──────────────────────────────────────────────────────────
@@ -74,8 +90,8 @@ register({
   validate(op, ctx) {
     const m = obj<MarkupInput>(op.markup, 'markup')
     pageIndex(m.pageIndex, ctx, 'markup.pageIndex')
-    if (!['highlight', 'underline', 'strikeout'].includes(m.type))
-      throw new GuidedError('markup.type must be highlight | underline | strikeout')
+    if (!['highlight', 'underline', 'strikeout', 'squiggly'].includes(m.type))
+      throw new GuidedError('markup.type must be highlight | underline | strikeout | squiggly')
     if (!Array.isArray(m.quads) || m.quads.length === 0)
       throw new GuidedError('markup.quads must hold at least one 8-number quad')
   },
@@ -144,12 +160,31 @@ register({
   validate(op, ctx) {
     const d = obj<DrawingInput>(op.drawing, 'drawing')
     pageIndex(d.pageIndex, ctx, 'drawing.pageIndex')
-    if (!['ink', 'rect', 'ellipse', 'line', 'arrow', 'image', 'note', 'link'].includes(d.kind))
+    if (
+      ![
+        'ink',
+        'rect',
+        'ellipse',
+        'line',
+        'arrow',
+        'image',
+        'note',
+        'link',
+        'caret',
+        'polygon',
+      ].includes(d.kind)
+    )
       throw new GuidedError(
-        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link',
+        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link | caret | polygon',
       )
     if (d.kind === 'note' && typeof d.contents !== 'string')
       throw new GuidedError('a note drawing needs string contents')
+    if (d.kind === 'caret') point(d.point, 'drawing.point')
+    if (d.kind === 'polygon') {
+      if (!Array.isArray(d.vertices) || d.vertices.length < 3)
+        throw new GuidedError('a polygon drawing needs at least 3 vertices')
+      d.vertices.forEach((v, i) => point(v, `drawing.vertices[${i}]`))
+    }
     if (d.kind === 'link') {
       const hasUrl = typeof d.url === 'string' && d.url.length > 0
       const page = d.destPage
@@ -252,6 +287,22 @@ register({
                 ...input,
                 from: [input.from[0] + dx, input.from[1] + dy] as [number, number],
                 to: [input.to[0] + dx, input.to[1] + dy] as [number, number],
+              },
+            }
+          case 'caret':
+            return {
+              ...d,
+              input: {
+                ...input,
+                point: [input.point[0] + dx, input.point[1] + dy] as [number, number],
+              },
+            }
+          case 'polygon':
+            return {
+              ...d,
+              input: {
+                ...input,
+                vertices: input.vertices.map(([x, y]) => [x + dx, y + dy] as [number, number]),
               },
             }
           default:

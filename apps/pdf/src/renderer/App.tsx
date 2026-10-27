@@ -275,6 +275,7 @@ import {
   IconThumbs,
   IconHighlight,
   IconUnderline,
+  IconSquiggly,
   IconStrike,
   IconEditText,
   IconInk,
@@ -282,6 +283,8 @@ import {
   IconEllipse,
   IconArrow,
   IconNote,
+  IconCaret,
+  IconPolygon,
   IconSign,
   IconCertSign,
   IconSignatures,
@@ -360,6 +363,8 @@ const DRAW_TOOLS = [
   { tool: 'rect' as const, icon: IconRect, key: 'drawRect' as const },
   { tool: 'ellipse' as const, icon: IconEllipse, key: 'drawEllipse' as const },
   { tool: 'arrow' as const, icon: IconArrow, key: 'drawArrow' as const },
+  { tool: 'polygon' as const, icon: IconPolygon, key: 'drawPolygon' as const },
+  { tool: 'caret' as const, icon: IconCaret, key: 'drawCaret' as const },
   { tool: 'note' as const, icon: IconNote, key: 'drawNote' as const },
 ]
 
@@ -2631,7 +2636,7 @@ export default function App() {
   const activeMarkupTypes = useMemo(() => {
     const active = new Set<MarkupType>()
     if (!selPopup) return active
-    for (const type of ['highlight', 'underline', 'strikeout'] as const) {
+    for (const type of ['highlight', 'underline', 'squiggly', 'strikeout'] as const) {
       if ([...selPopup.quads].every(([origIdx, quads]) => markupMatching(origIdx, type, quads)))
         active.add(type)
     }
@@ -7099,6 +7104,17 @@ export default function App() {
         <button
           className="rb-big"
           disabled={readOnly}
+          data-tip={t('squiggly')}
+          onClick={() => applyMarkup('squiggly')}
+        >
+          <span className="rb-big-icon">
+            <IconSquiggly />
+          </span>
+          <span>{t('squiggly')}</span>
+        </button>
+        <button
+          className="rb-big"
+          disabled={readOnly}
           data-tip={t('strikeout')}
           onClick={() => applyMarkup('strikeout')}
         >
@@ -9951,6 +9967,30 @@ export default function App() {
                       onClick={() => applyMarkup('underline')}
                     >
                       <span className="sel-swatch sel-swatch-ul">U</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('squiggly') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('squiggly') ? t('removeMarkup') : t('squiggly')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('squiggly') ? t('removeMarkup') : t('squiggly')
+                      }
+                      onClick={() => applyMarkup('squiggly')}
+                    >
+                      {/* Swatch painted inline from the palette so it always matches the applied color */}
+                      <span className="sel-swatch">
+                        <svg width="14" height="10" viewBox="0 0 28 10" fill="none" aria-hidden>
+                          <polyline
+                            points="1,5 4.5,1.5 8,8.5 11.5,1.5 15,8.5 18.5,1.5 22,8.5 25.5,5"
+                            stroke={cssRgb(MARKUP_COLORS.squiggly)}
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
                     </button>
                     <button
                       type="button"
