@@ -92,6 +92,8 @@ import {
   splitPdfBytes,
 } from './save-pdf'
 import { readPdfText } from './read-text'
+import { shrinkDocument } from './pdf-shrink'
+import { PDFDocument } from 'pdf-lib'
 import {
   addSignature,
   isSignatureData,
@@ -1620,6 +1622,40 @@ function registerPdfIpc(): void {
         name: basename(path),
         pageCount: text.pageCount,
         pages: text.pages.map((page) => page.text),
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Reduce File Size: shrink a copy picked through the save dialog; the open
+  // document is untouched
+  ipcMain.handle(PDF_CHANNELS.reduceFileSize, async (e, path: unknown) => {
+    if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+      return { ok: false as const, reason: 'pdf: path not granted to this view' }
+    }
+    const parent = BrowserWindow.fromWebContents(e.sender)
+    const base = basename(path).replace(/\.pdf$/i, '')
+    const picked = parent
+      ? await dialog.showSaveDialog(parent, {
+          title: base + '-small.pdf',
+          filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
+        })
+      : await dialog.showSaveDialog({ defaultPath: base + '-small.pdf' })
+    if (picked.canceled || !picked.filePath) return { ok: false as const, canceled: true }
+    try {
+      const source = new Uint8Array(await readFile(path))
+      const doc = await PDFDocument.load(source, { updateMetadata: false })
+      const result = shrinkDocument(doc)
+      const after = await doc.save({ useObjectStreams: false })
+      await writePdfAtomically(picked.filePath, after)
+      return {
+        ok: true as const,
+        targetPath: picked.filePath,
+        bytesBefore: source.length,
+        bytesAfter: after.length,
+        streamsRecompressed: result.streamsRecompressed,
+        imagesDownsampled: result.imagesDownsampled,
       }
     } catch (err) {
       return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }

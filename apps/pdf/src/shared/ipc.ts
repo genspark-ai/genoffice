@@ -23,6 +23,7 @@ export const PDF_CHANNELS = {
   insertPdf: 'pdf:insert-pdf',
   compareReadPdf: 'pdf:compare-read-pdf',
   compareReadOpen: 'pdf:compare-read-open',
+  reduceFileSize: 'pdf:reduce-file-size',
   insertBlankPage: 'pdf:insert-blank-page',
   splitPdf: 'pdf:split-pdf',
   mergePdf: 'pdf:merge-pdf',
@@ -973,6 +974,21 @@ export interface PdfApi {
     path: string,
   ): Promise<
     { ok: true; name: string; pageCount: number; pages: string[] } | { ok: false; reason: string }
+  >
+  /** Reduce file size: re-compress streams and downsample oversized Flate images.
+      The picked save target (main-side dialog) receives the shrunk copy; the open
+      document is untouched and reloads from the target when the caller asks. */
+  reduceFileSize(path: string): Promise<
+    | {
+        ok: true
+        targetPath: string
+        bytesBefore: number
+        bytesAfter: number
+        streamsRecompressed: number
+        imagesDownsampled: number
+      }
+    | { ok: false; canceled: true }
+    | { ok: false; reason: string }
   >
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>
