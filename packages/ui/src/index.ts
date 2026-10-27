@@ -147,3 +147,21 @@ export {
 export { ProviderLogo } from './provider-logos'
 export { useRedactLabelField } from './use-redact-label'
 export type { RedactLabelField } from './use-redact-label'
+export { AiVoiceButton } from './AiVoiceButton'
+export { AI_VOICE_LABELS, type AiVoiceLabels } from './strings-ai-voice'
+export {
+  useVoiceInput,
+  type VoiceError,
+  type VoiceInput,
+  type VoicePhase,
+  type VoiceTranscriber,
+  type UseVoiceInputOptions,
+} from './use-voice-input'
+export {
+  anchorAt,
+  discardAnchored,
+  replaceRange,
+  writeAnchored,
+  type VoiceAnchor,
+  type VoiceInsertion,
+} from './voice-text-splice'

@@ -1,0 +1,102 @@
+/* Composer microphone and its voice session. Chrome tokens only; each app imports
+ * this next to its other @genoffice/ui sheets. */
+
+.ai-input-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ai-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-30);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-voice-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-voice-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-voice-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ai-voice-btn.recording {
+  color: var(--color-error);
+  background: var(--hover);
+}
+
+/* Three bars standing in for the microphone while it is open. */
+.ai-voice-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.ai-voice-wave i {
+  width: 2px;
+  height: 4px;
+  border-radius: 1px;
+  background: currentColor;
+  animation: ai-voice-bar 0.9s ease-in-out infinite;
+}
+
+.ai-voice-wave i:nth-child(1) {
+  animation-delay: -0.2s;
+}
+
+.ai-voice-wave i:nth-child(2) {
+  animation-delay: -0.1s;
+}
+
+@keyframes ai-voice-bar {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-voice-wave i {
+    animation: none;
+    height: 8px;
+  }
+}
+
+.ai-voice-error {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--color-error);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

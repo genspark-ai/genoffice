@@ -25,6 +25,7 @@ export function AiComposer({
   header,
   queueStrip,
   footerStart,
+  footerEnd,
   iconOnly = false,
   sendIconEnabled,
   sendIconDisabled,
@@ -53,6 +54,12 @@ export function AiComposer({
   readonly queueStrip?: React.ReactNode
   /** extra controls at the left of the footer (attach button, toggles, …) */
   readonly footerStart?: React.ReactNode
+  /**
+   * extra controls pinned to the right of the footer, immediately before send
+   * (the microphone, …). Supplying it wraps send in a `.ai-input-tail` row; without
+   * it the composer renders exactly as it did before the slot existed.
+   */
+  readonly footerEnd?: React.ReactNode
   /** compact variant: no hint text, icon-only enter/stop button (Genspark composer style) */
   readonly iconOnly?: boolean | undefined
   /** custom art for the icon-only send button (e.g. brand-supplied PNGs); falls back to IconEnter */
@@ -91,6 +98,35 @@ export function AiComposer({
     ta.style.height = 'auto'
     ta.style.height = `${Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [value, ref])
+
+  const sendButton = busy ? (
+    <button
+      className="ai-send-btn ai-stop-btn"
+      onClick={onStop}
+      title={stopLabel}
+      aria-label={stopLabel}
+    >
+      {iconOnly ? (stopIcon ?? <IconStop size={16} />) : <IconStop size={16} />}
+      {!iconOnly && stopLabel}
+    </button>
+  ) : (
+    <button
+      className="ai-send-btn"
+      onClick={onSend}
+      disabled={!canSend}
+      title={sendLabel}
+      aria-label={sendLabel}
+    >
+      {iconOnly ? (
+        ((canSend ? sendIconEnabled : (sendIconDisabled ?? sendIconEnabled)) ?? (
+          <IconEnter size={16} />
+        ))
+      ) : (
+        <IconSend size={16} />
+      )}
+      {!iconOnly && sendLabel}
+    </button>
+  )
 
   return (
     <div className="ai-input-box">
@@ -134,33 +170,13 @@ export function AiComposer({
             {busy ? hintBusy : hintIdle}
           </span>
         )}
-        {busy ? (
-          <button
-            className="ai-send-btn ai-stop-btn"
-            onClick={onStop}
-            title={stopLabel}
-            aria-label={stopLabel}
-          >
-            {iconOnly ? (stopIcon ?? <IconStop size={16} />) : <IconStop size={16} />}
-            {!iconOnly && stopLabel}
-          </button>
+        {footerEnd ? (
+          <div className="ai-input-tail">
+            {footerEnd}
+            {sendButton}
+          </div>
         ) : (
-          <button
-            className="ai-send-btn"
-            onClick={onSend}
-            disabled={!canSend}
-            title={sendLabel}
-            aria-label={sendLabel}
-          >
-            {iconOnly ? (
-              ((canSend ? sendIconEnabled : (sendIconDisabled ?? sendIconEnabled)) ?? (
-                <IconEnter size={16} />
-              ))
-            ) : (
-              <IconSend size={16} />
-            )}
-            {!iconOnly && sendLabel}
-          </button>
+          sendButton
         )}
       </div>
     </div>

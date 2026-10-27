@@ -109,3 +109,14 @@ export function IconPlay(props: IconProps) {
     </Svg>
   )
 }
+
+/** microphone: start a voice session */
+export function IconMic(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="6" y="2.2" width="4" height="7.4" rx="2" />
+      <path d="M3.8 7.6a4.2 4.2 0 0 0 8.4 0" />
+      <path d="M8 11.8v2" />
+    </Svg>
+  )
+}
