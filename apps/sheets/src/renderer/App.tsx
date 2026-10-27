@@ -1118,7 +1118,11 @@ export function App({
       openLazyWorkbook,
       setPendingEdits,
       readCells: (addresses, sheetId) => readCellsImpl(readContext(), addresses, sheetId),
-      redactionStates: () => redactionStatesRef.current,
+      // null until the file's own part has been read: an empty array means
+      // "clear the part" to the gateway, and a save that lands before the read
+      // would wipe the withheld-cell marks the file already carries.
+      redactionStates: () =>
+        loadedRedactionStatesRef.current === null ? null : redactionStatesRef.current,
       slicerState: () => {
         // Only a session that changed its slicers rides them on the save:
         // untouched panels keep their parts byte-identical (raw-copied), and
