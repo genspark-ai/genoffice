@@ -231,9 +231,11 @@ describe('editing', () => {
     const { editor } = open('[[Alpha]] [[Beta|Bee]] [[Gamma#Section]] [[Alpha|Again]]', { resolve })
     await settled()
     expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['Alpha', 'Beta', 'Gamma#Section'])
-    const resolved = [...editor.view.dom.querySelectorAll('.wiki-link-resolved')].map((el) =>
-      el.getAttribute('data-wiki-target'),
-    )
+    // the alias display pass splits an aliased link's DOM around the hidden
+    // syntax, duplicating the resolver's span; the link is the visible reading
+    const resolved = [
+      ...editor.view.dom.querySelectorAll('.wiki-link-resolved:not(.wiki-alias-hidden)'),
+    ].map((el) => el.getAttribute('data-wiki-target'))
     expect(resolved).toEqual(['[[Alpha]]', '[[Beta|Bee]]', '[[Gamma#Section]]', '[[Alpha|Again]]'])
   })
 

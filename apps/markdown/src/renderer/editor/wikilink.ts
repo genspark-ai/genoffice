@@ -8,6 +8,15 @@ import { collectWikiEmbedTargets, embedWidth, isImagePath, wikiEmbedSpans } from
 import { resolveImageSrc } from './localImage'
 
 /**
+ * `[[wiki links]]` in two layers. The mark makes the document text the link:
+ * the literal as written is what is stored, what the save writes and what gets
+ * resolved, and the resolver's decorations only style it. `WikiAliasDisplay`
+ * adds the view's second reading of the same literals — as in Obsidian, an
+ * aliased link shows only its display text, with the syntax around it taken
+ * out of the flow by decorations that never touch the text underneath.
+ */
+
+/**
  * `[[target]]`, `[[target|alias]]`, `[[target#heading]]`, `[[target#^blockid]]`.
  * The target may hold anything but a bracket, pipe or newline; the alias runs
  * to the closing brackets. `[[]]` carries no name and is not a link.
@@ -390,5 +399,67 @@ export const WikiLink = Mark.create({
     // no target here: what a link points at is an answer from the resolver,
     // and it arrives as a decoration once the target set is resolved
     return ['a', { class: 'wiki-link' }, 0]
+  },
+})
+
+interface WikiAliasState {
+  decorations: DecorationSet
+}
+
+const aliasEmpty: WikiAliasState = { decorations: DecorationSet.empty }
+
+/** exported for tests: the alias display pass owns this slice of plugin state */
+export const wikiAliasDisplayKey = new PluginKey<WikiAliasState>('wikiAliasDisplay')
+
+/**
+ * The syntax an aliased link hides: the `[[target|` prefix through the pipe,
+ * and the closing `]]`. A literal split across several text nodes (an inline
+ * mark inside the brackets) is left visible — no segment spans the whole
+ * literal, so hiding part of one segment could clip text the next one carries.
+ */
+function aliasDecorations(doc: PmNode): Decoration[] {
+  const out: Decoration[] = []
+  for (const span of wikiSpans(doc)) {
+    // positions come from the literal match, so a mark the edit grew past its
+    // brackets contributes nothing
+    if (span.to - span.from !== span.raw.length) continue
+    const pipe = span.raw.indexOf('|')
+    if (pipe < 0) continue
+    // `[[Note|]]` never matches the link regex, so a matched pipe always has
+    // alias text after it
+    out.push(Decoration.inline(span.from, span.from + pipe + 1, { class: 'wiki-alias-hidden' }))
+    out.push(Decoration.inline(span.to - 2, span.to, { class: 'wiki-alias-hidden' }))
+  }
+  return out
+}
+
+/**
+ * Obsidian shows `[[Note|Alias]]` as `Alias`. This pass hides the syntax of an
+ * aliased link in the view only: the document text keeps the whole literal, so
+ * the save, the block source map and the resolver all read what was written.
+ * It waits on nothing async — what to hide follows from the document alone,
+ * recomputed whole on every change to it.
+ */
+export const WikiAliasDisplay = Extension.create({
+  name: 'wikiAliasDisplay',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<WikiAliasState>({
+        key: wikiAliasDisplayKey,
+        state: {
+          init: (_config, state) => ({
+            decorations: DecorationSet.create(state.doc, aliasDecorations(state.doc)),
+          }),
+          apply: (tr, old) =>
+            tr.docChanged
+              ? { decorations: DecorationSet.create(tr.doc, aliasDecorations(tr.doc)) }
+              : old,
+        },
+        props: {
+          decorations: (state) => (wikiAliasDisplayKey.getState(state) ?? aliasEmpty).decorations,
+        },
+      }),
+    ]
   },
 })

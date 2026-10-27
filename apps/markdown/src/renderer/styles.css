@@ -389,6 +389,14 @@ html[data-doc-theme='light'] .doc-page {
   color: var(--text-muted);
 }
 
+/* An aliased link shows only its display text: the `[[target|` prefix and the
+ * closing `]]` are covered by the alias display pass's inline decorations and
+ * taken out of the flow. The words underneath are document text; only the view
+ * hides them. */
+.wiki-alias-hidden {
+  display: none;
+}
+
 /* GFM footnotes. The reference shows the label as written and jumps to its
  * definition; the definition keeps its label in a fixed slot beside the body
  * column. A separator opens the first definition of a run, echoing GitHub's
