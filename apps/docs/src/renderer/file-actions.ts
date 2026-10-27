@@ -1196,7 +1196,12 @@ async function saveOnce(
       // win, and the marks must belong to the position they are restored at.
       const selectionPos = editor.state.selection.from
       const caretMarks = caretMarksSnapshot(editor)
-      editor.commands.setContent(rebasedPm as never)
+      // Rebase saved anchors without recording the reload as a user edit.
+      editor
+        .chain()
+        .setMeta(TRACK_IGNORE, true)
+        .setContent(rebasedPm as never)
+        .run()
       resetEditorHistory(editor)
       const chain = editor
         .chain()
