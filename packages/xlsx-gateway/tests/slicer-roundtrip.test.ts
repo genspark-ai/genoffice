@@ -76,6 +76,12 @@ function fixture(): MutablePackage {
     'xl/workbook.xml': WORKBOOK,
     'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
     'xl/worksheets/sheet1.xml': WORKSHEET,
+    // the pivot part's host: slicerCache pivotTables/pivotTable binds through
+    // the hosting worksheet's sheetId and the pivot table's name
+    'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+</Relationships>`,
     'xl/pivotTables/pivotTable1.xml': PIVOT_TABLE,
     'xl/pivotCache/pivotCacheDefinition1.xml': PIVOT_CACHE,
   })
@@ -132,13 +138,20 @@ describe('slicer write + read round trip', () => {
     expect(slicerXml).toContain('<slicer name="Region" cache="Slicer_Region" caption="Region"')
     const cacheXml = await pkg.readText('xl/slicerCaches/slicerCache1.xml')
     expect(cacheXml).toContain('name="Slicer_Region" sourceName="Region"')
-    expect(cacheXml).toContain('<pivotTable tabId="1"/>')
+    // the pivot binding: tabId is the hosting worksheet's sheetId, name the
+    // pivot table's own name
+    expect(cacheXml).toContain('<pivotTable tabId="1" name="Pivot1"/>')
     expect(cacheXml).toContain('<tabular pivotCacheId="7"')
     expect(cacheXml).toContain('<i x="0" s="1"/><i x="1"/><i x="2" s="1"/>')
     expect(await pkg.readText('xl/timelines/timeline1.xml')).toContain('<timeline name="Date"')
     const timelineCache = await pkg.readText('xl/timelineCaches/timelineCache1.xml')
     expect(timelineCache).toContain('name="Timeline_Date" sourceName="Date"')
+    expect(timelineCache).toContain('<pivotTable tabId="1" name="Pivot1"/>')
+    expect(timelineCache).toContain(
+      '<state minimalRefreshVersion="1" lastRefreshVersion="1" pivotCacheId="7" filterType="dateBetween">',
+    )
     expect(timelineCache).toContain('startDate="2021-01-01T00:00:00" endDate="2021-06-30T00:00:00"')
+    expect(timelineCache).toContain('<bounds startDate="2021-01-01T00:00:00"')
 
     // Worksheet rel + ext wiring.
     const sheetRels = await pkg.readText('xl/worksheets/_rels/sheet1.xml.rels')
@@ -146,7 +159,9 @@ describe('slicer write + read round trip', () => {
     expect(sheetRels).toContain(`Type="${TIMELINE_REL_TYPE}" Target="../timelines/timeline1.xml"`)
     const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
     expect(worksheet).toContain('<x14:slicerList><x14:slicer r:id="rId1"/></x14:slicerList>')
-    expect(worksheet).toContain('<x15:slicerList><x15:slicer r:id="rId2"/></x15:slicerList>')
+    expect(worksheet).toContain(
+      '<x15:timelineRefs><x15:timelineRef r:id="rId2"/></x15:timelineRefs>',
+    )
 
     // Workbook rel + ext wiring.
     const workbookRels = await pkg.readText('xl/_rels/workbook.xml.rels')
@@ -161,7 +176,7 @@ describe('slicer write + read round trip', () => {
       '<x14:slicerCaches><x14:slicerCache r:id="rId3"/></x14:slicerCaches>',
     )
     expect(workbook).toContain(
-      '<x15:slicerCaches><x15:slicerCache r:id="rId4"/></x15:slicerCaches>',
+      '<x15:timelineCacheRefs><x15:timelineCacheRef r:id="rId4"/></x15:timelineCacheRefs>',
     )
 
     // Content types.
@@ -394,6 +409,14 @@ describe('slicer state through the save planner', () => {
     zip.file('xl/workbook.xml', WORKBOOK)
     zip.file('xl/_rels/workbook.xml.rels', WORKBOOK_RELS)
     zip.file('xl/worksheets/sheet1.xml', WORKSHEET)
+    // the pivot part's host, for the slicerCache binding
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+</Relationships>`,
+    )
     zip.file('xl/pivotTables/pivotTable1.xml', PIVOT_TABLE)
     zip.file('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE)
     return zip.generateAsync({ type: 'nodebuffer' })

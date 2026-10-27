@@ -18,10 +18,11 @@
 /// trip cannot be verified in this environment (declared in the PR body).
 ///
 /// Pivot binding: slicerCacheDefinition carries the spec'd tabular@pivotCacheId
-/// (resolved through workbook pivotCaches) and a pivotTables/pivotTable@tabId;
-/// tabId is OUR rule — the 1-based index of the pivot part among sorted
-/// xl/pivotTables/*.xml paths — and is the only binding a timeline cache
-/// carries. The reader prefers pivotCacheId and falls back to the tabId rule.
+/// (resolved through workbook pivotCaches) and a pivotTables/pivotTable entry
+/// whose tabId is the hosting worksheet's sheetId and whose name is the pivot
+/// table's own name (MS-XLSX) — Excel does not bind the slicer to its pivot
+/// without them. The reader prefers pivotCacheId and falls back to the tabId
+/// rule over sorted pivot parts for foreign files.
 
 import {
   allocatePartPath,
@@ -48,19 +49,25 @@ export const SLICER_CACHE_REL_TYPE =
   'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
 export const TIMELINE_CACHE_REL_TYPE =
   'http://schemas.microsoft.com/office/2007/relationships/timelineCache'
+/// ECMA-376: the worksheet → pivotTable part relationship, used to find which
+/// sheet hosts a pivot (the slicerCache binding's tabId is that sheet's sheetId)
+const PIVOT_TABLE_REL_TYPE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable'
 
 const SLICER_CONTENT_TYPE = 'application/vnd.ms-excel.slicer+xml'
 const SLICER_CACHE_CONTENT_TYPE = 'application/vnd.ms-excel.slicerCache+xml'
 const TIMELINE_CONTENT_TYPE = 'application/vnd.ms-excel.timeline+xml'
 const TIMELINE_CACHE_CONTENT_TYPE = 'application/vnd.ms-excel.timelineCache+xml'
 
-/// Ext URIs per MS-XLSX recollection; the reader below does not depend on
-/// them (it matches container names + relationship types), so a wrong URI can
-/// only affect Excel, never our own round trip.
+/// Ext URIs per MS-XLSX; the reader below does not depend on them (it matches
+/// container names + relationship types), so a wrong URI can only affect
+/// Excel, never our own round trip. Timelines do NOT share the slicer
+/// containers: the worksheet carries x15:timelineRefs and the workbook
+/// x15:timelineCacheRefs, each with its own URI.
 const WORKSHEET_SLICER_LIST_URI = '{A8765BA9-456A-4dab-B4F3-ACF1056F45AA}'
-const WORKSHEET_TIMELINE_LIST_URI = '{46BE6895-7355-4a93-B00E-2C351335B9C9}'
+const WORKSHEET_TIMELINE_LIST_URI = '{7E03D99C-DC04-49d9-9315-930204A7B6E9}'
 const WORKBOOK_SLICER_CACHES_URI = '{BBE1A952-AA13-448e-AADC-164F8A28A991}'
-const WORKBOOK_TIMELINE_CACHES_URI = '{46BE6895-7355-4a93-B00E-2C351335B9C9}'
+const WORKBOOK_TIMELINE_CACHES_URI = '{D0CA8CA8-9F24-4464-BF8E-62219DCF47F9}'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
@@ -173,16 +180,53 @@ export interface SlicerStateWrite {
 
 // ─── Part XML builders ─────────────────────────────────────────────────────
 
-/// 1-based position of the pivot part among sorted xl/pivotTables/*.xml.
-async function pivotTabId(pkg: MutablePackage, pivotPath: string): Promise<number> {
-  const parts = (await pkg.paths())
-    .filter((path) => /^xl\/pivotTables\/[^/]+\.xml$/.test(path))
-    .sort()
-  const index = parts.indexOf(pivotPath)
-  if (index === -1) {
+/// SlicerCache/timelineCache pivot binding per MS-XLSX: pivotTables/pivotTable
+/// carries the hosting worksheet's sheetId as tabId and the pivot table's own
+/// name. The hosting worksheet is the one whose rels reference the pivot part.
+async function pivotBinding(
+  pkg: MutablePackage,
+  workbookXml: string,
+  pivotPath: string,
+): Promise<{ tabId: number; name: string }> {
+  if (!(await pkg.has(pivotPath))) {
     throw new SlicerAddError(`Slicer pivot part ${pivotPath} is missing from the workbook.`)
   }
-  return index + 1
+  const name = attr(await pkg.readText(pivotPath), 'name')
+  if (name === undefined) {
+    throw new SlicerAddError(`Pivot part ${pivotPath} has no pivot table name.`)
+  }
+  let hostPath: string | null = null
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/worksheets\/[^/]+\.xml$/.test(path)) continue
+    const relsPath = relsPathFor(path)
+    if (!(await pkg.has(relsPath))) continue
+    if (findRelationshipTo(await pkg.readText(relsPath), PIVOT_TABLE_REL_TYPE, path, pivotPath)) {
+      hostPath = path
+      break
+    }
+  }
+  if (hostPath === null) {
+    throw new SlicerAddError(`Pivot part ${pivotPath} is not hosted by any worksheet.`)
+  }
+  const relsXml = (await pkg.has('xl/_rels/workbook.xml.rels'))
+    ? await pkg.readText('xl/_rels/workbook.xml.rels')
+    : ''
+  const rels = parseRelationships(relsXml)
+  for (const sheet of workbookXml.matchAll(/<sheet\b[^>]*>/g)) {
+    const sheetId = attr(sheet[0], 'sheetId')
+    const relId = attr(sheet[0], 'r:id')
+    if (sheetId === undefined || relId === undefined) continue
+    const entry = rels.find((rel) => rel.id === relId)
+    if (entry === undefined || resolveRelTarget('xl/workbook.xml', entry.target) !== hostPath) {
+      continue
+    }
+    const parsed = Number(sheetId)
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new SlicerAddError(`Sheet ${hostPath} carries no usable sheetId.`)
+    }
+    return { tabId: parsed, name: decodeAttribute(name) }
+  }
+  throw new SlicerAddError(`The workbook does not list a sheet for ${hostPath}.`)
 }
 
 async function pivotCacheIdOf(pkg: MutablePackage, pivotPath: string): Promise<number> {
@@ -218,19 +262,26 @@ function carryOverGeometry(existingXml: string, tag: 'slicer' | 'timeline'): str
 }
 
 function buildSlicerPartXml(name: string, cacheName: string, caption: string, carried: string) {
+  // rowHeight is required for Excel to lay the control out; a fresh control
+  // gets Excel's own default (241300 EMU ≈ a quarter inch), an updated one
+  // keeps whatever the file carried.
+  const geometry = carried.includes('rowHeight') ? carried : `${carried} rowHeight="241300"`
   return (
     `${XML_DECL}<slicers xmlns="${X14_NS}">` +
     `<slicer name="${escapeAttribute(name)}" cache="${escapeAttribute(cacheName)}"` +
-    ` caption="${escapeAttribute(caption)}"${carried}/>` +
+    ` caption="${escapeAttribute(caption)}"${geometry}/>` +
     '</slicers>'
   )
 }
 
 function buildTimelinePartXml(name: string, cacheName: string, caption: string, carried: string) {
+  // level/selectionLevel are required; our session model is month-granular
+  // (level 2 in the year/quarter/month/day ladder)
+  const geometry = carried.includes('level') ? carried : `${carried} level="2" selectionLevel="2"`
   return (
     `${XML_DECL}<timelines xmlns="${X15_NS}">` +
     `<timeline name="${escapeAttribute(name)}" cache="${escapeAttribute(cacheName)}"` +
-    ` caption="${escapeAttribute(caption)}"${carried}/>` +
+    ` caption="${escapeAttribute(caption)}"${geometry}/>` +
     '</timelines>'
   )
 }
@@ -238,7 +289,7 @@ function buildTimelinePartXml(name: string, cacheName: string, caption: string, 
 function buildSlicerCacheXml(
   cacheName: string,
   sourceName: string,
-  tabId: number,
+  binding: { readonly tabId: number; readonly name: string },
   pivotCacheId: number,
   items: readonly SlicerItemWrite[],
 ): string {
@@ -248,7 +299,7 @@ function buildSlicerCacheXml(
   return (
     `${XML_DECL}<slicerCacheDefinition xmlns="${X14_NS}" xmlns:r="${REL_NS}"` +
     ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
-    `<pivotTables><pivotTable tabId="${tabId}"/></pivotTables>` +
+    `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
     '<data>' +
     `<tabular pivotCacheId="${pivotCacheId}" crossFilter="showItemsWithDataAtTop">` +
     `<items count="${items.length}">${itemsXml}</items>` +
@@ -259,23 +310,29 @@ function buildSlicerCacheXml(
 function buildTimelineCacheXml(
   cacheName: string,
   sourceName: string,
-  tabId: number,
+  binding: { readonly tabId: number; readonly name: string },
+  pivotCacheId: number,
   range: { readonly startMonth: number; readonly endMonth: number } | null,
 ): string {
   // The selection window lives on the cache; our month-granularity model
-  // serializes as inclusive first/last-of-month ISO datetimes. An absent
-  // selection element = unfiltered. The pivot binding is tabId only — unlike
-  // slicer caches there is no spec'd pivotCacheId attribute to carry it.
-  const selection =
+  // serializes as inclusive first/last-of-month ISO datetimes, carried in the
+  // spec's <bounds> element (the reader also accepts <selection>, the shape
+  // this writer shipped before the state attributes existed). The state
+  // attributes are what Excel requires to open the cache: refresh versions,
+  // the bound pivot cache, and how the filter applies.
+  const inner =
     range === null
       ? ''
       : `<selection startDate="${monthIso(range.startMonth, false)}"` +
+        ` endDate="${monthIso(range.endMonth, true)}"/>` +
+        `<bounds startDate="${monthIso(range.startMonth, false)}"` +
         ` endDate="${monthIso(range.endMonth, true)}"/>`
   return (
     `${XML_DECL}<timelineCacheDefinition xmlns="${X15_NS}" xmlns:r="${REL_NS}"` +
     ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
-    `<pivotTables><pivotTable tabId="${tabId}"/></pivotTables>` +
-    `<state>${selection}</state>` +
+    `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
+    `<state minimalRefreshVersion="1" lastRefreshVersion="1" pivotCacheId="${pivotCacheId}"` +
+    ` filterType="${range === null ? 'none' : 'dateBetween'}">${inner}</state>` +
     '</timelineCacheDefinition>'
   )
 }
@@ -305,8 +362,8 @@ const WORKSHEET_TIMELINE_WIRING: ExtWiring = {
   uri: WORKSHEET_TIMELINE_LIST_URI,
   prefix: 'x15',
   namespace: X15_NS,
-  container: 'slicerList',
-  item: 'slicer',
+  container: 'timelineRefs',
+  item: 'timelineRef',
 }
 const WORKBOOK_SLICER_WIRING: ExtWiring = {
   uri: WORKBOOK_SLICER_CACHES_URI,
@@ -319,8 +376,8 @@ const WORKBOOK_TIMELINE_WIRING: ExtWiring = {
   uri: WORKBOOK_TIMELINE_CACHES_URI,
   prefix: 'x15',
   namespace: X15_NS,
-  container: 'slicerCaches',
-  item: 'slicerCache',
+  container: 'timelineCacheRefs',
+  item: 'timelineCacheRef',
 }
 
 function extOpenTag(xml: string, wiring: ExtWiring): { start: number; end: number } | null {
@@ -594,7 +651,7 @@ async function writeControl(
   if (!(await pkg.has(control.worksheetPath))) {
     throw new SlicerAddError(`Slicer host worksheet ${control.worksheetPath} is missing.`)
   }
-  const tabId = await pivotTabId(pkg, control.pivotPath)
+  const binding = await pivotBinding(pkg, workbookXml, control.pivotPath)
   const pivotCacheId = await pivotCacheIdOf(pkg, control.pivotPath)
 
   // Identity: reuse the restored part paths / names, else allocate fresh ones
@@ -628,14 +685,15 @@ async function writeControl(
       ? buildSlicerCacheXml(
           cacheName,
           control.sourceName,
-          tabId,
+          binding,
           pivotCacheId,
           (control as SlicerControlWrite).items,
         )
       : buildTimelineCacheXml(
           cacheName,
           control.sourceName,
-          tabId,
+          binding,
+          pivotCacheId,
           (control as TimelineControlWrite).range,
         )
   if (await pkg.has(cachePath)) pkg.write(cachePath, cacheXml)
