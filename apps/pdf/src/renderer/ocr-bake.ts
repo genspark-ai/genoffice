@@ -5,14 +5,17 @@ import type { PageGeom } from './annotations'
 /**
  * The persistence half of auto-OCR: the recognized words already carry their
  * PDF user-space boxes, so baking is grouping them into visual lines and
- * emitting one white text insert per line — invisible over the scan, but
- * selectable and searchable in every reader, and it survives every save like
- * any other content. After the save the reload finds a text layer, so the
- * auto-OCR pass never fires for these pages again: the bake is its own
- * dedupe.
+ * emitting one invisible (render mode 3) text insert per line — present,
+ * selectable and searchable in every reader but never painted, and it survives
+ * every save like any other content. After the save the reload finds a text
+ * layer, so the auto-OCR pass never fires for these pages again: the bake is
+ * its own dedupe.
  */
 
-const BAKE_COLOR: [number, number, number] = [1, 1, 1]
+/** text-insert colours are 0-255 RGB (see the _FPDFPageObj_SetFillColor call in
+ *  text-edit.ts) — [1, 1, 1] here was one-almost-black on every scan. The fill
+ *  is belt-and-braces anyway: the insert rides with render mode 3. */
+const BAKE_COLOR: [number, number, number] = [255, 255, 255]
 
 /** a line groups words whose vertical centers sit within half a line height */
 export function groupLines(words: OcrWord[]): OcrWord[][] {
@@ -66,6 +69,7 @@ export function buildOcrBakeInserts(
       color: BAKE_COLOR,
       lineLeading: height * 1.1,
       rotate,
+      invisible: true,
     }
   })
 }

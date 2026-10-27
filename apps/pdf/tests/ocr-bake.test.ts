@@ -31,7 +31,10 @@ describe('buildOcrBakeInserts', () => {
     expect(inserts).toHaveLength(1)
     const insert = inserts[0]!
     expect(insert.pageIndex).toBe(0)
-    expect(insert.color).toEqual([1, 1, 1])
+    // 0-255 RGB like every other text insert — [1,1,1] painted near-black
+    expect(insert.color).toEqual([255, 255, 255])
+    // render mode 3: never painted, whatever a viewer does with the fill
+    expect(insert.invisible).toBe(true)
     expect(insert.text).toBe('Hello world')
     expect(insert.origin[0]).toBe(50)
     expect(insert.origin[1]).toBeGreaterThan(700)

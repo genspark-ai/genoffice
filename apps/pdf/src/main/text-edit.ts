@@ -2215,7 +2215,13 @@ export function applyTextInserts(
                     input.color[2],
                     255,
                   )
-                  if (syntheticBold)
+                  if (input.invisible) {
+                    // render mode 3 (invisible): the standard OCR-layer form.
+                    // White fill still shows on grey paper, photos and dark
+                    // headers, and lights up under selection.
+                    m._FPDFTextObj_SetTextRenderMode(obj, 3)
+                  }
+                  if (syntheticBold && !input.invisible)
                     strokeObject(
                       m,
                       obj,
