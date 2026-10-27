@@ -98,36 +98,18 @@ const AGENTS: readonly AgentDef[] = [
     // the cross-tool skills directory: these tools read `~/.agents/skills` and
     // need no folder of their own, so one row installs for all of them
     id: 'agents',
-    label: '.agents (OpenCode / Copilot / dsh …)',
+    label: '.agents (Codex / Cursor / Gemini CLI / Copilot / OpenCode / dsh …)',
     probe: (env, home) =>
       [
         join(home, '.agents'),
+        env.CODEX_HOME || join(home, '.codex'),
+        join(home, '.cursor'),
+        join(home, '.gemini'),
         join(home, '.copilot'),
         join(home, '.dsh'),
         join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode'),
       ].find(isDir) ?? join(home, '.agents'),
     skills: (_p, _env, home) => join(home, '.agents', 'skills'),
-    skillsTarget: true,
-  },
-  {
-    id: 'codex',
-    label: 'Codex',
-    probe: (env, home) => env.CODEX_HOME || join(home, '.codex'),
-    skills: (p) => join(p, 'skills'),
-    skillsTarget: true,
-  },
-  {
-    id: 'cursor',
-    label: 'Cursor',
-    probe: (_env, home) => join(home, '.cursor'),
-    skills: (p) => join(p, 'skills'),
-    skillsTarget: true,
-  },
-  {
-    id: 'gemini',
-    label: 'Gemini CLI',
-    probe: (_env, home) => join(home, '.gemini'),
-    skills: (p) => join(p, 'skills'),
     skillsTarget: true,
   },
   {
@@ -143,6 +125,27 @@ const AGENTS: readonly AgentDef[] = [
     probe: (_env, home) => join(home, '.openclaw'),
     skills: (p) => join(p, 'skills'),
     skillsTarget: true,
+  },
+  {
+    id: 'codex',
+    label: 'Codex',
+    probe: (env, home) => env.CODEX_HOME || join(home, '.codex'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    probe: (_env, home) => join(home, '.cursor'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    probe: (_env, home) => join(home, '.gemini'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
   },
   {
     id: 'copilot',
