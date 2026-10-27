@@ -4288,8 +4288,15 @@ export default function App() {
   }
 
   const noticeSkippedTextInserts = (skipped: TextInsertFailure[]) => {
-    const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(`${t('textInsertSkipped', { pages })}${skipDetail(skipped)}`)
+    // The bake layer's inserts ride the tail of the same textInserts array; a
+    // glyph no face covers there is OCR noise on a page the reader never
+    // edited, and nagging about it on every save is worse than the silence.
+    // An insert the reader typed is still worth its toast.
+    const userCount = textInsertsRef.current.length
+    const mine = skipped.filter((s) => s.editIndex < userCount)
+    if (mine.length === 0) return
+    const pages = [...new Set(mine.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
+    showNotice(`${t('textInsertSkipped', { pages })}${skipDetail(mine)}`)
   }
 
   /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As.
