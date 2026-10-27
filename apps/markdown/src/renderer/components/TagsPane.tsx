@@ -50,6 +50,7 @@ export function TagsPane({ onOpen }: { onOpen: (path: string) => void }): ReactE
           type="button"
           className="md-backlinks-refresh"
           aria-label={t('backlinksRefresh')}
+          title={t('backlinksRefresh')}
           onClick={() => setReload((v) => v + 1)}
         >
           ⟳
@@ -65,21 +66,23 @@ export function TagsPane({ onOpen }: { onOpen: (path: string) => void }): ReactE
             <li key={tag}>
               <button
                 type="button"
-                className="md-backlink"
+                className="md-backlinks-item"
                 onClick={() => setOpenTag((v) => (v === tag ? null : tag))}
               >
-                <span className="md-backlink-note">
-                  #{tag}
-                  <span className="md-backlink-target"> ({files.length})</span>
-                </span>
+                <span className="md-backlinks-name">#{tag}</span>
+                <span className="md-backlinks-target">{files.length}</span>
               </button>
               {openTag === tag && (
                 <ul className="md-backlinks-list md-tags-notes">
                   {files.map((file) => (
                     <li key={file}>
-                      <button type="button" className="md-backlink" onClick={() => onOpen(file)}>
-                        <span className="md-backlink-note">{name(file)}</span>
-                        <span className="md-backlink-target">{file}</span>
+                      <button
+                        type="button"
+                        className="md-backlinks-item"
+                        title={file}
+                        onClick={() => onOpen(file)}
+                      >
+                        <span className="md-backlinks-name">{name(file)}</span>
                       </button>
                     </li>
                   ))}

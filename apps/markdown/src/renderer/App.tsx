@@ -1336,6 +1336,7 @@ export default function App() {
         onToggleOutline={() => setOutlineOpen((v) => !v)}
         hasOutline={outlineItems.length > 0}
         backlinksOpen={backlinksOpen}
+        tagsOpen={tagsOpen}
         onToggleBacklinks={() => setBacklinksOpen((v) => !v)}
         onToggleTags={() => setTagsOpen((v) => !v)}
         onOpenGraph={() => setGraphOpen(true)}

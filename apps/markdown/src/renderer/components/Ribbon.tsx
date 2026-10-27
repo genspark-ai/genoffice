@@ -61,6 +61,7 @@ interface Props {
   onToggleOutline: () => void
   hasOutline: boolean
   backlinksOpen: boolean
+  tagsOpen: boolean
   onToggleTags: () => void
   onToggleBacklinks: () => void
   onOpenGraph: () => void
@@ -276,6 +277,7 @@ export function Ribbon({
   onToggleOutline,
   hasOutline,
   backlinksOpen,
+  tagsOpen,
   onToggleTags,
   onToggleBacklinks,
   onOpenGraph,
@@ -697,7 +699,12 @@ export function Ribbon({
               </IconBtn>
             )}
             {!sourceMode && (
-              <IconBtn title={t('tags')} disabled={disabled} onClick={onToggleTags}>
+              <IconBtn
+                title={t('tags')}
+                active={tagsOpen}
+                disabled={disabled}
+                onClick={onToggleTags}
+              >
                 <IconTag size={ICON} />
               </IconBtn>
             )}
