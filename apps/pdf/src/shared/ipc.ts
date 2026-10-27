@@ -325,8 +325,8 @@ export type DrawingInput =
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
   | {
-      /** Text insertion mark placed by a click; written as a Caret annotation the
-          viewer draws natively (no appearance stream, same philosophy as ink) */
+      /** Text insertion mark placed by a click; written as a Caret annotation with
+          its own appearance stream (no viewer synthesises one) */
       kind: 'caret'
       pageIndex: number
       color: [number, number, number]

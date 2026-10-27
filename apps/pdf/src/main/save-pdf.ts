@@ -243,7 +243,7 @@ function appendAnnot(pdfDoc: PDFDocument, page: PDFPage, annotRef: PDFRef): void
  * baseline, started and ended on the wave's midline — period ≈ 4 user units,
  * amplitude ≈ 1.5. The midline sits one amplitude above the underline position so
  * troughs stay inside the quad (the /AP BBox clips). (dx,dy) walks the line, (px,py)
- * is its unit perpendicular; a quadratic's control offset is 2× the apex it produces.
+ * is its unit perpendicular.
  */
 function squigglyOps(
   ops: string[],
@@ -264,7 +264,14 @@ function squigglyOps(
   let from = 0
   while (from < length) {
     const to = Math.min(from + half, length)
-    ops.push(`${at(from + (to - from) / 2, amp + side * 2 * amp)} ${at(to, amp)} v`)
+    // The quadratic hump PDF has no operator for, written as the cubic that
+    // reproduces it: control points at 1/3 and 2/3 of the segment, 4/3 of the
+    // apex above the midline (a symmetric cubic peaks at 3/4 of its control
+    // height). A single 'v' control point skewed the hump and pushed the
+    // troughs below the midline.
+    const ctrl = amp + (side * 4 * amp) / 3
+    const third = (to - from) / 3
+    ops.push(`${at(from + third, ctrl)} ${at(from + 2 * third, ctrl)} ${at(to, amp)} c`)
     from = to
     side = -side
   }
@@ -488,9 +495,16 @@ function noteAppearance(
   })
 }
 
-/** Drawing annots: hand-written AP for Ink/Square/Circle/Line; notes get an AP
- *  icon so Preview (Quartz) draws them instead of nothing. Caret and Polygon are
- *  AP-less: every viewer renders them natively from their own entries. */
+/** The caret wedge: the insertion point is the tip, the arms reach half a box out
+ *  and two thirds of it down — the renderer's chevron, filled. */
+const CARET_HALF_WIDTH = 8
+const CARET_DEPTH = 6
+
+/** Drawing annots: hand-written AP for every shape (Ink/Square/Circle/Line, Caret,
+ *  Polygon); notes get an AP icon so Preview (Quartz) draws them instead of nothing.
+ *  The AP is what makes a saved shape visible: pdf.js has no default appearance for
+ *  a Caret and pdfium's generator covers neither Caret nor Polygon, so both would
+ *  come back blank in GenOffice, Preview, Chrome or Edge. */
 function addDrawing(
   pdfDoc: PDFDocument,
   page: PDFPage,
@@ -539,13 +553,27 @@ function addDrawing(
 
   if (d.kind === 'caret') {
     const [x, y] = d.point
+    const rect = [num(x - 10), num(y - 10), num(x + 10), num(y + 10)]
+    // The wedge as a filled path: the tip is the insertion point, the arms open
+    // downwards. The AP BBox is the annotation rect — a viewer maps BBox → /Rect,
+    // so the two must match or the mark is scaled.
+    const ops = [
+      `${r} ${g} ${b} rg`,
+      `${num(x)} ${num(y)} m ${num(x - CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l ${num(x + CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l f`,
+    ]
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
     const annot = pdfDoc.context.obj({
       Type: 'Annot',
       Subtype: 'Caret',
-      Rect: [num(x - 10), num(y - 10), num(x + 10), num(y + 10)],
+      Rect: rect,
       F: 4,
       P: page.ref,
       C: d.color,
+      AP: { N: pdfDoc.context.register(ap) },
     })
     annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
     appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
@@ -555,15 +583,29 @@ function addDrawing(
   if (d.kind === 'polygon') {
     const xs = d.vertices.map((v) => v[0])
     const ys = d.vertices.map((v) => v[1])
+    const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(num)
+    // The vertices as a closed stroked path, like Ink/Line: round caps and joins
+    // match the renderer's preview, and the stroke is the annotation's own color.
+    const ops = [`${num(d.width)} w 1 J 1 j ${r} ${g} ${b} RG`]
+    d.vertices.forEach(([vx, vy], i) => {
+      ops.push(`${num(vx)} ${num(vy)} ${i === 0 ? 'm' : 'l'}`)
+    })
+    ops.push('h S')
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
     const annot = pdfDoc.context.obj({
       Type: 'Annot',
       Subtype: 'Polygon',
-      Rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(num),
+      Rect: rect,
       Vertices: d.vertices.flat().map(num),
       F: 4,
       P: page.ref,
       C: d.color,
       BS: { W: d.width },
+      AP: { N: pdfDoc.context.register(ap) },
     })
     annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
     appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
