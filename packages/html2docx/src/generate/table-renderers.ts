@@ -411,8 +411,9 @@ function renderPageColumns(generator, node, depth) {
 // or framed cards would show visible seams between the flattened pieces.
 function isLightShading(hex) {
   if (!hex) return true
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false
-  return [0, 2, 4].every((i) => parseInt(hex.slice(i, i + 2), 16) >= 0xdd)
+  const v = (hex ?? '').trim()
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return false
+  return [0, 2, 4].every((i) => parseInt(v.slice(i, i + 2), 16) >= 0xdd)
 }
 
 const FLOW_CHILD_TYPES = new Set(['para', 'heading', 'list', 'spacer', 'hr'])

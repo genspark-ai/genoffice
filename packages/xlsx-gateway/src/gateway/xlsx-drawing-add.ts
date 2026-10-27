@@ -31,6 +31,12 @@ export interface ChartAddSeries {
   readonly explosionPct?: number | undefined
   /// Per-slice explosion overrides, keyed by 0-based point index.
   readonly pointExplosions?: Readonly<Record<string, number>> | undefined
+  /// Combo chart: plot group the series joins ('lineChart' = line, absent or
+  /// anything else = column). Untagged series keep Insert Chart's combo
+  /// shape — the last series a line on the secondary right axis.
+  readonly plot?: 'barChart' | 'lineChart' | undefined
+  /// Combo chart: the series rides the secondary axis pair.
+  readonly secondaryAxis?: boolean | undefined
 }
 
 export interface ChartAdd {
@@ -65,6 +71,37 @@ export interface ChartAdd {
   readonly holeSizePct?: number | undefined
   readonly altText?: string | undefined
   readonly editAs?: 'twoCell' | 'oneCell' | 'absolute' | undefined
+  /// Part path of the PivotTable this chart is bound to
+  /// (`xl/pivotTables/pivotTableN.xml`). The save resolves it against the
+  /// package (resolveChartPivotSource); an unresolvable path degrades to a
+  /// regular chart rather than failing the save.
+  readonly pivotTablePath?: string | undefined
+  /// Resolved `<c:pivotSource>/<c:name>` value (`[]Sheet!PivotTable`), set by
+  /// resolveChartPivotSource; buildChartXml writes the pivotSource block (and
+  /// the matching c:pivotFmts) only when it is present.
+  readonly pivotSourceName?: string | undefined
+}
+
+/// Resolves a chart addition's pivotTablePath against the package into the
+/// final pivotSource name. c:name grammar (per real Excel PivotChart parts,
+/// e.g. `[files.xlsx]PIVOT!PivotTable1`): `[workbook]sheet!pivotTable`, where
+/// the workbook bracket may be empty — EPPlus ships `[]Sheet!PivotTable` and
+/// Excel accepts it, so the file-name-independent empty form is used (the
+/// save does not know the eventual file name). Missing part, non-pivot path,
+/// or a definition without a name degrades to a regular chart (writing a
+/// pivotSource Excel cannot resolve would make it refuse the file).
+export async function resolveChartPivotSource(
+  pkg: MutablePackage,
+  sheetName: string,
+  chart: ChartAdd,
+): Promise<ChartAdd> {
+  const path = chart.pivotTablePath
+  if (path === undefined || !/^xl\/pivotTables\/[^/]+\.xml$/.test(path)) return chart
+  if (!(await pkg.has(path))) return chart
+  const name =
+    /<pivotTableDefinition\b[^>]*\bname="([^"]+)"/.exec(await pkg.readText(path))?.[1] ?? undefined
+  if (name === undefined || name === '') return chart
+  return { ...chart, pivotSourceName: `[]${sheetName}!${name}` }
 }
 
 /// Anchor-level properties a session visual carries into the file:
@@ -556,30 +593,68 @@ export function buildChartXml(chart: ChartAdd): string {
       : ''
   // Bars ride the primary axes, the line rides a secondary right value axis
   // plus a hidden category axis — PowerPoint's combo-with-secondary shape
-  // (mirrors pptx-engine chart-insert).
+  // (mirrors pptx-engine chart-insert). Tagged series (Select Data on a
+  // combo) carry their own family and axis set instead.
   const comboPlot = (): string => {
-    const lineCount = chart.series.length >= 2 ? 1 : 0
-    const barEnd = chart.series.length - lineCount
-    const barSers = chart.series
-      .slice(0, barEnd)
-      .map((series, index) => buildSeriesXml(series, index, 'column'))
-      .join('')
-    const lineSers = chart.series
-      .slice(barEnd)
-      .map((series, index) => buildSeriesXml(series, barEnd + index, 'line'))
+    const tagged = chart.series.some((series) => series.plot !== undefined)
+    const placement = (
+      series: ChartAddSeries,
+      index: number,
+    ): { line: boolean; secondary: boolean } =>
+      tagged
+        ? {
+            line: series.plot === 'lineChart',
+            secondary: series.secondaryAxis === true,
+          }
+        : {
+            line: chart.series.length >= 2 && index === chart.series.length - 1,
+            secondary: chart.series.length >= 2 && index === chart.series.length - 1,
+          }
+    const groups: { line: boolean; secondary: boolean }[] = []
+    for (const secondary of [false, true]) {
+      for (const line of [false, true]) {
+        if (
+          chart.series.some((series, index) => {
+            const place = placement(series, index)
+            return place.line === line && place.secondary === secondary
+          })
+        ) {
+          groups.push({ line, secondary })
+        }
+      }
+    }
+    const wantsSecondary = groups.some((group) => group.secondary)
+    const groupXml = groups
+      .map((group, groupIndex) => {
+        const sers = chart.series
+          .map((series, index) => ({ series, index, place: placement(series, index) }))
+          .filter(({ place }) => place.line === group.line && place.secondary === group.secondary)
+          .map(({ series, index }) => buildSeriesXml(series, index, group.line ? 'line' : 'column'))
+          .join('')
+        // Plot-level labels ride the first group only (legacy combos put
+        // them on the bar group).
+        const labels = groupIndex === 0 ? dLbls : ''
+        const catId = group.secondary ? axCat2 : axCat
+        const valId = group.secondary ? axVal2 : axVal
+        if (!group.line) {
+          return (
+            '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>' +
+            `${sers}${labels}${gapWidth}<c:axId val="${catId}"/><c:axId val="${valId}"/></c:barChart>`
+          )
+        }
+        return (
+          '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' +
+          `${sers}${labels}<c:marker val="1"/><c:axId val="${catId}"/><c:axId val="${valId}"/></c:lineChart>`
+        )
+      })
       .join('')
     return (
-      '<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>' +
-      `${barSers}${dLbls}${gapWidth}<c:axId val="${axCat}"/><c:axId val="${axVal}"/></c:barChart>` +
-      (lineSers
-        ? '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' +
-          `${lineSers}<c:marker val="1"/><c:axId val="${axCat2}"/><c:axId val="${axVal2}"/></c:lineChart>`
-        : '') +
+      groupXml +
       `<c:catAx><c:axId val="${axCat}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
       `<c:delete val="0"/><c:axPos val="b"/>${catTitle}<c:crossAx val="${axVal}"/></c:catAx>` +
       `<c:valAx><c:axId val="${axVal}"/>${valScaling}` +
       `<c:delete val="0"/><c:axPos val="l"/>${gridlines}${valTitle}<c:crossAx val="${axCat}"/></c:valAx>` +
-      (lineSers
+      (wantsSecondary
         ? `<c:valAx><c:axId val="${axVal2}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
           `<c:delete val="0"/><c:axPos val="r"/><c:crossAx val="${axCat2}"/><c:crosses val="max"/></c:valAx>` +
           `<c:catAx><c:axId val="${axCat2}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
@@ -618,12 +693,32 @@ export function buildChartXml(chart: ChartAdd): string {
       : chart.series.length > 1 || isPieLike
         ? '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>'
         : ''
+  // PivotChart wiring, mirroring real Excel-produced chart parts. CT_ChartSpace
+  // order (ECMA-376 dml-chart): …roundedCorners, style, clrMapOvr, pivotSource,
+  // protection, chart… — we write none of the earlier members, so pivotSource
+  // leads. CT_PivotSource requires name + fmtId (there is no fmtType member;
+  // both Excel and EPPlus write fmtId val="0"). pivotFmts is Excel's own first
+  // child of c:chart (ECMA-376 1st edition CT_Chart order; EPPlus prepends it
+  // the same way), with a single empty pivotFmt.
+  const pivotSource =
+    chart.pivotSourceName === undefined
+      ? ''
+      : '<c:pivotSource>' +
+        `<c:name>${escapeXmlText(chart.pivotSourceName)}</c:name>` +
+        '<c:fmtId val="0"/>' +
+        '</c:pivotSource>'
+  const pivotFmts =
+    chart.pivotSourceName === undefined
+      ? ''
+      : '<c:pivotFmts><c:pivotFmt><c:idx val="0"/></c:pivotFmt></c:pivotFmts>'
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"' +
     ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
     ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    pivotSource +
     '<c:chart>' +
+    pivotFmts +
     '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>' +
     `<a:t>${escapeXmlText(chart.title)}</a:t>` +
     '</a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>' +

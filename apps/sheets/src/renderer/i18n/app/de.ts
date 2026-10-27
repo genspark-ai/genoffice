@@ -121,9 +121,11 @@ export const de = {
   appChartNoRepoint: 'Bei diesem Diagramm können die Datenbereiche nicht neu zugewiesen werden.',
   appKeepOneSeries: 'Behalten Sie mindestens eine Reihe.',
   appNoCategoriesToSwitch: 'Keine Kategorien zum Wechseln.',
-  appComboNoSelectData:
-    'Das Ändern der Datenquelle eines Verbunddiagramms wird noch nicht unterstützt.',
+  appSelectDataUnsupported:
+    'Das Ändern der Datenquelle dieses Diagrammtyps wird nicht unterstützt.',
   appSeriesName: 'Reihenname',
+  appSeriesType: 'Reihentyp',
+  appSecondaryAxis: 'Sekundärachse',
   appValuesRange: 'Wertebereich',
   appCategoriesRange: 'Kategoriebereich',
   appKeepUnchanged: 'Unverändert lassen',
@@ -209,6 +211,13 @@ export const de = {
   appInvalidPageField: 'Ungültiges Berichtsfilterfeld.',
   appPivotPageItemMissing:
     'Das Berichtsfilterelement „{item}“ ist kein Element des Felds „{label}“.',
+  appInvalidPivotBaseField:
+    'Das Basisfeld von „Werte anzeigen als“ muss sich in Zeilen oder Spalten befinden.',
+  appPivotBaseFieldMissing:
+    'Der Modus „Werte anzeigen als“ eines Wertefelds benötigt ein Basisfeld.',
+  appPivotBaseFieldNotAxis:
+    'Basisfeld „{label}“ muss sich in den Zeilen oder Spalten der PivotTable befinden.',
+  appPivotBaseItemMissing: 'Basiselement „{item}“ ist kein Mitglied des Felds „{label}“.',
   appInvalidLabelFilterField: 'Das Feld des Beschriftungsfilters ist ungültig.',
   appInvalidValueFieldIndex: 'Wertfeldindex {index} ist ungültig.',
   appInvalidValueField: 'Ungültiges Wertfeld.',
@@ -357,8 +366,6 @@ export const de = {
     'Dieses Blatt enthält eine PivotTable — das Verschieben von Bereichen wird noch nicht unterstützt.',
   appMergeOverTable:
     'Die Auswahl überschneidet sich mit einer Excel-Tabelle — das Verbinden von Zellen in einer Tabelle wird noch nicht unterstützt.',
-  appTableFilterNoEdit:
-    'Der Filter dieses Blatts gehört zu einer Excel-Tabelle — seine Bearbeitung kann noch nicht gespeichert werden.',
   appAutofillStreaming:
     'Automatisches Ausfüllen in einen noch per Streaming geladenen Bereich ist noch nicht erlaubt.',
   appDvNeedsIndexed:
@@ -622,8 +629,6 @@ export const de = {
   appSaveFailed: 'Die Arbeitsmappe kann nicht gespeichert werden.',
   appCfRuleUnsaveable:
     'Diese Regel für bedingte Formatierung kann nicht in xlsx gespeichert werden — verwenden Sie einen anderen Regeltyp.',
-  appSaveErrX14Dv:
-    'Dieses Blatt enthält erweiterte (x14) Datenüberprüfung; das Bearbeiten ihrer Überprüfungsregeln wird noch nicht unterstützt.',
   appSaveErrMultiSelectList:
     'Mehrfachauswahl-Listenüberprüfung kann nicht in xlsx gespeichert werden — löschen Sie die Regel vor dem Speichern.',
   appSaveErrX14Cf:
@@ -1255,6 +1260,7 @@ export const de = {
   appGroupForecast: 'Prognose',
   appWhatIfAnalysis: 'Was-wäre-wenn-Analyse',
   appGoalSeek: 'Zielwertsuche',
+  appDataTable: 'Datentabelle',
   appWhatIfTitle: 'Eingabe für einen Zielwert bestimmen',
   appGoalSeekNeedsFormula: 'Die Zielzelle muss eine Formel enthalten.',
   appGoalSeekByCellNotNumber: 'Die veränderbare Zelle muss eine Zahl enthalten oder leer sein.',

@@ -24,6 +24,7 @@ export const MARKDOWN_CHANNELS = {
   createWikiNote: 'markdown:create-wiki-note',
   /** notes whose links land on the given path (the backlinks panel) */
   wikiBacklinks: 'markdown:wiki-backlinks',
+  wikiTags: 'markdown:wiki-tags',
   /** the vault's link graph (nodes + resolved edges, the graph view) */
   wikiGraph: 'markdown:wiki-graph',
   save: 'markdown:save',
@@ -345,6 +346,7 @@ export interface MarkdownApi {
   createWikiNote(request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult>
   /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
   wikiBacklinks(path: string): Promise<WikiBacklink[]>
+  wikiTags(): Promise<{ tag: string; files: string[] }[]>
   /** The vault's link graph, notes as nodes and resolved links as edges. */
   wikiGraph(): Promise<WikiGraph>
   /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */

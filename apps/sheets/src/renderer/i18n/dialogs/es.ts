@@ -3,11 +3,14 @@ import type { zh } from './zh'
 export const es = {
   dlgAllowEditRangesTitle: 'Permitir editar rangos',
   dlgAllowEditRangesHint:
-    'Estos rangos se pueden seguir editando mientras la hoja está protegida. Se escriben al guardar; no se admiten contraseñas.',
+    'Estos rangos se pueden seguir editando mientras la hoja está protegida. Se escriben al guardar. Un rango que ya tiene contraseña no se puede modificar ni eliminar aquí.',
   dlgRangeName: 'Título',
   dlgRangeRef: 'Rango',
   dlgRangeAdd: 'Agregar',
   dlgRangeDelete: 'Eliminar',
+  dlgRangeLocked:
+    'Este rango lleva una contraseña en el archivo; no se puede modificar ni eliminar aquí.',
+  dlgRangePassword: 'Contraseña (opcional)',
   dlgRangeNameTaken: 'Escriba un título único y no vacío.',
   dlgRangeRefInvalid: 'Escriba un rango como A1:B4.',
   dlgCancel: 'Cancelar',
@@ -23,6 +26,28 @@ export const es = {
   dlgGoalSeekNotFound: 'Sin solución; valor original restaurado (último {reached}).',
   dlgGoalSeekSolve: 'Resolver',
   dlgGoalSeekSolving: 'Resolviendo…',
+  dlgDataTableTitle: 'Tabla de datos',
+  dlgDataTableRange: 'Rango de la tabla',
+  dlgDataTableRowInput: 'Celda de entrada de fila',
+  dlgDataTableColumnInput: 'Celda de entrada de columna',
+  dlgDataTableNote:
+    'Los resultados se escriben como valores normales y no se actualizan al recalcular (a diferencia de las tablas con fórmula matricial de Excel); toda la tabla se deshace en un solo paso.',
+  dlgDataTableNeedInput:
+    'Rellene al menos una celda de entrada: solo una es una variable, ambas son dos variables.',
+  dlgDataTableBadRange: 'El rango de la tabla debe ser una referencia tipo A1 o A1:B4.',
+  dlgDataTableBadShape:
+    'Forma del rango incorrecta: una variable en columna exige 2 columnas y 2+ filas, en fila 2 filas y 2+ columnas, dos variables al menos 2×2.',
+  dlgDataTableTooManyCells: 'La tabla supera el límite de {limit} celdas de resultado.',
+  dlgDataTableInputInside: 'Las celdas de entrada no pueden estar dentro del rango de la tabla.',
+  dlgDataTableSameInput: 'Las celdas de entrada de fila y columna deben ser distintas.',
+  dlgDataTableNeedsFormula: 'La celda de fórmula debe contener una fórmula.',
+  dlgDataTableInputNotNumber:
+    'Las celdas de entrada deben contener un número simple o estar vacías.',
+  dlgDataTableValuesNotNumber: 'Los valores de sustitución deben ser números.',
+  dlgDataTableRunning: 'Calculando… {done}/{total}',
+  dlgDataTableRunningShort: 'Calculando…',
+  dlgDataTableDone:
+    'Se escribieron {count} resultados (valores normales; no se actualizan al recalcular).',
   dlgApply: 'Aplicar',
   dlgCreate: 'Crear',
 
@@ -213,6 +238,8 @@ export const es = {
   dlgPivotShowAsRankDesc: 'Clasificar de mayor a menor…',
   dlgPivotShowAsIndex: 'Índice',
   dlgPivotNotSupportedYet: 'no disponible todavía',
+  dlgPivotBaseField: 'Campo base',
+  dlgPivotBaseItem: 'Elemento base',
   dlgPivotReportFilterItem: 'Elemento del filtro de informe',
   dlgPivotAllItems: '(Todas)',
   dlgPivotErrNeedValue: 'Agregue al menos un campo a Valores.',

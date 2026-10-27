@@ -8,7 +8,11 @@ import { parsePivotFormula } from '../domain/pivot-formula'
 import { isValidGrouping, type PivotFieldGrouping } from '../domain/pivot-grouping'
 import {
   isPivotAggregation,
-  isPivotShowDataAs,
+  PIVOT_BASE_ITEM_NEXT,
+  PIVOT_BASE_ITEM_PREVIOUS,
+  showDataAsFromOoxml,
+  showDataAsNeedsBaseField,
+  showDataAsNeedsBaseItem,
   type PivotShowDataAs,
 } from '../domain/pivot-value-modes'
 
@@ -59,6 +63,12 @@ export interface PivotDataField {
   readonly subtotal: string
   /// "Show values as" mode; undefined = normal (show the aggregate directly).
   readonly showDataAs?: PivotShowDataAs | undefined
+  /// Base field index of the "show values as" calculation (cache-field index,
+  /// dataField@baseField); present for the base-field modes.
+  readonly baseField?: number | undefined
+  /// Base item index within the base field's items (dataField@baseItem);
+  /// present for difference / percentDiff / percentOf.
+  readonly baseItem?: number | undefined
   /// Formula of a calculated field (present when field points at a cacheField
   /// with a formula): each group first SUMs the referenced source fields, then
   /// evaluates the formula.
@@ -299,21 +309,66 @@ export function parsePivotDefinition(
   const dataFields: PivotDataField[] = (
     dataFieldsBlock === null ? [] : elements(dataFieldsBlock, 'dataField')
   ).map((fieldXml) => {
-    // showDataAs="normal" (or absent) = normal display, not recorded; unsupported
-    // display modes only record an unsupported reason, and the mode itself is not
-    // carried over (the IPC schema only accepts supported enum values).
-    const showDataAs = attr(fieldXml, 'showDataAs')
-    if (showDataAs !== null && showDataAs !== 'normal' && !isPivotShowDataAs(showDataAs)) {
-      unsupported.push(`"show values as" mode "${showDataAs}" does not support recompute`)
+    // showDataAs="normal" (or absent) = normal display, not recorded; the file
+    // spelling "percent" maps to our "% Of…" mode. Unsupported display modes
+    // only record an unsupported reason, and the mode itself is not carried
+    // over (the IPC schema only accepts supported enum values).
+    const ooxmlMode = attr(fieldXml, 'showDataAs')
+    const showDataAs =
+      ooxmlMode === null || ooxmlMode === 'normal' ? null : showDataAsFromOoxml(ooxmlMode)
+    if (ooxmlMode !== null && ooxmlMode !== 'normal' && showDataAs === null) {
+      unsupported.push(`"show values as" mode "${ooxmlMode}" does not support recompute`)
     }
     const field = Number(attr(fieldXml, 'fld') ?? '0')
+    const dataFieldName = decodeEntities(attr(fieldXml, 'name') ?? '')
+    // Base-field modes: the base field must be a row/column axis field and the
+    // base item a concrete member of it — Excel's "(previous)"/"(next)" special
+    // values and anything out of range fail closed.
+    let baseField: number | undefined
+    let baseItem: number | undefined
+    if (showDataAs !== null && showDataAsNeedsBaseField(showDataAs)) {
+      const candidateField = attr(fieldXml, 'baseField')
+      const parsedField = candidateField === null ? null : Number(candidateField)
+      const baseFieldOk =
+        parsedField !== null &&
+        Number.isInteger(parsedField) &&
+        fields[parsedField] !== undefined &&
+        (rowFields.includes(parsedField) || colFields.includes(parsedField))
+      if (!baseFieldOk) {
+        unsupported.push(
+          `the base field of data field "${dataFieldName}" does not support recompute`,
+        )
+      } else {
+        baseField = parsedField
+        if (showDataAsNeedsBaseItem(showDataAs)) {
+          const parsedItem = attr(fieldXml, 'baseItem')
+          const item = parsedItem === null ? null : Number(parsedItem)
+          if (item === PIVOT_BASE_ITEM_PREVIOUS || item === PIVOT_BASE_ITEM_NEXT) {
+            unsupported.push(
+              `the "(previous)"/"(next)" base item of data field "${dataFieldName}" does not support recompute`,
+            )
+          } else if (
+            item === null ||
+            !Number.isInteger(item) ||
+            item < 0 ||
+            fieldItems[parsedField!]?.[item] === undefined
+          ) {
+            unsupported.push(
+              `the base item of data field "${dataFieldName}" does not support recompute`,
+            )
+          } else {
+            baseItem = item
+          }
+        }
+      }
+    }
     return {
-      name: decodeEntities(attr(fieldXml, 'name') ?? ''),
+      name: dataFieldName,
       field,
       subtotal: attr(fieldXml, 'subtotal') ?? 'sum',
-      ...(showDataAs !== null && isPivotShowDataAs(showDataAs)
-        ? { showDataAs: showDataAs as PivotShowDataAs }
-        : {}),
+      ...(showDataAs !== null ? { showDataAs } : {}),
+      ...(baseField !== undefined ? { baseField } : {}),
+      ...(baseItem !== undefined ? { baseItem } : {}),
       // Data fields pointing at a calculated field carry the formula; refresh
       // evaluates it.
       ...(formulaByField.has(field) ? { formula: formulaByField.get(field)! } : {}),

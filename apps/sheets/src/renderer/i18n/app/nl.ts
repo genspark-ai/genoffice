@@ -119,9 +119,11 @@ export const nl = {
   appChartNoRepoint: 'Deze grafiek ondersteunt het opnieuw toewijzen van gegevensbereiken niet.',
   appKeepOneSeries: 'Behoud ten minste één reeks.',
   appNoCategoriesToSwitch: 'Geen categorieën om te wisselen.',
-  appComboNoSelectData:
-    'Het wijzigen van de gegevensbron van een combinatiegrafiek wordt nog niet ondersteund.',
+  appSelectDataUnsupported:
+    'Het wijzigen van de gegevensbron van dit diagramtype wordt niet ondersteund.',
   appSeriesName: 'Reeksnaam',
+  appSeriesType: 'Serietype',
+  appSecondaryAxis: 'Secundaire as',
   appValuesRange: 'Waardenbereik',
   appCategoriesRange: 'Categoriebereik',
   appKeepUnchanged: 'Ongewijzigd laten',
@@ -207,6 +209,13 @@ export const nl = {
   appInvalidGroupField: 'Ongeldig groeperingsveld.',
   appInvalidPageField: 'Ongeldig rapportfilterveld.',
   appPivotPageItemMissing: 'Rapportfilteritem "{item}" is geen lid van veld "{label}".',
+  appInvalidPivotBaseField:
+    'Het basisveld van "Waarden weergeven als" moet in rijen of kolommen staan.',
+  appPivotBaseFieldMissing:
+    'De modus "Waarden weergeven als" van een waardeveld heeft een basisveld nodig.',
+  appPivotBaseFieldNotAxis:
+    'Basisveld "{label}" moet in de rijen of kolommen van de draaitabel staan.',
+  appPivotBaseItemMissing: 'Basisitem "{item}" is geen lid van veld "{label}".',
   appInvalidLabelFilterField: 'Het veld van het labelfilter is ongeldig.',
   appInvalidValueFieldIndex: 'Waardeveldindex {index} is ongeldig.',
   appInvalidValueField: 'Ongeldig waardeveld.',
@@ -350,8 +359,6 @@ export const nl = {
     'Dit werkblad bevat een draaitabel — bereiken verplaatsen wordt nog niet ondersteund.',
   appMergeOverTable:
     'De selectie overlapt een Excel-tabel — cellen samenvoegen in een tabel wordt nog niet ondersteund.',
-  appTableFilterNoEdit:
-    'Het filter van dit werkblad hoort bij een Excel-tabel — de bewerking kan nog niet worden opgeslagen.',
   appAutofillStreaming:
     'Automatisch doorvoeren naar een gebied dat nog streamend wordt geladen, is nog niet toegestaan.',
   appDvNeedsIndexed:
@@ -608,8 +615,6 @@ export const nl = {
   appSaveFailed: 'Kan de werkmap niet opslaan.',
   appCfRuleUnsaveable:
     'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
-  appSaveErrX14Dv:
-    'Dit blad heeft uitgebreide (x14) gegevensvalidatie; het bewerken van de validatieregels wordt nog niet ondersteund.',
   appSaveErrMultiSelectList:
     'Validatie met een meerkeuzelijst kan niet in xlsx worden opgeslagen — verwijder de regel voordat u opslaat.',
   appSaveErrX14Cf:
@@ -1238,6 +1243,7 @@ export const nl = {
   appGroupForecast: 'Prognose',
   appWhatIfAnalysis: 'Wat-als-analyse',
   appGoalSeek: 'Doelzoeken',
+  appDataTable: 'Gegevenstabel',
   appWhatIfTitle: 'Invoer bepalen voor een doelwaarde',
   appGoalSeekNeedsFormula: 'De cel moet een formule bevatten.',
   appGoalSeekByCellNotNumber: 'De te wijzigen cel moet een getal bevatten of leeg zijn.',

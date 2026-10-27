@@ -32,6 +32,7 @@ import { applyFormatPainterClick } from './format-painter'
 import { nextSheetName } from './op-executor'
 import { handleInsertNotePicture } from './note-picture-actions'
 import {
+  comboSeriesSetDefaults,
   transposeChartSeries,
   type ChartSeriesVisualState,
 } from '@genoffice/xlsx-gateway/domain/chart-visual'
@@ -153,6 +154,9 @@ export interface RibbonCommandContext {
     readonly canLabel: boolean
     readonly seriesCount: number
     readonly categoryCount: number
+    /// Current chart type echo ('combo' for a bar+line combo) — drives the
+    /// combo tagging of Switch Row/Column.
+    readonly currentType: string | null
     /// Current series (pending edits applied) for Switch Row/Column.
     readonly series: readonly ChartSeriesVisualState[]
   } | null
@@ -353,8 +357,18 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       const seriesSet = transposeChartSeries(ctx.selectedChart?.series ?? [], (n) =>
         t('appSeriesN', { n }),
       )
-      if (seriesSet) ctx.chartEditRef.current(editKey, { seriesSet })
-      else ctx.setMessage(t('appNoCategoriesToSwitch'))
+      if (!seriesSet) {
+        ctx.setMessage(t('appNoCategoriesToSwitch'))
+      } else {
+        // A transposed combo keeps Insert Chart's shape; an untagged set
+        // would collapse it into plain bars.
+        ctx.chartEditRef.current(editKey, {
+          seriesSet:
+            ctx.selectedChart?.currentType === 'combo'
+              ? comboSeriesSetDefaults(seriesSet)
+              : seriesSet,
+        })
+      }
     }
     return
   }

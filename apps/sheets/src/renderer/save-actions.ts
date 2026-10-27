@@ -209,9 +209,10 @@ export async function handleSave(
     .filter((sheetId) => !isSheetRemoved(state.editJournal, sheetId))
     .map((sheetId) => ({
       sheetId,
-      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref }) => ({
+      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref, password }) => ({
         name,
         sqref,
+        ...(password ? { password } : {}),
       })),
     }))
   const themeState =
@@ -658,7 +659,6 @@ export function stripIpcErrorWrapper(message: string): string {
 /// stable substring; unmatched messages surface verbatim (English) as before.
 const SAVE_ERROR_PATTERNS = [
   ['cannot shift here', 'appStructuralShiftBlocked'],
-  ['extended (x14) data validation', 'appSaveErrX14Dv'],
   ['Multi-select list rules', 'appSaveErrMultiSelectList'],
   ['extended conditional formatting (x14)', 'appSaveErrX14Cf'],
   ['data-bar extension format (x14)', 'appSaveErrX14Cf'],

@@ -117,8 +117,10 @@ export const id = {
   appChartNoRepoint: 'Bagan ini tidak mendukung penetapan ulang rentang datanya.',
   appKeepOneSeries: 'Pertahankan setidaknya satu seri.',
   appNoCategoriesToSwitch: 'Tidak ada kategori untuk ditukar.',
-  appComboNoSelectData: 'Mengubah sumber data bagan kombinasi belum didukung.',
+  appSelectDataUnsupported: 'Mengubah sumber data jenis bagan ini belum didukung.',
   appSeriesName: 'Nama Seri',
+  appSeriesType: 'Jenis seri',
+  appSecondaryAxis: 'Sumbu sekunder',
   appValuesRange: 'Rentang Nilai',
   appCategoriesRange: 'Rentang Kategori',
   appKeepUnchanged: 'Biarkan tidak berubah',
@@ -199,6 +201,12 @@ export const id = {
   appInvalidGroupField: 'Bidang pengelompokan tidak valid.',
   appInvalidPageField: 'Bidang filter laporan tidak valid.',
   appPivotPageItemMissing: 'Item filter laporan "{item}" bukan anggota bidang "{label}".',
+  appInvalidPivotBaseField:
+    'Bidang dasar "Tampilkan nilai sebagai" harus berada di baris atau kolom.',
+  appPivotBaseFieldMissing:
+    'Mode "Tampilkan nilai sebagai" pada bidang nilai memerlukan bidang dasar.',
+  appPivotBaseFieldNotAxis: 'Bidang dasar "{label}" harus berada di baris atau kolom tabel pivot.',
+  appPivotBaseItemMissing: 'Item dasar "{item}" bukan anggota bidang "{label}".',
   appInvalidLabelFilterField: 'Bidang filter label tidak valid.',
   appInvalidValueFieldIndex: 'Indeks bidang nilai {index} tidak valid.',
   appInvalidValueField: 'Bidang nilai tidak valid.',
@@ -333,7 +341,6 @@ export const id = {
   appPivotSheetNoMove: 'Lembar ini berisi PivotTable — memindahkan rentang belum didukung.',
   appMergeOverTable:
     'Pilihan tumpang tindih dengan tabel Excel — menggabungkan sel di dalam tabel belum didukung.',
-  appTableFilterNoEdit: 'Filter lembar ini milik tabel Excel — pengeditannya belum dapat disimpan.',
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
   appDvNeedsIndexed:
     'Mengedit validasi data memerlukan lembar ini terindeks penuh dahulu — coba lagi sebentar lagi.',
@@ -574,8 +581,6 @@ export const id = {
   appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
   appCfRuleUnsaveable:
     'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
-  appSaveErrX14Dv:
-    'Sheet ini memiliki validasi data yang diperluas (x14); mengedit aturan validasinya belum didukung.',
   appSaveErrMultiSelectList:
     'Validasi daftar pilihan ganda tidak dapat disimpan ke xlsx — hapus aturan tersebut sebelum menyimpan.',
   appSaveErrX14Cf:
@@ -1202,6 +1207,7 @@ export const id = {
   appGroupForecast: 'Prakiraan',
   appWhatIfAnalysis: 'Analisis Bagaimana-Jika',
   appGoalSeek: 'Pencarian Tujuan',
+  appDataTable: 'Tabel Data',
   appWhatIfTitle: 'Cari input untuk nilai target',
   appGoalSeekNeedsFormula: 'Sel target harus berisi rumus.',
   appGoalSeekByCellNotNumber: 'Sel yang diubah harus berisi angka atau kosong.',

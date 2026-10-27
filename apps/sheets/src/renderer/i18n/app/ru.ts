@@ -115,9 +115,10 @@ export const ru = {
   appChartNoRepoint: 'Эта диаграмма не поддерживает переназначение диапазонов данных.',
   appKeepOneSeries: 'Оставьте хотя бы один ряд.',
   appNoCategoriesToSwitch: 'Нет категорий для переключения.',
-  appComboNoSelectData:
-    'Изменение источника данных комбинированной диаграммы пока не поддерживается.',
+  appSelectDataUnsupported: 'Изменение источника данных для этого типа диаграмм не поддерживается.',
   appSeriesName: 'Имя ряда',
+  appSeriesType: 'Тип ряда',
+  appSecondaryAxis: 'Вспомогательная ось',
   appValuesRange: 'Диапазон значений',
   appCategoriesRange: 'Диапазон категорий',
   appKeepUnchanged: 'Оставить без изменений',
@@ -201,6 +202,13 @@ export const ru = {
   appInvalidGroupField: 'Недопустимое поле группировки.',
   appInvalidPageField: 'Недопустимое поле фильтра отчёта.',
   appPivotPageItemMissing: 'Элемент фильтра «{item}» не входит в поле «{label}».',
+  appInvalidPivotBaseField:
+    'Базовое поле режима «Показать значения как» должно находиться в строках или столбцах.',
+  appPivotBaseFieldMissing:
+    'Для режима «Показать значения как» поля значений требуется базовое поле.',
+  appPivotBaseFieldNotAxis:
+    'Базовое поле «{label}» должно находиться в строках или столбцах сводной таблицы.',
+  appPivotBaseItemMissing: 'Базовый элемент «{item}» не входит в поле «{label}».',
   appInvalidLabelFilterField: 'Поле фильтра подписей недопустимо.',
   appInvalidValueFieldIndex: 'Индекс поля значений {index} недопустим.',
   appInvalidValueField: 'Недопустимое поле значений.',
@@ -342,8 +350,6 @@ export const ru = {
     'Этот лист содержит сводную таблицу — перемещение диапазонов пока не поддерживается.',
   appMergeOverTable:
     'Выделение пересекается с таблицей Excel — объединение ячеек внутри таблицы пока не поддерживается.',
-  appTableFilterNoEdit:
-    'Фильтр этого листа принадлежит таблице Excel — его изменение пока нельзя сохранить.',
   appAutofillStreaming:
     'Автозаполнение в область, которая ещё загружается потоково, пока не разрешено.',
   appDvNeedsIndexed:
@@ -590,8 +596,6 @@ export const ru = {
   appSaveFailed: 'Не удаётся сохранить книгу.',
   appCfRuleUnsaveable:
     'Это правило условного форматирования нельзя сохранить в xlsx — выберите другой тип правила.',
-  appSaveErrX14Dv:
-    'На этом листе есть расширенная (x14) проверка данных; редактирование её правил проверки пока не поддерживается.',
   appSaveErrMultiSelectList:
     'Проверку данных со списком множественного выбора нельзя сохранить в xlsx — удалите это правило перед сохранением.',
   appSaveErrX14Cf:
@@ -1221,6 +1225,7 @@ export const ru = {
   appGroupForecast: 'Прогноз',
   appWhatIfAnalysis: 'Анализ «что если»',
   appGoalSeek: 'Подбор параметра',
+  appDataTable: 'Таблица данных',
   appWhatIfTitle: 'Найти вход для целевого значения',
   appGoalSeekNeedsFormula: 'Целевая ячейка должна содержать формулу.',
   appGoalSeekByCellNotNumber: 'Изменяемая ячейка должна содержать число или быть пустой.',

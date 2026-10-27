@@ -7,7 +7,6 @@ import {
   addColumnBefore,
   addRowAfter,
   addRowBefore,
-  deleteColumn,
   deleteRow,
   deleteTable,
   mergeCells,
@@ -31,6 +30,7 @@ import { pasteFromClipboard } from '../editor/paste-actions'
 import { setTableAutoFit } from '../editor/table-properties'
 import { distributeSelectedColumns } from '../editor/table-sizing'
 import {
+  deleteTableColumn,
   distributeRowsEvenly,
   inTableOrSelected,
   selectTablePart,
@@ -452,7 +452,7 @@ export function EditorContextMenu({
                 {(
                   [
                     ['ribbonDeleteRow', deleteRow],
-                    ['ribbonDeleteColumn', deleteColumn],
+                    ['ribbonDeleteColumn', deleteTableColumn],
                     ['ribbonDeleteTable', deleteTable],
                   ] as Array<[StringKey, Command]>
                 ).map(([labelKey, command]) => (

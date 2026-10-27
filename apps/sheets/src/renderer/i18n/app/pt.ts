@@ -121,9 +121,10 @@ export const pt = {
   appChartNoRepoint: 'Este gráfico não permite redefinir os intervalos de dados.',
   appKeepOneSeries: 'Mantenha pelo menos uma série.',
   appNoCategoriesToSwitch: 'Não há categorias para alternar.',
-  appComboNoSelectData:
-    'Alterar a fonte de dados de um gráfico de combinação ainda não é suportado.',
+  appSelectDataUnsupported: 'Não há suporte para alterar a origem de dados deste tipo de gráfico.',
   appSeriesName: 'Nome da série',
+  appSeriesType: 'Tipo de série',
+  appSecondaryAxis: 'Eixo secundário',
   appValuesRange: 'Intervalo de valores',
   appCategoriesRange: 'Intervalo de categorias',
   appKeepUnchanged: 'Manter inalterado',
@@ -207,6 +208,13 @@ export const pt = {
   appInvalidGroupField: 'Campo de agrupamento inválido.',
   appInvalidPageField: 'Campo de filtro de relatório inválido.',
   appPivotPageItemMissing: 'O item de filtro "{item}" não pertence ao campo "{label}".',
+  appInvalidPivotBaseField:
+    'O campo base de "Mostrar valores como" deve estar em linhas ou colunas.',
+  appPivotBaseFieldMissing:
+    'O modo "Mostrar valores como" de um campo de valores precisa de um campo base.',
+  appPivotBaseFieldNotAxis:
+    'O campo base "{label}" deve estar nas linhas ou colunas da tabela dinâmica.',
+  appPivotBaseItemMissing: 'O item base "{item}" não pertence ao campo "{label}".',
   appInvalidLabelFilterField: 'O campo do filtro de rótulo é inválido.',
   appInvalidValueFieldIndex: 'O índice do campo de valores {index} é inválido.',
   appInvalidValueField: 'Campo de valores inválido.',
@@ -357,8 +365,6 @@ export const pt = {
     'Esta planilha contém uma Tabela Dinâmica — mover intervalos ainda não é suportado.',
   appMergeOverTable:
     'A seleção sobrepõe uma tabela do Excel — mesclar células dentro de uma tabela ainda não é suportado.',
-  appTableFilterNoEdit:
-    'O filtro desta planilha pertence a uma tabela do Excel — a edição ainda não pode ser salva.',
   appAutofillStreaming:
     'O preenchimento automático em uma área ainda em streaming não é permitido por enquanto.',
   appDvNeedsIndexed:
@@ -613,8 +619,6 @@ export const pt = {
   appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
   appCfRuleUnsaveable:
     'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
-  appSaveErrX14Dv:
-    'Esta planilha tem validação de dados estendida (x14); editar suas regras de validação ainda não é suportado.',
   appSaveErrMultiSelectList:
     'A validação de lista de seleção múltipla não pode ser salva em xlsx — exclua a regra antes de salvar.',
   appSaveErrX14Cf:
@@ -1242,6 +1246,7 @@ export const pt = {
   appGroupForecast: 'Previsão',
   appWhatIfAnalysis: 'Teste de Hipóteses',
   appGoalSeek: 'Atingir meta',
+  appDataTable: 'Tabela de dados',
   appWhatIfTitle: 'Resolver uma entrada para um valor-alvo',
   appGoalSeekNeedsFormula: 'A célula deve conter uma fórmula.',
   appGoalSeekByCellNotNumber: 'A célula a alterar deve conter um número ou estar vazia.',

@@ -742,7 +742,7 @@ register({
       )
     }
     for (const [k, v] of Object.entries(colors as Record<string, unknown>)) {
-      if (typeof v !== 'string' || !/^#?[0-9a-fA-F]{6}$/.test(v)) {
+      if (typeof v !== 'string' || !/^#?[0-9a-fA-F]{6}$/.test(v.trim())) {
         throw new GuidedError(`op "applyTheme": colors.${k} must be a "#RRGGBB" string.`)
       }
     }

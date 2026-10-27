@@ -54,6 +54,7 @@ import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
 import { WikiSuggestMenu, type WikiSuggestMenuHandle } from './components/WikiSuggestMenu'
 import { BacklinksPane } from './components/BacklinksPane'
+import { TagsPane } from './components/TagsPane'
 import { GraphView } from './components/GraphView'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
@@ -182,6 +183,7 @@ export default function App() {
     () => Number(localStorage.getItem('mdapp.outlineWidth')) || undefined,
   )
   const [backlinksOpen, setBacklinksOpen] = useState(false)
+  const [tagsOpen, setTagsOpen] = useState(false)
   const [graphOpen, setGraphOpen] = useState(false)
   const [sourceViewOpen, setSourceViewOpen] = useState(false)
   const [sourceText, setSourceText] = useState('')
@@ -366,6 +368,11 @@ export default function App() {
           }
           createWikiNoteAndOpen(wikiTargetOf(target))
         },
+      },
+      blockLink: {
+        getDocumentPath: () => filePathRef.current ?? '',
+        onCopied: (link) => showToast(translate('blockLinkCopied', { link })),
+        onNothing: () => showToast(translate('blockLinkNone'), 'error'),
       },
     })
   }, [createWikiNoteAndOpen, insertImage, jumpToWikiFragment])
@@ -1334,8 +1341,11 @@ export default function App() {
         onToggleOutline={() => setOutlineOpen((v) => !v)}
         hasOutline={outlineItems.length > 0}
         backlinksOpen={backlinksOpen}
+        tagsOpen={tagsOpen}
         onToggleBacklinks={() => setBacklinksOpen((v) => !v)}
+        onToggleTags={() => setTagsOpen((v) => !v)}
         onOpenGraph={() => setGraphOpen(true)}
+        onCopyBlockLink={() => editor?.commands.copyBlockLink()}
         spellcheck={spellcheck}
         onToggleSpellcheck={() => setSpellcheck((v) => !v)}
         sourceMode={sourceMode}
@@ -1398,6 +1408,9 @@ export default function App() {
             path={filePath}
             onOpen={(path) => void window.markdownApi.openSourcePath(path)}
           />
+        )}
+        {tagsOpen && !sourceMode && (
+          <TagsPane onOpen={(path) => void window.markdownApi.openSourcePath(path)} />
         )}
         <div className="app-content">
           {diskNotice && (

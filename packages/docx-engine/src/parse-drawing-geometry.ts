@@ -151,8 +151,9 @@ function gradStopRgb(gs: XNode, theme?: ThemeColors | null): number[] | null {
     if (!slot) return null
     base = (theme?.[slot] as string | undefined) ?? DEFAULT_THEME_COLORS[slot]
   }
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
-  let rgb = [0, 2, 4].map((i) => parseInt(base!.slice(i, i + 2), 16))
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
+  let rgb = [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16))
   if (scheme) {
     const pct = (name: string): number | null => {
       const v = parseInt(attrsOf(findChild(scheme, name) ?? {})['val'] ?? '', 10)
@@ -465,8 +466,9 @@ function w14ColorRgb(node: XNode, theme?: ThemeColors | null): number[] | null {
     if (!slot) return null
     base = (theme?.[slot] as string | undefined) ?? DEFAULT_THEME_COLORS[slot]
   }
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
-  let rgb = [0, 2, 4].map((i) => parseInt(base!.slice(i, i + 2), 16))
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
+  let rgb = [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16))
   const pct = (name: string): number | null => {
     const v = parseInt(attrsOf(findChild(colorNode, name) ?? {})['w14:val'] ?? '', 10)
     return Number.isFinite(v) && v >= 0 ? v / 100000 : null

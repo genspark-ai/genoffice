@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const ru = {
   dlgAllowEditRangesTitle: 'Разрешить изменение диапазонов',
   dlgAllowEditRangesHint:
-    'Эти диапазоны остаются доступными для изменения при защищённом листе. Записываются при сохранении; пароли не поддерживаются.',
+    'Эти диапазоны остаются доступными для изменения при защищённом листе. Записываются при сохранении. Диапазон с уже заданным паролем нельзя изменить или удалить здесь.',
   dlgRangeName: 'Название',
   dlgRangeRef: 'Диапазон',
   dlgRangeAdd: 'Добавить',
   dlgRangeDelete: 'Удалить',
+  dlgRangeLocked: 'Этот диапазон защищён паролем в файле; его нельзя изменить или удалить здесь.',
+  dlgRangePassword: 'Пароль (необязательно)',
   dlgRangeNameTaken: 'Введите уникальное непустое название.',
   dlgRangeRefInvalid: 'Введите диапазон, например A1:B4.',
   dlgCancel: 'Отмена',
@@ -23,6 +25,27 @@ export const ru = {
   dlgGoalSeekNotFound: 'Решение не найдено; исходное значение восстановлено (последнее {reached}).',
   dlgGoalSeekSolve: 'Подобрать',
   dlgGoalSeekSolving: 'Подбор…',
+  dlgDataTableTitle: 'Таблица данных',
+  dlgDataTableRange: 'Диапазон таблицы',
+  dlgDataTableRowInput: 'Ячейка ввода для строки',
+  dlgDataTableColumnInput: 'Ячейка ввода для столбца',
+  dlgDataTableNote:
+    'Результаты записываются как обычные значения и не обновляются при пересчёте (в отличие от таблиц с формулой массива в Excel); всю таблицу можно отменить одним шагом.',
+  dlgDataTableNeedInput:
+    'Заполните хотя бы одну ячейку ввода: одна — одна переменная, обе — две переменные.',
+  dlgDataTableBadRange: 'Диапазон таблицы должен быть ссылкой вида A1 или A1:B4.',
+  dlgDataTableBadShape:
+    'Неверная форма диапазона: одна переменная по столбцу требует 2 столбца и 2+ строки, по строке — 2 строки и 2+ столбца, две переменные — минимум 2×2.',
+  dlgDataTableTooManyCells: 'Таблица превышает лимит в {limit} ячеек результатов.',
+  dlgDataTableInputInside: 'Ячейки ввода не могут находиться внутри диапазона таблицы.',
+  dlgDataTableSameInput: 'Ячейки ввода для строки и столбца должны различаться.',
+  dlgDataTableNeedsFormula: 'В ячейке формулы должна быть формула.',
+  dlgDataTableInputNotNumber: 'Ячейки ввода должны содержать простое число или быть пустыми.',
+  dlgDataTableValuesNotNumber: 'Значения подстановки должны быть числами.',
+  dlgDataTableRunning: 'Расчёт… {done}/{total}',
+  dlgDataTableRunningShort: 'Расчёт…',
+  dlgDataTableDone:
+    'Записано результатов: {count} (обычные значения; при пересчёте не обновляются).',
   dlgApply: 'Применить',
   dlgCreate: 'Создать',
 
@@ -214,6 +237,8 @@ export const ru = {
   dlgPivotShowAsRankDesc: 'Сортировка от максимального к минимальному…',
   dlgPivotShowAsIndex: 'Индекс',
   dlgPivotNotSupportedYet: 'пока недоступно',
+  dlgPivotBaseField: 'Базовое поле',
+  dlgPivotBaseItem: 'Базовый элемент',
   dlgPivotReportFilterItem: 'Элемент фильтра отчёта',
   dlgPivotAllItems: '(Все)',
   dlgPivotErrNeedValue: 'Добавьте хотя бы одно поле в область «Значения».',

@@ -3800,6 +3800,7 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       (entry.smooth !== undefined && typeof entry.smooth !== 'boolean') ||
       !isOptionalString(entry.marker) ||
       !isOptionalString(entry.plot) ||
+      (entry.secondaryAxis !== undefined && typeof entry.secondaryAxis !== 'boolean') ||
       !isOptionalEnum(entry.dataLabels, CHART_DATA_LABELS)
     ) {
       throw new Error('Invalid workbook chart series.')
@@ -3828,6 +3829,7 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       ...(entry.smooth === undefined ? {} : { smooth: entry.smooth }),
       ...(entry.marker === undefined ? {} : { marker: entry.marker }),
       ...(entry.plot === undefined ? {} : { plot: entry.plot }),
+      ...(entry.secondaryAxis === undefined ? {} : { secondaryAxis: entry.secondaryAxis }),
       ...(categoryGroups === undefined ? {} : { categoryGroups }),
       ...(entry.dataLabels === undefined ? {} : { dataLabels: entry.dataLabels }),
       ...(pointLabels === undefined ? {} : { pointLabels }),

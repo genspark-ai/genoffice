@@ -3,11 +3,14 @@ import type { zh } from './zh'
 export const en = {
   dlgAllowEditRangesTitle: 'Allow Edit Ranges',
   dlgAllowEditRangesHint:
-    'These ranges stay editable while the sheet is protected. Written on save; passwords are not supported.',
+    'These ranges stay editable while the sheet is protected. Written on save. A range that already carries a password cannot be changed or removed here.',
   dlgRangeName: 'Title',
   dlgRangeRef: 'Range',
   dlgRangeAdd: 'Add',
   dlgRangeDelete: 'Delete',
+  dlgRangeLocked:
+    'This range carries a password in the file; it cannot be changed or removed here.',
+  dlgRangePassword: 'Password (optional)',
   dlgRangeNameTaken: 'Enter a unique, non-empty title.',
   dlgRangeRefInvalid: 'Enter a range like A1:B4.',
   dlgCancel: 'Cancel',
@@ -23,6 +26,26 @@ export const en = {
   dlgGoalSeekNotFound: 'No solution found; original value restored (last reached {reached}).',
   dlgGoalSeekSolve: 'Solve',
   dlgGoalSeekSolving: 'Solving…',
+  dlgDataTableTitle: 'Data Table',
+  dlgDataTableRange: 'Table range',
+  dlgDataTableRowInput: 'Row input cell',
+  dlgDataTableColumnInput: 'Column input cell',
+  dlgDataTableNote:
+    "Results are written as plain values and do not refresh on recalculation (unlike Excel's array-formula tables); the whole table undoes in one step.",
+  dlgDataTableNeedInput:
+    'Fill at least one input cell: one alone is one-variable, both are two-variable.',
+  dlgDataTableBadRange: 'Table range must be an A1-style reference like A1 or A1:B4.',
+  dlgDataTableBadShape:
+    'Wrong region shape: one-variable down a column needs 2 columns and 2+ rows, across a row 2 rows and 2+ columns, two-variable at least 2×2.',
+  dlgDataTableTooManyCells: 'The table exceeds the limit of {limit} result cells.',
+  dlgDataTableInputInside: 'Input cells cannot be inside the table range.',
+  dlgDataTableSameInput: 'Row and column input cells must differ.',
+  dlgDataTableNeedsFormula: 'The formula cell must contain a formula.',
+  dlgDataTableInputNotNumber: 'Input cells must hold a plain number or be empty.',
+  dlgDataTableValuesNotNumber: 'Substitution values must be numbers.',
+  dlgDataTableRunning: 'Calculating… {done}/{total}',
+  dlgDataTableRunningShort: 'Calculating…',
+  dlgDataTableDone: 'Wrote {count} results (plain values; they do not refresh on recalculation).',
   dlgApply: 'Apply',
   dlgCreate: 'Create',
 
@@ -213,6 +236,8 @@ export const en = {
   dlgPivotShowAsRankDesc: 'Rank Largest to Smallest…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'not available yet',
+  dlgPivotBaseField: 'Base field',
+  dlgPivotBaseItem: 'Base item',
   dlgPivotReportFilterItem: 'Report filter item',
   dlgPivotAllItems: '(All)',
   dlgPivotErrNeedValue: 'Add at least one field to Values.',

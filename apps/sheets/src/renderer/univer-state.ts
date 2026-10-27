@@ -4,6 +4,7 @@
  * Used by both the App component (App.tsx) and the module-level sync
  * helpers (univer-sync.ts).
  */
+import type { SheetPasswordHash } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
 import type { SheetProtectionInfo } from './sheet-protection'
 import { BorderType, LocalUndoRedoService, Worksheet, type IRange } from '@univerjs/core'
 import { SheetInterceptorService } from '@univerjs/sheets'
@@ -102,7 +103,12 @@ export interface LazyWorkbookState {
   /// File-side allow-edit ranges, known once a sheet finishes indexing.
   readonly sheetProtectedRanges: Map<
     string,
-    { name: string; sqref: string; hasPassword: boolean }[]
+    {
+      name: string
+      sqref: string
+      hasPassword: boolean
+      password?: SheetPasswordHash
+    }[]
   >
   /// Defined names the Univer engine rejected at install — preserved verbatim
   /// by the declarative defined-names save.

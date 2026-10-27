@@ -167,13 +167,14 @@ export function proposeOperations(
           }
           // Save-time chart patching fails closed on non-convertible plots;
           // reject here so the user never sees Apply succeed and ⌘S fail.
+          // Combos convert by collapsing onto the target family.
           if (
             operation.chartType !== undefined &&
             (!visual.chart || convertibleType(visual.chart) === null)
           ) {
             return {
               ok: false,
-              error: `Chart ${operation.chartPath} cannot be converted to another type (only single-plot column/bar/line/area/pie/doughnut charts can).`,
+              error: `Chart ${operation.chartPath} cannot be converted to another type (single-plot column/bar/line/area/pie/doughnut charts and bar+line combos can).`,
             }
           }
           if (
@@ -1056,12 +1057,8 @@ export function lazyGateFailure(
               'Filter changes need the fully-loaded mode — this workbook is too large and streams partially, so filters cannot be edited.',
           }
     }
-    if (state.filterOrigins.get(sheetId)?.origin === 'table') {
-      return {
-        reason: "This sheet's auto-filter belongs to a table — table filters cannot be edited yet.",
-        messageKey: 'appTableFilterNoEdit',
-      }
-    }
+    // Table filters are no longer gated here: the save routes them into the
+    // table part (applyRoutedFilterState in the gateway).
     return null
   }
   if (

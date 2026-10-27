@@ -36,7 +36,7 @@ export class GuidedError extends Error {}
 /** Color payloads go straight into srgbClr @val after a '#' strip — anything
     but 6/8 hex digits produces schema-invalid XML PowerPoint flags for repair. */
 export function requireHexColor(value: unknown, opName: string, field: string): void {
-  if (typeof value !== 'string' || !/^#?[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/.test(value)) {
+  if (typeof value !== 'string' || !/^#?[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/.test(value.trim())) {
     throw new GuidedError(
       `op "${opName}": "${field}" must be a hex color "#RRGGBB" (or "#RRGGBBAA"), got ${JSON.stringify(value)}.`,
     )

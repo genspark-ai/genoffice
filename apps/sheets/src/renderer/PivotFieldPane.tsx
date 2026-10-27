@@ -17,6 +17,8 @@ import {
   setFieldGrouping,
   setFieldLabelFilter,
   setPageItem,
+  showAsUsesBaseField,
+  showAsUsesBaseItem,
   toggleField,
   updateValueSpec,
   type PivotArea,
@@ -63,23 +65,27 @@ const AGG_OPTIONS: readonly { value: string; labelKey: StringKey; supported: boo
   { value: 'varp', labelKey: 'dlgPivotAggVarp', supported: true },
 ]
 
-/// Every Excel "Show Values As" entry; '' = No Calculation. Modes the engine
-/// cannot bake/recompute are listed but not pickable.
+/// Every Excel "Show Values As" entry; '' = No Calculation. All fifteen modes
+/// are baked by the pivot engine (percent spellings map to OOXML on save).
 const SHOW_AS_OPTIONS: readonly { value: string; labelKey: StringKey; supported: boolean }[] = [
   { value: '', labelKey: 'dlgPivotShowAsNormal', supported: true },
   { value: 'percentOfTotal', labelKey: 'dlgPivotShowAsPctTotal', supported: true },
   { value: 'percentOfCol', labelKey: 'dlgPivotShowAsPctCol', supported: true },
   { value: 'percentOfRow', labelKey: 'dlgPivotShowAsPctRow', supported: true },
-  { value: 'percentOf', labelKey: 'dlgPivotShowAsPctOf', supported: false },
+  { value: 'percentOf', labelKey: 'dlgPivotShowAsPctOf', supported: true },
   { value: 'percentOfParentRow', labelKey: 'dlgPivotShowAsPctParentRow', supported: true },
   { value: 'percentOfParentCol', labelKey: 'dlgPivotShowAsPctParentCol', supported: true },
-  { value: 'percentOfParent', labelKey: 'dlgPivotShowAsPctParent', supported: false },
-  { value: 'difference', labelKey: 'dlgPivotShowAsDifference', supported: false },
-  { value: 'percentDiff', labelKey: 'dlgPivotShowAsPctDifference', supported: false },
-  { value: 'runTotal', labelKey: 'dlgPivotShowAsRunningTotal', supported: false },
-  { value: 'percentOfRunningTotal', labelKey: 'dlgPivotShowAsPctRunningTotal', supported: false },
-  { value: 'rankAscending', labelKey: 'dlgPivotShowAsRankAsc', supported: false },
-  { value: 'rankDescending', labelKey: 'dlgPivotShowAsRankDesc', supported: false },
+  { value: 'percentOfParent', labelKey: 'dlgPivotShowAsPctParent', supported: true },
+  { value: 'difference', labelKey: 'dlgPivotShowAsDifference', supported: true },
+  { value: 'percentDiff', labelKey: 'dlgPivotShowAsPctDifference', supported: true },
+  { value: 'runTotal', labelKey: 'dlgPivotShowAsRunningTotal', supported: true },
+  {
+    value: 'percentOfRunningTotal',
+    labelKey: 'dlgPivotShowAsPctRunningTotal',
+    supported: true,
+  },
+  { value: 'rankAscending', labelKey: 'dlgPivotShowAsRankAsc', supported: true },
+  { value: 'rankDescending', labelKey: 'dlgPivotShowAsRankDesc', supported: true },
   { value: 'index', labelKey: 'dlgPivotShowAsIndex', supported: true },
 ]
 
@@ -445,7 +451,9 @@ export function PivotFieldPane({
         (settings.area === 'values' ? (
           <ValueFieldSettingsDialog
             fields={fields}
+            model={model}
             value={model.values[settings.index]!}
+            onGetFieldMembers={onGetFieldMembers}
             onApply={(patch) => onModelChange(updateValueSpec(model, settings.index, patch))}
             onClose={() => setSettings(null)}
           />
@@ -469,12 +477,16 @@ export function PivotFieldPane({
 
 function ValueFieldSettingsDialog({
   fields,
+  model,
   value,
+  onGetFieldMembers,
   onApply,
   onClose,
 }: {
   readonly fields: readonly PivotField[]
+  readonly model: PivotLayoutModel
   readonly value: PivotValueSpec
+  readonly onGetFieldMembers: (fieldIndex: number) => string[]
   readonly onApply: (patch: Partial<PivotValueSpec>) => void
   readonly onClose: () => void
 }): React.JSX.Element {
@@ -483,6 +495,21 @@ function ValueFieldSettingsDialog({
   const modal = useModalDialog(onClose)
   const isCalc = draft.formula !== undefined
   const sourceName = isCalc ? (draft.calcName ?? '') : fieldLabel(t, fields, draft.fieldIndex)
+  // Base-field modes: the picker lists the current row/column fields (Excel's
+  // base field must sit on an axis); the base-item picker lists the chosen
+  // field's members.
+  const baseFieldCandidates = [...model.rows, ...model.columns]
+  const usesBaseField = showAsUsesBaseField(draft.showDataAs)
+  const usesBaseItem = showAsUsesBaseItem(draft.showDataAs)
+  const baseFieldIndex = usesBaseField
+    ? ((baseFieldCandidates.includes(draft.baseFieldIndex ?? -1)
+        ? draft.baseFieldIndex
+        : baseFieldCandidates[0]) ?? -1)
+    : -1
+  const baseMembers = usesBaseItem && baseFieldIndex >= 0 ? onGetFieldMembers(baseFieldIndex) : []
+  const baseItem = usesBaseItem
+    ? ((baseMembers.includes(draft.baseItem ?? '\u0000') ? draft.baseItem : baseMembers[0]) ?? '')
+    : undefined
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
@@ -566,10 +593,42 @@ function ValueFieldSettingsDialog({
                 setDraft({
                   ...draft,
                   showDataAs: mode === '' ? undefined : (mode as PivotShowDataAs),
+                  // A new mode re-anchors the pickers: keep the base field for
+                  // the modes that use one, drop it otherwise.
+                  baseFieldIndex: mode === '' ? undefined : draft.baseFieldIndex,
+                  baseItem: mode === '' ? undefined : draft.baseItem,
                 })
               }
             />
           </label>
+          {usesBaseField && baseFieldIndex >= 0 && (
+            <label>
+              {t('dlgPivotBaseField')}
+              <Dropdown
+                value={String(baseFieldIndex)}
+                options={baseFieldCandidates.map((fieldIndex) => ({
+                  value: String(fieldIndex),
+                  label: fieldLabel(t, fields, fieldIndex),
+                }))}
+                onPick={(picked) =>
+                  setDraft({ ...draft, baseFieldIndex: Number(picked), baseItem: undefined })
+                }
+              />
+            </label>
+          )}
+          {usesBaseItem && baseFieldIndex >= 0 && (
+            <label>
+              {t('dlgPivotBaseItem')}
+              <Dropdown
+                value={baseItem ?? ''}
+                options={baseMembers.map((member) => ({
+                  value: member,
+                  label: member === '' ? t('appBlank') : member,
+                }))}
+                onPick={(picked) => setDraft({ ...draft, baseItem: picked })}
+              />
+            </label>
+          )}
           <ValueFilterFields
             filter={draft.filter}
             onChange={(filter) => setDraft({ ...draft, filter })}
@@ -585,6 +644,8 @@ function ValueFieldSettingsDialog({
               onApply({
                 agg: draft.agg,
                 showDataAs: draft.showDataAs,
+                ...(usesBaseField && baseFieldIndex >= 0 ? { baseFieldIndex } : {}),
+                ...(usesBaseItem && baseFieldIndex >= 0 ? { baseItem } : {}),
                 name: draft.name?.trim() || undefined,
                 calcName: draft.calcName,
                 formula: draft.formula,

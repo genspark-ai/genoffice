@@ -457,6 +457,35 @@ export function insertRowsOrColumns(
   }
 }
 
+/** Delete Columns: prosemirror-tables removes the cells but leaves the table's
+ *  width grid untouched, so the surviving columns inherit the deleted columns'
+ *  shares and the layout shifts (public issue #2231). Word keeps the surviving
+ *  columns' widths: drop the deleted columns' entries and reflow — a px grid
+ *  shrinks the table by the deleted width, a percentage grid renormalizes onto
+ *  the survivors. */
+export const deleteTableColumn: Command = (state, dispatch) => {
+  if (!isInTable(state)) return false
+  const rect = selectedRect(state)
+  const tablePos = rect.tableStart - 1
+  const widths = columnWidthsPx(rect.table, rect.map)
+  const pct = pctOf(rect.table, rect.map, widths)
+  const captured: { tr?: Transaction } = {}
+  if (!deleteColumn(state, (t) => (captured.tr = t)) || !captured.tr) return false
+  const tr = captured.tr
+  if (!tr.doc.nodeAt(tablePos)) return false
+  // the grid lost [rect.left, rect.right): reflowColumns re-derives every
+  // cell's px slice and renormalizes the table's shares over the survivors
+  const keep = (col: number) => col < rect.left || col >= rect.right
+  reflowColumns(
+    tr,
+    tablePos,
+    widths ? widths.filter((_, col) => keep(col)) : null,
+    pct.filter((_, col) => keep(col)),
+  )
+  dispatch?.(tr)
+  return true
+}
+
 export type DeleteCellsMode = 'shiftLeft' | 'shiftUp' | 'row' | 'column'
 
 /** shifting cells needs a plain grid: merged cells would leave holes Word refuses too */
@@ -471,7 +500,7 @@ export function deleteCells(mode: DeleteCellsMode): Command {
   return (state, dispatch) => {
     if (!isInTable(state)) return false
     if (mode === 'row') return deleteRow(state, dispatch)
-    if (mode === 'column') return deleteColumn(state, dispatch)
+    if (mode === 'column') return deleteTableColumn(state, dispatch)
     if (!canShiftCells(state)) return false
     const rect = selectedRect(state)
     const { table } = rect

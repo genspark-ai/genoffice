@@ -400,12 +400,27 @@ function topLeftOf(area: { startRow: number; startColumn: number }, rowsAbove: n
 function modelOfPivotAdd(add: WorkbookPivotAdd): PivotLayoutModel {
   const columns =
     add.columnFieldIndices ?? (add.columnFieldIndex === undefined ? [] : [add.columnFieldIndex])
+  const columnFieldIndices = add.columnFieldIndices ?? columns
+  // "Show values as" base item: index into the base field's member list.
+  const baseItemLabelOf = (value: WorkbookPivotAdd['values'][number]): string | undefined => {
+    if (value.baseFieldIndex === undefined || value.baseItemIndex === undefined) return undefined
+    const rowLevel = add.rowFieldIndices.indexOf(value.baseFieldIndex)
+    const items =
+      rowLevel >= 0
+        ? (add.rowLevelItems?.[rowLevel] ?? add.rowItems)
+        : (add.colLevelItems?.[columnFieldIndices.indexOf(value.baseFieldIndex)] ??
+          add.columnItems ??
+          [])
+    return items[value.baseItemIndex]
+  }
   const values: PivotValueSpec[] = add.values.map((value, index) => {
     const filter = add.filters?.find((entry) => entry.kind === 'value' && entry.dataField === index)
     return {
       fieldIndex: value.fieldIndex,
       agg: value.agg,
       ...(value.showDataAs !== undefined ? { showDataAs: value.showDataAs } : {}),
+      ...(value.baseFieldIndex !== undefined ? { baseFieldIndex: value.baseFieldIndex } : {}),
+      ...(value.baseItemIndex !== undefined ? { baseItem: baseItemLabelOf(value) ?? '' } : {}),
       ...(value.name !== undefined ? { name: value.name } : {}),
       ...(value.formula !== undefined ? { formula: value.formula, calcName: value.calcName } : {}),
       ...(filter !== undefined && filter.kind === 'value'
@@ -475,10 +490,23 @@ function modelOfDefinition(
     const filter = definition.filters.find(
       (entry) => entry.kind === 'value' && entry.dataField === index,
     )
+    // "Show values as" base item: a fieldItems index of the base field; the
+    // model stores its label for the picker.
+    const baseItemLabel = (() => {
+      if (dataField.baseField === undefined || dataField.baseItem === undefined) return undefined
+      const sharedIndex = definition.fieldItems[dataField.baseField]?.[dataField.baseItem]?.x
+      const shared =
+        sharedIndex === null || sharedIndex === undefined
+          ? undefined
+          : definition.fields[dataField.baseField]?.sharedItems[sharedIndex]
+      return shared === undefined || shared === null ? '' : String(shared)
+    })()
     return {
       fieldIndex: isCalc ? -1 : dataField.field,
       agg,
       ...(dataField.showDataAs !== undefined ? { showDataAs: dataField.showDataAs } : {}),
+      ...(dataField.baseField !== undefined ? { baseFieldIndex: dataField.baseField } : {}),
+      ...(baseItemLabel !== undefined ? { baseItem: baseItemLabel } : {}),
       ...(dataField.name !== defaultName && !isCalc ? { name: dataField.name } : {}),
       ...(isCalc ? { formula: source.formula, calcName: source.name } : {}),
       ...(filter !== undefined && filter.kind === 'value'

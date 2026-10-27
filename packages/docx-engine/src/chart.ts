@@ -424,8 +424,9 @@ function solidFillHex(spPr: XNode | undefined, theme?: ThemeColors | null): stri
       const slot = SCHEME_SLOTS[attrsOf(clr)['val'] ?? '']
       base = slot ? theme?.[slot] : undefined
     }
-    if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) continue
-    return applyColorMods(base.toUpperCase(), clr)
+    const baseTrimmed = (base ?? '').trim()
+    if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) continue
+    return applyColorMods(baseTrimmed.toUpperCase(), clr)
   }
   return undefined
 }

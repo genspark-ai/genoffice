@@ -9,7 +9,7 @@ import type { AiProviderId } from '@genoffice/ai-provider/browser'
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
 // (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas
-// Cloud, OpenCode,
+// Cloud, Runcrate, OpenCode,
 // Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -249,6 +249,12 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   atlascloud: (
     <svg viewBox="0 0 27 26" fill="currentColor" aria-hidden="true">
       <path d="M13.4447 0L0 25.9887C6.22692 23.5227 11.249 23.1623 15.7643 23.3763L13.7037 18.8159C12.8029 18.7258 10.1905 18.7258 8.9519 19.0523L13.4447 9.06451C13.4447 9.06451 20.2009 23.7366 20.2121 23.7366C21.5183 23.9393 24.9977 25.1104 26.8895 25.9887L13.4447 0Z" />
+    </svg>
+  ),
+  // Runcrate's mark (runcrate.ai): a rounded square with a terminal prompt, 24-unit frame
+  runcrate: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM5.793 9.207A1 1 0 0 1 7.207 7.793L11.414 12 7.207 16.207A1 1 0 0 1 5.793 14.793L8.586 12ZM13 14.5h4.5a1 1 0 0 1 0 2H13a1 1 0 0 1 0-2Z" />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

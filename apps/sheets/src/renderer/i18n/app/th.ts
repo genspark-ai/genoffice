@@ -114,8 +114,10 @@ export const th = {
   appChartNoRepoint: 'แผนภูมินี้ไม่รองรับการกำหนดช่วงข้อมูลใหม่',
   appKeepOneSeries: 'ต้องเก็บชุดข้อมูลไว้อย่างน้อยหนึ่งชุด',
   appNoCategoriesToSwitch: 'ไม่มีประเภทให้สลับ',
-  appComboNoSelectData: 'ยังไม่รองรับการเปลี่ยนแหล่งข้อมูลของแผนภูมิผสม',
+  appSelectDataUnsupported: 'ยังไม่รองรับการเปลี่ยนแหล่งข้อมูลของชนิดแผนภูมินี้',
   appSeriesName: 'ชื่อชุดข้อมูล',
+  appSeriesType: 'ชนิดของชุดข้อมูล',
+  appSecondaryAxis: 'แกนรอง',
   appValuesRange: 'ช่วงค่า',
   appCategoriesRange: 'ช่วงประเภท',
   appKeepUnchanged: 'คงเดิม',
@@ -192,6 +194,10 @@ export const th = {
   appInvalidGroupField: 'เขตข้อมูลการจัดกลุ่มไม่ถูกต้อง',
   appInvalidPageField: 'เขตข้อมูลตัวกรองรายงานไม่ถูกต้อง',
   appPivotPageItemMissing: 'รายการตัวกรองรายงาน "{item}" ไม่ใช่สมาชิกของเขตข้อมูล "{label}"',
+  appInvalidPivotBaseField: 'ฟิลด์ฐานของ "แสดงค่าเป็น" ต้องอยู่ในแถวหรือคอลัมน์',
+  appPivotBaseFieldMissing: 'โหมด "แสดงค่าเป็น" ของฟิลด์ค่าต้องมีฟิลด์ฐาน',
+  appPivotBaseFieldNotAxis: 'ฟิลด์ฐาน "{label}" ต้องอยู่ในแถวหรือคอลัมน์ของตาราง Pivot',
+  appPivotBaseItemMissing: 'รายการฐาน "{item}" ไม่ใช่สมาชิกของเขตข้อมูล "{label}"',
   appInvalidLabelFilterField: 'เขตข้อมูลของตัวกรองป้ายชื่อไม่ถูกต้อง',
   appInvalidValueFieldIndex: 'ดัชนีเขตข้อมูลค่า {index} ไม่ถูกต้อง',
   appInvalidValueField: 'เขตข้อมูลค่าไม่ถูกต้อง',
@@ -320,7 +326,6 @@ export const th = {
   appDialogCancel: 'ยกเลิก',
   appPivotSheetNoMove: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการย้ายช่วง',
   appMergeOverTable: 'ส่วนที่เลือกซ้อนทับตาราง Excel — ยังไม่รองรับการผสานเซลล์ภายในตาราง',
-  appTableFilterNoEdit: 'ตัวกรองของแผ่นงานนี้เป็นของตาราง Excel — การแก้ไขยังบันทึกไม่ได้',
   appAutofillStreaming: 'ยังไม่อนุญาตให้เติมอัตโนมัติลงในพื้นที่ที่กำลังโหลดแบบสตรีม',
   appDvNeedsIndexed:
     'การแก้ไขการตรวจสอบความถูกต้องของข้อมูลต้องรอให้แผ่นงานนี้ทำดัชนีเสร็จก่อน — ลองใหม่อีกสักครู่',
@@ -549,8 +554,6 @@ export const th = {
   appSaveFailed: 'บันทึกเวิร์กบุ๊กไม่ได้',
   appCfRuleUnsaveable:
     'กฎการจัดรูปแบบตามเงื่อนไขนี้ไม่สามารถบันทึกเป็น xlsx ได้ — โปรดใช้กฎประเภทอื่น',
-  appSaveErrX14Dv:
-    'ชีตนี้มีการตรวจสอบความถูกต้องของข้อมูลแบบขยาย (x14) ยังไม่รองรับการแก้ไขกฎการตรวจสอบของชีตนี้',
   appSaveErrMultiSelectList:
     'การตรวจสอบแบบรายการเลือกหลายรายการไม่สามารถบันทึกเป็น xlsx ได้ — โปรดลบกฎนั้นก่อนบันทึก',
   appSaveErrX14Cf: 'ช่วงนี้มีการจัดรูปแบบตามเงื่อนไขแบบขยาย (x14) จึงยังแก้ไขไม่ได้ในขณะนี้',
@@ -1168,6 +1171,7 @@ export const th = {
   appGroupForecast: 'การพยากรณ์',
   appWhatIfAnalysis: 'การวิเคราะห์แบบ What-If',
   appGoalSeek: 'ค้นหาค่าเป้าหมาย',
+  appDataTable: 'ตารางข้อมูล',
   appWhatIfTitle: 'หาค่าป้อนเข้าจากค่าเป้าหมาย',
   appGoalSeekNeedsFormula: 'เซลล์เป้าหมายต้องมีสูตร',
   appGoalSeekByCellNotNumber: 'เซลล์ที่จะเปลี่ยนต้องเป็นตัวเลขหรือว่าง',

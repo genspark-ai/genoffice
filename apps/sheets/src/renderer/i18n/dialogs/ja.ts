@@ -3,11 +3,14 @@ import type { zh } from './zh'
 export const ja = {
   dlgAllowEditRangesTitle: '範囲の編集の許可',
   dlgAllowEditRangesHint:
-    'シート保護中もこれらの範囲は編集できます。保存時に書き込まれます。パスワードには対応していません。',
+    'シート保護中もこれらの範囲は編集できます。保存時に書き込まれます。パスワードが設定済みの範囲はここでは変更・削除できません。',
   dlgRangeName: 'タイトル',
   dlgRangeRef: '範囲',
   dlgRangeAdd: '追加',
   dlgRangeDelete: '削除',
+  dlgRangeLocked:
+    'この範囲にはファイル上パスワードが設定されており、ここでは変更・削除できません。',
+  dlgRangePassword: 'パスワード（任意）',
   dlgRangeNameTaken: '重複しない空でないタイトルを入力してください。',
   dlgRangeRefInvalid: 'A1:B4 のような範囲を入力してください。',
   dlgCancel: 'キャンセル',
@@ -23,6 +26,26 @@ export const ja = {
   dlgGoalSeekNotFound: '収束しませんでした。元の値に戻しました(最終到達値 {reached})。',
   dlgGoalSeekSolve: '実行',
   dlgGoalSeekSolving: '計算中…',
+  dlgDataTableTitle: 'データテーブル',
+  dlgDataTableRange: 'テーブル範囲',
+  dlgDataTableRowInput: '行の代入セル',
+  dlgDataTableColumnInput: '列の代入セル',
+  dlgDataTableNote:
+    '結果は通常の値として書き込まれ、再計算では更新されません（Excel の配列数式形式とは異なります）。テーブル全体を一度に元に戻せます。',
+  dlgDataTableNeedInput:
+    '代入セルを少なくとも 1 つ入力してください。1 つだけなら 1 変数、両方なら 2 変数です。',
+  dlgDataTableBadRange: 'テーブル範囲は A1 や A1:B4 のような参照である必要があります。',
+  dlgDataTableBadShape:
+    '領域の形状が不正です。列方向の 1 変数は 2 列かつ 2 行以上、行方向の 1 変数は 2 行かつ 2 列以上、2 変数は 2×2 以上が必要です。',
+  dlgDataTableTooManyCells: '結果セル数が上限 {limit} を超えています。',
+  dlgDataTableInputInside: '代入セルをテーブル範囲内に置くことはできません。',
+  dlgDataTableSameInput: '2 変数テーブルでは行と列の代入セルを同じにできません。',
+  dlgDataTableNeedsFormula: '数式セルには数式が必要です。',
+  dlgDataTableInputNotNumber: '代入セルは数値または空白である必要があります。',
+  dlgDataTableValuesNotNumber: '代入値は数値である必要があります。',
+  dlgDataTableRunning: '計算中… {done}/{total}',
+  dlgDataTableRunningShort: '計算中…',
+  dlgDataTableDone: '{count} 個の結果を書き込みました（通常の値。再計算では更新されません）。',
   dlgApply: '適用',
   dlgCreate: '作成',
 
@@ -212,6 +235,8 @@ export const ja = {
   dlgPivotShowAsRankDesc: '降順での順位…',
   dlgPivotShowAsIndex: '指数',
   dlgPivotNotSupportedYet: '未対応',
+  dlgPivotBaseField: '基準フィールド',
+  dlgPivotBaseItem: '基準アイテム',
   dlgPivotReportFilterItem: 'レポート フィルターの項目',
   dlgPivotAllItems: '(すべて)',
   dlgPivotErrNeedValue: '「値」に少なくとも 1 つのフィールドを追加してください。',

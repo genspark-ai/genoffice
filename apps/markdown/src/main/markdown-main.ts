@@ -49,6 +49,7 @@ import {
   reconcileOwnedAssets,
   renameOwnedAssetDocument,
   resolveSafeRelativeImagePath,
+  resolveSafeVaultImagePath,
   resolveSourcePendingAfterSaveAs,
   rollbackPreparedSaveAsAssets,
   writeImageIntoOwnedAssets,
@@ -69,7 +70,7 @@ import type {
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { listWikiNotes } from './wiki-notes'
 import { createWikiNote } from './wiki-create'
-import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph } from './wiki-index'
+import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph, wikiTags } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
@@ -743,19 +744,27 @@ function registerImageProtocol(): void {
     if (!DISPLAY_IMAGE_EXTS.has(extname(target).toLowerCase()) || !existsSync(target)) {
       return new Response(null, { status: 404 })
     }
-    let inDocDir = false
+    let served: string | null = null
     for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
       const dir = resolve(dirname(doc))
       // isInDocDir handles filesystem-root docs ("/", "C:\") whose dir
       // already ends in a separator — dir + sep would 403 every sibling.
       if (!isInDocDir(target, dir)) continue
-      if (await resolveSafeRelativeImagePath(doc, relative(dir, target))) {
-        inDocDir = true
+      const safe = await resolveSafeRelativeImagePath(doc, relative(dir, target))
+      if (safe) {
+        served = safe
         break
       }
     }
-    if (!inDocDir) return new Response(null, { status: 403 })
-    return net.fetch(pathToFileURL(target).toString())
+    if (!served) {
+      // a cross-folder embed resolves through the vault root the wiki resolver
+      // walks, so the picture next to the note (vault attachments/ from a
+      // nested note, the Obsidian layout) renders too: the same root decides,
+      // realpath-resolved so a symlink escape is refused
+      served = await resolveSafeVaultImagePath(configuredDefaultSaveDir(app), target)
+    }
+    if (!served) return new Response(null, { status: 403 })
+    return net.fetch(pathToFileURL(served).toString())
   })
 }
 
@@ -862,6 +871,10 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.wikiGraph, (): Promise<WikiGraph> =>
     wikiGraph(configuredDefaultSaveDir(app), nodeVaultFs()),
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.wikiTags, (): Promise<{ tag: string; files: string[] }[]> =>
+    wikiTags(configuredDefaultSaveDir(app), nodeVaultFs()),
   )
 
   ipcMain.handle(

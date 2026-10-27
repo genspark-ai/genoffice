@@ -3101,6 +3101,11 @@ textarea:focus {
   width: 560px;
 }
 
+/* Combo mode: two extra columns (series type, secondary axis). */
+.select-data-dialog.combo {
+  width: 720px;
+}
+
 .select-data-rows {
   display: flex;
   max-height: 300px;
@@ -3114,6 +3119,10 @@ textarea:focus {
   align-items: center;
   grid-template-columns: 1.1fr 1.4fr 1.4fr auto;
   gap: 6px;
+}
+
+.select-data-row.combo {
+  grid-template-columns: 1fr 1.15fr 1.15fr 0.75fr auto auto;
 }
 
 .select-data-head {
@@ -3143,6 +3152,31 @@ textarea:focus {
 .select-data-row input::placeholder {
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+.select-data-row select {
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.select-data-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.select-data-row input[type='checkbox'] {
+  justify-self: center;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
 }
 
 .select-data-row > span:last-child {

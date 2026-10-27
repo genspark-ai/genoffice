@@ -18,7 +18,6 @@ import {
   addColumnBefore,
   addRowAfter,
   addRowBefore,
-  deleteColumn,
   deleteRow,
   deleteTable,
   mergeCells,
@@ -79,6 +78,7 @@ import type { InkTool } from '../editor/ink'
 import type { RibbonFormatState } from './ribbon-format-state'
 import { distributeSelectedColumns, setSelectedColumnWidth } from '../editor/table-sizing'
 import {
+  deleteTableColumn,
   distributeRowsEvenly,
   enterSelectedTable,
   inTableOrSelected,
@@ -2905,7 +2905,7 @@ function RibbonInner({
                       </button>
                       {(
                         [
-                          ['ribbonDeleteColumn', IconColDelete, deleteColumn],
+                          ['ribbonDeleteColumn', IconColDelete, deleteTableColumn],
                           ['ribbonDeleteRow', IconRowDelete, deleteRow],
                           ['ribbonDeleteTable', IconTableDelete, deleteTable],
                         ] as Array<[StringKey, (props: { size?: number }) => ReactNode, Command]>

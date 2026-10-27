@@ -3,11 +3,14 @@ import type { zh } from './zh'
 export const id = {
   dlgAllowEditRangesTitle: 'Izinkan Edit Rentang',
   dlgAllowEditRangesHint:
-    'Rentang ini tetap dapat diedit saat lembar dilindungi. Ditulis saat disimpan; kata sandi tidak didukung.',
+    'Rentang ini tetap dapat diedit saat lembar dilindungi. Ditulis saat disimpan. Rentang yang sudah memiliki kata sandi tidak dapat diubah atau dihapus di sini.',
   dlgRangeName: 'Judul',
   dlgRangeRef: 'Rentang',
   dlgRangeAdd: 'Tambah',
   dlgRangeDelete: 'Hapus',
+  dlgRangeLocked:
+    'Rentang ini membawa kata sandi di dalam berkas; tidak dapat diubah atau dihapus di sini.',
+  dlgRangePassword: 'Kata sandi (opsional)',
   dlgRangeNameTaken: 'Masukkan judul yang unik dan tidak kosong.',
   dlgRangeRefInvalid: 'Masukkan rentang seperti A1:B4.',
   dlgCancel: 'Batal',
@@ -23,6 +26,26 @@ export const id = {
   dlgGoalSeekNotFound: 'Tidak ada solusi; nilai asli dikembalikan (terakhir {reached}).',
   dlgGoalSeekSolve: 'Selesaikan',
   dlgGoalSeekSolving: 'Menyelesaikan…',
+  dlgDataTableTitle: 'Tabel Data',
+  dlgDataTableRange: 'Rentang tabel',
+  dlgDataTableRowInput: 'Sel masukan baris',
+  dlgDataTableColumnInput: 'Sel masukan kolom',
+  dlgDataTableNote:
+    'Hasil ditulis sebagai nilai biasa dan tidak diperbarui saat rekalkulasi (berbeda dengan tabel formula array Excel); seluruh tabel bisa dibatalkan dalam satu langkah.',
+  dlgDataTableNeedInput:
+    'Isi minimal satu sel masukan: satu saja berarti satu variabel, keduanya berarti dua variabel.',
+  dlgDataTableBadRange: 'Rentang tabel harus berupa referensi seperti A1 atau A1:B4.',
+  dlgDataTableBadShape:
+    'Bentuk rentang salah: satu variabel kolom perlu 2 kolom dan 2+ baris, satu variabel baris 2 baris dan 2+ kolom, dua variabel minimal 2×2.',
+  dlgDataTableTooManyCells: 'Tabel melebihi batas {limit} sel hasil.',
+  dlgDataTableInputInside: 'Sel masukan tidak boleh berada di dalam rentang tabel.',
+  dlgDataTableSameInput: 'Sel masukan baris dan kolom harus berbeda.',
+  dlgDataTableNeedsFormula: 'Sel formula harus berisi formula.',
+  dlgDataTableInputNotNumber: 'Sel masukan harus berisi angka biasa atau kosong.',
+  dlgDataTableValuesNotNumber: 'Nilai substitusi harus berupa angka.',
+  dlgDataTableRunning: 'Menghitung… {done}/{total}',
+  dlgDataTableRunningShort: 'Menghitung…',
+  dlgDataTableDone: '{count} hasil ditulis (nilai biasa; tidak diperbarui saat rekalkulasi).',
   dlgApply: 'Terapkan',
   dlgCreate: 'Buat',
 
@@ -214,6 +237,8 @@ export const id = {
   dlgPivotShowAsRankDesc: 'Peringkat Terbesar ke Terkecil…',
   dlgPivotShowAsIndex: 'Indeks',
   dlgPivotNotSupportedYet: 'belum tersedia',
+  dlgPivotBaseField: 'Bidang dasar',
+  dlgPivotBaseItem: 'Item dasar',
   dlgPivotReportFilterItem: 'Item filter laporan',
   dlgPivotAllItems: '(Semua)',
   dlgPivotErrNeedValue: 'Tambahkan setidaknya satu bidang ke Nilai.',

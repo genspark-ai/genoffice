@@ -397,6 +397,32 @@ export async function resolveSafeRelativeImagePath(
   }
 }
 
+/**
+ * The realpath of an image target served from the vault wiki root — the same
+ * root {@link resolveWikiLinks} walks (no second definition), so a cross-folder
+ * picture embed `![[attachments/x.png]]` that resolves also renders. A target
+ * must sit under the root lexically and after realpath resolution (a symlink
+ * out of the vault is refused); `null` = refuse the serve.
+ */
+export async function resolveSafeVaultImagePath(
+  root: string,
+  target: string,
+): Promise<string | null> {
+  const vaultRoot = resolve(root)
+  if (!isInDocDir(target, vaultRoot)) return null
+  try {
+    const [realRoot, realCandidate, info] = await Promise.all([
+      realpath(vaultRoot),
+      realpath(target),
+      stat(target),
+    ])
+    if (!info.isFile() || !isInDocDir(realCandidate, realRoot)) return null
+    return realCandidate
+  } catch {
+    return null
+  }
+}
+
 function ownedNameForSource(source: string): string | null {
   const decoded = decodeLocalSource(source)
   if (!decoded) return null

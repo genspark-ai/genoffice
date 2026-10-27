@@ -115,8 +115,10 @@ export const en = {
   appChartNoRepoint: 'This chart does not support repointing its data ranges.',
   appKeepOneSeries: 'Keep at least one series.',
   appNoCategoriesToSwitch: 'No categories to switch.',
-  appComboNoSelectData: 'Changing the data source of a combo chart is not supported yet.',
+  appSelectDataUnsupported: 'Changing the data source of this chart type is not supported.',
   appSeriesName: 'Series Name',
+  appSeriesType: 'Series Type',
+  appSecondaryAxis: 'Secondary Axis',
   appValuesRange: 'Values Range',
   appCategoriesRange: 'Categories Range',
   appKeepUnchanged: 'Keep unchanged',
@@ -195,6 +197,10 @@ export const en = {
   appInvalidGroupField: 'Invalid grouping field.',
   appInvalidPageField: 'Invalid report filter field.',
   appPivotPageItemMissing: 'Report filter item "{item}" is not a member of field "{label}".',
+  appInvalidPivotBaseField: 'A "show values as" base field must sit on Rows or Columns.',
+  appPivotBaseFieldMissing: 'The "show values as" mode of a value field needs a base field.',
+  appPivotBaseFieldNotAxis: 'Base field "{label}" must sit on the pivot rows or columns.',
+  appPivotBaseItemMissing: 'Base item "{item}" is not a member of field "{label}".',
   appInvalidLabelFilterField: 'The label filter field is invalid.',
   appInvalidValueFieldIndex: 'Value field index {index} is invalid.',
   appInvalidValueField: 'Invalid value field.',
@@ -326,8 +332,6 @@ export const en = {
   appPivotSheetNoMove: 'This sheet contains a PivotTable — moving ranges is not supported yet.',
   appMergeOverTable:
     'The selection overlaps an Excel table — merging cells inside a table is not supported yet.',
-  appTableFilterNoEdit:
-    "This sheet's filter belongs to an Excel table — editing it cannot be saved yet.",
   appAutofillStreaming: 'Autofill into an area that is still streaming in is not allowed yet.',
   appDvNeedsIndexed:
     'Editing data validation needs this sheet fully indexed first — try again in a moment.',
@@ -558,8 +562,6 @@ export const en = {
   appSaveFailed: 'Unable to save the workbook.',
   appCfRuleUnsaveable:
     'This conditional formatting rule cannot be saved to xlsx — switch to another rule type.',
-  appSaveErrX14Dv:
-    'This sheet has extended (x14) data validation; editing its validation rules is not supported yet.',
   appSaveErrMultiSelectList:
     'Multi-select list validation cannot be saved to xlsx — delete the rule before saving.',
   appSaveErrX14Cf:
@@ -1181,6 +1183,7 @@ export const en = {
   appGroupForecast: 'Forecast',
   appWhatIfAnalysis: 'What-If Analysis',
   appGoalSeek: 'Goal Seek',
+  appDataTable: 'Data Table',
   appWhatIfTitle: 'Solve an input for a target value',
   appGoalSeekNeedsFormula: 'Set cell must contain a formula.',
   appGoalSeekByCellNotNumber: 'By changing cell must hold a plain number or be empty.',

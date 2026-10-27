@@ -3,11 +3,14 @@ import type { zh } from './zh'
 export const nl = {
   dlgAllowEditRangesTitle: 'Bewerken van bereiken toestaan',
   dlgAllowEditRangesHint:
-    'Deze bereiken blijven bewerkbaar terwijl het blad is beveiligd. Wordt bij het opslaan geschreven; wachtwoorden worden niet ondersteund.',
+    'Deze bereiken blijven bewerkbaar terwijl het blad is beveiligd. Wordt bij het opslaan geschreven. Een bereik dat al een wachtwoord heeft kan hier niet worden gewijzigd of verwijderd.',
   dlgRangeName: 'Titel',
   dlgRangeRef: 'Bereik',
   dlgRangeAdd: 'Toevoegen',
   dlgRangeDelete: 'Verwijderen',
+  dlgRangeLocked:
+    'Dit bereik heeft een wachtwoord in het bestand; het kan hier niet worden gewijzigd of verwijderd.',
+  dlgRangePassword: 'Wachtwoord (optioneel)',
   dlgRangeNameTaken: 'Voer een unieke, niet-lege titel in.',
   dlgRangeRefInvalid: 'Voer een bereik in zoals A1:B4.',
   dlgCancel: 'Annuleren',
@@ -23,6 +26,27 @@ export const nl = {
   dlgGoalSeekNotFound: 'Geen oplossing; oorspronkelijke waarde hersteld (laatst {reached}).',
   dlgGoalSeekSolve: 'Oplossen',
   dlgGoalSeekSolving: 'Bezig…',
+  dlgDataTableTitle: 'Gegevenstabel',
+  dlgDataTableRange: 'Tabelbereik',
+  dlgDataTableRowInput: 'Invoercel rij',
+  dlgDataTableColumnInput: 'Invoercel kolom',
+  dlgDataTableNote:
+    'Resultaten worden als gewone waarden geschreven en worden niet bijgewerkt bij herberekening (anders dan Excel-tabellen met matrixformules); de hele tabel is in één stap ongedaan te maken.',
+  dlgDataTableNeedInput:
+    'Vul minstens één invoercel in: alleen één is één variabele, beide zijn twee variabelen.',
+  dlgDataTableBadRange: 'Het tabelbereik moet een verwijzing zijn zoals A1 of A1:B4.',
+  dlgDataTableBadShape:
+    'Verkeerde vorm van het bereik: één variabele in een kolom vereist 2 kolommen en 2+ rijen, in een rij 2 rijen en 2+ kolommen, twee variabelen minstens 2×2.',
+  dlgDataTableTooManyCells: 'De tabel overschrijdt de limiet van {limit} resultaatcellen.',
+  dlgDataTableInputInside: 'Invoercellen mogen niet in het tabelbereik liggen.',
+  dlgDataTableSameInput: 'De invoercellen voor rij en kolom moeten verschillen.',
+  dlgDataTableNeedsFormula: 'De formulecel moet een formule bevatten.',
+  dlgDataTableInputNotNumber: 'Invoercellen moeten een gewoon getal bevatten of leeg zijn.',
+  dlgDataTableValuesNotNumber: 'De vervangingswaarden moeten getallen zijn.',
+  dlgDataTableRunning: 'Berekenen… {done}/{total}',
+  dlgDataTableRunningShort: 'Berekenen…',
+  dlgDataTableDone:
+    '{count} resultaten geschreven (gewone waarden; niet bijgewerkt bij herberekening).',
   dlgApply: 'Toepassen',
   dlgCreate: 'Maken',
 
@@ -213,6 +237,8 @@ export const nl = {
   dlgPivotShowAsRankDesc: 'Rang van groot naar klein…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'nog niet beschikbaar',
+  dlgPivotBaseField: 'Basisveld',
+  dlgPivotBaseItem: 'Basisitem',
   dlgPivotReportFilterItem: 'Rapportfilteritem',
   dlgPivotAllItems: '(Alles)',
   dlgPivotErrNeedValue: 'Voeg minstens één veld toe aan Waarden.',
