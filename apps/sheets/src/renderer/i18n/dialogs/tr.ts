@@ -8,6 +8,8 @@ export const tr = {
   dlgRangeRef: 'Aralık',
   dlgRangeAdd: 'Ekle',
   dlgRangeDelete: 'Sil',
+  dlgRangeLocked: 'Bu aralık dosyada bir parola taşıyor; burada değiştirilemez veya kaldırılamaz.',
+  dlgRangePassword: 'Parola (isteğe bağlı)',
   dlgRangeNameTaken: 'Benzersiz, boş olmayan bir başlık girin.',
   dlgRangeRefInvalid: 'A1:B4 gibi bir aralık girin.',
   dlgCancel: 'İptal',
