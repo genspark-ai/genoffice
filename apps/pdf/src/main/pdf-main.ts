@@ -1355,6 +1355,50 @@ function registerPdfIpc(): void {
     }
   })
 
+  // An attachment to embed: the open dialog is main-side, the bytes travel base64
+  // over the same IPC the stamp images already use
+  ipcMain.handle(PDF_CHANNELS.pickAttachmentFile, async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
+    const picked = await showOpenDialogWithMemory(dialog, win ?? undefined, {
+      properties: ['openFile'],
+    })
+    const file = picked.filePaths[0]
+    if (picked.canceled || !file) return { ok: false as const, cancelled: true }
+    try {
+      const bytes = await readFile(file)
+      return {
+        ok: true as const,
+        name: basename(file),
+        bytesBase64: bytes.toString('base64'),
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(
+    PDF_CHANNELS.exportAttachment,
+    async (e, path: unknown, name: unknown, bytesBase64: unknown) => {
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false as const, reason: 'pdf: path not granted to this view' }
+      }
+      if (typeof name !== 'string' || typeof bytesBase64 !== 'string') {
+        return { ok: false as const, reason: 'pdf: malformed export request' }
+      }
+      const parent = BrowserWindow.fromWebContents(e.sender)
+      const picked = parent
+        ? await dialog.showSaveDialog(parent, { defaultPath: join(dirname(path), name) })
+        : await dialog.showSaveDialog({ defaultPath: join(dirname(path), name) })
+      if (picked.canceled || !picked.filePath) return { ok: false as const, cancelled: true }
+      try {
+        await writeFile(picked.filePath, Buffer.from(bytesBase64, 'base64'))
+        return { ok: true as const, targetPath: picked.filePath }
+      } catch (err) {
+        return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
   ipcMain.handle(PDF_CHANNELS.isUntitled, (e, path: unknown): boolean => {
     return (
       typeof path === 'string' &&

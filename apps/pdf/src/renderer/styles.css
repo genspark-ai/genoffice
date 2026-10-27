@@ -1661,6 +1661,67 @@ button {
   gap: 8px;
 }
 
+/* Attachments panel: rows with a pending tag while the edit has not been saved */
+.pdf-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.pdf-attachments-add {
+  align-self: flex-start;
+}
+
+.pdf-attachments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.pdf-attachment:hover {
+  background: var(--hover);
+}
+
+.pdf-attachment.removing {
+  opacity: 0.55;
+}
+
+.pdf-attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92em;
+}
+
+.pdf-attachment-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--pdf-prop-bg);
+  color: var(--text-secondary);
+  font-size: 0.78em;
+}
+
+.pdf-attachment-size {
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+
 /* Label rows inside form dialogs: control left, label beside it, one per line */
 .pdf-perm-row {
   display: flex;

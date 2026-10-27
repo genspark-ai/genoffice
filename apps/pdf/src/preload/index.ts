@@ -11,6 +11,9 @@ const api: PdfApi = {
   openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   readFile: (path) => ipcRenderer.invoke(PDF_CHANNELS.readFile, path),
   save: (request) => ipcRenderer.invoke(PDF_CHANNELS.save, request),
+  pickAttachmentFile: () => ipcRenderer.invoke(PDF_CHANNELS.pickAttachmentFile),
+  exportAttachment: (path, name, bytesBase64) =>
+    ipcRenderer.invoke(PDF_CHANNELS.exportAttachment, path, name, bytesBase64),
   requestRedactionCopy: (path) => ipcRenderer.invoke(PDF_CHANNELS.requestRedactionCopy, path),
   autoRename: (path, baseName) => ipcRenderer.invoke(PDF_CHANNELS.autoRename, path, baseName),
   isUntitled: (path) => ipcRenderer.invoke(PDF_CHANNELS.isUntitled, path),
