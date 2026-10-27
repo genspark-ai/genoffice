@@ -222,7 +222,7 @@ describe('applyDvRules', () => {
   it('rewrites the rules of a sheet carrying x14 validations instead of failing', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      '<pageMargins left="0.7"/><extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"' +
+      '<pageMargins left="0.7"/><extLst><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"' +
         ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
         '<x14:dataValidations xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" count="1">' +
         '<x14:dataValidation type="list"><x14:formula1><xm:f>Other!$A$1</xm:f></x14:formula1>' +

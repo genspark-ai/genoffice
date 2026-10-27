@@ -4,6 +4,12 @@
 
 use super::*;
 
+/// The worksheet extension carrying x14 data validations. Excel parks
+/// cross-sheet rules in an extension of its own; the x14 conditional
+/// formatting extension ({78C0D931-…}) is a different one, and Excel
+/// ignores validation rules placed there.
+pub(crate) const X14_DV_EXT_URI: &str = "{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}";
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn index_worksheet(
     workbook_path: &Path,
@@ -79,6 +85,11 @@ pub(crate) fn index_worksheet(
     let mut dv_x14 = false;
     let mut in_dv_sqref = false;
     let mut dv_sqref_text = String::new();
+    // The extension the reader is inside. The x14 form of a validation rule
+    // only counts inside Excel's x14 data-validation extension; the same
+    // element in another extension (the conditional-formatting one) is a
+    // rule Excel ignores.
+    let mut in_x14_dv_ext = false;
     let mut data_validations: Vec<DataValidationRule> = Vec::new();
     let mut page_print = PagePrintInfo::default();
     // customSheetView carries its own print elements; only sheet-level ones
@@ -640,6 +651,16 @@ pub(crate) fn index_worksheet(
                     range.has_password = true;
                 }
             }
+            Event::Start(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = attribute_value(&reader, &element, b"uri")?
+                    .is_some_and(|uri| uri.eq_ignore_ascii_case(X14_DV_EXT_URI));
+            }
+            Event::Empty(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = false;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = false;
+            }
             Event::Start(element) if element.local_name().as_ref() == b"dataValidation" => {
                 // Legacy rules carry sqref as an attribute; the x14
                 // extension form has none (it arrives as an <xm:sqref>
@@ -647,10 +668,13 @@ pub(crate) fn index_worksheet(
                 if attribute_value(&reader, &element, b"sqref")?.is_some() {
                     dv_x14 = false;
                     dv_rule = parse_dv_rule(&reader, &element)?;
-                } else {
+                } else if in_x14_dv_ext {
                     dv_x14 = true;
                     dv_rule = Some(x14_dv_rule(&reader, &element)?);
                 }
+                // An x14-shaped rule outside the data-validation extension is
+                // not a rule: Excel ignores it there, so it is not read as
+                // one either.
             }
             Event::Empty(element) if element.local_name().as_ref() == b"dataValidation" => {
                 // A self-closing x14 form has no room for its <xm:sqref>

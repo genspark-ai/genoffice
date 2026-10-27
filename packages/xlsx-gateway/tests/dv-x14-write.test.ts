@@ -9,11 +9,26 @@ const SHEET =
   '<hyperlinks><hyperlink ref="G1" r:id="rId1"/></hyperlinks>' +
   '<pageMargins left="0.7"/></worksheet>'
 
-const X14_EXT_URI = '{78C0D931-6437-407d-A8EE-F0AAD7539E65}'
+/// Excel's x14 data-validation extension. The literal is spelled out here on
+/// purpose: a test that imports the constant from the source cannot tell the
+/// right uri from the conditional-formatting one.
+const X14_DV_EXT_URI = '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}'
+/// Excel's x14 conditional-formatting extension — a different one, whose
+/// validation rules Excel ignores.
+const X14_CF_EXT_URI = '{78C0D931-6437-407d-A8EE-F0AAD7539E65}'
 const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const XM_NS = 'http://schemas.microsoft.com/office/excel/2006/main'
 
 const range = (column = 0) => ({ startRow: 0, endRow: 4, startColumn: column, endColumn: column })
+
+/// The content of the `<ext>` element carrying `uri`, or null when the
+/// worksheet has no such extension.
+function extContent(xml: string, uri: string): string | null {
+  const open = new RegExp(`<ext\\b[^>]*\\buri="${uri.replace(/[{}]/g, '\\$&')}"[^>]*>`).exec(xml)
+  if (open === null) return null
+  const close = xml.indexOf('</ext>', open.index)
+  return close === -1 ? null : xml.slice(open.index + open[0].length, close)
+}
 
 describe('applyDvRules x14 extension writes', () => {
   it('routes cross-sheet list rules into the x14 block and omits the legacy twin', () => {
@@ -31,12 +46,26 @@ describe('applyDvRules x14 extension writes', () => {
     )
     // x14 block: uri, both namespaces, the wrapped formula, and the sqref child.
     expect(xml).toContain(
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
+      `<extLst><ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
         `<x14:dataValidations xmlns:x14="${X14_NS}" xmlns:xm="${XM_NS}" count="1">` +
         '<x14:dataValidation type="list">' +
         '<x14:formula1><xm:f>Sheet2!$A$1:$A$5</xm:f></x14:formula1>' +
         '<xm:sqref>D1:D5</xm:sqref></x14:dataValidation>' +
         '</x14:dataValidations></ext></extLst></worksheet>',
+    )
+  })
+
+  it('puts the block in the data-validation extension, not the conditional-formatting one', () => {
+    const xml = applyDvRules(SHEET, [
+      { ranges: [range()], rule: { type: 'list', formula1: '=Sheet2!$A$1:$A$5' } },
+    ])
+    // The literal uri of Excel's x14 data-validation extension.
+    expect(xml).toContain('<ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"')
+    // The conditional-formatting extension is a different one; Excel ignores
+    // validation rules parked in it, so it must not appear at all.
+    expect(xml).not.toContain('{78C0D931-6437-407d-A8EE-F0AAD7539E65}')
+    expect(extContent(xml, '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}')).toContain(
+      '<x14:dataValidations',
     )
   })
 
@@ -63,13 +92,15 @@ describe('applyDvRules x14 extension writes', () => {
     expect(xml).not.toContain('x14:dataValidations')
   })
 
-  it('rewrites the existing x14 block, keeping sibling conditional formatting verbatim', () => {
+  it('rewrites the existing x14 block, keeping the conditional-formatting extension verbatim', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      `<pageMargins left="0.7"/><extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
+      `<pageMargins left="0.7"/><extLst>` +
+        `<ext uri="${X14_CF_EXT_URI}" xmlns:x14="${X14_NS}">` +
         '<x14:conditionalFormattings><x14:conditionalFormatting ' +
         `xmlns:xm="${XM_NS}"><x14:cfRule type="dataBar" id="{DB1}"/><xm:sqref>F1:F4</xm:sqref>` +
-        '</x14:conditionalFormatting></x14:conditionalFormattings>' +
+        '</x14:conditionalFormatting></x14:conditionalFormattings></ext>' +
+        `<ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
         `<x14:dataValidations xmlns:xm="${XM_NS}" count="1">` +
         '<x14:dataValidation type="list"><x14:formula1><xm:f>Old!$A$1</xm:f></x14:formula1>' +
         '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>',
@@ -80,23 +111,47 @@ describe('applyDvRules x14 extension writes', () => {
     expect(xml).not.toContain('Old!$A$1')
     expect(xml).toContain('<xm:f>Other!$B$2:$B$4</xm:f>')
     expect(xml).toContain('<xm:sqref>C1:C5</xm:sqref>')
-    // The CF twin stays byte-identical and comes first inside the ext.
-    expect(xml).toContain(
+    // The conditional-formatting extension stays byte-identical.
+    expect(extContent(xml, X14_CF_EXT_URI)).toBe(
       '<x14:conditionalFormattings><x14:conditionalFormatting ' +
         `xmlns:xm="${XM_NS}"><x14:cfRule type="dataBar" id="{DB1}"/><xm:sqref>F1:F4</xm:sqref>` +
         '</x14:conditionalFormatting></x14:conditionalFormattings>',
     )
-    expect(xml.indexOf('<x14:conditionalFormattings')).toBeLessThan(
-      xml.indexOf('<x14:dataValidations'),
+    // The block lives in the data-validation extension, and nowhere else.
+    expect(extContent(xml, X14_DV_EXT_URI)).toContain(
+      `<x14:dataValidations xmlns:x14="${X14_NS}" xmlns:xm="${XM_NS}" count="1">` +
+        '<x14:dataValidation type="list"><x14:formula1><xm:f>Other!$B$2:$B$4</xm:f></x14:formula1>' +
+        '<xm:sqref>C1:C5</xm:sqref></x14:dataValidation>',
     )
     // The legacy whole rule from the file is gone (full snapshot rewrite).
     expect(xml).not.toContain('type="whole"')
   })
 
+  it('moves a block an older build wrote into the conditional-formatting extension', () => {
+    const wrongSheet = SHEET.replace(
+      '<pageMargins left="0.7"/>',
+      `<pageMargins left="0.7"/><extLst><ext uri="${X14_CF_EXT_URI}" xmlns:x14="${X14_NS}">` +
+        `<x14:dataValidations xmlns:xm="${XM_NS}" count="1">` +
+        '<x14:dataValidation type="list"><x14:formula1><xm:f>Old!$A$1</xm:f></x14:formula1>' +
+        '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>',
+    )
+    const xml = applyDvRules(wrongSheet, [
+      { ranges: [range()], rule: { type: 'list', formula1: '=New!$A$1:$A$2' } },
+    ])
+    // The rules end up where Excel looks for them.
+    expect(extContent(xml, X14_DV_EXT_URI)).toContain('<xm:f>New!$A$1:$A$2</xm:f>')
+    // The conditional-formatting extension lost its only element, so it goes
+    // with the block instead of lingering as an empty husk Excel repairs.
+    expect(extContent(xml, X14_CF_EXT_URI)).toBeNull()
+    expect(xml).not.toContain(X14_CF_EXT_URI)
+    // The extLst survives to hold the data-validation extension.
+    expect(extContent(xml, X14_DV_EXT_URI)).toContain('<x14:dataValidations')
+  })
+
   it('moves a rule back to legacy once its source is same-sheet', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
+      `<pageMargins left="0.7"/><extLst><ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
         `<x14:dataValidations xmlns:xm="${XM_NS}" count="1">` +
         '<x14:dataValidation type="list"><x14:formula1><xm:f>Sheet9!$A$1:$A$2</xm:f></x14:formula1>' +
         '<xm:sqref>B1:B9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>',
@@ -112,7 +167,7 @@ describe('applyDvRules x14 extension writes', () => {
   it('removes the x14 block, the emptied extension, and the emptied extLst', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
+      `<pageMargins left="0.7"/><extLst><ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
         `<x14:dataValidations xmlns:xm="${XM_NS}" count="2">` +
         '<x14:dataValidation type="list"><x14:formula1><xm:f>Old!$A$1</xm:f></x14:formula1>' +
         '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation>' +
@@ -126,24 +181,27 @@ describe('applyDvRules x14 extension writes', () => {
     expect(xml).toContain('<hyperlinks>')
   })
 
-  it('keeps the extension when sibling content survives the block removal', () => {
+  it('keeps the conditional-formatting extension when the data-validation one goes away', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
-        '<x14:conditionalFormattings/>' +
+      `<pageMargins left="0.7"/><extLst>` +
+        `<ext uri="${X14_CF_EXT_URI}" xmlns:x14="${X14_NS}"><x14:conditionalFormattings/></ext>` +
+        `<ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
         `<x14:dataValidations xmlns:xm="${XM_NS}" count="1">` +
         '<x14:dataValidation type="list"><x14:formula1><xm:f>Old!$A$1</xm:f></x14:formula1>' +
         '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst>',
     )
     const xml = applyDvRules(x14Sheet, [])
-    expect(xml).toContain('<x14:conditionalFormattings/>')
+    expect(extContent(xml, X14_CF_EXT_URI)).toBe('<x14:conditionalFormattings/>')
+    expect(extContent(xml, X14_DV_EXT_URI)).toBeNull()
     expect(xml).not.toContain('x14:dataValidations')
   })
 
   it('replaces a self-closing x14 dataValidations element', () => {
     const x14Sheet = SHEET.replace(
       '<pageMargins left="0.7"/>',
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}"><x14:dataValidations/></ext></extLst>`,
+      `<pageMargins left="0.7"/><extLst><ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
+        '<x14:dataValidations/></ext></extLst>',
     )
     const xml = applyDvRules(x14Sheet, [
       { ranges: [range()], rule: { type: 'list', formula1: '=Sheet2!$A$1:$A$5' } },
@@ -167,7 +225,7 @@ describe('applyDvRules x14 extension writes', () => {
   it('appends x14 rules while trimming the areas the batch takes over', () => {
     const x14Sheet =
       '<worksheet><sheetData/>' +
-      `<extLst><ext uri="${X14_EXT_URI}" xmlns:x14="${X14_NS}">` +
+      `<extLst><ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_NS}">` +
       `<x14:dataValidations xmlns:xm="${XM_NS}" count="2">` +
       '<x14:dataValidation type="list"><x14:formula1><xm:f>Old!$A$1</xm:f></x14:formula1>' +
       '<xm:sqref>C1:C9 D2</xm:sqref></x14:dataValidation>' +

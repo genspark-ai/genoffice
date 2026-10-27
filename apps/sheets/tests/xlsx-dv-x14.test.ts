@@ -13,10 +13,21 @@ import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
 import { toUniverDvRule } from '../src/renderer/univer-sync'
 import { workbookRangeResultSchema } from '../src/shared/desktop-api'
 
+/// Excel's x14 data-validation extension, spelled out literally: a fixture
+/// that imported the constant from the source could not tell it apart from
+/// the conditional-formatting extension.
+const X14_DV_EXT_URI = '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}'
+/// Excel's x14 conditional-formatting extension — a different one.
+const X14_CF_EXT_URI = '{78C0D931-6437-407d-A8EE-F0AAD7539E65}'
+
 const X14_EXT =
-  '<extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}"' +
+  '<extLst>' +
+  `<ext uri="${X14_CF_EXT_URI}"` +
   ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
   '<x14:conditionalFormattings/>' +
+  '</ext>' +
+  `<ext uri="${X14_DV_EXT_URI}"` +
+  ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
   '<x14:dataValidations xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" count="2">' +
   '<x14:dataValidation type="list" allowBlank="1">' +
   '<x14:formula1><xm:f>Lookup!$A$1:$A$5</xm:f></x14:formula1>' +
@@ -24,6 +35,27 @@ const X14_EXT =
   '<x14:dataValidation type="whole" operator="lessThan">' +
   '<x14:formula1><xm:f>100</xm:f></x14:formula1>' +
   '<xm:sqref>D1:D9</xm:sqref></x14:dataValidation>' +
+  '</x14:dataValidations></ext></extLst>'
+
+/// The content of the `<ext>` element carrying `uri`, or null when the
+/// worksheet has no such extension.
+function extContent(xml: string, uri: string): string | null {
+  const open = new RegExp(`<ext\\b[^>]*\\buri="${uri.replace(/[{}]/g, '\\$&')}"[^>]*>`).exec(xml)
+  if (open === null) return null
+  const close = xml.indexOf('</ext>', open.index)
+  return close === -1 ? null : xml.slice(open.index + open[0].length, close)
+}
+
+/// The same rules parked in the conditional-formatting extension, which is
+/// where Excel does not read them from.
+const X14_EXT_IN_CF =
+  '<extLst>' +
+  `<ext uri="${X14_CF_EXT_URI}"` +
+  ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+  '<x14:dataValidations xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" count="1">' +
+  '<x14:dataValidation type="list" allowBlank="1">' +
+  '<x14:formula1><xm:f>Lookup!$A$1:$A$5</xm:f></x14:formula1>' +
+  '<xm:sqref>C1:C9</xm:sqref></x14:dataValidation>' +
   '</x14:dataValidations></ext></extLst>'
 
 function homeWorksheet(ext: string): string {
@@ -47,7 +79,7 @@ const LOOKUP_WORKSHEET =
   '<row r="2"><c r="A2" t="inlineStr"><is><t>green</t></is></c></row>' +
   '<row r="3"><c r="A3" t="inlineStr"><is><t>blue</t></is></c></row></sheetData></worksheet>'
 
-async function buildFixture(): Promise<Buffer> {
+async function buildFixture(ext: string = X14_EXT): Promise<Buffer> {
   const zip = new JSZip()
   zip.file(
     '[Content_Types].xml',
@@ -79,7 +111,7 @@ async function buildFixture(): Promise<Buffer> {
       '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
       '</Relationships>',
   )
-  zip.file('xl/worksheets/sheet1.xml', homeWorksheet(X14_EXT))
+  zip.file('xl/worksheets/sheet1.xml', homeWorksheet(ext))
   zip.file('xl/worksheets/sheet2.xml', LOOKUP_WORKSHEET)
   return zip.generateAsync({ type: 'nodebuffer' })
 }
@@ -198,6 +230,10 @@ describe('x14 data validation round-trip (sidecar read + gateway write)', () => 
       expect(worksheet).toContain('<xm:f>Lookup!$B$2:$B$6</xm:f>')
       expect(worksheet).toContain('<xm:sqref>C1:C9</xm:sqref>')
       expect(worksheet).not.toContain('Lookup!$A$1:$A$5')
+      // The block rides in Excel's x14 data-validation extension; the
+      // conditional-formatting extension keeps only its own content.
+      expect(extContent(worksheet ?? '', X14_DV_EXT_URI)).toContain('<x14:dataValidations')
+      expect(extContent(worksheet ?? '', X14_CF_EXT_URI)).toBe('<x14:conditionalFormattings/>')
 
       // Reopen: the saved rules come back exactly as written.
       const savedPath = join(directory, 'saved.xlsx')
@@ -215,6 +251,31 @@ describe('x14 data validation round-trip (sidecar read + gateway write)', () => 
         { operator: 'lessThan', formulas: ['100'] },
       ])
       await client.close(reopened.sessionId)
+    } finally {
+      if (sessionId) await client.close(sessionId)
+      client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('ignores an x14 block parked in the conditional-formatting extension', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-dv-x14-wrong-ext-'))
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    let sessionId: string | null = null
+    try {
+      const path = join(directory, 'fixture.xlsx')
+      await writeFile(path, await buildFixture(X14_EXT_IN_CF))
+      const opened = openResultSchema.parse(await client.open(path))
+      sessionId = opened.sessionId
+      // Excel does not read validation rules from that extension, so neither
+      // does the sidecar: only the legacy rule of the sheet is a rule.
+      const fileRules = await readHomeRules(client, sessionId)
+      expect(fileRules).toHaveLength(1)
+      expect(fileRules[0]).toMatchObject({
+        ruleType: 'whole',
+        operator: 'equal',
+        formulas: ['7'],
+      })
     } finally {
       if (sessionId) await client.close(sessionId)
       client.stop()

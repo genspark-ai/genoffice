@@ -43,9 +43,11 @@ const DV_ERROR_STYLE_NAMES: Record<number, string | undefined> = {
   2: 'warning',
 }
 
-/// The worksheet extLst extension carrying x14 data validations (shared with
-/// x14 conditional formatting; Excel declares the uri with this casing).
-const X14_DV_EXT_URI = '{78C0D931-6437-407d-A8EE-F0AAD7539E65}'
+/// The worksheet extLst extension carrying x14 data validations. Excel
+/// declares it with this uri; the {78C0D931-…} extension is the x14
+/// conditional-formatting one, and Excel ignores validation rules parked
+/// there — so the block gets an extension of its own.
+const X14_DV_EXT_URI = '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}'
 const X14_XMLNS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const XM_XMLNS = 'http://schemas.microsoft.com/office/excel/2006/main'
 const X14_DV_SECTION_RE =
@@ -56,6 +58,7 @@ const X14_DV_EXT_OPEN_RE = new RegExp(
   `<ext\\b[^>]*\\buri="${X14_DV_EXT_URI.replace(/[{}]/g, '\\$&')}"[^>]*>`,
   'i',
 )
+const EXT_OPEN_RE = /<ext\b[^>]*>/g
 
 export interface DvApplyOptions {
   /** keep the existing rules, replace those on the same ranges, drop `remove`, add the rest */
@@ -315,12 +318,14 @@ function x14Entry(prepared: PreparedRule): string {
 }
 
 /// Rewrites the worksheet's x14:dataValidations block to `entriesXml` (empty
-/// removes it). Other content of the {78C0D931} extension — x14 conditional
-/// formatting — stays verbatim; an extension left with no elements and an
-/// extLst left with no extensions go away so deleted rules leave no husks.
+/// removes it). The block lives in its own {CCE6A557} extension — Excel's
+/// x14 data-validation extension — never in the {78C0D931} one, which
+/// carries conditional formatting and whose validation rules Excel ignores.
+/// An extension left without elements and an extLst left without extensions
+/// go away so deleted rules leave no husks.
 function reconcileX14DataValidations(xml: string, entriesXml: string): string {
   if (entriesXml === '' && !/<x14:dataValidations\b/.test(xml)) return xml
-  xml = xml.replace(X14_DV_SECTION_RE, '')
+  xml = removeX14DvBlocks(xml)
   if (entriesXml === '') return dropEmptyX14DvExt(xml)
   const count = (entriesXml.match(/<x14:dataValidation\b/g) ?? []).length
   const block =
@@ -335,13 +340,13 @@ function reconcileX14DataValidations(xml: string, entriesXml: string): string {
         xml.slice(extOpen.index + extOpen[0].length)
       )
     }
-    // x14:schema slots dataValidations after conditionalFormattings, i.e.
-    // right before the extension closes.
+    // The extension holds the block and nothing else Excel writes there, so
+    // the block goes in right before the extension closes.
     const close = xml.indexOf('</ext>', extOpen.index)
     if (close === -1) throw new DvEditError('The data-validation extension element is malformed.')
     return xml.slice(0, close) + block + xml.slice(close)
   }
-  // No {78C0D931} extension yet: only the worksheet-level extLst (past
+  // No {CCE6A557} extension yet: only the worksheet-level extLst (past
   // sheetData) qualifies — cells may carry their own extLst.
   const ext = `<ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_XMLNS}">${block}</ext>`
   const extLstClose = xml.lastIndexOf('</extLst>')
@@ -353,8 +358,73 @@ function reconcileX14DataValidations(xml: string, entriesXml: string): string {
   return xml.slice(0, worksheetClose) + `<extLst>${ext}</extLst>` + xml.slice(worksheetClose)
 }
 
-/// Removes the {78C0D931} extension when the block removal left it without
-/// elements, and the extLst when that in turn left it without extensions.
+/// One worksheet extLst extension element: its open tag, its content and
+/// the `</ext>` closing it. ext elements never nest.
+interface X14Ext {
+  readonly start: number
+  readonly openEnd: number
+  readonly end: number
+}
+
+/// The ext element holding `index`, if any: the last `<ext …>` open tag
+/// before it whose `</ext>` still comes after.
+function extAround(xml: string, index: number): X14Ext | null {
+  let found: X14Ext | null = null
+  for (const match of xml.matchAll(EXT_OPEN_RE)) {
+    const start = match.index ?? 0
+    if (start >= index) break
+    if (match[0].endsWith('/>')) continue
+    const openEnd = start + match[0].length
+    const close = xml.indexOf('</ext>', openEnd)
+    if (close === -1) continue
+    const end = close + '</ext>'.length
+    if (end <= index) continue
+    found = { start, openEnd, end }
+  }
+  return found
+}
+
+/// Removes the worksheet's x14:dataValidations blocks. Excel keeps the block
+/// in the {CCE6A557} extension, but a file written by an older build may
+/// hold it in the conditional-formatting one, whose rules Excel ignores; the
+/// extension the removal empties goes with it, since an extension without
+/// elements is what Excel flags for repair.
+function removeX14DvBlocks(xml: string): string {
+  let out = xml
+  for (const block of [...out.matchAll(X14_DV_SECTION_RE)].reverse()) {
+    const index = block.index ?? 0
+    const ext = extAround(out, index)
+    const removed = block[0].length
+    out = out.slice(0, index) + out.slice(index + removed)
+    if (ext === null) continue
+    // The block sat inside the extension, so its end moved up by its size.
+    const end = ext.end - removed
+    if (out.slice(ext.openEnd, end - '</ext>'.length).includes('<')) continue
+    out = dropExt(out, { start: ext.start, openEnd: ext.openEnd, end })
+  }
+  return out
+}
+
+/// Removes the ext element and the extLst around it when that was its only
+/// extension — an extLst without extensions is what Excel flags for repair.
+function dropExt(xml: string, ext: X14Ext): string {
+  const stripped = xml.slice(0, ext.start) + xml.slice(ext.end)
+  // The enclosing extLst (a malformed worksheet may leave the ext bare);
+  // drop it too when this was its only extension.
+  const lstOpenAt = xml.lastIndexOf('<extLst', ext.start)
+  if (lstOpenAt === -1) return stripped
+  const lstOpen = /<extLst\b[^>]*>/.exec(xml.slice(lstOpenAt, ext.start))?.[0]
+  if (lstOpen === undefined) return stripped
+  const lstInnerStart = lstOpenAt + lstOpen.length
+  const lstClose = xml.indexOf('</extLst>', lstInnerStart)
+  if (lstClose === -1 || lstClose < ext.start) return stripped
+  const inner = xml.slice(lstInnerStart, ext.start) + xml.slice(ext.end, lstClose)
+  if (inner.includes('<')) return stripped
+  return xml.slice(0, lstOpenAt) + xml.slice(lstClose + '</extLst>'.length)
+}
+
+/// Removes the {CCE6A557} extension when it holds no elements, and the
+/// extLst when that in turn left it without extensions.
 function dropEmptyX14DvExt(xml: string): string {
   const extOpen = X14_DV_EXT_OPEN_RE.exec(xml)
   if (!extOpen || extOpen[0].endsWith('/>')) return xml
@@ -362,20 +432,11 @@ function dropEmptyX14DvExt(xml: string): string {
   if (close === -1) return xml
   const start = extOpen.index
   if (xml.slice(start + extOpen[0].length, close).includes('<')) return xml
-  const afterExt = close + '</ext>'.length
-  const stripped = xml.slice(0, start) + xml.slice(afterExt)
-  // The enclosing extLst (a malformed worksheet may leave the ext bare);
-  // drop it too when this was its only extension.
-  const lstOpenAt = xml.lastIndexOf('<extLst', start)
-  if (lstOpenAt === -1) return stripped
-  const lstOpen = /<extLst\b[^>]*>/.exec(xml.slice(lstOpenAt, start))?.[0]
-  if (lstOpen === undefined) return stripped
-  const lstInnerStart = lstOpenAt + lstOpen.length
-  const lstClose = xml.indexOf('</extLst>', lstInnerStart)
-  if (lstClose === -1 || lstClose < start) return stripped
-  const inner = xml.slice(lstInnerStart, start) + xml.slice(afterExt, lstClose)
-  if (inner.includes('<')) return stripped
-  return xml.slice(0, lstOpenAt) + xml.slice(lstClose + '</extLst>'.length)
+  return dropExt(xml, {
+    start,
+    openEnd: start + extOpen[0].length,
+    end: close + '</ext>'.length,
+  })
 }
 
 /// The file's own x14 entries for append mode: each loses the areas the batch
