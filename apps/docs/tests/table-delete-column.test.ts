@@ -77,7 +77,7 @@ afterEach(() => {
   editors.clear()
 })
 
-function createEditor(content: JsonNode[]): Editor {
+function createEditor(content: JsonNode): Editor {
   const editor = new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,

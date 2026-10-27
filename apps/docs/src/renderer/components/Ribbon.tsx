@@ -2905,7 +2905,7 @@ function RibbonInner({
                       </button>
                       {(
                         [
-                          ['ribbonDeleteColumn', IconColDelete, deleteTableColumn],
+                          ['ribbonDeleteColumn', IconColDelete, deleteTableColumn()],
                           ['ribbonDeleteRow', IconRowDelete, deleteRow],
                           ['ribbonDeleteTable', IconTableDelete, deleteTable],
                         ] as Array<[StringKey, (props: { size?: number }) => ReactNode, Command]>

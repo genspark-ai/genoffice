@@ -452,7 +452,7 @@ export function EditorContextMenu({
                 {(
                   [
                     ['ribbonDeleteRow', deleteRow],
-                    ['ribbonDeleteColumn', deleteTableColumn],
+                    ['ribbonDeleteColumn', deleteTableColumn()],
                     ['ribbonDeleteTable', deleteTable],
                   ] as Array<[StringKey, Command]>
                 ).map(([labelKey, command]) => (
