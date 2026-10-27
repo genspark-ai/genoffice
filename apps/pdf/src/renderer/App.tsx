@@ -265,6 +265,7 @@ import {
 } from './text-edit-preview'
 import { samplePaperColor } from './paper-sample'
 import type { LocalTextEdit, LocalTextInsert, TextDraft } from './text-edit-preview'
+import { buildOcrBakeInserts } from './ocr-bake'
 import { planEditOps, reduceBucket } from './edit-ops'
 import type { Bucket, Op, OpContext, PlanResult } from './edit-ops'
 import { rectsNear } from './edit-state'
@@ -1044,6 +1045,20 @@ export default function App() {
   docFontsRef.current = docFonts
   /** OCR results for scanned pages, keyed by original page index (reset per doc) */
   const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
+  /** the auto-OCR's words as white text inserts: baked into every save while the
+      recognition data is in the session (the post-save reload finds a text layer,
+      so the pass never re-runs and the bake never doubles) */
+  const ocrBakeInserts = useMemo(() => {
+    const out: LocalTextInsert[] = []
+    for (const [origIdx, data] of ocrPages) {
+      const geom = pageGeomRef.current(origIdx)
+      if (!geom) continue
+      for (const input of buildOcrBakeInserts(origIdx, data.words, geom)) {
+        out.push({ id: `ocr-bake-${origIdx}-${out.length}`, input })
+      }
+    }
+    return out
+  }, [ocrPages])
   /** One text extraction per loaded document, shared by search, paragraph boxes,
       the AI tools and the auto-OCR pass */
   const [searchIndexCache] = useState(createSearchIndexCache)
@@ -2007,7 +2022,8 @@ export default function App() {
     deleted.size > 0 ||
     order !== null ||
     metadata !== null ||
-    (pendingOutline?.edited ?? false)
+    (pendingOutline?.edited ?? false) ||
+    ocrBakeInserts.length > 0
   const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
   const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
   const dirty = redactions.length > 0 || ordinaryDirty
@@ -4298,7 +4314,10 @@ export default function App() {
     })),
     drawings: (noteFlush?.drawings ?? drawings).map((d) => d.input),
     textEdits: edits.map((e) => e.input),
-    textInserts: textInserts.map((insert) => insert.input),
+    textInserts: [
+      ...textInserts.map((insert) => insert.input),
+      ...ocrBakeInserts.map((insert) => insert.input),
+    ],
     imageEdits: imageEdits.map((e) => e.input),
     staticFormFills,
     stamps: stampCfg ? renderStamps(stampCfg, visList) : [],
@@ -4359,7 +4378,8 @@ export default function App() {
       (flushAll ? ordinaryDirty : savableDirty) ||
       edits !== textEdits ||
       noteFlush.drawings !== drawings ||
-      noteFlush.noteEdits !== noteEdits
+      noteFlush.noteEdits !== noteEdits ||
+      ocrBakeInserts.length > 0
     if (!anythingToSave || !filePath) return Promise.resolve(!anythingToSave)
     // An explicit save opts this file into autosave
     if (!autosave) savedOnceRef.current = true
