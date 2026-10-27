@@ -6238,9 +6238,9 @@ export default function App() {
       return
     }
     const savedPct =
-      outcome.bytesBefore > 0
-        ? Math.max(1, Math.round((1 - outcome.bytesAfter / outcome.bytesBefore) * 100))
-        : 0
+      outcome.bytesBefore > 0 ? Math.round((1 - outcome.bytesAfter / outcome.bytesBefore) * 100) : 0
+    // a run that came out bigger writes nothing and lands here as <= 0%: the
+    // toast says the file is already small instead of inventing a reduction
     showNotice(savedPct > 0 ? t('reduceDone', { pct: savedPct }) : t('reduceAlreadySmall'))
   }
 
@@ -8529,7 +8529,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    disabled={status !== 'ready'}
+                    disabled={status !== 'ready' || readOnly}
                     data-tip={t('reduceHint')}
                     onClick={() => void reduceFileSize()}
                   >

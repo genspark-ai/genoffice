@@ -1,5 +1,5 @@
 import { deflateSync, inflateSync } from 'node:zlib'
-import { PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib'
 
 /**
  * Reduce File Size, the parts that are safe without re-rendering anything:
@@ -55,11 +55,20 @@ function decodeFlate(contents: Uint8Array, dict: PDFDict): Uint8Array | null {
   }
 }
 
-function channelCount(colorSpace: string): 1 | 3 | 4 | 0 {
-  if (/DeviceGray|CalGray|^\/G$/.test(colorSpace)) return 1
-  if (/DeviceRGB|CalRGB|^\/RG$/.test(colorSpace)) return 3
-  if (/DeviceCMYK|^\/CM$/.test(colorSpace)) return 4
-  return 0
+function channelCount(name: PDFName | undefined): 1 | 3 | 4 | 0 {
+  // Only bare device names, resolved through the context: a regex over the
+  // stringified object matched /DeviceN [/DeviceCMYK …] and recolored the
+  // image, while Indexed/Separation/ICCBased passed by accident.
+  switch (name?.asString()) {
+    case '/DeviceGray':
+      return 1
+    case '/DeviceRGB':
+      return 3
+    case '/DeviceCMYK':
+      return 4
+    default:
+      return 0
+  }
 }
 
 /**
@@ -85,7 +94,8 @@ export function shrinkDocument(
       if (width === 0 || height === 0) continue
       if (Math.max(width, height) <= maxDimension) continue
       if (asInt(dict.get(PDFName.of('BitsPerComponent')) ?? 8) !== 8) continue
-      const channels = channelCount(String(dict.get(PDFName.of('ColorSpace')) ?? ''))
+      const cs = doc.context.lookupMaybe(dict.get(PDFName.of('ColorSpace')), PDFName)
+      const channels = channelCount(cs)
       if (channels === 0) continue
       const decoded = filter === '/FlateDecode' ? decodeFlate(obj.contents, dict) : null
       if (!decoded || decoded.length < width * height * channels) continue
@@ -93,16 +103,17 @@ export function shrinkDocument(
       const newWidth = Math.max(1, Math.floor(width * scale))
       const newHeight = Math.max(1, Math.floor(height * scale))
       const pixels = resamplePixels(decoded, width, height, channels, newWidth, newHeight)
-      const freshDict = doc.context.obj({
-        Type: 'XObject',
-        Subtype: 'Image',
-        Width: newWidth,
-        Height: newHeight,
-        ColorSpace: channels === 1 ? 'DeviceGray' : channels === 3 ? 'DeviceRGB' : 'DeviceCMYK',
-        BitsPerComponent: 8,
-        Filter: 'FlateDecode',
-      })
-      doc.context.assign(ref, PDFRawStream.of(freshDict, deflateSync(pixels, { level: 9 })))
+      // Clone the producer's dict and retitle only the geometry: a fresh
+      // five-key dict dropped /SMask, /Mask, /Decode, /Interpolate, /Intent,
+      // /OC, /StructParent and /Metadata — transparency turned opaque and
+      // inverted CMYK/gray flipped. The color space is untouched: only bare
+      // device names qualify, so the channels already describe this dict.
+      const freshDict = dict.clone()
+      freshDict.set(PDFName.of('Width'), PDFNumber.of(newWidth))
+      freshDict.set(PDFName.of('Height'), PDFNumber.of(newHeight))
+      const packed = deflateSync(pixels, { level: 9 })
+      freshDict.set(PDFName.of('Length'), PDFNumber.of(packed.length))
+      doc.context.assign(ref, PDFRawStream.of(freshDict, packed))
       imagesDownsampled++
       continue
     }

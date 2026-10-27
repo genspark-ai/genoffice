@@ -1636,18 +1636,34 @@ function registerPdfIpc(): void {
     }
     const parent = BrowserWindow.fromWebContents(e.sender)
     const base = basename(path).replace(/\.pdf$/i, '')
+    // the file name belongs in defaultPath: `title` only labels the dialog and
+    // leaves the name field empty with no directory
+    const filters = [{ name: tm('filterPdf'), extensions: ['pdf'] }]
     const picked = parent
       ? await dialog.showSaveDialog(parent, {
-          title: base + '-small.pdf',
-          filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
+          defaultPath: base + '-small.pdf',
+          filters,
         })
-      : await dialog.showSaveDialog({ defaultPath: base + '-small.pdf' })
+      : await dialog.showSaveDialog({ defaultPath: base + '-small.pdf', filters })
     if (picked.canceled || !picked.filePath) return { ok: false as const, canceled: true }
     try {
       const source = new Uint8Array(await readFile(path))
       const doc = await PDFDocument.load(source, { updateMetadata: false })
       const result = shrinkDocument(doc)
-      const after = await doc.save({ useObjectStreams: false })
+      // Object streams stay on: turning them off expands any file whose
+      // producer used them — bigger output that the toast reported as a
+      // reduction. A run that does not come out smaller writes nothing.
+      const after = await doc.save({ useObjectStreams: true })
+      if (after.length >= source.length) {
+        return {
+          ok: true as const,
+          targetPath: picked.filePath,
+          bytesBefore: source.length,
+          bytesAfter: after.length,
+          streamsRecompressed: result.streamsRecompressed,
+          imagesDownsampled: result.imagesDownsampled,
+        }
+      }
       await writePdfAtomically(picked.filePath, after)
       return {
         ok: true as const,
