@@ -657,9 +657,19 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       // SetNumfmt mutations journal like any format edit either way.
       stepSelectionDecimals(runtime, command === 'decimal-inc' ? 1 : -1)
       return
-    case 'filter-toggle':
-      void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter')
+    case 'filter-toggle': {
+      // A declined command — nothing selected, a range the filter cannot take —
+      // says nothing on its own, and a filter that never appeared reads as a dead
+      // button. While the sheet is still loading, the gate in App.tsx already
+      // says why (a footer note, a "load it all" prompt, or the projection
+      // path's own progress), so this stays quiet rather than talking over it.
+      const lazy = ctx.lazyWorkbookRef.current
+      const stillLoading = lazy !== null && !lazy.flags.preloadComplete
+      void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter').then((ok) => {
+        if (ok === false && !stillLoading) ctx.setMessage(t('appFilterToggleFailed'))
+      })
       return
+    }
     case 'autofit-row-height':
     case 'autofit-col-width': {
       if (!worksheet) return

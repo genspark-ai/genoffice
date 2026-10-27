@@ -347,6 +347,7 @@ export const tr = {
   appPivotSheetNoMove: 'Bu sayfa bir PivotTable içeriyor — aralık taşıma henüz desteklenmiyor.',
   appMergeOverTable:
     'Seçim bir Excel tablosuyla çakışıyor — tablo içinde hücre birleştirme henüz desteklenmiyor.',
+  appFilterToggleFailed: 'Filtre uygulanmadı — önce verilerinizin bulunduğu aralığı seçin.',
   appAutofillStreaming: 'Hâlâ akışla yüklenen bir alana otomatik doldurmaya henüz izin verilmiyor.',
   appDvNeedsIndexed:
     'Veri doğrulamayı düzenlemek için önce bu sayfanın tamamen dizinlenmesi gerekir — birazdan yeniden deneyin.',

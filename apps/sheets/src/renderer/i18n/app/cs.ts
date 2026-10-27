@@ -344,6 +344,7 @@ export const cs = {
     'Tento list obsahuje kontingenční tabulku — přesouvání oblastí zatím není podporováno.',
   appMergeOverTable:
     'Výběr se překrývá s tabulkou Excelu — slučování buněk v tabulce zatím není podporováno.',
+  appFilterToggleFailed: 'Filtr nebyl použit — nejprve vyberte oblast s daty.',
   appAutofillStreaming:
     'Automatické vyplnění do oblasti, která se stále načítá, zatím není povoleno.',
   appDvNeedsIndexed:
