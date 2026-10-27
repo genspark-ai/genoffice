@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildOcrBakeInserts, groupLines } from '../src/renderer/ocr-bake'
+import { pdfToView } from '../src/renderer/annotations'
 import type { OcrWord } from '../src/renderer/ocr-layer'
 
 const geom = { pw: 595, ph: 842, rot: 0, x0: 0, y0: 0 }
@@ -59,6 +60,22 @@ describe('buildOcrBakeInserts', () => {
       ...geom,
       rot: 90,
     })
+    expect(inserts[0]!.rotate).toBe(90)
+  })
+
+  it('places the origin through display space on a rotated page', () => {
+    // A line that is horizontal in DISPLAY space on a /Rotate 90 page: its
+    // user-space box runs vertically (x 80..92, y 100..300), mapping to a
+    // display box x 100..300, y 80..92 (y down). The baseline must sit
+    // 12*0.22 above the display box bottom on the line's display-left edge;
+    // a user-space min-x/min-y origin disagrees with the writer's
+    // counter-rotation for every non-zero rotation.
+    const g = { pw: 612, ph: 792, rot: 90, x0: 0, y0: 0 }
+    const inserts = buildOcrBakeInserts(0, [word('x', 80, 100, 12, 200)], g)
+    const [ux, uy] = inserts[0]!.origin
+    const [vx, vy] = pdfToView(g, ux, uy)
+    expect(vx).toBeCloseTo(100)
+    expect(vy).toBeCloseTo(92 - 12 * 0.22)
     expect(inserts[0]!.rotate).toBe(90)
   })
 })

@@ -2022,8 +2022,12 @@ export default function App() {
     deleted.size > 0 ||
     order !== null ||
     metadata !== null ||
-    (pendingOutline?.edited ?? false) ||
-    ocrBakeInserts.length > 0
+    (pendingOutline?.edited ?? false)
+  // The pending OCR bake deliberately stays out of dirty: a scan the user only
+  // opened to read must not show the modified marker, prompt on close or feed
+  // the save-in-flight plumbing. The bake still rides the save request
+  // (anythingToSave keeps it), so an explicit ⌘S writes it — a user action —
+  // and everything the reader does afterwards sees a text layer.
   const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
   const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
   const dirty = redactions.length > 0 || ordinaryDirty
