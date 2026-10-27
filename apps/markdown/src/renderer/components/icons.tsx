@@ -221,6 +221,14 @@ export function IconPalette(props: IconProps) {
   )
 }
 
+/** A tag: the # glyph */
+export function IconTag(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10 4v9a3 3 0 0 0 6 0V8a5 5 0 0 0-10 0v6" strokeLinecap="round" />
+    </Svg>
+  )
+}
 export function IconBacklinks(props: IconProps) {
   return (
     <Svg {...props}>

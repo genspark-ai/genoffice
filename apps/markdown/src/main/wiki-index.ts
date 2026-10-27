@@ -86,11 +86,52 @@ export function extractWikiTargets(text: string): string[] {
 
 const WIKI_TARGET_RE = /!?\[\[([^[|\n]+?)(?:\|[^[|\n]*)?\]\]/g
 
+/**
+ * `#tag` as Obsidian reads it: `#` followed by a letter (any script), then
+ * letters/digits/`-`/`_`/`/`. Not a heading (`#` needs a space after to be
+ * one), not inside a fence or inline code — the same stripping walk
+ * extractWikiTargets uses.
+ */
+const TAG_RE = /(^|[^\w#])#(\p{L}[\p{L}\p{N}/_-]*)/gu
+
+export function extractTags(text: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  let inFence = false
+  let fence = ''
+  for (const line of text.split('\n')) {
+    const opens = /^\s{0,3}(```|~~~)/.exec(line)
+    if (opens) {
+      const marker = opens[1]!
+      if (!inFence) {
+        inFence = true
+        fence = marker
+      } else if (marker === fence) {
+        inFence = false
+        fence = ''
+      }
+      continue
+    }
+    if (inFence) continue
+    const clean = line.replace(/`[^`\n]*`/g, ' ')
+    for (const match of clean.matchAll(TAG_RE)) {
+      const tag = match[2]!
+      if (!seen.has(tag)) {
+        seen.add(tag)
+        out.push(tag)
+      }
+    }
+  }
+  return out
+}
+
 export interface VaultFileEntry {
   path: string
   mtimeMs: number
   /** the targets this file's links carry, deduplicated in order */
   targets: string[]
+  /** the #tags this file carries, deduplicated in order */
+  tags: string[]
 }
 
 interface IndexState {
@@ -147,12 +188,15 @@ function refreshFiles(root: string, fs: VaultFs): Promise<IndexState> {
           const known = state.files.get(path)
           if (known && known.mtimeMs === mtimeMs) continue
           let targets: string[]
+          let tags: string[]
           try {
-            targets = extractWikiTargets(await fs.read(path))
+            const text = await fs.read(path)
+            targets = extractWikiTargets(text)
+            tags = extractTags(text)
           } catch {
             continue // unreadable this round; the next one retries
           }
-          state.files.set(path, { path, mtimeMs, targets })
+          state.files.set(path, { path, mtimeMs, targets, tags })
           state.edges.delete(path)
         }
         if (seen.size >= MAX_INDEX_FILES || depth + 1 > MAX_DEPTH) continue
@@ -263,6 +307,31 @@ export async function wikiBacklinks(
     }
   }
   return out
+}
+
+export interface WikiTagEntry {
+  tag: string
+  /** absolute paths of notes carrying the tag, sorted */
+  files: string[]
+}
+
+/**
+ * Every #tag in the vault with the notes that carry it, most-used first.
+ * Falls out of the same index the backlinks and graph read — no second walk.
+ */
+export async function wikiTags(root: string, fs: VaultFs): Promise<WikiTagEntry[]> {
+  const state = await refreshFiles(root, fs)
+  const byTag = new Map<string, string[]>()
+  for (const [path, entry] of state.files) {
+    for (const tag of entry.tags) {
+      const list = byTag.get(tag)
+      if (list) list.push(path)
+      else byTag.set(tag, [path])
+    }
+  }
+  return [...byTag.entries()]
+    .map(([tag, files]) => ({ tag, files: files.sort() }))
+    .sort((a, b) => b.files.length - a.files.length || (a.tag < b.tag ? -1 : 1))
 }
 
 export interface WikiGraphNode {
