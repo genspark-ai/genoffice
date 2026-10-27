@@ -1661,6 +1661,52 @@ button {
   gap: 8px;
 }
 
+/* Label rows inside form dialogs: control left, label beside it, one per line */
+.pdf-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.pdf-perm-row > span:first-child {
+  min-width: 150px;
+}
+
+.pdf-perm-row > input[type='text'],
+.pdf-perm-row > input[type='number'],
+.pdf-perm-row > input[type='password'] {
+  flex: 1;
+}
+
+/* Bates preview: a page outline with the number strips where the position puts them */
+.pdf-bates-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.pdf-bates-preview-page {
+  height: 64px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+}
+
+.pdf-bates-preview-strip {
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pdf-bates-positions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 16px;
+}
+
 /* Genspark DS modal footer buttons: secondary = bg-subtle, primary = black (#232425) */
 .pdf-modal-btn {
   display: inline-flex;

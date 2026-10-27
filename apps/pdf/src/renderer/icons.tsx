@@ -109,6 +109,12 @@ export const IconCertSign = () => (
     <path d="M9 13.4 L7.5 19.5 L12 17.4 L16.5 19.5 L15 13.4" />
   </Icon>
 )
+/** Bates numbering: a # with a page corner */
+export const IconBates = () => (
+  <Icon>
+    <path d="M9 5 L7 19 M13 5 L11 19 M6.5 9 L17.5 9 M5.8 14 L16.8 14" />
+  </Icon>
+)
 /** Signature panel: a shield with a check mark */
 export const IconSignatures = () => (
   <Icon>

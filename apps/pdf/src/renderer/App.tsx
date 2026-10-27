@@ -134,6 +134,8 @@ import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
 import { CertSignDialog } from './CertSignDialog'
+import { BatesDialog } from './BatesDialog'
+import { buildBatesInserts, type BatesConfig } from './bates'
 import { SignaturesDialog, overallSignatureStatus } from './SignaturesDialog'
 import { SignatureDialog, fileToCanvas } from './SignatureDialog'
 import type { SignatureData } from './SignatureDialog'
@@ -285,6 +287,7 @@ import {
   IconSign,
   IconCertSign,
   IconSignatures,
+  IconBates,
   IconPreviousField,
   IconNextField,
   IconCompleteForm,
@@ -847,6 +850,7 @@ export default function App() {
   /** Certificate (digital) signatures found in the file on disk, verified by the main process */
   const [digitalSignatures, setDigitalSignatures] = useState<PdfSignatureInfo[]>([])
   const [certSignDlg, setCertSignDlg] = useState(false)
+  const [batesDlg, setBatesDlg] = useState(false)
   const [signaturesDlg, setSignaturesDlg] = useState(false)
   /** Confirmed signature awaiting placement; when non-null the page enters click-to-place mode */
   const [pendingSign, setPendingSign] = useState<SignatureData | null>(null)
@@ -4887,6 +4891,25 @@ export default function App() {
     prepareStaticFormFill('text', image)
   }
 
+  const applyBates = (config: BatesConfig): void => {
+    const fontOf = (size: number) => `${size}px ${getComputedStyle(document.body).fontFamily}`
+    const inserts = buildBatesInserts(
+      sizes.map((_, i) => {
+        const geom = pageGeom(i)
+        return { width: geom.pw, height: geom.ph, rotate: geom.rot, x0: geom.x0, y0: geom.y0 }
+      }),
+      config,
+      (text, size) => measureTextWidth(text, fontOf(size)),
+    )
+    if (inserts.length === 0) {
+      setBatesDlg(false)
+      return
+    }
+    applyEditOps(inserts.map((input) => ({ op: 'addTextInsert' as const, input })))
+    setBatesDlg(false)
+    showNotice(t('batesApplied', { count: inserts.length }))
+  }
+
   const placeTextInsert = (origIdx: number, vx: number, vy: number) => {
     const pending = pendingTextInsert
     if (!pending) return
@@ -8175,6 +8198,17 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
+                    disabled={readOnly || sizes.length === 0}
+                    data-tip={t('batesHint')}
+                    onClick={() => setBatesDlg(true)}
+                  >
+                    <span className="rb-big-icon">
+                      <IconBates />
+                    </span>
+                    <span>{t('bates')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
                     disabled={curOrigIdx < 0 || readOnly}
                     onClick={openReplaceDlg}
                   >
@@ -10378,6 +10412,14 @@ export default function App() {
                   setPropsDlg(false)
                   applyEditOps([{ op: 'setMetadata', metadata: meta }])
                 }}
+              />
+            )}
+            {batesDlg && (
+              <BatesDialog
+                t={t}
+                pageCount={sizes.length}
+                onApply={applyBates}
+                onClose={() => setBatesDlg(false)}
               />
             )}
             {certSignDlg && (
