@@ -367,7 +367,8 @@ export const pt = {
     'A seleção sobrepõe uma tabela do Excel — mesclar células dentro de uma tabela ainda não é suportado.',
   appAutofillStreaming:
     'O preenchimento automático em uma área ainda em streaming não é permitido por enquanto.',
-  appFilterToggleFailed: 'O filtro não foi aplicado — selecione primeiro o intervalo com seus dados.',
+  appFilterToggleFailed:
+    'O filtro não foi aplicado — selecione primeiro o intervalo com seus dados.',
   appDvNeedsIndexed:
     'Editar a validação de dados requer que esta planilha seja totalmente indexada primeiro — tente novamente em instantes.',
   appPivotSheetNoDuplicate:
