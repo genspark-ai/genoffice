@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-undef */
 // Probe the web UI with the system Chrome: load each editor page, wait for the
 // renderer to boot, and report what came up. Run with the app's playwright-core:
 //   node scripts/web-browser-probe.mjs [baseURL]

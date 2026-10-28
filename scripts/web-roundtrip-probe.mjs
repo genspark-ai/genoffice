@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-undef */
 // Round-trip probe: open report.docx in the browser, type into the editor,
 // save (Ctrl+S), and verify the file on disk gained the typed text.
 import { createRequire } from 'node:module'

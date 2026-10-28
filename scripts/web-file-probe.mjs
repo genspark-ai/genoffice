@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-undef */
 // Deep probe: open real documents through the web bridge and assert the
 // editors render their content. node scripts/web-file-probe.mjs [baseURL]
 import { createRequire } from 'node:module'
