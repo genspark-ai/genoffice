@@ -288,16 +288,12 @@ fn run(
                 if formatted.is_empty() && !is_formula {
                     continue;
                 }
-                // Known engine gaps where the file's cached value beats the
-                // error: CELL("filename") is unimplemented (#175) and RATE's
-                // Newton solver dies near -100% where Excel converges (#185).
-                if formatted.starts_with('#') {
+                // Known engine gap where the file's cached value beats the
+                // error: RATE's Newton solver dies near -100% where Excel
+                // converges (#185).
+                if formatted == "#NUM!" {
                     if let Some(text) = &formula {
-                        let upper = text.to_uppercase();
-                        if upper.contains("CELL(") && upper.contains("\"FILENAME\"") {
-                            continue;
-                        }
-                        if formatted == "#NUM!" && upper.contains("RATE(") {
+                        if text.to_uppercase().contains("RATE(") {
                             continue;
                         }
                     }
@@ -554,7 +550,9 @@ fn references_a_sheet_of_this_workbook(formula: &str, names: &[String]) -> bool 
 /// reference parses or not, so the file's cached value is the only truth.
 /// A digits-only `[N]` is not enough on its own — an R1C1 offset brackets a
 /// number too (`C[0]`) — so the bracket must be followed by a sheet name
-/// and `!` to count as a workbook index.
+/// and `!` to count as a workbook index. A name with spaces or CJK
+/// characters only appears quoted, and Excel forbids `[` inside a sheet
+/// name, so a `'` right before the bracket is always the external form.
 fn references_an_external_workbook(formula: &str) -> bool {
     let code = blank_text_literals(formula);
     let bytes = code.as_bytes();
@@ -569,12 +567,29 @@ fn references_an_external_workbook(formula: &str) -> bool {
         if end == at + 1 || end >= bytes.len() || bytes[end] != b']' {
             continue;
         }
+        // `'[1]Sheet Name'!A1` — the opening quote precedes the bracket, so
+        // the sheet name runs to the closing quote: spaces, CJK, anything
+        if at > 0 && bytes[at - 1] == b'\'' {
+            let mut close = end + 1;
+            while close < bytes.len() && bytes[close] != b'\'' {
+                close += 1;
+            }
+            if bytes.get(close + 1) == Some(&b'!') {
+                return true;
+            }
+            continue;
+        }
         let mut after = end + 1;
         if bytes.get(after) == Some(&b'\'') {
             after += 1;
         }
         let name_start = after;
-        while after < bytes.len() && (bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_')
+        // word characters, or any non-ASCII byte: a CJK sheet name needs no
+        // quotes (`[1]数据!A1`), while a space does and lands in the branch above
+        while after < bytes.len()
+            && (bytes[after].is_ascii_alphanumeric()
+                || bytes[after] == b'_'
+                || bytes[after] >= 0x80)
         {
             after += 1;
         }
@@ -1099,6 +1114,19 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn an_external_reference_with_a_spaced_or_cjk_sheet_name_is_recognised() {
+        assert!(references_an_external_workbook("'[1]Sheet Name'!A1"));
+        assert!(references_an_external_workbook("SUM('[1]Sheet Name'!A1:B2)"));
+        // a CJK name needs no quotes
+        assert!(references_an_external_workbook("[1]数据!A1"));
+        // an R1C1 offset is still not an external workbook, quoted or not
+        assert!(!references_an_external_workbook("R[1]C[0]"));
+        assert!(!references_an_external_workbook("'My Sheet'!R[1]C[0]"));
+        // a workbook index in a text literal is not a reference
+        assert!(!references_an_external_workbook(r#""[1]Sheet Name""#));
+    }
+
     fn write_external_link_fixture(path: &Path) {
         use std::io::Write;
         let entries: [(&str, &str); 8] = [
@@ -1132,7 +1160,7 @@ mod tests {
             ),
             (
                 "xl/worksheets/sheet1.xml",
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C2"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row></sheetData></worksheet>"#,
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C3"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row><row r="3"><c r="A3"><f>'[1]Sheet Name'!A1+1</f><v>43</v></c><c r="B3"><f>[1]数据!A1+1</f><v>8</v></c></row></sheetData></worksheet>"#,
             ),
         ];
         let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
@@ -1162,7 +1190,7 @@ mod tests {
                 sheet: "Sheet1".into(),
                 range: CellRange {
                     start_row: 0,
-                    end_row: 1,
+                    end_row: 2,
                     start_column: 0,
                     end_column: 2,
                 },
@@ -1194,6 +1222,15 @@ mod tests {
         assert_eq!(
             (at(1, 1).formatted.as_str(), at(1, 1).is_formula),
             ("94", true)
+        );
+        // a spaced sheet name (quoted) and a CJK one (bare) pin just the same
+        assert_eq!(
+            (at(2, 0).formatted.as_str(), at(2, 0).is_formula),
+            ("43", false)
+        );
+        assert_eq!(
+            (at(2, 1).formatted.as_str(), at(2, 1).is_formula),
+            ("8", false)
         );
     }
 
