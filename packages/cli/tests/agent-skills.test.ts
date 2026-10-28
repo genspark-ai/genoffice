@@ -9,10 +9,13 @@ import {
   buildSkillZip,
   bundledSkillFrom,
   compareVersions,
+  currentSkillInstalled,
   detectAgents,
+  findLegacySkillCopies,
   installSkill,
   parseSkillFrontmatter,
   readInstallState,
+  sweepLegacySkillCopies,
   uninstallSkill,
   type SkillLedger,
 } from '../src/agent-skills'
@@ -192,5 +195,71 @@ describe('buildSkillZip', () => {
     const zip = await JSZip.loadAsync(await buildSkillZip(b))
     expect(Object.keys(zip.files).filter((f) => !zip.files[f]!.dir)).toEqual(['genoffice/SKILL.md'])
     expect(await zip.file('genoffice/SKILL.md')!.async('string')).toBe(b.text)
+  })
+})
+
+describe('the legacy per-tool skill copies', () => {
+  it('are found through the ledger, not by guessing', () => {
+    const h = home()
+    const ledger: SkillLedger = {}
+    const b = bundled()
+    // a copy this app wrote in the old layout
+    installSkill(join(h, '.codex', 'skills'), b, ledger)
+    // a copy in a folder the ledger does not know: not ours to touch
+    mkdirSync(join(h, '.gemini', 'skills', 'genoffice'), { recursive: true })
+    writeFileSync(join(h, '.gemini', 'skills', 'genoffice', 'SKILL.md'), 'hand written\n')
+
+    const found = findLegacySkillCopies(ledger, {}, h)
+    expect(found.map((c) => c.agent)).toEqual(['codex'])
+    expect(found[0]).toMatchObject({
+      label: 'Codex',
+      skillsDir: join(h, '.codex', 'skills'),
+      ours: true,
+    })
+  })
+
+  it('sweep away the copies this app wrote and keep the edited ones', () => {
+    const h = home()
+    const ledger: SkillLedger = {}
+    const b = bundled()
+    const codexPath = installSkill(join(h, '.codex', 'skills'), b, ledger)
+    const cursorPath = installSkill(join(h, '.cursor', 'skills'), b, ledger)
+    // someone edited this one by hand
+    writeFileSync(cursorPath, 'my own version\n')
+
+    const sweep = sweepLegacySkillCopies(ledger, {}, h)
+    expect(sweep.removed.map((c) => c.agent)).toEqual(['codex'])
+    expect(sweep.kept.map((c) => c.agent)).toEqual(['cursor'])
+    expect(existsSync(codexPath)).toBe(false)
+    expect(existsSync(join(h, '.codex', 'skills', 'genoffice'))).toBe(false)
+    expect(existsSync(cursorPath)).toBe(true)
+    expect(ledger[codexPath]).toBeUndefined()
+    expect(ledger[cursorPath]).toBeDefined()
+  })
+
+  it('follow the env overrides the old layout used', () => {
+    const h = home()
+    const ledger: SkillLedger = {}
+    const b = bundled()
+    const codexPath = installSkill(join(h, 'codex-elsewhere', 'skills'), b, ledger)
+    const opencodePath = installSkill(join(h, 'cfg', 'opencode', 'skills'), b, ledger)
+
+    const found = findLegacySkillCopies(
+      ledger,
+      { CODEX_HOME: join(h, 'codex-elsewhere'), XDG_CONFIG_HOME: join(h, 'cfg') },
+      h,
+    )
+    expect(found.map((c) => c.path).sort()).toEqual([codexPath, opencodePath].sort())
+  })
+
+  it('the shared .agents copy gates the sweep', () => {
+    const h = home()
+    const ledger: SkillLedger = {}
+    const b = bundled()
+    installSkill(join(h, '.codex', 'skills'), b, ledger)
+    expect(currentSkillInstalled(ledger, {}, h)).toBe(false)
+
+    installSkill(join(h, '.agents', 'skills'), b, ledger)
+    expect(currentSkillInstalled(ledger, {}, h)).toBe(true)
   })
 })
