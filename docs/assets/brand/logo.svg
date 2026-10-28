@@ -1,21 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <!-- GenOffice logo: four folded pages (one per editor, in its accent) drawn
-       into a pinwheel whose negative space is the AI spark.
+       into a pinwheel whose negative space is the AI spark. Each blade's corner
+       tucks over its neighbor; the interlock cycle is closed by the two last-drawn
+       patches (north over west, east over north).
        Master for icon.png / icon.ico / icon.icns / icon-mac.png — regenerate with:
        node_modules/.bin/electron tools/build-icons.cjs -->
-  <g transform="translate(100 100) scale(0.89)"
-     stroke-linejoin="round" stroke-width="28" stroke-linecap="round">
-    <!-- north: docs blue -->
-    <polygon points="512,112 660,500 512,392 364,500"
-             fill="#0f7fff" stroke="#0f7fff"/>
-    <!-- east: sheets green -->
-    <polygon points="512,112 660,500 512,392 364,500"
-             fill="#16a34a" stroke="#16a34a" transform="rotate(90 512 512)"/>
-    <!-- south: slides orange -->
-    <polygon points="512,112 660,500 512,392 364,500"
-             fill="#f97316" stroke="#f97316" transform="rotate(180 512 512)"/>
-    <!-- west: pdf red -->
-    <polygon points="512,112 660,500 512,392 364,500"
-             fill="#ef4444" stroke="#ef4444" transform="rotate(270 512 512)"/>
+<g transform="translate(100 100) scale(0.89)" stroke-linejoin="round" stroke-width="28" stroke-linecap="round">
+    <polygon points="512,112 660,500 512,392 364,500" fill="#0f7fff" stroke="#0f7fff"/>
+    <polygon points="512,112 660,500 512,392 364,500" fill="#16a34a" stroke="#16a34a" transform="rotate(90 512 512)"/>
+    <polygon points="512,112 660,500 512,392 364,500" fill="#f97316" stroke="#f97316" transform="rotate(180 512 512)"/>
+    <polygon points="512,112 660,500 512,392 364,500" fill="#ef4444" stroke="#ef4444" transform="rotate(270 512 512)"/>
+    <polygon points="512,112 512,392 364,500" fill="#0f7fff" stroke="#0f7fff"/><polygon points="524,364 660,440 632,512" fill="#16a34a" stroke="#16a34a"/>
   </g>
 </svg>
