@@ -5069,6 +5069,15 @@ export function createSlidesView(openPath?: string | null): WebContentsView {
   return view
 }
 
+/** web-server mode: a browser tab registers like a desktop view tab (no
+ *  vibrancy — that is a native-window surface). The bridge's tab object covers
+ *  everything trackSlidesWebContents touches (id/destroyed/send). */
+export function trackWebSlidesTab(webContents: WebContents, openPath?: string | null): void {
+  registerSlidesIpc()
+  trackSlidesWebContents(webContents)
+  if (openPath && existsSync(openPath)) pendingByWc.set(webContents.id, openPath)
+}
+
 /** Items the shell injects into the File menu (e.g. Back to Home) */
 let extraFileMenuItems: Electron.MenuItemConstructorOptions[] = []
 export function setSlidesExtraFileMenuItems(items: Electron.MenuItemConstructorOptions[]): void {
