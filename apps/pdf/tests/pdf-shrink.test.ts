@@ -79,4 +79,128 @@ describe('shrinkDocument', () => {
     const after = await doc.save()
     expect(after.length).toBe(before.length)
   })
+
+  it('skips an oversized ICCBased image without throwing', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([300, 300])
+    // an array colour space, as photo scans carry: [/ICCBased <stream ref>]
+    const icc = doc.context.nextRef()
+    doc.context.assign(
+      icc,
+      PDFRawStream.of(doc.context.obj({ N: 3, Length: 2 }), new Uint8Array([0, 0])),
+    )
+    const w = 4000
+    const pixels = new Uint8Array(w * 100 * 3).fill(200)
+    const dict = doc.context.obj({
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: w,
+      Height: 100,
+      ColorSpace: doc.context.obj([PDFName.of('ICCBased'), icc]),
+      BitsPerComponent: 8,
+      Filter: 'FlateDecode',
+      Length: 1,
+    })
+    const ref = doc.context.nextRef()
+    doc.context.assign(ref, PDFRawStream.of(dict, deflateSync(pixels)))
+    // lookupMaybe on the array used to raise UnexpectedObjectTypeError and
+    // abort the whole run; the array is now simply not a device colour space
+    const result = shrinkDocument(doc)
+    expect(result.imagesDownsampled).toBe(0)
+  })
+
+  it('keeps an /SMask pair intact when only one side could shrink', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([300, 300])
+    const w = 4000
+    const h = 1000
+    // base: DCT (never touched) — the mask's dimensions must follow it
+    const baseDict = doc.context.obj({
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: w,
+      Height: h,
+      ColorSpace: 'DeviceRGB',
+      BitsPerComponent: 8,
+      Filter: 'DCTDecode',
+      Length: 4,
+    })
+    const baseRef = doc.context.nextRef()
+    doc.context.assign(baseRef, PDFRawStream.of(baseDict, new Uint8Array([1, 2, 3, 4])))
+    // mask: oversized Flate gray — a candidate on its own, but its base is not
+    const maskPixels = new Uint8Array(w * h).fill(128)
+    const maskRef = doc.context.nextRef()
+    doc.context.assign(
+      maskRef,
+      PDFRawStream.of(
+        doc.context.obj({
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: w,
+          Height: h,
+          ColorSpace: 'DeviceGray',
+          BitsPerComponent: 8,
+          Filter: 'FlateDecode',
+          Length: 1,
+        }),
+        deflateSync(maskPixels),
+      ),
+    )
+    baseDict.set(PDFName.of('SMask'), maskRef)
+    const result = shrinkDocument(doc)
+    expect(result.imagesDownsampled).toBe(0)
+    expect(
+      String((doc.context.lookup(maskRef) as PDFRawStream).dict.get(PDFName.of('Width'))),
+    ).toBe(String(w))
+  })
+
+  it('shrinks an /SMask pair together so the dimensions still match', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([300, 300])
+    const w = 4000
+    const h = 1000
+    const baseRef = doc.context.nextRef()
+    doc.context.assign(
+      baseRef,
+      PDFRawStream.of(
+        doc.context.obj({
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: w,
+          Height: h,
+          ColorSpace: 'DeviceRGB',
+          BitsPerComponent: 8,
+          Filter: 'FlateDecode',
+          Length: 1,
+        }),
+        deflateSync(new Uint8Array(w * h * 3).fill(200)),
+      ),
+    )
+    const maskRef = doc.context.nextRef()
+    const maskDict = doc.context.obj({
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: w,
+      Height: h,
+      ColorSpace: 'DeviceGray',
+      BitsPerComponent: 8,
+      Filter: 'FlateDecode',
+      Length: 1,
+    })
+    doc.context.assign(maskRef, PDFRawStream.of(maskDict, deflateSync(new Uint8Array(w * h))))
+    ;(doc.context.lookup(baseRef) as PDFRawStream).dict.set(PDFName.of('SMask'), maskRef)
+    // a mask with /Matte must never shrink apart from its base
+    maskDict.set(PDFName.of('Matte'), doc.context.obj([1, 0, 0, -1, 0, h]))
+    const withMatte = shrinkDocument(doc)
+    expect(withMatte.imagesDownsampled).toBe(0)
+    // without the Matte the pair shrinks to the same new dimensions
+    maskDict.delete(PDFName.of('Matte'))
+    const paired = shrinkDocument(doc)
+    expect(paired.imagesDownsampled).toBe(2)
+    const dims = (r: unknown) => {
+      const d = (doc.context.lookup(r) as PDFRawStream).dict
+      return [String(d.get(PDFName.of('Width'))), String(d.get(PDFName.of('Height')))]
+    }
+    expect(dims(baseRef)).toEqual(dims(maskRef))
+  })
 })
