@@ -128,7 +128,7 @@ export function shrinkDocument(
   // the pairing first; enumeration order cannot decide it.
   const refKey = (ref: PDFRef): string => `${ref.objectNumber}:${ref.generationNumber}`
   const baseOfMask = new Map<string, PDFRawStream>()
-  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
     if (!(obj instanceof PDFRawStream)) continue
     if (String(obj.dict.get(PDFName.of('Subtype')) ?? '') !== '/Image') continue
     const mask = obj.dict.get(PDFName.of('SMask'))
