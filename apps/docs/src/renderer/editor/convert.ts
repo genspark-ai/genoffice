@@ -26,7 +26,8 @@ import {
   patchTextboxParas,
   generateTableModelXml,
   inlinePictureDrawingXml,
-  resizeInlinePictureXml,
+  patchRunPictureXml,
+  type RunPictureGeometry,
   NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
@@ -3672,7 +3673,20 @@ export function inlineToRuns(content: PmNode[]): Run[] {
       const w = Number(node.attrs?.widthPx)
       const h = Number(node.attrs?.heightPx)
       let xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
-      if (xml && !rule && w > 0 && h > 0) xml = resizeInlinePictureXml(xml, w, h)
+      // size, wrap and position edits; untouched geometry keeps the bytes
+      if (xml && !rule) {
+        const a = node.attrs ?? {}
+        xml = patchRunPictureXml(xml, {
+          widthPx: w > 0 ? w : null,
+          heightPx: h > 0 ? h : null,
+          wrap: (a.wrap as ImageWrap | null) ?? null,
+          offsetXEmu: (a.offsetXEmu as number | null) ?? null,
+          offsetYEmu: (a.offsetYEmu as number | null) ?? null,
+          relH: (a.relH as RunPictureGeometry['relH']) ?? null,
+          relV: (a.relV as RunPictureGeometry['relV']) ?? null,
+          lineCenterV: !!a.lineCenterV,
+        })
+      }
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),

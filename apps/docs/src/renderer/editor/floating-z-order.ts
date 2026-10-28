@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core'
+import { NodeSelection } from '@tiptap/pm/state'
 import type { ImageWrap, TextboxDisplay } from '@genoffice/docx-engine'
 
 const EMU_PER_PX = 9525
@@ -100,6 +101,26 @@ function normalizedShapeWrap(wrap: string | null): ImageWrap | null | undefined 
 
 /** Wrap Text on the selection: the shape's box model for a shape, the anchor attrs for an image. */
 export function setFloatingWrap(editor: Editor, wrap: string | null): void {
+  const { state, view } = editor
+  const sel = state.selection
+  if (sel instanceof NodeSelection && sel.node.type.name === 'docInlineImage') {
+    // a run picture wraps through its own node; entering or leaving the flow
+    // drops the old placement, so it starts at its column edge
+    const attrs: Record<string, unknown> = { ...sel.node.attrs, wrap }
+    if (!wrap || !sel.node.attrs.wrap) {
+      Object.assign(attrs, {
+        offsetXEmu: null,
+        offsetYEmu: null,
+        relH: null,
+        relV: null,
+        lineCenterV: false,
+      })
+    }
+    const tr = state.tr.setNodeMarkup(sel.from, undefined, attrs)
+    view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, sel.from)))
+    view.focus()
+    return
+  }
   const boxes = selectedShapeBoxes(editor)
   if (boxes) {
     const mode = normalizedShapeWrap(wrap)

@@ -314,8 +314,9 @@ export function computeFormatState(
       : imageSelected
         ? str(protAttrs.imageDataUrl)
         : null,
-    imageWrap:
-      Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0
+    imageWrap: inlinePic
+      ? str(inlinePic.wrap)
+      : Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0
         ? shapeWrapOf(protAttrs.textboxes[0] as TextboxDisplay)
         : str(protAttrs.imageWrap),
     imageAlign: str(protAttrs.imageAlign),
@@ -382,10 +383,10 @@ export function computeFormatState(
   }
 }
 
-/** attrs of the inline run picture under a node selection (rules and floating pictures excluded) */
+/** attrs of the run picture (in line or floating) under a node selection (rules excluded) */
 function inlinePictureOf(ed: Editor): Record<string, unknown> | null {
   const sel = ed.state.selection
   if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
   const attrs = sel.node.attrs
-  return attrs.rule || attrs.wrap || !attrs.dataUrl ? null : attrs
+  return attrs.rule || !attrs.dataUrl ? null : attrs
 }

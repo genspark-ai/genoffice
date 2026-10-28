@@ -347,26 +347,35 @@ export function applyShapeWrapAt(
   } else if (!hasAnchor) {
     next = applyImageWrap(drawing, wrap, undefined, undefined, zOrder)
   } else {
-    const behind = wrap === 'behind' ? '1' : '0'
-    const wrapElement =
-      wrap === 'front' || wrap === 'behind'
-        ? '<wp:wrapNone/>'
-        : wrap === 'topBottom'
-          ? '<wp:wrapTopAndBottom/>'
-          : '<wp:wrapSquare wrapText="bothSides"/>'
-    next = drawing
-      .replace(WRAP_ELEMENT_RE, '')
-      .replace(/<wp:anchor[^>]*>/, (tag) =>
-        tag.includes('behindDoc=')
-          ? tag.replace(/behindDoc="[^"]*"/, `behindDoc="${behind}"`)
-          : tag.replace(/<wp:anchor/, `<wp:anchor behindDoc="${behind}"`),
-      )
-    if (zOrder !== undefined) next = setAnchorRank(next, zOrder)
-    next = /<wp:docPr/.test(next)
-      ? next.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
-      : next.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
+    next = swapAnchorWrap(drawing, wrap, zOrder)
   }
   return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
+}
+
+/**
+ * Switch the wrap mode of an existing wp:anchor drawing in place: only the
+ * wrap element, behindDoc and (when given) relativeHeight change, so the
+ * positionH/V bytes keep the object where it was.
+ */
+export function swapAnchorWrap(drawingXml: string, wrap: ImageWrap, zOrder?: number): string {
+  const behind = wrap === 'behind' ? '1' : '0'
+  const wrapElement =
+    wrap === 'front' || wrap === 'behind'
+      ? '<wp:wrapNone/>'
+      : wrap === 'topBottom'
+        ? '<wp:wrapTopAndBottom/>'
+        : '<wp:wrapSquare wrapText="bothSides"/>'
+  let next = drawingXml
+    .replace(WRAP_ELEMENT_RE, '')
+    .replace(/<wp:anchor[^>]*>/, (tag) =>
+      tag.includes('behindDoc=')
+        ? tag.replace(/behindDoc="[^"]*"/, `behindDoc="${behind}"`)
+        : tag.replace(/<wp:anchor/, `<wp:anchor behindDoc="${behind}"`),
+    )
+  if (zOrder !== undefined) next = setAnchorRank(next, zOrder)
+  return /<wp:docPr/.test(next)
+    ? next.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
+    : next.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
 }
 
 // ---- protected field / formula token patching ----
@@ -2703,7 +2712,20 @@ export interface InlinePictureXmlOptions {
  *  a:ext follow (effectExtent is left alone). Unchanged when the extent already
  *  reads these sizes, so an untouched picture saves byte-identical. */
 export function resizeInlinePictureXml(xml: string, widthPx: number, heightPx: number): string {
-  if (!(widthPx > 0) || !(heightPx > 0) || !/<wp:inline[\s>]/.test(xml)) return xml
+  if (!/<wp:inline[\s>]/.test(xml)) return xml
+  return resizeDrawingExtents(xml, widthPx, heightPx)
+}
+
+/** resizeInlinePictureXml for a floating (wp:anchor) run picture; only a lone
+ *  picture: a group's extent does not follow its first picture */
+export function resizeAnchoredPictureXml(xml: string, widthPx: number, heightPx: number): string {
+  if (!/<wp:anchor[\s>]/.test(xml) || /<wpg:/.test(xml)) return xml
+  if ((xml.match(/<pic:pic[\s>]/g) ?? []).length !== 1) return xml
+  return resizeDrawingExtents(xml, widthPx, heightPx)
+}
+
+function resizeDrawingExtents(xml: string, widthPx: number, heightPx: number): string {
+  if (!(widthPx > 0) || !(heightPx > 0)) return xml
   const cx = Math.max(1, Math.round(widthPx * EMU_PER_PX))
   const cy = Math.max(1, Math.round(heightPx * EMU_PER_PX))
   const extent = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(xml)

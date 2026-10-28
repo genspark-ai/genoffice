@@ -2572,6 +2572,28 @@ function RibbonInner({
                 <div className="ribbon-sep" />
               </>
             )}
+            {fs.inlinePicture && (
+              <>
+                {/* ---- Arrange: wrap text of a run picture (its own node) ---- */}
+                <div className="table-tool-group">
+                  <div className="table-tool-row">
+                    <Dropdown
+                      className="rb-wrap-dd"
+                      disabled={!canEdit}
+                      tip={t('ribbonWrapText')}
+                      value={fs.imageWrap ?? ''}
+                      options={WRAP_OPTIONS.map((opt) => ({
+                        value: opt.value ?? '',
+                        label: t(opt.labelKey),
+                      }))}
+                      onPick={(v) => canEdit && setFloatingWrap(ed, v || null)}
+                    />
+                  </div>
+                  <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
+                </div>
+                <div className="ribbon-sep" />
+              </>
+            )}
             {/* ---- Size: height/width in the measurement unit, aspect lock, reset ---- */}
             <div className="table-tool-group">
               <div className="table-tool-row table-size-inputs" key={fs.imageKey ?? 'nosel'}>
