@@ -4625,17 +4625,13 @@ async function writeWorkbookTo(
     sheetName: resolveSheetName(sheetId),
     ...group,
   }))
-  // Slicer/timeline panels: same sheetId → sheet name mapping as the other
+  // Slicer panels: same sheetId → sheet name mapping as the other
   // additions; part paths stay package-absolute.
   const slicerState =
     request.slicerState === null
       ? null
       : {
           slicers: request.slicerState.slicers.map(({ sheetId, ...control }) => ({
-            ...control,
-            sheetName: resolveSheetName(sheetId),
-          })),
-          timelines: request.slicerState.timelines.map(({ sheetId, ...control }) => ({
             ...control,
             sheetName: resolveSheetName(sheetId),
           })),

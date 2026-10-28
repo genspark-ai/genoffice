@@ -114,7 +114,6 @@ import {
   type SlicerRemovalWrite,
   type SlicerStateWrite,
   type SlicerControlWrite,
-  type TimelineControlWrite,
 } from './xlsx-slicer'
 import { setPivotRefreshOnLoad } from './xlsx-pivot'
 import { applyPivotLayoutExpansions, type PivotRefreshUpdate } from './xlsx-pivot-expand'
@@ -918,7 +917,6 @@ export {
   SlicerAddError,
   parseSlicerState,
   SLICER_REL_TYPE,
-  TIMELINE_REL_TYPE,
   type SlicerPartState,
 } from './xlsx-slicer'
 
@@ -931,12 +929,8 @@ export {
 export type SheetSlicerAddition = Omit<SlicerControlWrite, 'worksheetPath'> & {
   readonly sheetName: string
 }
-export type SheetTimelineAddition = Omit<TimelineControlWrite, 'worksheetPath'> & {
-  readonly sheetName: string
-}
 export interface SheetSlicerState {
   readonly slicers: readonly SheetSlicerAddition[]
-  readonly timelines: readonly SheetTimelineAddition[]
   readonly removals: readonly SlicerRemovalWrite[]
 }
 
@@ -1731,15 +1725,10 @@ export async function planCellEditsToXlsx(
     workbookXml = await applyPivotAdditions(pkg, resolvedPivots, workbookXml, touchedEntries)
   }
 
-  // Slicer/timeline persistence runs after pivot additions: new pivots this
+  // Slicer persistence runs after pivot additions: new pivots this
   // save join the tabId enumeration, and the workbook-level cache exts land
   // on the final workbook XML (before calcPr maintenance sees it).
-  if (
-    slicerState !== null &&
-    (slicerState.slicers.length > 0 ||
-      slicerState.timelines.length > 0 ||
-      slicerState.removals.length > 0)
-  ) {
+  if (slicerState !== null && (slicerState.slicers.length > 0 || slicerState.removals.length > 0)) {
     const resolvedSlicers: SlicerControlWrite[] = []
     for (const { sheetName, ...control } of slicerState.slicers) {
       resolvedSlicers.push({
@@ -1747,16 +1736,8 @@ export async function planCellEditsToXlsx(
         worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
       })
     }
-    const resolvedTimelines: TimelineControlWrite[] = []
-    for (const { sheetName, ...control } of slicerState.timelines) {
-      resolvedTimelines.push({
-        ...control,
-        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
-      })
-    }
     const resolved: SlicerStateWrite = {
       slicers: resolvedSlicers,
-      timelines: resolvedTimelines,
       removals: slicerState.removals,
     }
     workbookXml = await applySlicerState(pkg, resolved, workbookXml, touchedEntries)

@@ -909,9 +909,7 @@ export function App({
   const slicersDirtyRef = useRef(false)
   /// File-restored controls deleted this session: their parts and references
   /// are removed on save (nothing else may ever be listed here).
-  const removedSlicerPartsRef = useRef<
-    { kind: 'slicer' | 'timeline'; partPath: string; cachePath: string }[]
-  >([])
+  const removedSlicerPartsRef = useRef<{ partPath: string; cachePath: string }[]>([])
   const menuActionRef = useRef<(action: MenuAction) => void>(() => {})
   /// Where the user was when a save started: the post-save session swap
   /// reinstalls the workbook, and the install consumes this instead of
@@ -988,8 +986,6 @@ export function App({
       recordSlicerRemoval: (control) => {
         if (control.partPath === undefined || control.cachePath === undefined) return
         removedSlicerPartsRef.current.push({
-          // Timelines are the union member with a `range` field.
-          kind: 'range' in control ? 'timeline' : 'slicer',
           partPath: control.partPath,
           cachePath: control.cachePath,
         })
@@ -1128,11 +1124,7 @@ export function App({
         // untouched panels keep their parts byte-identical (raw-copied), and
         // a file without slicers never gains any.
         if (!slicersDirtyRef.current) return null
-        if (
-          slicers.length === 0 &&
-          timelines.length === 0 &&
-          removedSlicerPartsRef.current.length === 0
-        ) {
+        if (slicers.length === 0 && removedSlicerPartsRef.current.length === 0) {
           return null
         }
         return {
@@ -1149,20 +1141,6 @@ export function App({
               x: member.x,
               selected: slicer.selected.includes(member.member),
             })),
-          })),
-          timelines: timelines.map((timeline) => ({
-            sheetId: timeline.sheetId,
-            pivotPath: timeline.pivotPath,
-            sourceName: timeline.fieldName,
-            caption: timeline.fieldName,
-            ...(timeline.name === undefined ? {} : { name: timeline.name }),
-            ...(timeline.partPath === undefined ? {} : { partPath: timeline.partPath }),
-            ...(timeline.cachePath === undefined ? {} : { cachePath: timeline.cachePath }),
-            ...(timeline.cacheName === undefined ? {} : { cacheName: timeline.cacheName }),
-            range:
-              timeline.range === null
-                ? null
-                : { startMonth: timeline.range.start, endMonth: timeline.range.end },
           })),
           removals: removedSlicerPartsRef.current.map((removal) => ({ ...removal })),
         }
@@ -4924,8 +4902,7 @@ export function App({
       .then((entries) => {
         if (lazyWorkbookRef.current !== state || entries.length === 0) return
         const restored = restoreSlicerPanels(state, entries)
-        setSlicers(restored.slicers)
-        setTimelines(restored.timelines)
+        setSlicers(restored)
       })
       .catch(() => undefined)
     // Dev-only diagnosis hooks: e2e drivers dump journal state and dispatch

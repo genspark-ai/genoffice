@@ -52,7 +52,6 @@ function state(): LazyWorkbookState {
 
 function slicerEntry(overrides: Partial<WorkbookSlicerPart> = {}): WorkbookSlicerPart {
   return {
-    kind: 'slicer',
     sheetId: 'sheet-1',
     worksheetPath: 'xl/worksheets/sheet1.xml',
     partPath: 'xl/slicers/slicer1.xml',
@@ -63,23 +62,6 @@ function slicerEntry(overrides: Partial<WorkbookSlicerPart> = {}): WorkbookSlice
     caption: 'Region',
     pivotCacheDefinitionPath: CACHE_DEF_PATH,
     selectedItems: [0, 2],
-    range: null,
-    ...overrides,
-  }
-}
-
-function timelineEntry(overrides: Partial<WorkbookSlicerPart> = {}): WorkbookSlicerPart {
-  return {
-    ...slicerEntry(),
-    kind: 'timeline',
-    partPath: 'xl/timelines/timeline1.xml',
-    cachePath: 'xl/timelineCaches/timelineCache1.xml',
-    name: 'Date',
-    cacheName: 'Timeline_Date',
-    sourceName: 'Date',
-    caption: 'Date',
-    selectedItems: null,
-    range: { startMonth: 2021 * 12 + 0, endMonth: 2021 * 12 + 2 },
     ...overrides,
   }
 }
@@ -87,9 +69,8 @@ function timelineEntry(overrides: Partial<WorkbookSlicerPart> = {}): WorkbookSli
 describe('restoreSlicerPanels', () => {
   it('rebuilds a slicer panel with its file identity and selection', () => {
     const restored = restoreSlicerPanels(state(), [slicerEntry()])
-    expect(restored.timelines).toEqual([])
-    expect(restored.slicers).toHaveLength(1)
-    const slicer = restored.slicers[0]!
+    expect(restored).toHaveLength(1)
+    const slicer = restored[0]!
     expect(slicer.sheetId).toBe('sheet-1')
     expect(slicer.pivotPath).toBe(PIVOT_PATH)
     expect(slicer.field).toBe(0)
@@ -106,58 +87,25 @@ describe('restoreSlicerPanels', () => {
 
   it('treats a cache without an item list as unfiltered', () => {
     const restored = restoreSlicerPanels(state(), [slicerEntry({ selectedItems: null })])
-    expect(restored.slicers[0]!.selected).toEqual([0, 1, 2])
+    expect(restored[0]!.selected).toEqual([0, 1, 2])
   })
 
   it('never restores a fully-deselected slicer (defensive all-selected)', () => {
     const restored = restoreSlicerPanels(state(), [slicerEntry({ selectedItems: [] })])
-    expect(restored.slicers[0]!.selected).toEqual([0, 1, 2])
-  })
-
-  it('rebuilds a timeline panel with its month range and identity', () => {
-    const restored = restoreSlicerPanels(state(), [timelineEntry()])
-    expect(restored.slicers).toEqual([])
-    expect(restored.timelines).toHaveLength(1)
-    const timeline = restored.timelines[0]!
-    expect(timeline.field).toBe(1)
-    expect(timeline.fieldName).toBe('Date')
-    expect(timeline.minMonth).toBe(2021 * 12 + 0)
-    expect(timeline.maxMonth).toBe(2021 * 12 + 5)
-    expect(timeline.range).toEqual({ start: 2021 * 12 + 0, end: 2021 * 12 + 2 })
-    expect(timeline.partPath).toBe('xl/timelines/timeline1.xml')
-    expect(timeline.cacheName).toBe('Timeline_Date')
-  })
-
-  it('restores an unfiltered timeline as range null', () => {
-    const restored = restoreSlicerPanels(state(), [timelineEntry({ range: null })])
-    expect(restored.timelines[0]!.range).toBeNull()
+    expect(restored[0]!.selected).toEqual([0, 1, 2])
   })
 
   it('skips entries it cannot bind (unknown field, missing definition, unbound cache)', () => {
     const workbook = state()
-    const unknownField = restoreSlicerPanels(workbook, [
-      slicerEntry({ sourceName: 'Nope' }),
-      timelineEntry({ sourceName: 'Nope' }),
-    ])
-    expect(unknownField).toEqual({ slicers: [], timelines: [] })
+    const unknownField = restoreSlicerPanels(workbook, [slicerEntry({ sourceName: 'Nope' })])
+    expect(unknownField).toEqual([])
 
     const noDefinition = state()
     noDefinition.pivotDefinitions.delete(PIVOT_PATH)
-    expect(restoreSlicerPanels(noDefinition, [slicerEntry()])).toEqual({
-      slicers: [],
-      timelines: [],
-    })
+    expect(restoreSlicerPanels(noDefinition, [slicerEntry()])).toEqual([])
 
     expect(restoreSlicerPanels(state(), [slicerEntry({ pivotCacheDefinitionPath: null })])).toEqual(
-      { slicers: [], timelines: [] },
+      [],
     )
-  })
-
-  it('skips a timeline whose field no longer parses as dates', () => {
-    // Field 0 (Region) is not a date field: the domain is null, no panel.
-    const restored = restoreSlicerPanels(state(), [
-      timelineEntry({ sourceName: 'Region', cacheName: 'Timeline_Region' }),
-    ])
-    expect(restored.timelines).toEqual([])
   })
 })

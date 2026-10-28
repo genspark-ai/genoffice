@@ -2188,8 +2188,6 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
       !isRecord(input.slicerState) ||
       !Array.isArray(input.slicerState.slicers) ||
       input.slicerState.slicers.length > 100 ||
-      !Array.isArray(input.slicerState.timelines) ||
-      input.slicerState.timelines.length > 100 ||
       !Array.isArray(input.slicerState.removals) ||
       input.slicerState.removals.length > 200
     )

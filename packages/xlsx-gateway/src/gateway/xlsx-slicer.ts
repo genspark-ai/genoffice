@@ -1,14 +1,19 @@
-/// Slicer / timeline OOXML persistence (MS-XLSX x14 slicers, x15 timelines).
+/// Slicer OOXML persistence (MS-XLSX x14 slicers). Timelines (x15) are not
+/// persisted by this writer: their parts ride a save untouched, and the
+/// session timeline feature stays session-only (to land separately).
 ///
-/// Write side: session slicer/timeline panels are materialized as
+/// Write side: session slicer panels are materialized as
 ///   xl/slicerCaches/slicerCacheN.xml   (pivot binding + member selection)
 ///   xl/slicers/slicerN.xml             (the control: name/caption/geometry)
-///   xl/timelineCaches/timelineCacheN.xml + xl/timelines/timelineN.xml
 /// wired up by
-///   worksheet rels (…/2007/relationships/slicer|timeline) + worksheet
-///     extLst x14:slicerList / x15:slicerList ext entries,
-///   workbook rels (…/slicerCache|timelineCache) + workbook extLst
-///     x14:slicerCaches / x15:slicerCaches ext entries,
+///   worksheet rels (…/2007/relationships/slicer) + worksheet extLst
+///     x14:slicerList ext entries,
+///   workbook rels (…/slicerCache) + workbook extLst x14:slicerCaches ext
+///     entries,
+///   the bound pivotCacheDefinition's own x14 ext (pivotCacheId,
+///     slicerData="1") — tabular@pivotCacheId must equal it or Excel drops
+///     the whole slicerCache part as 'Removed Part: slicerCache',
+///   a hidden Slicer_<name> definedName in the workbook,
 ///   [Content_Types].xml overrides per part.
 ///
 /// Read side mirrors the writer exactly (the reader keys on container element
@@ -18,11 +23,12 @@
 /// trip cannot be verified in this environment (declared in the PR body).
 ///
 /// Pivot binding: slicerCacheDefinition carries the spec'd tabular@pivotCacheId
-/// (resolved through workbook pivotCaches) and a pivotTables/pivotTable entry
-/// whose tabId is the hosting worksheet's sheetId and whose name is the pivot
-/// table's own name (MS-XLSX) — Excel does not bind the slicer to its pivot
-/// without them. The reader prefers pivotCacheId and falls back to the tabId
-/// rule over sorted pivot parts for foreign files.
+/// (the workbook pivotCache@cacheId, mirrored into the pivot cache
+/// definition's x14 ext) and a pivotTables/pivotTable entry whose tabId is
+/// the hosting worksheet's sheetId and whose name is the pivot table's own
+/// name (MS-XLSX) — Excel does not bind the slicer to its pivot without
+/// them. The reader prefers pivotCacheId and falls back to the tabId rule
+/// over sorted pivot parts for foreign files.
 
 import {
   allocatePartPath,
@@ -41,15 +47,12 @@ export class SlicerAddError extends Error {}
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
-const X15_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2010/11/main'
 const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
 
 export const SLICER_REL_TYPE = 'http://schemas.microsoft.com/office/2007/relationships/slicer'
-export const TIMELINE_REL_TYPE = 'http://schemas.microsoft.com/office/2007/relationships/timeline'
 export const SLICER_CACHE_REL_TYPE =
   'http://schemas.microsoft.com/office/2007/relationships/slicerCache'
-export const TIMELINE_CACHE_REL_TYPE =
-  'http://schemas.microsoft.com/office/2007/relationships/timelineCache'
 /// ECMA-376: the worksheet → pivotTable part relationship, used to find which
 /// sheet hosts a pivot (the slicerCache binding's tabId is that sheet's sheetId)
 const PIVOT_TABLE_REL_TYPE =
@@ -57,18 +60,15 @@ const PIVOT_TABLE_REL_TYPE =
 
 const SLICER_CONTENT_TYPE = 'application/vnd.ms-excel.slicer+xml'
 const SLICER_CACHE_CONTENT_TYPE = 'application/vnd.ms-excel.slicerCache+xml'
-const TIMELINE_CONTENT_TYPE = 'application/vnd.ms-excel.timeline+xml'
-const TIMELINE_CACHE_CONTENT_TYPE = 'application/vnd.ms-excel.timelineCache+xml'
 
 /// Ext URIs per MS-XLSX; the reader below does not depend on them (it matches
 /// container names + relationship types), so a wrong URI can only affect
-/// Excel, never our own round trip. Timelines do NOT share the slicer
-/// containers: the worksheet carries x15:timelineRefs and the workbook
-/// x15:timelineCacheRefs, each with its own URI.
+/// Excel, never our own round trip.
 const WORKSHEET_SLICER_LIST_URI = '{A8765BA9-456A-4dab-B4F3-ACF1056F45AA}'
-const WORKSHEET_TIMELINE_LIST_URI = '{7E03D99C-DC04-49d9-9315-930204A7B6E9}'
 const WORKBOOK_SLICER_CACHES_URI = '{BBE1A952-AA13-448e-AADC-164F8A28A991}'
-const WORKBOOK_TIMELINE_CACHES_URI = '{D0CA8CA8-9F24-4464-BF8E-62219DCF47F9}'
+/// The x14 pivotCacheDefinition ext that makes a pivot cache slicer-bound
+/// (MS-XLSX): its @pivotCacheId is what tabular@pivotCacheId must equal.
+const PIVOT_CACHE_SLICER_EXT_URI = '{725AE2AE-9491-48be-B2B4-4EB974FC3084}'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
@@ -154,28 +154,13 @@ export interface SlicerControlWrite {
   readonly items: readonly SlicerItemWrite[]
 }
 
-export interface TimelineControlWrite {
-  readonly worksheetPath: string
-  readonly pivotPath: string
-  readonly sourceName: string
-  readonly caption: string
-  readonly name?: string | undefined
-  readonly partPath?: string | undefined
-  readonly cachePath?: string | undefined
-  readonly cacheName?: string | undefined
-  /// Selected inclusive month range (year*12+month-1); null = unfiltered.
-  readonly range: { readonly startMonth: number; readonly endMonth: number } | null
-}
-
 export interface SlicerRemovalWrite {
-  readonly kind: 'slicer' | 'timeline'
   readonly partPath: string
   readonly cachePath: string
 }
 
 export interface SlicerStateWrite {
   readonly slicers: readonly SlicerControlWrite[]
-  readonly timelines: readonly TimelineControlWrite[]
   readonly removals: readonly SlicerRemovalWrite[]
 }
 
@@ -239,23 +224,13 @@ async function pivotCacheIdOf(pkg: MutablePackage, pivotPath: string): Promise<n
   return parsed
 }
 
-function monthIso(key: number, lastDay: boolean): string {
-  const year = Math.floor(key / 12)
-  const month = (key % 12) + 1
-  const day = lastDay ? new Date(Date.UTC(year, month, 0)).getUTCDate() : 1
-  return (
-    `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-` +
-    `${String(day).padStart(2, '0')}T00:00:00`
-  )
-}
-
 /// Geometry attributes worth keeping when rewriting an Excel-authored part
 /// (our session model has no geometry; the file's survives the rewrite).
-function carryOverGeometry(existingXml: string, tag: 'slicer' | 'timeline'): string {
-  const element = new RegExp(`<${tag}(?:\\s[^>]*)?/>`).exec(existingXml)?.[0]
+function carryOverGeometry(existingXml: string): string {
+  const element = new RegExp(`<slicer(?:\\s[^>]*)?/>`).exec(existingXml)?.[0]
   if (element === undefined) return ''
   let carried = ''
-  for (const name of ['rowHeight', 'columnCount', 'style', 'showCaption', 'startItem', 'level']) {
+  for (const name of ['rowHeight', 'columnCount', 'style', 'showCaption', 'startItem']) {
     const value = attr(element, name)
     if (value !== undefined) carried += ` ${name}="${escapeAttribute(value)}"`
   }
@@ -275,18 +250,6 @@ function buildSlicerPartXml(name: string, cacheName: string, caption: string, ca
   )
 }
 
-function buildTimelinePartXml(name: string, cacheName: string, caption: string, carried: string) {
-  // level/selectionLevel are required; our session model is month-granular
-  // (level 2 in the year/quarter/month/day ladder)
-  const geometry = carried.includes('level') ? carried : `${carried} level="2" selectionLevel="2"`
-  return (
-    `${XML_DECL}<timelines xmlns="${X15_NS}">` +
-    `<timeline name="${escapeAttribute(name)}" cache="${escapeAttribute(cacheName)}"` +
-    ` caption="${escapeAttribute(caption)}"${geometry}/>` +
-    '</timelines>'
-  )
-}
-
 function buildSlicerCacheXml(
   cacheName: string,
   sourceName: string,
@@ -302,60 +265,139 @@ function buildSlicerCacheXml(
     ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
     `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
     '<data>' +
+    // pivotCacheId mirrors the pivot cache definition's x14 ext below — the
+    // two must match or Excel repairs the file ('Removed Part: slicerCache')
     `<tabular pivotCacheId="${pivotCacheId}" crossFilter="showItemsWithDataAtTop">` +
     `<items count="${items.length}">${itemsXml}</items>` +
     '</tabular></data></slicerCacheDefinition>'
   )
 }
 
-function buildTimelineCacheXml(
-  cacheName: string,
-  sourceName: string,
-  binding: { readonly tabId: number; readonly name: string },
-  pivotCacheId: number,
-  range: { readonly startMonth: number; readonly endMonth: number } | null,
-): string {
-  // The selection window lives on the cache; our month-granularity model
-  // serializes as inclusive first/last-of-month ISO datetimes, carried in the
-  // spec's <bounds> element (the reader also accepts <selection>, the shape
-  // this writer shipped before the state attributes existed). The state
-  // attributes are what Excel requires to open the cache: refresh versions,
-  // the bound pivot cache, and how the filter applies.
-  const inner =
-    range === null
-      ? ''
-      : `<selection startDate="${monthIso(range.startMonth, false)}"` +
-        ` endDate="${monthIso(range.endMonth, true)}"/>` +
-        `<bounds startDate="${monthIso(range.startMonth, false)}"` +
-        ` endDate="${monthIso(range.endMonth, true)}"/>`
-  return (
-    `${XML_DECL}<timelineCacheDefinition xmlns="${X15_NS}" xmlns:r="${REL_NS}"` +
-    ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
-    `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
-    `<state minimalRefreshVersion="1" lastRefreshVersion="1" pivotCacheId="${pivotCacheId}"` +
-    ` filterType="${range === null ? 'none' : 'dateBetween'}">${inner}</state>` +
-    '</timelineCacheDefinition>'
+/// The pivotCacheDefinition part a workbook cacheId resolves to (through
+/// workbook pivotCaches and their rels), or null when it cannot be found.
+async function pivotCacheDefinitionPathOf(
+  pkg: MutablePackage,
+  workbookXml: string,
+  cacheId: number,
+): Promise<string | null> {
+  const relsXml = (await pkg.has('xl/_rels/workbook.xml.rels'))
+    ? await pkg.readText('xl/_rels/workbook.xml.rels')
+    : ''
+  const rels = parseRelationships(relsXml)
+  for (const pivotCache of workbookXml.matchAll(/<pivotCache\b[^>]*>/g)) {
+    if (attr(pivotCache[0], 'cacheId') !== String(cacheId)) continue
+    const relId = attr(pivotCache[0], 'r:id')
+    const entry = relId === undefined ? undefined : rels.find((rel) => rel.id === relId)
+    if (entry !== undefined) return resolveRelTarget('xl/workbook.xml', entry.target)
+  }
+  return null
+}
+
+/// The pivotCacheDefinition's x14 ext (MS-XLSX): slicerData="1" plus the
+/// slicer-space pivotCacheId that tabular@pivotCacheId must equal. Nothing
+/// else writes it, so a slicer-bound cache gains it here (and a rewritten
+/// cache keeps it current).
+async function ensurePivotCacheSlicerExt(
+  pkg: MutablePackage,
+  workbookXml: string,
+  pivotPath: string,
+  cacheId: number,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const definitionPath = await pivotCacheDefinitionPathOf(pkg, workbookXml, cacheId)
+  if (definitionPath === null) {
+    throw new SlicerAddError(`No pivotCacheDefinition carries cacheId ${cacheId}.`)
+  }
+
+  const xml = await pkg.readText(definitionPath)
+  const extElement =
+    `<ext uri="${PIVOT_CACHE_SLICER_EXT_URI}" xmlns:x14="${X14_NS}">` +
+    `<x14:pivotCacheDefinition pivotCacheId="${cacheId}" slicerData="1"/></ext>`
+  let patched: string
+  const existing = new RegExp(
+    `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>`,
+  ).exec(xml)
+  if (existing) {
+    patched =
+      xml.slice(0, existing.index) + extElement + xml.slice(existing.index + existing[0].length)
+  } else if (xml.includes('</pivotCacheDefinition>')) {
+    // extLst is the schema-last child; an existing one takes the ext, else
+    // the element gains one right before its close
+    const extLstClose = xml.lastIndexOf('</extLst>')
+    patched =
+      extLstClose !== -1 && extLstClose > xml.lastIndexOf('</pivotCacheDefinition>')
+        ? xml.slice(0, extLstClose) + extElement + xml.slice(extLstClose)
+        : xml.replace(
+            '</pivotCacheDefinition>',
+            `<extLst>${extElement}</extLst></pivotCacheDefinition>`,
+          )
+  } else {
+    // a self-closing definition opens up to carry the extLst
+    const selfClosing = /<pivotCacheDefinition\b[^>]*?\/>/.exec(xml)
+    if (selfClosing === null) {
+      throw new SlicerAddError(`Pivot cache definition ${definitionPath} is malformed.`)
+    }
+    patched =
+      xml.slice(0, selfClosing.index) +
+      selfClosing[0].slice(0, -2) +
+      `><extLst>${extElement}</extLst></pivotCacheDefinition>` +
+      xml.slice(selfClosing.index + selfClosing[0].length)
+  }
+  pkg.write(definitionPath, patched)
+  touchedEntries.add(definitionPath)
+}
+
+/// Drops the x14 slicer ext from a pivot cache definition once no remaining
+/// slicerCache part binds that cacheId anymore.
+async function removePivotCacheSlicerExt(
+  pkg: MutablePackage,
+  workbookXml: string,
+  cacheId: number,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/slicerCaches\/[^/]+\.xml$/.test(path)) continue
+    const bound = Number(
+      attr(/<tabular\b[^>]*>/.exec(await pkg.readText(path))?.[0] ?? '', 'pivotCacheId') ?? NaN,
+    )
+    if (bound === cacheId) return // another slicer still binds this cache
+  }
+  const definitionPath = await pivotCacheDefinitionPathOf(pkg, workbookXml, cacheId)
+  if (definitionPath === null || !(await pkg.has(definitionPath))) return
+  const xml = await pkg.readText(definitionPath)
+  const ext = new RegExp(
+    `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>\\s*`,
   )
+  let patched = xml.replace(ext, '')
+  const open = patched.lastIndexOf('<extLst>')
+  if (open !== -1) {
+    const close = patched.indexOf('</extLst>', open)
+    if (close !== -1 && patched.slice(open + '<extLst>'.length, close).trim() === '') {
+      patched = patched.slice(0, open) + patched.slice(close + '</extLst>'.length)
+    }
+  }
+  if (patched !== xml) {
+    pkg.write(definitionPath, patched)
+    touchedEntries.add(definitionPath)
+  }
 }
 
 // ─── On-sheet control (drawing graphicFrame) ────────────────────────────────
 
 /// The control's visible face lives in the worksheet's drawing part as a
-/// graphicFrame (sle:slicer / tsle:timeslicer). The slicer part alone is
-/// plumbing: without the frame Excel opens the file with no control on the
-/// sheet. An anchor that already names this control is left untouched — that
-/// is where Excel-authored geometry survives a rewrite.
+/// graphicFrame (sle:slicer). The slicer part alone is plumbing: without the
+/// frame Excel opens the file with no control on the sheet. An anchor that
+/// already names this control is left untouched — that is where Excel-authored
+/// geometry survives a rewrite.
 async function ensureControlFrame(
   pkg: MutablePackage,
   worksheetPath: string,
-  kind: 'slicer' | 'timeline',
   name: string,
   touchedEntries: Set<string>,
 ): Promise<void> {
   const drawing = await ensureSheetDrawing(pkg, worksheetPath, touchedEntries)
   const xml = await pkg.readText(drawing.path)
-  const tag = kind === 'slicer' ? 'sle:slicer' : 'tsle:timeslicer'
-  if (new RegExp(`<${tag}\\b[^>]*\\bname="${escapeRegExp(name)}"`).test(xml)) return
+  if (new RegExp(`<sle:slicer\\b[^>]*\\bname="${escapeRegExp(name)}"`).test(xml)) return
   // No session geometry: new controls land in a column of slots below the
   // used range's first rows, offset per existing anchor so they do not stack.
   const anchors = (xml.match(/<xdr:twoCellAnchor\b/g) ?? []).length
@@ -364,26 +406,79 @@ async function ensureControlFrame(
   const marker = (col: number, row: number) =>
     `<xdr:col>${col}</xdr:col><xdr:colOff>0</xdr:colOff>` +
     `<xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff>`
+  // cNvPr ids are unique per drawing part: max-plus-one, not anchor-count
+  // (an Excel-authored part can carry arbitrary ids)
+  let maxId = 1
+  for (const id of xml.matchAll(/<xdr:cNvPr\b[^>]*\bid="(\d+)"/g)) {
+    const parsed = Number(id[1])
+    if (Number.isInteger(parsed) && parsed > maxId) maxId = parsed
+  }
   const control =
-    kind === 'slicer'
-      ? `<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer"` +
-        ` name="${escapeAttribute(name)}"/>`
-      : `<tsle:timeslicer xmlns:tsle="http://schemas.microsoft.com/office/drawing/2010/timeslicer"` +
-        ` name="${escapeAttribute(name)}"/>`
+    `<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer"` +
+    ` name="${escapeAttribute(name)}"/>`
   const frame =
     '<xdr:twoCellAnchor editAs="oneCell">' +
     `<xdr:from>${marker(fromCol, fromRow)}</xdr:from>` +
     `<xdr:to>${marker(fromCol + 3, fromRow + 12)}</xdr:to>` +
+    '<mc:AlternateContent xmlns:mc="' +
+    MC_NS +
+    '">' +
+    `<mc:Choice xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" Requires="sle">` +
     '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr>' +
-    `<xdr:cNvPr id="${anchors + 2}" name="${escapeAttribute(name)}"/>` +
+    `<xdr:cNvPr id="${maxId + 1}" name="${escapeAttribute(name)}"/>` +
     '<xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>' +
     '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>' +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">' +
     control +
     '</a:graphicData></a:graphic><xdr:clientData/></xdr:graphicFrame>' +
+    '</mc:Choice>' +
+    // a reader without the slicer extension draws the fallback shape instead
+    // of repairing the file (what Excel itself writes for down-level clients)
+    '<mc:Fallback><xdr:sp macro="" textlink=""><xdr:nvSpPr>' +
+    `<xdr:cNvPr id="${maxId + 2}" name="${escapeAttribute(name)} Fallback"/>` +
+    '<xdr:cNvSpPr/><xdr:nvPr/></xdr:nvSpPr>' +
+    '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></xdr:spPr>' +
+    '<xdr:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></xdr:txBody>' +
+    '</xdr:sp></mc:Fallback>' +
+    '</mc:AlternateContent>' +
     '</xdr:twoCellAnchor>'
   pkg.write(drawing.path, xml.replace('</xdr:wsDr>', `${frame}</xdr:wsDr>`))
   touchedEntries.add(drawing.path)
+}
+
+/// Drops the twoCellAnchor whose sle:slicer names `name` — removal without it
+/// strands an orphan control in the drawing (Excel repairs it away).
+async function removeControlFrame(
+  pkg: MutablePackage,
+  worksheetPath: string,
+  name: string,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const relsPath = relsPathFor(worksheetPath)
+  if (!(await pkg.has(relsPath))) return
+  const relsXml = await pkg.readText(relsPath)
+  let drawingPath: string | null = null
+  for (const entry of parseRelationships(relsXml)) {
+    if (
+      entry.type === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
+    ) {
+      drawingPath = resolveRelTarget(worksheetPath, entry.target)
+      break
+    }
+  }
+  if (drawingPath === null || !(await pkg.has(drawingPath))) return
+  const xml = await pkg.readText(drawingPath)
+  const pattern = new RegExp(
+    `<xdr:twoCellAnchor\\b[^>]*>(?:(?!</xdr:twoCellAnchor>)[\\s\\S])*?` +
+      `<sle:slicer\\b[^>]*\\bname="${escapeRegExp(name)}"[^>]*/>` +
+      `[\\s\\S]*?</xdr:twoCellAnchor>\\s*`,
+  )
+  const stripped = xml.replace(pattern, '')
+  if (stripped !== xml) {
+    pkg.write(drawingPath, stripped)
+    touchedEntries.add(drawingPath)
+  }
 }
 
 // ─── extLst surgery (worksheet and workbook share the container shape) ─────
@@ -406,26 +501,12 @@ const WORKSHEET_SLICER_WIRING: ExtWiring = {
   container: 'slicerList',
   item: 'slicer',
 }
-const WORKSHEET_TIMELINE_WIRING: ExtWiring = {
-  uri: WORKSHEET_TIMELINE_LIST_URI,
-  prefix: 'x15',
-  namespace: X15_NS,
-  container: 'timelineRefs',
-  item: 'timelineRef',
-}
 const WORKBOOK_SLICER_WIRING: ExtWiring = {
   uri: WORKBOOK_SLICER_CACHES_URI,
   prefix: 'x14',
   namespace: X14_NS,
   container: 'slicerCaches',
   item: 'slicerCache',
-}
-const WORKBOOK_TIMELINE_WIRING: ExtWiring = {
-  uri: WORKBOOK_TIMELINE_CACHES_URI,
-  prefix: 'x15',
-  namespace: X15_NS,
-  container: 'timelineCacheRefs',
-  item: 'timelineCacheRef',
 }
 
 function extOpenTag(xml: string, wiring: ExtWiring): { start: number; end: number } | null {
@@ -687,10 +768,41 @@ async function worksheetsReferencing(
 
 // ─── Write entry point ─────────────────────────────────────────────────────
 
+/// The hidden `Slicer_<name>` definedName Excel writes per control: it keeps
+/// slicer names inside the workbook's name space. Add to an existing
+/// <definedNames>, else create the element (schema position: after sheets).
+function addSlicerDefinedName(workbookXml: string, name: string): string {
+  const definedName = `<definedName name="Slicer_${escapeAttribute(name)}" hidden="1">${escapeAttribute(name)}</definedName>`
+  const close = workbookXml.lastIndexOf('</definedNames>')
+  if (close !== -1) return workbookXml.slice(0, close) + definedName + workbookXml.slice(close)
+  const sheetsClose = workbookXml.lastIndexOf('</sheets>')
+  if (sheetsClose === -1) throw new SlicerAddError('The workbook part lists no sheets.')
+  return (
+    workbookXml.slice(0, sheetsClose + '</sheets>'.length) +
+    `<definedNames>${definedName}</definedNames>` +
+    workbookXml.slice(sheetsClose + '</sheets>'.length)
+  )
+}
+
+function removeSlicerDefinedName(workbookXml: string, name: string): string {
+  const pattern = new RegExp(
+    `<definedName\\b[^>]*\\bname="Slicer_${escapeRegExp(escapeAttribute(name))}"[^>]*>[^<]*</definedName>\\s*`,
+  )
+  let patched = workbookXml.replace(pattern, '')
+  // an emptied <definedNames> container drops out
+  const open = patched.lastIndexOf('<definedNames>')
+  if (open !== -1) {
+    const close = patched.indexOf('</definedNames>', open)
+    if (close !== -1 && patched.slice(open + '<definedNames>'.length, close).trim() === '') {
+      patched = patched.slice(0, open) + patched.slice(close + '</definedNames>'.length)
+    }
+  }
+  return patched
+}
+
 async function writeControl(
   pkg: MutablePackage,
-  control: SlicerControlWrite | TimelineControlWrite,
-  kind: 'slicer' | 'timeline',
+  control: SlicerControlWrite,
   workbookXml: string,
   touchedEntries: Set<string>,
   takenControlNames: Set<string>,
@@ -701,108 +813,71 @@ async function writeControl(
   }
   const binding = await pivotBinding(pkg, workbookXml, control.pivotPath)
   const pivotCacheId = await pivotCacheIdOf(pkg, control.pivotPath)
+  // The bound pivot cache definition gains its x14 slicer ext — the
+  // pivotCacheId tabular@pivotCacheId must equal (MS-XLSX)
+  await ensurePivotCacheSlicerExt(pkg, workbookXml, control.pivotPath, pivotCacheId, touchedEntries)
 
   // Identity: reuse the restored part paths / names, else allocate fresh ones
   // that do not collide with anything already in the package.
-  const partPath =
-    control.partPath ??
-    (await allocatePartPath(
-      pkg,
-      kind === 'slicer' ? 'xl/slicers/slicer' : 'xl/timelines/timeline',
-      '.xml',
-    ))
+  const partPath = control.partPath ?? (await allocatePartPath(pkg, 'xl/slicers/slicer', '.xml'))
   const cachePath =
-    control.cachePath ??
-    (await allocatePartPath(
-      pkg,
-      kind === 'slicer' ? 'xl/slicerCaches/slicerCache' : 'xl/timelineCaches/timelineCache',
-      '.xml',
-    ))
+    control.cachePath ?? (await allocatePartPath(pkg, 'xl/slicerCaches/slicerCache', '.xml'))
   const cacheName =
     control.cacheName ??
-    uniqueName(
-      `${kind === 'slicer' ? 'Slicer' : 'Timeline'}_${sanitizeNameBase(control.sourceName)}`,
-      takenCacheNames,
-    )
+    uniqueName(`Slicer_${sanitizeNameBase(control.sourceName)}`, takenCacheNames)
   const name =
     control.name ??
     uniqueName(sanitizeNameBase(control.caption || control.sourceName), takenControlNames)
 
-  const cacheXml =
-    kind === 'slicer'
-      ? buildSlicerCacheXml(
-          cacheName,
-          control.sourceName,
-          binding,
-          pivotCacheId,
-          (control as SlicerControlWrite).items,
-        )
-      : buildTimelineCacheXml(
-          cacheName,
-          control.sourceName,
-          binding,
-          pivotCacheId,
-          (control as TimelineControlWrite).range,
-        )
+  const cacheXml = buildSlicerCacheXml(
+    cacheName,
+    control.sourceName,
+    binding,
+    pivotCacheId,
+    control.items,
+  )
   if (await pkg.has(cachePath)) pkg.write(cachePath, cacheXml)
   else pkg.add(cachePath, cacheXml)
   touchedEntries.add(cachePath)
-  await registerContentTypeOverride(
-    pkg,
-    cachePath,
-    kind === 'slicer' ? SLICER_CACHE_CONTENT_TYPE : TIMELINE_CACHE_CONTENT_TYPE,
-    touchedEntries,
-  )
+  await registerContentTypeOverride(pkg, cachePath, SLICER_CACHE_CONTENT_TYPE, touchedEntries)
 
-  // The workbook rel + ext entry point at the cache part.
-  const cacheRelType = kind === 'slicer' ? SLICER_CACHE_REL_TYPE : TIMELINE_CACHE_REL_TYPE
+  // The workbook rel + ext entry point at the cache part, and the hidden
+  // Slicer_<name> definedName joins the workbook's name space.
   const relId = await appendOrReuseRelationship(
     pkg,
     'xl/_rels/workbook.xml.rels',
-    cacheRelType,
+    SLICER_CACHE_REL_TYPE,
     'xl/workbook.xml',
     cachePath,
     touchedEntries,
   )
-  const wiredWorkbook = addExtRef(
-    workbookXml,
-    kind === 'slicer' ? WORKBOOK_SLICER_WIRING : WORKBOOK_TIMELINE_WIRING,
-    relId,
-    '</workbook>',
-  )
+  let wiredWorkbook = addExtRef(workbookXml, WORKBOOK_SLICER_WIRING, relId, '</workbook>')
+  wiredWorkbook = addSlicerDefinedName(wiredWorkbook, name)
 
   // The control part (rewrites an existing one, preserving its geometry).
   const existingPart = (await pkg.has(partPath)) ? await pkg.readText(partPath) : null
-  const carried = existingPart === null ? '' : carryOverGeometry(existingPart, kind)
-  const partXml =
-    kind === 'slicer'
-      ? buildSlicerPartXml(name, cacheName, control.caption, carried)
-      : buildTimelinePartXml(name, cacheName, control.caption, carried)
+  const carried = existingPart === null ? '' : carryOverGeometry(existingPart)
+  const partXml = buildSlicerPartXml(name, cacheName, control.caption, carried)
   if (existingPart === null) pkg.add(partPath, partXml)
   else pkg.write(partPath, partXml)
   touchedEntries.add(partPath)
-  await registerContentTypeOverride(
-    pkg,
-    partPath,
-    kind === 'slicer' ? SLICER_CONTENT_TYPE : TIMELINE_CONTENT_TYPE,
-    touchedEntries,
-  )
+  await registerContentTypeOverride(pkg, partPath, SLICER_CONTENT_TYPE, touchedEntries)
 
   await ensureWorksheetRef(
     pkg,
     control.worksheetPath,
     partPath,
-    kind === 'slicer' ? SLICER_REL_TYPE : TIMELINE_REL_TYPE,
-    kind === 'slicer' ? WORKSHEET_SLICER_WIRING : WORKSHEET_TIMELINE_WIRING,
+    SLICER_REL_TYPE,
+    WORKSHEET_SLICER_WIRING,
     touchedEntries,
   )
-  await ensureControlFrame(pkg, control.worksheetPath, kind, name, touchedEntries)
+  await ensureControlFrame(pkg, control.worksheetPath, name, touchedEntries)
   return wiredWorkbook
 }
 
-/// Materializes every slicer/timeline control and cleans removals. Returns
-/// the workbook XML with the cache ext entries merged in. Removals run first
-/// so a deleted control's parts free their names for reuse.
+/// Materializes every slicer control and cleans removals. Returns the workbook
+/// XML with the cache ext entries merged in. Removals run first so a deleted
+/// control's parts free their names for reuse.
 export async function applySlicerState(
   pkg: MutablePackage,
   state: SlicerStateWrite,
@@ -810,7 +885,7 @@ export async function applySlicerState(
   touchedEntries: Set<string>,
 ): Promise<string> {
   const written = new Set(
-    [...state.slicers, ...state.timelines].flatMap((control) =>
+    state.slicers.flatMap((control) =>
       [
         ...(control.partPath ? [control.partPath] : []),
         ...(control.cachePath ? [control.cachePath] : []),
@@ -824,31 +899,54 @@ export async function applySlicerState(
   }
 
   for (const removal of state.removals) {
-    const relType = removal.kind === 'slicer' ? SLICER_REL_TYPE : TIMELINE_REL_TYPE
-    const cacheRelType = removal.kind === 'slicer' ? SLICER_CACHE_REL_TYPE : TIMELINE_CACHE_REL_TYPE
-    const wiring = removal.kind === 'slicer' ? WORKSHEET_SLICER_WIRING : WORKSHEET_TIMELINE_WIRING
-    const cacheWiring =
-      removal.kind === 'slicer' ? WORKBOOK_SLICER_WIRING : WORKBOOK_TIMELINE_WIRING
-    for (const host of await worksheetsReferencing(pkg, removal.partPath, relType)) {
-      await removeWorksheetRef(pkg, host, removal.partPath, relType, wiring, touchedEntries)
+    // the control's name keys the drawing anchor and the definedName; the
+    // cache's bound pivotCacheId keys the pivot cache definition's x14 ext
+    const partXml = (await pkg.has(removal.partPath)) ? await pkg.readText(removal.partPath) : null
+    const rawName =
+      partXml === null ? undefined : attr(/<slicer\b[^>]*?\/?>/.exec(partXml)?.[0] ?? '', 'name')
+    const name = rawName === undefined ? null : decodeAttribute(rawName)
+    const cacheXml = (await pkg.has(removal.cachePath))
+      ? await pkg.readText(removal.cachePath)
+      : null
+    const boundCacheId = Number(
+      attr(/<tabular\b[^>]*>/.exec(cacheXml ?? '')?.[0] ?? '', 'pivotCacheId') ?? NaN,
+    )
+    for (const host of await worksheetsReferencing(pkg, removal.partPath, SLICER_REL_TYPE)) {
+      await removeWorksheetRef(
+        pkg,
+        host,
+        removal.partPath,
+        SLICER_REL_TYPE,
+        WORKSHEET_SLICER_WIRING,
+        touchedEntries,
+      )
+      if (name !== null) {
+        await removeControlFrame(pkg, host, name, touchedEntries)
+      }
     }
     const relsPath = 'xl/_rels/workbook.xml.rels'
     if (await pkg.has(relsPath)) {
       const relsXml = await pkg.readText(relsPath)
       const existing = findRelationshipTo(
         relsXml,
-        cacheRelType,
+        SLICER_CACHE_REL_TYPE,
         'xl/workbook.xml',
         removal.cachePath,
       )
       if (existing) {
         pkg.write(relsPath, removeRelationshipById(relsXml, existing.id))
         touchedEntries.add(relsPath)
-        workbookXml = removeExtRef(workbookXml, cacheWiring, existing.id)
+        workbookXml = removeExtRef(workbookXml, WORKBOOK_SLICER_WIRING, existing.id)
       }
+    }
+    if (name !== null) {
+      workbookXml = removeSlicerDefinedName(workbookXml, name)
     }
     await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
     await removePartWithSatellites(pkg, removal.cachePath, touchedEntries)
+    if (Number.isInteger(boundCacheId)) {
+      await removePivotCacheSlicerExt(pkg, workbookXml, boundCacheId, touchedEntries)
+    }
   }
 
   if (state.slicers.length > 0) {
@@ -858,22 +956,6 @@ export async function applySlicerState(
       workbookXml = await writeControl(
         pkg,
         slicer,
-        'slicer',
-        workbookXml,
-        touchedEntries,
-        takenNames,
-        takenCaches,
-      )
-    }
-  }
-  if (state.timelines.length > 0) {
-    const takenNames = await collectControlNames(pkg, 'xl/timelines/', 'timeline')
-    const takenCaches = await collectCacheNames(pkg, 'xl/timelineCaches/')
-    for (const timeline of state.timelines) {
-      workbookXml = await writeControl(
-        pkg,
-        timeline,
-        'timeline',
         workbookXml,
         touchedEntries,
         takenNames,
@@ -887,15 +969,14 @@ export async function applySlicerState(
 // ─── Read side ─────────────────────────────────────────────────────────────
 
 export interface SlicerPartState {
-  readonly kind: 'slicer' | 'timeline'
   /// Sidecar sheet id (`sheet-<workbook sheetId attribute>`).
   readonly sheetId: string
   readonly worksheetPath: string
   readonly partPath: string
   readonly cachePath: string
-  /// slicer@name / timeline@name.
+  /// slicer@name.
   readonly name: string
-  /// slicerCacheDefinition@name / timelineCacheDefinition@name.
+  /// slicerCacheDefinition@name.
   readonly cacheName: string
   /// slicerCacheDefinition@sourceName (the bound cache field's name).
   readonly sourceName: string
@@ -903,11 +984,9 @@ export interface SlicerPartState {
   /// pivotCacheDefinition part path resolved from the cache binding; null
   /// when unresolvable.
   readonly pivotCacheDefinitionPath: string | null
-  /// Slicer: sharedItems indices of the selected members; null = the cache
-  /// carried no item list (treat as unfiltered).
+  /// sharedItems indices of the selected members; null = the cache carried
+  /// no item list (treat as unfiltered).
   readonly selectedItems: readonly number[] | null
-  /// Timeline: inclusive month range; null = unfiltered.
-  readonly range: { readonly startMonth: number; readonly endMonth: number } | null
 }
 
 export interface SlicerPartReader {
@@ -915,37 +994,22 @@ export interface SlicerPartReader {
   readText(path: string): Promise<string>
 }
 
-function monthKeyOfIso(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})/.exec(value)
-  if (!match) return null
-  const year = Number(match[1])
-  const month = Number(match[2])
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null
-  return year * 12 + month - 1
-}
-
 interface ParsedCachePart {
   readonly path: string
   readonly name: string
   readonly sourceName: string
-  /// tabular@pivotCacheId (slicers) or root@pivotCacheId (timelines, our own
-  /// writer); null when the part carries none.
+  /// tabular@pivotCacheId; null when the part carries none.
   readonly pivotCacheId: number | null
   /// pivotTables/pivotTable@tabId, for the fallback binding.
   readonly tabId: number | null
-  /// Slicer: true when the data section is tabular (OLAP caches cannot be
+  /// true when the data section is tabular (OLAP caches cannot be
   /// represented by the session model).
   readonly tabular: boolean
   readonly selectedItems: readonly number[] | null
-  readonly range: { readonly startMonth: number; readonly endMonth: number } | null
 }
 
-function parseCachePart(
-  kind: 'slicer' | 'timeline',
-  path: string,
-  xml: string,
-): ParsedCachePart | null {
-  const root = kind === 'slicer' ? 'slicerCacheDefinition' : 'timelineCacheDefinition'
+function parseCachePart(path: string, xml: string): ParsedCachePart | null {
+  const root = 'slicerCacheDefinition'
   const element = new RegExp(`<${root}(?:\\s[^>]*)?(?:/>|[\\s\\S]*?</${root}>)`).exec(xml)?.[0]
   if (element === undefined) return null
   const name = attr(element, 'name')
@@ -974,17 +1038,6 @@ function parseCachePart(
     selectedItems = selected
   }
 
-  let range: { readonly startMonth: number; readonly endMonth: number } | null = null
-  const selection = /<selection\b[^>]*\/?>/.exec(element)?.[0]
-  if (selection !== undefined) {
-    const start = attr(selection, 'startDate')
-    const end = attr(selection, 'endDate')
-    const startMonth = start === undefined ? null : monthKeyOfIso(start)
-    const endMonth = end === undefined ? null : monthKeyOfIso(end)
-    if (startMonth !== null && endMonth !== null) {
-      range = { startMonth, endMonth: Math.max(startMonth, endMonth) }
-    }
-  }
   return {
     path,
     name: decodeAttribute(name),
@@ -993,17 +1046,17 @@ function parseCachePart(
     tabId: tabId !== null && Number.isInteger(tabId) ? tabId : null,
     tabular,
     selectedItems,
-    range,
   }
 }
 
-/// Reads every slicer/timeline control the package carries, with enough
-/// identity (part paths, names) for the session to update-in-place on save.
+/// Reads every slicer control the package carries, with enough identity (part
+/// paths, names) for the session to update-in-place on save. Timeline parts
+/// are not read: the session has no timeline persistence yet, and an unread
+/// foreign part rides a save untouched.
 export async function parseSlicerState(reader: SlicerPartReader): Promise<SlicerPartState[]> {
   const paths = await reader.paths()
   const slicerParts = paths.filter((path) => /^xl\/slicers\/[^/]+\.xml$/.test(path)).sort()
-  const timelineParts = paths.filter((path) => /^xl\/timelines\/[^/]+\.xml$/.test(path)).sort()
-  if (slicerParts.length === 0 && timelineParts.length === 0) return []
+  if (slicerParts.length === 0) return []
 
   const workbookXml = await reader.readText('xl/workbook.xml')
   const workbookRelsXml = (await hasEntry(reader, 'xl/_rels/workbook.xml.rels'))
@@ -1041,13 +1094,8 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
   // Cache parts by @name.
   const cachesByName = new Map<string, ParsedCachePart>()
   for (const path of paths) {
-    const kind = /^xl\/slicerCaches\/[^/]+\.xml$/.test(path)
-      ? 'slicer'
-      : /^xl\/timelineCaches\/[^/]+\.xml$/.test(path)
-        ? 'timeline'
-        : null
-    if (kind === null) continue
-    const parsed = parseCachePart(kind, path, await reader.readText(path))
+    if (!/^xl\/slicerCaches\/[^/]+\.xml$/.test(path)) continue
+    const parsed = parseCachePart(path, await reader.readText(path))
     if (parsed) cachesByName.set(parsed.name, parsed)
   }
 
@@ -1058,62 +1106,54 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
     const relsPath = relsPathFor(path)
     if (!(await hasEntry(reader, relsPath))) continue
     for (const entry of parseRelationships(await reader.readText(relsPath))) {
-      if (entry.type !== SLICER_REL_TYPE && entry.type !== TIMELINE_REL_TYPE) continue
+      if (entry.type !== SLICER_REL_TYPE) continue
       hostByPart.set(resolveRelTarget(path, entry.target), path)
     }
   }
 
   const states: SlicerPartState[] = []
-  const readControls = async (parts: readonly string[], kind: 'slicer' | 'timeline') => {
-    for (const partPath of parts) {
-      const xml = await reader.readText(partPath)
-      for (const match of xml.matchAll(new RegExp(`<${kind}(?:\\s[^>]*)?/>`, 'g'))) {
-        const control = match[0]
-        const name = attr(control, 'name')
-        const cacheName = attr(control, 'cache')
-        if (name === undefined || cacheName === undefined) continue
-        const cache = cachesByName.get(decodeAttribute(cacheName))
-        const host = hostByPart.get(partPath)
-        if (cache === undefined || host === undefined) continue
-        if (kind === 'slicer' && !cache.tabular) continue // OLAP caches: skip
-        // Binding: prefer tabular/root pivotCacheId; fall back to our tabId
-        // rule over the sorted pivot table parts.
-        let pivotCacheDefinitionPath: string | null = null
-        if (cache.pivotCacheId !== null) {
-          pivotCacheDefinitionPath = cachePathByCacheId.get(cache.pivotCacheId) ?? null
-        }
-        if (pivotCacheDefinitionPath === null && cache.tabId !== null) {
-          const pivotParts = paths
-            .filter((path) => /^xl\/pivotTables\/[^/]+\.xml$/.test(path))
-            .sort()
-          const pivotPath = pivotParts[cache.tabId - 1]
-          if (pivotPath !== undefined) {
-            const pivotCacheId = attr(await reader.readText(pivotPath), 'cacheId')
-            const parsed = pivotCacheId === undefined ? Number.NaN : Number(pivotCacheId)
-            if (Number.isInteger(parsed)) {
-              pivotCacheDefinitionPath = cachePathByCacheId.get(parsed) ?? null
-            }
+  for (const partPath of slicerParts) {
+    const xml = await reader.readText(partPath)
+    for (const match of xml.matchAll(/<slicer(?:\s[^>]*)?\/>/g)) {
+      const control = match[0]
+      const name = attr(control, 'name')
+      const cacheName = attr(control, 'cache')
+      if (name === undefined || cacheName === undefined) continue
+      const cache = cachesByName.get(decodeAttribute(cacheName))
+      const host = hostByPart.get(partPath)
+      if (cache === undefined || host === undefined) continue
+      if (!cache.tabular) continue // OLAP caches: skip
+      // Binding: prefer tabular pivotCacheId; fall back to our tabId rule
+      // over the sorted pivot table parts.
+      let pivotCacheDefinitionPath: string | null = null
+      if (cache.pivotCacheId !== null) {
+        pivotCacheDefinitionPath = cachePathByCacheId.get(cache.pivotCacheId) ?? null
+      }
+      if (pivotCacheDefinitionPath === null && cache.tabId !== null) {
+        const pivotParts = paths.filter((path) => /^xl\/pivotTables\/[^/]+\.xml$/.test(path)).sort()
+        const pivotPath = pivotParts[cache.tabId - 1]
+        if (pivotPath !== undefined) {
+          const pivotCacheId = attr(await reader.readText(pivotPath), 'cacheId')
+          const parsed = pivotCacheId === undefined ? Number.NaN : Number(pivotCacheId)
+          if (Number.isInteger(parsed)) {
+            pivotCacheDefinitionPath = cachePathByCacheId.get(parsed) ?? null
           }
         }
-        states.push({
-          kind,
-          sheetId: sheetIdByWorksheet.get(host) ?? '',
-          worksheetPath: host,
-          partPath,
-          cachePath: cache.path,
-          name: decodeAttribute(name),
-          cacheName: cache.name,
-          sourceName: cache.sourceName,
-          caption: decodeAttribute(attr(control, 'caption') ?? name),
-          pivotCacheDefinitionPath,
-          selectedItems: kind === 'slicer' ? cache.selectedItems : null,
-          range: kind === 'timeline' ? cache.range : null,
-        })
       }
+      states.push({
+        sheetId: sheetIdByWorksheet.get(host) ?? '',
+        worksheetPath: host,
+        partPath,
+        cachePath: cache.path,
+        name: decodeAttribute(name),
+        cacheName: cache.name,
+        sourceName: cache.sourceName,
+        caption: decodeAttribute(attr(control, 'caption') ?? name),
+        pivotCacheDefinitionPath,
+        selectedItems: cache.selectedItems,
+      })
     }
   }
-  await readControls(slicerParts, 'slicer')
-  await readControls(timelineParts, 'timeline')
   return states
 }
 

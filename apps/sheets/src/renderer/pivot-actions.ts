@@ -1102,16 +1102,15 @@ export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string
   ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
 }
 
-/// Restores slicer/timeline panels from the file's x14/x15 parts after the
-/// pivot definitions have loaded (open flow). Best effort: an entry whose
-/// pivot, field, or member list cannot be resolved is skipped — its parts
-/// stay in the file untouched (and invisible) rather than blocking the open.
+/// Restores slicer panels from the file's x14 parts after the pivot
+/// definitions have loaded (open flow). Best effort: an entry whose pivot,
+/// field, or member list cannot be resolved is skipped — its parts stay in
+/// the file untouched (and invisible) rather than blocking the open.
 export function restoreSlicerPanels(
   state: LazyWorkbookState,
   entries: readonly WorkbookSlicerPart[],
-): { slicers: SlicerUiState[]; timelines: TimelineUiState[] } {
+): SlicerUiState[] {
   const slicers: SlicerUiState[] = []
-  const timelines: TimelineUiState[] = []
   for (const entry of entries) {
     if (entry.pivotCacheDefinitionPath === null) continue
     // The panel binds to the first pivot on that cache with a loaded
@@ -1130,66 +1129,38 @@ export function restoreSlicerPanels(
     const field = definition.fields.findIndex((meta) => meta.name === entry.sourceName)
     if (field < 0) continue
     const fieldName = definition.fields[field]?.name || t('appFieldN', { n: field + 1 })
-    if (entry.kind === 'slicer') {
-      const members: SlicerMember[] = []
-      definition.fieldItems[field]?.forEach((item, member) => {
-        if (item.x === null) return
-        const shared = definition.fields[field]?.sharedItems[item.x]
-        members.push({
-          member,
-          x: item.x,
-          label:
-            shared === null || shared === undefined || shared === ''
-              ? t('appBlank')
-              : String(shared),
-        })
+    const members: SlicerMember[] = []
+    definition.fieldItems[field]?.forEach((item, member) => {
+      if (item.x === null) return
+      const shared = definition.fields[field]?.sharedItems[item.x]
+      members.push({
+        member,
+        x: item.x,
+        label:
+          shared === null || shared === undefined || shared === '' ? t('appBlank') : String(shared),
       })
-      if (members.length === 0) continue
-      const selectedX = entry.selectedItems
-      const selected =
-        selectedX === null
-          ? members.map((item) => item.member)
-          : members.filter((item) => selectedX.includes(item.x)).map((item) => item.member)
-      slicers.push({
-        id: `slicer-${Date.now().toString(36)}-${slicers.length + 1}`,
-        sheetId: host.sheet.id,
-        pivotPath: host.pivot.path,
-        field,
-        fieldName,
-        members,
-        // A cache with no readable selection (or an all-empty one) restores
-        // unfiltered rather than hiding everything.
-        selected: selected.length === 0 ? members.map((item) => item.member) : selected,
-        name: entry.name,
-        partPath: entry.partPath,
-        cachePath: entry.cachePath,
-        cacheName: entry.cacheName,
-      })
-    } else {
-      const domain = timelineDomainOf(
-        definition.fields[field]?.sharedItems ?? [],
-        definition.fieldItems[field] ?? [],
-      )
-      if (!domain) continue
-      timelines.push({
-        id: `timeline-${Date.now().toString(36)}-${timelines.length + 1}`,
-        sheetId: host.sheet.id,
-        pivotPath: host.pivot.path,
-        field,
-        fieldName,
-        members: domain.members,
-        minMonth: domain.minMonth,
-        maxMonth: domain.maxMonth,
-        range:
-          entry.range === null
-            ? null
-            : { start: entry.range.startMonth, end: entry.range.endMonth },
-        name: entry.name,
-        partPath: entry.partPath,
-        cachePath: entry.cachePath,
-        cacheName: entry.cacheName,
-      })
-    }
+    })
+    if (members.length === 0) continue
+    const selectedX = entry.selectedItems
+    const selected =
+      selectedX === null
+        ? members.map((item) => item.member)
+        : members.filter((item) => selectedX.includes(item.x)).map((item) => item.member)
+    slicers.push({
+      id: `slicer-${Date.now().toString(36)}-${slicers.length + 1}`,
+      sheetId: host.sheet.id,
+      pivotPath: host.pivot.path,
+      field,
+      fieldName,
+      members,
+      // A cache with no readable selection (or an all-empty one) restores
+      // unfiltered rather than hiding everything.
+      selected: selected.length === 0 ? members.map((item) => item.member) : selected,
+      name: entry.name,
+      partPath: entry.partPath,
+      cachePath: entry.cachePath,
+      cacheName: entry.cacheName,
+    })
   }
-  return { slicers, timelines }
+  return slicers
 }

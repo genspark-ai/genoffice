@@ -8,8 +8,6 @@ import {
   SLICER_CACHE_REL_TYPE,
   SLICER_REL_TYPE,
   SlicerAddError,
-  TIMELINE_CACHE_REL_TYPE,
-  TIMELINE_REL_TYPE,
   type SlicerPartState,
 } from '../src/gateway/xlsx-slicer'
 import {
@@ -103,35 +101,23 @@ const SLICER_INPUT = {
   ],
 }
 
-const TIMELINE_INPUT = {
-  worksheetPath: 'xl/worksheets/sheet1.xml',
-  pivotPath: 'xl/pivotTables/pivotTable1.xml',
-  sourceName: 'Date',
-  caption: 'Date',
-  range: { startMonth: 2021 * 12 + 0, endMonth: 2021 * 12 + 5 } as const,
-}
-
-async function writeInitial(): Promise<{
-  pkg: MutablePackage
-  slicer: SlicerPartState
-  timeline: SlicerPartState
-}> {
+async function writeInitial(): Promise<{ pkg: MutablePackage; slicer: SlicerPartState }> {
   const pkg = fixture()
   const workbookXml = await applySlicerState(
     pkg,
-    { slicers: [SLICER_INPUT], timelines: [TIMELINE_INPUT], removals: [] },
+    { slicers: [SLICER_INPUT], removals: [] },
     WORKBOOK,
     new Set(),
   )
   pkg.write('xl/workbook.xml', workbookXml)
-  const [slicer, timeline] = await parseSlicerState(readerOf(pkg))
-  if (slicer === undefined || timeline === undefined) throw new Error('controls did not restore')
-  return { pkg, slicer, timeline }
+  const [slicer] = await parseSlicerState(readerOf(pkg))
+  if (slicer === undefined) throw new Error('controls did not restore')
+  return { pkg, slicer }
 }
 
 describe('slicer write + read round trip', () => {
   it('writes every part with rels, exts, and content types, and reads them back', async () => {
-    const { pkg, slicer, timeline } = await writeInitial()
+    const { pkg, slicer } = await writeInitial()
 
     // Parts exist with the right root elements.
     const slicerXml = await pkg.readText('xl/slicers/slicer1.xml')
@@ -143,27 +129,21 @@ describe('slicer write + read round trip', () => {
     expect(cacheXml).toContain('<pivotTable tabId="1" name="Pivot1"/>')
     expect(cacheXml).toContain('<tabular pivotCacheId="7"')
     expect(cacheXml).toContain('<i x="0" s="1"/><i x="1"/><i x="2" s="1"/>')
-    expect(await pkg.readText('xl/timelines/timeline1.xml')).toContain('<timeline name="Date"')
-    const timelineCache = await pkg.readText('xl/timelineCaches/timelineCache1.xml')
-    expect(timelineCache).toContain('name="Timeline_Date" sourceName="Date"')
-    expect(timelineCache).toContain('<pivotTable tabId="1" name="Pivot1"/>')
-    expect(timelineCache).toContain(
-      '<state minimalRefreshVersion="1" lastRefreshVersion="1" pivotCacheId="7" filterType="dateBetween">',
-    )
-    expect(timelineCache).toContain('startDate="2021-01-01T00:00:00" endDate="2021-06-30T00:00:00"')
-    expect(timelineCache).toContain('<bounds startDate="2021-01-01T00:00:00"')
+
+    // The pivot cache definition carries its x14 slicer ext, and the two
+    // pivotCacheIds are the same value — Excel drops the whole slicerCache
+    // part ('Removed Part: slicerCache') when they disagree.
+    const pivotCache = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+    expect(pivotCache).toContain('<x14:pivotCacheDefinition pivotCacheId="7" slicerData="1"/>')
+    expect(pivotCache).toContain('uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}"')
 
     // Worksheet rel + ext wiring.
     const sheetRels = await pkg.readText('xl/worksheets/_rels/sheet1.xml.rels')
     expect(sheetRels).toContain(`Type="${SLICER_REL_TYPE}" Target="../slicers/slicer1.xml"`)
-    expect(sheetRels).toContain(`Type="${TIMELINE_REL_TYPE}" Target="../timelines/timeline1.xml"`)
     const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
     expect(worksheet).toContain('<x14:slicerList><x14:slicer r:id="rId1"/></x14:slicerList>')
-    expect(worksheet).toContain(
-      '<x15:timelineRefs><x15:timelineRef r:id="rId3"/></x15:timelineRefs>',
-    )
-    // the visible controls: a drawing part with one graphicFrame per control,
-    // wired from the worksheet
+    // the visible control: a drawing part with a graphicFrame, wired from the
+    // worksheet and wrapped in an mc:AlternateContent with a down-level fallback
     expect(worksheet).toContain('<drawing r:id="rId2"/>')
     expect(sheetRels).toContain(
       'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"',
@@ -175,28 +155,26 @@ describe('slicer write + read round trip', () => {
       '<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" name="Region"/>',
     )
     expect(drawing).toContain(
-      '<tsle:timeslicer xmlns:tsle="http://schemas.microsoft.com/office/drawing/2010/timeslicer" name="Date"/>',
-    )
-    expect(drawing).toContain(
       '<a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">',
     )
-    expect((drawing.match(/<xdr:twoCellAnchor\b/g) ?? []).length).toBe(2)
+    expect(drawing).toContain('<mc:AlternateContent')
+    expect(drawing).toContain('Requires="sle"')
+    expect(drawing).toContain('<mc:Fallback><xdr:sp')
+    // cNvPr ids are unique inside the drawing part
+    const ids = [...drawing.matchAll(/<xdr:cNvPr\b[^>]*\bid="(\d+)"/g)].map((m) => m[1])
+    expect(new Set(ids).size).toBe(ids.length)
+    expect((drawing.match(/<xdr:twoCellAnchor\b/g) ?? []).length).toBe(1)
 
-    // Workbook rel + ext wiring.
+    // Workbook rel + ext wiring, plus the hidden Slicer_<name> definedName.
     const workbookRels = await pkg.readText('xl/_rels/workbook.xml.rels')
     expect(workbookRels).toContain(
       `Type="${SLICER_CACHE_REL_TYPE}" Target="slicerCaches/slicerCache1.xml"`,
-    )
-    expect(workbookRels).toContain(
-      `Type="${TIMELINE_CACHE_REL_TYPE}" Target="timelineCaches/timelineCache1.xml"`,
     )
     const workbook = await pkg.readText('xl/workbook.xml')
     expect(workbook).toContain(
       '<x14:slicerCaches><x14:slicerCache r:id="rId3"/></x14:slicerCaches>',
     )
-    expect(workbook).toContain(
-      '<x15:timelineCacheRefs><x15:timelineCacheRef r:id="rId4"/></x15:timelineCacheRefs>',
-    )
+    expect(workbook).toContain('<definedName name="Slicer_Region" hidden="1">Region</definedName>')
 
     // Content types.
     const contentTypes = await pkg.readText('[Content_Types].xml')
@@ -207,18 +185,11 @@ describe('slicer write + read round trip', () => {
       '<Override PartName="/xl/slicerCaches/slicerCache1.xml" ContentType="application/vnd.ms-excel.slicerCache+xml"/>',
     )
     expect(contentTypes).toContain(
-      '<Override PartName="/xl/timelines/timeline1.xml" ContentType="application/vnd.ms-excel.timeline+xml"/>',
-    )
-    expect(contentTypes).toContain(
-      '<Override PartName="/xl/timelineCaches/timelineCache1.xml" ContentType="application/vnd.ms-excel.timelineCache+xml"/>',
-    )
-    expect(contentTypes).toContain(
       '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>',
     )
 
     // Read side restores identity, binding, and selection.
     expect(slicer).toMatchObject({
-      kind: 'slicer',
       sheetId: 'sheet-1',
       worksheetPath: 'xl/worksheets/sheet1.xml',
       partPath: 'xl/slicers/slicer1.xml',
@@ -229,23 +200,11 @@ describe('slicer write + read round trip', () => {
       caption: 'Region',
       pivotCacheDefinitionPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       selectedItems: [0, 2],
-      range: null,
-    })
-    expect(timeline).toMatchObject({
-      kind: 'timeline',
-      sheetId: 'sheet-1',
-      partPath: 'xl/timelines/timeline1.xml',
-      cachePath: 'xl/timelineCaches/timelineCache1.xml',
-      name: 'Date',
-      cacheName: 'Timeline_Date',
-      sourceName: 'Date',
-      pivotCacheDefinitionPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
-      range: { startMonth: 2021 * 12, endMonth: 2021 * 12 + 5 },
     })
   })
 
   it('updates existing parts in place instead of allocating duplicates', async () => {
-    const { pkg, slicer, timeline } = await writeInitial()
+    const { pkg, slicer } = await writeInitial()
     pkg.write(
       'xl/workbook.xml',
       await applySlicerState(
@@ -268,19 +227,6 @@ describe('slicer write + read round trip', () => {
               ],
             },
           ],
-          timelines: [
-            {
-              worksheetPath: timeline.worksheetPath,
-              pivotPath: 'xl/pivotTables/pivotTable1.xml',
-              sourceName: 'Date',
-              caption: 'Date',
-              name: timeline.name,
-              partPath: timeline.partPath,
-              cachePath: timeline.cachePath,
-              cacheName: timeline.cacheName,
-              range: null,
-            },
-          ],
           removals: [],
         },
         await pkg.readText('xl/workbook.xml'),
@@ -291,12 +237,8 @@ describe('slicer write + read round trip', () => {
     expect(paths.filter((path) => path.startsWith('xl/slicers/'))).toEqual([
       'xl/slicers/slicer1.xml',
     ])
-    expect(paths.filter((path) => path.startsWith('xl/timelines/'))).toEqual([
-      'xl/timelines/timeline1.xml',
-    ])
-    const [restoredSlicer, restoredTimeline] = await parseSlicerState(readerOf(pkg))
+    const [restoredSlicer] = await parseSlicerState(readerOf(pkg))
     expect(restoredSlicer?.selectedItems).toEqual([0, 1])
-    expect(restoredTimeline?.range).toBeNull()
     // Names stay stable through the merge.
     expect(restoredSlicer?.name).toBe('Region')
     expect(restoredSlicer?.cacheName).toBe('Slicer_Region')
@@ -324,7 +266,6 @@ describe('slicer write + read round trip', () => {
             cacheName: 'Slicer_Region',
           },
         ],
-        timelines: [],
         removals: [],
       },
       WORKBOOK,
@@ -336,33 +277,50 @@ describe('slicer write + read round trip', () => {
     expect(xml).toContain('rowHeight="241300"')
   })
 
-  it('removes parts, rels, exts, and content types without leaving orphans', async () => {
-    const { pkg, slicer, timeline } = await writeInitial()
+  it('opens up a self-closing pivot cache definition for the x14 ext', async () => {
+    const pkg = fixture()
+    pkg.write(
+      'xl/pivotCache/pivotCacheDefinition1.xml',
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" r:id="rId1" refreshOnLoad="1"/>',
+    )
+    await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+    const xml = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+    expect(xml).toContain('refreshOnLoad="1"')
+    expect(xml).toContain('<x14:pivotCacheDefinition pivotCacheId="7" slicerData="1"/>')
+    expect(xml).toContain('</pivotCacheDefinition>')
+  })
+
+  it('removes parts, rels, exts, frames, and content types without leaving orphans', async () => {
+    const { pkg, slicer } = await writeInitial()
     pkg.write(
       'xl/workbook.xml',
       await applySlicerState(
         pkg,
         {
           slicers: [],
-          timelines: [],
-          removals: [
-            { kind: 'slicer', partPath: slicer.partPath, cachePath: slicer.cachePath },
-            { kind: 'timeline', partPath: timeline.partPath, cachePath: timeline.cachePath },
-          ],
+          removals: [{ partPath: slicer.partPath, cachePath: slicer.cachePath }],
         },
         await pkg.readText('xl/workbook.xml'),
         new Set(),
       ),
     )
     const paths = await pkg.paths()
-    expect(paths.some((path) => /(?:slicer|timeline)s?\//.test(path))).toBe(false)
+    expect(paths.some((path) => /slicers?\//.test(path))).toBe(false)
     expect(paths).toContain('xl/worksheets/_rels/sheet1.xml.rels') // still exists, emptied of slicer rels
     const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
     expect(worksheet).not.toContain('slicerList')
     expect(worksheet).not.toContain('<extLst>')
+    // the drawing's graphicFrame went with the control — no orphan sle:slicer
+    const drawing = await pkg.readText('xl/drawings/drawing1.xml')
+    expect(drawing).not.toContain('sle:slicer')
+    expect(drawing).not.toContain('<xdr:twoCellAnchor')
     const workbook = await pkg.readText('xl/workbook.xml')
     expect(workbook).not.toContain('slicerCaches')
     expect(workbook).not.toContain('<extLst>')
+    expect(workbook).not.toContain('Slicer_Region')
+    const pivotCache = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+    expect(pivotCache).not.toContain('slicerData')
     const contentTypes = await pkg.readText('[Content_Types].xml')
     expect(contentTypes).not.toContain('slicer')
     expect(await parseSlicerState(readerOf(pkg))).toEqual([])
@@ -383,7 +341,7 @@ describe('slicer write + read round trip', () => {
     // An empty state (no slicers, no removals) is a no-op for the foreign parts.
     await applySlicerState(
       pkg,
-      { slicers: [], timelines: [], removals: [] },
+      { slicers: [], removals: [] },
       await pkg.readText('xl/workbook.xml'),
       new Set(),
     )
@@ -391,7 +349,21 @@ describe('slicer write + read round trip', () => {
     expect(await pkg.has('xl/slicerCaches/slicerCache2.xml')).toBe(true)
     // OLAP caches are skipped by the reader (not representable in-session).
     const restored = await parseSlicerState(readerOf(pkg))
-    expect(restored.map((entry) => entry.name)).toEqual(['Region', 'Date'])
+    expect(restored.map((entry) => entry.name)).toEqual(['Region'])
+  })
+
+  it('leaves timeline parts alone — their persistence is a separate piece of work', async () => {
+    const pkg = fixture()
+    pkg.add(
+      'xl/timelines/timeline1.xml',
+      '<timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">' +
+        '<timeline name="Date" cache="Timeline_Date" caption="Date" level="2" selectionLevel="2"/></timelines>',
+    )
+    await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+    expect(await pkg.has('xl/timelines/timeline1.xml')).toBe(true)
+    // and the reader does not surface it as a session control
+    const restored = await parseSlicerState(readerOf(pkg))
+    expect(restored.map((entry) => entry.name)).toEqual(['Region'])
   })
 
   it('rejects writing and removing the same part in one save', async () => {
@@ -401,8 +373,7 @@ describe('slicer write + read round trip', () => {
         pkg,
         {
           slicers: [{ ...SLICER_INPUT, partPath: slicer.partPath, cachePath: slicer.cachePath }],
-          timelines: [],
-          removals: [{ kind: 'slicer', partPath: slicer.partPath, cachePath: slicer.cachePath }],
+          removals: [{ partPath: slicer.partPath, cachePath: slicer.cachePath }],
         },
         WORKBOOK,
         new Set(),
@@ -414,12 +385,7 @@ describe('slicer write + read round trip', () => {
     const pkg = fixture()
     pkg.remove('xl/pivotTables/pivotTable1.xml')
     await expect(
-      applySlicerState(
-        pkg,
-        { slicers: [SLICER_INPUT], timelines: [], removals: [] },
-        WORKBOOK,
-        new Set(),
-      ),
+      applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set()),
     ).rejects.toThrow(/missing from the workbook/)
   })
 })
@@ -455,7 +421,6 @@ describe('slicer state through the save planner', () => {
 
     const state: SheetSlicerState = {
       slicers: [{ sheetName: 'Data', ...SLICER_INPUT }],
-      timelines: [{ sheetName: 'Data', ...TIMELINE_INPUT }],
       removals: [],
     }
     const plan = await planCellEditsToXlsx(
@@ -495,26 +460,22 @@ describe('slicer state through the save planner', () => {
     for (const part of [
       'xl/slicers/slicer1.xml',
       'xl/slicerCaches/slicerCache1.xml',
-      'xl/timelines/timeline1.xml',
-      'xl/timelineCaches/timelineCache1.xml',
       'xl/worksheets/_rels/sheet1.xml.rels',
       '[Content_Types].xml',
       'xl/workbook.xml',
       'xl/worksheets/sheet1.xml',
+      'xl/pivotCache/pivotCacheDefinition1.xml',
     ]) {
       expect(plan.touchedEntries).toContain(part)
     }
 
     // The saved archive restores the same session state through the reader.
     const restored = await parseSlicerState(await createBufferEntrySource(mutation.buffer))
-    expect(restored).toHaveLength(2)
-    const slicer = restored.find((entry) => entry.kind === 'slicer')
-    const timeline = restored.find((entry) => entry.kind === 'timeline')
-    expect(slicer).toMatchObject({
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({
       sheetId: 'sheet-1',
       pivotCacheDefinitionPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       selectedItems: [0, 2],
     })
-    expect(timeline?.range).toEqual({ startMonth: 2021 * 12, endMonth: 2021 * 12 + 5 })
   })
 })
