@@ -89,9 +89,11 @@ export function homebrewBinDirs(
   const fromEnv = env.HOMEBREW_PREFIX?.replace(/\/+$/, '')
   if (fromEnv && isAbsolute(fromEnv)) roots.add(fromEnv)
   for (const root of HOMEBREW_ROOTS[platform] ?? []) {
-    if (exists(join(root, 'bin', 'brew'))) roots.add(root)
+    if (exists(`${root}/bin/brew`)) roots.add(root)
   }
-  return [...roots].map((r) => join(r, 'bin'))
+  // POSIX-only paths: node:path join would spell them with the host's
+  // separator, and the filter in defaultCandidateDirs compares them verbatim
+  return [...roots].map((r) => `${r}/bin`)
 }
 
 /** `$XDG_BIN_HOME`, then `~/.local/bin`: created on demand because a fresh account rarely has them. */

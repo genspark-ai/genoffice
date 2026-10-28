@@ -41,6 +41,21 @@ export function xmllintAvailable() {
   return spawnSync('xmllint', ['--version'], { encoding: 'utf8' }).status === 0
 }
 
+/** Match an xmllint-reported location (plain path or file URI) back to the part file it names. */
+const locatePart = (entries, reported) => {
+  const forms = [reported]
+  if (/^file:/i.test(reported)) {
+    try {
+      forms.push(fileURLToPath(reported))
+    } catch {
+      /* not a usable file URI: compare the raw form only */
+    }
+  }
+  return entries.find((p) =>
+    forms.some((f) => f === p.file || f.replaceAll('\\', '/') === p.file.replaceAll('\\', '/')),
+  )
+}
+
 /** Markup Compatibility preprocessing against the base schema (no extension namespace understood). */
 export function mcePreprocess(xml) {
   const doc = new DOMParser().parseFromString(xml, 'text/xml')
@@ -103,10 +118,10 @@ export async function validatePptx(input) {
     })
     if (wf.error) throw wf.error
     const malformed = new Set()
-    for (const line of wf.stderr.split('\n')) {
+    for (const line of wf.stderr.split(/\r?\n/)) {
       const m = /^(.*?):(\d+): (.*)$/.exec(line)
       if (!m) continue
-      const part = raw.find((p) => p.file === m[1])?.name
+      const part = locatePart(raw, m[1])?.name
       if (!part) continue
       malformed.add(part)
       problems.push({ part, message: m[3] })
@@ -140,10 +155,10 @@ export async function validatePptx(input) {
         { cwd: SCHEMA_DIR, encoding: 'utf8', maxBuffer: 256 << 20 },
       )
       if (r.error) throw r.error
-      for (const line of r.stderr.split('\n')) {
+      for (const line of r.stderr.split(/\r?\n/)) {
         if (!line || / validates$/.test(line) || / fails to validate$/.test(line)) continue
         const m = /^(.*?):(\d+): (.*)$/.exec(line)
-        const part = m ? (parts.find((p) => p.file === m[1])?.name ?? m[1]) : parts[0]?.name
+        const part = m ? (locatePart(parts, m[1])?.name ?? m[1]) : parts[0]?.name
         problems.push({ part, message: m ? m[3] : line })
       }
     }

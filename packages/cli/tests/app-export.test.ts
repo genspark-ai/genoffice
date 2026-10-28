@@ -72,7 +72,11 @@ describe('exportViaApp', () => {
       env,
       spawn: fakeSpawn(
         {
-          stdout: `log line\n{"status":"ok","summary":"Exported /tmp/a.docx to ${out}","output_path":"${out}"}\n`,
+          stdout: `log line\n${JSON.stringify({
+            status: 'ok',
+            summary: `Exported /tmp/a.docx to ${out}`,
+            output_path: out,
+          })}\n`,
           writeOutput: true,
         },
         calls,
@@ -218,7 +222,7 @@ describe('exportViaApp', () => {
     expect(launch!.command).toMatch(
       process.platform === 'darwin' ? /MacOS\/Electron$/ : /electron/i,
     )
-    expect(launch!.args[0]).toMatch(/apps\/shell$/)
+    expect(launch!.args[0]).toMatch(/apps[\\/]shell$/)
   })
 
   it('parses the last JSON line of stdout', () => {

@@ -162,20 +162,28 @@ describe('resumable installer download', () => {
   it('a mid-stream network failure keeps the .part for the next attempt', async () => {
     const dest = destOf()
     const { executor } = makeUpdater()
-    // a body stream that errors halfway through
     // a real socket hang-up errors the stream after the prefix was delivered
-    // (a synchronous error would void the queued chunk — Node web streams)
+    // (a synchronous error would void the queued chunk — Node web streams), so
+    // the error is raised from the writer's first progress report: that fires
+    // strictly after the prefix was written, which a wall-clock timer cannot
+    // guarantee on a loaded event loop
+    let failStream: (() => void) | undefined
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
+        failStream = () => controller.error(new Error('socket hang up'))
         controller.enqueue(new Uint8Array(FULL.subarray(0, 4)))
-        setTimeout(() => controller.error(new Error('socket hang up')), 5)
       },
     })
     globalThis.fetch = vi.fn(
       async () =>
         new Response(stream, { status: 200, headers: { 'content-length': String(FULL.length) } }),
     ) as unknown as typeof fetch
-    await expect(executor.download(url, dest, { sha512: sha512(FULL) })).rejects.toThrow(/hang up/)
+    await expect(
+      executor.download(url, dest, {
+        sha512: sha512(FULL),
+        onProgress: () => failStream?.(),
+      }),
+    ).rejects.toThrow(/hang up/)
     // the received prefix survives: the next attempt resumes from it
     expect((await stat(partOf())).size).toBe(4)
     expect(await readFile(partOf())).toEqual(FULL.subarray(0, 4))

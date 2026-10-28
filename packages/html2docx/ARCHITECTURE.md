@@ -74,6 +74,7 @@ Because the browser extraction layer needs to be serialized by `page.evaluate` i
 1. The `CHROME_PATH` environment variable
 2. Google Chrome on macOS
 3. Common Google Chrome / Chromium paths on Linux
+4. Standard Windows Chrome locations (env-derived), then Edge as a Chromium fallback
 
 The package talks to the browser through the `BrowserDriver` interface (`src/driver.ts`); the CLI and tests use the Playwright implementation over a locally installed Chrome, the app uses Electron's own webContents. Nothing downloads Chromium. When deploying to Linux, Chromium must be installed in the image, or `CHROME_PATH` must be set.
 

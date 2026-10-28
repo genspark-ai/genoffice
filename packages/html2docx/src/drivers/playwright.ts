@@ -1,12 +1,25 @@
 /**
- * BrowserDriver over playwright-core driving a locally installed Chrome. Used
- * by the tests and the CLI; the app uses the Electron driver instead. Not
- * re-exported from the package index so app bundles never pull in Playwright.
+ * BrowserDriver over playwright-core driving a locally installed Chrome (Edge
+ * as the Windows Chromium fallback). Used by the tests and the CLI; the app
+ * uses the Electron driver instead. Not re-exported from the package index so
+ * app bundles never pull in Playwright.
  */
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { chromium } from 'playwright-core'
 import type { Browser, BrowserContext, Page } from 'playwright-core'
 import type { BrowserDriver, ScreenshotOptions, Viewport } from '../driver'
+
+// Windows install roots resolved from env; undefined on macOS/Linux, so the
+// Windows candidates below drop out there.
+const windowsChromeRoots = [
+  process.env.LOCALAPPDATA,
+  process.env.PROGRAMFILES,
+  process.env['ProgramFiles(x86)'],
+].filter((p): p is string => Boolean(p))
+const windowsEdgeRoots = [process.env.PROGRAMFILES, process.env['ProgramFiles(x86)']].filter(
+  (p): p is string => Boolean(p),
+)
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -15,6 +28,9 @@ const CHROME_CANDIDATES = [
   '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium',
   '/usr/bin/chromium-browser',
+  // Standard Windows Chrome installs, then Edge as the Chromium fallback.
+  ...windowsChromeRoots.map((root) => join(root, 'Google/Chrome/Application/chrome.exe')),
+  ...windowsEdgeRoots.map((root) => join(root, 'Microsoft/Edge/Application/msedge.exe')),
 ].filter((p): p is string => Boolean(p))
 
 export function findChrome(): string {

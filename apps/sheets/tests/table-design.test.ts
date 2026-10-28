@@ -62,7 +62,8 @@ describe('resolveCreateTableRange', () => {
 })
 
 describe('handleTableDesignCommand parsing', () => {
-  it('keeps the colon inside the Create Table range', async () => {
+  // first import pulls the whole renderer chain through a cold transform (~8s)
+  it('keeps the colon inside the Create Table range', { timeout: 60_000 }, async () => {
     const { handleTableDesignCommand } = await import('../src/renderer/table-design-actions')
     const messages: string[] = []
     const ctx = {

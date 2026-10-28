@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { ProjectStore } from '../src/store.js'
+import { ProjectStore, canonicalPathKey } from '../src/store.js'
 
 // ────────────────────────────────────────────────────────────
 // Test helpers
@@ -917,7 +917,8 @@ describe('deleteProject', () => {
     const _resolved = store.resolveProjectForFile('/test/file.docx')
     // resolveProjectForFile doesn't rewrite existing mappings, so check the index first
     const index = (store as any).readIndex()
-    expect(index.fileMap['/test/file.docx']).toBe('default')
+    // fileMap is keyed by the store's canonical path, which is drive-absolute on Windows
+    expect(index.fileMap[canonicalPathKey('/test/file.docx')]).toBe('default')
   })
 
   it('cannot delete the default project', () => {

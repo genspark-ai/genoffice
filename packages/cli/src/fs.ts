@@ -21,6 +21,7 @@ import {
   resolve,
   sep,
 } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { assertNotOpenInGui } from './gui'
 import { assertPackageWithinLimits } from './limits'
 import { CliError, EXIT, type ErrorHints } from './result'
@@ -98,6 +99,25 @@ export function resolveInput(path: string | undefined, ctx: PathContext): string
   if (!statSync(abs).isFile()) throw new CliError(EXIT.file, `not a file: ${abs}`)
   assertPackageWithinLimits(abs, extension(abs))
   return abs
+}
+
+/**
+ * Local path of a file:// URL. On Windows a drive-less (POSIX-style) URL can
+ * never name a local file, so it fails as a file error the same way the
+ * identical missing path fails on POSIX, not as a converter crash.
+ */
+export function fileUrlPath(ref: string): string {
+  try {
+    return fileURLToPath(ref)
+  } catch (err) {
+    if (
+      process.platform === 'win32' &&
+      (err as NodeJS.ErrnoException).code === 'ERR_INVALID_FILE_URL_PATH'
+    ) {
+      throw new CliError(EXIT.file, `file not found: ${new URL(ref).pathname}`)
+    }
+    throw err
+  }
 }
 
 /** Windows: antivirus or the indexer briefly locks the rename target. */

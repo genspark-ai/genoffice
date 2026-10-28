@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   documentMediaRoots,
@@ -45,7 +45,8 @@ describe('localMediaRoots', () => {
 
 describe('documentMediaRoots', () => {
   it("is the open document's directory plus the attachment directory", () => {
-    expect(documentMediaRoots(join('/work', 'deck.pptx'), '/attach')).toEqual(['/work', '/attach'])
+    const doc = join('/work', 'deck.pptx')
+    expect(documentMediaRoots(doc, '/attach')).toEqual([dirname(doc), '/attach'])
   })
 
   it('keeps only the attachment directory for an untitled document', () => {

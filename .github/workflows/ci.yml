@@ -4,6 +4,8 @@ name: CI
 # all workspaces, and the full unit-test suite (engine packages and app tests; the
 # sheets suite also runs the Rust xlsx-sidecar tests). Packaging/signing is handled
 # by separate release automation — this workflow never builds installers.
+# A windows-latest job mirrors the typecheck and unit-test gates to guard the
+# Windows test baseline.
 
 on:
   push:
@@ -161,6 +163,56 @@ jobs:
         run: |
           npm run fixtures -w @genoffice/sheets
           npm run compat -w @genoffice/sheets
+
+  test-windows:
+    # Guards the Windows test baseline: the typecheck and unit-test gates of
+    # `test`, including the Rust xlsx-sidecar tests via sheets. The other
+    # gates are either platform-independent (already covered by the ubuntu
+    # job) or ubuntu-only, and are not duplicated here.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # sheets' test script runs native:test && native:build, so Rust is needed
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      # electron's postinstall cache lives under the user's LocalAppData on
+      # Windows; the runner.os-scoped key keeps this entry apart from Linux's
+      - name: Cache electron binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-bin-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-bin-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Chrome is preinstalled on windows-latest, so the html2docx browser
+      # tests need no setup here; xmllint is absent and the schema-validation
+      # tests skip themselves where it is missing.
+      - name: Test
+        run: npm test
 
   e2e:
     # 22.04, not -latest: 24.04's AppArmor hardening blocks Electron renderer

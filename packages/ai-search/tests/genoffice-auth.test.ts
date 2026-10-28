@@ -149,7 +149,12 @@ describe('startGenofficeLogin', () => {
       key_id: 'kid-1',
       access_token: 'bearer-token',
     })
-    expect(statSync(genofficeAuthPath()).mode & 0o777).toBe(0o600)
+    if (process.platform === 'win32') {
+      // win32 statSync reports no POSIX permission bits; existence plus contents are the contract
+      expect(existsSync(genofficeAuthPath())).toBe(true)
+    } else {
+      expect(statSync(genofficeAuthPath()).mode & 0o777).toBe(0o600)
+    }
     expect(genofficeApiKey()).toBe('gsk-genoffice-key')
     expect(genofficeLoginInFlight()).toBe(false)
 

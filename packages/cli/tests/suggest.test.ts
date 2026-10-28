@@ -59,10 +59,12 @@ describe('writeOutput', () => {
   it('replaces the file whole and keeps its mode', () => {
     const file = join(tempDir(), 'doc.bin')
     writeFileSync(file, 'old')
+    // Windows reports any writable file as 0o666, so 0o600 is not observable there
+    const kept = process.platform === 'win32' ? 0o666 : 0o600
     chmodSync(file, 0o600)
     writeOutput(file, 'new content')
     expect(readFileSync(file, 'utf-8')).toBe('new content')
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    expect(statSync(file).mode & 0o777).toBe(kept)
     const fresh = join(tempDir(), 'fresh.bin')
     writeOutput(fresh, Buffer.from([1, 2, 3]))
     expect(readFileSync(fresh)).toEqual(Buffer.from([1, 2, 3]))

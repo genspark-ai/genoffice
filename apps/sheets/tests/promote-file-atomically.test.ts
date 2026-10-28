@@ -11,24 +11,27 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   truncate,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { promoteFileAtomically } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, copyFile: vi.fn(actual.copyFile) }
+  return { ...actual, copyFile: vi.fn(actual.copyFile), rename: vi.fn(actual.rename) }
 })
 const copyFileMock = vi.mocked(copyFile)
+const renameMock = vi.mocked(rename)
 
 const scratches: string[] = []
 const actualCopyFile = copyFileMock.getMockImplementation()!
+const actualRename = renameMock.getMockImplementation()!
 
 async function scratchDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'genoffice-promote-test-'))
@@ -36,9 +39,23 @@ async function scratchDir(): Promise<string> {
   return dir
 }
 
+/**
+ * Windows turns directory chmod 0o555 into a read-only attribute that does
+ * not refuse renames or new files, so the lock the POSIX run gets for free
+ * is injected through the same mocked fs surface on win32.
+ */
+function blockRenameOnWindows(): void {
+  if (process.platform !== 'win32') return
+  renameMock.mockImplementation(async () => {
+    throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' })
+  })
+}
+
 afterEach(async () => {
   copyFileMock.mockReset()
   copyFileMock.mockImplementation(actualCopyFile)
+  renameMock.mockReset()
+  renameMock.mockImplementation(actualRename)
   for (const dir of scratches.splice(0)) {
     await chmod(dir, 0o755).catch(() => {})
     for (const sub of ['locked']) await chmod(join(dir, sub), 0o755).catch(() => {})
@@ -111,6 +128,7 @@ describe('promoteFileAtomically', () => {
       await truncate(String(dest))
       throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' })
     })
+    blockRenameOnWindows()
     await expect(promoteFileAtomically(temporary, target)).rejects.toThrow(
       'The save target is locked by another program',
     )
@@ -135,8 +153,12 @@ describe('promoteFileAtomically', () => {
         throw busy()
       }
       if (String(dest) === target) throw busy()
+      // the read-only attribute does not refuse creating files in the locked
+      // directory either, so the recovered copy is refused the same way
+      if (process.platform === 'win32' && dirname(String(dest)) === locked) throw busy()
       return actualCopyFile(src, dest, mode)
     })
+    blockRenameOnWindows()
     const failure = await promoteFileAtomically(temporary, target).catch((error: Error) => error)
     await chmod(locked, 0o755)
     expect(failure?.message).toContain('preserved at: ')

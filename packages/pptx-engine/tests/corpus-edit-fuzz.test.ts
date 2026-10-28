@@ -6,13 +6,18 @@
  */
 import { it } from 'vitest'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { validatePptx, newProblems } from '../../../tools/ooxml-validate/validate-pptx.mjs'
+import {
+  validatePptx,
+  newProblems,
+  xmllintAvailable,
+} from '../../../tools/ooxml-validate/validate-pptx.mjs'
 import * as E from '../src/index'
 import type { TextElement, GroupElement } from '../src/types'
 
 const DIRS = (process.env.CORPUS_DIRS ?? '').split(',').filter(Boolean)
-const OUT = process.env.FUZZ_OUT ?? '/tmp/fuzz-report.json'
+const OUT = process.env.FUZZ_OUT ?? path.join(os.tmpdir(), 'fuzz-report.json')
 const MAX_BYTES = 30 * 1024 * 1024
 
 const files = DIRS.flatMap((d) =>
@@ -37,7 +42,7 @@ const step = (deck: string, name: string, fn: () => unknown) => {
   }
 }
 
-it.skipIf(!DIRS.length)(
+it.skipIf(!DIRS.length || (!xmllintAvailable() && !process.env.CI))(
   'corpus edit fuzz',
   async () => {
     let n = 0

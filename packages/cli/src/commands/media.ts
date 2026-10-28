@@ -1,9 +1,8 @@
 import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { analyzeMediaTool, localMediaRoots } from '@genoffice/ai-search'
 import { flagString } from '../args'
 import { aiSettingsPath, prepareCloud } from '../cloud'
-import { resolveInput } from '../fs'
+import { fileUrlPath, resolveInput } from '../fs'
 import type { CommandDef } from '../registry'
 import { CliError, EXIT } from '../result'
 
@@ -25,7 +24,7 @@ export const mediaCommand: CommandDef = {
       })
     const target = /^https?:\/\//i.test(ref)
       ? ref
-      : resolveInput(ref.startsWith('file:') ? fileURLToPath(ref) : ref, ctx)
+      : resolveInput(ref.startsWith('file:') ? fileUrlPath(ref) : ref, ctx)
     await prepareCloud(ctx.env)
     // the user named this file on the command line, so its own directory is the
     // allowlist: an http(s) target is fetched remotely and has no local root

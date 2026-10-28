@@ -1,9 +1,19 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { run, tempDir } from './helpers'
 
 const LAUNCHER = resolve(__dirname, '..', 'bin', 'genoffice')
+
+/**
+ * The entry `mcp install` writes for this checkout: the launcher itself on
+ * macOS/Linux; on Windows an MCP client cannot spawn the POSIX bin script, so
+ * the entry starts the system node on the built bundle (mcpLaunchFromLauncher).
+ */
+const ENTRY: { command: string; args: string[] } =
+  process.platform === 'win32'
+    ? { command: 'node', args: [`${dirname(LAUNCHER)}\\..\\dist\\genoffice.cjs`, 'mcp'] }
+    : { command: LAUNCHER, args: ['mcp'] }
 
 function fakeMachine(agents: string[]) {
   const home = tempDir()
@@ -18,7 +28,7 @@ describe('genoffice mcp list', () => {
     const m = fakeMachine(['.cursor', '.gemini'])
     writeFileSync(
       join(m.home, '.gemini', 'settings.json'),
-      JSON.stringify({ mcpServers: { genoffice: { command: LAUNCHER, args: ['mcp'] } } }),
+      JSON.stringify({ mcpServers: { genoffice: { ...ENTRY } } }),
     )
     const r = await run(['mcp', 'list', '--json'], { env: m.env })
     expect(r.code).toBe(0)
@@ -58,7 +68,7 @@ describe('genoffice mcp install', () => {
       agent: 'cursor',
       status: 'installed',
       registered: true,
-      command: LAUNCHER,
+      command: ENTRY.command,
     })
     const text = readFileSync(file, 'utf-8')
     expect(text.endsWith('\n')).toBe(true)
@@ -66,7 +76,7 @@ describe('genoffice mcp install', () => {
     expect(JSON.parse(text)).toEqual({
       mcpServers: {
         other: { url: 'https://x.test/mcp' },
-        genoffice: { type: 'stdio', command: LAUNCHER, args: ['mcp'] },
+        genoffice: { type: 'stdio', ...ENTRY },
       },
       theme: 'dark',
     })
@@ -82,7 +92,7 @@ describe('genoffice mcp install', () => {
     const r = await run(['mcp', 'install', 'windsurf', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(readJson(join(m.home, '.codeium', 'windsurf', 'mcp_config.json'))).toEqual({
-      mcpServers: { genoffice: { command: LAUNCHER, args: ['mcp'] } },
+      mcpServers: { genoffice: { ...ENTRY } },
     })
   })
 
@@ -98,7 +108,7 @@ describe('genoffice mcp install', () => {
     expect(first.json().detail.agents[0].status).toBe('installed')
     expect(readFileSync(file, 'utf-8')).toBe(
       'model = "gpt-5"\n\n[mcp_servers.other]\ncommand = "npx"\nargs = ["-y", "x"]\n\n' +
-        `[mcp_servers.genoffice]\ncommand = ${JSON.stringify(LAUNCHER)}\nargs = ["mcp"]\n`,
+        `[mcp_servers.genoffice]\ncommand = ${JSON.stringify(ENTRY.command)}\nargs = ${JSON.stringify(ENTRY.args)}\n`,
     )
     expect(
       (await run(['mcp', 'install', 'codex', '--json'], { env: m.env })).json().detail.agents[0]
@@ -121,7 +131,7 @@ describe('genoffice mcp install', () => {
     expect(replaced.json().detail.agents[0].status).toBe('updated')
     expect(readFileSync(file, 'utf-8')).toBe(
       '[mcp_servers.other]\ncommand = "npx"\n\n[projects."/tmp/x"]\ntrust_level = "trusted"\n\n' +
-        `[mcp_servers.genoffice]\ncommand = ${JSON.stringify(LAUNCHER)}\nargs = ["mcp"]\n`,
+        `[mcp_servers.genoffice]\ncommand = ${JSON.stringify(ENTRY.command)}\nargs = ${JSON.stringify(ENTRY.args)}\n`,
     )
   })
 
@@ -160,7 +170,7 @@ describe('genoffice mcp install', () => {
     const forced = await run(['mcp', 'install', 'cursor', '--force', '--json'], { env: m.env })
     expect(forced.code).toBe(0)
     expect(forced.json().detail.agents[0].status).toBe('updated')
-    expect(readJson(file).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(readJson(file).mcpServers.genoffice.command).toBe(ENTRY.command)
   })
 
   it('install all writes only detected agents; an undetected agent needs --force', async () => {
@@ -177,13 +187,12 @@ describe('genoffice mcp install', () => {
     expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(4)
     expect(readJson(join(m.home, '.copilot', 'mcp-config.json')).mcpServers.genoffice).toEqual({
       type: 'local',
-      command: LAUNCHER,
-      args: ['mcp'],
+      ...ENTRY,
       tools: ['*'],
     })
     expect(readJson(join(m.home, '.config', 'opencode', 'opencode.json')).mcp.genoffice).toEqual({
       type: 'local',
-      command: [LAUNCHER, 'mcp'],
+      command: [ENTRY.command, ...ENTRY.args],
       enabled: true,
     })
     expect(existsSync(join(m.home, '.cursor'))).toBe(false)
@@ -205,7 +214,7 @@ describe('genoffice mcp install', () => {
     expect(readJson(file)).toEqual({
       numStartups: 3,
       projects: { '/p': { mcpServers: {} } },
-      mcpServers: { genoffice: { type: 'stdio', command: LAUNCHER, args: ['mcp'] } },
+      mcpServers: { genoffice: { type: 'stdio', ...ENTRY } },
     })
 
     const custom = join(m.home, 'cc-config')
@@ -213,7 +222,7 @@ describe('genoffice mcp install', () => {
     const env = { ...m.env, CLAUDE_CONFIG_DIR: custom }
     const r2 = await run(['mcp', 'install', 'claude-code', '--json'], { env })
     expect(r2.code).toBe(0)
-    expect(readJson(join(custom, '.claude.json')).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(readJson(join(custom, '.claude.json')).mcpServers.genoffice.command).toBe(ENTRY.command)
   })
 
   it('--dir points one agent at a custom config folder, resolved against the working directory', async () => {
@@ -228,9 +237,9 @@ describe('genoffice mcp install', () => {
       status: 'installed',
       config: join(m.home, 'cfg', 'settings.json'),
     })
-    expect(readJson(join(m.home, 'cfg', 'settings.json')).mcpServers.genoffice.args).toEqual([
-      'mcp',
-    ])
+    expect(readJson(join(m.home, 'cfg', 'settings.json')).mcpServers.genoffice.args).toEqual(
+      ENTRY.args,
+    )
     const all = await run(['mcp', 'install', 'all', '--dir', 'cfg', '--json'], { env: m.env })
     expect(all.code).toBe(1)
   })
@@ -242,7 +251,7 @@ describe('genoffice mcp install', () => {
     const r = await run(['mcp', 'install', 'cursor', '--json'], { env: m.env })
     expect(r.code).toBe(2)
     expect(r.json().detail.status).toBe('manual')
-    expect(JSON.parse(r.json().detail.snippet).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(JSON.parse(r.json().detail.snippet).mcpServers.genoffice.command).toBe(ENTRY.command)
     expect(readFileSync(join(m.home, '.cursor', 'mcp.json'), 'utf-8')).toBe(
       '{ "mcpServers": { broken ',
     )
@@ -289,7 +298,7 @@ describe('genoffice mcp install summaries', () => {
     const r = await run(['mcp', 'install', 'cursor', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(r.json().detail.agents[0].status).toBe('installed')
-    expect(readJson(file).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(readJson(file).mcpServers.genoffice.command).toBe(ENTRY.command)
   })
 })
 
@@ -310,10 +319,10 @@ describe('genoffice mcp with a symlinked config', () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true)
     expect(readJson(target).mcpServers).toEqual({
       other: { command: 'x' },
-      genoffice: { type: 'stdio', command: LAUNCHER, args: ['mcp'] },
+      genoffice: { type: 'stdio', ...ENTRY },
     })
     expect(lstatSync(join(m.home, '.claude.json')).isSymbolicLink()).toBe(true)
-    expect(readJson(claudeTarget).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(readJson(claudeTarget).mcpServers.genoffice.command).toBe(ENTRY.command)
 
     const u = await run(['mcp', 'uninstall', 'cursor', '--json'], { env: m.env })
     expect(u.json().detail.agents[0].status).toBe('removed')
@@ -336,7 +345,7 @@ describe('genoffice mcp with a symlinked config directory', () => {
     const r = await run(['mcp', 'install', 'cursor', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(r.json().detail.agents[0].status).toBe('installed')
-    expect(readJson(target).mcpServers.genoffice.command).toBe(LAUNCHER)
+    expect(readJson(target).mcpServers.genoffice.command).toBe(ENTRY.command)
     expect(lstatSync(join(m.home, '.cursor')).isSymbolicLink()).toBe(true)
     expect(lstatSync(join(dotfiles, 'cursor', 'mcp.json')).isSymbolicLink()).toBe(true)
     expect(existsSync(join(m.home, 'store'))).toBe(false)

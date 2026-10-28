@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto'
 import { dirname, extname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { generateImageTool, localMediaRoots } from '@genoffice/ai-search'
 import {
   MAX_REMOTE_IMAGE_BYTES,
@@ -9,7 +8,7 @@ import {
 } from '@genoffice/electron-utils/remote-image'
 import { flagBool, flagString } from '../args'
 import { aiSettingsPath, prepareCloud } from '../cloud'
-import { resolveInput, resolveOutput, writeOutput } from '../fs'
+import { fileUrlPath, resolveInput, resolveOutput, writeOutput } from '../fs'
 import type { CommandDef } from '../registry'
 import { CliError, EXIT } from '../result'
 
@@ -70,9 +69,7 @@ export const imageCommand: CommandDef = {
       .filter(Boolean)
       // only http(s) is remote; file:// and plain paths go through the path policy before upload
       .map((r) =>
-        /^https?:\/\//i.test(r)
-          ? r
-          : resolveInput(r.startsWith('file:') ? fileURLToPath(r) : r, ctx),
+        /^https?:\/\//i.test(r) ? r : resolveInput(r.startsWith('file:') ? fileUrlPath(r) : r, ctx),
       )
     // resolve (policy, --force) the output before spending generation credits; the
     // default name is checked as .png here and re-checked under the real extension

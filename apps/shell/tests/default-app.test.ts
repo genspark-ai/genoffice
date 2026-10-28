@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   OFFICE_TYPES,
@@ -134,7 +135,8 @@ describe('createDefaultAppService', () => {
       platform: 'linux',
       run,
       readFile: (p) => {
-        if (p.endsWith('/usr/share/applications/wps-office-et.desktop'))
+        // linuxDesktopName joins its search dirs, so match the joined shape on every platform
+        if (p.endsWith(join('/usr/share/applications', 'wps-office-et.desktop')))
           return '[Desktop Entry]\nName=WPS Spreadsheets\n'
         throw new Error('ENOENT')
       },

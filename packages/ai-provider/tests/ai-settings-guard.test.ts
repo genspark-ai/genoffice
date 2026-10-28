@@ -5,7 +5,8 @@
  * user's gsk bearer token. 'ai:stream' / 'ai:chat' consumed the same payload
  * per request without any check. The main process must schema-check first.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,9 +16,11 @@ import { normalizeBaseUrl } from '../src/registry'
 
 const tempDirs: string[] = []
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs()
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  // rmSync hard-crashes the process on Windows for non-ASCII paths (Node 24
+  // win-x64 sync fs.rm bug, exit 0xC0000409); fs.promises.rm is unaffected
+  for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 
 function existingFilePath(): string {
@@ -146,12 +149,15 @@ describe('sanitizeAiSettings', () => {
   })
 
   it('keeps Windows-style paths with spaces and non-ASCII (reviewer case: C:\\Users\\Ana María\\codex.exe)', () => {
-    // on POSIX the reviewer's string cannot name a real file, so exercise the
-    // same shape (backslashes, dot, space, í) as a literal file name; on
-    // Windows the exact reviewer string is stat'd directly and behaves the same
+    // the reviewer's string names a real file only on POSIX, where every
+    // character is legal in a name; win32 forbids ':' in a component, so
+    // there the same shape (backslash separators via join(), dot, space, í)
+    // is exercised with a name win32 can create
+    const name =
+      process.platform === 'win32' ? 'Ana María codex.exe' : 'C:\\Users\\Ana María\\codex.exe'
     const dir = mkdtempSync(join(tmpdir(), 'genoffice-ai-guard-'))
     tempDirs.push(dir)
-    const cliPath = join(dir, 'C:\\Users\\Ana María\\codex.exe')
+    const cliPath = join(dir, name)
     writeFileSync(cliPath, 'bin\n')
     expect(validCliPath(cliPath)).toBe(true)
   })

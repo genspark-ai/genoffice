@@ -19,6 +19,19 @@ import {
 } from '../src/install'
 import { tempDir } from './helpers'
 
+/**
+ * A candidate directory the link walk must refuse as not writable. POSIX: a
+ * directory chmod'd read-only. Windows has no mode bits on directories, so a
+ * read-only file stands in: the walk's W_OK probe fails on it the same way.
+ */
+function lockedDir(parent: string): string {
+  const locked = join(parent, 'locked')
+  if (process.platform === 'win32') writeFileSync(locked, '')
+  else mkdirSync(locked)
+  chmodSync(locked, 0o555)
+  return locked
+}
+
 describe('installCliLink', () => {
   it('links into the first writable directory and is idempotent', () => {
     const dir = tempDir()
@@ -94,9 +107,7 @@ describe('installCliLink', () => {
       'occupied',
     )
 
-    const locked = join(dir, 'locked')
-    mkdirSync(locked)
-    chmodSync(locked, 0o555)
+    const locked = lockedDir(dir)
     const r = installCliLink({ launcher, platform: 'linux', candidateDirs: [locked] })
     const seen = inspectCliLink({ launcher, platform: 'linux', candidateDirs: [locked] })
     chmodSync(locked, 0o755)
@@ -207,10 +218,13 @@ describe('installCliLink', () => {
     const launcher = join(home, 'app', 'genoffice')
     mkdirSync(join(home, 'app'))
     writeFileSync(launcher, '#!/bin/sh\n')
-    const locked = join(home, 'locked')
-    mkdirSync(locked)
-    chmodSync(locked, 0o555)
+    const locked = lockedDir(home)
     const userBin = join(home, '.local', 'bin')
+    // Windows join spells the dir with backslashes and the POSIX hint quotes it literally
+    const userHint =
+      process.platform === 'win32'
+        ? `export PATH="${userBin}:$PATH"`
+        : 'export PATH="$HOME/.local/bin:$PATH"'
     const env = { HOME: home, PATH: '/usr/bin:/bin' }
     const dirs = [locked, userBin]
     try {
@@ -219,19 +233,24 @@ describe('installCliLink', () => {
         status: 'missing',
         location: join(userBin, 'genoffice'),
         manual: expect.stringContaining('sudo'),
-        pathHint: 'export PATH="$HOME/.local/bin:$PATH"',
+        pathHint: userHint,
       })
       expect(existsSync(userBin)).toBe(false)
       expect(installCliLink({ launcher, platform: 'linux', candidateDirs: dirs, env })).toEqual({
         status: 'linked',
         location: join(userBin, 'genoffice'),
-        pathHint: 'export PATH="$HOME/.local/bin:$PATH"',
+        pathHint: userHint,
       })
       expect(readlinkSync(join(userBin, 'genoffice'))).toBe(launcher)
       const onPath = { ...env, PATH: `${userBin}/:${env.PATH}` }
       expect(
         installCliLink({ launcher, platform: 'linux', candidateDirs: dirs, env: onPath }),
-      ).toEqual({ status: 'present', location: join(userBin, 'genoffice') })
+      ).toEqual(
+        // a drive-letter dir can never equal a ':'-split PATH entry, so the hint stays on Windows
+        process.platform === 'win32'
+          ? { status: 'present', location: join(userBin, 'genoffice'), pathHint: userHint }
+          : { status: 'present', location: join(userBin, 'genoffice') },
+      )
       // an explicit non-user dir never gets created or a PATH hint
       const absent = join(home, 'no-such-bin')
       expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [absent], env })).toEqual(
@@ -357,9 +376,7 @@ describe('the Homebrew prefix is never written uninvited (genoffice#1914)', () =
     // the shape that produced the report: every system dir is unwritable, and
     // the first directory the old walk found writable was the brew prefix
     const home = tempDir()
-    const locked = join(home, 'locked')
-    mkdirSync(locked)
-    chmodSync(locked, 0o555)
+    const locked = lockedDir(home)
     const launcher = join(home, 'app', 'genoffice')
     mkdirSync(join(home, 'app'))
     writeFileSync(launcher, '#!/bin/sh\n')
