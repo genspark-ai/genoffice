@@ -686,6 +686,15 @@ export interface PdfPermissions {
   copying: boolean
 }
 
+/** Password protection carried on a save: the source is opened with the user
+    password and the output is written back under the same configuration. */
+export interface PdfEncryptionInput {
+  userPassword: string
+  /** who may lift the limits; defaults to the user password in the UI */
+  ownerPassword: string
+  permissions: PdfPermissions
+}
+
 export interface SavePdfRequest {
   path: string
   /**
@@ -694,6 +703,9 @@ export interface SavePdfRequest {
    * Must match the target granted to the view by the main process (save dialog pick).
    */
   targetPath?: string
+  /** Present while the session works on a password-protected document: the source
+      bytes are opened with the user password and the output is re-protected. */
+  encryption?: PdfEncryptionInput
   /** Password of the file currently on disk, when it is protected — needed even when
       this save writes plain (protection removed): a password change makes it differ
       from `encryption.userPassword`. */

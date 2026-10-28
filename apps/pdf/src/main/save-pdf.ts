@@ -19,7 +19,7 @@ import {
 } from 'pdf-lib'
 import type { PDFPage } from 'pdf-lib'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
-import { decryptDocument } from './pdf-crypt'
+import { decryptDocument, encryptDocument } from './pdf-crypt'
 import type {
   BlankPageInput,
   DrawingInput,
@@ -1291,7 +1291,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: e.newText }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, request.encryption?.userPassword)))
   }
   const appliedInserts = (request.textInserts ?? []).filter(
     (_insert, editIndex) =>
@@ -1303,7 +1303,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, insert.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: insert.text }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, request.encryption?.userPassword)))
   }
   const appliedImages = (request.imageEdits ?? []).filter(
     (e, i) => e.kind !== 'deleteImage' && !skips.skippedImageEdits.some((s) => s.editIndex === i),
@@ -1372,7 +1372,7 @@ export async function applySaveRequest(
   // the protected output of the previous save, and the session's edits only make
   // sense against the plaintext (a failure here means the file changed underneath
   // the session — surfaced to the user as a save error).
-  const sourcePassword = request.decryption?.userPassword
+  const sourcePassword = request.decryption?.userPassword ?? request.encryption?.userPassword
   if (sourcePassword !== undefined) {
     bytes = (await decryptDocument(bytes, sourcePassword)).bytes
   }
@@ -1515,11 +1515,21 @@ export async function applySaveRequest(
       )
   }
   refreshFieldAppearances(pdfDoc)
+  // Protection serializes with the document: strings and streams are encrypted in
+  // place, so no object/xref stream may be created after this point (all saves here
+  // already run with useObjectStreams off). Redaction below re-serializes a cleaned
+  // graph, which would drop the trailer entry — protect that output instead.
+  if (request.encryption) encryptDocument(pdfDoc, request.encryption)
   let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
   // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
   // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
   if (request.redactions?.length) {
     saved = await redactPdf(saved, request.redactions)
+    if (request.encryption) {
+      const cleaned = await PDFDocument.load(saved, { updateMetadata: false })
+      encryptDocument(cleaned, request.encryption)
+      saved = await cleaned.save({ useObjectStreams: false })
+    }
   }
   return {
     bytes: saved,
