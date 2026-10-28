@@ -10,14 +10,14 @@
   "desktopName": "genoffice.desktop",
   "scripts": {
     "dev": "electron-vite dev --watch",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node ../../tools/build-web-preloads.mjs",
     "notices": "node ../../tools/gen-third-party-notices.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "start": "electron-vite build && electron .",
-    "dist:mac": "npm run notices && electron-vite build && electron-builder --mac",
-    "dist:win": "npm run notices && electron-vite build && electron-builder --win",
-    "dist:linux": "npm run notices && electron-vite build && electron-builder --linux"
+    "dist:mac": "npm run notices && npm run build && electron-builder --mac",
+    "dist:win": "npm run notices && npm run build && electron-builder --win",
+    "dist:linux": "npm run notices && npm run build && electron-builder --linux"
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",

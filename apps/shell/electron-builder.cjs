@@ -227,6 +227,9 @@ function assertModuleTreesPresent() {
     '../html/out',
     '../../packages/cli/dist/genoffice.cjs',
     '../../packages/cli/dist/node_modules/jsdom',
+    // web-server mode's browser bundles; shell's build script produces them
+    'web-preloads/client.js',
+    'web-preloads/preload-docs.js',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -485,6 +488,13 @@ const config = {
     {
       from: '../../node_modules/electron/dist/LICENSES.chromium.html',
       to: 'LICENSES.chromium.html',
+    },
+    {
+      // web-server mode's browser bundles (client.js + per-app preload
+      // shims), built by tools/build-web-preloads.mjs as part of
+      // `npm run build` — the packaged build ships the web mode too
+      from: 'web-preloads',
+      to: 'web-preloads',
     },
     {
       from: '../docs/out',

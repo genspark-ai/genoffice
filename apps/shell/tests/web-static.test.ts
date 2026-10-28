@@ -96,6 +96,9 @@ describe('web static serving', () => {
     expect(html).toContain('preload-docs.js')
     expect(html.indexOf('/__web/client.js')).toBeLessThan(html.indexOf('type="module"'))
     expect(html).toMatch(/connect-src [^"]*ws:/)
+    // the rewritten scheme-source is invalid in a CSP and appears twice in the
+    // docs meta (img-src + connect-src); both must go
+    expect(html).not.toContain('/__media:')
   })
 
   it('rewrites the docs media scheme to a same-origin path', async () => {

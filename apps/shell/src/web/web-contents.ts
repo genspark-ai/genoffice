@@ -110,7 +110,13 @@ export class WebTabContents {
   }
 
   once(event: string, listener: () => void): this {
-    return this.on(event, listener)
+    // self-removing wrapper: Electron once() never fires twice, and the
+    // listener set must not accumulate a spent copy forever
+    const wrapped = (): void => {
+      this.removeListener(event, wrapped)
+      listener()
+    }
+    return this.on(event, wrapped)
   }
 
   removeListener(event: string, listener: () => void): this {

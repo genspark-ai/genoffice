@@ -6,9 +6,16 @@ import { WebSocketServer } from 'ws'
 import { app } from 'electron'
 import { attachWebBridge, broadcastWebEvent } from './bridge'
 import { installWebDialogPatch } from './web-dialogs'
-import { serveWebStatic, tokenValid, webRendererRoots, type RendererRoots } from './static'
+import {
+  originHostOk,
+  serveWebStatic,
+  tokenValid,
+  webRendererRoots,
+  type RendererRoots,
+} from './static'
 import { serveWebApi } from './api'
 import { createCliRunner, type CliRunner } from '../main/mcp/cli-runner'
+import { showErrorDialog } from '../main/error-dialog'
 import { setWebPrintToPDFDelegate } from './web-contents'
 import { webPrintToPDF } from './web-print'
 
@@ -17,6 +24,12 @@ import { webPrintToPDF } from './web-print'
  * front end talks to the same main-process IPC handlers the desktop windows
  * use — one WebSocket per browser tab stands in for the WebContents an Electron
  * view would own. Start it with `--web-server` (or GENOFFICE_WEB=1).
+ *
+ * The service sits on every captured IPC handler, so it is always
+ * token-authenticated: a random token is generated unless one is given, every
+ * route and the WebSocket upgrade require it, and Origin headers must match
+ * the server's own Host (DNS-rebinding / cross-site guard). Share the printed
+ * `?token=…` URL, never the bare port.
  */
 
 export interface WebServerConfig {
@@ -31,6 +44,13 @@ export interface WebServerHandle {
   close(): void
 }
 
+/** only `--flag value` consumes the next argv; a bare `--web-token` generates */
+function flagValue(argv: string[], i: number): [value: string | undefined, next: number] {
+  const value = argv[i + 1]
+  if (value === undefined || value.startsWith('--')) return [undefined, i]
+  return [value, i + 1]
+}
+
 export function parseWebServerArgv(argv: string[]): {
   enabled: boolean
   overrides: Partial<WebServerConfig>
@@ -42,7 +62,13 @@ export function parseWebServerArgv(argv: string[]): {
     if (arg === '--web-server') enabled = true
     else if (arg === '--web-port') overrides.port = Number(argv[++i])
     else if (arg === '--web-host') overrides.host = argv[++i]
-    else if (arg === '--web-token') overrides.token = argv[++i] || randomBytes(24).toString('hex')
+    else if (arg === '--web-token') {
+      // value optional: `--web-token secret` pins one, bare `--web-token`
+      // generates (the token is never optional)
+      const [value, consumed] = flagValue(argv, i)
+      i = consumed
+      overrides.token = value ?? randomBytes(24).toString('hex')
+    }
   }
   if (process.env.GENOFFICE_WEB_PORT) overrides.port = Number(process.env.GENOFFICE_WEB_PORT)
   if (process.env.GENOFFICE_WEB_HOST) overrides.host = process.env.GENOFFICE_WEB_HOST
@@ -79,6 +105,9 @@ export async function startWebServer(
   deps: { apiRunner?: CliRunner } = {},
 ): Promise<WebServerHandle> {
   const config: WebServerConfig = { ...defaultWebConfig(), ...overrides }
+  // the surface reaches every file-read/write handler: a token is not optional
+  config.token ??= randomBytes(24).toString('hex')
+  const token = config.token
   const roots: RendererRoots = webRendererRoots()
   const apiRunner = deps.apiRunner ?? bundledWebCliRunner()
 
@@ -87,19 +116,27 @@ export async function startWebServer(
 
   // an uncaught exception in web mode must not become Electron's native error
   // dialog: its modal loop stops the Node event loop, and with it every
-  // HTTP/WebSocket connection the browser holds. Log loudly instead.
+  // HTTP/WebSocket connection the browser holds. Log it and surface it through
+  // the async (non-modal) error dialog the desktop app already uses, so the
+  // failure is visible without freezing live browser sessions.
   process.on('uncaughtException', (err) => {
     console.error('[web] uncaught exception:', err)
+    showErrorDialog(null, 'GenOffice web service hit an unexpected error.', err)
   })
   process.on('unhandledRejection', (reason) => {
     console.error('[web] unhandled rejection:', reason)
   })
 
   const server = createServer((req, res) => {
-    void serveWebApi(req, res, { token: config.token, runner: apiRunner })
+    if (!originHostOk(req)) {
+      res.writeHead(403)
+      res.end('cross-origin request refused')
+      return
+    }
+    void serveWebApi(req, res, { token, runner: apiRunner })
       .then((served) => {
         if (served) return
-        return serveWebStatic(req, res, { roots, token: config.token })
+        return serveWebStatic(req, res, { roots, token })
       })
       .catch((err) => {
         console.error('[web] request failed:', err)
@@ -112,7 +149,10 @@ export async function startWebServer(
 
   const wss = new WebSocketServer({ noServer: true })
   server.on('upgrade', (req, socket, head) => {
-    if (config.token && !tokenValid(req, config.token)) {
+    // the WebSocket is not governed by the browser's same-origin policy, so
+    // the Origin check is what keeps a malicious page from driving the user's
+    // session with its cookies; token check does the rest
+    if (!originHostOk(req) || !tokenValid(req, token)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()
       return
@@ -135,9 +175,8 @@ export async function startWebServer(
   })
 
   const where = `http://${config.host === '0.0.0.0' || config.host === '::' ? '127.0.0.1' : config.host}:${config.port}/`
-  const suffix = config.token ? `?token=${config.token}` : ''
-  console.log(`[web] GenOffice web UI: ${where}${suffix}`)
-  if (config.token) console.log('[web] token auth is on — share the printed URL, not the bare port')
+  console.log(`[web] GenOffice web UI: ${where}?token=${token}`)
+  console.log('[web] token auth is always on — share the printed URL, not the bare port')
 
   return {
     server,

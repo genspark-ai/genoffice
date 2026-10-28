@@ -17,8 +17,7 @@ const nativeOpen = vi.fn(async () => ({ canceled: true, filePaths: [] }))
 const nativeMessage = vi.fn(async () => ({ response: 0 }))
 
 import {
-  beginWebDispatch,
-  endWebDispatch,
+  runWithWebDispatch,
   installWebDialogPatch,
   listWebDialogDir,
   resolveWebDialog,
@@ -56,22 +55,44 @@ describe('web dialogs', () => {
   afterEach(() => {
     if (dir) rmSync(dir, { recursive: true, force: true })
     dir = ''
-    endWebDispatch()
   })
 
   it('routes dialogs to the tab during a web dispatch', async () => {
     const { tab, requests } = tabWithCapturedDialogs()
-    beginWebDispatch(tab)
     const dialog = (await import('electron')).dialog as unknown as {
       showSaveDialog: (options: unknown) => Promise<unknown>
     }
-    const result = dialog.showSaveDialog({ title: 'Export', defaultPath: '/tmp/x.pdf' })
+    const result = runWithWebDispatch(tab, () =>
+      dialog.showSaveDialog({ title: 'Export', defaultPath: '/tmp/x.pdf' }),
+    )
     await new Promise((r) => setTimeout(r, 20))
     expect(requests).toHaveLength(1)
     expect(requests[0].options).toMatchObject({ kind: 'save', title: 'Export' })
     resolveWebDialog(requests[0].id, { canceled: false, filePath: '/tmp/x.pdf' })
     await expect(result).resolves.toEqual({ canceled: false, filePath: '/tmp/x.pdf' })
     expect(nativeSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps the dispatch context across awaits and drops it after', async () => {
+    const { tab, requests } = tabWithCapturedDialogs()
+    const seen = runWithWebDispatch(tab, async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      // still inside the async chain after an await: concurrent dispatches
+      // cannot bleed into each other
+      ;(await import('electron')).dialog
+        .showSaveDialog({ title: 'still scoped' })
+        .catch(() => undefined)
+      await new Promise((r) => setTimeout(r, 10))
+      return requests.length
+    })
+    await new Promise((r) => setTimeout(r, 40))
+    await expect(seen).resolves.toBe(1)
+    // after the chain ends, the same call takes the native path again
+    const dialog2 = (await import('electron')).dialog as unknown as {
+      showMessageBox: (options: unknown) => Promise<unknown>
+    }
+    await dialog2.showMessageBox({ message: 'native' })
+    expect(nativeMessage).toHaveBeenCalledTimes(1)
   })
 
   it('keeps native dialogs outside a web dispatch', async () => {
@@ -84,14 +105,12 @@ describe('web dialogs', () => {
 
   it('maps open dialogs and honors a canceled response', async () => {
     const { tab, requests } = tabWithCapturedDialogs()
-    beginWebDispatch(tab)
     const dialog = (await import('electron')).dialog as unknown as {
       showOpenDialog: (options: unknown) => Promise<unknown>
     }
-    const result = dialog.showOpenDialog({ title: 'Pick' })
+    const result = runWithWebDispatch(tab, () => dialog.showOpenDialog({ title: 'Pick' }))
     await new Promise((r) => setTimeout(r, 20))
     expect(requests).toHaveLength(1)
-    endWebDispatch()
     resolveWebDialog(requests[0].id, { canceled: true })
     await expect(result).resolves.toEqual({ canceled: true, filePaths: [] })
   })

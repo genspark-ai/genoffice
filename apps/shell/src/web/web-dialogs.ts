@@ -1,6 +1,7 @@
 import * as electronDialog from 'electron'
 import type { MessageBoxOptions, OpenDialogOptions, SaveDialogOptions } from 'electron'
 import { readdir } from 'node:fs/promises'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import type { WebTabContents } from './web-contents'
@@ -70,19 +71,23 @@ export function cancelWebDialogsFor(tab: WebTabContents): void {
 
 const dialogOwners = new Map<number, WebTabContents>()
 
-/** the tab whose handler dispatch is running; null during desktop dispatches */
-let dispatchTab: WebTabContents | null = null
+/**
+ * The tab whose handler dispatch is running, tracked per async chain:
+ * desktop and web dispatches interleave freely (each awaits handlers), and a
+ * module-level "current tab" would hijack a concurrent desktop dialog into a
+ * browser tab or vice versa. AsyncLocalStorage follows each dispatch's own
+ * await chain, so a dialog call always sees the tab that started it.
+ */
+const dispatchStorage = new AsyncLocalStorage<WebTabContents>()
 
-export function beginWebDispatch(tab: WebTabContents): void {
-  dispatchTab = tab
+/** run `fn` with `tab` as the web-dispatch context (bridge invoke/send) */
+export function runWithWebDispatch<T>(tab: WebTabContents, fn: () => T): T {
+  return dispatchStorage.run(tab, fn)
 }
 
-export function endWebDispatch(): void {
-  dispatchTab = null
-}
-
-function isWebDispatch(): boolean {
-  return dispatchTab !== null
+/** the tab of the running web dispatch; null during desktop dispatches */
+function webDispatchTab(): WebTabContents | null {
+  return dispatchStorage.getStore() ?? null
 }
 
 type ShowSave = (options: SaveDialogOptions) => Promise<{ canceled: boolean; filePath?: string }>
@@ -101,16 +106,18 @@ export function installWebDialogPatch(): void {
   const nativeMessage = d.showMessageBox.bind(d)
 
   d.showSaveDialog = (options: SaveDialogOptions) => {
-    if (!isWebDispatch()) return nativeSave(options)
-    return serveWebDialog(dispatchTab!, saveOptionsOf(options)).then((result) =>
+    const tab = webDispatchTab()
+    if (!tab) return nativeSave(options)
+    return serveWebDialog(tab, saveOptionsOf(options)).then((result) =>
       result.canceled || !('filePath' in result)
         ? { canceled: true }
         : { canceled: false, filePath: result.filePath },
     )
   }
   d.showOpenDialog = (options: OpenDialogOptions) => {
-    if (!isWebDispatch()) return nativeOpen(options)
-    return serveWebDialog(dispatchTab!, {
+    const tab = webDispatchTab()
+    if (!tab) return nativeOpen(options)
+    return serveWebDialog(tab, {
       kind: 'open',
       title: options.title,
       defaultPath: Array.isArray(options.defaultPath) ? undefined : options.defaultPath,
@@ -124,8 +131,9 @@ export function installWebDialogPatch(): void {
     )
   }
   d.showMessageBox = (options: MessageBoxOptions) => {
-    if (!isWebDispatch()) return nativeMessage(options)
-    return serveWebDialog(dispatchTab!, {
+    const tab = webDispatchTab()
+    if (!tab) return nativeMessage(options)
+    return serveWebDialog(tab, {
       kind: 'message',
       title: options.title,
       message: options.message,

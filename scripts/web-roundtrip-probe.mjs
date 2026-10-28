@@ -11,6 +11,8 @@ const require = createRequire(join(root, 'package.json'))
 const { chromium } = require('playwright-core')
 
 const base = process.argv[2] ?? 'http://127.0.0.1:8931'
+const token = process.env.WEB_TOKEN ?? ''
+const withToken = (path) => `${base}${path}${path.includes('?') ? '&' : '?'}token=${token}`
 const file = '/tmp/web-e2e/report.docx'
 const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -18,7 +20,7 @@ const browser = await chromium.launch({ executablePath, headless: true })
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
 page.on('pageerror', (err) => console.log('[pageerror]', String(err).slice(0, 200)))
 
-await page.goto(`${base}/docs/?path=${encodeURIComponent(file)}`, {
+await page.goto(withToken(`/docs/?path=${encodeURIComponent(file)}`), {
   waitUntil: 'domcontentloaded',
   timeout: 30000,
 })

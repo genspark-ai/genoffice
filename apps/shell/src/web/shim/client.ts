@@ -143,7 +143,7 @@ function toast(text: string): void {
   const el = document.createElement('div')
   el.textContent = text
   el.style.cssText =
-    'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1f2328;color:#fff;padding:8px 14px;border-radius:8px;z-index:2147483647;font:13px -apple-system,system-ui,sans-serif'
+    'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--text,#1f2328);color:var(--surface,#fff);padding:8px 14px;border-radius:var(--radius-4,8px);z-index:2147483647;font:13px -apple-system,system-ui,sans-serif'
   document.body.appendChild(el)
   setTimeout(() => el.remove(), 3200)
 }
@@ -191,17 +191,17 @@ function showDialogOverlay(req: DialogRequest): void {
   const host = overlayHost()
   const panel = document.createElement('div')
   panel.style.cssText =
-    'background:#fff;border-radius:12px;min-width:460px;max-width:620px;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden'
+    'background:var(--surface,#fff);border-radius:var(--radius-8,12px);min-width:460px;max-width:620px;max-height:70vh;display:flex;flex-direction:column;box-shadow:var(--shadow-overlay,0 18px 50px rgba(0,0,0,.3));overflow:hidden'
   panel.innerHTML = `
-    <div style="padding:12px 16px;border-bottom:1px solid #e4e7ec;font-weight:600;font-size:14px" data-role="title"></div>
-    <div style="padding:8px 16px 0;font-size:12px;color:#59636e" data-role="crumbs"></div>
-    <div data-role="list" style="flex:1;overflow:auto;margin:8px 16px;border:1px solid #e4e7ec;border-radius:8px;min-height:220px"></div>
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border,#e4e7ec);font-weight:600;font-size:14px" data-role="title"></div>
+    <div style="padding:8px 16px 0;font-size:12px;color:var(--text-secondary,#606366)" data-role="crumbs"></div>
+    <div data-role="list" style="flex:1;overflow:auto;margin:8px 16px;border:1px solid var(--border,#e4e7ec);border-radius:var(--radius-4,8px);min-height:220px"></div>
     <div style="padding:0 16px 12px;display:flex;gap:8px;align-items:center" data-role="namer">
-      <input data-role="name" style="flex:1;padding:7px 10px;border:1px solid #d1d9e0;border-radius:8px;font-size:13px" />
+      <input data-role="name" style="flex:1;padding:7px 10px;border:1px solid var(--border,#d1d9e0);border-radius:var(--radius-4,8px);font-size:13px" />
     </div>
-    <div style="padding:12px 16px;border-top:1px solid #e4e7ec;display:flex;justify-content:flex-end;gap:8px">
-      <button data-role="cancel" style="padding:7px 14px;border:1px solid #d1d9e0;background:#fff;border-radius:8px;cursor:pointer;font-size:13px">Cancel</button>
-      <button data-role="ok" style="padding:7px 14px;border:1px solid #0969da;background:#0969da;color:#fff;border-radius:8px;cursor:pointer;font-size:13px"></button>
+    <div style="padding:12px 16px;border-top:1px solid var(--border,#e4e7ec);display:flex;justify-content:flex-end;gap:8px">
+      <button data-role="cancel" style="padding:7px 14px;border:1px solid var(--border,#d1d9e0);background:var(--surface,#fff);border-radius:var(--radius-4,8px);cursor:pointer;font-size:13px">Cancel</button>
+      <button data-role="ok" style="padding:7px 14px;border:1px solid var(--accent,#0969da);background:var(--accent,#0969da);color:var(--docs-on-accent,#fff);border-radius:var(--radius-4,8px);cursor:pointer;font-size:13px"></button>
     </div>`
   host.appendChild(panel)
 
@@ -231,7 +231,7 @@ function showDialogOverlay(req: DialogRequest): void {
       const row = document.createElement('div')
       row.textContent = (entry.dir ? '📁 ' : '　 ') + entry.name
       row.style.cssText = 'padding:4px 10px;cursor:pointer;font-size:13px;white-space:nowrap'
-      row.onmouseenter = () => (row.style.background = '#f3f4f6')
+      row.onmouseenter = () => (row.style.background = 'var(--hover,#f3f4f6)')
       row.onmouseleave = () => (row.style.background = '')
       row.onclick = () => {
         if (entry.dir) void showDir(dir.replace(/\/$/, '') + '/' + entry.name)
@@ -281,22 +281,22 @@ function showMessageOverlay(req: DialogRequest): void {
   const host = overlayHost()
   const panel = document.createElement('div')
   panel.style.cssText =
-    'background:#fff;border-radius:12px;min-width:380px;max-width:520px;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.3);font-size:14px'
+    'background:var(--surface,#fff);border-radius:var(--radius-8,12px);min-width:380px;max-width:520px;padding:20px;box-shadow:var(--shadow-overlay,0 18px 50px rgba(0,0,0,.3));font-size:14px'
   const buttons = req.options.buttons?.length ? req.options.buttons : ['OK']
   panel.innerHTML = `
     <div style="font-weight:600;margin-bottom:6px">${escapeHtml(req.options.message ?? '')}</div>
-    <div style="color:#59636e;margin-bottom:16px;white-space:pre-wrap">${escapeHtml(req.options.detail ?? '')}</div>
+    <div style="color:var(--text-secondary,#606366);margin-bottom:16px;white-space:pre-wrap">${escapeHtml(req.options.detail ?? '')}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px" data-role="buttons"></div>`
   host.appendChild(panel)
   const row = panel.querySelector('[data-role="buttons"]') as HTMLElement
   buttons.forEach((label, index) => {
     const btn = document.createElement('button')
     btn.textContent = label
-    btn.style.cssText = `padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid #d1d9e0;background:#fff;${index === 0 ? '' : ''}`
+    btn.style.cssText = `padding:7px 14px;border-radius:var(--radius-4,8px);cursor:pointer;font-size:13px;border:1px solid var(--border,#d1d9e0);background:var(--surface,#fff);${index === 0 ? '' : ''}`
     if (index === buttons.length - 1) {
-      btn.style.background = '#0969da'
-      btn.style.borderColor = '#0969da'
-      btn.style.color = '#fff'
+      btn.style.background = 'var(--accent,#0969da)'
+      btn.style.borderColor = 'var(--accent,#0969da)'
+      btn.style.color = 'var(--docs-on-accent,#fff)'
     }
     btn.onclick = () => {
       host.remove()
@@ -325,7 +325,7 @@ function showLostOverlay(): void {
   const host = overlayHost()
   host.style.background = 'rgba(15,18,22,.85)'
   host.innerHTML =
-    '<div style="background:#fff;border-radius:12px;padding:24px 28px;font:14px -apple-system,system-ui,sans-serif;max-width:420px">' +
+    '<div style="background:var(--surface,#fff);border-radius:var(--radius-8,12px);padding:24px 28px;font:14px -apple-system,system-ui,sans-serif;max-width:420px;color:var(--text,#242424)">' +
     '<b>GenOffice service disconnected.</b><br><br>' +
     'The local service stopped or restarted. Reload this tab once it is reachable again.</div>'
 }

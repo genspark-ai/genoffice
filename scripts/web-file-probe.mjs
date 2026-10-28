@@ -10,6 +10,8 @@ const require = createRequire(join(root, 'package.json'))
 const { chromium } = require('playwright-core')
 
 const base = process.argv[2] ?? 'http://127.0.0.1:8931'
+const token = process.env.WEB_TOKEN ?? ''
+const withToken = (path) => `${base}${path}${path.includes('?') ? '&' : '?'}token=${token}`
 const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 const browser = await chromium.launch({ executablePath, headless: true })
@@ -17,7 +19,7 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
 page.on('pageerror', (err) => console.log(`[pageerror:${page.url()}]`, String(err).slice(0, 200)))
 
 // 1. docx: pending-open → consume → editor renders text
-await page.goto(`${base}/docs/?path=${encodeURIComponent('/tmp/web-e2e/report.docx')}`, {
+await page.goto(withToken(`/docs/?path=${encodeURIComponent('/tmp/web-e2e/report.docx')}`), {
   waitUntil: 'domcontentloaded',
   timeout: 30000,
 })
@@ -39,7 +41,7 @@ try {
 await page.screenshot({ path: '/tmp/web-probe-docs-file.png' })
 
 // 2. sheets: queued workbook → sidecar session → Univer grid shows cells
-await page.goto(`${base}/sheets/?path=${encodeURIComponent('/tmp/web-e2e/book.xlsx')}`, {
+await page.goto(withToken(`/sheets/?path=${encodeURIComponent('/tmp/web-e2e/book.xlsx')}`), {
   waitUntil: 'domcontentloaded',
   timeout: 30000,
 })
@@ -52,7 +54,7 @@ try {
 await page.screenshot({ path: '/tmp/web-probe-sheets-file.png' })
 
 // 3. markdown: pending open → editor content
-await page.goto(`${base}/markdown/?path=${encodeURIComponent('/tmp/web-e2e/note.md')}`, {
+await page.goto(withToken(`/markdown/?path=${encodeURIComponent('/tmp/web-e2e/note.md')}`), {
   waitUntil: 'domcontentloaded',
   timeout: 30000,
 })

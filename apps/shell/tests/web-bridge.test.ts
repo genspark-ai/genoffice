@@ -1,15 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WebSocket } from 'ws'
 
-// hoisted so the electron factory can reference it
-const { ipcMainMock } = vi.hoisted(() => ({
-  ipcMainMock: {
-    handle: (_channel: string, _fn: unknown) => {},
-    on: (_channel: string, _fn: unknown) => {},
-    once: (_channel: string, _fn: unknown) => {},
-    removeHandler: (_channel: string) => {},
-  },
-}))
+// hoisted so the electron factory can reference it; the registration methods
+// delegate to these maps in the factory itself, because capture.ts installs at
+// import time and would bind the pre-assignment noop methods otherwise
+const { ipcMainMock, ipcRegistry, sendRegistry } = vi.hoisted(() => {
+  const ipcRegistry = new Map<string, (...args: unknown[]) => unknown>()
+  const sendRegistry = new Map<string, ((...args: unknown[]) => unknown)[]>()
+  return {
+    ipcRegistry,
+    sendRegistry,
+    ipcMainMock: {
+      handle: (channel: string, fn: unknown) => {
+        ipcRegistry.set(channel, fn as never)
+      },
+      on: (channel: string, fn: unknown) => {
+        const list = sendRegistry.get(channel) ?? []
+        list.push(fn as never)
+        sendRegistry.set(channel, list)
+      },
+      once: (channel: string, fn: unknown) => {
+        const list = sendRegistry.get(channel) ?? []
+        list.push(fn as never)
+        sendRegistry.set(channel, list)
+      },
+      removeHandler: (channel: string) => {
+        ipcRegistry.delete(channel)
+      },
+    },
+  }
+})
 
 vi.mock('electron', () => ({
   session: { defaultSession: { spellCheckerLanguages: [] } },
@@ -39,22 +59,6 @@ vi.mock('../../html/src/main/html-main', () => ({
 const docsSeeds: [string, unknown[]][] = []
 const sheetsSeeds: unknown[][] = []
 const otherSeeds: [string, unknown, unknown][] = []
-
-const ipcRegistry = new Map<string, (...args: unknown[]) => unknown>()
-const sendRegistry = new Map<string, ((...args: unknown[]) => unknown)[]>()
-
-ipcMainMock.handle = (channel: string, fn: unknown) => {
-  ipcRegistry.set(channel, fn as never)
-}
-ipcMainMock.on = (channel: string, fn: unknown) => {
-  const list = sendRegistry.get(channel) ?? []
-  list.push(fn as never)
-  sendRegistry.set(channel, list)
-}
-ipcMainMock.once = ipcMainMock.on
-ipcMainMock.removeHandler = (channel: string) => {
-  ipcRegistry.delete(channel)
-}
 
 import { WebSocketServer } from 'ws'
 import { installWebIpcCapture } from '../src/web/capture'

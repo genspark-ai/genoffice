@@ -10,11 +10,10 @@ import { decodeFrame, encodeFrame } from './serialize'
 import { rewriteIn, rewriteOut } from './schemes'
 import { WebTabContents, registerWebTab, unregisterWebTab } from './web-contents'
 import {
-  beginWebDispatch,
-  endWebDispatch,
+  cancelWebDialogsFor,
   listWebDialogDir,
   resolveWebDialog,
-  cancelWebDialogsFor,
+  runWithWebDispatch,
   validateWebDialogPath,
   webDialogStartDirs,
 } from './web-dialogs'
@@ -108,20 +107,19 @@ async function dispatchInvoke(
   const startedAt = Date.now()
   const args = rewriteIn(appOfTab(ctx.tab), rawArgs) as unknown[]
   try {
-    const override = invokeOverrides[channel]
-    beginWebDispatch(ctx.tab)
-    if (override) {
-      value = await override(ctx, args)
-    } else {
+    // AsyncLocalStorage scopes the dialog patch to this dispatch's own await
+    // chain: a concurrent desktop IPC dispatch keeps its native dialogs
+    value = await runWithWebDispatch(ctx.tab, async () => {
+      const override = invokeOverrides[channel]
+      if (override) return override(ctx, args)
       const handler = getInvokeHandler(channel)
       if (!handler) throw new Error(`No handler for "${channel}"`)
-      value = await handler(makeEvent(ctx.tab), ...args)
-    }
+      return handler(makeEvent(ctx.tab), ...args)
+    })
   } catch (err) {
     ctx.ws.send(encodeFrame({ t: 'reply', id, ok: false, error: String(err) }))
     return
   } finally {
-    endWebDispatch()
     const took = Date.now() - startedAt
     if (took > 300) console.log(`[web] invoke ${channel} took ${took}ms`)
   }
@@ -133,8 +131,7 @@ async function dispatchInvoke(
 function dispatchSend(ctx: DispatchContext, channel: string, rawArgs: unknown[]): void {
   const listeners = getSendListeners(channel)
   const args = rewriteIn(appOfTab(ctx.tab), rawArgs) as unknown[]
-  beginWebDispatch(ctx.tab)
-  try {
+  runWithWebDispatch(ctx.tab, () => {
     for (const listener of listeners) {
       try {
         listener(makeEvent(ctx.tab), ...args)
@@ -142,9 +139,7 @@ function dispatchSend(ctx: DispatchContext, channel: string, rawArgs: unknown[])
         console.error(`[web] send handler ${channel}:`, err)
       }
     }
-  } finally {
-    endWebDispatch()
-  }
+  })
 }
 
 async function dispatchDialogList(

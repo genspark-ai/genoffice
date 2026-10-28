@@ -107,10 +107,15 @@ export function injectIntoHtml(html: string, injection: string): string {
   // the served page rewrites this app's media schemes to same-origin paths;
   // their CSP entries (img-src md-asset: …) become invalid sources, so drop
   // them, and widen connect-src with a bare ws: scheme-source — the desktop
-  // CSP's ws://localhost:* misses a 127.0.0.1 or LAN origin
-  html = html.replace(/(content="[^"]*)\/__(?:media|mdasset|preview|htmlasset):/g, '$1')
+  // CSP's ws://localhost:* misses a 127.0.0.1 or LAN origin. The rewritten
+  // path appears in the CSP more than once, so the scheme-source is removed
+  // wherever it occurs (anchor-free); the index.html carries no other
+  // `/__media:`-shaped text (the bundles are separate files).
+  html = html.replace(/\/__(?:media|mdasset|preview|htmlasset):/g, '')
+  // always append the bare ws: scheme-source: the desktop CSP's
+  // ws://localhost:* does not match a 127.0.0.1 or LAN serving host
   html = html.replace(/connect-src ([^"]*?)(?=")/, (m, list: string) =>
-    m.includes(' ws:') ? m : `connect-src ${list} ws:`,
+    m.endsWith(' ws:') ? m : `connect-src ${list} ws:`,
   )
   const moduleScript = /<script[^>]*type="module"[^>]*>/
   const match = moduleScript.exec(html)
@@ -145,10 +150,11 @@ async function serveDocsMedia(res: ServerResponse, pathname: string): Promise<bo
   const schemeUrl = `genoffice-docx-media://${rest}`
   const handed = takeHandoff(schemeUrl)
   if (handed) {
+    // same-origin only: the bridge delivered this URL to the page that owns
+    // the bytes, so no CORS carve-out is wanted
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
       'Content-Length': String(handed.byteLength),
-      'Access-Control-Allow-Origin': '*',
     })
     res.end(handed)
     return true
@@ -211,6 +217,29 @@ export function tokenCookieHeader(req: IncomingMessage, token: string): string |
   return `${TOKEN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict`
 }
 
+/**
+ * DNS-rebinding / cross-site guard, applied to every HTTP request and the
+ * WebSocket upgrade. A request that carries an Origin header (every browser
+ * context does; top-level navigations and non-browser clients like curl do
+ * not) must originate from this server's own host — a malicious page driving
+ * `ws://127.0.0.1:8931/` or a form-POST to the API announces its origin and
+ * is refused here. The Host header must be present and well-formed either way.
+ */
+export function originHostOk(req: IncomingMessage): boolean {
+  const host = req.headers.host
+  if (!host || host.includes('\0') || host.length > 255) return false
+  const origin = req.headers.origin
+  if (!origin) return true
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+  return parsed.host === host
+}
+
 function unauthorized(res: ServerResponse): void {
   res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' })
   res.end(
@@ -236,12 +265,14 @@ function launcherHtml(): string {
     .join('')
   return `<!doctype html><html><head><meta charset="utf-8"><title>GenOffice Web</title>
 <style>
-body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:48px auto;padding:0 24px;color:#1f2328}
-h1{font-size:20px}p{color:#59636e;font-size:14px}
+/* standalone page without the design-token stylesheet: every var() carries
+   the light-theme value as fallback so the launcher still reads correctly */
+body{font-family:-apple-system,system-ui,sans-serif;max-width:720px;margin:48px auto;padding:0 24px;color:var(--text,#242424);background:var(--surface,#fff)}
+h1{font-size:20px}p{color:var(--text-secondary,#606366);font-size:14px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:24px}
-.card{display:flex;flex-direction:column;gap:4px;padding:16px;border:1px solid #d1d9e0;border-radius:10px;text-decoration:none;color:inherit}
-.card span{color:#59636e;font-size:12px}
-.card:hover{border-color:#0969da}
+.card{display:flex;flex-direction:column;gap:4px;padding:16px;border:1px solid var(--border,#e3e6ea);border-radius:var(--radius-6,10px);text-decoration:none;color:inherit}
+.card span{color:var(--text-secondary,#606366);font-size:12px}
+.card:hover{border-color:var(--accent,#0969da);background:var(--hover,#f5f5f5)}
 </style></head><body>
 <h1>GenOffice Web</h1>
 <p>The desktop suite's engines, editing in a browser tab. Open a document from an
