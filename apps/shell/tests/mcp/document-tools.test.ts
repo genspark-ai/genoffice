@@ -340,6 +340,7 @@ describe('M6 visible-editing tools (docs control wired)', () => {
       'create_session',
       'get_app_info',
       'insert_content',
+      'insert_picture',
       'open_in_genoffice',
       'read_document',
       'read_docx',
@@ -395,6 +396,38 @@ describe('M6 visible-editing tools (docs control wired)', () => {
       command: 'apply_ops',
       payload: { ops: [{ op: 'setFont' }], dryRun: true },
     })
+  })
+
+  it('routes insert_picture with its payload', async () => {
+    await client2!.callTool({ name: 'create_session', arguments: { family: 'docx' } })
+    const result = await client2!.callTool({
+      name: 'insert_picture',
+      arguments: {
+        url: 'https://example.com/pic.png',
+        afterBlockIndex: 0,
+        width: 240,
+        float: { anchor: 'page', x: 24, y: 96, wrap: 'square' },
+        altText: 'chart',
+      },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(fake.calls.at(-1)).toEqual({
+      wcId: 42,
+      command: 'insert_picture',
+      payload: {
+        url: 'https://example.com/pic.png',
+        afterBlockIndex: 0,
+        width: 240,
+        float: { anchor: 'page', x: 24, y: 96, wrap: 'square' },
+        altText: 'chart',
+      },
+    })
+  })
+
+  it('insert_picture requires a url', async () => {
+    await client2!.callTool({ name: 'create_session', arguments: { family: 'docx' } })
+    const result = await client2!.callTool({ name: 'insert_picture', arguments: {} })
+    expect(result.isError).toBe(true)
   })
 
   it('save_session forwards path + overwrite and ends the session', async () => {

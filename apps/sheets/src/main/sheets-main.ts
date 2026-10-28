@@ -3605,12 +3605,18 @@ export function registerSheetsIpc(): void {
         session.suggestSaveAs ?? session.restoreTarget ?? session.path,
       )
       const ext = macroEnabled ? 'xlsm' : 'xlsx'
+      // A name the model proposed for the reader's own request prefills the
+      // dialog rather than replacing it: the reader still chooses where the
+      // file goes, and cancelling still cancels. Without one, the dialog opens
+      // on the name the save would have offered anyway.
+      const fallbackPath =
+        session.suggestSaveAs ??
+        session.csvSourcePath?.replace(/\.[^.]+$/, '.xlsx') ??
+        session.restoreTarget ??
+        session.path
+      const proposed = request.defaultName ? sanitizeAutoRenameBase(request.defaultName) : null
       const selection = await saveFileDialog(event, {
-        defaultPath:
-          session.suggestSaveAs ??
-          session.csvSourcePath?.replace(/\.[^.]+$/, '.xlsx') ??
-          session.restoreTarget ??
-          session.path,
+        defaultPath: proposed ? join(dirname(fallbackPath), `${proposed}.${ext}`) : fallbackPath,
         filters: macroEnabled
           ? [{ name: tm('filterXlsm'), extensions: ['xlsm'] }]
           : [

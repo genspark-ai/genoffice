@@ -65,6 +65,7 @@ export const cs = {
   ribbonOpen: 'Otevřít…',
   ribbonSave: 'Uložit',
   ribbonSaveAs: 'Uložit jako…',
+  ribbonNameWithAi: 'Název pomocí AI…',
   ribbonConvert: 'Převést',
   ribbonConvertTip: 'Převést do PDF, HTML, Markdown nebo obrázků',
   ribbonConvertPdf: 'Převést do PDF…',

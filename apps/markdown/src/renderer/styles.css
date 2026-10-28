@@ -659,6 +659,13 @@ html.markdown-graph-open .ribbon-tabs {
   white-space: nowrap;
 }
 
+/* a labelled button in an icon-only row: wide enough for any locale's text */
+.qa-name-with-ai {
+  width: auto;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
 .qa-btn svg {
   display: block;
   margin: 0 auto;

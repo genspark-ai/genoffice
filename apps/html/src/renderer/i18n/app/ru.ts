@@ -68,6 +68,7 @@ export const ru = {
   openExternal: 'Ссылка открыта в браузере',
   save: 'Сохранить (⌘S)',
   saveAs: 'Сохранить как…',
+  aiNameFile: 'Назвать с помощью ИИ…',
   ribbonCollapse: 'Свернуть ленту',
   ribbonExpand: 'Развернуть ленту',
   ribbonGroupInsert: 'Вставка',

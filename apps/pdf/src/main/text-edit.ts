@@ -2137,6 +2137,64 @@ export function applyTextInserts(
         }
         byPage.set(input.pageIndex, [...(byPage.get(input.pageIndex) ?? []), { input, editIndex }])
       })
+      // One resolved face per (font, bold, italic) across the request: the OCR
+      // bake sends hundreds of same-face lines, and resolving per insert
+      // subsetted and loaded a font per line — a 40-page scan wrote on the
+      // order of 2000 font objects. The subset covers the merged text of every
+      // line sharing the face, so each line still has its glyphs.
+      const faceKeyOf = (input: TextInsertInput): string =>
+        `${input.font ?? ''}|${input.bold ? 1 : 0}|${input.italic ? 1 : 0}`
+      const faces = new Map<string, { input: TextInsertInput; editIndex: number }[]>()
+      for (const pageInserts of byPage.values())
+        for (const entry of pageInserts) {
+          const key = faceKeyOf(entry.input)
+          faces.set(key, [...(faces.get(key) ?? []), entry])
+        }
+      const faceCache = new Map<
+        string,
+        { font: number; truetype: boolean; syntheticBold: boolean; failed?: string }
+      >()
+      for (const [key, group] of faces) {
+        const first = group[0]!.input
+        const merged = group.map(({ input }) => input.text.replace(/\n/g, '')).join('')
+        const pseudoEdit: TextEditInput = {
+          pageIndex: 0,
+          rect: [0, 0, 0, 0],
+          oldText: '',
+          newText: merged,
+          fontSize: first.fontSize,
+          newFontSize: first.fontSize,
+          newColor: first.color,
+          newFont: first.font,
+          newBold: first.bold,
+          newItalic: first.italic,
+        }
+        try {
+          const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
+            m,
+            0,
+            pseudoEdit,
+            merged,
+          )
+          const fontPtr = m._malloc(fontBytes.length)
+          m.HEAPU8.set(fontBytes, fontPtr)
+          const font = m._FPDFText_LoadFont(
+            doc,
+            fontPtr,
+            fontBytes.length,
+            isTruetype(fontBytes) ? FPDF_FONT_TRUETYPE : FPDF_FONT_TYPE1,
+            1,
+          )
+          m._free(fontPtr)
+          if (!font) throw new Error('FPDFText_LoadFont failed')
+          faceCache.set(key, { font, truetype: isTruetype(fontBytes), syntheticBold })
+        } catch (err) {
+          const reason = errMsg(err)
+          faceCache.set(key, { font: 0, truetype: true, syntheticBold: false, failed: reason })
+          for (const { input, editIndex } of group)
+            skipped.push({ editIndex, pageIndex: input.pageIndex, reason })
+        }
+      }
       for (const [pageIndex, pageInserts] of byPage) {
         const page = m._FPDF_LoadPage(doc, pageIndex)
         if (!page) throw new Error(`could not load page ${pageIndex + 1}`)
@@ -2148,38 +2206,11 @@ export function applyTextInserts(
               skipped.push({ editIndex, pageIndex, reason: 'empty inserted text' })
               continue
             }
-            const pseudoEdit: TextEditInput = {
-              pageIndex,
-              rect: [input.origin[0], input.origin[1], input.origin[0], input.origin[1]],
-              oldText: '',
-              newText: input.text,
-              fontSize: input.fontSize,
-              newFontSize: input.fontSize,
-              newColor: input.color,
-              newFont: input.font,
-              newBold: input.bold,
-              newItalic: input.italic,
-            }
+            const face = faceCache.get(faceKeyOf(input))
+            if (!face || face.failed) continue // recorded as skipped with the face
             const created: number[] = []
-            let font = 0
             try {
-              const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
-                m,
-                0,
-                pseudoEdit,
-                input.text,
-              )
-              const fontPtr = m._malloc(fontBytes.length)
-              m.HEAPU8.set(fontBytes, fontPtr)
-              font = m._FPDFText_LoadFont(
-                doc,
-                fontPtr,
-                fontBytes.length,
-                isTruetype(fontBytes) ? FPDF_FONT_TRUETYPE : FPDF_FONT_TYPE1,
-                1,
-              )
-              m._free(fontPtr)
-              if (!font) throw new Error('FPDFText_LoadFont failed')
+              const font = face.font
               const matrixPtr = m._malloc(24)
               try {
                 const leading = input.lineLeading ?? input.fontSize * LINE_GAP
@@ -2215,7 +2246,13 @@ export function applyTextInserts(
                     input.color[2],
                     255,
                   )
-                  if (syntheticBold)
+                  if (input.invisible) {
+                    // render mode 3 (invisible): the standard OCR-layer form.
+                    // White fill still shows on grey paper, photos and dark
+                    // headers, and lights up under selection.
+                    m._FPDFTextObj_SetTextRenderMode(obj, 3)
+                  }
+                  if (face.syntheticBold && !input.invisible)
                     strokeObject(
                       m,
                       obj,
@@ -2228,7 +2265,7 @@ export function applyTextInserts(
                 m._free(matrixPtr)
               }
               for (const obj of created) m._FPDFPage_InsertObject(page, obj)
-              embeddedCff = !isTruetype(fontBytes) || embeddedCff
+              if (!face.truetype) embeddedCff = true
               applied++
             } catch (err) {
               for (const obj of created) m._FPDFPageObj_Destroy(obj)

@@ -45,7 +45,12 @@ export interface DocToolDeps {
 
 /** editor commands the docs renderer bridge understands (see docs shared/ipc.ts) */
 export type McpEditorCommandName =
-  'insert_content' | 'replace_blocks' | 'apply_ops' | 'read_document' | 'save_document'
+  | 'insert_content'
+  | 'replace_blocks'
+  | 'apply_ops'
+  | 'insert_picture'
+  | 'read_document'
+  | 'save_document'
 
 /**
  * Visible-editor control: opens a docs tab and pushes editor commands into it,
@@ -335,6 +340,69 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
           ops: args.ops,
           dryRun: args.dryRun === true,
         })
+      },
+    },
+    {
+      name: 'insert_picture',
+      description:
+        'Insert a picture into the visible document from a direct image link (png/jpg/gif), ' +
+        'at a given size, inline after a block or floating at a position with text wrap. ' +
+        'Use read_document for block indexes.',
+      inputSchema: {
+        url: z.string().describe('direct image link (png/jpg/gif)'),
+        afterBlockIndex: z
+          .number()
+          .int()
+          .optional()
+          .describe('insert after this block (-1 = start of document); default: end of document'),
+        width: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            'display width, "2.54cm", "1in", "72pt", "96px" or a bare number of points; ' +
+              'default natural size capped at 480px',
+          ),
+        height: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe('display height; omit to keep the aspect ratio'),
+        float: z
+          .object({
+            anchor: z
+              .enum(['paragraph', 'page', 'margin'])
+              .optional()
+              .describe(
+                'what x/y measure from: the anchor paragraph (default), the page corner, ' +
+                  'or the margin box corner',
+              ),
+            x: z
+              .union([z.number(), z.string()])
+              .optional()
+              .describe(
+                'horizontal offset, "2.54cm", "1in", "72pt", "96px" or a bare number of points',
+              ),
+            y: z
+              .union([z.number(), z.string()])
+              .optional()
+              .describe(
+                'vertical offset, "2.54cm", "1in", "72pt", "96px" or a bare number of points',
+              ),
+            wrap: z
+              .enum(['square', 'tight', 'topAndBottom', 'behind', 'inFront'])
+              .optional()
+              .describe('how text wraps around the floating picture (default square)'),
+          })
+          .optional()
+          .describe(
+            'omit for an inline picture in its own paragraph; give it to float the picture ' +
+              'at a position',
+          ),
+        altText: z.string().optional().describe('alternative text (accessibility)'),
+        document: documentField,
+      },
+      handler: async (args) => {
+        const wc = await target(args.document, { focus: true })
+        return docs.runCommand(wc, 'insert_picture', args)
       },
     },
     {

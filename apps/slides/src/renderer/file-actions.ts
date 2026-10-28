@@ -6,6 +6,7 @@
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ExportPdfLink } from '../shared/ipc'
 import { baseName } from '../shared/base-name'
+import { modelSaveAsName } from './file-naming'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
@@ -93,6 +94,9 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
     const ctx = getCtx()
     await flushActiveEdit(ctx)
     await ctx.flushNotes()
+    // No name is proposed here: a save never waits on a model round-trip. An
+    // untitled deck keeps the app's own name, the localized "Untitled
+    // presentation" the main process produces in `pickDraftPath`.
     const r = await window.slidesApi.save()
     if (r.ok) {
       if (r.slides) adoptSavedSlides(ctx, r.slides)
@@ -113,14 +117,47 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
 }
 
 export async function saveAs(getCtx: () => ActionCtx): Promise<void> {
+  await saveAsWithName(getCtx, null)
+}
+
+/**
+ * Ask the model to name this deck, on request, then open Save As with its
+ * answer prefilled.
+ *
+ * The stem goes into the dialog rather than renaming the file on disk: a deck
+ * that may be open elsewhere, presented from another machine, or synced is not
+ * something to move behind the reader's back. A declined or empty answer
+ * leaves the dialog on the deck's current name, so this is a no-op rather than
+ * a failure.
+ */
+export async function nameWithAi(getCtx: () => ActionCtx): Promise<void> {
+  const ctx = getCtx()
+  // the model reads the deck, so an edit still being typed has to land first
+  const editing = ctx.editingActiveRef.current
+  await flushActiveEdit(ctx)
+  // that commit can replace the deck, so read it again rather than from the
+  // snapshot taken before the flush
+  const deck = editing ? getCtx() : ctx
+  const stem = await modelSaveAsName(deck.slides)
+  if (!stem) return
+  await saveAsWithName(getCtx, `${stem}.pptx`)
+}
+
+/**
+ * Save As with a name the reader (or the model, via `nameWithAi`) chose.
+ *
+ * A null name means "the deck's current name", which is read inside the queue:
+ * a save that landed while this call was waiting may have changed it.
+ */
+export async function saveAsWithName(getCtx: () => ActionCtx, name: string | null): Promise<void> {
   // Same queue as save(): Save + Save As (or double Save As) write through
   // the same main-process pipe and would interleave without it.
   await runSerialized(async () => {
     const ctx = getCtx()
     await flushActiveEdit(ctx)
     await ctx.flushNotes()
-    const name = baseName(ctx.path ?? '') || 'presentation.pptx'
-    const r = await window.slidesApi.saveAs(name)
+    const target = name ?? (baseName(ctx.path ?? '') || 'presentation.pptx')
+    const r = await window.slidesApi.saveAs(target)
     if (r.ok) {
       if (r.slides) adoptSavedSlides(ctx, r.slides)
       ctx.setPath(r.path ?? ctx.path)

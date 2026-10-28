@@ -350,6 +350,7 @@ export const ru = {
     'Этот лист содержит сводную таблицу — перемещение диапазонов пока не поддерживается.',
   appMergeOverTable:
     'Выделение пересекается с таблицей Excel — объединение ячеек внутри таблицы пока не поддерживается.',
+  appFilterToggleFailed: 'Фильтр не применён — сначала выделите диапазон с данными.',
   appAutofillStreaming:
     'Автозаполнение в область, которая ещё загружается потоково, пока не разрешено.',
   appDvNeedsIndexed:
@@ -726,6 +727,7 @@ export const ru = {
   appExportPdfTitle: 'Экспорт в PDF',
   appSaveTitle: 'Сохранить (⌘S)',
   appSaveAs: 'Сохранить как',
+  aiNameFile: 'Назвать с помощью ИИ…',
   appUndo: 'Отменить',
   appRedo: 'Вернуть',
   appUnsavedEditOne: '● Несохранённых изменений: {count}',

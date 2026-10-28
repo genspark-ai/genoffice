@@ -68,6 +68,7 @@ export const ko = {
   openExternal: '브라우저에서 링크를 열었습니다',
   save: '저장 (⌘S)',
   saveAs: '다른 이름으로 저장…',
+  aiNameFile: 'AI로 이름 지정…',
   ribbonCollapse: '리본 축소',
   ribbonExpand: '리본 확장',
   ribbonGroupInsert: '삽입',

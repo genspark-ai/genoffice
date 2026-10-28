@@ -326,6 +326,7 @@ export const th = {
   appDialogCancel: 'ยกเลิก',
   appPivotSheetNoMove: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการย้ายช่วง',
   appMergeOverTable: 'ส่วนที่เลือกซ้อนทับตาราง Excel — ยังไม่รองรับการผสานเซลล์ภายในตาราง',
+  appFilterToggleFailed: 'ไม่ได้ใช้ตัวกรอง — เลือกช่วงที่มีข้อมูลก่อน',
   appAutofillStreaming: 'ยังไม่อนุญาตให้เติมอัตโนมัติลงในพื้นที่ที่กำลังโหลดแบบสตรีม',
   appDvNeedsIndexed:
     'การแก้ไขการตรวจสอบความถูกต้องของข้อมูลต้องรอให้แผ่นงานนี้ทำดัชนีเสร็จก่อน — ลองใหม่อีกสักครู่',
@@ -674,6 +675,7 @@ export const th = {
   appExportPdfTitle: 'ส่งออกเป็น PDF',
   appSaveTitle: 'บันทึก (⌘S)',
   appSaveAs: 'บันทึกเป็น',
+  aiNameFile: 'ตั้งชื่อด้วย AI…',
   appUndo: 'เลิกทำ',
   appRedo: 'ทำซ้ำ',
   appUnsavedEditOne: '● การแก้ไข {count} รายการยังไม่บันทึก',

@@ -65,6 +65,7 @@ export const en = {
   ribbonOpen: 'Open…',
   ribbonSave: 'Save',
   ribbonSaveAs: 'Save As…',
+  ribbonNameWithAi: 'Name with AI…',
   ribbonConvert: 'Convert',
   ribbonConvertTip: 'Convert to PDF, HTML, Markdown or images',
   ribbonConvertPdf: 'Convert to PDF…',

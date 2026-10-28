@@ -157,6 +157,39 @@ export function MarkupOverlay({
           const style: CSSProperties = pdfRectToCss(geom, quadToRect(q), scale)
           if (m.type === 'highlight') {
             style.background = `rgba(${r * 255}, ${g * 255}, ${b * 255}, 0.4)`
+          } else if (m.type === 'squiggly') {
+            // Wavy line pinned to the quad's bottom edge; the stretched viewBox keeps
+            // the wave periodic at any quad width while non-scaling-stroke keeps the
+            // stroke 2px at any zoom (matches the saved annotation's appearance)
+            const bar = `rgb(${r * 255}, ${g * 255}, ${b * 255})`
+            const points = Array.from({ length: 21 }, (_, k) => {
+              const y = k % 2 === 0 ? 3 : k % 4 === 1 ? 0.7 : 5.3
+              return `${k * 5},${y}`
+            }).join(' ')
+            return (
+              <div
+                key={`${m.id}-${i}`}
+                className={`pdf-markup pdf-markup-squiggly${m.id === selectedId ? ' pdf-markup-selected' : ''}`}
+                style={style}
+              >
+                <svg
+                  width="100%"
+                  height="6"
+                  viewBox="0 0 100 6"
+                  preserveAspectRatio="none"
+                  style={{ position: 'absolute', bottom: 0, left: 0, overflow: 'visible' }}
+                  aria-hidden
+                >
+                  <polyline
+                    points={points}
+                    fill="none"
+                    stroke={bar}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              </div>
+            )
           } else {
             const bar = `rgb(${r * 255}, ${g * 255}, ${b * 255})`
             if (m.type === 'underline') style.borderBottom = `2px solid ${bar}`

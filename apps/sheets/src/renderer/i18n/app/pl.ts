@@ -359,6 +359,7 @@ export const pl = {
     'Ten arkusz zawiera tabelę przestawną — przenoszenie zakresów nie jest jeszcze obsługiwane.',
   appMergeOverTable:
     'Zaznaczenie nachodzi na tabelę programu Excel — scalanie komórek w tabeli nie jest jeszcze obsługiwane.',
+  appFilterToggleFailed: 'Filtr nie został zastosowany — najpierw zaznacz zakres z danymi.',
   appAutofillStreaming:
     'Autouzupełnianie do obszaru, który wciąż jest ładowany strumieniowo, nie jest jeszcze dozwolone.',
   appDvNeedsIndexed:
@@ -733,6 +734,7 @@ export const pl = {
   appExportPdfTitle: 'Eksportuj jako PDF',
   appSaveTitle: 'Zapisz (⌘S)',
   appSaveAs: 'Zapisz jako',
+  aiNameFile: 'Nazwij za pomocą AI…',
   appUndo: 'Cofnij',
   appRedo: 'Wykonaj ponownie',
   appUnsavedEditOne: '● {count} niezapisana zmiana',

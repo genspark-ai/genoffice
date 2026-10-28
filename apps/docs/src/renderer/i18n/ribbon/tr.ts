@@ -65,6 +65,7 @@ export const tr = {
   ribbonOpen: 'Aç…',
   ribbonSave: 'Kaydet',
   ribbonSaveAs: 'Farklı Kaydet…',
+  ribbonNameWithAi: 'Yapay zeka ile adlandır…',
   ribbonConvert: 'Dönüştür',
   ribbonConvertTip: 'PDF, HTML, Markdown veya resimlere dönüştür',
   ribbonConvertPdf: "PDF'ye Dönüştür…",

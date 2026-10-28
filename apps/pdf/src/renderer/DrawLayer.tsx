@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { pdfToView, viewToPdf } from './annotations'
 import type { PageGeom } from './annotations'
 import type { DrawingInput } from '../shared/ipc'
 
-export type DrawTool = 'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'note' | 'redact' | 'link'
+export type DrawTool =
+  'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'note' | 'redact' | 'link' | 'caret' | 'polygon'
 
 /** Displayed-pixel box (scaled) */
 interface Box {
@@ -45,6 +46,9 @@ export const DRAW_COLORS: { name: string; rgb: [number, number, number] }[] = [
 
 export const cssRgb = (c: readonly [number, number, number]): string =>
   `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`
+
+/** Click this close (display px) to the first vertex to close a polygon */
+const POLY_CLOSE_PX = 10
 
 /** Drawing SVG paths: PDF space → displayed page pixels */
 function toView(geom: PageGeom, scale: number, x: number, y: number): [number, number] {
@@ -94,6 +98,23 @@ function drawingShape(
       />
     )
   }
+  if (d.kind === 'caret') {
+    const stroke = hit ? 'transparent' : cssRgb(d.color)
+    const [vx, vy] = toView(geom, scale, d.point[0], d.point[1])
+    // Zoom-independent glyph: the saved annotation is drawn by the viewer at a
+    // fixed icon size, so the preview must not scale with the page either
+    const s = 8
+    return (
+      <path
+        d={`M${vx - s} ${vy + s * 0.75} L${vx} ${vy} L${vx + s} ${vy + s * 0.75}`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={hit ? 16 : 1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    )
+  }
   const stroke = hit ? 'transparent' : cssRgb(d.color)
   const w = hit ? Math.max(16, d.width * scale * 4) : d.width * scale
   if (d.kind === 'ink') {
@@ -137,6 +158,17 @@ function drawingShape(
         stroke={stroke}
         strokeWidth={w}
       />
+    )
+  }
+  if (d.kind === 'polygon') {
+    const pts = d.vertices
+      .map(([x, y]) => {
+        const [vx, vy] = toView(geom, scale, x, y)
+        return `${vx},${vy}`
+      })
+      .join(' ')
+    return (
+      <polygon points={pts} fill="none" stroke={stroke} strokeWidth={w} strokeLinejoin="round" />
     )
   }
   const [fx, fy] = toView(geom, scale, d.from[0], d.from[1])
@@ -224,6 +256,13 @@ export function DrawLayer({
   const [live, setLive] = useState<DrawingInput | null>(null)
   const startRef = useRef<[number, number] | null>(null)
   const inkRef = useRef<number[]>([])
+  // In-progress polygon: placed vertices plus the rubber end following the cursor
+  const [poly, setPoly] = useState<{
+    vertices: [number, number][]
+    cursor: [number, number] | null
+  } | null>(null)
+  const polyRef = useRef(poly)
+  polyRef.current = poly
   // Dragging an existing shape: view coords (page-relative, scale=1)
   const [drag, setDrag] = useState<{
     id: string
@@ -240,12 +279,61 @@ export function DrawLayer({
     return viewToPdf(geom, (e.clientX - box.left) / scale, (e.clientY - box.top) / scale)
   }
 
+  const commitPolygon = (vertices: [number, number][]) => {
+    setPoly(null)
+    if (vertices.length < 3) return
+    onCommit({ kind: 'polygon', pageIndex: 0, color, width: strokeWidth, vertices })
+  }
+
+  // Leaving the polygon tool discards an unfinished vertex collection
+  useEffect(() => {
+    if (tool !== 'polygon') setPoly(null)
+  }, [tool])
+
+  // Enter closes the ring, Escape discards it (double-click closes too, like CAD tools)
+  useEffect(() => {
+    if (!poly) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        commitPolygon(polyRef.current?.vertices ?? [])
+      } else if (e.key === 'Escape') {
+        setPoly(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // commitPolygon closes over the current color/width/onCommit props
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poly])
+
   const onPointerDown = (e: ReactPointerEvent) => {
     if (!tool || e.button !== 0) return
     e.preventDefault()
     const at = toPdf(e)
     if (tool === 'note') {
       onNoteAt(at)
+      return
+    }
+    if (tool === 'caret') {
+      // A caret is placed by click, like a note — no drag
+      onCommit({ kind: 'caret', pageIndex: 0, color, point: at })
+      return
+    }
+    if (tool === 'polygon') {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      const cur = polyRef.current
+      if (!cur) {
+        setPoly({ vertices: [at], cursor: at })
+        return
+      }
+      const [fx, fy] = toView(geom, scale, cur.vertices[0]![0], cur.vertices[0]![1])
+      const [tx, ty] = toView(geom, scale, at[0], at[1])
+      if (cur.vertices.length >= 3 && Math.hypot(tx - fx, ty - fy) < POLY_CLOSE_PX) {
+        commitPolygon(cur.vertices)
+        return
+      }
+      setPoly({ vertices: [...cur.vertices, at], cursor: at })
       return
     }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -257,7 +345,12 @@ export function DrawLayer({
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
-    if (!tool || !startRef.current) return
+    if (!tool) return
+    if (tool === 'polygon') {
+      if (polyRef.current) setPoly({ ...polyRef.current, cursor: toPdf(e) })
+      return
+    }
+    if (!startRef.current) return
     const at = toPdf(e)
     if (tool === 'ink') {
       inkRef.current = [...inkRef.current, at[0], at[1]]
@@ -306,6 +399,17 @@ export function DrawLayer({
       if (Math.hypot(pending.to[0] - pending.from[0], pending.to[1] - pending.from[1]) < 4) return
     }
     onCommit(pending)
+  }
+
+  // The double-click's own second click re-added the last vertex — drop the twin, then close
+  const onDouble = () => {
+    const v = polyRef.current?.vertices
+    if (!v) return
+    const last = v.at(-1)!
+    const prev = v.at(-2)
+    commitPolygon(
+      prev && Math.hypot(last[0] - prev[0], last[1] - prev[1]) * scale < 4 ? v.slice(0, -1) : v,
+    )
   }
 
   // ── Drag-to-move an existing shape (no tool active) ──
@@ -414,6 +518,7 @@ export function DrawLayer({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onDoubleClick={onDouble}
       >
         {drawings.map((d) =>
           d.input.kind === 'note' ? null : (
@@ -473,6 +578,39 @@ export function DrawLayer({
             ))
           })()}
         {live && drawingShape(live, geom, scale)}
+        {poly && (
+          <>
+            {/* Rubber band: placed vertices plus the segment following the cursor */}
+            <polyline
+              points={[...poly.vertices, ...(poly.cursor ? [poly.cursor] : [])]
+                .map(([x, y]) => {
+                  const [vx, vy] = toView(geom, scale, x, y)
+                  return `${vx},${vy}`
+                })
+                .join(' ')}
+              fill="none"
+              stroke={cssRgb(color)}
+              strokeWidth={strokeWidth * scale}
+              strokeLinejoin="round"
+              strokeDasharray={`${4 * scale} ${3 * scale}`}
+            />
+            {/* Close affordance: the ring closes on a click at the first vertex */}
+            {poly.vertices.length >= 3 &&
+              (() => {
+                const [cx, cy] = toView(geom, scale, poly.vertices[0]![0], poly.vertices[0]![1])
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={POLY_CLOSE_PX / 2}
+                    fill="none"
+                    stroke={cssRgb(color)}
+                    strokeWidth={Math.max(1, 1.25 * scale)}
+                  />
+                )
+              })()}
+          </>
+        )}
       </svg>
       {[
         ...savedNotes.map((n) => ({

@@ -68,6 +68,7 @@ export const tr = {
   openExternal: 'Bağlantı tarayıcınızda açıldı',
   save: 'Kaydet (⌘S)',
   saveAs: 'Farklı Kaydet…',
+  aiNameFile: 'AI ile adlandır',
   ribbonCollapse: "Şerit'i daralt",
   ribbonExpand: "Şerit'i genişlet",
   ribbonGroupInsert: 'Ekle',
