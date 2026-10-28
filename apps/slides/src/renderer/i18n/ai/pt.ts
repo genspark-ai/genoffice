@@ -85,6 +85,7 @@ export const pt = {
   aiQueueSkipNested: 'o elemento está aninhado demais para ser editado — ignorada',
   aiQueueSkippedNote: 'Edições ignoradas: {count}',
   aiRemoveAttachment: 'Remover anexo',
+  aiSetupNeeded: 'Ainda não há modelo de IA configurado — configure um ou entre com o Genspark.',
   aiInputPlaceholder: 'Descreva uma alteração ou pergunte o que quiser',
   aiAttachTitle: 'Anexar arquivos locais (ou arraste-os para o painel)',
   aiInputHint: 'Enter para enviar · Shift+Enter para nova linha',

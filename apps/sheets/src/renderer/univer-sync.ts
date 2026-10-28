@@ -1650,6 +1650,18 @@ export interface RawCopyCell {
   fileFormula: string | null
 }
 
+/// User-visible workbook name for streaming status lines: file.name is the
+/// session temp snapshot's UUID basename, so derive the name from the user's
+/// on-disk file (csvPath for CSV sessions) the way CELL("filename") does.
+function visibleWorkbookName(file: WorkbookFile): string {
+  const path = file.csvPath ?? file.path
+  if (path) {
+    const base = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+    if (base) return base
+  }
+  return file.name
+}
+
 /**
  * Streamed unfiltered copy_range source reader: consumes the sidecar's
  * mapped payload plus the journal overlay directly instead of installing
@@ -1700,7 +1712,7 @@ export async function readCopySourceDirect(
     if (rows > chunkRows) {
       setMessage(
         t('appStreamingRows', {
-          name: state.file.name,
+          name: visibleWorkbookName(state.file),
           rows: `${(startRow - bounds.startRow).toLocaleString()} / ${rows.toLocaleString()}`,
         }),
       )
@@ -3459,7 +3471,7 @@ async function loadRange(
     } else if (isActiveSheet(runtime, sheetId)) {
       setMessage(
         t('appStreamingRows', {
-          name: state.file.name,
+          name: visibleWorkbookName(state.file),
           rows: sheet?.rowCount.toLocaleString() ?? '?',
         }),
       )
@@ -3580,7 +3592,7 @@ export async function applyRangeInLoadedChunks(
       if (totalRows > chunkRows && isActiveSheet(runtime, sheetId)) {
         setMessage(
           t('appStreamingRows', {
-            name: state.file.name,
+            name: visibleWorkbookName(state.file),
             rows: `${(startRow - bounds.startRow).toLocaleString()} / ${totalRows.toLocaleString()}`,
           }),
         )

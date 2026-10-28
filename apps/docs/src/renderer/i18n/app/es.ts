@@ -59,6 +59,7 @@ export const es = {
   appSaveFailed: 'Error al guardar: {error}',
   appAutoSavedAt: 'Guardado automáticamente ({time})',
   appSaved: 'Guardado',
+  appSavedWithPath: 'Guardado en {path}',
   appSectionBreakInserted: 'Salto de sección insertado ({type})',
   appSectionBreakPending:
     'Salto de sección insertado; la nueva sección se aplicará después de guardar',

@@ -1,47 +1,37 @@
-import { defineStrings } from '@genoffice/i18n'
-import { zh } from './ribbon/zh'
+import type { Lang } from '@genoffice/i18n'
 import { en } from './ribbon/en'
-import { ja } from './ribbon/ja'
-import { ko } from './ribbon/ko'
-import { fr } from './ribbon/fr'
-import { de } from './ribbon/de'
-import { es } from './ribbon/es'
-import { th } from './ribbon/th'
-import { id } from './ribbon/id'
-import { ru } from './ribbon/ru'
-import { ar } from './ribbon/ar'
-import { pt } from './ribbon/pt'
-import { it } from './ribbon/it'
-import { pl } from './ribbon/pl'
-import { cs } from './ribbon/cs'
-import { nl } from './ribbon/nl'
-import { ms } from './ribbon/ms'
-import { he } from './ribbon/he'
-import { hi } from './ribbon/hi'
-import { zhTW } from './ribbon/zh-TW'
-import { vi } from './ribbon/vi'
+import type { zh } from './ribbon/zh'
 
 /** Strings for Ribbon / ribbon-tabs / icons */
-export const ribbonStrings = defineStrings({
-  zh,
-  en,
-  ja,
-  ko,
-  fr,
-  de,
-  es,
-  th,
-  id,
-  ru,
-  ar,
-  pt,
-  it,
-  pl,
-  cs,
-  nl,
-  ms,
-  he,
-  hi,
-  'zh-TW': zhTW,
-  vi,
-})
+export type RibbonDict = typeof zh
+
+/** en stays eager so t() has a fallback before any lazy locale chunk lands */
+export const ribbonEn: RibbonDict = en
+
+const loaders: Record<Lang, () => Promise<RibbonDict>> = {
+  en: () => Promise.resolve(ribbonEn),
+  zh: async () => (await import('./ribbon/zh')).zh,
+  ja: async () => (await import('./ribbon/ja')).ja,
+  ko: async () => (await import('./ribbon/ko')).ko,
+  fr: async () => (await import('./ribbon/fr')).fr,
+  de: async () => (await import('./ribbon/de')).de,
+  es: async () => (await import('./ribbon/es')).es,
+  th: async () => (await import('./ribbon/th')).th,
+  id: async () => (await import('./ribbon/id')).id,
+  ru: async () => (await import('./ribbon/ru')).ru,
+  ar: async () => (await import('./ribbon/ar')).ar,
+  pt: async () => (await import('./ribbon/pt')).pt,
+  it: async () => (await import('./ribbon/it')).it,
+  pl: async () => (await import('./ribbon/pl')).pl,
+  cs: async () => (await import('./ribbon/cs')).cs,
+  nl: async () => (await import('./ribbon/nl')).nl,
+  ms: async () => (await import('./ribbon/ms')).ms,
+  he: async () => (await import('./ribbon/he')).he,
+  hi: async () => (await import('./ribbon/hi')).hi,
+  'zh-TW': async () => (await import('./ribbon/zh-TW')).zhTW,
+  vi: async () => (await import('./ribbon/vi')).vi,
+}
+
+export function loadRibbonStrings(lang: Lang): Promise<RibbonDict> {
+  return loaders[lang]()
+}

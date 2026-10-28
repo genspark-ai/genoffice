@@ -41,6 +41,8 @@ export const ja = {
   aiCellEmpty: '空',
   aiRemoveAttachment: '添付ファイルを削除',
   aiAttachTitle: 'ローカル ファイルを添付（パネルへのドラッグ＆ドロップも可）',
+  aiSetupNeeded:
+    'AI モデルがまだ設定されていません — 設定するか、Genspark でサインインしてください。',
   aiComposerPlaceholder: 'AI にこのブックの分析や変更を依頼…',
   aiHintIdle: 'Enter で送信',
   aiHintBusy: 'Esc で停止',

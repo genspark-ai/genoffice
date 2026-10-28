@@ -60,6 +60,7 @@ export const ko = {
   appSaveFailed: '저장 실패: {error}',
   appAutoSavedAt: '자동 저장됨 ({time})',
   appSaved: '저장됨',
+  appSavedWithPath: '{path}에 저장됨',
   // Section breaks
   appSectionBreakInserted: '구역 나누기를 삽입했습니다({type})',
   appSectionBreakPending: '구역 나누기를 삽입했습니다. 새 구역은 저장 후 적용됩니다',

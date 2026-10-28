@@ -5,9 +5,11 @@ import { join } from 'node:path'
 import { createI18n, LANGS, type Lang } from '@genoffice/i18n'
 import { normalizeRecentQuery, pageRecentPaths } from '../src/main/recent-files'
 import { fileCountLabel, visiblePageCount } from '../src/renderer/src/counts'
-import { strings } from '../src/renderer/src/strings'
+import { loadAllStrings } from '../src/renderer/src/strings'
 
 const tempDirs: string[] = []
+
+const strings = await loadAllStrings()
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })

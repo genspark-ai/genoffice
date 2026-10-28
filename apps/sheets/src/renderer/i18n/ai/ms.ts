@@ -42,6 +42,8 @@ export const ms = {
   aiCellEmpty: 'kosong',
   aiRemoveAttachment: 'Alih keluar lampiran',
   aiAttachTitle: 'Lampirkan fail setempat (atau seret ke panel)',
+  aiSetupNeeded:
+    'Belum ada model AI dikonfigurasikan — sediakan satu, atau log masuk dengan Genspark.',
   aiComposerPlaceholder: 'Minta AI menganalisis atau mengubah buku kerja ini…',
   aiHintIdle: 'Enter untuk hantar',
   aiHintBusy: 'Esc untuk henti',

@@ -747,18 +747,32 @@ export function sanitizeFileBaseName(raw: string): string | null {
 }
 
 /**
- * Docs' analog of slides' deckName: a still-untitled document takes its file name
- * from the first heading, so the first silent save (and with it the shell tab
- * title) picks up a content-derived name instead of "Untitled.docx".
+ * Docs' analog of slides' deckName: a still-untitled document takes its file
+ * name from the first heading, so the first silent save (and with it the shell
+ * tab title) picks up a content-derived name instead of "Untitled.docx".
+ * Prose documents with no heading fall back to the first paragraph's opening
+ * (first 20 characters).
  */
 function deriveAutoFileName(editor: Editor): string | null {
-  const body = (editor.getJSON() as PmNode).content ?? []
+  return autoFileNameFromBody((editor.getJSON() as PmNode).content ?? [])
+}
+
+/** testable half of deriveAutoFileName: derives from the doc body's JSON nodes */
+export function autoFileNameFromBody(body: PmNode[]): string | null {
+  let prose: string | null = null
   for (const node of body) {
-    if (node.type !== 'docHeading') continue
-    const base = sanitizeFileBaseName(pmNodeText(node))
-    if (base) return `${base}.docx`
+    if (node.type === 'docHeading') {
+      const base = sanitizeFileBaseName(pmNodeText(node))
+      if (base) return `${base}.docx`
+      continue
+    }
+    if (prose === null && node.type === 'docParagraph') {
+      const text = pmNodeText(node)
+      if (text) prose = text
+    }
   }
-  return null
+  const base = prose ? sanitizeFileBaseName(prose.slice(0, 20)) : null
+  return base ? `${base}.docx` : null
 }
 
 /**
@@ -1109,7 +1123,8 @@ async function saveOnce(
       if (result.dataUrl) fullBytes = await fetchDocBytes(result.dataUrl)
       if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else if (saveAs || !savedPath) {
-      // A never-saved document still called "Untitled" gets a name derived from its first heading
+      // A never-saved document still called "Untitled" gets a name derived from
+      // its first heading, or its first paragraph when it has no heading
       const autoName =
         !doc.filePath && doc.fileName === t('appUntitledDocx') ? deriveAutoFileName(editor) : null
       // Save As keeps the dialog; a new document's first save lands silently in the default
@@ -1280,7 +1295,9 @@ async function saveOnce(
     ctx.setStatus(
       auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
     )
-    if (!auto) showToast(t('appSaved'))
+    // the toast names the file: a first save lands in the default folder, and
+    // without the path the user cannot tell where the document went
+    if (!auto) showToast(savedPath ? t('appSavedWithPath', { path: savedPath }) : t('appSaved'))
     return true
   } catch (err) {
     ctx.setStatus(t('appSaveFailed', { error: String(err) }))

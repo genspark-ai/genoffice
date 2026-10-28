@@ -1,6 +1,7 @@
 /** ai strings, zh: defines the key set every other locale shard must match. */
 export const zh = {
   aiCollapsePanel: '收起面板',
+  aiSetupNeeded: '尚未配置 AI 模型——请先设置，或登录 Genspark。',
   aiComposerPlaceholder: '让 AI 撰写或修改文档…',
   aiCopyReplyTitle: '复制回复',
   aiCopyCode: '复制代码',

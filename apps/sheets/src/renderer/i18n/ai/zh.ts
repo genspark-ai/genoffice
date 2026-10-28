@@ -40,6 +40,7 @@ export const zh = {
   aiCellEmpty: '空',
   aiRemoveAttachment: '移除附件',
   aiAttachTitle: '添加本地文件作为附件(也可拖拽到面板)',
+  aiSetupNeeded: '尚未配置 AI 模型——请先设置，或登录 Genspark。',
   aiComposerPlaceholder: '让 AI 分析或修改这个工作簿…',
   aiHintIdle: 'Enter 发送',
   aiHintBusy: 'Esc 停止',

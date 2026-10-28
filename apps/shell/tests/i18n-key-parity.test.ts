@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { strings } from '../src/renderer/src/strings'
+import { loadAllStrings } from '../src/renderer/src/strings'
 
 /**
- * zh defines the key set, every sibling locale must cover it. The LangDicts
- * constraint at the `createI18n(strings)` call already turns a missing key
- * into a compile error, but only while the object flows into that call
- * unmarked — and a type error names neither the locale nor the key. These
- * runtime checks read the shipped table directly, in the style of
- * apps/docs/tests/translate-i18n-completeness.test.ts, so a drifting table
- * fails CI with a message that says exactly which keys moved.
+ * zh defines the key set, every sibling locale must cover it. The per-language
+ * files under strings/ carry a `Dict` annotation (typeof zh), which already
+ * turns a missing or extra key into a compile error, but a type error names
+ * neither the locale nor the key. These runtime checks read the shipped tables
+ * directly, in the style of apps/docs/tests/translate-i18n-completeness.test.ts,
+ * so a drifting table fails CI with a message that says exactly which keys
+ * moved.
  */
 
+const strings = await loadAllStrings()
 const LOCALES = Object.keys(strings) as Array<keyof typeof strings>
 
 describe('shell strings — key parity', () => {

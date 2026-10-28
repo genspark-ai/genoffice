@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ICommandService } from '@univerjs/core'
 
 import { RedactDialog } from '../src/renderer/components/RedactDialog'
 import { HIDE_SELECTION_COMMAND_ID, installRedactMenu } from '../src/renderer/redact-menu'
-import { strings } from '../src/renderer/i18n/strings'
+import { loadStrings, type Strings } from '../src/renderer/i18n/strings'
 import { hideFromAiLocale } from '../src/renderer/univer-locales'
 
 /**
@@ -230,6 +230,15 @@ describe('the grid menu item', () => {
 })
 
 describe('the menu label reaches Univer as a locale key', () => {
+  // Dictionaries are lazy chunks now; the three languages this suite reads
+  // must be resident before the synchronous lookups below.
+  let en: Strings
+  let ja: Strings
+  let th: Strings
+  beforeAll(async () => {
+    ;[en, ja, th] = await Promise.all([loadStrings('en'), loadStrings('ja'), loadStrings('th')])
+  })
+
   // Univer resolves a menu item's `title` through its own LocaleService, so a
   // missing key does not fail loudly — the item simply renders untranslated.
   function titleFor(lang: 'en' | 'ja' | 'th') {
@@ -244,10 +253,10 @@ describe('the menu label reaches Univer as a locale key', () => {
     // en is what the runtime boots with and ja is a Univer-pack language;
     // both must come from here, which is what keeps the gesture identical
     // across the other editors.
-    expect(titleFor('en')).toBe(strings.en.redactMenuLabel)
-    expect(titleFor('ja')).toBe(strings.ja.redactMenuLabel)
+    expect(titleFor('en')).toBe(en.redactMenuLabel)
+    expect(titleFor('ja')).toBe(ja.redactMenuLabel)
     // ...and ja is genuinely translated, not quietly falling back to English.
-    expect(strings.ja.redactMenuLabel).not.toBe(strings.en.redactMenuLabel)
+    expect(ja.redactMenuLabel).not.toBe(en.redactMenuLabel)
   })
 
   it('leaves the pack it merged into untouched', () => {
@@ -261,7 +270,7 @@ describe('the menu label reaches Univer as a locale key', () => {
     // where every other entry is English. The redaction item follows that
     // rather than being the one string in the menu with a language of its own
     // — so it must not fall back to the app's Thai wording.
-    expect(titleFor('th')).toBe(strings.en.redactMenuLabel)
-    expect(titleFor('th')).not.toBe(strings.th.redactMenuLabel)
+    expect(titleFor('th')).toBe(en.redactMenuLabel)
+    expect(titleFor('th')).not.toBe(th.redactMenuLabel)
   })
 })

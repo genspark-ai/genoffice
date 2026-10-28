@@ -22,13 +22,17 @@ export default defineConfig({
         ],
       }),
     ],
+    // electron-vite defaults build.minify to false
+    build: { minify: 'esbuild' },
   },
   preload: {
     // Sandboxed preload scripts cannot require arbitrary npm packages at
     // runtime, so the drop-open bridge must be bundled, not externalized.
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils'] })],
+    build: { minify: 'esbuild' },
   },
   renderer: {
     plugins: [react()],
+    build: { minify: 'esbuild' },
   },
 })

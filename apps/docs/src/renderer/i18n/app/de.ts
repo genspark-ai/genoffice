@@ -59,6 +59,7 @@ export const de = {
   appSaveFailed: 'Speichern fehlgeschlagen: {error}',
   appAutoSavedAt: 'Automatisch gespeichert ({time})',
   appSaved: 'Gespeichert',
+  appSavedWithPath: 'Gespeichert unter {path}',
   appSectionBreakInserted: 'Abschnittsumbruch eingefügt ({type})',
   appSectionBreakPending:
     'Abschnittsumbruch eingefügt; der neue Abschnitt wird nach dem Speichern wirksam',

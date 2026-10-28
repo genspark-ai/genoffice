@@ -22,14 +22,18 @@ export default defineConfig({
   // @genoffice/i18n and @genoffice/electron-utils ship as TS source — must be bundled
   main: {
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/i18n', '@genoffice/electron-utils'] })],
+    // electron-vite defaults build.minify to false
+    build: { minify: 'esbuild' },
   },
   preload: {
     // same bundling requirement as main (see comment above)
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/i18n', '@genoffice/electron-utils'] })],
+    build: { minify: 'esbuild' },
   },
   renderer: {
     plugins: [react()],
     resolve: { dedupe: TIPTAP_DEDUPE },
+    build: { minify: 'esbuild' },
     server: {
       port: Number(process.env.MARKDOWN_DEV_PORT) || 5177,
       strictPort: Boolean(process.env.MARKDOWN_DEV_PORT),

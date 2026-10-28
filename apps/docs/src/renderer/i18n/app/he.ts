@@ -55,6 +55,7 @@ export const he = {
   appSaveFailed: 'השמירה נכשלה: {error}',
   appAutoSavedAt: 'נשמר אוטומטית ({time})',
   appSaved: 'נשמר',
+  appSavedWithPath: 'נשמר ב-{path}',
   appSectionBreakInserted: 'הוסף מעבר מקטע ({type})',
   appSectionBreakPending: 'הוסף מעבר מקטע; המקטע החדש ייכנס לתוקף לאחר השמירה',
   appBreakNextPage: 'עמוד הבא',

@@ -58,6 +58,7 @@ export const it = {
   appSaveFailed: 'Salvataggio non riuscito: {error}',
   appAutoSavedAt: 'Salvato automaticamente ({time})',
   appSaved: 'Salvato',
+  appSavedWithPath: 'Salvato in {path}',
   appSectionBreakInserted: 'Interruzione di sezione inserita ({type})',
   appSectionBreakPending:
     'Interruzione di sezione inserita; la nuova sezione avrà effetto dopo il salvataggio',

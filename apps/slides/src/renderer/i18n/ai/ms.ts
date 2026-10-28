@@ -85,6 +85,8 @@ export const ms = {
   aiQueueSkipNested: 'elemen tersarang terlalu dalam — dilangkau',
   aiQueueSkippedNote: '{count} suntingan dilangkau',
   aiRemoveAttachment: 'Alih keluar lampiran',
+  aiSetupNeeded:
+    'Belum ada model AI dikonfigurasikan — sediakan satu, atau log masuk dengan Genspark.',
   aiInputPlaceholder: 'Terangkan suntingan, atau tanya apa-apa sahaja',
   aiAttachTitle: 'Lampirkan fail setempat (atau seret ke panel)',
   aiInputHint: 'Enter untuk hantar · Shift+Enter untuk baris baharu',

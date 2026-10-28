@@ -459,7 +459,8 @@ body.vib .home {
   position: relative;
   flex: 1;
   min-width: 0;
-  max-width: 280px;
+  /* uncapped: at 2560-class viewports the 280px cap left a wide dead zone
+     past the last card — the row fills the content column like the table below */
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -544,6 +545,19 @@ body.vib .home {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
+}
+
+/* 1280-class viewports: seven cards in one row ellipsize their titles — the
+   1100px wrap breakpoint never fires there, so wrap into four-up rows first */
+@media (max-width: 1400px) {
+  .quick-cards {
+    flex-wrap: wrap;
+  }
+
+  .quick-card {
+    flex: 1 1 calc(25% - 7.5px);
+    max-width: none;
+  }
 }
 
 @media (max-width: 1100px) {

@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const cs = {
   aiCollapsePanel: 'Sbalit panel',
+  aiSetupNeeded:
+    'Zatím není nakonfigurován žádný AI model — nastavte ho, nebo se přihlaste přes Genspark.',
   aiComposerPlaceholder: 'Požádejte AI o napsání nebo úpravu dokumentu…',
   aiCopyReplyTitle: 'Kopírovat odpověď',
   aiCopyCode: 'Kopírovat kód',

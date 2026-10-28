@@ -41,6 +41,7 @@ export const ko = {
   aiCellEmpty: '비어 있음',
   aiRemoveAttachment: '첨부 파일 제거',
   aiAttachTitle: '로컬 파일 첨부(패널로 끌어다 놓아도 됩니다)',
+  aiSetupNeeded: '아직 구성된 AI 모델이 없습니다 — 모델을 설정하거나 Genspark로 로그인하세요.',
   aiComposerPlaceholder: 'AI에게 이 통합 문서의 분석이나 수정을 요청하세요…',
   aiHintIdle: 'Enter로 보내기',
   aiHintBusy: 'Esc로 중지',

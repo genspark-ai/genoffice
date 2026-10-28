@@ -18,7 +18,11 @@ import {
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
-import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
+import {
+  activeProvider,
+  imageGenerationAvailable,
+  mediaAnalysisAvailable,
+} from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import {
@@ -558,13 +562,18 @@ export function AiPanel({
 
   /** gsk login state for the cloud-tools gate (refreshed on mount and window focus) */
   const gskLoggedInRef = useRef(false)
+  /** reactive mirror of gskLoggedInRef for the composer setup gate */
+  const [gskLoggedIn, setGskLoggedIn] = useState(false)
   useEffect(() => {
     let alive = true
     const refresh = () => {
       void window.slidesApi
         ?.aiGskStatus()
         .then((s) => {
-          if (alive) gskLoggedInRef.current = !!s?.loggedIn
+          if (alive) {
+            gskLoggedInRef.current = !!s?.loggedIn
+            setGskLoggedIn(!!s?.loggedIn)
+          }
         })
         .catch(() => {})
     }
@@ -575,6 +584,14 @@ export function AiPanel({
       window.removeEventListener('focus', refresh)
     }
   }, [])
+  /**
+   * No usable chat provider and no Genspark login: the bespoke composer gates
+   * sending until setup, mirroring the docs panel's empty-state CTA rule.
+   */
+  const aiSetupNeeded =
+    !gskLoggedIn &&
+    activeProvider(settings) === 'genspark' &&
+    !(settings.customEndpoints ?? []).some((e) => e.baseUrl?.trim() && e.model?.trim())
   const imagesRef = useRef(images)
   imagesRef.current = images
   const attachedSkillsRef = useRef(attachedSkills)
@@ -2583,9 +2600,11 @@ export function AiPanel({
               data-slides-ai-input="true"
               data-deck-undo-ready={!busy && !inputEditedSinceRunRef.current ? 'true' : 'false'}
               placeholder={
-                busy
-                  ? AI_QUEUE_LABELS[lang].queuePlaceholder
-                  : t(deckEmpty ? 'aiInputPlaceholderGen' : 'aiInputPlaceholder')
+                aiSetupNeeded
+                  ? t('aiSetupNeeded')
+                  : busy
+                    ? AI_QUEUE_LABELS[lang].queuePlaceholder
+                    : t(deckEmpty ? 'aiInputPlaceholderGen' : 'aiInputPlaceholder')
               }
               onChange={(e) => {
                 inputEditedSinceRunRef.current = true
@@ -2594,6 +2613,7 @@ export function AiPanel({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
+                  if (aiSetupNeeded) return
                   if (busy) enqueueDraft()
                   else run()
                 } else if (e.key === 'Escape' && busy) {
@@ -2633,11 +2653,15 @@ export function AiPanel({
                 <button
                   className="ai-send-btn"
                   onClick={run}
-                  disabled={!input.trim()}
-                  data-tip={t('aiSend')}
+                  disabled={!input.trim() || aiSetupNeeded}
+                  data-tip={aiSetupNeeded ? t('aiSetupNeeded') : t('aiSend')}
                   aria-label={t('aiSend')}
                 >
-                  <img src={input.trim() ? sendEnterOn : sendEnterOff} alt="" aria-hidden />
+                  <img
+                    src={input.trim() && !aiSetupNeeded ? sendEnterOn : sendEnterOff}
+                    alt=""
+                    aria-hidden
+                  />
                 </button>
               )}
             </div>

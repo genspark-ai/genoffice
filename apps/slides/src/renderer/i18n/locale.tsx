@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
-import { strings } from './strings'
+import { htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
+import { loadLocale, translate, type StringKey } from './strings'
 
-const translate = createI18n(strings)
-
-export type StringKey = keyof typeof strings.zh
+export type { StringKey }
+export { loadLocale }
 export type TFunc = (key: StringKey, params?: Params) => string
 
 // mirror for non-React modules (insert-presets, konva-adapter, AI tools …);
@@ -79,10 +78,13 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
   useEffect(
     () =>
       window.slidesApi.onLanguageChanged((next) => {
-        setModuleLang(next)
-        document.documentElement.lang = htmlLang(next)
-        document.documentElement.dir = htmlDir(next)
-        setLang(next)
+        // flip only once the locale's chunk is in, so the UI never flashes the en fallback
+        void loadLocale(next).then(() => {
+          setModuleLang(next)
+          document.documentElement.lang = htmlLang(next)
+          document.documentElement.dir = htmlDir(next)
+          setLang(next)
+        })
       }),
     [],
   )

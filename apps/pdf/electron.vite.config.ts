@@ -24,10 +24,13 @@ export default defineConfig({
         ],
       }),
     ],
+    // electron-vite defaults build.minify to false
+    build: { minify: 'esbuild' },
   },
   preload: {
     // i18n and electron-utils ship as TS source — must be bundled, not left external
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/i18n', '@genoffice/electron-utils'] })],
+    build: { minify: 'esbuild' },
   },
   renderer: {
     plugins: [
@@ -40,6 +43,7 @@ export default defineConfig({
         ],
       }),
     ],
+    build: { minify: 'esbuild' },
     server: {
       port: Number(process.env.PDF_DEV_PORT) || 5176,
       strictPort: Boolean(process.env.PDF_DEV_PORT),

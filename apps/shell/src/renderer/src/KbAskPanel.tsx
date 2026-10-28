@@ -34,6 +34,7 @@ import type { AiSettings } from '@genoffice/ai-provider'
 import { activeProvider } from '@genoffice/ai-provider/browser'
 import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store'
 import { useI18n } from './locale'
+import { aiSetupNeeded } from './ai-setup-state'
 import type { AttachmentAddResult } from '../../shared/home-api'
 import { AskAttachments } from './AskAttachments'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
@@ -375,6 +376,29 @@ export function KbAskPanel({
   }
 
   useEffect(() => window.aiOffice.onAiSettingsChanged?.(refreshSettings), [])
+
+  // Composer gate, the same rule Home's setup entry uses: no usable provider
+  // and no Genspark login. Re-checked after any renderer saves ai-settings.
+  const [aiSetup, setAiSetup] = useState<'needed' | 'ready'>('ready')
+  useEffect(() => {
+    let alive = true
+    const refresh = () => {
+      void window.aiOffice
+        .aiGetSettings()
+        .then((settings) =>
+          window.aiOffice.aiGskStatus().then((gsk) => {
+            if (alive) setAiSetup(aiSetupNeeded(settings, gsk.loggedIn) ? 'needed' : 'ready')
+          }),
+        )
+        .catch(() => undefined)
+    }
+    refresh()
+    const off = window.aiOffice.onAiSettingsChanged?.(refresh)
+    return () => {
+      alive = false
+      off?.()
+    }
+  }, [])
 
   const modelBridge = useMemo<AiModelPickerBridge>(
     () => ({
@@ -993,6 +1017,8 @@ export function KbAskPanel({
         placeholder={t('askPlaceholder')}
         hintIdle={t('askHintIdle')}
         hintBusy={t('askHintBusy')}
+        setupRequired={aiSetup === 'needed'}
+        setupHint={t('askNeedsLogin')}
         sendLabel={t('askSend')}
         stopLabel={t('askStop')}
         ariaLabel={t('askPlaceholder')}

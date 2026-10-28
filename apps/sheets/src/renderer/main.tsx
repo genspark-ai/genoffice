@@ -23,6 +23,7 @@ import {
   untilCellFontsLoaded,
 } from './cell-font-fallback'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
+import { loadStrings } from './i18n/strings'
 import type { DocTheme, UiTheme } from '../shared/desktop-api'
 import './styles.css'
 
@@ -81,6 +82,10 @@ async function bootstrap(): Promise<void> {
   } catch {
     /* dev renderer without the preload bridge */
   }
+  // Locale dictionaries are lazy per-language chunks now; t() is synchronous,
+  // so the UI language and the English fallback must be resident before the
+  // first render.
+  await Promise.all([loadStrings(lang), loadStrings('en')])
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
   document.documentElement.dir = htmlDir(lang)

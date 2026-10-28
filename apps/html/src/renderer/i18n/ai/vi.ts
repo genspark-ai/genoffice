@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const vi = {
   aiCollapsePanel: 'Thu gọn bảng điều khiển',
+  aiSetupNeeded:
+    'Chưa có mô hình AI nào được cấu hình — hãy thiết lập một mô hình hoặc đăng nhập bằng Genspark.',
   aiComposerPlaceholder: 'Yêu cầu AI viết hoặc chỉnh sửa tài liệu…',
   aiCopyReplyTitle: 'Sao chép câu trả lời',
   aiCopyCode: 'Sao chép mã',

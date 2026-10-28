@@ -85,6 +85,7 @@ export const hi = {
   aiQueueSkipNested: 'तत्व बहुत गहराई में समूहित है — छोड़ा गया',
   aiQueueSkippedNote: 'छोड़े गए संपादन: {count}',
   aiRemoveAttachment: 'अटैचमेंट हटाएँ',
+  aiSetupNeeded: 'अभी कोई AI मॉडल कॉन्फ़िगर नहीं है — एक सेट अप करें या Genspark से साइन इन करें।',
   aiInputPlaceholder: 'कोई संपादन बताएँ, या कुछ भी पूछें',
   aiAttachTitle: 'स्थानीय फ़ाइलें अटैच करें (या पैनल में खींचकर छोड़ें)',
   aiInputHint: 'भेजने के लिए Enter · नई पंक्ति के लिए Shift+Enter',

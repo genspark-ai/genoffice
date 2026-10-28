@@ -11,6 +11,8 @@ const MAX_TEXTAREA_HEIGHT = 168
  * app-specific controls, a shortcut hint, and the send/stop button.
  * Renders the `.ai-input-box` class family; each app themes it in its own CSS.
  * While busy, Enter queues the draft instead (see useChatRunQueue).
+ * While `setupRequired` is true, the composer points at setup instead: the
+ * guidance placeholder replaces the invite, and Enter/send wait (see props).
  */
 export function AiComposer({
   value,
@@ -19,6 +21,8 @@ export function AiComposer({
   hintIdle,
   hintBusy,
   hintIdleTitle,
+  setupRequired,
+  setupHint,
   sendLabel,
   stopLabel,
   ariaLabel,
@@ -44,6 +48,10 @@ export function AiComposer({
   readonly hintIdle: string
   readonly hintBusy: string
   readonly hintIdleTitle?: string | undefined
+  /** true while no usable model is configured: the textarea points at setup, Enter and the send button wait */
+  readonly setupRequired?: boolean | undefined
+  /** guidance shown as the textarea placeholder and the disabled send button's title while setupRequired */
+  readonly setupHint?: string | undefined
   readonly sendLabel: string
   readonly stopLabel: string
   readonly ariaLabel?: string | undefined
@@ -76,7 +84,8 @@ export function AiComposer({
 }): React.JSX.Element {
   const innerRef = useRef<HTMLTextAreaElement | null>(null)
   const ref = textareaRef ?? innerRef
-  const canSend = value.trim().length > 0 && !busy
+  const gated = setupRequired === true
+  const canSend = value.trim().length > 0 && !busy && !gated
   const { spellcheck } = useAiPanelPrefs()
 
   // auto-grow up to ~6 lines; empty clears the inline height outright so the
@@ -99,7 +108,13 @@ export function AiComposer({
       <textarea
         ref={ref}
         value={value}
-        placeholder={busy && onQueue && queuePlaceholder ? queuePlaceholder : placeholder}
+        placeholder={
+          gated && setupHint
+            ? setupHint
+            : busy && onQueue && queuePlaceholder
+              ? queuePlaceholder
+              : placeholder
+        }
         aria-label={ariaLabel}
         rows={1}
         dir="auto"
@@ -109,7 +124,7 @@ export function AiComposer({
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
             if (canSend) onSend()
-            else if (busy && onQueue) onQueue()
+            else if (busy && onQueue && !gated) onQueue()
           } else if (e.key === 'Escape' && busy) {
             e.preventDefault()
             onStop()
@@ -149,7 +164,7 @@ export function AiComposer({
             className="ai-send-btn"
             onClick={onSend}
             disabled={!canSend}
-            title={sendLabel}
+            title={gated && setupHint ? setupHint : sendLabel}
             aria-label={sendLabel}
           >
             {iconOnly ? (

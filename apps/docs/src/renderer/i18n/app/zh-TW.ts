@@ -55,6 +55,7 @@ export const zhTW = {
   appSaveFailed: '儲存失敗: {error}',
   appAutoSavedAt: '已自動儲存 ({time})',
   appSaved: '已儲存',
+  appSavedWithPath: '已儲存到 {path}',
   appSectionBreakInserted: '已插入分節符號({type})',
   appSectionBreakPending: '已插入分節符號,儲存後新節生效',
   appBreakNextPage: '下一頁',

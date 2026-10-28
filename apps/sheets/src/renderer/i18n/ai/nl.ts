@@ -43,6 +43,7 @@ export const nl = {
   aiCellEmpty: 'leeg',
   aiRemoveAttachment: 'Bijlage verwijderen',
   aiAttachTitle: 'Lokale bestanden bijvoegen (of sleep ze naar het paneel)',
+  aiSetupNeeded: 'Nog geen AI-model geconfigureerd — stel er een in of log in met Genspark.',
   aiComposerPlaceholder: 'Vraag de AI om deze werkmap te analyseren of te wijzigen…',
   aiHintIdle: 'Enter om te verzenden',
   aiHintBusy: 'Esc om te stoppen',

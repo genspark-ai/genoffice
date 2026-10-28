@@ -42,6 +42,7 @@ export const hi = {
   aiCellEmpty: 'खाली',
   aiRemoveAttachment: 'अनुलग्नक हटाएं',
   aiAttachTitle: 'स्थानीय फ़ाइलें संलग्न करें (या उन्हें पैनल पर खींचकर छोड़ें)',
+  aiSetupNeeded: 'अभी कोई AI मॉडल कॉन्फ़िगर नहीं है — एक सेट अप करें या Genspark से साइन इन करें।',
   aiComposerPlaceholder: 'AI से इस कार्यपुस्तिका का विश्लेषण या संशोधन करने को कहें…',
   aiHintIdle: 'भेजने के लिए Enter',
   aiHintBusy: 'रोकने के लिए Esc',

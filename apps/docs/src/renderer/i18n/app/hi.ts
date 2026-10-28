@@ -58,6 +58,7 @@ export const hi = {
   appSaveFailed: 'सहेजने में विफल: {error}',
   appAutoSavedAt: 'स्वतः सहेजा गया ({time})',
   appSaved: 'सहेजा गया',
+  appSavedWithPath: '{path} में सहेजा गया',
   appSectionBreakInserted: 'अनुभाग विराम सम्मिलित किया गया ({type})',
   appSectionBreakPending: 'अनुभाग विराम सम्मिलित किया गया; नया अनुभाग सहेजने के बाद प्रभावी होगा',
   appBreakNextPage: 'अगला पृष्ठ',

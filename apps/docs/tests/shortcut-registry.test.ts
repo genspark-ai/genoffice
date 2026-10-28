@@ -6,13 +6,14 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { LANGS } from '@genoffice/i18n'
 import {
   SHORTCUTS,
   SHORTCUT_GROUPS,
   shortcutKeys,
   type ShortcutDef,
 } from '../src/renderer/shortcuts'
-import { strings } from '../src/renderer/i18n/strings'
+import { getStrings, loadStrings } from '../src/renderer/i18n/strings'
 
 // alternates are listed as "A / B"; the separator has to keep ⌘/ itself intact
 const chords = (def: ShortcutDef, isMac: boolean) => shortcutKeys(def, isMac).split(' / ')
@@ -40,11 +41,12 @@ describe('shortcut registry', () => {
     }
   })
 
-  it('labels every row in every language', () => {
-    for (const [lang, dict] of Object.entries(strings)) {
+  it('labels every row in every language', async () => {
+    await Promise.all(LANGS.map((lang) => loadStrings(lang)))
+    for (const lang of LANGS) {
+      const dict = getStrings(lang) as Record<string, string> | undefined
       for (const entry of [...SHORTCUTS, ...SHORTCUT_GROUPS]) {
-        const value = (dict as Record<string, string>)[entry.labelKey]
-        expect(value, `${entry.labelKey} missing in ${lang}`).toBeTruthy()
+        expect(dict?.[entry.labelKey], `${entry.labelKey} missing in ${lang}`).toBeTruthy()
       }
     }
   })

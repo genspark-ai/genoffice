@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const nl = {
   aiCollapsePanel: 'Paneel inklappen',
+  aiSetupNeeded: 'Nog geen AI-model geconfigureerd — stel er een in of log in met Genspark.',
   aiComposerPlaceholder: 'Vraag AI te schrijven of bewerken…',
   aiCopyReplyTitle: 'Antwoord kopiëren',
   aiCopyCode: 'Code kopiëren',

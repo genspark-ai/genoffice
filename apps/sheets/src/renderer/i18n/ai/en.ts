@@ -42,6 +42,7 @@ export const en = {
   aiCellEmpty: 'empty',
   aiRemoveAttachment: 'Remove attachment',
   aiAttachTitle: 'Attach local files (or drag them onto the panel)',
+  aiSetupNeeded: 'No AI model configured yet — set one up, or sign in with Genspark.',
   aiComposerPlaceholder: 'Ask AI to analyze or update this workbook…',
   aiHintIdle: 'Enter to send',
   aiHintBusy: 'Esc to stop',

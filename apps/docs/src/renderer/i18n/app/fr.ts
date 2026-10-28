@@ -58,6 +58,7 @@ export const fr = {
   appSaveFailed: "Échec de l'enregistrement : {error}",
   appAutoSavedAt: 'Enregistrement automatique ({time})',
   appSaved: 'Enregistré',
+  appSavedWithPath: 'Enregistré dans {path}',
   appSectionBreakInserted: 'Saut de section inséré ({type})',
   appSectionBreakPending:
     "Saut de section inséré ; la nouvelle section prendra effet après l'enregistrement",

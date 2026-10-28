@@ -85,6 +85,7 @@ export const it = {
   aiQueueSkipNested: "l'elemento è annidato troppo in profondità: ignorata",
   aiQueueSkippedNote: 'Modifiche ignorate: {count}',
   aiRemoveAttachment: 'Rimuovi allegato',
+  aiSetupNeeded: 'Nessun modello AI ancora configurato — configuralo oppure accedi con Genspark.',
   aiInputPlaceholder: 'Descrivi una modifica o chiedi qualsiasi cosa',
   aiAttachTitle: 'Allega file locali (o trascinali sul pannello)',
   aiInputHint: 'Invio per inviare · Maiusc+Invio per andare a capo',

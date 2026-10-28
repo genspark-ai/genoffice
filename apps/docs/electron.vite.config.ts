@@ -30,15 +30,19 @@ export default defineConfig({
       }),
     ],
     resolve: { alias: localAlias },
+    // electron-vite defaults build.minify to false
+    build: { minify: 'esbuild' },
   },
   preload: {
     // Sandboxed preload scripts cannot require arbitrary npm packages at
     // runtime, so the drop-open bridge must be bundled, not externalized.
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils'] })],
+    build: { minify: 'esbuild' },
   },
   renderer: {
     plugins: [react()],
     resolve: { alias: localAlias },
+    build: { minify: 'esbuild' },
     server: {
       // Overridable so multiple genoffice dev instances can coexist (default 5173).
       port: Number(process.env.DOCS_DEV_PORT) || 5173,

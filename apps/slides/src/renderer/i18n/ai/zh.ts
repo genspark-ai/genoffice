@@ -81,6 +81,7 @@ export const zh = {
   aiQueueSkipNested: '元素嵌套过深,无法编辑,已跳过',
   aiQueueSkippedNote: '{count} 处编辑已跳过',
   aiRemoveAttachment: '移除附件',
+  aiSetupNeeded: '尚未配置 AI 模型——请先设置，或登录 Genspark。',
   aiInputPlaceholder: '描述修改要求,或直接提问',
   aiAttachTitle: '添加本地文件作为附件(也可拖拽到面板)',
   aiInputHint: 'Enter 发送 · Shift+Enter 换行',

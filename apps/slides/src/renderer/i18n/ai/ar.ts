@@ -83,6 +83,7 @@ export const ar = {
   aiQueueSkipNested: 'العنصر متداخل بعمق يتعذر تحريره — تم التخطي',
   aiQueueSkippedNote: 'تعديلات متخطاة: {count}',
   aiRemoveAttachment: 'إزالة المرفق',
+  aiSetupNeeded: 'لم يتم تكوين نموذج ذكاء اصطناعي بعد — قم بإعداده أو سجّل الدخول بحساب Genspark.',
   aiInputPlaceholder: 'صف التعديل المطلوب أو اطرح سؤالًا مباشرة',
   aiAttachTitle: 'إرفاق ملفات محلية (يمكن أيضًا سحبها إلى اللوحة)',
   aiInputHint: 'Enter للإرسال · Shift+Enter لسطر جديد',

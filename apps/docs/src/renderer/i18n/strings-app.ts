@@ -1,47 +1,37 @@
-import { defineStrings } from '@genoffice/i18n'
-import { zh } from './app/zh'
+import type { Lang } from '@genoffice/i18n'
 import { en } from './app/en'
-import { ja } from './app/ja'
-import { ko } from './app/ko'
-import { fr } from './app/fr'
-import { de } from './app/de'
-import { es } from './app/es'
-import { th } from './app/th'
-import { id } from './app/id'
-import { ru } from './app/ru'
-import { ar } from './app/ar'
-import { pt } from './app/pt'
-import { it } from './app/it'
-import { pl } from './app/pl'
-import { cs } from './app/cs'
-import { nl } from './app/nl'
-import { ms } from './app/ms'
-import { he } from './app/he'
-import { hi } from './app/hi'
-import { zhTW } from './app/zh-TW'
-import { vi } from './app/vi'
+import type { zh } from './app/zh'
 
 /** Strings for App.tsx / SettingsModal / non-Ribbon components (keys use the app prefix to mark the area) */
-export const appStrings = defineStrings({
-  zh,
-  en,
-  ja,
-  ko,
-  fr,
-  de,
-  es,
-  th,
-  id,
-  ru,
-  ar,
-  pt,
-  it,
-  pl,
-  cs,
-  nl,
-  ms,
-  he,
-  hi,
-  'zh-TW': zhTW,
-  vi,
-})
+export type AppDict = typeof zh
+
+/** en stays eager so t() has a fallback before any lazy locale chunk lands */
+export const appEn: AppDict = en
+
+const loaders: Record<Lang, () => Promise<AppDict>> = {
+  en: () => Promise.resolve(appEn),
+  zh: async () => (await import('./app/zh')).zh,
+  ja: async () => (await import('./app/ja')).ja,
+  ko: async () => (await import('./app/ko')).ko,
+  fr: async () => (await import('./app/fr')).fr,
+  de: async () => (await import('./app/de')).de,
+  es: async () => (await import('./app/es')).es,
+  th: async () => (await import('./app/th')).th,
+  id: async () => (await import('./app/id')).id,
+  ru: async () => (await import('./app/ru')).ru,
+  ar: async () => (await import('./app/ar')).ar,
+  pt: async () => (await import('./app/pt')).pt,
+  it: async () => (await import('./app/it')).it,
+  pl: async () => (await import('./app/pl')).pl,
+  cs: async () => (await import('./app/cs')).cs,
+  nl: async () => (await import('./app/nl')).nl,
+  ms: async () => (await import('./app/ms')).ms,
+  he: async () => (await import('./app/he')).he,
+  hi: async () => (await import('./app/hi')).hi,
+  'zh-TW': async () => (await import('./app/zh-TW')).zhTW,
+  vi: async () => (await import('./app/vi')).vi,
+}
+
+export function loadAppStrings(lang: Lang): Promise<AppDict> {
+  return loaders[lang]()
+}

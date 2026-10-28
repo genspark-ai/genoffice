@@ -6,7 +6,9 @@
 .set-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* above the star-prompt promo card (z-index 60): at the same level the
+     later-DOM card stacked over this dialog */
+  z-index: 70;
   display: flex;
   align-items: center;
   justify-content: center;

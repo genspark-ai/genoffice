@@ -9,6 +9,8 @@ export default defineConfig({
   main: {
     // node:sqlite is a Node 22+ builtin the bundler's builtin list may predate
     build: {
+      // electron-vite defaults build.minify to false
+      minify: 'esbuild',
       rollupOptions: { external: ['node:sqlite'] },
       // pi packages are ESM-only; externalizing them makes the CJS main bundle
       // require() them at runtime and crash on startup
@@ -23,6 +25,7 @@ export default defineConfig({
   },
   preload: {
     build: {
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
@@ -37,6 +40,7 @@ export default defineConfig({
   renderer: {
     plugins: [react()],
     build: {
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),

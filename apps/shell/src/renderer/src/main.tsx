@@ -12,6 +12,7 @@ import '@genoffice/ui/ai-skills.css'
 import './home.css'
 import './tabbar.css'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
+import { loadStrings } from './strings'
 
 installScreenTips()
 
@@ -29,7 +30,7 @@ void Promise.all([
   // if the flag is unreadable, skip onboarding rather than block the home screen
   window.aiOffice.onboardingSeen().catch(() => true),
   window.aiOffice.getTheme().catch(() => 'system' as const),
-]).then(([lang, onboardingSeen, theme]) => {
+]).then(async ([lang, onboardingSeen, theme]) => {
   document.documentElement.lang = htmlLang(lang)
   document.documentElement.dir = htmlDir(lang)
   // apply theme attribute before first paint to avoid flash
@@ -55,6 +56,9 @@ void Promise.all([
   // one. A static import meant Home's first paint paid for a manual nobody had
   // opened.
   const isHelp = new URLSearchParams(location.search).get('mode') === 'help'
+  // fetch only the current language's dictionary before first paint; switching
+  // later loads the new one before the re-render
+  await loadStrings(lang)
   const HelpScreen = React.lazy(() =>
     import('./i18n/help/HelpScreen').then((m) => ({ default: m.HelpScreen })),
   )

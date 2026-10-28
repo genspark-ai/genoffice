@@ -21,6 +21,7 @@ import {
 } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { activeProvider } from '@genoffice/ai-provider/browser'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { AiSkillChips, AiSkillsMenu, createFileNav, Markdown } from '@genoffice/ui'
@@ -387,6 +388,43 @@ export function AiChatPanel({
   useEffect(() => {
     if (aiBusy) busyStartRef.current = Date.now()
   }, [aiBusy])
+
+  // No usable chat provider and no Genspark login: the composer gates sending
+  // until setup. Same rule as the docs panel's empty-state CTA; refreshed with
+  // the model chip (mount, window focus, ai-settings broadcasts). Promise.resolve
+  // wrapping keeps a throwing bridge (tests render without a preload) harmless.
+  const [aiSetupNeeded, setAiSetupNeeded] = useState(false)
+  useEffect(() => {
+    const refresh = () => {
+      void Promise.all([
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.getSettings())
+          .catch(() => null),
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.gskLoggedIn?.() ?? false)
+          .catch(() => false),
+      ]).then(([settings, loggedIn]) => {
+        setAiSetupNeeded(
+          settings != null &&
+            !loggedIn &&
+            activeProvider(settings) === 'genspark' &&
+            !(settings.customEndpoints ?? []).some((e) => e.baseUrl?.trim() && e.model?.trim()),
+        )
+      })
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    let off: (() => void) | undefined
+    try {
+      off = MODEL_BRIDGE.onSettingsChanged?.(refresh)
+    } catch {
+      off = undefined
+    }
+    return () => {
+      window.removeEventListener('focus', refresh)
+      off?.()
+    }
+  }, [])
 
   // preferred = the user's chosen width (the only value persisted); the CSS var
   // gets the display width derived from the preference and the live window, so
@@ -990,6 +1028,8 @@ export function AiChatPanel({
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
           hintIdleTitle={t('aiHintIdleTitle')}
+          setupRequired={aiSetupNeeded}
+          setupHint={t('aiSetupNeeded')}
           sendLabel={t('aiSend')}
           stopLabel={t('aiStop')}
           ariaLabel={t('aiInstructionAria')}

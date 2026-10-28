@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const fr = {
   aiCollapsePanel: 'Réduire le panneau',
+  aiSetupNeeded:
+    "Aucun modèle d'IA configuré pour l'instant — configurez-en un ou connectez-vous avec Genspark.",
   aiComposerPlaceholder: "Demandez à l'IA d'écrire ou de modifier…",
   aiCopyReplyTitle: 'Copier la réponse',
   aiCopyCode: 'Copier le code',

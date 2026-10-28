@@ -41,6 +41,7 @@ export const he = {
   aiCellEmpty: 'ריק',
   aiRemoveAttachment: 'הסרת הקובץ המצורף',
   aiAttachTitle: 'צירוף קבצים מקומיים (אפשר גם לגרור אותם אל החלונית)',
+  aiSetupNeeded: 'עדיין לא הוגדר מודל AI — הגדר אחד או התחבר עם Genspark.',
   aiComposerPlaceholder: 'בקשו מה-AI לנתח או לשנות את חוברת העבודה הזו…',
   aiHintIdle: 'Enter לשליחה',
   aiHintBusy: 'Esc לעצירה',

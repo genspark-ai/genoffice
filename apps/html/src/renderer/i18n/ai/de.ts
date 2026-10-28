@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const de = {
   aiCollapsePanel: 'Panel einklappen',
+  aiSetupNeeded:
+    'Noch kein KI-Modell konfiguriert — richten Sie eines ein oder melden Sie sich mit Genspark an.',
   aiComposerPlaceholder: 'KI schreiben oder bearbeiten lassen…',
   aiCopyReplyTitle: 'Antwort kopieren',
   aiCopyCode: 'Code kopieren',

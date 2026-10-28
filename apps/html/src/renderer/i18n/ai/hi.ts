@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const hi = {
   aiCollapsePanel: 'पैनल संक्षिप्त करें',
+  aiSetupNeeded: 'अभी कोई AI मॉडल कॉन्फ़िगर नहीं है — एक सेट अप करें या Genspark से साइन इन करें।',
   aiComposerPlaceholder: 'AI से लिखने या संपादित करने को कहें…',
   aiCopyReplyTitle: 'जवाब कॉपी करें',
   aiCopyCode: 'कोड कॉपी करें',

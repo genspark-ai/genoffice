@@ -86,6 +86,7 @@ export const nl = {
   aiQueueSkipNested: 'element is te diep genest om te bewerken — overgeslagen',
   aiQueueSkippedNote: 'Overgeslagen bewerkingen: {count}',
   aiRemoveAttachment: 'Bijlage verwijderen',
+  aiSetupNeeded: 'Nog geen AI-model geconfigureerd — stel er een in of log in met Genspark.',
   aiInputPlaceholder: 'Beschrijf een bewerking of stel een vraag',
   aiAttachTitle: 'Lokale bestanden bijvoegen (of sleep ze naar het paneel)',
   aiInputHint: 'Enter om te verzenden · Shift+Enter voor nieuwe regel',

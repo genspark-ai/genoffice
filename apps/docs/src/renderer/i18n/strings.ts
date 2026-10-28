@@ -1,178 +1,50 @@
-import { aiStrings } from './strings-ai'
-import { appStrings } from './strings-app'
+import type { Lang } from '@genoffice/i18n'
+import { aiEn, loadAiStrings, type AiDict } from './strings-ai'
+import { appEn, loadAppStrings, type AppDict } from './strings-app'
 import { editorStrings } from './strings-editor'
-import { ribbonStrings } from './strings-ribbon'
+import { ribbonEn, loadRibbonStrings, type RibbonDict } from './strings-ribbon'
 import { tableStrings } from './strings-table'
 import { zoteroStrings } from './strings-zotero'
 
-export const strings = {
-  zh: {
-    ...appStrings.zh,
-    ...ribbonStrings.zh,
-    ...tableStrings.zh,
-    ...editorStrings.zh,
-    ...aiStrings.zh,
-    ...zoteroStrings.zh,
-  },
-  en: {
-    ...appStrings.en,
-    ...ribbonStrings.en,
-    ...tableStrings.en,
-    ...editorStrings.en,
-    ...aiStrings.en,
-    ...zoteroStrings.en,
-  },
-  ja: {
-    ...appStrings.ja,
-    ...ribbonStrings.ja,
-    ...tableStrings.ja,
-    ...editorStrings.ja,
-    ...aiStrings.ja,
-    ...zoteroStrings.ja,
-  },
-  ko: {
-    ...appStrings.ko,
-    ...ribbonStrings.ko,
-    ...tableStrings.ko,
-    ...editorStrings.ko,
-    ...aiStrings.ko,
-    ...zoteroStrings.ko,
-  },
-  fr: {
-    ...appStrings.fr,
-    ...ribbonStrings.fr,
-    ...tableStrings.fr,
-    ...editorStrings.fr,
-    ...aiStrings.fr,
-    ...zoteroStrings.fr,
-  },
-  de: {
-    ...appStrings.de,
-    ...ribbonStrings.de,
-    ...tableStrings.de,
-    ...editorStrings.de,
-    ...aiStrings.de,
-    ...zoteroStrings.de,
-  },
-  es: {
-    ...appStrings.es,
-    ...ribbonStrings.es,
-    ...tableStrings.es,
-    ...editorStrings.es,
-    ...aiStrings.es,
-    ...zoteroStrings.es,
-  },
-  th: {
-    ...appStrings.th,
-    ...ribbonStrings.th,
-    ...tableStrings.th,
-    ...editorStrings.th,
-    ...aiStrings.th,
-    ...zoteroStrings.th,
-  },
-  id: {
-    ...appStrings.id,
-    ...ribbonStrings.id,
-    ...tableStrings.id,
-    ...editorStrings.id,
-    ...aiStrings.id,
-    ...zoteroStrings.id,
-  },
-  ru: {
-    ...appStrings.ru,
-    ...ribbonStrings.ru,
-    ...tableStrings.ru,
-    ...editorStrings.ru,
-    ...aiStrings.ru,
-    ...zoteroStrings.ru,
-  },
-  ar: {
-    ...appStrings.ar,
-    ...ribbonStrings.ar,
-    ...tableStrings.ar,
-    ...editorStrings.ar,
-    ...aiStrings.ar,
-    ...zoteroStrings.ar,
-  },
-  pt: {
-    ...appStrings.pt,
-    ...ribbonStrings.pt,
-    ...tableStrings.pt,
-    ...editorStrings.pt,
-    ...aiStrings.pt,
-    ...zoteroStrings.pt,
-  },
-  it: {
-    ...appStrings.it,
-    ...ribbonStrings.it,
-    ...tableStrings.it,
-    ...editorStrings.it,
-    ...aiStrings.it,
-    ...zoteroStrings.it,
-  },
-  pl: {
-    ...appStrings.pl,
-    ...ribbonStrings.pl,
-    ...tableStrings.pl,
-    ...editorStrings.pl,
-    ...aiStrings.pl,
-    ...zoteroStrings.pl,
-  },
-  cs: {
-    ...appStrings.cs,
-    ...ribbonStrings.cs,
-    ...tableStrings.cs,
-    ...editorStrings.cs,
-    ...aiStrings.cs,
-    ...zoteroStrings.cs,
-  },
-  nl: {
-    ...appStrings.nl,
-    ...ribbonStrings.nl,
-    ...tableStrings.nl,
-    ...editorStrings.nl,
-    ...aiStrings.nl,
-    ...zoteroStrings.nl,
-  },
-  ms: {
-    ...appStrings.ms,
-    ...ribbonStrings.ms,
-    ...tableStrings.ms,
-    ...editorStrings.ms,
-    ...aiStrings.ms,
-    ...zoteroStrings.ms,
-  },
-  he: {
-    ...appStrings.he,
-    ...ribbonStrings.he,
-    ...tableStrings.he,
-    ...editorStrings.he,
-    ...aiStrings.he,
-    ...zoteroStrings.he,
-  },
-  hi: {
-    ...appStrings.hi,
-    ...ribbonStrings.hi,
-    ...tableStrings.hi,
-    ...editorStrings.hi,
-    ...aiStrings.hi,
-    ...zoteroStrings.hi,
-  },
+/** merged per-locale dictionary; zh still anchors the key set (see the shard types) */
+export type StringsDict = AppDict &
+  RibbonDict &
+  typeof tableStrings.zh &
+  typeof editorStrings.zh &
+  AiDict &
+  typeof zoteroStrings.zh
 
-  vi: {
-    ...appStrings.vi,
-    ...ribbonStrings.vi,
-    ...tableStrings.vi,
-    ...editorStrings.vi,
-    ...aiStrings.vi,
-    ...zoteroStrings.vi,
-  },
-  'zh-TW': {
-    ...appStrings['zh-TW'],
-    ...ribbonStrings['zh-TW'],
-    ...tableStrings['zh-TW'],
-    ...editorStrings['zh-TW'],
-    ...aiStrings['zh-TW'],
-    ...zoteroStrings['zh-TW'],
-  },
+/** eager en fallback, so t() is meaningful before any lazy locale chunk lands */
+export const enStrings: StringsDict = {
+  ...appEn,
+  ...ribbonEn,
+  ...tableStrings.en,
+  ...editorStrings.en,
+  ...aiEn,
+  ...zoteroStrings.en,
+}
+
+const dicts: Partial<Record<Lang, StringsDict>> = { en: enStrings }
+
+/** sync registry read for the translator; undefined until loadStrings(lang) resolves */
+export function getStrings(lang: Lang): StringsDict | undefined {
+  return dicts[lang]
+}
+
+/** merge one locale's shards into the registry; en resolves immediately, others lazy-load */
+export async function loadStrings(lang: Lang): Promise<void> {
+  if (dicts[lang]) return
+  const [app, ai, ribbon] = await Promise.all([
+    loadAppStrings(lang),
+    loadAiStrings(lang),
+    loadRibbonStrings(lang),
+  ])
+  dicts[lang] = {
+    ...app,
+    ...ribbon,
+    ...tableStrings[lang],
+    ...editorStrings[lang],
+    ...ai,
+    ...zoteroStrings[lang],
+  }
 }

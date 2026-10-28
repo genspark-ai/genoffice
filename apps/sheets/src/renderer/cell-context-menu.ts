@@ -36,6 +36,7 @@ import {
 import type { IMenuButtonItem, IMenuSelectorItem, MenuSchemaType } from '@univerjs/ui'
 
 import { getLang, t, tFor, type StringKey } from './i18n/locale'
+import { loadStrings } from './i18n/strings'
 import { NUMBER_FORMAT_LABEL, numberFormatCategories } from './number-format'
 import { collectPickListValues, filterCriteriaForText } from './pick-from-list'
 import type { UniverRuntime } from './univer-state'
@@ -448,7 +449,13 @@ export function installCellContextMenu(runtime: UniverRuntime): IDisposable {
   )
   disposables.push(
     { dispose: () => localeSubscription.unsubscribe() },
-    { dispose: window.desktopApi.onLanguageChanged((lang) => loadMenuLocale(localeService, lang)) },
+    {
+      // Dictionaries load per language now, so the labels wait for the chunk
+      // before they reload — tFor() would read fallback English otherwise.
+      dispose: window.desktopApi.onLanguageChanged(
+        (lang) => void loadStrings(lang).then(() => loadMenuLocale(localeService, lang)),
+      ),
+    },
   )
   const header = schemaFor(headerContextMenuLayout())
   injector.get(IMenuManagerService).mergeMenu({

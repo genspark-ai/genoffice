@@ -84,6 +84,8 @@ export const pl = {
   aiQueueSkipNested: 'element jest zbyt głęboko zagnieżdżony — pominięto',
   aiQueueSkippedNote: 'Pominięte zmiany: {count}',
   aiRemoveAttachment: 'Usuń załącznik',
+  aiSetupNeeded:
+    'Nie skonfigurowano jeszcze żadnego modelu AI — skonfiguruj go lub zaloguj się przez Genspark.',
   aiInputPlaceholder: 'Opisz zmianę lub zadaj dowolne pytanie',
   aiAttachTitle: 'Załącz pliki lokalne (możesz też przeciągnąć je na panel)',
   aiInputHint: 'Enter — wyślij · Shift+Enter — nowy wiersz',

@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const ko = {
   aiCollapsePanel: '패널 접기',
+  aiSetupNeeded: '아직 구성된 AI 모델이 없습니다 — 모델을 설정하거나 Genspark로 로그인하세요.',
   aiComposerPlaceholder: 'AI에게 작성·수정을 요청하세요…',
   aiCopyReplyTitle: '답변 복사',
   aiCopyCode: '코드 복사',

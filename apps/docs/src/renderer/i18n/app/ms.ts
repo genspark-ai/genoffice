@@ -59,6 +59,7 @@ export const ms = {
   appSaveFailed: 'Gagal menyimpan: {error}',
   appAutoSavedAt: 'Disimpan secara automatik ({time})',
   appSaved: 'Disimpan',
+  appSavedWithPath: 'Disimpan ke {path}',
   appSectionBreakInserted: 'Pemisah seksyen disisipkan ({type})',
   appSectionBreakPending:
     'Pemisah seksyen disisipkan; seksyen baharu berkuat kuasa selepas disimpan',

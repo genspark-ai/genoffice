@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const ja = {
   aiCollapsePanel: 'パネルを折りたたむ',
+  aiSetupNeeded:
+    'AI モデルがまだ設定されていません — 設定するか、Genspark でサインインしてください。',
   aiComposerPlaceholder: 'AI に執筆・編集を依頼…',
   aiCopyReplyTitle: '返信をコピー',
   aiCopyCode: 'コードをコピー',

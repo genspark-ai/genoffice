@@ -369,6 +369,10 @@ export interface HomeApi {
   deleteFolder(dir: string): Promise<void>
   /** a folder under the root changed on disk (created/renamed/deleted/moved, from anywhere) */
   onFolderChanged(handler: (dirs: string[]) => void): () => void
+  /** the recents list changed in the main process (a save or open landed a new
+   *  head entry) — broadcast on the docs pushRecent funnel, which every editor
+   *  app's shell hooks feed; lets Home re-pull without waiting for focus */
+  onRecentsChanged(handler: () => void): () => void
   /** current UI language (persisted in userData/app-settings.json) */
   getLanguage(): Promise<UiLanguage>
   /** switch + persist the UI language; main rebuilds its menus to match */
@@ -678,6 +682,7 @@ export const HOME_CHANNELS = {
   movePaths: 'home:move-paths',
   deleteFolder: 'home:folder-delete',
   folderChanged: 'home:folder-changed',
+  recentsChanged: 'home:recents-changed',
   getLanguage: 'home:get-language',
   setLanguage: 'home:set-language',
   getUpdateChannel: 'home:get-update-channel',

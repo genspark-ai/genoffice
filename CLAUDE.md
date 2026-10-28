@@ -52,9 +52,13 @@ system mode).
 
 ## UI strings (i18n)
 
-- Large dictionaries are sharded per locale: `i18n/strings-<domain>.ts` is a
-  thin aggregator over `i18n/<domain>/<lang>.ts` (one file per language, `zh`
-  defines the key set). Add a new key to `zh.ts` and to every sibling shard;
-  the `satisfies Record<keyof typeof zh, string>` on each shard turns a
-  missing or extra key into a type error. Never grow the aggregator back into
-  a single 19-locale object.
+- Large dictionaries are sharded per locale: one `i18n/<domain>/<lang>.ts`
+  (or `i18n/lang/<lang>.ts` / shell `strings/<lang>.ts`) file per language,
+  `zh` defines the key set. Add a new key to `zh.ts` and to every sibling
+  shard; the `satisfies Record<keyof typeof zh, string>` on each shard turns
+  a missing or extra key into a type error.
+- Locales load lazily at runtime: aggregators are dynamic-import maps
+  (`loadStrings(lang)` / `ensureLocale(lang)`), bootstrap awaits the active
+  locale before first render, and only zh/en (or en) stay eager as the sync
+  fallback chain. Keep new dictionaries behind the same lazy loaders —
+  never reintroduce a static all-locales import into a renderer entry.

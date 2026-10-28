@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const zhTW = {
   aiCollapsePanel: '收合面板',
+  aiSetupNeeded: '尚未設定 AI 模型——請先設定，或登入 Genspark。',
   aiComposerPlaceholder: '讓 AI 撰寫或修改文件…',
   aiCopyReplyTitle: '複製回覆',
   aiCopyCode: '複製程式碼',

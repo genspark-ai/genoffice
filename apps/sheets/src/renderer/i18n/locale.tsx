@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
-import { strings } from './strings'
+import { dicts, loadStrings, type Strings } from './strings'
 
-const translate = createI18n(strings)
+const translate = createI18n(dicts)
 
-export type StringKey = keyof typeof strings.zh
+export type StringKey = keyof Strings
 export type TFunc = (key: StringKey, params?: Params) => string
 
 /**
@@ -92,10 +92,16 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
   useEffect(
     () =>
       window.desktopApi.onLanguageChanged((next) => {
-        setModuleLang(next)
-        document.documentElement.lang = htmlLang(next)
-        document.documentElement.dir = htmlDir(next)
-        setLang(next)
+        // Lazy switch: the dictionary chunk lands before the language moves,
+        // so no frame renders fallback English in between.
+        void loadStrings(next)
+          .then(() => {
+            setModuleLang(next)
+            document.documentElement.lang = htmlLang(next)
+            document.documentElement.dir = htmlDir(next)
+            setLang(next)
+          })
+          .catch(() => {})
       }),
     [],
   )

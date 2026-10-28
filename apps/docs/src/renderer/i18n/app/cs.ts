@@ -58,6 +58,7 @@ export const cs = {
   appSaveFailed: 'Uložení se nezdařilo: {error}',
   appAutoSavedAt: 'Automaticky uloženo ({time})',
   appSaved: 'Uloženo',
+  appSavedWithPath: 'Uloženo do {path}',
   appSectionBreakInserted: 'Konec oddílu vložen ({type})',
   appSectionBreakPending: 'Konec oddílu vložen; nový oddíl se projeví po uložení',
   appBreakNextPage: 'Další stránka',

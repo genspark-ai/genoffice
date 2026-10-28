@@ -1420,7 +1420,22 @@ function RibbonInner({
     setDropdown(null)
   }
 
-  const currentFont = fs.fontFamily
+  // Word's font box: a selection declaring no face of its own falls back to the
+  // document default (default paragraph style → docDefaults → theme body), and
+  // beyond that to the renderer's own ultimate Latin default (doc-style-css's
+  // `docBodyFont(parsed) ?? 'Calibri'`) so a fontless document still names what
+  // its text renders in; a mixed selection keeps the blank box
+  // (fontLatin/fontEastAsia null)
+  const defaultParaDisplay =
+    styles && [...styles.values()].find((s) => s.type === 'paragraph' && s.isDefault)?.display
+  const docDefaultFont =
+    defaultParaDisplay?.fontAscii ??
+    docDefaults?.asciiFont ??
+    defaultParaDisplay?.font ??
+    themeFonts?.minor ??
+    'Calibri'
+  const fontUndeclared = fs.fontFamily === '' && fs.fontLatin !== null && fs.fontEastAsia !== null
+  const currentFont = fontUndeclared ? (docDefaultFont ?? '') : fs.fontFamily
   // Word's font box: an East Asian face fills every rFonts slot, a Latin face only
   // w:ascii/w:hAnsi so the CJK font survives
   const setFont = (name: string) => {

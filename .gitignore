@@ -1,8 +1,8 @@
 node_modules
 out/
 dist/
-release/
-*.log
+release/*.log
+/apps/shell/release*/
 .DS_Store
 .refs/
 .env

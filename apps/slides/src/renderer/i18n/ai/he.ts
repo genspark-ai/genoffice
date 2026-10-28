@@ -83,6 +83,7 @@ export const he = {
   aiQueueSkipNested: 'הפריט מקונן עמוק מדי לעריכה — דולג',
   aiQueueSkippedNote: 'עריכות שדולגו: {count}',
   aiRemoveAttachment: 'הסר קובץ מצורף',
+  aiSetupNeeded: 'עדיין לא הוגדר מודל AI — הגדר אחד או התחבר עם Genspark.',
   aiInputPlaceholder: 'תאר עריכה, או שאל כל דבר',
   aiAttachTitle: 'צרף קבצים מקומיים (או גרור אותם אל הלוח)',
   aiInputHint: 'Enter לשליחה · Shift+Enter לשורה חדשה',

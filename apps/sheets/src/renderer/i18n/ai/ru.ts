@@ -42,6 +42,7 @@ export const ru = {
   aiCellEmpty: 'пусто',
   aiRemoveAttachment: 'Удалить вложение',
   aiAttachTitle: 'Прикрепить локальные файлы (или перетащите их на панель)',
+  aiSetupNeeded: 'Модель ИИ ещё не настроена — настройте её или войдите через Genspark.',
   aiComposerPlaceholder: 'Попросите ИИ проанализировать или изменить эту книгу…',
   aiHintIdle: 'Enter — отправить',
   aiHintBusy: 'Esc — остановить',

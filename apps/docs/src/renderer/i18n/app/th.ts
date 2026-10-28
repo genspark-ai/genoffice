@@ -56,6 +56,7 @@ export const th = {
   appSaveFailed: 'บันทึกไม่สำเร็จ: {error}',
   appAutoSavedAt: 'บันทึกอัตโนมัติแล้ว ({time})',
   appSaved: 'บันทึกแล้ว',
+  appSavedWithPath: 'บันทึกไปที่ {path}',
   appSectionBreakInserted: 'แทรกตัวแบ่งส่วนแล้ว ({type})',
   appSectionBreakPending: 'แทรกตัวแบ่งส่วนแล้ว ส่วนใหม่จะมีผลหลังจากบันทึก',
   appBreakNextPage: 'หน้าถัดไป',

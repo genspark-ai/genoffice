@@ -87,6 +87,8 @@ export const de = {
   aiQueueSkipNested: 'Element ist zu tief verschachtelt — übersprungen',
   aiQueueSkippedNote: 'Übersprungene Änderungen: {count}',
   aiRemoveAttachment: 'Anlage entfernen',
+  aiSetupNeeded:
+    'Noch kein KI-Modell konfiguriert — richten Sie eines ein oder melden Sie sich mit Genspark an.',
   aiInputPlaceholder: 'Beschreiben Sie eine Änderung oder stellen Sie eine Frage',
   aiAttachTitle: 'Lokale Dateien anhängen (oder auf den Bereich ziehen)',
   aiInputHint: 'Eingabetaste zum Senden · Umschalt+Eingabetaste für Zeilenumbruch',

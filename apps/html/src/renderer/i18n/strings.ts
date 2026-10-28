@@ -1,27 +1,46 @@
-import { aiStrings } from './strings-ai'
-import { appStrings } from './strings-app'
+import { defineStrings } from '@genoffice/i18n'
+import { zh } from './lang/zh'
+import { en } from './lang/en'
+import { ja } from './lang/ja'
+import { ko } from './lang/ko'
+import { fr } from './lang/fr'
+import { de } from './lang/de'
+import { es } from './lang/es'
+import { th } from './lang/th'
+import { id } from './lang/id'
+import { ru } from './lang/ru'
+import { ar } from './lang/ar'
+import { pt } from './lang/pt'
+import { it } from './lang/it'
+import { pl } from './lang/pl'
+import { cs } from './lang/cs'
+import { nl } from './lang/nl'
+import { ms } from './lang/ms'
+import { he } from './lang/he'
+import { hi } from './lang/hi'
+import { vi } from './lang/vi'
+import { zhTW } from './lang/zh-TW'
 
-export const strings = {
-  zh: { ...appStrings.zh, ...aiStrings.zh },
-  en: { ...appStrings.en, ...aiStrings.en },
-  ja: { ...appStrings.ja, ...aiStrings.ja },
-  ko: { ...appStrings.ko, ...aiStrings.ko },
-  fr: { ...appStrings.fr, ...aiStrings.fr },
-  de: { ...appStrings.de, ...aiStrings.de },
-  es: { ...appStrings.es, ...aiStrings.es },
-  th: { ...appStrings.th, ...aiStrings.th },
-  id: { ...appStrings.id, ...aiStrings.id },
-  ru: { ...appStrings.ru, ...aiStrings.ru },
-  ar: { ...appStrings.ar, ...aiStrings.ar },
-  pt: { ...appStrings.pt, ...aiStrings.pt },
-  it: { ...appStrings.it, ...aiStrings.it },
-  pl: { ...appStrings.pl, ...aiStrings.pl },
-  cs: { ...appStrings.cs, ...aiStrings.cs },
-  nl: { ...appStrings.nl, ...aiStrings.nl },
-  ms: { ...appStrings.ms, ...aiStrings.ms },
-  he: { ...appStrings.he, ...aiStrings.he },
-  hi: { ...appStrings.hi, ...aiStrings.hi },
-
-  vi: { ...appStrings.vi, ...aiStrings.vi },
-  'zh-TW': { ...appStrings['zh-TW'], ...aiStrings['zh-TW'] },
-}
+export const strings = defineStrings({
+  zh,
+  en,
+  ja,
+  ko,
+  fr,
+  de,
+  es,
+  th,
+  id,
+  ru,
+  ar,
+  pt,
+  it,
+  pl,
+  cs,
+  nl,
+  ms,
+  he,
+  hi,
+  vi,
+  'zh-TW': zhTW,
+})

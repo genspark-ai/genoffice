@@ -3441,11 +3441,24 @@ function pushRecent(filePath: string): void {
   const next = [filePath, ...recent.filter((p) => p !== filePath)].slice(0, RECENT_LIMIT)
   try {
     writeJsonAtomic(RECENT_PATH(), next)
+    broadcastRecentsChanged()
   } catch (err) {
     // the document itself is already saved; a lost recents entry must not fail the save
     console.warn('[docs] recent.json write failed:', err)
   }
   buildDocsMenu() // keep File > Open Recent in sync
+}
+
+/**
+ * Tell every renderer the recents list changed (a save or open landed on a new
+ * head entry) so the shell Home re-pulls its list immediately instead of
+ * waiting for the next window focus. Channel mirrors HOME_CHANNELS.recentsChanged
+ * in the shell (docs cannot import the shell's shared module, so the name is
+ * duplicated here; both sides pin it in tests).
+ */
+function broadcastRecentsChanged(): void {
+  for (const wc of webContents.getAllWebContents())
+    if (!wc.isDestroyed()) wc.send('home:recents-changed')
 }
 
 /** unified recents for the shell home screen (paths only; type = extension).
@@ -4964,6 +4977,9 @@ export function registerDocsIpc(): void {
         pushRecent(filePath)
         return {
           ok: true,
+          // the plain-save answer carries the absolute path like save-as /
+          // save-new / save-to do, so every save result names its file
+          path: filePath,
           passwordIntentPending,
           ...reissuedDoc(!!passwordState.password, hashes, plain),
         }

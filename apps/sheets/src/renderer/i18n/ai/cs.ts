@@ -42,6 +42,8 @@ export const cs = {
   aiCellEmpty: 'prázdná',
   aiRemoveAttachment: 'Odebrat přílohu',
   aiAttachTitle: 'Připojit místní soubory (nebo je přetáhněte na panel)',
+  aiSetupNeeded:
+    'Zatím není nakonfigurován žádný AI model — nastavte ho, nebo se přihlaste přes Genspark.',
   aiComposerPlaceholder: 'Požádejte AI o analýzu nebo úpravu tohoto sešitu…',
   aiHintIdle: 'Enter odešle',
   aiHintBusy: 'Esc zastaví',

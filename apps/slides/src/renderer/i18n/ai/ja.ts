@@ -84,6 +84,8 @@ export const ja = {
   aiQueueSkipNested: '要素の入れ子が深すぎて編集できません。スキップしました',
   aiQueueSkippedNote: '{count} 件をスキップしました',
   aiRemoveAttachment: '添付ファイルを削除',
+  aiSetupNeeded:
+    'AI モデルがまだ設定されていません — 設定するか、Genspark でサインインしてください。',
   aiInputPlaceholder: '編集内容を指示するか、質問を入力',
   aiAttachTitle: 'ローカル ファイルを添付（パネルへのドラッグも可）',
   aiInputHint: 'Enter で送信 · Shift+Enter で改行',

@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills, withAttachedSkills } from '@genoffice/agent-core'
 import type { AgentImage } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { activeProvider, type AiSettings } from '@genoffice/ai-provider/browser'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import {
@@ -534,6 +534,43 @@ export function AiPanel({
   const settingsRef = useRef<AiSettings | null>(null)
   const langRef = useRef(lang)
   langRef.current = lang
+
+  // No usable chat provider and no Genspark login: the composer gates sending
+  // until setup, mirroring the docs panel's empty-state CTA rule. Refreshed
+  // with the model chip (mount, window focus, ai-settings broadcasts); the
+  // Promise.resolve wrapping keeps a throwing bridge harmless in tests.
+  const [aiSetupNeeded, setAiSetupNeeded] = useState(false)
+  useEffect(() => {
+    const refresh = () => {
+      void Promise.all([
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.getSettings())
+          .catch(() => null),
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.gskLoggedIn?.() ?? false)
+          .catch(() => false),
+      ]).then(([settings, loggedIn]) => {
+        setAiSetupNeeded(
+          settings != null &&
+            !loggedIn &&
+            activeProvider(settings) === 'genspark' &&
+            !(settings.customEndpoints ?? []).some((e) => e.baseUrl?.trim() && e.model?.trim()),
+        )
+      })
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    let off: (() => void) | undefined
+    try {
+      off = MODEL_BRIDGE.onSettingsChanged?.(refresh)
+    } catch {
+      off = undefined
+    }
+    return () => {
+      window.removeEventListener('focus', refresh)
+      off?.()
+    }
+  }, [])
   const depsRef = useRef(deps)
   depsRef.current = deps
   const filePathRef = useRef(filePath)
@@ -1640,6 +1677,8 @@ export function AiPanel({
           placeholder={t('aiComposerPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
+          setupRequired={aiSetupNeeded}
+          setupHint={t('aiSetupNeeded')}
           sendLabel={t('aiSend')}
           stopLabel={t('aiStop')}
           iconOnly

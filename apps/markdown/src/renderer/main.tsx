@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
-import { LocaleProvider } from './i18n/locale'
+import { LocaleProvider, ensureLocale } from './i18n/locale'
 import type { DocTheme, UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
@@ -60,6 +60,8 @@ void (async () => {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.markdownApi?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
+  // the UI language's dictionary must be registered before the first render
+  await ensureLocale(lang as Lang)
   createRoot(document.getElementById('root')!).render(
     <LocaleProvider initial={lang}>
       <App />

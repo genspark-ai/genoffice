@@ -40,7 +40,10 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     // the engine's display-only `effective` keys stay out of saved-model toEqual
-    setupFiles: [local('../../packages/docx-engine/tests/setup-equality.ts')],
+    setupFiles: [
+      local('../../packages/docx-engine/tests/setup-equality.ts'),
+      local('./tests/helpers/i18n-preload.ts'),
+    ],
     environment: 'jsdom',
     testTimeout: 20000,
     // stops worker oversubscription flakes: 12 logical CPUs meant 12 fork

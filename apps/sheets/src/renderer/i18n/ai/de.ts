@@ -43,6 +43,8 @@ export const de = {
   aiCellEmpty: 'leer',
   aiRemoveAttachment: 'Anlage entfernen',
   aiAttachTitle: 'Lokale Dateien anfügen (oder in den Bereich ziehen)',
+  aiSetupNeeded:
+    'Noch kein KI-Modell konfiguriert — richten Sie eines ein oder melden Sie sich mit Genspark an.',
   aiComposerPlaceholder: 'Bitten Sie die KI, diese Arbeitsmappe zu analysieren oder zu ändern…',
   aiHintIdle: 'Eingabetaste zum Senden',
   aiHintBusy: 'Esc zum Stoppen',

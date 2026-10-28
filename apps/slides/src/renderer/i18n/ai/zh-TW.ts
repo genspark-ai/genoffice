@@ -82,6 +82,7 @@ export const zhTW = {
   aiQueueSkipNested: '元素巢狀過深,無法編輯,已略過',
   aiQueueSkippedNote: '{count} 處編輯已略過',
   aiRemoveAttachment: '移除附件',
+  aiSetupNeeded: '尚未設定 AI 模型——請先設定，或登入 Genspark。',
   aiInputPlaceholder: '描述修改需求,或直接提問',
   aiAttachTitle: '新增本機檔案作為附件(也可拖曳到面板)',
   aiInputHint: 'Enter 傳送 · Shift+Enter 換行',

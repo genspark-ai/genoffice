@@ -319,6 +319,11 @@ const homeApi: HomeApi = {
     ipcRenderer.on(HOME_CHANNELS.folderChanged, listener)
     return () => ipcRenderer.removeListener(HOME_CHANNELS.folderChanged, listener)
   },
+  onRecentsChanged(handler) {
+    const listener = () => handler()
+    ipcRenderer.on(HOME_CHANNELS.recentsChanged, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.recentsChanged, listener)
+  },
   async openTrash() {
     await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
   },

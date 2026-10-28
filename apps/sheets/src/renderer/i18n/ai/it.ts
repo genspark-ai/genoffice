@@ -42,6 +42,7 @@ export const it = {
   aiCellEmpty: 'vuota',
   aiRemoveAttachment: 'Rimuovi allegato',
   aiAttachTitle: 'Allega file locali (oppure trascinali sul pannello)',
+  aiSetupNeeded: 'Nessun modello AI ancora configurato — configuralo oppure accedi con Genspark.',
   aiComposerPlaceholder: "Chiedi all'IA di analizzare o modificare questa cartella di lavoro…",
   aiHintIdle: 'Invio per inviare',
   aiHintBusy: 'Esc per interrompere',

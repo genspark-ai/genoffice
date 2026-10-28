@@ -83,6 +83,7 @@ export const th = {
   aiQueueSkipNested: 'องค์ประกอบซ้อนลึกเกินกว่าจะแก้ไข จึงข้ามไป',
   aiQueueSkippedNote: 'ข้ามไป {count} รายการ',
   aiRemoveAttachment: 'ลบสิ่งที่แนบ',
+  aiSetupNeeded: 'ยังไม่ได้ตั้งค่าโมเดล AI — ตั้งค่าหนึ่งรายการ หรือลงชื่อเข้าใช้ด้วย Genspark',
   aiInputPlaceholder: 'อธิบายสิ่งที่ต้องการแก้ไข หรือถามคำถามได้เลย',
   aiAttachTitle: 'แนบไฟล์ในเครื่อง (หรือลากมาวางบนแผงก็ได้)',
   aiInputHint: 'Enter เพื่อส่ง · Shift+Enter เพื่อขึ้นบรรทัดใหม่',

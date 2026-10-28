@@ -85,6 +85,8 @@ export const vi = {
   aiQueueSkipNested: 'phần tử lồng quá sâu không thể chỉnh sửa — đã bỏ qua',
   aiQueueSkippedNote: 'Chỉnh sửa đã bỏ qua: {count}',
   aiRemoveAttachment: 'Xóa tệp đính kèm',
+  aiSetupNeeded:
+    'Chưa có mô hình AI nào được cấu hình — hãy thiết lập một mô hình hoặc đăng nhập bằng Genspark.',
   aiInputPlaceholder: 'Mô tả yêu cầu chỉnh sửa, hoặc hỏi bất kỳ điều gì',
   aiAttachTitle: 'Đính kèm tệp từ máy (hoặc kéo thả vào bảng điều khiển)',
   aiInputHint: 'Nhấn Enter để gửi · Shift+Enter để xuống dòng',

@@ -2,6 +2,8 @@ import type { zh } from './zh'
 
 export const id = {
   aiCollapsePanel: 'Ciutkan panel',
+  aiSetupNeeded:
+    'Belum ada model AI yang dikonfigurasi — siapkan satu, atau masuk dengan Genspark.',
   aiComposerPlaceholder: 'Minta AI menulis atau mengedit…',
   aiCopyReplyTitle: 'Salin balasan',
   aiCopyCode: 'Salin kode',

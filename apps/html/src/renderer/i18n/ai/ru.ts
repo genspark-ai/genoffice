@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const ru = {
   aiCollapsePanel: 'Свернуть панель',
+  aiSetupNeeded: 'Модель ИИ ещё не настроена — настройте её или войдите через Genspark.',
   aiComposerPlaceholder: 'Попросите ИИ написать или изменить…',
   aiCopyReplyTitle: 'Копировать ответ',
   aiCopyCode: 'Копировать код',

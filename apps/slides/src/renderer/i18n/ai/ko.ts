@@ -85,6 +85,7 @@ export const ko = {
   aiQueueSkipNested: '요소가 너무 깊이 중첩되어 건너뛰었습니다',
   aiQueueSkippedNote: '{count}개를 건너뛰었습니다',
   aiRemoveAttachment: '첨부 파일 제거',
+  aiSetupNeeded: '아직 구성된 AI 모델이 없습니다 — 모델을 설정하거나 Genspark로 로그인하세요.',
   aiInputPlaceholder: '수정 요청을 설명하거나 바로 질문하세요',
   aiAttachTitle: '로컬 파일을 첨부(패널로 드래그해도 됨)',
   aiInputHint: 'Enter 보내기 · Shift+Enter 줄 바꿈',

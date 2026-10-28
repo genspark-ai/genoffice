@@ -1,12 +1,23 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
-import { strings } from './strings'
+import {
+  format,
+  htmlDir,
+  htmlLang,
+  platformShortcuts,
+  type Lang,
+  type Params,
+} from '@genoffice/i18n'
+import { enStrings, getStrings, loadStrings, type StringsDict } from './strings'
 
-const translate = createI18n(strings)
-
-export type StringKey = keyof typeof strings.zh
+export type StringKey = keyof StringsDict
 export type TFunc = (key: StringKey, params?: Params) => string
+
+// same chain as createI18n, over the lazily-filled registry: current locale → en → raw key
+const translate = (lang: Lang, key: StringKey, params?: Params): string => {
+  const text = getStrings(lang)?.[key] ?? enStrings[key] ?? String(key)
+  return format(platformShortcuts(text), params)
+}
 
 // mirror for non-React modules (pagination, editor extensions, AI tools …);
 // set before first render and on every language switch
@@ -76,16 +87,22 @@ const LocaleContext = createContext<Lang>('zh')
 
 export function LocaleProvider({ initial, children }: { initial: Lang; children: ReactNode }) {
   const [lang, setLang] = useState<Lang>(initial)
-  useEffect(
-    () =>
-      window.desktop.onLanguageChanged((next) => {
+  useEffect(() => {
+    // latest wins: an out-of-order load must not flip the UI to a stale choice
+    let latest: Lang | undefined
+    const off = window.desktop.onLanguageChanged((next) => {
+      latest = next
+      document.documentElement.lang = htmlLang(next)
+      document.documentElement.dir = htmlDir(next)
+      // the locale chunk lands before the re-render, so t() never flashes English
+      void loadStrings(next).then(() => {
+        if (latest !== next) return
         setModuleLang(next)
-        document.documentElement.lang = htmlLang(next)
-        document.documentElement.dir = htmlDir(next)
         setLang(next)
-      }),
-    [],
-  )
+      })
+    })
+    return off
+  }, [])
   return <LocaleContext.Provider value={lang}>{children}</LocaleContext.Provider>
 }
 

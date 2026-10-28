@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
 import { PresentView } from './PresentView'
-import { LocaleProvider } from './i18n/locale'
+import { LocaleProvider, ensureLocale } from './i18n/locale'
 import type { UiTheme } from '../shared/ipc'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 import '@genoffice/ui/tokens.css'
@@ -41,6 +41,8 @@ void (async () => {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.htmlApi?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
+  // the UI language's dictionary must be registered before the first render
+  await ensureLocale(lang as Lang)
   // a present tab/window (opened by Present → New tab) renders only its owner's preview
   const params = new URLSearchParams(location.search)
   const present = params.has('present')

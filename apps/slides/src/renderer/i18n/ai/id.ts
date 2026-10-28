@@ -86,6 +86,8 @@ export const id = {
   aiQueueSkipNested: 'elemen tersarang terlalu dalam — dilewati',
   aiQueueSkippedNote: '{count} suntingan dilewati',
   aiRemoveAttachment: 'Hapus lampiran',
+  aiSetupNeeded:
+    'Belum ada model AI yang dikonfigurasi — siapkan satu, atau masuk dengan Genspark.',
   aiInputPlaceholder: 'Jelaskan perubahan yang diinginkan, atau ajukan pertanyaan',
   aiAttachTitle: 'Lampirkan file lokal (atau seret ke panel)',
   aiInputHint: 'Enter untuk kirim · Shift+Enter untuk baris baru',

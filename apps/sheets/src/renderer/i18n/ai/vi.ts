@@ -42,6 +42,8 @@ export const vi = {
   aiCellEmpty: 'trống',
   aiRemoveAttachment: 'Xóa tệp đính kèm',
   aiAttachTitle: 'Đính kèm tệp cục bộ (hoặc kéo thả vào bảng điều khiển)',
+  aiSetupNeeded:
+    'Chưa có mô hình AI nào được cấu hình — hãy thiết lập một mô hình hoặc đăng nhập bằng Genspark.',
   aiComposerPlaceholder: 'Yêu cầu AI phân tích hoặc cập nhật sổ làm việc này…',
   aiHintIdle: 'Nhấn Enter để gửi',
   aiHintBusy: 'Nhấn Esc để dừng',

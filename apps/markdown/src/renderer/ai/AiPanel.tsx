@@ -17,7 +17,11 @@ import {
   withAttachedSkills,
   type MindMapTreeNode,
 } from '@genoffice/agent-core'
-import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
+import {
+  activeProvider,
+  imageGenerationAvailable,
+  type AiSettings,
+} from '@genoffice/ai-provider/browser'
 import {
   AiComposer,
   AiQueueStrip,
@@ -246,6 +250,43 @@ export function AiPanel({
     return () => {
       alive = false
       window.removeEventListener('focus', refresh)
+    }
+  }, [])
+
+  // No usable chat provider and no Genspark login: the composer gates sending
+  // until setup, mirroring the docs panel's empty-state CTA rule. Refreshed
+  // with the model chip (mount, window focus, ai-settings broadcasts); the
+  // Promise.resolve wrapping keeps a throwing bridge harmless in tests.
+  const [aiSetupNeeded, setAiSetupNeeded] = useState(false)
+  useEffect(() => {
+    const refresh = () => {
+      void Promise.all([
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.getSettings())
+          .catch(() => null),
+        Promise.resolve()
+          .then(() => MODEL_BRIDGE.gskLoggedIn?.() ?? false)
+          .catch(() => false),
+      ]).then(([settings, loggedIn]) => {
+        setAiSetupNeeded(
+          settings != null &&
+            !loggedIn &&
+            activeProvider(settings) === 'genspark' &&
+            !(settings.customEndpoints ?? []).some((e) => e.baseUrl?.trim() && e.model?.trim()),
+        )
+      })
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    let off: (() => void) | undefined
+    try {
+      off = MODEL_BRIDGE.onSettingsChanged?.(refresh)
+    } catch {
+      off = undefined
+    }
+    return () => {
+      window.removeEventListener('focus', refresh)
+      off?.()
     }
   }, [])
   const langRef = useRef(lang)
@@ -1233,6 +1274,8 @@ export function AiPanel({
           placeholder={t('aiComposerPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
+          setupRequired={aiSetupNeeded}
+          setupHint={t('aiSetupNeeded')}
           sendLabel={t('aiSend')}
           stopLabel={t('aiStop')}
           iconOnly

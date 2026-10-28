@@ -41,6 +41,7 @@ export const zhTW = {
   aiCellEmpty: '空',
   aiRemoveAttachment: '移除附件',
   aiAttachTitle: '新增本機檔案作為附件（也可拖曳到面板）',
+  aiSetupNeeded: '尚未設定 AI 模型——請先設定，或登入 Genspark。',
   aiComposerPlaceholder: '讓 AI 分析或修改這個活頁簿…',
   aiHintIdle: 'Enter 傳送',
   aiHintBusy: 'Esc 停止',

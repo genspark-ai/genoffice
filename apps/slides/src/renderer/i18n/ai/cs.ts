@@ -86,6 +86,8 @@ export const cs = {
   aiQueueSkipNested: 'prvek je pro úpravu vnořen příliš hluboko — přeskočeno',
   aiQueueSkippedNote: 'Přeskočené úpravy: {count}',
   aiRemoveAttachment: 'Odebrat přílohu',
+  aiSetupNeeded:
+    'Zatím není nakonfigurován žádný AI model — nastavte ho, nebo se přihlaste přes Genspark.',
   aiInputPlaceholder: 'Popište úpravu nebo se na cokoli zeptejte',
   aiAttachTitle: 'Připojit místní soubory (nebo je přetáhněte na panel)',
   aiInputHint: 'Enter odešle · Shift+Enter nový řádek',

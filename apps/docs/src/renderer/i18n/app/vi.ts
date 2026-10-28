@@ -57,6 +57,7 @@ export const vi = {
   appSaveFailed: 'Lưu thất bại: {error}',
   appAutoSavedAt: 'Đã tự động lưu ({time})',
   appSaved: 'Đã lưu',
+  appSavedWithPath: 'Đã lưu vào {path}',
   appSectionBreakInserted: 'Đã chèn dấu ngắt phần ({type})',
   appSectionBreakPending: 'Đã chèn dấu ngắt phần; phần mới sẽ có hiệu lực sau khi lưu',
   appBreakNextPage: 'Trang tiếp theo',

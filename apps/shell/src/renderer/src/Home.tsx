@@ -27,7 +27,7 @@ import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
-import { onFilesChanged } from './file-events'
+import { bindRecentsChanged, onFilesChanged } from './file-events'
 import { aiSetupNeeded } from './ai-setup-state'
 
 import type { ProjectApi } from '@genoffice/project-store'
@@ -1801,6 +1801,11 @@ export function Home() {
 
   // a rename from the tab strip happens while this renderer already has focus
   useEffect(() => onFilesChanged(() => refreshRef.current()), [])
+
+  // a save landing in any editor tab pushes recents-changed from the main
+  // process; binding it here re-pulls the list immediately instead of waiting
+  // for the next window focus (a save inside a tab never moves focus)
+  useEffect(() => bindRecentsChanged(), [])
 
   const hasMore = entries.length < listTotal
 

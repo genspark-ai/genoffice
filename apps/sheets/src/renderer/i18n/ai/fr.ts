@@ -43,6 +43,8 @@ export const fr = {
   aiCellEmpty: 'vide',
   aiRemoveAttachment: 'Supprimer la pièce jointe',
   aiAttachTitle: 'Joindre des fichiers locaux (ou les faire glisser sur le volet)',
+  aiSetupNeeded:
+    "Aucun modèle d'IA configuré pour l'instant — configurez-en un ou connectez-vous avec Genspark.",
   aiComposerPlaceholder: "Demandez à l'IA d'analyser ou de modifier ce classeur…",
   aiHintIdle: 'Entrée pour envoyer',
   aiHintBusy: 'Échap pour arrêter',

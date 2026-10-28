@@ -9,10 +9,10 @@ import type { IntegrationsApi } from '../src/shared/integrations-api'
 import type { FoundSkill, RecommendedSkill } from '../src/shared/found-skill'
 import { FoundSkills } from '../src/renderer/src/FoundSkills'
 import { LocaleProvider } from '../src/renderer/src/locale'
-import { strings } from '../src/renderer/src/strings'
+import { en as enStrings } from '../src/renderer/src/strings/en'
 
 /** the real English text, so assertions read like what a user sees */
-const en = strings.en as Record<string, string>
+const en = enStrings as Record<string, string>
 const t = ((key: string, params?: Record<string, string>) =>
   (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => params?.[name] ?? `{${name}}`)) as never
 

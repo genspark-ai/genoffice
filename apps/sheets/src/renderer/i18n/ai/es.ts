@@ -43,6 +43,8 @@ export const es = {
   aiCellEmpty: 'vacío',
   aiRemoveAttachment: 'Quitar datos adjuntos',
   aiAttachTitle: 'Adjuntar archivos locales (o arrástralos al panel)',
+  aiSetupNeeded:
+    'Aún no hay ningún modelo de IA configurado: configúralo o inicia sesión con Genspark.',
   aiComposerPlaceholder: 'Pide a la IA que analice o modifique este libro…',
   aiHintIdle: 'Entrar para enviar',
   aiHintBusy: 'Esc para detener',

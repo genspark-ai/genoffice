@@ -85,6 +85,7 @@ export const en = {
   aiQueueSkipNested: 'element is nested too deep to edit — skipped',
   aiQueueSkippedNote: 'Skipped edits: {count}',
   aiRemoveAttachment: 'Remove attachment',
+  aiSetupNeeded: 'No AI model configured yet — set one up, or sign in with Genspark.',
   aiInputPlaceholder: 'Describe an edit, or ask anything',
   aiAttachTitle: 'Attach local files (or drag them onto the panel)',
   aiInputHint: 'Enter to send · Shift+Enter for newline',

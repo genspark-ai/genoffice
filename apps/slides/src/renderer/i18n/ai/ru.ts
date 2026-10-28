@@ -85,6 +85,7 @@ export const ru = {
   aiQueueSkipNested: 'элемент слишком глубоко вложен — пропущено',
   aiQueueSkippedNote: 'Пропущено правок: {count}',
   aiRemoveAttachment: 'Удалить вложение',
+  aiSetupNeeded: 'Модель ИИ ещё не настроена — настройте её или войдите через Genspark.',
   aiInputPlaceholder: 'Опишите правку или просто задайте вопрос',
   aiAttachTitle: 'Прикрепить локальные файлы (или перетащите их на панель)',
   aiInputHint: 'Enter — отправить · Shift+Enter — новая строка',

@@ -5,6 +5,7 @@
   position: fixed;
   right: 20px;
   bottom: 20px;
+  /* stays under the settings overlay (70) and confirm dialogs (100): non-modal promo */
   z-index: 60;
   width: 320px;
   padding: 16px 16px 14px;

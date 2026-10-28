@@ -41,6 +41,7 @@ export const th = {
   aiCellEmpty: 'ว่าง',
   aiRemoveAttachment: 'เอาสิ่งที่แนบออก',
   aiAttachTitle: 'แนบไฟล์ในเครื่อง (หรือลากมาวางบนแผงก็ได้)',
+  aiSetupNeeded: 'ยังไม่ได้ตั้งค่าโมเดล AI — ตั้งค่าหนึ่งรายการ หรือลงชื่อเข้าใช้ด้วย Genspark',
   aiComposerPlaceholder: 'ขอให้ AI วิเคราะห์หรือแก้ไขเวิร์กบุ๊กนี้…',
   aiHintIdle: 'กด Enter เพื่อส่ง',
   aiHintBusy: 'กด Esc เพื่อหยุด',

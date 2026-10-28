@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const ar = {
   aiCollapsePanel: 'طي اللوحة',
+  aiSetupNeeded: 'لم يتم تكوين نموذج ذكاء اصطناعي بعد — قم بإعداده أو سجّل الدخول بحساب Genspark.',
   aiComposerPlaceholder: 'اطلب من الذكاء الاصطناعي الكتابة أو التعديل…',
   aiCopyReplyTitle: 'نسخ الرد',
   aiCopyCode: 'نسخ الكود',

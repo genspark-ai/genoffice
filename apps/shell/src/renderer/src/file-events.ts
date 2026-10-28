@@ -18,3 +18,18 @@ export function onFilesChanged(handler: () => void): () => void {
   target.addEventListener(FILES_CHANGED, handler)
   return () => target.removeEventListener(FILES_CHANGED, handler)
 }
+
+/**
+ * Main → renderer half: the main process pushes HOME_CHANNELS.recentsChanged
+ * whenever a save or open lands a new head entry in the recents list (the docs
+ * pushRecent funnel broadcasts it). Bridged onto the event above so Home
+ * re-pulls its list the moment a save finishes — a document saved in an editor
+ * tab never moves window focus, so the focus listener alone would leave the new
+ * file missing from Home until the next focus change.
+ */
+export function bindRecentsChanged(): () => void {
+  // optional-chained: component tests stub a partial aiOffice, and a preload
+  // without the method degrades to the old focus-driven refresh
+  const off = window.aiOffice.onRecentsChanged?.(() => notifyFilesChanged())
+  return () => off?.()
+}

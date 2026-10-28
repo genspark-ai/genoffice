@@ -1,7 +1,7 @@
 /**
  * Regenerate the app icon set from apps/shell/build/logo.svg.
  *
- *   node_modules/.bin/electron tools/build-icons.mjs
+ *   node_modules/.bin/electron tools/build-icons.cjs
  *
  * Rasterizes the SVG master through an offscreen Chromium window (no native
  * deps) and packs:
@@ -9,6 +9,7 @@
  *   apps/shell/build/icon-mac.png  1024
  *   apps/shell/build/icon.ico      16/24/32/48/64/128/256 PNG-in-ICO
  *   apps/shell/build/icon.icns     128/256/512/1024 PNG chunks
+ *   apps/shell/build/icons/NxN.png 16/32/48/64/128/256/512/1024 (linux packagers)
  */
 const { app, BrowserWindow } = require('electron')
 const { readFileSync, writeFileSync } = require('node:fs')
@@ -107,6 +108,11 @@ app.whenReady().then(async () => {
   const icnsPngs = ICNS.map(([type, size]) => ({ type, data: pngs.get(size) }))
   writeFileSync(join(BUILD, 'icon.icns'), packIcns(icnsPngs))
 
-  console.log('icons regenerated: icon.png, icon-mac.png, icon.ico, icon.icns')
+  // Linux packagers read build/icons/<size>x<size>.png
+  for (const size of [16, 32, 48, 64, 128, 256, 512, 1024]) {
+    writeFileSync(join(BUILD, 'icons', `${size}x${size}.png`), pngs.get(size))
+  }
+
+  console.log('icons regenerated: icon.png, icon-mac.png, icon.ico, icon.icns, icons/')
   app.quit()
 })

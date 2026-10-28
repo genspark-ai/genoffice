@@ -86,6 +86,8 @@ export const fr = {
   aiQueueSkipNested: "l'élément est trop imbriqué pour être modifié — ignoré",
   aiQueueSkippedNote: 'Modifications ignorées : {count}',
   aiRemoveAttachment: 'Supprimer la pièce jointe',
+  aiSetupNeeded:
+    "Aucun modèle d'IA configuré pour l'instant — configurez-en un ou connectez-vous avec Genspark.",
   aiInputPlaceholder: 'Décrivez une modification ou posez une question',
   aiAttachTitle: 'Joindre des fichiers locaux (ou faites-les glisser sur le panneau)',
   aiInputHint: 'Entrée pour envoyer · Maj+Entrée pour un saut de ligne',

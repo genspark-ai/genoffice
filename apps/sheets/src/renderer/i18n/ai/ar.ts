@@ -41,6 +41,7 @@ export const ar = {
   aiCellEmpty: 'فارغ',
   aiRemoveAttachment: 'إزالة المرفق',
   aiAttachTitle: 'إرفاق ملفات محلية (أو اسحبها إلى اللوحة)',
+  aiSetupNeeded: 'لم يتم تكوين نموذج ذكاء اصطناعي بعد — قم بإعداده أو سجّل الدخول بحساب Genspark.',
   aiComposerPlaceholder: 'اطلب من الذكاء الاصطناعي تحليل هذا المصنف أو تعديله…',
   aiHintIdle: 'Enter للإرسال',
   aiHintBusy: 'Esc للإيقاف',

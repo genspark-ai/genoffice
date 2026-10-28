@@ -68,14 +68,18 @@ export default defineConfig({
         ],
       }),
     ],
+    // electron-vite defaults build.minify to false
+    build: { minify: 'esbuild' },
   },
   preload: {
     // electron-utils ships raw TS source — must be bundled, not left external
     plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils'] })],
+    build: { minify: 'esbuild' },
   },
   renderer: {
     resolve: { alias: workspaceAlias },
     plugins: [react()],
+    build: { minify: 'esbuild' },
     server: {
       port: Number(process.env.SLIDES_DEV_PORT) || 5175,
       strictPort: Boolean(process.env.SLIDES_DEV_PORT),

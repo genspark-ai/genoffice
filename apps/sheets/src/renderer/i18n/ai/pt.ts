@@ -42,6 +42,7 @@ export const pt = {
   aiCellEmpty: 'vazio',
   aiRemoveAttachment: 'Remover anexo',
   aiAttachTitle: 'Anexar arquivos locais (ou arraste-os para o painel)',
+  aiSetupNeeded: 'Ainda não há modelo de IA configurado — configure um ou entre com o Genspark.',
   aiComposerPlaceholder: 'Peça à IA para analisar ou modificar esta pasta de trabalho…',
   aiHintIdle: 'Enter para enviar',
   aiHintBusy: 'Esc para parar',

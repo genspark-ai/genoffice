@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { strings } from '../src/renderer/src/strings'
+import { loadAllStrings } from '../src/renderer/src/strings'
 
 /**
- * Home-screen locale tables (src/renderer/src/strings.ts): zh defines the key
+ * Home-screen locale tables (src/renderer/src/strings/): zh defines the key
  * set; every other locale must cover exactly the same keys with real content.
  */
+
+const strings = await loadAllStrings()
 
 const locales = Object.keys(strings) as Array<keyof typeof strings>
 const referenceKeys = Object.keys(strings.zh).sort()

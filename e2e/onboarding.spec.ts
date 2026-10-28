@@ -21,6 +21,11 @@ test.describe('first-run onboarding', () => {
       await expect(page.locator('.onb-slide.active .onb-title')).toHaveText('Free for everyone')
       await page.screenshot({ path: screenshotPath('onboarding-slide-3') })
 
+      await page.locator('.onb-next').click()
+      await expect(page.locator('.onb-slide.active .onb-title')).toHaveText('Connect your AI')
+      await expect(page.locator('.onb-slide.active .onb-setup-btn')).toBeVisible()
+      await page.screenshot({ path: screenshotPath('onboarding-slide-4') })
+
       // last slide's primary button finishes the onboarding
       await page.locator('.onb-next').click()
       await expect(overlay).toBeHidden()

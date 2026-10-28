@@ -1941,6 +1941,8 @@ export function AiPanel({
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
           hintIdleTitle={t('aiHintIdleTitle')}
+          setupRequired={aiSetupNeeded}
+          setupHint={t('aiSetupNeeded')}
           sendLabel={t('aiSend')}
           stopLabel={t('aiStop')}
           iconOnly

@@ -1,11 +1,10 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
-import { strings } from './strings'
+import { htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
+import { loadStrings, translate, type StringKey } from './strings'
 
-const translate = createI18n(strings)
+export type { StringKey }
 
-export type StringKey = keyof typeof strings.zh
 export type TFunc = (key: StringKey, params?: Params) => string
 
 interface LocaleValue {
@@ -25,9 +24,13 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
         // committed here first would survive only until the next launch
         window.aiOffice.setLanguage(next).then(
           () => {
-            setLangState(next)
-            document.documentElement.lang = htmlLang(next)
-            document.documentElement.dir = htmlDir(next)
+            // the new dictionary must be in place before the re-render so t()
+            // never reads a half-swapped table
+            void loadStrings(next).then(() => {
+              setLangState(next)
+              document.documentElement.lang = htmlLang(next)
+              document.documentElement.dir = htmlDir(next)
+            })
           },
           (err: unknown) => console.warn('language not saved', err),
         )

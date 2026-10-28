@@ -41,6 +41,8 @@ export const pl = {
   aiCellEmpty: 'pusta',
   aiRemoveAttachment: 'Usuń załącznik',
   aiAttachTitle: 'Załącz pliki lokalne (możesz też przeciągnąć je na panel)',
+  aiSetupNeeded:
+    'Nie skonfigurowano jeszcze żadnego modelu AI — skonfiguruj go lub zaloguj się przez Genspark.',
   aiComposerPlaceholder: 'Poproś AI o analizę lub zmianę tego skoroszytu…',
   aiHintIdle: 'Enter, aby wysłać',
   aiHintBusy: 'Esc, aby zatrzymać',

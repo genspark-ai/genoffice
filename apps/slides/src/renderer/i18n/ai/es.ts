@@ -86,6 +86,8 @@ export const es = {
   aiQueueSkipNested: 'el elemento está demasiado anidado para editarlo: omitida',
   aiQueueSkippedNote: 'Ediciones omitidas: {count}',
   aiRemoveAttachment: 'Quitar datos adjuntos',
+  aiSetupNeeded:
+    'Aún no hay ningún modelo de IA configurado: configúralo o inicia sesión con Genspark.',
   aiInputPlaceholder: 'Describe un cambio o pregunta lo que quieras',
   aiAttachTitle: 'Adjuntar archivos locales (o arrástralos al panel)',
   aiInputHint: 'Entrar para enviar · Mayús+Entrar para salto de línea',

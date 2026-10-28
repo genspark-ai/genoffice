@@ -1,6 +1,8 @@
 // A failed run marks the error bubble with a "Sign in to Genspark" button only
 // when Genspark is the active provider — a BYOK user's failure (their own
 // provider's rate limit, say) must not advertise a Genspark sign-in (genoffice#1948).
+// The composer now gates sends while nothing usable is configured, so the
+// Genspark case below starts a signed-in run and drops the session mid-flight.
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -144,9 +146,13 @@ describe('AI error bubble sign-in button', () => {
   it('offers the sign-in button when Genspark is the provider', async () => {
     const editor = createEditor()
     try {
+      // The composer gate (no usable provider + signed out) blocks a send before
+      // it starts, so this run begins signed in and the session drops before the
+      // reply lands — the error bubble must still offer the sign-in (#1948).
+      let gskLoggedIn = true
       let listener: ChunkListener | null = null
       ;(window as unknown as Record<string, unknown>).desktop = {
-        aiGskStatus: vi.fn(async () => ({ loggedIn: false })),
+        aiGskStatus: vi.fn(async () => ({ loggedIn: gskLoggedIn })),
         onAiStream: (l: ChunkListener) => {
           listener = l
           return () => {
@@ -169,6 +175,10 @@ describe('AI error bubble sign-in button', () => {
         }),
       )
       const container = mounted.container
+      await act(async () => {
+        await flush()
+      })
+      gskLoggedIn = false
       const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
       typeInto(textarea, 'summarize this')
       const send = container.querySelector<HTMLButtonElement>('.ai-send-btn')!

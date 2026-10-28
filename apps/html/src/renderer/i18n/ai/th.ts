@@ -2,6 +2,7 @@ import type { zh } from './zh'
 
 export const th = {
   aiCollapsePanel: 'ยุบแผง',
+  aiSetupNeeded: 'ยังไม่ได้ตั้งค่าโมเดล AI — ตั้งค่าหนึ่งรายการ หรือลงชื่อเข้าใช้ด้วย Genspark',
   aiComposerPlaceholder: 'ให้ AI เขียนหรือแก้ไขเอกสาร…',
   aiCopyReplyTitle: 'คัดลอกคำตอบ',
   aiCopyCode: 'คัดลอกโค้ด',

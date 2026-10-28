@@ -58,6 +58,7 @@ export const pl = {
   appSaveFailed: 'Zapisywanie nie powiodło się: {error}',
   appAutoSavedAt: 'Zapisano automatycznie ({time})',
   appSaved: 'Zapisano',
+  appSavedWithPath: 'Zapisano w {path}',
   appSectionBreakInserted: 'Wstawiono podział sekcji ({type})',
   appSectionBreakPending: 'Wstawiono podział sekcji; nowa sekcja zacznie obowiązywać po zapisaniu',
   appBreakNextPage: 'Następna strona',

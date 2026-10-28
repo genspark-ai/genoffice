@@ -3,6 +3,7 @@ import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
 import { setAuthorName } from './author-name'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
+import { loadStrings } from './i18n/strings'
 import type { DocTheme, UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
@@ -56,6 +57,9 @@ async function bootstrap(): Promise<void> {
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
   document.documentElement.dir = htmlDir(lang)
+  // the current locale must be in the registry before the first render; en (the
+  // eager fallback) keeps the UI usable if the chunk fails to load
+  await loadStrings(lang).catch(() => {})
   applyTheme(theme)
   applyDocumentTheme(docTheme ?? 'follow')
   window.desktop?.onThemeChanged(applyTheme)
