@@ -890,6 +890,9 @@ export default function App() {
   /** password of the file on disk (null: it is plain) — a protection change makes it
       differ from `encryption.userPassword` until the save lands */
   const diskPasswordRef = useRef<string | null>(null)
+  /** the password the in-flight save is writing: it reaches diskPasswordRef
+      only once that save lands — the file on disk still carries the old one */
+  const pendingDiskPasswordRef = useRef<string | null | undefined>(undefined)
   const [protectionDlg, setProtectionDlg] = useState(false)
   /** the protection configuration differs from the file on disk (set, changed or
       lifted since the last load); cleared by the post-save reload */
@@ -4463,6 +4466,12 @@ export default function App() {
       if (result.skippedImageEdits && result.skippedImageEdits.length > 0) {
         noticeSkippedImages(result.skippedImageEdits)
       }
+      // The write landed: a pending protection change is what the disk carries now
+      if (pendingDiskPasswordRef.current !== undefined) {
+        diskPasswordRef.current =
+          pendingDiskPasswordRef.current === '' ? null : pendingDiskPasswordRef.current
+        pendingDiskPasswordRef.current = undefined
+      }
       // Reload: changes are in the file now, canvas renders directly, saved pending ops are cleared
       try {
         const el = scrollRef.current
@@ -7549,9 +7558,11 @@ export default function App() {
   }): void => {
     setEncryption(result)
     setProtectionDirty(true)
-    // the next save writes a file that only opens with the new password
+    // the next save writes a file that only opens with the new password; the
+    // file ON DISK keeps the old one until that write lands, so the disk
+    // password follows the save instead of leading it
     passwordRef.current = result.userPassword
-    diskPasswordRef.current = result.userPassword
+    pendingDiskPasswordRef.current = result.userPassword
     setProtectionDlg(false)
   }
 
@@ -7560,6 +7571,7 @@ export default function App() {
     setProtectionDirty(true)
     // the next save writes plain; until then the disk file still needs the old password
     passwordRef.current = undefined
+    pendingDiskPasswordRef.current = ''
     setProtectionDlg(false)
   }
 

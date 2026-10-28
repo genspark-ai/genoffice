@@ -8,6 +8,7 @@ import {
   PDFNumber,
   PDFRawStream,
   PDFRef,
+  PDFStream,
   PDFString,
 } from 'pdf-lib'
 import type { PdfPermissions } from '../shared/ipc'
@@ -384,7 +385,7 @@ function encryptPayload(derived: R6Encrypt, data: Uint8Array): Uint8Array {
 function replaceStream(
   context: { assign(ref: PDFRef, obj: unknown): void },
   ref: PDFRef,
-  stream: PDFRawStream,
+  stream: PDFStream,
   payload: Uint8Array,
 ): void {
   const dict = stream.dict
@@ -401,8 +402,11 @@ function transformPayloads(
   const context = doc.context
   for (const [ref, obj] of context.enumerateIndirectObjects()) {
     if (skip && ref.toString() === skip.toString()) continue
-    if (obj instanceof PDFRawStream) {
-      replaceStream(context, ref, obj, transform(ref, obj.contents, false))
+    if (obj instanceof PDFStream) {
+      // pdf-lib's own content streams are PDFFlateStream, not PDFRawStream: only
+      // raw streams were encrypted, so every rebuilt page's content stream was
+      // written in plaintext inside a file declared encrypted — a corrupt save
+      replaceStream(context, ref, obj, transform(ref, obj.getContents(), false))
       continue
     }
     const walk = (node: unknown): void => {

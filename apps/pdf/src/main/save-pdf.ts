@@ -1291,7 +1291,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: e.newText }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, request.encryption?.userPassword)))
   }
   const appliedInserts = (request.textInserts ?? []).filter(
     (_insert, editIndex) =>
@@ -1303,7 +1303,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, insert.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: insert.text }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, request.encryption?.userPassword)))
   }
   const appliedImages = (request.imageEdits ?? []).filter(
     (e, i) => e.kind !== 'deleteImage' && !skips.skippedImageEdits.some((s) => s.editIndex === i),
