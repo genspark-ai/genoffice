@@ -563,6 +563,20 @@ export default function App() {
   /** set when the user re-clicks the armed measure tool: the next drawn line
       re-calibrates instead of measuring */
   const measureRecalibrateRef = useRef(false)
+  /** one-shot: the deliberate second click disarms the tool while keeping the
+      re-calibration request; the drawTool effect below must not read that
+      transition as a stale flag to clear */
+  const keepMeasureRecalibrateRef = useRef(false)
+  // Any way of leaving the measure tool other than the deliberate second
+  // click — another tool, Esc, entering another edit mode — drops a pending
+  // re-calibration request, so the dialog cannot re-open unexpectedly later.
+  useEffect(() => {
+    if (keepMeasureRecalibrateRef.current) {
+      keepMeasureRecalibrateRef.current = false
+      return
+    }
+    if (drawTool !== 'measure') measureRecalibrateRef.current = false
+  }, [drawTool])
   const [redactions, setRedactions] = useState<LocalRedaction[]>([])
   const redactionApplyConfirmedRef = useRef(false)
   const redactionRequestInFlightRef = useRef(false)
@@ -8015,11 +8029,12 @@ export default function App() {
                         setImagePick(null)
                         setEditImageMode(false)
                         if (tool === 'measure' && drawTool === 'measure') {
-                          // a second click re-calibrates: the next drawn line
-                          // opens the dialog again, so a wrong first entry is
-                          // never stuck for the session
+                          // a second click disarms the tool like every other
+                          // one and asks the next measure line to re-open the
+                          // scale dialog, so a wrong first entry is never
+                          // stuck for the session
                           measureRecalibrateRef.current = true
-                          return
+                          keepMeasureRecalibrateRef.current = true
                         }
                         setDrawTool((v) => (v === tool ? null : tool))
                       }}

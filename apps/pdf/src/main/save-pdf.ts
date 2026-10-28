@@ -765,8 +765,10 @@ function addDrawing(
       const ang = Math.atan2(ty - fy, tx - fx)
       const flip = Math.abs(ang) > Math.PI / 2
       const tilt = flip ? ang + Math.PI : ang
-      ops.push(`BT ${r} ${g} ${b} rg /Helvetica 9 Tf`)
-      ops.push(`${num(mx)} ${num(my + 6)} ${num(Math.cos(tilt))} ${num(Math.sin(tilt))} Tm`)
+      ops.push(`BT ${r} ${g} ${b} rg /F1 9 Tf`)
+      ops.push(
+        `${num(Math.cos(tilt))} ${num(Math.sin(tilt))} ${num(-Math.sin(tilt))} ${num(Math.cos(tilt))} ${num(mx)} ${num(my + 6)} Tm`,
+      )
       const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
       ops.push(`(${esc}) Tj ET`)
       // Helvetica 9pt averages ~4.5pt per glyph, and the extent follows the
@@ -796,7 +798,7 @@ function addDrawing(
     Math.max(...ys) + pad,
   ]
   // Preview and Acrobat synthesize nothing for an unresolvable font reference:
-  // the label's /Helvetica must be reachable through the form's /Resources
+  // the label's /F1 must be reachable through the form's /Resources
   const ap = pdfDoc.context.stream(ops.join('\n'), {
     Type: 'XObject',
     Subtype: 'Form',
@@ -1591,9 +1593,14 @@ export async function applySaveRequest(
     if (page && validMarkup(m)) addMarkup(pdfDoc, page, m)
   }
   const noteRefs = new Map<string, PDFRef>()
-  // the measure label's font: standard-14 Helvetica, no bytes to embed, one dict per save
-  const measureFontRef = (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
-  for (const d of request.drawings ?? []) {
+  // the measure label's font: standard-14 Helvetica, no bytes to embed — but
+  // only when a measure drawing is actually written, so saves without one
+  // leave the document's font dict untouched
+  const drawings = request.drawings ?? []
+  const measureFontRef = drawings.some((d) => d.kind === 'measure')
+    ? (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
+    : undefined
+  for (const d of drawings) {
     const page = pages[d.pageIndex]
     if (!page) continue
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)

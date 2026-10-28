@@ -5,7 +5,17 @@ import type { PageGeom } from './annotations'
 import type { DrawingInput } from '../shared/ipc'
 
 export type DrawTool =
-  'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'measure' | 'note' | 'redact' | 'link' | 'caret' | 'polygon'
+  | 'ink'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'measure'
+  | 'note'
+  | 'redact'
+  | 'link'
+  | 'caret'
+  | 'polygon'
 
 /** Displayed-pixel box (scaled) */
 interface Box {

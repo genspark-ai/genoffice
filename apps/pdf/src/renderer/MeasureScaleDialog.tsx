@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { parseCalibration } from './measure'
 import type { TFunc } from './i18n/locale'
 
 /**
@@ -24,14 +25,12 @@ export function MeasureScaleDialog({
   const [error, setError] = useState<string | null>(null)
 
   const apply = (): void => {
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed) || parsed <= 0 || unit.trim() === '' || unit.length > 12) {
+    const scale = parseCalibration(value, unit, drawnPts)
+    if (!scale) {
       setError(t('measureScaleErr'))
       return
     }
-    // the drawn line is the ruler: points per real-world unit is its PDF
-    // length divided by what the user says it is
-    onApply(drawnPts / parsed, unit.trim())
+    onApply(scale.unitsPerPt, scale.unit)
   }
 
   return (

@@ -12,8 +12,16 @@ export function formatLength(pts: number, scale: MeasureScale): string {
   return `${value.toFixed(2)} ${scale.unit}`
 }
 
-export function parseScale(value: string, unit: string): MeasureScale | null {
+/** Validate a calibration entry: `value` is the real-world length the user
+ *  says the drawn reference line (`drawnPts` PDF points) spans, so the line
+ *  itself is the ruler — points per unit is its length over that entry. */
+export function parseCalibration(
+  value: string,
+  unit: string,
+  drawnPts: number,
+): MeasureScale | null {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0 || unit.trim() === '' || unit.length > 12) return null
-  return { unitsPerPt: parsed, unit: unit.trim() }
+  if (!Number.isFinite(drawnPts) || drawnPts <= 0) return null
+  return { unitsPerPt: drawnPts / parsed, unit: unit.trim() }
 }
