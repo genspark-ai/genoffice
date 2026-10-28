@@ -28,7 +28,13 @@ try {
   )
   console.log('[docs] content rendered: OK')
 } catch {
-  console.log('[docs] content rendered: MISSING — body text:', String(await page.evaluate(() => document.body?.innerText?.slice(0, 300))).replace(/\n/g, ' | '))
+  console.log(
+    '[docs] content rendered: MISSING — body text:',
+    String(await page.evaluate(() => document.body?.innerText?.slice(0, 300))).replace(
+      /\n/g,
+      ' | ',
+    ),
+  )
 }
 await page.screenshot({ path: '/tmp/web-probe-docs-file.png' })
 

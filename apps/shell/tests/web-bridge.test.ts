@@ -62,9 +62,7 @@ import { attachWebBridge } from '../src/web/bridge'
 import { webTabById } from '../src/web/web-contents'
 import type { AddressInfo } from 'node:net'
 
-async function connect(
-  path: string,
-): Promise<{
+async function connect(path: string): Promise<{
   ws: WebSocket
   frames: Record<string, unknown>[]
   next: () => Promise<Record<string, unknown>>

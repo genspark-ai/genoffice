@@ -37,7 +37,9 @@ await new Promise((r) => setTimeout(r, 2500))
 
 const bytes = readFileSync(file)
 const { execFileSync } = await import('node:child_process')
-const xml = execFileSync('unzip', ['-p', file, 'word/document.xml'], { maxBuffer: 64 * 1024 * 1024 }).toString('utf8')
+const xml = execFileSync('unzip', ['-p', file, 'word/document.xml'], {
+  maxBuffer: 64 * 1024 * 1024,
+}).toString('utf8')
 const ok = xml.includes('SAVED-FROM-BROWSER')
 console.log(`[docs] save round trip: ${ok ? 'OK' : 'MISSING'} (file ${bytes.length} bytes)`)
 await page.screenshot({ path: '/tmp/web-probe-save.png' })
