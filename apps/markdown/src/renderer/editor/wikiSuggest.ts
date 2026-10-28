@@ -30,10 +30,14 @@ function queryNamePart(query: string): string {
   return query.slice(0, cut)
 }
 
-/** the query part after the first `#`, '' while the query has none */
+/** the query part after the first `#`, '' while the query has none; a typed
+ *  alias is not part of the fragment filter (`[[Note#Head|alias` narrows on `Head`) */
 function queryFragmentPart(query: string): string {
   const at = query.indexOf('#')
-  return at < 0 ? '' : query.slice(at + 1)
+  if (at < 0) return ''
+  const rest = query.slice(at + 1)
+  const bar = rest.indexOf('|')
+  return bar < 0 ? rest : rest.slice(0, bar)
 }
 
 /** one row the suggester offers: a note, or — after a `#` — a heading or block id */
@@ -62,7 +66,13 @@ export function docFragmentItems(doc: PmNode, fragmentQuery: string): WikiSugges
   const out: WikiSuggestItem[] = []
   doc.descendants((node) => {
     if (node.type.name === 'heading' && !wantBlocks) {
-      const text = node.textContent.replace(/\s+/g, ' ').trim()
+      // a trailing `^id` is the heading's own block marker, not its text —
+      // the main-side parser strips it too, and a completion must not bake
+      // `[[#Title ^id]]` into the link
+      const text = node.textContent
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\^[A-Za-z0-9-]+\s*$/, '')
+        .trim()
       if (text && addressableHeading(text) && (!q || text.toLowerCase().includes(q))) {
         out.push({ kind: 'heading', text, level: Number(node.attrs.level ?? 1) })
       }
@@ -357,7 +367,11 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
           } else {
             const name = queryNamePart(query)
             const frag = item.kind === 'block' ? `^${item.id}` : item.text
-            text = `${embed ? '!' : ''}${name}#${frag}]]`
+            // a typed alias rides along (`[[Note#Head|al` stays `…#Head|al`),
+            // minus a hand-closed `]]` the completion re-adds
+            const bar = query.indexOf('|')
+            const alias = bar < 0 ? '' : query.slice(bar).replace(/\]\]/, '')
+            text = `${embed ? '!' : ''}${name}#${frag}${alias}]]`
           }
           insertCompletion(editor, range, text, embed)
         },

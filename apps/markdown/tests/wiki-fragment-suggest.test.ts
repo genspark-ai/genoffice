@@ -110,6 +110,16 @@ describe('this document as the fragment source', () => {
     expect(docFragmentItems(editor.state.doc, '^b1')).toHaveLength(1)
     expect(docFragmentItems(editor.state.doc, '^zzz')).toEqual([])
   })
+
+  it('a heading carrying its own marker completes by text without the ^id', () => {
+    const { editor } = openDoc('# Title ^hdr1\n\nplain')
+    expect(docFragmentItems(editor.state.doc, '')).toEqual([
+      { kind: 'heading', text: 'Title', level: 1 },
+    ])
+    expect(docFragmentItems(editor.state.doc, '^')).toEqual([
+      { kind: 'block', id: 'hdr1', text: 'Title' },
+    ])
+  })
 })
 
 describe('the suggester in fragment mode', () => {
@@ -193,6 +203,25 @@ describe('the suggester in fragment mode', () => {
     await tick()
     await tick()
     expect(asked).toHaveLength(1)
+  })
+
+  it('a typed alias narrows the fragment on the head and rides along on completion', async () => {
+    ;(window as unknown as { markdownApi: Record<string, unknown> }).markdownApi.wikiHeads =
+      async () => [
+        { kind: 'heading', text: 'Alpha', level: 1 },
+        { kind: 'heading', text: 'Beta', level: 2 },
+      ]
+    const { editor, states } = mount('/vault/Home.md')
+    editor.commands.insertContent('See [[')
+    await tick()
+    editor.commands.insertContent('Note#Alpha|my alias')
+    await tick()
+    await tick()
+    const state = states.at(-1)!
+    // the filter saw `Alpha`, not `Alpha|my alias`
+    expect(state.items).toEqual([{ kind: 'heading', text: 'Alpha', level: 1 }])
+    state.command(state.items[0]!)
+    expect(editor.state.doc.textContent).toBe('See [[Note#Alpha|my alias]]')
   })
 
   it('an embed completion keeps the bang and adds its own brackets only once', async () => {
