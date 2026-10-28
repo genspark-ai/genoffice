@@ -218,11 +218,7 @@ function tokensEqual(given: string | null, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
-export function tokenValid(
-  req: IncomingMessage,
-  token: string,
-  port: number,
-): boolean {
+export function tokenValid(req: IncomingMessage, token: string, port: number): boolean {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (tokensEqual(url.searchParams.get('token'), token)) return true
   const cookieName = tokenCookieName(port)
@@ -235,7 +231,11 @@ export function tokenValid(
   return false
 }
 
-export function tokenCookieHeader(req: IncomingMessage, token: string, port: number): string | null {
+export function tokenCookieHeader(
+  req: IncomingMessage,
+  token: string,
+  port: number,
+): string | null {
   const url = new URL(req.url ?? '/', 'http://localhost')
   if (!tokensEqual(url.searchParams.get('token'), token)) return null
   return `${tokenCookieName(port)}=${token}; Path=/; HttpOnly; SameSite=Strict`
@@ -250,10 +250,7 @@ export function tokenCookieHeader(req: IncomingMessage, token: string, port: num
  * present, must still equal the Host (a cross-site page announcing itself is
  * refused regardless).
  */
-export function originHostOk(
-  req: IncomingMessage,
-  bound: { host: string; port: number },
-): boolean {
+export function originHostOk(req: IncomingMessage, bound: { host: string; port: number }): boolean {
   const host = req.headers.host
   if (!host || host.includes('\0') || host.length > 255) return false
   let parsed: URL

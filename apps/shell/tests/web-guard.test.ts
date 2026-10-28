@@ -92,12 +92,12 @@ describe('web request guard', () => {
   })
 
   it('refuses malformed or non-http origins', () => {
-    expect(
-      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'not a url' }), BOUND),
-    ).toBe(false)
-    expect(
-      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'file:///etc' }), BOUND),
-    ).toBe(false)
+    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'not a url' }), BOUND)).toBe(
+      false,
+    )
+    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'file:///etc' }), BOUND)).toBe(
+      false,
+    )
   })
 
   it('keeps requiring the port-scoped token for cookies and query', () => {

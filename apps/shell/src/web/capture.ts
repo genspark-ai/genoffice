@@ -77,13 +77,9 @@ export function installWebIpcCapture(): void {
   // mirror entry; when the host lacks them (older mocks), the mirror stays
   // authoritative on its own
   const removeListener = (ipcMain as unknown as Record<string, unknown>).removeListener as
-    | ((ch: string, fn: unknown) => void)
-    | undefined
+    ((ch: string, fn: unknown) => void) | undefined
   const wrapRemove = (name: 'removeListener' | 'off'): void => {
-    ;(ipcMain as unknown as Record<string, unknown>)[name] = (
-      channel: string,
-      fn: unknown,
-    ) => {
+    ;(ipcMain as unknown as Record<string, unknown>)[name] = (channel: string, fn: unknown) => {
       removeSendListener(channel, fn as IpcHandler)
       removeListener?.(channel, fn)
     }
