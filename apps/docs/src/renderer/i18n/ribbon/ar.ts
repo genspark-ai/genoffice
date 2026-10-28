@@ -65,6 +65,7 @@ export const ar = {
   ribbonOpen: 'فتح…',
   ribbonSave: 'حفظ',
   ribbonSaveAs: 'حفظ باسم…',
+  ribbonNameWithAi: 'تسمية بالذكاء الاصطناعي…',
   ribbonConvert: 'تحويل',
   ribbonConvertTip: 'التحويل إلى PDF أو HTML أو Markdown أو صور',
   ribbonConvertPdf: 'تحويل إلى PDF…',

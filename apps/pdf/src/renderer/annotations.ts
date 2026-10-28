@@ -7,6 +7,7 @@ export interface LocalMarkup extends MarkupInput {
 export const MARKUP_COLORS: Record<MarkupType, [number, number, number]> = {
   highlight: [1, 0.87, 0.35],
   underline: [0.17, 0.4, 1],
+  squiggly: [0.13, 0.65, 0.35],
   strikeout: [0.86, 0.22, 0.18],
 }
 

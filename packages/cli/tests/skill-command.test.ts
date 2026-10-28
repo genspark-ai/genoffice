@@ -29,7 +29,8 @@ describe('genoffice skill', () => {
     const r = await run(['skill', 'list', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     const agents = r.json().detail.agents as Array<Record<string, unknown>>
-    expect(agents.map((a) => a.agent)).toContain('codex')
+    // cursor reads the shared directory, so it is detected through the .agents row
+    expect(agents.map((a) => a.agent)).toEqual(['claude-code', 'agents', 'windsurf', 'openclaw'])
     const claude = agents.find((a) => a.agent === 'claude-code')!
     expect(claude).toMatchObject({
       detected: true,
@@ -38,7 +39,11 @@ describe('genoffice skill', () => {
       up_to_date: false,
       skills_dir: join(m.home, '.claude', 'skills'),
     })
-    expect(agents.find((a) => a.agent === 'codex')).toMatchObject({ detected: false })
+    expect(agents.find((a) => a.agent === 'agents')).toMatchObject({
+      detected: true,
+      skills_dir: join(m.home, '.agents', 'skills'),
+    })
+    expect(agents.find((a) => a.agent === 'windsurf')).toMatchObject({ detected: false })
     expect(r.json().detail.bundled_version).toBe(bundledVersion)
     expect((await run(['skill', '--list'], { env: m.env })).stdout).toContain('2 agent(s) detected')
   })
@@ -81,26 +86,37 @@ describe('genoffice skill', () => {
     const m = fakeMachine(['.claude', '.codex'])
     const all = await run(['skill', 'install', 'all', '--json'], { env: m.env })
     expect(all.code).toBe(0)
+    // codex is planted but reads the shared row, so the write lands in ~/.agents/skills
     expect(
       all
         .json()
         .detail.agents.map((a: any) => a.agent)
         .sort(),
-    ).toEqual(['claude-code', 'codex'])
+    ).toEqual(['agents', 'claude-code'])
+    expect(existsSync(join(m.home, '.agents', 'skills', 'genoffice', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(m.home, '.codex', 'skills'))).toBe(false)
 
     const typo = await run(['skill', 'install', 'claud-code', '--json'], { env: m.env })
     expect(typo.code).toBe(1)
     expect(typo.json()).toMatchObject({ error: 'unsupported' })
     expect(typo.json().suggestion).toContain('claude-code')
 
-    const absent = await run(['skill', 'install', 'cursor', '--json'], { env: m.env })
-    expect(absent.code).toBe(1)
-    expect(absent.json().error).toBe('unsupported')
+    // cursor reads the shared row too, so it is no longer a target of its own
+    const cursor = await run(['skill', 'install', 'cursor', '--json'], { env: m.env })
+    expect(cursor.code).toBe(1)
+    expect(cursor.json().error).toBe('unsupported')
     expect(existsSync(join(m.home, '.cursor'))).toBe(false)
 
-    const forced = await run(['skill', 'install', 'cursor', '--force', '--json'], { env: m.env })
+    const absent = await run(['skill', 'install', 'windsurf', '--json'], { env: m.env })
+    expect(absent.code).toBe(1)
+    expect(absent.json().error).toBe('unsupported')
+    expect(existsSync(join(m.home, '.codeium'))).toBe(false)
+
+    const forced = await run(['skill', 'install', 'windsurf', '--force', '--json'], { env: m.env })
     expect(forced.code).toBe(0)
-    expect(existsSync(join(m.home, '.cursor', 'skills', 'genoffice', 'SKILL.md'))).toBe(true)
+    expect(
+      existsSync(join(m.home, '.codeium', 'windsurf', 'skills', 'genoffice', 'SKILL.md')),
+    ).toBe(true)
   })
 
   it('refuses to downgrade a newer skill or overwrite a hand-edited one without --force', async () => {
@@ -163,12 +179,12 @@ describe('genoffice skill', () => {
 
   it('install all refuses before writing anything when one target is blocked', async () => {
     const m = fakeMachine(['.claude', '.codex'])
-    const codex = join(m.home, '.codex', 'skills', 'genoffice')
-    mkdirSync(codex, { recursive: true })
-    writeFileSync(join(codex, 'SKILL.md'), '---\nname: other-skill\n---\nx\n')
+    const shared = join(m.home, '.agents', 'skills', 'genoffice')
+    mkdirSync(shared, { recursive: true })
+    writeFileSync(join(shared, 'SKILL.md'), '---\nname: other-skill\n---\nx\n')
     const r = await run(['skill', 'install', 'all', '--json'], { env: m.env })
     expect(r.code).toBe(2)
-    expect(r.json().detail).toMatchObject({ agent: 'codex', status: 'occupied' })
+    expect(r.json().detail).toMatchObject({ agent: 'agents', status: 'occupied' })
     expect(existsSync(join(m.home, '.claude', 'skills', 'genoffice'))).toBe(false)
     expect(existsSync(join(m.env.GENOFFICE_USER_DATA, 'app-settings.json'))).toBe(false)
   })

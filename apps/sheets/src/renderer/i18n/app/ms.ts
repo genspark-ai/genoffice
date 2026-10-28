@@ -344,6 +344,7 @@ export const ms = {
   appPivotSheetNoMove: 'Helaian ini mengandungi Jadual Pangsi — pengalihan julat belum disokong.',
   appMergeOverTable:
     'Pilihan bertindih dengan jadual Excel — mencantumkan sel di dalam jadual belum disokong.',
+  appFilterToggleFailed: 'Penapis tidak digunakan — pilih dahulu julat yang mengandungi data anda.',
   appAutofillStreaming: 'AutoIsi ke kawasan yang masih distrim belum dibenarkan.',
   appDvNeedsIndexed:
     'Mengedit pengesahihan data memerlukan helaian ini diindeks sepenuhnya dahulu — cuba lagi sebentar.',

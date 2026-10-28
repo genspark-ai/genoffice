@@ -54,6 +54,12 @@ export const IconUnderline = () => (
     <path d="M5.89 19.5 L18.11 19.5" strokeWidth={1.85} />
   </Icon>
 )
+/** Wavy line: three quadratic humps, the squiggly-markup glyph */
+export const IconSquiggly = () => (
+  <Icon>
+    <path d="M4.2 13.1 C5.7 10.4 7.2 10.4 8.7 13.1 C10.2 15.8 11.7 15.8 13.2 13.1 C14.7 10.4 16.2 10.4 17.7 13.1 C19.2 15.8 20.7 15.8 22.2 13.1" />
+  </Icon>
+)
 export const IconStrike = () => (
   <Icon>
     <path d="M16.29 7.21 C15.72 5.52 14.03 4.5 12 4.5 C9.52 4.5 7.71 5.85 7.71 7.88 C7.71 9.46 8.73 10.36 10.65 10.93" />
@@ -93,6 +99,18 @@ export const IconNote = () => (
   <Icon>
     <path d="M4.5 5.57 L19.5 5.57 L19.5 15.21 L10.93 15.21 L6.64 18.43 L6.64 15.21 L4.5 15.21 Z" />
     <path d="M8.25 9.32 L15.75 9.32 M8.25 12 L13.07 12" />
+  </Icon>
+)
+/** Insertion mark: the proofreader's caret wedge */
+export const IconCaret = () => (
+  <Icon>
+    <path d="M5.8 16.2 L12 9.4 L18.2 16.2" />
+  </Icon>
+)
+/** Regular pentagon outline */
+export const IconPolygon = () => (
+  <Icon>
+    <path d="M12 4.2 L19.6 9.7 L16.7 18.7 L7.3 18.7 L4.4 9.7 Z" />
   </Icon>
 )
 export const IconSign = () => (

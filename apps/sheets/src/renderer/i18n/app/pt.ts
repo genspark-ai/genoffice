@@ -365,6 +365,8 @@ export const pt = {
     'Esta planilha contém uma Tabela Dinâmica — mover intervalos ainda não é suportado.',
   appMergeOverTable:
     'A seleção sobrepõe uma tabela do Excel — mesclar células dentro de uma tabela ainda não é suportado.',
+  appFilterToggleFailed:
+    'O filtro não foi aplicado — selecione primeiro o intervalo com seus dados.',
   appAutofillStreaming:
     'O preenchimento automático em uma área ainda em streaming não é permitido por enquanto.',
   appDvNeedsIndexed:

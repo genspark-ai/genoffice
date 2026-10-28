@@ -332,6 +332,7 @@ export const en = {
   appPivotSheetNoMove: 'This sheet contains a PivotTable — moving ranges is not supported yet.',
   appMergeOverTable:
     'The selection overlaps an Excel table — merging cells inside a table is not supported yet.',
+  appFilterToggleFailed: 'The filter was not applied — select the range with your data first.',
   appAutofillStreaming: 'Autofill into an area that is still streaming in is not allowed yet.',
   appDvNeedsIndexed:
     'Editing data validation needs this sheet fully indexed first — try again in a moment.',

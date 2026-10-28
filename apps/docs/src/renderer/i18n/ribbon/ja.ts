@@ -68,6 +68,7 @@ export const ja = {
   ribbonOpen: '開く…',
   ribbonSave: '保存',
   ribbonSaveAs: '名前を付けて保存…',
+  ribbonNameWithAi: 'AI で名前をつける…',
   ribbonConvert: '変換',
   ribbonConvertTip: 'PDF、HTML、Markdown、画像に変換',
   ribbonConvertPdf: 'PDF に変換…',

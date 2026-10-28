@@ -341,6 +341,7 @@ export const id = {
   appPivotSheetNoMove: 'Lembar ini berisi PivotTable — memindahkan rentang belum didukung.',
   appMergeOverTable:
     'Pilihan tumpang tindih dengan tabel Excel — menggabungkan sel di dalam tabel belum didukung.',
+  appFilterToggleFailed: 'Filter tidak diterapkan — pilih dulu rentang yang berisi data Anda.',
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
   appDvNeedsIndexed:
     'Mengedit validasi data memerlukan lembar ini terindeks penuh dahulu — coba lagi sebentar lagi.',

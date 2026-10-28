@@ -6064,13 +6064,28 @@ export function App({
     if (snapshot.ranges.some((range) => range.hasPassword && range.password === undefined)) {
       return t('appRangesPasswordBlocked')
     }
+    const kept = new Map(snapshot.ranges.map((range) => [range.name, range]))
     const hashed = await Promise.all(
-      ranges.map(async (range) => ({
-        name: range.name,
-        sqref: range.sqref,
-        hasPassword: range.password !== undefined && range.password !== '',
-        ...(range.password ? { password: await hashSheetPassword(range.password) } : {}),
-      })),
+      ranges.map(async (range) => {
+        if (range.password) {
+          return {
+            name: range.name,
+            sqref: range.sqref,
+            hasPassword: true,
+            password: await hashSheetPassword(range.password),
+          }
+        }
+        const prior = kept.get(range.name)
+        if (prior?.password !== undefined) {
+          return {
+            name: range.name,
+            sqref: range.sqref,
+            hasPassword: true,
+            password: prior.password,
+          }
+        }
+        return { name: range.name, sqref: range.sqref, hasPassword: false }
+      }),
     )
     state.sheetProtectedRanges.set(sheetId, hashed)
     recordProtectedRangesChange(state.editJournal, sheetId)

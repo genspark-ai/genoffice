@@ -69,6 +69,7 @@ export const ja = {
   openExternal: 'ブラウザでリンクを開きました',
   save: '上書き保存 (⌘S)',
   saveAs: '名前を付けて保存…',
+  aiNameFile: 'AI で名前を変更…',
   ribbonCollapse: 'リボンを折りたたむ',
   ribbonExpand: 'リボンを展開する',
   ribbonGroupInsert: '挿入',

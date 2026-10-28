@@ -19,6 +19,7 @@ import type {
 export const MARKUP_TYPE_BY_ANNOT: Record<number, MarkupType> = {
   9: 'highlight',
   10: 'underline',
+  11: 'squiggly',
   12: 'strikeout',
 }
 

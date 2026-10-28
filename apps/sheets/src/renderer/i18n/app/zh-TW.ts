@@ -301,6 +301,7 @@ export const zhTW = {
   appDialogCancel: '取消',
   appPivotSheetNoMove: '該工作表含樞紐分析表——暫不支援移動範圍。',
   appMergeOverTable: '所選範圍位於 Excel 表格內——暫不支援合併表格中的儲存格。',
+  appFilterToggleFailed: '篩選沒有套用——請先選取包含資料的範圍。',
   appAutofillStreaming: '暫不允許向仍在串流載入的範圍自動填入。',
   appDvNeedsIndexed: '編輯資料驗證需要該工作表先完成索引——請稍後再試。',
   appPivotSheetNoDuplicate: '該工作表含樞紐分析表——暫不支援複製該表。',

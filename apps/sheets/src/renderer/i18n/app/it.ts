@@ -367,6 +367,8 @@ export const it = {
     'Questo foglio contiene una tabella pivot — lo spostamento di intervalli non è ancora supportato.',
   appMergeOverTable:
     'La selezione si sovrappone a una tabella di Excel — l’unione di celle in una tabella non è ancora supportata.',
+  appFilterToggleFailed:
+    'Il filtro non è stato applicato — seleziona prima l’intervallo con i tuoi dati.',
   appAutofillStreaming:
     "Il riempimento automatico in un'area ancora in streaming non è ancora consentito.",
   appDvNeedsIndexed:

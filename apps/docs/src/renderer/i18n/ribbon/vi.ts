@@ -65,6 +65,7 @@ export const vi = {
   ribbonOpen: 'Mở…',
   ribbonSave: 'Lưu',
   ribbonSaveAs: 'Lưu dưới dạng…',
+  ribbonNameWithAi: 'Đặt tên bằng AI…',
   ribbonConvert: 'Chuyển đổi',
   ribbonConvertTip: 'Chuyển đổi sang PDF, HTML, Markdown hoặc hình ảnh',
   ribbonConvertPdf: 'Chuyển đổi sang PDF…',
