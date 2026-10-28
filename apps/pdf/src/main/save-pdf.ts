@@ -1648,7 +1648,13 @@ export async function applySaveRequest(
   // place, so no object/xref stream may be created after this point (all saves here
   // already run with useObjectStreams off). Redaction below re-serializes a cleaned
   // graph, which would drop the trailer entry — protect that output instead.
-  if (request.encryption) encryptDocument(pdfDoc, request.encryption)
+  if (request.encryption) {
+    // flush first: pdf-lib embeds fonts and images only at save/flush time, and
+    // a payload created after this pass would land in the file as plaintext
+    // inside a document declared encrypted
+    await pdfDoc.flush()
+    encryptDocument(pdfDoc, request.encryption)
+  }
   let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
   // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
   // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
@@ -1656,6 +1662,7 @@ export async function applySaveRequest(
     saved = await redactPdf(saved, request.redactions)
     if (request.encryption) {
       const cleaned = await PDFDocument.load(saved, { updateMetadata: false })
+      await cleaned.flush()
       encryptDocument(cleaned, request.encryption)
       saved = await cleaned.save({ useObjectStreams: false })
     }

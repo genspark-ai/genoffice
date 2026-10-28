@@ -31,8 +31,12 @@ const ENCRYPTED_FIXTURES = ['enc-r3-rc4.pdf', 'enc-r4-aes128.pdf', 'enc-r5-aes25
 describe('decryptDocument', () => {
   for (const name of ENCRYPTED_FIXTURES) {
     it(`opens a ${name} fixture into working plain bytes`, async () => {
-      const { bytes, permissions, neededPassword } = await decryptDocument(fixture(name), 's3cret')
+      const { bytes, permissions, neededPassword, unlockedAs } = await decryptDocument(
+        fixture(name),
+        's3cret',
+      )
       expect(neededPassword).toBe(true)
+      expect(unlockedAs).toBe('user')
       const plain = await PDFDocument.load(bytes, { updateMetadata: false })
       expect(plain.getPageCount()).toBe(1)
       // pdf.js opens it with no password and the words survived the decryption
@@ -50,13 +54,51 @@ describe('decryptDocument', () => {
   }
 
   it('a permissions-only file opens with the empty password', async () => {
-    const { bytes, neededPassword, permissions } = await decryptDocument(
+    const { bytes, neededPassword, permissions, unlockedAs } = await decryptDocument(
       fixture('enc-r5-owneronly.pdf'),
       '',
     )
     expect(neededPassword).toBe(false)
+    // the empty password is the user's: the /P limits bind the session
+    expect(unlockedAs).toBe('user')
     expect(await textOf(bytes)).toContain(PROBE_TEXT)
     expect(permissions.printing).toBe(true)
+  })
+
+  it('reads the crypt filter /StmF and /StrF name, not the first /CFM in the dict', async () => {
+    // a producer that carries an /Identity filter next to StdCF: the streams
+    // still run through StdCF's AESV2, whatever appears first in the dict
+    const raw = Buffer.from(fixture('enc-r4-aes128.pdf')).toString('latin1')
+    const reordered = raw.replace('/CF <<', '/CF << /Crypt << /CFM /Identity >> ')
+    expect(reordered).not.toBe(raw)
+    const { bytes } = await decryptDocument(
+      new Uint8Array(Buffer.from(reordered, 'latin1')),
+      's3cret',
+    )
+    expect(await textOf(bytes)).toContain(PROBE_TEXT)
+  })
+
+  it('accepts literal-string /O and /U entries', async () => {
+    // some producers write the password entries as (…) literals, not <…> hex
+    const raw = Buffer.from(fixture('enc-r3-rc4.pdf')).toString('latin1')
+    const asLiteral = raw.replace(
+      /\/([OU])\s*<([0-9a-fA-F\s]+)>/g,
+      (_all, name: string, hex: string) => {
+        const bytes = Buffer.from(hex.replace(/\s+/g, ''), 'hex')
+        let literal = ''
+        for (const byte of bytes) {
+          const ch = String.fromCharCode(byte)
+          literal += ch === '(' || ch === ')' || ch === '\\' ? `\\${ch}` : ch
+        }
+        return `/${name} (${literal})`
+      },
+    )
+    expect(asLiteral).not.toBe(raw)
+    const { bytes } = await decryptDocument(
+      new Uint8Array(Buffer.from(asLiteral, 'latin1')),
+      's3cret',
+    )
+    expect(await textOf(bytes)).toContain(PROBE_TEXT)
   })
 })
 
@@ -118,6 +160,47 @@ describe('protection through the save pipeline', () => {
     expect(await textOf(bytes, 's3cret')).toContain(PROBE_TEXT)
     const reopened = await decryptDocument(bytes, 's3cret')
     expect(await textOf(reopened.bytes)).toContain(PROBE_TEXT)
+  })
+
+  it('a protected save encrypts the streams a lazy embed adds', async () => {
+    // a stamp's PNG embeds only inside save()/flush(): flush runs before the
+    // in-place encryption pass, so those streams must not stay plaintext —
+    // the next save re-decrypts this output and would die on them
+    const png1x1 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    const request: SavePdfRequest = {
+      path: 'fixture.pdf',
+      markups: [],
+      drawings: [],
+      formValues: [],
+      textInserts: [
+        {
+          pageIndex: 0,
+          origin: [50, 150],
+          text: 'stamped by the suite',
+          fontSize: 14,
+          color: [0.1, 0.2, 0.3],
+        },
+      ],
+      stamps: [
+        {
+          pageIndex: 0,
+          rect: [40, 40, 80, 80],
+          image: png1x1,
+        },
+      ],
+      encryption: {
+        userPassword: 's3cret',
+        ownerPassword: 's3cret',
+        permissions: { printing: true, modifying: true, annotating: true, copying: true },
+      },
+    }
+    const { bytes } = await applySaveRequest(fixture('plain-sample.pdf'), request)
+    expect(await textOf(bytes, 's3cret')).toContain('stamped by the suite')
+    // a plaintext stream object inside it would surface as
+    // 'could not decrypt stream object N'
+    const again = await applySaveRequest(bytes, { ...request, textInserts: [], stamps: [] })
+    expect(await textOf(again.bytes, 's3cret')).toContain('stamped by the suite')
   })
 
   it('a second protected save opens the previous protected output', async () => {

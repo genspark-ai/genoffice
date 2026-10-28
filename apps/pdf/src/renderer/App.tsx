@@ -911,6 +911,11 @@ export default function App() {
   /** the protection configuration differs from the file on disk (set, changed or
       lifted since the last load); cleared by the post-save reload */
   const [protectionDirty, setProtectionDirty] = useState(false)
+  /** what the file on disk allows this session: the /P limits bind a user
+      password (or the empty one of an owner-only file); the owner's ignore them */
+  const [diskLock, setDiskLock] = useState<{ unlockedAsOwner: boolean; modifying: boolean } | null>(
+    null,
+  )
   const [activeFormWidgetId, setActiveFormWidgetId] = useState<string | null>(null)
   const formControlRefs = useRef<Map<string, HTMLElement>>(new Map())
   const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
@@ -1288,14 +1293,20 @@ export default function App() {
               permissions: outcome.permissions,
             })
             setSessionUnlocked(true)
+            setDiskLock({
+              unlockedAsOwner: outcome.unlockedAs === 'owner',
+              modifying: outcome.permissions.modifying,
+            })
           } else {
             setEncryption(null)
             setSessionUnlocked(false)
+            setDiskLock(null)
           }
           diskPasswordRef.current = password
         } else {
           setEncryption(null)
           setSessionUnlocked(false)
+          setDiskLock(null)
           diskPasswordRef.current = null
         }
         setProtectionDirty(false)
@@ -1653,8 +1664,13 @@ export default function App() {
 
   /** Editable once the session can both read and write the document: password-opened
       files count after our own decryptor accepted them (the save pipeline re-reads the
-      protected bytes from disk, which pdf-lib alone cannot). */
-  const readOnly = status === 'ready' && documentEncrypted && !sessionUnlocked
+      protected bytes from disk, which pdf-lib alone cannot). A session holding only
+      the user password — or the empty one of an owner-only file — is additionally
+      bound by the /P the file carries: modifying denied means read-only. */
+  const readOnly =
+    status === 'ready' &&
+    documentEncrypted &&
+    (!sessionUnlocked || (diskLock !== null && !diskLock.unlockedAsOwner && !diskLock.modifying))
 
   useEffect(() => {
     if (
@@ -4499,6 +4515,19 @@ export default function App() {
       noteFlush.noteEdits !== noteEdits ||
       ocrBakeInserts.length > 0
     if (!anythingToSave || !filePath) return Promise.resolve(!anythingToSave)
+    // An owner-only file opened with its empty user password has no owner
+    // password to write back: rewriting it would hand ownership to anyone, so
+    // the save refuses until the owner password is typed (a protection change
+    // of the session's own — protectionDirty — supplies both passwords)
+    if (
+      !protectionDirty &&
+      encryption !== null &&
+      encryption.userPassword === '' &&
+      encryption.ownerPassword === ''
+    ) {
+      showNotice(t('pwOwnerNeeded'))
+      return Promise.resolve(false)
+    }
     // An explicit save opts this file into autosave
     if (!autosave) savedOnceRef.current = true
     // What this save writes — the post-save reload subtracts exactly this, keeping

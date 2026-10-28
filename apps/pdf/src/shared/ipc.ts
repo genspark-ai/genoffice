@@ -984,12 +984,20 @@ export interface PdfApi {
   openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
-  /** Open a password-protected document for editing: plain bytes plus the /P the file carried */
+  /** Open a password-protected document for editing: plain bytes, the /P the file
+      carried, whether a password was needed at all (false: owner-only file) and
+      which password opened it (the owner's ignores the /P limits) */
   decryptPdf(
     bytes: Uint8Array,
     password: string,
   ): Promise<
-    | { ok: true; bytes: Uint8Array; permissions: PdfPermissions }
+    | {
+        ok: true
+        bytes: Uint8Array
+        permissions: PdfPermissions
+        neededPassword: boolean
+        unlockedAs: 'user' | 'owner'
+      }
     | { ok: false; reason: 'wrong-password' | string }
   >
   /** Pick a second document for Compare and read its per-page text (the pick is

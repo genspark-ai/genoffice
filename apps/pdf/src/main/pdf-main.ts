@@ -1240,7 +1240,13 @@ function registerPdfIpc(): void {
     }
     try {
       const opened = await decryptDocument(bytes, password)
-      return { ok: true as const, bytes: opened.bytes, permissions: opened.permissions }
+      return {
+        ok: true as const,
+        bytes: opened.bytes,
+        permissions: opened.permissions,
+        neededPassword: opened.neededPassword,
+        unlockedAs: opened.unlockedAs,
+      }
     } catch (err) {
       if (err instanceof WrongPasswordError) return { ok: false as const, reason: 'wrong-password' }
       if (err instanceof CertificateEncryptionError) {

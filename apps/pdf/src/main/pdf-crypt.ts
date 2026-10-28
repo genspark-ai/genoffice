@@ -196,17 +196,23 @@ function aes256DecryptNoPad(key: Uint8Array, data: Uint8Array): Uint8Array {
 interface LegacyEncrypt {
   revision: 2 | 3 | 4
   fileKey: Uint8Array
-  streamCfm: 'V2' | 'AESV2'
-  stringCfm: 'V2' | 'AESV2'
+  streamCfm: 'V2' | 'AESV2' | 'Identity'
+  stringCfm: 'V2' | 'AESV2' | 'Identity'
 }
 
 interface R6Encrypt {
   revision: 5 | 6
   fileKey: Uint8Array
+  /** /StmF or /StrF naming /Identity: that class travels in the clear */
+  stmIdentity: boolean
+  strIdentity: boolean
 }
 
 /** What a document's /Encrypt dict reduces to once the password opens it */
 type Derived = LegacyEncrypt | R6Encrypt
+
+/** which password opened the document — the owner's ignores the /P limits */
+export type UnlockedAs = 'user' | 'owner'
 
 function uintOf(dict: PDFDict, name: string): number {
   const value = dict.get(PDFName.of(name))
@@ -228,7 +234,11 @@ function bytesOf(dict: PDFDict, name: string): Uint8Array {
  * key leaves this function, so a wrong password is a WrongPasswordError and
  * never a silently garbled document.
  */
-function deriveKey(encrypt: PDFDict, id0: Uint8Array, password: string): Derived {
+function deriveKey(
+  encrypt: PDFDict,
+  id0: Uint8Array,
+  password: string,
+): { derived: Derived; unlockedAs: UnlockedAs } {
   const revision = uintOf(encrypt, 'R')
   const padded = paddedPassword(password)
 
@@ -238,13 +248,21 @@ function deriveKey(encrypt: PDFDict, id0: Uint8Array, password: string): Derived
     const u = bytesOf(encrypt, 'U')
     const p = uintOf(encrypt, 'P')
     const encryptMetadata = readEncryptMetadata(encrypt)
-    const cfm = cfmOf(encrypt)
+    const cfms = cfmsOf(encrypt)
     const compareLength = revision >= 3 ? 16 : u.length
     // the password as the user's (Algorithm 2 + 4/5)
     const userKey = legacyFileKey(padded, o, p, id0, keyLength, revision, encryptMetadata)
     const userExpect = legacyExpectation(userKey, id0, revision)
     if (equal(userExpect.subarray(0, compareLength), u.subarray(0, compareLength))) {
-      return { revision: revision as 2 | 3 | 4, fileKey: userKey, streamCfm: cfm, stringCfm: cfm }
+      return {
+        derived: {
+          revision: revision as 2 | 3 | 4,
+          fileKey: userKey,
+          streamCfm: cfms.stream,
+          stringCfm: cfms.string,
+        },
+        unlockedAs: 'user',
+      }
     }
     // the password may still be the owner's (Algorithm 7/8): it decrypts /O
     // back into the padded user password, which yields the file key
@@ -259,10 +277,13 @@ function deriveKey(encrypt: PDFDict, id0: Uint8Array, password: string): Derived
       throw new WrongPasswordError()
     }
     return {
-      revision: revision as 2 | 3 | 4,
-      fileKey: ownerFileKey,
-      streamCfm: cfm,
-      stringCfm: cfm,
+      derived: {
+        revision: revision as 2 | 3 | 4,
+        fileKey: ownerFileKey,
+        streamCfm: cfms.stream,
+        stringCfm: cfms.string,
+      },
+      unlockedAs: 'owner',
     }
   }
 
@@ -272,31 +293,60 @@ function deriveKey(encrypt: PDFDict, id0: Uint8Array, password: string): Derived
   const ue = bytesOf(encrypt, 'UE')
   const oe = bytesOf(encrypt, 'OE')
   const pw = passwordBytes(password)
+  const cfms = cfmsOf(encrypt)
   const userValidation = r6Hash(revision6, pw, u.subarray(32, 40), new Uint8Array(0))
   if (equal(userValidation, u.subarray(0, 32))) {
     // the file key travels in /UE, encrypted under the key-salt hash
     const keyHash = r6Hash(revision6, pw, u.subarray(40, 48), new Uint8Array(0))
-    return { revision: revision6, fileKey: aes256DecryptNoPad(keyHash, ue) }
+    return {
+      derived: {
+        revision: revision6,
+        fileKey: aes256DecryptNoPad(keyHash, ue),
+        stmIdentity: cfms.stream === 'Identity',
+        strIdentity: cfms.string === 'Identity',
+      },
+      unlockedAs: 'user',
+    }
   }
   const ownerValidation = r6Hash(revision6, pw, o.subarray(32, 40), u.subarray(0, 48))
   if (equal(ownerValidation, o.subarray(0, 32))) {
     const keyHash = r6Hash(revision6, pw, o.subarray(40, 48), u.subarray(0, 48))
-    return { revision: revision6, fileKey: aes256DecryptNoPad(keyHash, oe) }
+    return {
+      derived: {
+        revision: revision6,
+        fileKey: aes256DecryptNoPad(keyHash, oe),
+        stmIdentity: cfms.stream === 'Identity',
+        strIdentity: cfms.string === 'Identity',
+      },
+      unlockedAs: 'owner',
+    }
   }
   throw new WrongPasswordError()
 }
 
-function cfmOf(encrypt: PDFDict): 'V2' | 'AESV2' {
-  // revisions ≤ 3 have no crypt filters (RC4); revision 4 reads its StdCF
-  const cf = encrypt.get(PDFName.of('CF'))
-  if (cf instanceof PDFDict) {
-    const std = cf.get(PDFName.of('StdCF'))
-    if (std instanceof PDFDict) {
-      const cfm = String(std.get(PDFName.of('CFM')))
-      if (cfm === '/AESV2') return 'AESV2'
+/** the cipher each payload class runs through, per /StmF and /StrF (§7.6.3.2) */
+function cfmsOf(encrypt: PDFDict): {
+  stream: 'V2' | 'AESV2' | 'Identity'
+  string: 'V2' | 'AESV2' | 'Identity'
+} {
+  // /StmF and /StrF name the crypt filter their class runs through; a name of
+  // /Identity leaves that class in the clear, and the default is StdCF
+  const of = (which: 'StmF' | 'StrF'): 'V2' | 'AESV2' | 'Identity' => {
+    const name = encrypt.get(PDFName.of(which))
+    const filterName = name instanceof PDFName ? name.asString().slice(1) : 'StdCF'
+    if (filterName === 'Identity') return 'Identity'
+    const cf = encrypt.get(PDFName.of('CF'))
+    if (cf instanceof PDFDict) {
+      const filter = cf.get(PDFName.of(filterName))
+      if (filter instanceof PDFDict) {
+        const cfm = String(filter.get(PDFName.of('CFM')))
+        if (cfm === '/AESV2') return 'AESV2'
+        if (cfm === '/Identity') return 'Identity'
+      }
     }
+    return 'V2'
   }
-  return 'V2'
+  return { stream: of('StmF'), string: of('StrF') }
 }
 
 function readEncryptMetadata(encrypt: PDFDict): boolean {
@@ -363,9 +413,12 @@ function decryptPayload(
   data: Uint8Array,
   isString: boolean,
 ): Uint8Array {
+  // an empty payload was empty plaintext: AES-CBC would have nothing to unpick
+  if (data.length === 0) return data
   if (derived.revision <= 4) {
     const legacy = derived as LegacyEncrypt
     const cfm = isString ? legacy.stringCfm : legacy.streamCfm
+    if (cfm === 'Identity') return data
     if (cfm === 'AESV2') {
       const key = legacyObjectKey(derived.fileKey, ref, true)
       return aesCbc('decrypt', 128, key, data.subarray(0, 16), data.subarray(16), true)
@@ -373,6 +426,8 @@ function decryptPayload(
     const key = legacyObjectKey(derived.fileKey, ref, false)
     return rc4(key, data)
   }
+  const r6 = derived as R6Encrypt
+  if (isString ? r6.strIdentity : r6.stmIdentity) return data
   return aesCbc('decrypt', 256, derived.fileKey, data.subarray(0, 16), data.subarray(16), true)
 }
 
@@ -585,7 +640,7 @@ async function deriveKeyFromRaw(
   id0: Uint8Array,
   password: string,
   encryptMetadata: boolean,
-): Promise<Derived> {
+): Promise<{ derived: Derived; unlockedAs: UnlockedAs }> {
   const scratch = await PDFDocument.create()
   const number = (name: string): number => {
     const all = [...body.matchAll(new RegExp(`/${name}\\s+(-?\\d+)`, 'g'))].map((m) => Number(m[1]))
@@ -594,23 +649,60 @@ async function deriveKeyFromRaw(
     // counts bits (40/128/256): the larger value is the root's
     return name === 'Length' ? Math.max(...all) : all[0]!
   }
-  const hexBytes = (name: string): Uint8Array => {
-    const match = new RegExp(`/${name}\\s*<([0-9a-fA-F\\s]+)>`).exec(body)
-    return match === null ? new Uint8Array(0) : hexToBytes(match[1]!)
+  /** a hex `<…>` or literal `(…)` entry; producers write /O and /U both ways */
+  const entryBytes = (name: string): Uint8Array => {
+    const hex = new RegExp(`/${name}\\s*<([0-9a-fA-F\\s]+)>`).exec(body)
+    if (hex !== null) return hexToBytes(hex[1]!)
+    const literal = new RegExp(`/${name}\\s*\\(((?:[^()\\\\]|\\\\.)*)\\)`).exec(body)
+    if (literal === null) return new Uint8Array(0)
+    const raw = literal[1]!
+    const out: number[] = []
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i] !== '\\') {
+        out.push(raw.charCodeAt(i) & 0xff)
+        continue
+      }
+      const esc = raw[++i]
+      if (esc === undefined) break
+      if (esc === 'n') out.push(0x0a)
+      else if (esc === 'r') out.push(0x0d)
+      else if (esc === 't') out.push(0x09)
+      else if (esc === 'b') out.push(0x08)
+      else if (esc === 'f') out.push(0x0c)
+      else if (esc >= '0' && esc <= '7') {
+        let octal = esc
+        while (octal.length < 3 && raw[i + 1] >= '0' && raw[i + 1] <= '7') octal += raw[++i]
+        out.push(parseInt(octal, 8) & 0xff)
+      } else out.push(esc.charCodeAt(0) & 0xff) // \( \) \\ and anything else: itself
+    }
+    return new Uint8Array(out)
   }
-  const cfm = /\/CFM\s*\/(AESV2|AESV3|V2)\b/.exec(body)?.[1] ?? 'V2'
-  const ue = hexBytes('UE')
-  const oe = hexBytes('OE')
+  // the cipher each payload class runs through: /StmF and /StrF name a crypt
+  // filter (or /Identity); the first /CFM anywhere may belong to another filter
+  const cfmOfName = (filter: string): string => {
+    if (filter === 'Identity') return 'Identity'
+    const block = new RegExp(`/${filter}\\s*<<([^<>]*)>>`).exec(body)?.[1]
+    return block === undefined ? 'V2' : (/\/CFM\s*\/(\w+)/.exec(block)?.[1] ?? 'V2')
+  }
+  const stmName = /\/StmF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF'
+  const strName = /\/StrF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF'
+  const filters: Record<string, { CFM: string }> = {}
+  for (const name of new Set([stmName, strName, 'StdCF']))
+    if (name !== 'Identity') filters[name] = { CFM: cfmOfName(name) }
+  const ue = entryBytes('UE')
+  const oe = entryBytes('OE')
   const dict = scratch.context.obj({
     R: number('R'),
     V: number('V'),
     Length: number('Length'),
     P: number('P'),
-    O: PDFHexString.of(hex(hexBytes('O'))),
-    U: PDFHexString.of(hex(hexBytes('U'))),
+    O: PDFHexString.of(hex(entryBytes('O'))),
+    U: PDFHexString.of(hex(entryBytes('U'))),
     ...(ue.length > 0 ? { UE: PDFHexString.of(hex(ue)) } : {}),
     ...(oe.length > 0 ? { OE: PDFHexString.of(hex(oe)) } : {}),
-    CF: scratch.context.obj({ StdCF: scratch.context.obj({ CFM: cfm }) }),
+    CF: scratch.context.obj(filters),
+    StmF: stmName,
+    StrF: strName,
     ...(encryptMetadata ? {} : { EncryptMetadata: false }),
   })
   if (!(dict instanceof PDFDict)) throw new Error('could not build the encryption dictionary')
@@ -738,6 +830,8 @@ export interface DecryptedPdf {
   permissions: PdfPermissions
   /** whether a password was actually required to open (false: owner-only file) */
   neededPassword: boolean
+  /** which password opened it; the owner's ignores the /P limits */
+  unlockedAs: UnlockedAs
 }
 
 /**
@@ -750,7 +844,7 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
   const text = Buffer.from(bytes).toString('latin1')
   const encrypt = rawEncryptDict(text)
   if (encrypt === null) {
-    return { bytes, permissions: permissionsFromP(-1), neededPassword: false }
+    return { bytes, permissions: permissionsFromP(-1), neededPassword: false, unlockedAs: 'user' }
   }
   // a certificate-encrypted document carries /Recipients envelopes instead of
   // the password entries: there is no password to type, and saying so is the
@@ -759,7 +853,12 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
     throw new CertificateEncryptionError()
   }
   const encryptMetadata = !/\/EncryptMetadata\s+false/.test(encrypt.body)
-  const derived = await deriveKeyFromRaw(encrypt.body, rawId0(text), password, encryptMetadata)
+  const { derived, unlockedAs } = await deriveKeyFromRaw(
+    encrypt.body,
+    rawId0(text),
+    password,
+    encryptMetadata,
+  )
   // streams first, on the raw bytes: the parser cannot read an encrypted
   // /ObjStm, and nothing below this line runs until it can
   const pre = predecryptStreams(bytes, derived, encryptMetadata)
@@ -776,6 +875,7 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
     bytes: await doc.save({ useObjectStreams: false }),
     permissions: permissionsFromP(Number(/\/P\s+(-?\d+)/.exec(encrypt.body)?.[1] ?? -1)),
     neededPassword: password.length > 0,
+    unlockedAs,
   }
 }
 
@@ -806,7 +906,9 @@ export function encryptDocument(doc: PDFDocument, protection: PdfProtection): vo
   // the file key travels in /UE under the key-salt hash
   const ue = aesCbc('encrypt', 256, keyHash, new Uint8Array(16), fileKey, false)
 
-  const owner = protection.ownerPassword ?? protection.userPassword
+  // an empty owner password would hand ownership to anyone; an unset one
+  // falls back to the user password (the common single-password file)
+  const owner = protection.ownerPassword || protection.userPassword
   const ownerBytes = passwordBytes(owner)
   const ownerValidationSalt = randomBytes(8)
   const ownerKeySalt = randomBytes(8)
@@ -854,6 +956,7 @@ export function encryptDocument(doc: PDFDocument, protection: PdfProtection): vo
     context.trailerInfo.ID = context.obj([PDFHexString.of(id), PDFHexString.of(id)])
   }
 
-  const derived: R6Encrypt = { revision: 6, fileKey }
+  // both payload classes run through StdCF's AESV3 (StmF/StrF below)
+  const derived: R6Encrypt = { revision: 6, fileKey, stmIdentity: false, strIdentity: false }
   transformPayloads(doc, encryptRef, (_ref, data) => encryptPayload(derived, data))
 }
