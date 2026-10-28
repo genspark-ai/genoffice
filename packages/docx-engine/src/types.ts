@@ -1785,7 +1785,7 @@ export interface Block {
       ilvl?: number
     }
   }
-  /** Top-level block insertion/deletion wrapper (w:ins/w:del around w:p or w:tbl). */
+  /** Block insertion/deletion wrapper (w:ins/w:del around a w:tbl &c). A whole paragraph takes the paragraph-mark record instead — the shape readers resolve. */
   blockRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** Tracked deletion of the paragraph mark (w:pPr/w:rPr/w:del): Word joins the paragraph into the next one. */
   paraMarkDel?: { author: string; date?: string; dateUtc?: string; id?: string }

@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { compareDocuments, parseDocx, type CompareOptions } from '../src/index'
+import { applyTrackedChangesXml, countTrackedChangesXml } from '../src/revision-xml'
 import { buildDocx } from './helpers/build-docx'
 
 /** the paragraph both documents share, unchanged */
@@ -58,6 +59,63 @@ describe('document comparison (tracked changes)', () => {
     expect(summary.insertedParagraphs).toBe(1)
     expect(summary.deletedParagraphs).toBe(0)
     expect(summary.changedParagraphs).toBe(0)
+  })
+
+  it('marks a wholly inserted paragraph on the runs and the paragraph mark, not a body wrapper', async () => {
+    const { xml, summary } = await compare(UNCHANGED_P, UNCHANGED_P + ADDED_P)
+    // w:ins/w:del are not resolved as tracked changes around a w:p — Word's
+    // Compare marks the paragraph mark instead (w:pPr/w:rPr)
+    expect(xml).not.toMatch(/<w:ins\b[^>]*>\s*<w:p[\s/>]/)
+    expect(xml).toContain('<w:pPr><w:rPr><w:ins ')
+    expect(xml).toMatch(
+      new RegExp(`<w:ins w:id="\\d+" w:author="${AUTHOR}" w:date="${DATE}"/>`),
+    )
+    // the text runs still carry their own insertion
+    expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:r>\s*<w:t(?:\s[^>]*)?>A brand new paragraph/)
+    expect(summary.insertedParagraphs).toBe(1)
+  })
+
+  it('marks a wholly deleted paragraph on the runs and the paragraph mark, not a body wrapper', async () => {
+    const { xml, summary } = await compare(UNCHANGED_P + REMOVED_P, UNCHANGED_P)
+    expect(xml).not.toMatch(/<w:del\b[^>]*>\s*<w:p[\s/>]/)
+    expect(xml).toContain('<w:pPr><w:rPr><w:del ')
+    expect(xml).toContain('<w:delText')
+    expect(summary.deletedParagraphs).toBe(1)
+  })
+
+  it('a non-paragraph block keeps the block-level wrapper (the shape Word writes for tables)', async () => {
+    const tableA =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>old cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const tableB =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>new cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const { xml } = await compare(UNCHANGED_P + tableA, UNCHANGED_P + tableB)
+    expect(xml).toMatch(/<w:del\b[^>]*>\s*<w:tbl[\s>]/)
+    expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:tbl[\s>]/)
+  })
+
+  it('accepting every change resolves the redline to the revised document, rejecting to the original', async () => {
+    const { bytes, summary } = await compare(ORIGINAL_BODY, REVISED_BODY)
+    expect(summary.changedParagraphs).toBe(1)
+    expect(summary.insertedParagraphs).toBe(1)
+    expect(summary.deletedParagraphs).toBe(1)
+    const zip = await JSZip.loadAsync(bytes)
+    const xml = zip.file('word/document.xml')!.async('string')
+    for (const [mode, expected] of [
+      ['accept', ['The quick red fox jumps.', 'A brand new paragraph appears here.']],
+      ['reject', ['The quick brown fox jumps.', 'This paragraph was removed entirely.']],
+    ] as const) {
+      const out = applyTrackedChangesXml(await xml, mode)
+      expect(out.remaining).toBe(0)
+      expect(out.applied).toBeGreaterThan(0)
+      const text = [...out.xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('')
+      expect(text).toContain(expected[0])
+      expect(text).toContain(expected[1])
+      expect(text).not.toContain(mode === 'accept' ? 'brown' : 'red')
+      expect(text).not.toContain(mode === 'accept' ? 'removed entirely' : 'brand new')
+    }
+    expect(countTrackedChangesXml(await xml)).toBeGreaterThan(0)
   })
 
   it('marks a deleted paragraph as a tracked deletion', async () => {

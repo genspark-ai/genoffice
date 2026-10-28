@@ -126,7 +126,7 @@ describe('tracked change parsing', () => {
 })
 
 describe('tracked change save fidelity', () => {
-  it('writes and reopens top-level paragraph and table revision wrappers', async () => {
+  it('a paragraph revision rides the paragraph mark, a table one keeps the wrapper', async () => {
     const parsed = await parseDocx(
       await buildDocx({ bodyXml: '<w:p><w:r><w:t>base</w:t></w:r></w:p>' }),
     )
@@ -135,16 +135,31 @@ describe('tracked change save fidelity', () => {
       author: 'Structural Reviewer',
       date: '2026-07-30T10:00:00Z',
     }
+    // a whole paragraph takes the shape Word's Compare writes: the mark
+    // carries the record, so readers resolve it (a w:ins wrapper around w:p
+    // is the shape for tables)
+    // the caller marks the runs (compare and --track both do) and asks for
+    // the block revision on top
     const paragraph = await saveDocx(parsed, [
       {
         kind: 'generated',
-        block: { type: 'paragraph', runs: [{ text: 'inserted paragraph' }] },
-        revision,
+        block: {
+          type: 'paragraph',
+          runs: [{ text: 'inserted paragraph', ins: { ...revision, id: '9002' } }],
+        },
+        revision: { ...revision, id: '9001' },
       },
     ])
     const reopenedParagraph = await parseDocx(paragraph)
-    expect(reopenedParagraph.blocks[0].blockRevision).toMatchObject(revision)
+    expect(reopenedParagraph.blocks[0].blockRevision).toBeUndefined()
+    expect(reopenedParagraph.blocks[0].paraMarkIns).toMatchObject({
+      author: revision.author,
+      date: revision.date,
+    })
     expect(reopenedParagraph.blocks[0].runs?.[0].text).toBe('inserted paragraph')
+    expect(reopenedParagraph.blocks[0].runs?.[0].ins).toMatchObject({
+      author: revision.author,
+    })
 
     const table = await saveDocx(parsed, [{ kind: 'xml', xml: TABLE_XML, revision }])
     const reopenedTable = await parseDocx(table)
