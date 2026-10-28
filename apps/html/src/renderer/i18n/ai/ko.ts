@@ -49,6 +49,7 @@ export const ko = {
   aiStop: '중지',
   aiStopped: '중지됨',
   aiThinking: '생각 중',
+  aiReasoningLabel: '사고 과정',
   aiTimeoutError: 'AI 응답 시간 초과',
   aiToolWebSearch: '웹 검색',
   aiToolWebSearchDone: '"{query}" 검색 · 결과 {count}개',

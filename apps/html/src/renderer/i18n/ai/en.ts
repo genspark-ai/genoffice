@@ -49,6 +49,7 @@ export const en = {
   aiStop: 'Stop',
   aiStopped: 'Stopped',
   aiThinking: 'Thinking',
+  aiReasoningLabel: 'Thinking',
   aiTimeoutError: 'AI response timed out',
   aiToolWebSearch: 'Web search',
   aiToolWebSearchDone: 'Searched "{query}" · {count} results',

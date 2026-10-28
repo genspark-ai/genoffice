@@ -75,6 +75,7 @@ export const ms = {
   aiStarterLaunchPost: 'Sediakan pengumuman pelancaran produk',
   aiStarterEventOutline: 'Sediakan rangka rancangan acara',
   aiThinking: 'Sedang berfikir',
+  aiReasoningBlock: 'Penaakulan',
   aiWorkedSteps: 'Selesai · {n} langkah',
   aiGroupWorking: 'Sedang berjalan…',
   aiWorking: 'Sedang memproses',

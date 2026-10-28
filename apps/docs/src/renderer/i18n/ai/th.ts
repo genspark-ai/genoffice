@@ -73,6 +73,7 @@ export const th = {
   aiStarterLaunchPost: 'เขียนประกาศเปิดตัวผลิตภัณฑ์',
   aiStarterEventOutline: 'ร่างโครงร่างแผนจัดกิจกรรม',
   aiThinking: 'กำลังคิด',
+  aiReasoningBlock: 'กระบวนการคิด',
   aiWorkedSteps: 'เสร็จสิ้น · {n} ขั้นตอน',
   aiGroupWorking: 'กำลังทำงาน…',
   aiWorking: 'กำลังดำเนินการ',

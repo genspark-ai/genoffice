@@ -1,8 +1,13 @@
 import {
+  AI_PANEL_WIDTH_DEFAULT,
+  AI_PANEL_WIDTH_MAX,
+  aiPanelAutoWidth,
+  aiPanelClampWidth,
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
   type AiModelPickerBridge,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
@@ -53,23 +58,23 @@ function countWords(text: string): number {
 }
 
 const PANEL_WIDTH_KEY = 'pdf-ai-panel-width'
-const PANEL_WIDTH_DEFAULT = 360
-const PANEL_WIDTH_MIN = 280
 
-function clampPanelWidth(w: number): number {
-  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
-  // shell lays it out), so never let the ceiling drop below the minimum
-  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
-}
-
-function loadPanelWidth(): number {
+/** the user's dragged width (the only persisted value); null = never dragged → auto width */
+function loadPanelWidth(): number | null {
   const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
   // static bounds only — clamping against the window here would bake a
   // transiently small viewport into the restored preference
   return Number.isFinite(saved) && saved > 0
-    ? Math.min(Math.max(saved, PANEL_WIDTH_MIN), 720)
-    : PANEL_WIDTH_DEFAULT
+    ? Math.min(Math.max(saved, AI_PANEL_WIDTH_DEFAULT), AI_PANEL_WIDTH_MAX)
+    : null
+}
+
+/** width actually displayed: the auto rule until the user drags, the clamped
+ *  preference afterwards (the panel grows/shrinks with the window either way) */
+function fitPanelWidth(preferred: number | null): number {
+  return preferred === null
+    ? aiPanelAutoWidth(window.innerWidth)
+    : aiPanelClampWidth(preferred, window.innerWidth)
 }
 
 interface ToolActivity {
@@ -93,6 +98,8 @@ interface ChatEntry {
   skills?: string[]
   /** tokens the provider billed for this reply, summed across its turns (absent when unreported) */
   usage?: AiTokenUsageView
+  /** model reasoning streamed for this assistant message (kept after the run ends) */
+  reasoning?: string
 }
 
 /** longest selection excerpt echoed on a user bubble */
@@ -133,6 +140,11 @@ export function AiPanel({
   onClearSelection?: () => void
 }): ReactElement {
   const { lang, t } = useI18n()
+  // AI panel display toggles (shell Settings, live-updated). Render paths read the
+  // hook values; the once-built loop callbacks read showStreaming through a ref.
+  const { showStreaming, showThinking, showToolCalls } = useAiPanelPrefs()
+  const showStreamingRef = useRef(showStreaming)
+  showStreamingRef.current = showStreaming
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [attachedSkills, setAttachedSkills] = useState<string[]>([])
@@ -161,6 +173,8 @@ export function AiPanel({
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
   /** current turn's streamed text; completed turns collect into runTextsRef */
   const segTextRef = useRef('')
+  /** current turn's streamed reasoning (rendered under the showThinking pref) */
+  const segReasoningRef = useRef('')
   /** whole-run accumulation: one stored assistant message per run (consecutive
       assistant rows would break restore() on strict-alternation providers) */
   const runTextsRef = useRef<string[]>([])
@@ -294,11 +308,11 @@ export function AiPanel({
         /* silent */
       })
   }, [filePath])
-  // preferred = the user's chosen width (the only value persisted); panelWidth =
-  // what fits the current window. Deriving the display width from the preference
-  // means a transiently small window never permanently shrinks the panel.
-  const preferredWidthRef = useRef(loadPanelWidth())
-  const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
+  // preferred = the user's dragged width (the only value persisted; null = auto);
+  // panelWidth = what fits the current window. Deriving the display width from the
+  // preference means a transiently small window never permanently shrinks the panel.
+  const preferredWidthRef = useRef<number | null>(loadPanelWidth())
+  const [panelWidth, setPanelWidth] = useState(() => fitPanelWidth(preferredWidthRef.current))
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
 
@@ -445,14 +459,23 @@ export function AiPanel({
       fetchImage: (url) => apiRef.current.fetchImage(url),
     }
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current!),
+      transport: createElectronTransport(
+        () => settingsRef.current!,
+        (text) => {
+          // reasoning rides on the message (the showThinking pref gates rendering)
+          segReasoningRef.current += text
+          patchLast({ reasoning: segReasoningRef.current })
+        },
+      ),
       skill: createPdfSkill(deps),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {
           setPhase('replying')
           segTextRef.current = text
-          patchLast({ text })
+          // showStreaming off: the reply stays pending (typing indicator) and is
+          // revealed whole when its turn completes
+          if (showStreamingRef.current) patchLast({ text })
         },
         onToolExecuted: ({ call, execution }) => {
           setPhase('working')
@@ -478,7 +501,10 @@ export function AiPanel({
         onTurnEnd: () => {
           setPhase('thinking')
           runTextsRef.current.push(segTextRef.current)
+          // showStreaming off: the held turn text is revealed now that its turn completed
+          if (!showStreamingRef.current) patchLast({ text: segTextRef.current })
           segTextRef.current = ''
+          segReasoningRef.current = ''
           patchLast({ streaming: false })
           setChat((prev) => [...prev, { role: 'assistant', text: '', streaming: true }])
         },
@@ -499,6 +525,7 @@ export function AiPanel({
             : base
           if (cancelled) {
             segTextRef.current = ''
+            segReasoningRef.current = ''
             runTextsRef.current = []
             runToolsRef.current = []
           } else {
@@ -575,6 +602,7 @@ export function AiPanel({
     const scope = retryScope !== undefined ? (retryScope ?? undefined) : selectionScopeQuote()
     persistMessage('user', instruction, undefined, scope)
     segTextRef.current = ''
+    segReasoningRef.current = ''
     runTextsRef.current = []
     runToolsRef.current = []
     runUsageRef.current = undefined
@@ -664,10 +692,10 @@ export function AiPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per nonce
   }, [preset?.nonce])
 
-  // Re-derive the display width on window resize (max is 60% of the window);
-  // growing the window back restores the preferred width
+  // Re-derive the display width on window resize: the auto rule tracks the
+  // window until the user drags, a dragged preference just re-clamps into it
   useEffect(() => {
-    const onResize = (): void => setPanelWidth(clampPanelWidth(preferredWidthRef.current))
+    const onResize = (): void => setPanelWidth(fitPanelWidth(preferredWidthRef.current))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -683,7 +711,7 @@ export function AiPanel({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent): void => {
-      const w = clampPanelWidth(aiPanelWidthAtPointer(ev.clientX))
+      const w = aiPanelClampWidth(aiPanelWidthAtPointer(ev.clientX), window.innerWidth)
       preferredWidthRef.current = w
       setPanelWidth(w)
     }
@@ -699,7 +727,8 @@ export function AiPanel({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setResizing(false)
-      localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(preferredWidthRef.current)))
+      const preferred = preferredWidthRef.current
+      if (preferred !== null) localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(preferred)))
     }
     resizeCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
@@ -858,13 +887,17 @@ export function AiPanel({
               </div>
             )
           }
-          const hasTools = (entry.tools?.length ?? 0) > 0
-          if (!entry.text && !hasTools) return null
+          const hasTools = showToolCalls && (entry.tools?.length ?? 0) > 0
+          const showReasoning = showThinking && !!entry.reasoning
+          if (!entry.text && !hasTools && !showReasoning) return null
           return (
             <div
               key={i}
               className={`ai-msg ai-msg-assistant${entry.isError ? ' ai-msg-error' : ''}`}
             >
+              {showReasoning && (
+                <ReasoningBlock text={entry.reasoning!} streaming={entry.streaming} />
+              )}
               {hasTools && <ToolChipList tools={entry.tools!} />}
               {entry.usage && (
                 <div className="ai-message-usage">
@@ -1176,6 +1209,39 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
               </div>
             )
           })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Reasoning block: the model's thinking attached to an assistant message.
+ *  Live-expanded while the reply streams (the manual toggle always wins), a
+ *  quiet collapsible after — same affordance language as the tool group. */
+function ReasoningBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  const { t } = useI18n()
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+
+  const open = userOpen ?? !!streaming
+
+  return (
+    <div className="ai-reasoning">
+      <button
+        type="button"
+        className="ai-reasoning-summary"
+        aria-expanded={open}
+        onClick={() => setUserOpen(!open)}
+      >
+        <span className="ai-reasoning-label">{t('aiReasoning')}</span>
+        <span className={`ai-tool-chip-caret${open ? ' open' : ''}`} aria-hidden>
+          ›
+        </span>
+      </button>
+      <div className={`ai-reasoning-body${open ? ' open' : ''}`}>
+        <div className="ai-reasoning-body-inner">
+          <div className="ai-reasoning-pre" dir="auto">
+            {text}
+          </div>
         </div>
       </div>
     </div>

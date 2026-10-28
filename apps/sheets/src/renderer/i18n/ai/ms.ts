@@ -26,6 +26,7 @@ export const ms = {
   aiEmptyBodyLine1: 'Terangkan perubahan yang diingini atau tanya tentang data.',
   aiThinkingAria: 'Sedang berfikir',
   aiThinking: 'Sedang berfikir…',
+  aiThinkingBlock: 'Proses berfikir',
   aiWorkedSteps: 'Selesai · {n} langkah',
   aiGroupWorking: 'Sedang berjalan…',
   aiWorking: 'Sedang melaksanakan…',

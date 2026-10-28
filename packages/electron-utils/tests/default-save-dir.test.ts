@@ -58,17 +58,21 @@ describe('resolveDefaultSaveDir', () => {
     expect(existsSync(fallback)).toBe(true)
   })
 
-  it('degrades to the fallback when the configured folder is not writable', () => {
-    const readOnly = join(root, 'read-only')
-    mkdirSync(readOnly)
-    chmodSync(readOnly, 0o500)
-    const fallback = join(root, 'fallback')
-    try {
-      expect(resolveDefaultSaveDir(readOnly, fallback)).toBe(fallback)
-    } finally {
-      chmodSync(readOnly, 0o700)
-    }
-  })
+  // Windows ignores directory chmod bits, so the read-only setup only bites on POSIX
+  it.skipIf(process.platform === 'win32')(
+    'degrades to the fallback when the configured folder is not writable',
+    () => {
+      const readOnly = join(root, 'read-only')
+      mkdirSync(readOnly)
+      chmodSync(readOnly, 0o500)
+      const fallback = join(root, 'fallback')
+      try {
+        expect(resolveDefaultSaveDir(readOnly, fallback)).toBe(fallback)
+      } finally {
+        chmodSync(readOnly, 0o700)
+      }
+    },
+  )
 
   it('throws a descriptive error when the fallback itself is unusable', () => {
     const blocker = join(root, 'blocker')

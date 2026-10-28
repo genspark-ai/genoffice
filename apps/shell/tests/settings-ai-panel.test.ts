@@ -5,7 +5,8 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AiPanelPrefs } from '@genoffice/ui'
+import { DEFAULT_AI_PANEL_PREFS, type AiPanelPrefs } from '@genoffice/ui'
+import { defaultAiSettings } from '@genoffice/ai-provider'
 import type { HomeApi } from '../src/shared/home-api'
 import { LocaleProvider } from '../src/renderer/src/locale'
 import { SettingsModal } from '../src/renderer/src/SettingsModal'
@@ -39,10 +40,9 @@ async function click(button: HTMLButtonElement): Promise<void> {
 describe('Settings AI panel preferences', () => {
   it('shows the saved spellcheck state and persists the toggle as a patch', async () => {
     let saved: AiPanelPrefs = {
+      ...DEFAULT_AI_PANEL_PREFS,
       fontSize: 'large',
-      customFontSize: 14,
       spellcheck: false,
-      side: 'left',
     }
     const setAiPanelPrefs = vi.fn(async (patch: Partial<AiPanelPrefs>) => {
       saved = { ...saved, ...patch }
@@ -101,8 +101,8 @@ describe('Settings AI panel preferences', () => {
 
   it('shows the saved panel side and persists switching sides independently', async () => {
     let saved: AiPanelPrefs = {
+      ...DEFAULT_AI_PANEL_PREFS,
       fontSize: 'large',
-      customFontSize: 14,
       spellcheck: false,
       side: 'right',
     }
@@ -166,10 +166,9 @@ describe('Settings AI panel preferences', () => {
 
   it('shows a px input for the custom size and persists in-range values as typed', async () => {
     let saved: AiPanelPrefs = {
+      ...DEFAULT_AI_PANEL_PREFS,
       fontSize: 'custom',
       customFontSize: 20,
-      spellcheck: true,
-      side: 'left',
     }
     const setAiPanelPrefs = vi.fn(async (patch: Partial<AiPanelPrefs>) => {
       saved = { ...saved, ...patch }
@@ -240,5 +239,79 @@ describe('Settings AI panel preferences', () => {
     })
     expect(setAiPanelPrefs).toHaveBeenLastCalledWith({ customFontSize: 32 })
     expect(input?.value).toBe('32')
+  })
+
+  it('shows the streaming/thinking/tool-call switches in AI Model and persists patches', async () => {
+    let saved: AiPanelPrefs = {
+      ...DEFAULT_AI_PANEL_PREFS,
+      showThinking: false,
+    }
+    const setAiPanelPrefs = vi.fn(async (patch: Partial<AiPanelPrefs>) => {
+      saved = { ...saved, ...patch }
+      return saved
+    })
+    window.aiOffice = {
+      getTheme: async () => 'system',
+      getDefaultSaveDir: async () => '',
+      getAnalyticsEnabled: async () => true,
+      setAnalyticsEnabled: async () => true,
+      getAiPanelPrefs: async () => saved,
+      setAiPanelPrefs,
+      getUpdateChannel: async () => 'stable',
+      getAppVersion: async () => '1.0.0',
+      githubStars: async () => null,
+      getAiProviders: () => [],
+      getAiSettings: async () => defaultAiSettings(),
+    } as unknown as HomeApi
+
+    await act(async () => {
+      root.render(
+        createElement(
+          LocaleProvider,
+          { initial: 'en' },
+          createElement(SettingsModal, {
+            status: null,
+            loggingOut: false,
+            loginWaiting: false,
+            loginUrl: null,
+            urlCopied: false,
+            onOpenLoginUrl: vi.fn(),
+            onCopyLoginUrl: vi.fn(),
+            onClose: vi.fn(),
+            onLogin: vi.fn(),
+            onLogout: vi.fn(),
+          }),
+        ),
+      )
+      await Promise.resolve()
+    })
+
+    const aiModel = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find(
+      (button) => button.textContent?.includes('AI Model'),
+    )
+    await click(aiModel!)
+
+    const streaming = host.querySelector<HTMLButtonElement>(
+      '.set-switch[aria-label="Stream AI responses"]',
+    )
+    const thinking = host.querySelector<HTMLButtonElement>(
+      '.set-switch[aria-label="Show the AI thinking"]',
+    )
+    const toolCalls = host.querySelector<HTMLButtonElement>(
+      '.set-switch[aria-label="Show tool activity"]',
+    )
+    expect(streaming).not.toBeNull()
+    expect(streaming?.getAttribute('aria-checked')).toBe('true')
+    expect(thinking?.getAttribute('aria-checked')).toBe('false')
+    expect(toolCalls?.getAttribute('aria-checked')).toBe('true')
+
+    await click(thinking!)
+    expect(setAiPanelPrefs).toHaveBeenLastCalledWith({ showThinking: true })
+    expect(thinking?.getAttribute('aria-checked')).toBe('true')
+
+    await click(toolCalls!)
+    expect(setAiPanelPrefs).toHaveBeenLastCalledWith({ showToolCalls: false })
+    expect(toolCalls?.getAttribute('aria-checked')).toBe('false')
+    expect(saved.showStreaming).toBe(true)
   })
 })

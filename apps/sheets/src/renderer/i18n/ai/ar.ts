@@ -25,6 +25,7 @@ export const ar = {
   aiEmptyBodyLine1: 'صِف التغيير المطلوب أو اسأل عن البيانات.',
   aiThinkingAria: 'يفكّر',
   aiThinking: 'يفكّر…',
+  aiThinkingBlock: 'عملية التفكير',
   aiWorkedSteps: 'اكتمل · {n} خطوات',
   aiGroupWorking: 'جارٍ العمل…',
   aiWorking: 'قيد التنفيذ…',

@@ -74,6 +74,7 @@ export const ko = {
   aiStarterLaunchPost: '제품 출시 공지문 작성해 줘',
   aiStarterEventOutline: '행사 기획 개요 만들어 줘',
   aiThinking: '생각하는 중',
+  aiReasoningBlock: '사고 과정',
   aiWorkedSteps: '완료 · {n}단계',
   aiGroupWorking: '작업 중…',
   aiWorking: '처리 중',

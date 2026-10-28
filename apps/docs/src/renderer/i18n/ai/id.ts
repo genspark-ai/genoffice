@@ -75,6 +75,7 @@ export const id = {
   aiStarterLaunchPost: 'Buat pengumuman peluncuran produk',
   aiStarterEventOutline: 'Buat kerangka rencana acara',
   aiThinking: 'Berpikir',
+  aiReasoningBlock: 'Penalaran',
   aiWorkedSteps: 'Selesai · {n} langkah',
   aiGroupWorking: 'Sedang bekerja…',
   aiWorking: 'Memproses',

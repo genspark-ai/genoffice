@@ -74,6 +74,7 @@ export const en = {
   aiStarterLaunchPost: 'Draft a product launch announcement',
   aiStarterEventOutline: 'Outline an event plan',
   aiThinking: 'Thinking',
+  aiReasoningBlock: 'Thinking',
   aiWorkedSteps: 'Worked · {n} steps',
   aiGroupWorking: 'Working…',
   aiWorking: 'Working',

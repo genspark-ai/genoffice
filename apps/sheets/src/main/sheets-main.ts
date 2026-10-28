@@ -56,6 +56,7 @@ import {
   viewMenuTemplate,
   windowMenuTemplate,
   settingsMenuItem,
+  settingsMenuTemplate,
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
@@ -4903,8 +4904,6 @@ function installApplicationMenu(): void {
             : process.platform === 'darwin'
               ? { role: 'close' as const, label: tm('menuClose') }
               : { role: 'quit' as const, label: tm('menuQuit') },
-          { type: 'separator' },
-          settingsMenuItem(labels),
         ],
       },
       {
@@ -4933,6 +4932,9 @@ function installApplicationMenu(): void {
       // ⌘R is Fill Right and ⌘0/⌘+/⌘- hide columns / zoom the sheet; menu
       // accelerators would swallow them on macOS.
       viewMenuTemplate(labels, { devItems: !app.isPackaged, pageZoom: false }),
+      // Settings Center: top-level menu right before Window (macOS keeps its
+      // app-menu Settings entry too)
+      settingsMenuTemplate(labels),
       windowMenuTemplate(process.platform, labels),
       helpMenuTemplate(labels),
     ]),

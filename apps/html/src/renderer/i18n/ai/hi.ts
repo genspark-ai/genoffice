@@ -49,6 +49,7 @@ export const hi = {
   aiStop: 'रोकें',
   aiStopped: 'रोका गया',
   aiThinking: 'सोच रहा है',
+  aiReasoningLabel: 'विचार प्रक्रिया',
   aiTimeoutError: 'AI प्रतिक्रिया समय समाप्त',
   aiToolWebSearch: 'वेब खोज',
   aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',

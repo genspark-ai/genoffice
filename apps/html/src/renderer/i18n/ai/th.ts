@@ -49,6 +49,7 @@ export const th = {
   aiStop: 'หยุด',
   aiStopped: 'หยุดแล้ว',
   aiThinking: 'กำลังคิด',
+  aiReasoningLabel: 'กระบวนการคิด',
   aiTimeoutError: 'การตอบกลับของ AI หมดเวลา',
   aiToolWebSearch: 'ค้นหาเว็บ',
   aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',

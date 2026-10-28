@@ -10,7 +10,8 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
  *
  * The macOS application menu is spelled out rather than left as Electron's
  * fixed role:'appMenu' template, so the entry exists on macOS too; the other
- * platforms put it at the bottom of the File menu. Either way the assertion
+ * platforms carry it in the top-level Settings Center menu placed before the
+ * Window menu. Either way the assertion
  * is the same: find the entry, check its accelerator, click it, and see the
  * Settings dialog.
  */

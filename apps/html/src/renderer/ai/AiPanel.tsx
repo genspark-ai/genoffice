@@ -1,10 +1,12 @@
 import {
+  aiPanelClampWidth,
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
   type AiModelPickerBridge,
   AiSkillChips,
   AiSkillsMenu,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
@@ -62,6 +64,7 @@ import { BriefCard } from '../components/BriefCard'
 import { createSearchSkill } from './search-skill'
 import { pastedBase64Image } from './base64-paste'
 import { createElectronTransport } from './transport'
+import { displayPanelWidth, loadSavedPanelWidth, PANEL_WIDTH_KEY } from './panel-width'
 import { DOC_NAV_SCHEME, parseDocNavHref } from './doc-nav'
 import { EditQueueCard } from './EditQueueCard'
 import {
@@ -181,27 +184,8 @@ function AttachmentList({
   )
 }
 
-const PANEL_WIDTH_KEY = 'html-ai-panel-width'
-const PANEL_WIDTH_DEFAULT = 360
-const PANEL_WIDTH_MIN = 280
 const MAX_SNAPSHOTS = 20
 const TOOL_OUTPUT_MAX_CHARS = 2000
-
-function clampPanelWidth(w: number): number {
-  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
-  // shell lays it out), so never let the ceiling drop below the minimum
-  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
-}
-
-function loadPanelWidth(): number {
-  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
-  // static bounds only — clamping against the window here would bake a
-  // transiently small viewport into the restored preference
-  return Number.isFinite(saved) && saved > 0
-    ? Math.min(Math.max(saved, PANEL_WIDTH_MIN), 720)
-    : PANEL_WIDTH_DEFAULT
-}
 
 interface ToolActivity {
   name: string
@@ -217,6 +201,8 @@ interface ChatEntry {
   text: string
   streaming?: boolean
   isError?: boolean
+  /** model reasoning (thinking) captured during this reply; rendered under showThinking */
+  reasoning?: string
   /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
   /** instruction actually sent when it differs from the bubble text (sid-pinned Ask AI / queue batch); retries resend this */
@@ -315,6 +301,10 @@ export function AiPanel({
   onCollapse: () => void
 }): ReactElement {
   const { lang, t } = useI18n()
+  const prefs = useAiPanelPrefs()
+  // loop callbacks are built once; they read the live prefs through this ref
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
@@ -524,11 +514,14 @@ export function AiPanel({
     const rel = ext === 'webp' ? null : await window.htmlApi.saveImage({ base64: img.base64, ext })
     return { ok: true, src: rel ?? `data:${img.mime};base64,${img.base64}` }
   }
-  // preferred = the user's chosen width (the only value persisted); panelWidth =
-  // what fits the current window. Deriving the display width from the preference
-  // means a transiently small window never permanently shrinks the panel.
-  const preferredWidthRef = useRef(loadPanelWidth())
-  const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
+  // preferred = the user's dragged width (the only value persisted; null = auto);
+  // panelWidth = what fits the current window. Deriving the display width from
+  // the preference means a transiently small window never permanently shrinks
+  // the panel, and without a drag the panel auto-grows with the window.
+  const preferredWidthRef = useRef<number | null>(loadSavedPanelWidth())
+  const [panelWidth, setPanelWidth] = useState(() =>
+    displayPanelWidth(preferredWidthRef.current, window.innerWidth),
+  )
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
   const mountedRef = useRef(true)
@@ -614,7 +607,14 @@ export function AiPanel({
   // The loop is built once; every mutable value goes through a ref getter
   const transportRef = useRef<ReturnType<typeof createElectronTransport> | null>(null)
   if (!transportRef.current) {
-    transportRef.current = createElectronTransport(() => settingsRef.current!)
+    // Reasoning crosses the IPC chain but the loop only stores it internally;
+    // tap the deltas here to attach live thinking text to the assistant entry
+    transportRef.current = createElectronTransport(
+      () => settingsRef.current!,
+      (text) => {
+        patchLast((last) => ({ reasoning: (last.reasoning ?? '') + text }))
+      },
+    )
   }
 
   /**
@@ -749,7 +749,11 @@ export function AiPanel({
       captureSnapshot: () => depsRef.current.getSnapshot(),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
-        onText: (text) => patchLast({ text }),
+        onText: (text) => {
+          // showStreaming off: hold the message pending (typing indicator) and
+          // reveal the full text when the run completes via onDone
+          if (prefsRef.current.showStreaming) patchLast({ text })
+        },
         onToolStart: (call) => {
           // Live "running" chip: replaced in place by onToolExecuted
           patchLast((last) => ({
@@ -1152,10 +1156,11 @@ export function AiPanel({
     setSnapshots((prev) => prev.filter((s) => s !== snapshot))
   }
 
-  // Re-derive the display width on window resize (max is 60% of the window);
-  // growing the window back restores the preferred width
+  // Re-derive the display width on window resize: the auto width tracks the
+  // window, a dragged preference is clamped into it (never below the 360 floor)
   useEffect(() => {
-    const onResize = (): void => setPanelWidth(clampPanelWidth(preferredWidthRef.current))
+    const onResize = (): void =>
+      setPanelWidth(displayPanelWidth(preferredWidthRef.current, window.innerWidth))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -1171,7 +1176,7 @@ export function AiPanel({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent): void => {
-      const w = clampPanelWidth(aiPanelWidthAtPointer(ev.clientX))
+      const w = aiPanelClampWidth(aiPanelWidthAtPointer(ev.clientX), window.innerWidth)
       preferredWidthRef.current = w
       setPanelWidth(w)
     }
@@ -1187,7 +1192,8 @@ export function AiPanel({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setResizing(false)
-      localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(preferredWidthRef.current)))
+      if (preferredWidthRef.current !== null)
+        localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(preferredWidthRef.current)))
     }
     resizeCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
@@ -1363,7 +1369,7 @@ export function AiPanel({
             )
           }
           const hasTools = (entry.tools?.length ?? 0) > 0
-          if (!entry.text && !entry.streaming && !hasTools) return null
+          if (!entry.text && !entry.streaming && !hasTools && !entry.reasoning) return null
           const isLast = i === chat.length - 1
           // Action row appears once per completed reply: on the turn's final segment only
           // (mid-turn segments have a following assistant entry; the live turn ends when !busy)
@@ -1375,6 +1381,9 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-assistant${entry.isError ? ' ai-msg-error' : ''}${entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {entry.reasoning && prefs.showThinking && (
+                <ReasoningBlock text={entry.reasoning} streaming={!!entry.streaming} />
+              )}
               {!entry.text && entry.streaming ? (
                 <span className="ai-typing-row">
                   <AiTypingIndicator label={hasTools ? t('aiWorking') : t('aiThinking')} />
@@ -1390,7 +1399,7 @@ export function AiPanel({
                   </div>
                 )
               )}
-              {hasTools && <ToolChipList tools={entry.tools!} />}
+              {hasTools && prefs.showToolCalls && <ToolChipList tools={entry.tools!} />}
               {entry.usage && (
                 <div className="ai-message-usage">
                   <AiUsageChip usage={entry.usage} lang={lang} />
@@ -1790,6 +1799,37 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
               </div>
             )
           })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Model reasoning (thinking) attached to an assistant message: expanded
+ *  while the reply streams, collapsed after; a manual toggle always wins */
+function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  const { t: tr } = useI18n()
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = userOpen ?? streaming
+
+  return (
+    <div className="ai-reasoning">
+      <button
+        type="button"
+        className="ai-reasoning-summary"
+        aria-expanded={open}
+        onClick={() => setUserOpen(!open)}
+      >
+        <span className="ai-reasoning-label">{tr('aiReasoningLabel')}</span>
+        <span className={`ai-tool-chip-caret${open ? ' open' : ''}`} aria-hidden>
+          ›
+        </span>
+      </button>
+      <div className={`ai-reasoning-body${open ? ' open' : ''}`}>
+        <div className="ai-reasoning-body-inner">
+          <div className="ai-reasoning-text" dir="auto">
+            {text}
+          </div>
         </div>
       </div>
     </div>

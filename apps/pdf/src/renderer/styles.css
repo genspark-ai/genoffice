@@ -3631,6 +3631,89 @@ button {
   line-height: 1.5;
 }
 
+/* ── AI reasoning block (model thinking, collapsible like the tool group) ── */
+
+/* Like the tool group, this app renders the block BEFORE the reply text, so the
+   gap to the surrounding content comes from margin-bottom, not margin-top. */
+.ai-reasoning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.ai-msg-assistant .ai-reasoning:last-child,
+.ai-reasoning:only-child {
+  margin-bottom: 0;
+}
+
+.ai-reasoning-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-summary:hover {
+  color: var(--color-text-secondary);
+}
+
+.ai-reasoning-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
+  border-radius: 4px;
+}
+
+.ai-reasoning-body {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open {
+  grid-template-rows: 1fr;
+}
+
+.ai-reasoning-body-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 0 0 8px;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open .ai-reasoning-body-inner {
+  padding: 4px 0 8px 8px;
+}
+
+/* the streamed thinking text: same quiet gray card as tool output */
+.ai-reasoning-pre {
+  background: var(--color-bg-subtle);
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
 /* ── Print container: hidden on screen, the only thing shown when printing ── */
 
 .pdf-print-root {

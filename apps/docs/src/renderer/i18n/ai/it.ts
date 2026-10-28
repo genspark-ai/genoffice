@@ -77,6 +77,7 @@ export const it = {
   aiStarterLaunchPost: 'Scrivi un annuncio di lancio di un prodotto',
   aiStarterEventOutline: 'Prepara la scaletta di un evento',
   aiThinking: 'Riflessione in corso',
+  aiReasoningBlock: 'Ragionamento',
   aiWorkedSteps: 'Completato · {n} passaggi',
   aiGroupWorking: 'In corso…',
   aiWorking: 'Elaborazione in corso',

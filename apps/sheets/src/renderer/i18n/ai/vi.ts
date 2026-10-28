@@ -26,6 +26,7 @@ export const vi = {
   aiEmptyBodyLine1: 'Mô tả thay đổi hoặc đặt câu hỏi về dữ liệu.',
   aiThinkingAria: 'Đang suy nghĩ',
   aiThinking: 'Đang suy nghĩ…',
+  aiThinkingBlock: 'Quá trình suy nghĩ',
   aiWorkedSteps: 'Đã thực hiện · {n} bước',
   aiGroupWorking: 'Đang xử lý…',
   aiWorking: 'Đang thực hiện…',

@@ -49,6 +49,7 @@ export const ar = {
   aiStop: 'إيقاف',
   aiStopped: 'تم الإيقاف',
   aiThinking: 'يفكر',
+  aiReasoningLabel: 'عملية التفكير',
   aiTimeoutError: 'انتهت مهلة استجابة الذكاء الاصطناعي',
   aiToolWebSearch: 'بحث ويب',
   aiToolWebSearchDone: 'بحث عن "{query}" · {count} نتيجة',

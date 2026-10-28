@@ -73,6 +73,7 @@ import {
   useAutoSavePref,
   addTokenUsage,
   ImageViewer,
+  useAiPanelPrefs,
   type AiTokenUsageView,
   type AiScopeQuoteData,
 } from '@genoffice/ui'
@@ -185,6 +186,7 @@ import {
 import { moveOutlineEntries, shiftOutlineEntries } from './outline-model'
 import type { ApplyOutcome, ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { createElectronTransport } from './ai/transport'
+import { streamedTextPatch } from './ai/stream-patch'
 import {
   MAX_READ_RANGE_CELLS,
   type ActiveSheetInfo,
@@ -1161,6 +1163,12 @@ export function App({
     }
   }, [])
   const [aiBusy, setAiBusy] = useState(false)
+  // AI panel prefs update live (the shell broadcasts changes). The streaming
+  // gate is read from AgentLoop callbacks created once at first render, so the
+  // value travels through a ref updated on every render.
+  const aiPanelPrefs = useAiPanelPrefs()
+  const showStreamingRef = useRef(aiPanelPrefs.showStreaming)
+  showStreamingRef.current = aiPanelPrefs.showStreaming
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
   const [chat, setChat] = useState<readonly AiChatMessage[]>([])
@@ -1455,13 +1463,23 @@ export function App({
   /** Last non-empty streamed text of the run: a final empty turn falls back to
    * it instead of wiping the model's own summary from the tool-call turn. */
   const runLastTextRef = useRef('')
+  /** reasoning captured while the in-flight run streamed (concatenated across
+   * turns); kept on the assistant message so it survives the stream's end */
+  const runReasoningRef = useRef('')
   /** true once any tool of the run mutated the workbook */
   const runMutatedRef = useRef(false)
 
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => aiSettingsRef.current!),
+      transport: createElectronTransport(() => aiSettingsRef.current!, {
+        // AgentLoopEvents has no reasoning event, so the transport tap is the
+        // app's only view of the deltas the main process already forwards
+        onReasoning: (delta) => {
+          runReasoningRef.current += delta
+          patchLastAssistant((entry) => ({ ...entry, reasoning: runReasoningRef.current }))
+        },
+      }),
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
@@ -1488,7 +1506,10 @@ export function App({
           // When the model retries successfully and keeps streaming after a
           // mid-run failure (e.g. one apply error), clear the error flag —
           // otherwise the whole successful message stays rendered in red.
-          patchLastAssistant((entry) => ({ ...entry, text, isError: false }))
+          // The live text lands only when the user streams replies; with the
+          // pref off the bubble keeps its pending state (typing indicator) and
+          // onDone reveals the completed text.
+          patchLastAssistant((entry) => streamedTextPatch(entry, text, showStreamingRef.current))
         },
         onToolStart: (call) => {
           // Live "running" chip: replaced in place by onToolExecuted
@@ -1712,6 +1733,7 @@ export function App({
     setAiRunScope(aiScopeDismissed ? null : aiScope)
     aiApplyPromisesRef.current = []
     runLastTextRef.current = ''
+    runReasoningRef.current = ''
     runMutatedRef.current = false
     setAiBusy(true)
     setMessage(t('appAiThinking'))

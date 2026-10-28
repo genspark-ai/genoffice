@@ -41,6 +41,7 @@ export const zh = {
   aiStop: '停止',
   aiStopped: '已停止',
   aiThinking: '思考中',
+  aiReasoningLabel: '思考过程',
   aiTimeoutError: 'AI 响应超时',
   aiToolWebSearch: '联网搜索',
   aiToolWebSearchDone: '搜索"{query}" · {count} 条结果',

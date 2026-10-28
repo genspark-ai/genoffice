@@ -26,6 +26,7 @@ export const hi = {
   aiEmptyBodyLine1: 'कोई बदलाव बताएं या डेटा के बारे में पूछें।',
   aiThinkingAria: 'सोच रहा है',
   aiThinking: 'सोच रहा है…',
+  aiThinkingBlock: 'विचार प्रक्रिया',
   aiWorkedSteps: 'पूर्ण · {n} चरण',
   aiGroupWorking: 'कार्य जारी…',
   aiWorking: 'कार्य जारी है…',

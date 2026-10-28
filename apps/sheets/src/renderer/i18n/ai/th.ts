@@ -25,6 +25,7 @@ export const th = {
   aiEmptyBodyLine1: 'อธิบายการเปลี่ยนแปลงที่ต้องการ หรือถามเกี่ยวกับข้อมูล',
   aiThinkingAria: 'กำลังคิด',
   aiThinking: 'กำลังคิด…',
+  aiThinkingBlock: 'กระบวนการคิด',
   aiWorkedSteps: 'เสร็จสิ้น · {n} ขั้นตอน',
   aiGroupWorking: 'กำลังทำงาน…',
   aiWorking: 'กำลังดำเนินการ…',

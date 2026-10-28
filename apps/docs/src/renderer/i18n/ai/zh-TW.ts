@@ -73,6 +73,7 @@ export const zhTW = {
   aiStarterLaunchPost: '寫一篇產品發布公告',
   aiStarterEventOutline: '列一個活動企劃大綱',
   aiThinking: '思考中',
+  aiReasoningBlock: '思考過程',
   aiWorkedSteps: '已完成 · {n} 個步驟',
   aiGroupWorking: '處理中…',
   aiWorking: '繼續處理中',

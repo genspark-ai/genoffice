@@ -42,6 +42,7 @@ export const zhTW = {
   aiStop: '停止',
   aiStopped: '已停止',
   aiThinking: '思考中',
+  aiReasoningLabel: '思考過程',
   aiTimeoutError: 'AI 回應逾時',
   aiToolWebSearch: '網路搜尋',
   aiToolWebSearchDone: '搜尋「{query}」· {count} 筆結果',

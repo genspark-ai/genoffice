@@ -50,6 +50,7 @@ export const pt = {
   aiStop: 'Parar',
   aiStopped: 'Parado',
   aiThinking: 'Pensando',
+  aiReasoningLabel: 'Raciocínio',
   aiTimeoutError: 'A resposta da IA expirou',
   aiToolWebSearch: 'Pesquisa na Web',
   aiToolWebSearchDone: 'Pesquisa por "{query}" · {count} resultados',

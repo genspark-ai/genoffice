@@ -49,6 +49,7 @@ export const id = {
   aiStop: 'Berhenti',
   aiStopped: 'Dihentikan',
   aiThinking: 'Berpikir',
+  aiReasoningLabel: 'Proses berpikir',
   aiTimeoutError: 'Respons AI kehabisan waktu',
   aiToolWebSearch: 'Pencarian web',
   aiToolWebSearchDone: 'Mencari "{query}" · {count} hasil',

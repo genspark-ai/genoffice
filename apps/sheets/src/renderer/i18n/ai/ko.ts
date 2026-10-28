@@ -25,6 +25,7 @@ export const ko = {
   aiEmptyBodyLine1: '원하는 변경을 설명하거나 데이터에 대해 질문하세요.',
   aiThinkingAria: '생각 중',
   aiThinking: '생각 중…',
+  aiThinkingBlock: '생각 과정',
   aiWorkedSteps: '완료 · {n}단계',
   aiGroupWorking: '작업 중…',
   aiWorking: '실행 중…',

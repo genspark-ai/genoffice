@@ -50,6 +50,7 @@ export const es = {
   aiStop: 'Detener',
   aiStopped: 'Detenido',
   aiThinking: 'Pensando',
+  aiReasoningLabel: 'Razonamiento',
   aiTimeoutError: 'La respuesta de IA agotó el tiempo',
   aiToolWebSearch: 'Búsqueda web',
   aiToolWebSearchDone: 'Búsqueda de «{query}» · {count} resultados',

@@ -31,6 +31,13 @@ export {
   aiPanelWidthAtPointer,
 } from './ai-panel-prefs-store'
 export {
+  AI_PANEL_WIDTH_DEFAULT,
+  AI_PANEL_WIDTH_MAX,
+  aiPanelAutoWidth,
+  aiPanelClampWidth,
+  aiPanelWidthCap,
+} from './ai-panel-width'
+export {
   ColorPicker,
   THEME_COLORS,
   THEME_COLOR_SHADES,

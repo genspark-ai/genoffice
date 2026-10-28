@@ -516,6 +516,12 @@ const homeApi: HomeApi = {
   async setAiPanelPrefs(patch) {
     return normalizeAiPanelPrefs(await ipcRenderer.invoke(HOME_CHANNELS.setAiPanelPrefs, patch))
   },
+  onAiPanelPrefsChanged(handler) {
+    const listener = (_event: IpcRendererEvent, prefs: unknown) =>
+      handler(normalizeAiPanelPrefs(prefs))
+    ipcRenderer.on('app:ai-panel-prefs-changed', listener)
+    return () => ipcRenderer.removeListener('app:ai-panel-prefs-changed', listener)
+  },
   async getDefaultSaveDir() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)
     return typeof result === 'string' ? result : ''

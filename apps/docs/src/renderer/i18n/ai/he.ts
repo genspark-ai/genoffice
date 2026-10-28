@@ -73,6 +73,7 @@ export const he = {
   aiStarterLaunchPost: 'נסח הודעה על השקת מוצר',
   aiStarterEventOutline: 'הכן ראשי פרקים לתוכנית אירוע',
   aiThinking: 'חושב',
+  aiReasoningBlock: 'תהליך החשיבה',
   aiWorkedSteps: 'הושלם · {n} שלבים',
   aiGroupWorking: 'בעבודה…',
   aiWorking: 'מעבד',

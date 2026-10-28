@@ -24,6 +24,7 @@ export const zh = {
   aiEmptyBodyLine1: '描述想要的修改，或询问数据。',
   aiThinkingAria: '思考中',
   aiThinking: '思考中…',
+  aiThinkingBlock: '思考过程',
   aiWorkedSteps: '已完成 · {n} 个步骤',
   aiGroupWorking: '处理中…',
   aiWorking: '执行中…',

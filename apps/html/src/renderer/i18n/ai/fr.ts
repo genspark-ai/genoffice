@@ -49,6 +49,7 @@ export const fr = {
   aiStop: 'Arrêter',
   aiStopped: 'Arrêté',
   aiThinking: 'Réflexion',
+  aiReasoningLabel: 'Raisonnement',
   aiTimeoutError: 'Délai de réponse IA dépassé',
   aiToolWebSearch: 'Recherche Web',
   aiToolWebSearchDone: 'Recherche « {query} » · {count} résultats',

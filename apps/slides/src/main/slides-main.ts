@@ -45,6 +45,7 @@ import {
   helpMenuTemplate,
   toggleDevToolsItem,
   settingsMenuItem,
+  settingsMenuTemplate,
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
@@ -5107,8 +5108,6 @@ export function buildSlidesMenu(): Menu {
           : isMac
             ? { role: 'close' as const, label: tm('menuClose') }
             : { role: 'quit' as const, label: tm('menuQuit') },
-        { type: 'separator' },
-        settingsMenuItem(labels),
       ],
     },
     {
@@ -5139,6 +5138,7 @@ export function buildSlidesMenu(): Menu {
         toggleDevToolsItem(labels),
       ],
     },
+    settingsMenuTemplate(labels),
     helpMenuTemplate(labels),
   ]
   return Menu.buildFromTemplate(template)

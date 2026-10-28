@@ -11,7 +11,7 @@ import '@genoffice/ui/ai-usage.css'
 import '@genoffice/ui/ai-skills.css'
 import './home.css'
 import './tabbar.css'
-import { installScreenTips } from '@genoffice/ui'
+import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 
 installScreenTips()
 
@@ -40,6 +40,13 @@ void Promise.all([
     if (next === 'system') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.setAttribute('data-theme', next)
   })
+  // AI panel prefs feed useAiPanelPrefs() consumers (KbAskPanel's streaming and
+  // tool-call switches); the shell main broadcasts every change
+  void window.aiOffice
+    .getAiPanelPrefs()
+    .then(applyAiPanelPrefs)
+    .catch(() => undefined)
+  window.aiOffice.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
   // The manual tab is the same bundle branched on ?mode=help: no onboarding,
   // no home state, just the searchable topic browser (issue #1520).
   //

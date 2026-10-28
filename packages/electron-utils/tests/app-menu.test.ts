@@ -35,6 +35,7 @@ import {
   windowMenuTemplate,
   type AppMenuLabels,
 } from '../src/index'
+import { settingsMenuTemplate } from '../src/app-menu'
 
 const LANGS = [
   'zh',
@@ -56,6 +57,7 @@ const LANGS = [
   'ms',
   'he',
   'hi',
+  'vi',
   'zh-TW',
 ] as const
 
@@ -71,7 +73,7 @@ beforeEach(() => {
 })
 
 describe('appMenuLabels', () => {
-  it('covers all 20 languages with every key non-empty', () => {
+  it('covers all 21 languages with every key non-empty', () => {
     const keys = Object.keys(en) as (keyof AppMenuLabels)[]
     for (const lang of LANGS) {
       const labels = appMenuLabels(lang)
@@ -87,6 +89,24 @@ describe('appMenuLabels', () => {
     const zh = appMenuLabels('zh')
     expect(zh.copy).toBe('\u590d\u5236')
     expect(zh.selectAll).toBe('\u5168\u9009')
+  })
+
+  it('titles the top-level Settings Center menu for every locale, without the item ellipsis', () => {
+    for (const lang of LANGS) {
+      const labels = appMenuLabels(lang)
+      expect(labels.settingsMenu, `${lang}.settingsMenu`).toBeTruthy()
+      expect(labels.settingsMenu.endsWith('…'), `${lang}.settingsMenu`).toBe(false)
+    }
+    expect(appMenuLabels('zh').settingsMenu).toBe('\u8bbe\u7f6e\u4e2d\u5fc3')
+    expect(appMenuLabels('zh-TW').settingsMenu).toBe('\u8a2d\u5b9a\u4e2d\u5fc3')
+  })
+
+  it('reuses each locale settings item label minus the ellipsis as the menu title', () => {
+    for (const lang of LANGS) {
+      if (lang === 'zh' || lang === 'zh-TW') continue
+      const labels = appMenuLabels(lang)
+      expect(labels.settingsMenu, lang).toBe(labels.settings.replace(/…$/, ''))
+    }
   })
 })
 
@@ -283,6 +303,48 @@ describe('settingsMenuItem', () => {
 
   it('is localized', () => {
     expect((settingsMenuItem(appMenuLabels('zh')) as Item).label).toBe('\u8bbe\u7f6e…')
+  })
+})
+
+describe('settingsMenuTemplate', () => {
+  it('titles the menu from settingsMenu and holds exactly the Settings item', () => {
+    const zh = appMenuLabels('zh')
+    const tpl = settingsMenuTemplate(zh)
+    expect(tpl.label).toBe(zh.settingsMenu)
+    expect(tpl.label).not.toBe(zh.settings)
+    const items = submenuOf(tpl)
+    expect(items).toHaveLength(1)
+    const expected = settingsMenuItem(zh) as Item
+    expect(items[0]!.label).toBe(expected.label)
+    expect(items[0]!.accelerator).toBe(expected.accelerator)
+    expect(items[0]!.accelerator).toBe('CmdOrCtrl+,')
+  })
+
+  it('routes the click to the registered action', () => {
+    const invoke = vi.fn()
+    setSettingsInvoker(invoke)
+    ;(submenuOf(settingsMenuTemplate(en))[0] as { click: () => void }).click()
+    expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to the app own preferences when nothing is registered', () => {
+    const fallback = vi.fn()
+    ;(submenuOf(settingsMenuTemplate(en, fallback))[0] as { click: () => void }).click()
+    expect(fallback).toHaveBeenCalledOnce()
+  })
+
+  it('prefers the registered action over the fallback', () => {
+    const invoke = vi.fn()
+    const fallback = vi.fn()
+    setSettingsInvoker(invoke)
+    ;(submenuOf(settingsMenuTemplate(en, fallback))[0] as { click: () => void }).click()
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('no-ops without an action, and does not throw', () => {
+    const item = submenuOf(settingsMenuTemplate(en))[0] as { click: () => void }
+    expect(() => item.click()).not.toThrow()
   })
 })
 

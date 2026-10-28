@@ -25,6 +25,7 @@ export const ja = {
   aiEmptyBodyLine1: '行いたい変更を説明するか、データについて質問してください。',
   aiThinkingAria: '思考中',
   aiThinking: '思考中…',
+  aiThinkingBlock: '思考プロセス',
   aiWorkedSteps: '完了 · {n} ステップ',
   aiGroupWorking: '処理中…',
   aiWorking: '実行中…',

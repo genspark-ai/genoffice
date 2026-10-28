@@ -76,6 +76,7 @@ export const nl = {
   aiStarterLaunchPost: 'Stel een productlanceringsaankondiging op',
   aiStarterEventOutline: 'Maak een opzet voor een evenementenplan',
   aiThinking: 'Aan het denken',
+  aiReasoningBlock: 'Redenering',
   aiWorkedSteps: 'Klaar · {n} stappen',
   aiGroupWorking: 'Bezig…',
   aiWorking: 'Bezig met verwerken',

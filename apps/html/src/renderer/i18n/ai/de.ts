@@ -49,6 +49,7 @@ export const de = {
   aiStop: 'Stopp',
   aiStopped: 'Gestoppt',
   aiThinking: 'Denkt nach',
+  aiReasoningLabel: 'Denkprozess',
   aiTimeoutError: 'Zeitüberschreitung der KI-Antwort',
   aiToolWebSearch: 'Websuche',
   aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',

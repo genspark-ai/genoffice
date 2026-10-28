@@ -25,6 +25,8 @@ export interface AppMenuLabels extends ContextMenuLabels {
   checkUpdates: string
   version: string
   settings: string
+  /** Top-level Settings Center menu title; menu titles take no ellipsis. */
+  settingsMenu: string
 }
 
 type Labels = Omit<AppMenuLabels, keyof ContextMenuLabels>
@@ -50,10 +52,11 @@ const EN: Labels = {
   checkUpdates: 'Check for Updates…',
   version: 'Version',
   settings: 'Settings…',
+  settingsMenu: 'Settings',
 }
 
 // Shared table, same rationale as context-menu.ts: one copy instead of
-// 15 keys × 20 languages per app dictionary.
+// 21 keys × 20 languages per app dictionary.
 const LABELS: Record<string, Labels> = {
   zh: {
     window: '窗口',
@@ -76,6 +79,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: '检查更新…',
     version: '版本',
     settings: '设置…',
+    settingsMenu: '设置中心',
   },
   en: EN,
   ja: {
@@ -99,6 +103,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: '更新を確認…',
     version: 'バージョン',
     settings: '設定…',
+    settingsMenu: '設定',
   },
   ko: {
     window: '창',
@@ -121,6 +126,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: '업데이트 확인…',
     version: '버전',
     settings: '설정…',
+    settingsMenu: '설정',
   },
   fr: {
     window: 'Fenêtre',
@@ -143,6 +149,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Rechercher les mises à jour…',
     version: 'Version',
     settings: 'Réglages…',
+    settingsMenu: 'Réglages',
   },
   de: {
     window: 'Fenster',
@@ -165,6 +172,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Nach Updates suchen…',
     version: 'Version',
     settings: 'Einstellungen…',
+    settingsMenu: 'Einstellungen',
   },
   es: {
     window: 'Ventana',
@@ -187,6 +195,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Buscar actualizaciones…',
     version: 'Versión',
     settings: 'Ajustes…',
+    settingsMenu: 'Ajustes',
   },
   th: {
     window: 'หน้าต่าง',
@@ -209,6 +218,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'ตรวจหาการอัปเดต…',
     version: 'เวอร์ชัน',
     settings: 'การตั้งค่า…',
+    settingsMenu: 'การตั้งค่า',
   },
   id: {
     window: 'Jendela',
@@ -231,6 +241,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Periksa Pembaruan…',
     version: 'Versi',
     settings: 'Pengaturan…',
+    settingsMenu: 'Pengaturan',
   },
   ru: {
     window: 'Окно',
@@ -253,6 +264,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Проверить обновления…',
     version: 'Версия',
     settings: 'Настройки…',
+    settingsMenu: 'Настройки',
   },
   ar: {
     window: 'نافذة',
@@ -275,6 +287,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'التحقق من التحديثات…',
     version: 'الإصدار',
     settings: 'الإعدادات…',
+    settingsMenu: 'الإعدادات',
   },
   pt: {
     window: 'Janela',
@@ -297,6 +310,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Procurar atualizações…',
     version: 'Versão',
     settings: 'Configurações…',
+    settingsMenu: 'Configurações',
   },
   it: {
     window: 'Finestra',
@@ -319,6 +333,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Controlla aggiornamenti…',
     version: 'Versione',
     settings: 'Impostazioni…',
+    settingsMenu: 'Impostazioni',
   },
   pl: {
     window: 'Okno',
@@ -341,6 +356,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Sprawdź aktualizacje…',
     version: 'Wersja',
     settings: 'Ustawienia…',
+    settingsMenu: 'Ustawienia',
   },
   cs: {
     window: 'Okno',
@@ -363,6 +379,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Zkontrolovat aktualizace…',
     version: 'Verze',
     settings: 'Nastavení…',
+    settingsMenu: 'Nastavení',
   },
   nl: {
     window: 'Venster',
@@ -385,6 +402,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Controleren op updates…',
     version: 'Versie',
     settings: 'Instellingen…',
+    settingsMenu: 'Instellingen',
   },
   ms: {
     window: 'Tetingkap',
@@ -407,6 +425,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Semak Kemas Kini…',
     version: 'Versi',
     settings: 'Tetapan…',
+    settingsMenu: 'Tetapan',
   },
   he: {
     window: 'חלון',
@@ -429,6 +448,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'בדוק עדכונים…',
     version: 'גרסה',
     settings: 'הגדרות…',
+    settingsMenu: 'הגדרות',
   },
   hi: {
     window: 'विंडो',
@@ -451,6 +471,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'अपडेट जांचें…',
     version: 'संस्करण',
     settings: 'सेटिंग्स…',
+    settingsMenu: 'सेटिंग्स',
   },
   vi: {
     window: 'Cửa sổ',
@@ -473,6 +494,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'Kiểm tra bản cập nhật…',
     version: 'Phiên bản',
     settings: 'Cài đặt…',
+    settingsMenu: 'Cài đặt',
   },
   'zh-TW': {
     window: '視窗',
@@ -495,6 +517,7 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: '檢查更新…',
     version: '版本',
     settings: '設定…',
+    settingsMenu: '設定中心',
   },
 }
 
@@ -675,6 +698,19 @@ export function settingsMenuItem(
     label: labels.settings,
     accelerator: 'CmdOrCtrl+,',
     click: () => (settingsInvoker ?? fallback)?.(),
+  }
+}
+
+/** The top-level Settings Center menu, shared by every app: the single
+ * Settings entry under labels.settingsMenu. Callers insert it before the
+ * Window menu; the Ctrl/Cmd+, accelerator stays on the item. */
+export function settingsMenuTemplate(
+  labels: AppMenuLabels,
+  fallback?: () => void,
+): MenuItemConstructorOptions {
+  return {
+    label: labels.settingsMenu,
+    submenu: [settingsMenuItem(labels, fallback)],
   }
 }
 

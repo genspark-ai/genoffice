@@ -27,6 +27,7 @@ export const nl = {
   aiEmptyBodyLine1: 'Beschrijf een wijziging of stel een vraag over de gegevens.',
   aiThinkingAria: 'Aan het nadenken',
   aiThinking: 'Aan het nadenken…',
+  aiThinkingBlock: 'Gedachtegang',
   aiWorkedSteps: 'Klaar · {n} stappen',
   aiGroupWorking: 'Bezig…',
   aiWorking: 'Bezig met uitvoeren…',

@@ -25,6 +25,7 @@ export const he = {
   aiEmptyBodyLine1: 'תארו שינוי רצוי או שאלו על הנתונים.',
   aiThinkingAria: 'חושב',
   aiThinking: 'חושב…',
+  aiThinkingBlock: 'תהליך החשיבה',
   aiWorkedSteps: 'הושלם · {n} שלבים',
   aiGroupWorking: 'בעבודה…',
   aiWorking: 'מבצע…',

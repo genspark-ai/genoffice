@@ -61,6 +61,7 @@ import {
   checkUpdatesMenuItem,
   toggleDevToolsItem,
   settingsMenuItem,
+  settingsMenuTemplate,
   windowMenuTemplate,
   type HeadlessExportFormat,
   type HeadlessExportTarget,
@@ -6283,13 +6284,14 @@ export function buildDocsMenu(): void {
       submenu: [
         { label: tm('menuWordCount'), click: () => sendCommand('word-count') },
         { label: tm('menuAutoCorrect'), click: () => sendCommand('autocorrect-options') },
-        // Word for Mac keeps Settings in the application menu
-        ...(isMac ? [] : [settingsMenuItem(labels, () => sendCommand('preferences'))]),
         { type: 'separator' },
         // Runs the same AI proofread as Review > Editor (renderer shows the one-time ack)
         { label: tm('menuAiProofread'), click: () => sendCommand('ai-proofread') },
       ],
     },
+    // top-level Settings Center menu before Window; Word for Mac keeps Settings
+    // in the application menu
+    ...(isMac ? [] : [settingsMenuTemplate(labels, () => sendCommand('preferences'))]),
     windowMenuTemplate(process.platform, appMenuLabels(getUiLang())),
     {
       label: tm('menuHelp'),

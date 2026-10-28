@@ -1253,6 +1253,76 @@ html.genoffice-popover-open .ribbon-tabs {
   transform: rotate(90deg);
 }
 
+/* Model reasoning (thinking) block attached to an assistant reply */
+.ai-reasoning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.ai-msg-assistant .ai-reasoning:first-child,
+.ai-reasoning:only-child {
+  margin-top: 0;
+}
+
+.ai-reasoning-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-summary:hover {
+  color: var(--color-text-secondary);
+}
+
+.ai-reasoning-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--hx-focus-ring);
+  border-radius: 4px;
+}
+
+.ai-reasoning-body {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open {
+  grid-template-rows: 1fr;
+}
+
+.ai-reasoning-body-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 0 0 8px;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open .ai-reasoning-body-inner {
+  padding: 4px 0 8px 8px;
+}
+
+.ai-reasoning-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 /* expanded step detail: subtle gray card, no border */
 .ai-tool-output {
   background: var(--color-bg-subtle);

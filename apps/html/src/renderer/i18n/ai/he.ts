@@ -46,6 +46,7 @@ export const he = {
   aiStop: 'עצור',
   aiStopped: 'נעצר',
   aiThinking: 'חושב',
+  aiReasoningLabel: 'תהליך החשיבה',
   aiTimeoutError: 'תגובת ה-AI חרגה מהזמן',
   aiToolWebSearch: 'חיפוש ברשת',
   aiToolWebSearchDone: 'חיפוש "{query}" · {count} תוצאות',

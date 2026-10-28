@@ -49,6 +49,7 @@ export const cs = {
   aiStop: 'Zastavit',
   aiStopped: 'Zastaveno',
   aiThinking: 'Přemýšlím',
+  aiReasoningLabel: 'Proces myšlení',
   aiTimeoutError: 'Odpověď AI vypršela',
   aiToolWebSearch: 'Hledání na webu',
   aiToolWebSearchDone: 'Hledáno „{query}“ · {count} výsledků',

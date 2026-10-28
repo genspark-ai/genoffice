@@ -2606,6 +2606,26 @@ html[dir='rtl'] .quick-title-row {
   gap: 6px;
   margin-bottom: 7px;
 }
+.kb-ask-thinking {
+  margin-bottom: 7px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8, 8px);
+  background: var(--color-bg-page);
+}
+.kb-ask-thinking summary {
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  user-select: none;
+}
+.kb-ask-thinking-text {
+  padding: 0 10px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
 .kb-ask .ai-input-box {
   margin-top: 8px;
   border: 1px solid var(--color-border-default);

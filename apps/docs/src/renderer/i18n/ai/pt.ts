@@ -76,6 +76,7 @@ export const pt = {
   aiStarterLaunchPost: 'Redija um anúncio de lançamento de produto',
   aiStarterEventOutline: 'Esboce um plano de evento',
   aiThinking: 'Pensando',
+  aiReasoningBlock: 'Raciocínio',
   aiWorkedSteps: 'Concluído · {n} etapas',
   aiGroupWorking: 'Em andamento…',
   aiWorking: 'Processando',

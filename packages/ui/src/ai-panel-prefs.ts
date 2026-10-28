@@ -28,6 +28,14 @@ export interface AiPanelPrefs {
    * turning the switch off closes one that was already open (for users who want
    * a plain editor without a broken Ask-AI) */
   readonly showAiSidebar: boolean
+  /** Stream assistant text into the chat log as deltas arrive; off: hold
+   * pending and reveal the full text at completion */
+  readonly showStreaming: boolean
+  /** Render the model's reasoning in a collapsible block when the provider
+   * supplies reasoning deltas */
+  readonly showThinking: boolean
+  /** Render per-tool-call activity entries in the chat log */
+  readonly showToolCalls: boolean
 }
 
 export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
@@ -37,6 +45,9 @@ export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
   spellcheck: true,
   openInNewDocs: true,
   showAiSidebar: true,
+  showStreaming: true,
+  showThinking: true,
+  showToolCalls: true,
 }
 
 export function isAiFontSize(value: unknown): value is AiFontSize {
@@ -70,7 +81,10 @@ export function sameAiPanelPrefs(a: AiPanelPrefs, b: AiPanelPrefs): boolean {
     a.customFontSize === b.customFontSize &&
     a.spellcheck === b.spellcheck &&
     a.openInNewDocs === b.openInNewDocs &&
-    a.showAiSidebar === b.showAiSidebar
+    a.showAiSidebar === b.showAiSidebar &&
+    a.showStreaming === b.showStreaming &&
+    a.showThinking === b.showThinking &&
+    a.showToolCalls === b.showToolCalls
   )
 }
 
@@ -92,5 +106,17 @@ export function normalizeAiPanelPrefs(raw: unknown): AiPanelPrefs {
       typeof obj.showAiSidebar === 'boolean'
         ? obj.showAiSidebar
         : DEFAULT_AI_PANEL_PREFS.showAiSidebar,
+    showStreaming:
+      typeof obj.showStreaming === 'boolean'
+        ? obj.showStreaming
+        : DEFAULT_AI_PANEL_PREFS.showStreaming,
+    showThinking:
+      typeof obj.showThinking === 'boolean'
+        ? obj.showThinking
+        : DEFAULT_AI_PANEL_PREFS.showThinking,
+    showToolCalls:
+      typeof obj.showToolCalls === 'boolean'
+        ? obj.showToolCalls
+        : DEFAULT_AI_PANEL_PREFS.showToolCalls,
   }
 }

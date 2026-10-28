@@ -27,6 +27,7 @@ import {
   addTokenUsage,
   createFileNav,
   Markdown,
+  useAiPanelPrefs,
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
@@ -73,6 +74,25 @@ const TOOL_NOTE_LABEL = {
   cli: 'askToolCli',
 } as const
 
+/** Collapsible thinking block for one answer: open while the run streams,
+ * collapsed afterwards; a manual toggle wins over the live default */
+function KbThinkingBlock({ text, live, label }: { text: string; live: boolean; label: string }) {
+  const [open, setOpen] = useState(live)
+  useEffect(() => {
+    if (live) setOpen(true)
+  }, [live])
+  return (
+    <details
+      className="kb-ask-thinking"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary>{label}</summary>
+      <div className="kb-ask-thinking-text">{text}</div>
+    </details>
+  )
+}
+
 interface AskMessage {
   role: 'user' | 'assistant'
   text: string
@@ -81,6 +101,8 @@ interface AskMessage {
   artifacts: Artifact[]
   streaming?: boolean
   isError?: boolean
+  /** reasoning captured during this answer's run (thinking block; UI-only, never persisted) */
+  reasoning?: string
   /** tokens the provider billed for this answer, summed across its turns (absent when unreported) */
   usage?: AiTokenUsageView
   /** skills the user attached to this question from the composer menu */
@@ -188,6 +210,7 @@ export function KbAskPanel({
   onOpenModelSettings: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
+  const aiPrefs = useAiPanelPrefs()
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState('')
   const [attachedSkills, setAttachedSkills] = useState<string[]>([])
@@ -207,6 +230,7 @@ export function KbAskPanel({
   const askSeqRef = useRef(0)
   /** tokens billed so far in the in-flight answer (summed across turns) */
   const runUsageRef = useRef<AiTokenUsageView | undefined>(undefined)
+  const runReasoningRef = useRef('')
   /** tokens billed across the panel's session (the composer chip) */
   const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
   /** the rendered thread, readable from callbacks that close over an older one */
@@ -433,6 +457,10 @@ export function KbAskPanel({
       ]),
       events: {
         onText: (text) => patchLast({ text }),
+        onReasoning: (text) => {
+          runReasoningRef.current += text
+          patchLast({ reasoning: runReasoningRef.current })
+        },
         onToolExecuted: ({ call, execution }) =>
           patchLast((last) => ({ artifacts: settleArtifact(last.artifacts, call, execution) })),
         onToolStart: (call) =>
@@ -611,6 +639,7 @@ export function KbAskPanel({
     }
     const seq = ++askSeqRef.current
     runUsageRef.current = undefined
+    runReasoningRef.current = ''
     // freshly starred files are answerable this very turn
     try {
       const files = await window.aiOffice.kbList()
@@ -802,130 +831,147 @@ export function KbAskPanel({
         {messages.length === 0 && corpusCount !== null && corpusCount > 0 && (
           <p className="kb-ask-hint">{t('askIntro')}</p>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`kb-ask-msg kb-ask-${m.role}${m.isError ? ' kb-ask-error' : ''}`}>
-            {m.role === 'user' && m.attachments && <AskAttachments items={m.attachments} />}
-            {m.role === 'user' && m.skills && <AiSkillChips lang={lang} names={m.skills} />}
-            {m.role === 'assistant' && m.toolNotes.length > 0 && (
-              <div className="kb-ask-tools">
-                {m.toolNotes.map((note, j) => (
-                  <span key={j} className="kb-ask-tool-note">
-                    {note.kind === 'search' ? (
-                      <IconSearch />
-                    ) : note.kind === 'create' || note.kind === 'cli' ? (
-                      <IconFilePlus />
-                    ) : (
-                      <IconFileText />
-                    )}
-                    {note.label}
-                    {note.detail && <span className="kb-ask-tool-detail">{note.detail}</span>}
-                    {note.count > 1 && <span className="kb-ask-tool-count">×{note.count}</span>}
-                    {m.streaming && j === m.toolNotes.length - 1 ? '…' : ''}
-                  </span>
-                ))}
-              </div>
-            )}
-            {m.role === 'assistant' && m.artifacts.length > 0 && (
-              <div className="kb-ask-card" role="list">
-                {m.artifacts.map((a) => (
-                  <div
-                    key={a.callId}
-                    className={`kb-ask-card-row kb-ask-card-${a.status}`}
-                    role="listitem"
-                  >
-                    {a.status === 'done' && a.path ? (
-                      <button
-                        type="button"
-                        className="kb-ask-card-name"
-                        onClick={() => onOpenPath(a.path!)}
-                      >
+        {messages.map((m, i) => {
+          // streaming off: the answer is held until it completes — the typing
+          // indicator stays up and the full text appears in one piece
+          const held = m.role === 'assistant' && m.streaming && !aiPrefs.showStreaming
+          return (
+            <div
+              key={i}
+              className={`kb-ask-msg kb-ask-${m.role}${m.isError ? ' kb-ask-error' : ''}`}
+            >
+              {m.role === 'user' && m.attachments && <AskAttachments items={m.attachments} />}
+              {m.role === 'user' && m.skills && <AiSkillChips lang={lang} names={m.skills} />}
+              {m.role === 'assistant' && aiPrefs.showToolCalls && m.toolNotes.length > 0 && (
+                <div className="kb-ask-tools">
+                  {m.toolNotes.map((note, j) => (
+                    <span key={j} className="kb-ask-tool-note">
+                      {note.kind === 'search' ? (
+                        <IconSearch />
+                      ) : note.kind === 'create' || note.kind === 'cli' ? (
+                        <IconFilePlus />
+                      ) : (
                         <IconFileText />
-                        {a.name}
-                      </button>
-                    ) : (
-                      <span className="kb-ask-card-name">
-                        <IconFileText />
-                        {a.name}
-                      </span>
-                    )}
-                    {a.status === 'building' && (
-                      <span className="kb-ask-card-status">{t('askArtifactBuilding')}…</span>
-                    )}
-                    {a.status === 'failed' && (
-                      <>
-                        <span className="kb-ask-card-status kb-ask-card-error" title={a.error}>
-                          {t('askArtifactFailed')}
-                        </span>
+                      )}
+                      {note.label}
+                      {note.detail && <span className="kb-ask-tool-detail">{note.detail}</span>}
+                      {note.count > 1 && <span className="kb-ask-tool-count">×{note.count}</span>}
+                      {m.streaming && j === m.toolNotes.length - 1 ? '…' : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {m.role === 'assistant' && m.artifacts.length > 0 && (
+                <div className="kb-ask-card" role="list">
+                  {m.artifacts.map((a) => (
+                    <div
+                      key={a.callId}
+                      className={`kb-ask-card-row kb-ask-card-${a.status}`}
+                      role="listitem"
+                    >
+                      {a.status === 'done' && a.path ? (
                         <button
                           type="button"
-                          className="kb-ask-action"
-                          disabled={busy}
-                          onClick={() => void askWith(retryInstruction(a))}
+                          className="kb-ask-card-name"
+                          onClick={() => onOpenPath(a.path!)}
                         >
-                          {t('askArtifactRetry')}
+                          <IconFileText />
+                          {a.name}
                         </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {m.text ? (
-              m.role === 'assistant' ? (
-                <Markdown text={m.text} navs={[fileNav]} />
-              ) : (
-                m.text
-              )
-            ) : m.streaming ? (
-              <AiTypingIndicator label={t('askHintBusy')} />
-            ) : null}
-            {m.role === 'assistant' && m.usage && (
-              <div className="ai-message-usage">
-                <AiUsageChip usage={m.usage} lang={lang} />
-              </div>
-            )}
-            {m.role === 'assistant' && m.text && !m.streaming && !m.isError && (
-              <div className="kb-ask-actions">
-                {m.saved && typeof m.saved === 'object' && 'path' in m.saved ? (
-                  <button
-                    type="button"
-                    className="kb-ask-action kb-ask-action-saved"
-                    onClick={() => onOpenPath((m.saved as { path: string }).path)}
-                  >
-                    <IconFileText />
-                    {t('askSavedAs', { name: m.saved.name })}
-                  </button>
+                      ) : (
+                        <span className="kb-ask-card-name">
+                          <IconFileText />
+                          {a.name}
+                        </span>
+                      )}
+                      {a.status === 'building' && (
+                        <span className="kb-ask-card-status">{t('askArtifactBuilding')}…</span>
+                      )}
+                      {a.status === 'failed' && (
+                        <>
+                          <span className="kb-ask-card-status kb-ask-card-error" title={a.error}>
+                            {t('askArtifactFailed')}
+                          </span>
+                          <button
+                            type="button"
+                            className="kb-ask-action"
+                            disabled={busy}
+                            onClick={() => void askWith(retryInstruction(a))}
+                          >
+                            {t('askArtifactRetry')}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {m.role === 'assistant' && aiPrefs.showThinking && m.reasoning && (
+                <KbThinkingBlock
+                  text={m.reasoning}
+                  live={m.streaming === true}
+                  label={t('setAiShowThinking')}
+                />
+              )}
+              {held ? (
+                <AiTypingIndicator label={t('askHintBusy')} />
+              ) : m.text ? (
+                m.role === 'assistant' ? (
+                  <Markdown text={m.text} navs={[fileNav]} />
                 ) : (
-                  <>
+                  m.text
+                )
+              ) : m.streaming ? (
+                <AiTypingIndicator label={t('askHintBusy')} />
+              ) : null}
+              {m.role === 'assistant' && m.usage && (
+                <div className="ai-message-usage">
+                  <AiUsageChip usage={m.usage} lang={lang} />
+                </div>
+              )}
+              {m.role === 'assistant' && m.text && !m.streaming && !m.isError && (
+                <div className="kb-ask-actions">
+                  {m.saved && typeof m.saved === 'object' && 'path' in m.saved ? (
                     <button
                       type="button"
-                      className="kb-ask-action"
-                      disabled={m.saved === 'saving'}
-                      onClick={() => void saveAnswer(i, 'md')}
+                      className="kb-ask-action kb-ask-action-saved"
+                      onClick={() => onOpenPath((m.saved as { path: string }).path)}
                     >
-                      <IconFilePlus />
-                      {t('askSaveMd')}
+                      <IconFileText />
+                      {t('askSavedAs', { name: m.saved.name })}
                     </button>
-                    <button
-                      type="button"
-                      className="kb-ask-action"
-                      disabled={m.saved === 'saving'}
-                      onClick={() => void saveAnswer(i, 'docx')}
-                    >
-                      <IconFilePlus />
-                      {t('askSaveDocx')}
-                    </button>
-                    {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
-                      <span className="kb-ask-action-error">
-                        {t('askSaveFailed', { error: m.saved.error })}
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="kb-ask-action"
+                        disabled={m.saved === 'saving'}
+                        onClick={() => void saveAnswer(i, 'md')}
+                      >
+                        <IconFilePlus />
+                        {t('askSaveMd')}
+                      </button>
+                      <button
+                        type="button"
+                        className="kb-ask-action"
+                        disabled={m.saved === 'saving'}
+                        onClick={() => void saveAnswer(i, 'docx')}
+                      >
+                        <IconFilePlus />
+                        {t('askSaveDocx')}
+                      </button>
+                      {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
+                        <span className="kb-ask-action-error">
+                          {t('askSaveFailed', { error: m.saved.error })}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
       {messages.length > 0 && (
         <p className="kb-ask-nosave">

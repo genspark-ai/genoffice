@@ -49,6 +49,7 @@ export const ja = {
   aiStop: '停止',
   aiStopped: '停止しました',
   aiThinking: '思考中',
+  aiReasoningLabel: '思考プロセス',
   aiTimeoutError: 'AI の応答がタイムアウトしました',
   aiToolWebSearch: 'ウェブ検索',
   aiToolWebSearchDone: '「{query}」を検索 · {count} 件',

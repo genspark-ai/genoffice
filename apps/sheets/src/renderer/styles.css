@@ -4925,6 +4925,75 @@ textarea:focus {
   transform: rotate(90deg);
 }
 
+/* Collapsible model-reasoning block (the thinking panel): same pattern as the
+   tool-activity group — live/expanded while the reply streams, collapsed to
+   its label once done, manual toggle always wins. */
+.ai-reasoning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.ai-msg-assistant .ai-reasoning:last-child,
+.ai-reasoning:only-child {
+  margin-bottom: 0;
+}
+
+.ai-reasoning-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-summary:hover {
+  color: var(--color-text-secondary);
+}
+
+.ai-reasoning-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--sheets-focus-ring);
+  border-radius: 4px;
+}
+
+.ai-reasoning-body {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open {
+  grid-template-rows: 1fr;
+}
+
+.ai-reasoning-text {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 0 0 8px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-reasoning-body.open .ai-reasoning-text {
+  padding: 4px 0 8px 8px;
+}
+
 /* stream rows ease in */
 @keyframes ai-row-ease-in {
   from {

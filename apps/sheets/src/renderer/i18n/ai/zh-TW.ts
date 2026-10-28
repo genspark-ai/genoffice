@@ -25,6 +25,7 @@ export const zhTW = {
   aiEmptyBodyLine1: '描述想要的修改，或詢問資料。',
   aiThinkingAria: '思考中',
   aiThinking: '思考中…',
+  aiThinkingBlock: '思考過程',
   aiWorkedSteps: '已完成 · {n} 個步驟',
   aiGroupWorking: '處理中…',
   aiWorking: '執行中…',

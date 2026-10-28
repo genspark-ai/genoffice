@@ -8439,6 +8439,77 @@ body.docs-crop-active
   margin-top: 8px;
 }
 
+/* Model reasoning ("thinking") block on assistant messages: same family as
+ * the tool-activity group — quiet summary row, collapsible body */
+.ai-thinking {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.ai-msg-assistant .ai-thinking:first-child,
+.ai-thinking:only-child {
+  margin-top: 0;
+}
+
+.ai-thinking-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-thinking-summary:hover {
+  color: var(--color-text-secondary);
+}
+
+.ai-thinking-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
+  border-radius: 4px;
+}
+
+.ai-thinking-summary.live {
+  color: var(--color-text-secondary);
+}
+
+.ai-thinking-summary.live .ai-thinking-label {
+  animation: ai-summary-pulse 1500ms linear infinite;
+}
+
+.ai-thinking-body {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-thinking-body.open {
+  grid-template-rows: 1fr;
+}
+
+.ai-thinking-body-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 0 0 8px;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-thinking-body.open .ai-thinking-body-inner {
+  padding: 4px 0 8px 8px;
+}
+
 /* ---- interactive mind map card (generate_mindmap) ---- */
 .ai-mindmap {
   margin-top: 12px;

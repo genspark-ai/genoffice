@@ -74,6 +74,7 @@ export const ja = {
   aiStarterLaunchPost: '製品リリースのお知らせを書いて',
   aiStarterEventOutline: 'イベント企画のアウトラインを作って',
   aiThinking: '考え中',
+  aiReasoningBlock: '思考',
   aiWorkedSteps: '完了 · {n} ステップ',
   aiGroupWorking: '処理中…',
   aiWorking: '処理中',

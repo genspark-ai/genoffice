@@ -49,6 +49,7 @@ export const ms = {
   aiStop: 'Berhenti',
   aiStopped: 'Dihentikan',
   aiThinking: 'Berfikir',
+  aiReasoningLabel: 'Proses pemikiran',
   aiTimeoutError: 'Respons AI tamat masa',
   aiToolWebSearch: 'Carian web',
   aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',

@@ -25,6 +25,7 @@ export const pl = {
   aiEmptyBodyLine1: 'Opisz zmianę lub zadaj pytanie o dane.',
   aiThinkingAria: 'Myślenie',
   aiThinking: 'Myślenie…',
+  aiThinkingBlock: 'Rozumowanie',
   aiWorkedSteps: 'Ukończono · {n} kroków',
   aiGroupWorking: 'W toku…',
   aiWorking: 'Wykonywanie…',

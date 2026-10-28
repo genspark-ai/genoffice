@@ -6,7 +6,7 @@
 import { mkdirSync, mkdtempSync, renameSync, writeFileSync, utimesSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -57,6 +57,26 @@ function uncachedVaultFs(): VaultFs {
       }
       return { files, dirs }
     },
+  }
+}
+
+/**
+ * Flat in-memory vault, contents keyed by joined path. The cap test indexes
+ * 400+ notes; over the real filesystem each one resolves with stat and read
+ * calls whose I/O alone can outlast the test timeout on a busy machine, while
+ * the graph logic under test is pure.
+ */
+function memVaultFs(files: Record<string, string>): VaultFs {
+  return {
+    isFile: async (path) => path in files,
+    list: async () => ({
+      files: Object.keys(files)
+        .map((p) => basename(p))
+        .sort(),
+      dirs: [],
+    }),
+    read: async (path) => files[path] ?? '',
+    mtimeMs: async () => 1,
   }
 }
 
@@ -160,9 +180,10 @@ describe('wikiGraph', () => {
   it('says so when the node cap cut the vault, and reports the real count', async () => {
     // walk order, not a neighbourhood: the cap takes the first N and the edges
     // only those among them, so a 400-of-3000 draw must not read as the vault
+    const root = '/vault'
     const files: Record<string, string> = {}
-    for (let i = 0; i < MAX_GRAPH_NODES + 5; i += 1) files[`N${i}.md`] = `[[N${i + 1}]]`
-    const graph = await wikiGraph(vault(files), nodeVaultFs())
+    for (let i = 0; i < MAX_GRAPH_NODES + 5; i += 1) files[join(root, `N${i}.md`)] = `[[N${i + 1}]]`
+    const graph = await wikiGraph(root, memVaultFs(files))
     expect(graph.nodes).toHaveLength(MAX_GRAPH_NODES)
     expect(graph.truncated).toBe(true)
     expect(graph.totalNotes).toBe(MAX_GRAPH_NODES + 5)

@@ -198,6 +198,33 @@ describe('AgentLoop', () => {
     expect(stripped.reasoning).toBeUndefined()
   })
 
+  it('forwards reasoning deltas to events.onReasoning while keeping its own copy', async () => {
+    const seen: string[] = []
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onReasoning?.('the user wants ')
+        cb.onReasoning?.('a change')
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('All done')
+        cb.onDone()
+      },
+    ])
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onReasoning: (text) => seen.push(text) },
+    })
+    loop.run('make a change')
+    await flush()
+    await flush()
+    expect(seen).toEqual(['the user wants ', 'a change'])
+    const withTools = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(withTools.reasoning).toBe('the user wants a change')
+  })
+
   it('emits onToolStart before each execution, paired with onToolExecuted', async () => {
     const transport = scriptedTransport([
       (cb) => {

@@ -36,6 +36,9 @@ export interface AgentRunResult {
 export interface AgentLoopEvents<TSnapshot> {
   /** cumulative assistant text of the current turn (call per delta) */
   onText?(text: string): void
+  /** raw reasoning delta of the current turn, for thinking displays; the loop
+   * keeps its own copy regardless (the interleaved-thinking echo) */
+  onReasoning?(text: string): void
   /** a tool is about to execute (UI shows a live "running" indicator; onToolExecuted always follows) */
   onToolStart?(call: AgentToolCall): void
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
@@ -1005,6 +1008,14 @@ export class AgentLoop<TSnapshot = unknown> {
             if (this.turnReasoning.length > TURN_STREAM_MAX_CHARS) {
               settled = true
               this.failRun(turnBudgetError('reasoning'))
+              return
+            }
+            try {
+              this.options.events?.onReasoning?.(text)
+            } catch (err) {
+              // Same transport-callback hazard as onText above
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
             }
           },
           onToolCall: (call) => {

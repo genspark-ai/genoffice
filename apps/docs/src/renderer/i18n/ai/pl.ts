@@ -75,6 +75,7 @@ export const pl = {
   aiStarterLaunchPost: 'Napisz ogłoszenie o premierze produktu',
   aiStarterEventOutline: 'Przygotuj konspekt planu wydarzenia',
   aiThinking: 'Myślę',
+  aiReasoningBlock: 'Rozumowanie',
   aiWorkedSteps: 'Ukończono · {n} kroków',
   aiGroupWorking: 'W toku…',
   aiWorking: 'Przetwarzanie',

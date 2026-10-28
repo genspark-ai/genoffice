@@ -75,6 +75,7 @@ export const hi = {
   aiStarterLaunchPost: 'उत्पाद लॉन्च की घोषणा लिखें',
   aiStarterEventOutline: 'कार्यक्रम योजना की रूपरेखा बनाएँ',
   aiThinking: 'सोच रहा है',
+  aiReasoningBlock: 'विचार प्रक्रिया',
   aiWorkedSteps: 'पूर्ण · {n} चरण',
   aiGroupWorking: 'कार्य जारी…',
   aiWorking: 'प्रोसेस हो रहा है',

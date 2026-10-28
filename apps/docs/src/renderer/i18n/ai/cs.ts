@@ -75,6 +75,7 @@ export const cs = {
   aiStarterLaunchPost: 'Připravte oznámení o uvedení produktu',
   aiStarterEventOutline: 'Sestavte osnovu plánu akce',
   aiThinking: 'Přemýšlí',
+  aiReasoningBlock: 'Úvahy',
   aiWorkedSteps: 'Hotovo · {n} kroků',
   aiGroupWorking: 'Pracuje…',
   aiWorking: 'Pracuje',

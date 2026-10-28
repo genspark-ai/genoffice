@@ -26,6 +26,7 @@ export const cs = {
   aiEmptyBodyLine1: 'Popište změnu nebo se zeptejte na data.',
   aiThinkingAria: 'Přemýšlí',
   aiThinking: 'Přemýšlí…',
+  aiThinkingBlock: 'Proces myšlení',
   aiWorkedSteps: 'Hotovo · {n} kroků',
   aiGroupWorking: 'Pracuje…',
   aiWorking: 'Pracuje…',

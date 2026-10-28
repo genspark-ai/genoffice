@@ -25,6 +25,7 @@ export {
   setSettingsInvoker,
   setUpdateCheckInvoker,
   settingsMenuItem,
+  settingsMenuTemplate,
   toggleDevToolsItem,
   viewMenuTemplate,
   windowMenuTemplate,

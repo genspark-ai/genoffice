@@ -74,6 +74,7 @@ export const vi = {
   aiStarterLaunchPost: 'Soạn thảo thông báo ra mắt sản phẩm',
   aiStarterEventOutline: 'Lập dàn ý kế hoạch sự kiện',
   aiThinking: 'Đang suy nghĩ',
+  aiReasoningBlock: 'Quá trình suy luận',
   aiWorkedSteps: 'Đã thực hiện · {n} bước',
   aiGroupWorking: 'Đang xử lý…',
   aiWorking: 'Đang xử lý',

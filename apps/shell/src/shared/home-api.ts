@@ -438,10 +438,12 @@ export interface HomeApi {
   getAuthorName(): Promise<AuthorNameSetting>
   /** persist; broadcasts 'app:author-name-changed' (the effective name) to all web contents */
   setAuthorName(value: string): Promise<AuthorNameSetting>
-  /** AI panel text size + chat-input spellcheck (persisted in userData/app-settings.json) */
+  /** AI panel prefs: side, text size, spellcheck, streaming/thinking/tool-call switches (persisted in userData/app-settings.json) */
   getAiPanelPrefs(): Promise<AiPanelPrefs>
   /** merge + persist; broadcasts 'app:ai-panel-prefs-changed' to all web contents */
   setAiPanelPrefs(patch: Partial<AiPanelPrefs>): Promise<AiPanelPrefs>
+  /** AI panel prefs switched anywhere (broadcast from the main process) */
+  onAiPanelPrefsChanged(handler: (prefs: AiPanelPrefs) => void): () => void
   /** effective default save folder for new/untitled files (configured in userData/app-settings.json, falls back to <Documents>/GenOffice) */
   getDefaultSaveDir(): Promise<string>
   /** directory picker to change the default save folder; resolves to the new folder, or null when canceled or the pick was unusable */

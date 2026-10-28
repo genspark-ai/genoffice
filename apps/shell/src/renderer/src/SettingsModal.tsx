@@ -318,7 +318,15 @@ function foldModels(providerId: string, models: string[]) {
 }
 
 /** AI model pane: provider / model / key / base URL, saved to userData/ai-settings.json */
-function AiModelPane({ t }: { t: TFunc }) {
+function AiModelPane({
+  t,
+  aiPrefs,
+  onUpdateAiPrefs,
+}: {
+  t: TFunc
+  aiPrefs: AiPanelPrefs
+  onUpdateAiPrefs: (patch: Partial<AiPanelPrefs>) => void
+}) {
   const [catalog, setCatalog] = useState<AiCatalogEntry[]>(
     () => window.aiOffice.getAiProviders?.() ?? [],
   )
@@ -1132,6 +1140,51 @@ function AiModelPane({ t }: { t: TFunc }) {
             setSettings({ ...settings, gskToolsEnabled: settings.gskToolsEnabled === false })
             touch()
           }}
+        />
+      </div>
+      <div className="set-field">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <div className="set-field-label">{t('setAiShowStreaming')}</div>
+            <div className="set-field-desc">{t('setAiShowStreamingDesc')}</div>
+          </div>
+        </div>
+        <button
+          className="set-switch"
+          role="switch"
+          aria-checked={aiPrefs.showStreaming}
+          aria-label={t('setAiShowStreaming')}
+          onClick={() => onUpdateAiPrefs({ showStreaming: !aiPrefs.showStreaming })}
+        />
+      </div>
+      <div className="set-field">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <div className="set-field-label">{t('setAiShowThinking')}</div>
+            <div className="set-field-desc">{t('setAiShowThinkingDesc')}</div>
+          </div>
+        </div>
+        <button
+          className="set-switch"
+          role="switch"
+          aria-checked={aiPrefs.showThinking}
+          aria-label={t('setAiShowThinking')}
+          onClick={() => onUpdateAiPrefs({ showThinking: !aiPrefs.showThinking })}
+        />
+      </div>
+      <div className="set-field">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <div className="set-field-label">{t('setAiShowToolCalls')}</div>
+            <div className="set-field-desc">{t('setAiShowToolCallsDesc')}</div>
+          </div>
+        </div>
+        <button
+          className="set-switch"
+          role="switch"
+          aria-checked={aiPrefs.showToolCalls}
+          aria-label={t('setAiShowToolCalls')}
+          onClick={() => onUpdateAiPrefs({ showToolCalls: !aiPrefs.showToolCalls })}
         />
       </div>
     </>
@@ -2069,7 +2122,9 @@ export function SettingsModal({
                 </div>
               </>
             )}
-            {section === 'aiModel' && <AiModelPane t={t} />}
+            {section === 'aiModel' && (
+              <AiModelPane t={t} aiPrefs={aiPrefs} onUpdateAiPrefs={updateAiPrefs} />
+            )}
             {section === 'aiMedia' && (
               <AiMediaPane
                 t={t}

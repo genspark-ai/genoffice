@@ -79,6 +79,7 @@ import {
   setSettingsInvoker,
   setUpdateCheckInvoker,
   settingsMenuItem,
+  settingsMenuTemplate,
   installRendererProtocol,
   AUTHOR_NAME_KEY,
   readAuthorNameSetting,
@@ -674,6 +675,9 @@ function currentAiPanelPrefs(): AiPanelPrefs {
     spellcheck: saved.aiPanelSpellcheck,
     openInNewDocs: saved.aiPanelOpenInNewDocs,
     showAiSidebar: saved.aiPanelShowSidebar,
+    showStreaming: saved.aiPanelShowStreaming,
+    showThinking: saved.aiPanelShowThinking,
+    showToolCalls: saved.aiPanelShowToolCalls,
   })
   return cachedAiPanelPrefs
 }
@@ -5191,6 +5195,9 @@ function registerHomeIpc(): void {
       spellcheck: 'spellcheck' in raw ? raw.spellcheck : prev.spellcheck,
       openInNewDocs: 'openInNewDocs' in raw ? raw.openInNewDocs : prev.openInNewDocs,
       showAiSidebar: 'showAiSidebar' in raw ? raw.showAiSidebar : prev.showAiSidebar,
+      showStreaming: 'showStreaming' in raw ? raw.showStreaming : prev.showStreaming,
+      showThinking: 'showThinking' in raw ? raw.showThinking : prev.showThinking,
+      showToolCalls: 'showToolCalls' in raw ? raw.showToolCalls : prev.showToolCalls,
     })
     if (sameAiPanelPrefs(next, prev)) return prev
     cachedAiPanelPrefs = next
@@ -5201,6 +5208,9 @@ function registerHomeIpc(): void {
       aiPanelSpellcheck: next.spellcheck,
       aiPanelOpenInNewDocs: next.openInNewDocs,
       aiPanelShowSidebar: next.showAiSidebar,
+      aiPanelShowStreaming: next.showStreaming,
+      aiPanelShowThinking: next.showThinking,
+      aiPanelShowToolCalls: next.showToolCalls,
     })
     for (const wc of webContents.getAllWebContents()) wc.send('app:ai-panel-prefs-changed', next)
     return next
@@ -5869,12 +5879,11 @@ function buildHomeMenu(): void {
         },
         { type: 'separator' },
         { role: 'close', label: tm('menuClose') },
-        { type: 'separator' },
-        settingsMenuItem(labels),
       ],
     },
     viewMenuTemplate(),
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    settingsMenuTemplate(labels),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {
       role: 'help',
@@ -5963,11 +5972,10 @@ function buildPdfMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
-        { type: 'separator' },
-        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    settingsMenuTemplate(labels),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {
       role: 'help',
@@ -6070,11 +6078,10 @@ function buildMarkdownMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
-        { type: 'separator' },
-        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    settingsMenuTemplate(labels),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {
       role: 'help',
@@ -6170,11 +6177,10 @@ function buildHtmlMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
-        { type: 'separator' },
-        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    settingsMenuTemplate(labels),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {
       role: 'help',

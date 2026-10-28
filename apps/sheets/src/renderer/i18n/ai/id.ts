@@ -25,6 +25,7 @@ export const id = {
   aiEmptyBodyLine1: 'Jelaskan perubahan yang diinginkan atau tanyakan tentang datanya.',
   aiThinkingAria: 'Berpikir',
   aiThinking: 'Berpikir…',
+  aiThinkingBlock: 'Proses berpikir',
   aiWorkedSteps: 'Selesai · {n} langkah',
   aiGroupWorking: 'Sedang bekerja…',
   aiWorking: 'Menjalankan…',

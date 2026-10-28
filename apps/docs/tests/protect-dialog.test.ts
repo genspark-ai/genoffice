@@ -105,18 +105,23 @@ describe('ProtectDialog', () => {
     await d.cleanup()
   })
 
-  it('setting a modify password produces verifiable writeProtection credentials', async () => {
-    const d = await mount({})
-    const [, , modify, modifyConfirm] = d.passwordInputs()
-    await d.setValue(modify, 'to-modify')
-    await d.setValue(modifyConfirm, 'to-modify')
-    await d.submit(d.applied)
-    const result = d.onApply.mock.calls[0][0]
-    expect(result.openPassword).toBeUndefined()
-    expect(result.writeProtection?.hash).toBeTruthy()
-    expect(await verifyProtectionPassword('to-modify', result.writeProtection!)).toBe(true)
-    await d.cleanup()
-  })
+  // hashing runs the full-strength KDF; give it headroom under suite-parallel load
+  it(
+    'setting a modify password produces verifiable writeProtection credentials',
+    { timeout: 60_000 },
+    async () => {
+      const d = await mount({})
+      const [, , modify, modifyConfirm] = d.passwordInputs()
+      await d.setValue(modify, 'to-modify')
+      await d.setValue(modifyConfirm, 'to-modify')
+      await d.submit(d.applied)
+      const result = d.onApply.mock.calls[0][0]
+      expect(result.openPassword).toBeUndefined()
+      expect(result.writeProtection?.hash).toBeTruthy()
+      expect(await verifyProtectionPassword('to-modify', result.writeProtection!)).toBe(true)
+      await d.cleanup()
+    },
+  )
 
   it('enabling a comments restriction without password enforces mode only', async () => {
     const d = await mount({})

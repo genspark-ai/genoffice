@@ -49,6 +49,7 @@ export const vi = {
   aiStop: 'Dừng',
   aiStopped: 'Đã dừng',
   aiThinking: 'Đang suy nghĩ',
+  aiReasoningLabel: 'Quá trình suy nghĩ',
   aiTimeoutError: 'Phản hồi từ AI đã hết thời gian chờ',
   aiToolWebSearch: 'Tìm kiếm trên web',
   aiToolWebSearchDone: 'Đã tìm kiếm "{query}" · {count} kết quả',

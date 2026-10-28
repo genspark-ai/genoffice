@@ -251,9 +251,15 @@ export const strings = {
       '关闭后，编辑器会隐藏 AI 侧栏和侧边按钮；功能区或菜单里的 AI 操作仍会打开面板，新文档也不会自动打开。',
     setAiOpenInNewDocs: '新文档中打开 AI 面板',
     setAiOpenInNewDocsDesc: '关闭后，新打开的文档默认收起 AI 面板；需要时点一下即可展开。',
+    setAiShowStreaming: '流式输出',
+    setAiShowStreamingDesc: '关闭后，回答完成前不逐字显示，完成后一次性显示全文。',
+    setAiShowThinking: '思考过程',
+    setAiShowThinkingDesc: '显示模型提供的推理过程；关闭后不显示。',
+    setAiShowToolCalls: '工具调用',
+    setAiShowToolCallsDesc: '在对话中显示每次工具调用的简短动态；关闭后隐藏。',
     setAuthorName: '用户名',
     setAuthorNameDesc: '作为批注和修订的作者显示在 Docs、Sheets、Slides 中。留空则使用电脑账户名。',
-    settings: '设置',
+    settings: '设置中心',
     setSecAccount: '账户',
     setSecGeneral: '通用',
     setMcp: '本地 MCP 服务',
@@ -782,6 +788,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Open the AI panel in new documents',
     setAiOpenInNewDocsDesc:
       'When off, newly opened documents start with the AI panel collapsed; it is one click away when needed.',
+    setAiShowStreaming: 'Stream AI responses',
+    setAiShowStreamingDesc:
+      'When off, the answer stays pending until it completes, then appears in full.',
+    setAiShowThinking: 'Show the AI thinking',
+    setAiShowThinkingDesc:
+      'Renders the reasoning of the model under the answer when the provider sends it; off hides it entirely.',
+    setAiShowToolCalls: 'Show tool activity',
+    setAiShowToolCallsDesc:
+      'Adds a compact chat entry for each executed tool call; off hides them.',
     setAuthorName: 'User name',
     setAuthorNameDesc:
       'Shown as the author of comments and tracked changes in Docs, Sheets and Slides. Leave blank to use your computer account name.',
@@ -1327,6 +1342,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Mở bảng AI trong tài liệu mới',
     setAiOpenInNewDocsDesc:
       'Khi tắt, tài liệu mới mở sẽ thu gọn bảng AI; chỉ cần một lần bấm để mở lại khi cần.',
+    setAiShowStreaming: 'Truyền phát phản hồi AI',
+    setAiShowStreamingDesc:
+      'Khi tắt, câu trả lời chỉ hiển thị đầy đủ sau khi hoàn tất thay vì hiện dần từng phần.',
+    setAiShowThinking: 'Hiện quá trình suy nghĩ',
+    setAiShowThinkingDesc:
+      'Hiển thị phần lý luận của mô hình dưới câu trả lời khi nhà cung cấp gửi; tắt để ẩn hoàn toàn.',
+    setAiShowToolCalls: 'Hiện hoạt động công cụ',
+    setAiShowToolCallsDesc:
+      'Thêm một dòng gọn cho mỗi lần công cụ được gọi trong trò chuyện; tắt để ẩn.',
     setAuthorName: 'Tên người dùng',
     setAuthorNameDesc:
       'Hiển thị là tác giả của nhận xét và thay đổi được theo dõi trong Docs, Sheets và Slides. Để trống để dùng tên tài khoản máy tính.',
@@ -1887,6 +1911,15 @@ export const strings = {
     setAiOpenInNewDocs: '新しいドキュメントで AI パネルを開く',
     setAiOpenInNewDocsDesc:
       'オフにすると、新しく開いたドキュメントは AI パネルを折りたたんだ状態で始まります。必要なときはワンクリックで開けます。',
+    setAiShowStreaming: 'AI の回答をストリーミング',
+    setAiShowStreamingDesc:
+      'オフにすると、回答は逐次表示されず、完了時に全文が一度に表示されます。',
+    setAiShowThinking: '思考過程を表示',
+    setAiShowThinkingDesc:
+      'プロバイダーが推論を送ってきた場合、回答の下に折りたたみ可能な形で表示します。オフでは非表示になります。',
+    setAiShowToolCalls: 'ツール実行を表示',
+    setAiShowToolCallsDesc:
+      '実行されたツール呼び出しごとに簡潔な記録をチャットに表示します。オフでは非表示です。',
     setAuthorName: 'ユーザー名',
     setAuthorNameDesc:
       'Docs、Sheets、Slides でコメントと変更履歴の作成者として表示されます。空欄の場合はパソコンのアカウント名を使います。',
@@ -2442,6 +2475,15 @@ export const strings = {
     setAiOpenInNewDocs: '새 문서에서 AI 패널 열기',
     setAiOpenInNewDocsDesc:
       '끄면 새로 여는 문서는 AI 패널이 접힌 상태로 시작합니다. 필요할 때 한 번 클릭하면 열립니다.',
+    setAiShowStreaming: 'AI 응답 스트리밍',
+    setAiShowStreamingDesc:
+      '끄면 응답이 한 글자씩 표시되지 않고, 완료된 후 전체가 한 번에 표시됩니다.',
+    setAiShowThinking: '사고 과정 표시',
+    setAiShowThinkingDesc:
+      '공급자가 추론을 보내면 답변 아래에 접을 수 있는 블록으로 표시합니다. 끄면 숨겨집니다.',
+    setAiShowToolCalls: '도구 활동 표시',
+    setAiShowToolCallsDesc:
+      '실행된 도구 호출마다 간단한 기록을 채팅에 표시합니다. 끄면 숨겨집니다.',
     setAuthorName: '사용자 이름',
     setAuthorNameDesc:
       'Docs, Sheets, Slides에서 메모와 변경 내용 추적의 작성자로 표시됩니다. 비워 두면 컴퓨터 계정 이름을 사용합니다.',
@@ -3002,6 +3044,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Ouvrir le panneau IA dans les nouveaux documents',
     setAiOpenInNewDocsDesc:
       "Désactivé : les documents nouvellement ouverts démarrent avec le panneau IA replié ; un clic suffit pour l'afficher.",
+    setAiShowStreaming: "Diffuser les réponses de l'IA",
+    setAiShowStreamingDesc:
+      "Désactivé : la réponse reste en attente jusqu'à la fin, puis s'affiche en entier.",
+    setAiShowThinking: "Afficher la réflexion de l'IA",
+    setAiShowThinkingDesc:
+      "Affiche le raisonnement du modèle sous la réponse quand le fournisseur l'envoie ; désactivé, il reste masqué.",
+    setAiShowToolCalls: "Afficher l'activité des outils",
+    setAiShowToolCallsDesc:
+      "Ajoute une entrée compacte par appel d'outil exécuté dans la conversation ; désactivé, elles sont masquées.",
     setAuthorName: 'Nom d’utilisateur',
     setAuthorNameDesc:
       'Affiché comme auteur des commentaires et des modifications suivies dans Docs, Sheets et Slides. Laissez vide pour utiliser le nom de votre compte.',
@@ -3576,6 +3627,15 @@ export const strings = {
     setAiOpenInNewDocs: 'KI-Panel in neuen Dokumenten öffnen',
     setAiOpenInNewDocsDesc:
       'Wenn aus, starten neu geöffnete Dokumente mit eingeklapptem KI-Panel; ein Klick genügt, um es zu öffnen.',
+    setAiShowStreaming: 'KI-Antworten streamen',
+    setAiShowStreamingDesc:
+      'Wenn aus, erscheint die Antwort erst vollständig, wenn sie fertig ist, statt Wort für Wort.',
+    setAiShowThinking: 'Denkprozess anzeigen',
+    setAiShowThinkingDesc:
+      'Zeigt das Reasoning des Modells unter der Antwort, wenn der Anbieter es liefert; aus blendet es aus.',
+    setAiShowToolCalls: 'Werkzeugaktivität anzeigen',
+    setAiShowToolCallsDesc:
+      'Fügt pro ausgeführtem Werkzeugaufruf einen knappen Eintrag im Chat hinzu; aus blendet sie aus.',
     setAuthorName: 'Benutzername',
     setAuthorNameDesc:
       'Wird in Docs, Sheets und Slides als Autor von Kommentaren und nachverfolgten Änderungen angezeigt. Leer lassen, um den Kontonamen des Computers zu verwenden.',
@@ -4144,6 +4204,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir el panel de IA en documentos nuevos',
     setAiOpenInNewDocsDesc:
       'Si está desactivado, los documentos recién abiertos empiezan con el panel de IA plegado; se abre con un clic cuando lo necesites.',
+    setAiShowStreaming: 'Transmitir respuestas de IA',
+    setAiShowStreamingDesc:
+      'Cuando está desactivado, la respuesta aparece completa al terminar en lugar de mostrarse palabra a palabra.',
+    setAiShowThinking: 'Mostrar el proceso de razonamiento',
+    setAiShowThinkingDesc:
+      'Muestra el razonamiento del modelo bajo la respuesta cuando el proveedor lo envía; desactivado, se oculta.',
+    setAiShowToolCalls: 'Mostrar actividad de herramientas',
+    setAiShowToolCallsDesc:
+      'Añade una entrada compacta por cada llamada de herramienta ejecutada en el chat; desactivado, se oculta.',
     setAuthorName: 'Nombre de usuario',
     setAuthorNameDesc:
       'Se muestra como autor de los comentarios y los cambios con seguimiento en Docs, Sheets y Slides. Déjalo vacío para usar el nombre de tu cuenta.',
@@ -4701,6 +4770,15 @@ export const strings = {
     setAiOpenInNewDocs: 'เปิดแผง AI ในเอกสารใหม่',
     setAiOpenInNewDocsDesc:
       'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
+    setAiShowStreaming: 'แสดงคำตอบแบบสตรีม',
+    setAiShowStreamingDesc:
+      'เมื่อปิด คำตอบจะแสดงทั้งหมดเมื่อเสร็จสิ้นแทนที่จะทยอยแสดงทีละส่วน',
+    setAiShowThinking: 'แสดงกระบวนการคิด',
+    setAiShowThinkingDesc:
+      'แสดงเหตุผลของโมเดลใต้คำตอบเมื่อผู้ให้บริการส่งมา ปิดจะซ่อนทั้งหมด',
+    setAiShowToolCalls: 'แสดงกิจกรรมเครื่องมือ',
+    setAiShowToolCallsDesc:
+      'เพิ่มรายการสั้นต่อการเรียกใช้เครื่องมือแต่ละครั้งในแชท ปิดจะซ่อน',
     setAuthorName: 'ชื่อผู้ใช้',
     setAuthorNameDesc:
       'แสดงเป็นผู้เขียนความคิดเห็นและการติดตามการเปลี่ยนแปลงใน Docs, Sheets และ Slides เว้นว่างไว้เพื่อใช้ชื่อบัญชีคอมพิวเตอร์',
@@ -5253,6 +5331,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI di dokumen baru',
     setAiOpenInNewDocsDesc:
       'Jika nonaktif, dokumen yang baru dibuka dimulai dengan panel AI terlipat; cukup satu klik saat dibutuhkan.',
+    setAiShowStreaming: 'Streaming respons AI',
+    setAiShowStreamingDesc:
+      'Saat nonaktif, jawaban tampil utuh setelah selesai alih-alih ditampilkan bertahap.',
+    setAiShowThinking: 'Tampilkan proses berpikir',
+    setAiShowThinkingDesc:
+      'Menampilkan penalaran model di bawah jawaban saat penyedia mengirimkannya; nonaktif menyembunyikannya.',
+    setAiShowToolCalls: 'Tampilkan aktivitas alat',
+    setAiShowToolCallsDesc:
+      'Menambahkan satu entri ringkas per panggilan alat yang dijalankan di obrolan; nonaktif menyembunyikannya.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
       'Ditampilkan sebagai penulis komentar dan perubahan terlacak di Docs, Sheets, dan Slides. Kosongkan untuk memakai nama akun komputer.',
@@ -5810,6 +5897,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Открывать панель ИИ в новых документах',
     setAiOpenInNewDocsDesc:
       'Если выключено, новые документы открываются со свёрнутой панелью ИИ; она доступна в один клик.',
+    setAiShowStreaming: 'Потоковый вывод ответов',
+    setAiShowStreamingDesc:
+      'Когда выключено, ответ появляется целиком после завершения, а не по мере поступления.',
+    setAiShowThinking: 'Показывать ход размышлений',
+    setAiShowThinkingDesc:
+      'Показывает рассуждения модели под ответом, когда провайдер их присылает; выключено — скрывает.',
+    setAiShowToolCalls: 'Показывать активность инструментов',
+    setAiShowToolCallsDesc:
+      'Добавляет в чат краткую запись на каждый выполненный вызов инструмента; выключено — скрывает.',
     setAuthorName: 'Имя пользователя',
     setAuthorNameDesc:
       'Отображается как автор примечаний и исправлений в Docs, Sheets и Slides. Оставьте пустым, чтобы использовать имя учётной записи компьютера.',
@@ -6368,6 +6464,15 @@ export const strings = {
     setAiOpenInNewDocs: 'فتح لوحة الذكاء الاصطناعي في المستندات الجديدة',
     setAiOpenInNewDocsDesc:
       'عند الإيقاف، تبدأ المستندات المفتوحة حديثًا بلوحة الذكاء الاصطناعي مطوية؛ تكفي نقرة واحدة لفتحها عند الحاجة.',
+    setAiShowStreaming: 'بث استجابات الذكاء الاصطناعي',
+    setAiShowStreamingDesc:
+      'عند الإيقاف، تظهر الإجابة كاملة بعد اكتمالها بدلًا من عرضها تدريجيًا.',
+    setAiShowThinking: 'إظهار عملية التفكير',
+    setAiShowThinkingDesc:
+      'يعرض استدلال النموذج أسفل الإجابة عندما يرسله المزود؛ عند الإيقاف يُخفى تمامًا.',
+    setAiShowToolCalls: 'إظهار نشاط الأدوات',
+    setAiShowToolCallsDesc:
+      'يضيف سجلًا موجزًا لكل استدعاء أداة في المحادثة؛ عند الإيقاف يُخفى.',
     setAuthorName: 'اسم المستخدم',
     setAuthorNameDesc:
       'يظهر كمؤلف التعليقات والتغييرات المتعقبة في Docs وSheets وSlides. اتركه فارغًا لاستخدام اسم حساب الكمبيوتر.',
@@ -6915,6 +7020,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Abrir o painel de IA em novos documentos',
     setAiOpenInNewDocsDesc:
       'Quando desativado, os documentos recém-abertos começam com o painel de IA recolhido; basta um clique quando precisar.',
+    setAiShowStreaming: 'Transmitir respostas da IA',
+    setAiShowStreamingDesc:
+      'Quando desativado, a resposta aparece completa ao terminar, em vez de ser exibida aos poucos.',
+    setAiShowThinking: 'Mostrar o processo de raciocínio',
+    setAiShowThinkingDesc:
+      'Mostra o raciocínio do modelo abaixo da resposta quando o provedor o envia; desativado, fica oculto.',
+    setAiShowToolCalls: 'Mostrar atividade das ferramentas',
+    setAiShowToolCallsDesc:
+      'Adiciona uma entrada compacta por chamada de ferramenta executada no chat; desativado, fica oculto.',
     setAuthorName: 'Nome de usuário',
     setAuthorNameDesc:
       'Exibido como autor dos comentários e das alterações controladas no Docs, Sheets e Slides. Deixe em branco para usar o nome da conta do computador.',
@@ -7471,6 +7585,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Apri il pannello IA nei nuovi documenti',
     setAiOpenInNewDocsDesc:
       'Se disattivato, i documenti appena aperti iniziano con il pannello IA ridotto; basta un clic quando serve.',
+    setAiShowStreaming: 'Streaming delle risposte IA',
+    setAiShowStreamingDesc:
+      'Se disattivato, la risposta compare completa al termine invece che progressiveamente.',
+    setAiShowThinking: 'Mostra il processo di ragionamento',
+    setAiShowThinkingDesc:
+      'Mostra il ragionamento del modello sotto la risposta quando il fornitore lo invia; disattivato, resta nascosto.',
+    setAiShowToolCalls: 'Mostra attività degli strumenti',
+    setAiShowToolCallsDesc:
+      'Aggiunge una voce compatta per ogni chiamata di strumento eseguita nella chat; disattivato, la nasconde.',
     setAuthorName: 'Nome utente',
     setAuthorNameDesc:
       'Mostrato come autore di commenti e revisioni in Docs, Sheets e Slides. Lascia vuoto per usare il nome dell’account del computer.',
@@ -8025,6 +8148,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Otwieraj panel AI w nowych dokumentach',
     setAiOpenInNewDocsDesc:
       'Gdy wyłączone, nowo otwarte dokumenty zaczynają ze zwiniętym panelem AI; wystarczy jedno kliknięcie, gdy jest potrzebny.',
+    setAiShowStreaming: 'Strumieniuj odpowiedzi AI',
+    setAiShowStreamingDesc:
+      'Gdy wyłączone, odpowiedź pojawia się w całości po zakończeniu zamiast pojawiać się stopniowo.',
+    setAiShowThinking: 'Pokazuj proces myślenia',
+    setAiShowThinkingDesc:
+      'Wyświetla rozumowanie modelu pod odpowiedzią, gdy dostawca je przesyła; wyłączone ukrywa.',
+    setAiShowToolCalls: 'Pokazuj aktywność narzędzi',
+    setAiShowToolCallsDesc:
+      'Dodaje zwięzły wpis dla każdego wykonanego wywołania narzędzia w czacie; wyłączone ukrywa.',
     setAuthorName: 'Nazwa użytkownika',
     setAuthorNameDesc:
       'Wyświetlana jako autor komentarzy i śledzonych zmian w Docs, Sheets i Slides. Pozostaw puste, aby użyć nazwy konta komputera.',
@@ -8799,6 +8931,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Otevírat panel AI v nových dokumentech',
     setAiOpenInNewDocsDesc:
       'Když je vypnuto, nově otevřené dokumenty začínají se sbaleným panelem AI; v případě potřeby stačí jedno kliknutí.',
+    setAiShowStreaming: 'Streamovat odpovědi AI',
+    setAiShowStreamingDesc:
+      'Když je vypnuto, odpověď se zobrazí celá po dokončení místo postupného zobrazování.',
+    setAiShowThinking: 'Zobrazovat proces uvažování',
+    setAiShowThinkingDesc:
+      'Zobrazí uvažování modelu pod odpovědí, když je poskytovatel zasílá; vypnuto ho skryje.',
+    setAiShowToolCalls: 'Zobrazovat aktivitu nástrojů',
+    setAiShowToolCallsDesc:
+      'Přidá do chatu stručný záznam za každé provedené volání nástroje; vypnuto ho skryje.',
     intgSkillsDesc:
       'GenOffice používá pouze dovednosti ze své vlastní složky. Import složky nebo zipu zkopíruje celou dovednost; při importu se nic nespouští.',
     intgSkillsEmpty: 'Zatím nejsou nainstalovány žádné dovednosti.',
@@ -9123,6 +9264,15 @@ export const strings = {
     setAiOpenInNewDocs: 'AI-paneel openen in nieuwe documenten',
     setAiOpenInNewDocsDesc:
       'Indien uit, starten nieuw geopende documenten met een ingeklapt AI-paneel; één klik volstaat wanneer je het nodig hebt.',
+    setAiShowStreaming: 'AI-antwoorden streamen',
+    setAiShowStreamingDesc:
+      'Uit: het antwoord verschijnt in één keer wanneer het klaar is, in plaats van woord voor woord.',
+    setAiShowThinking: 'Denkproces tonen',
+    setAiShowThinkingDesc:
+      'Toont de redenering van het model onder het antwoord wanneer de aanbieder die stuurt; uit verbergt hem.',
+    setAiShowToolCalls: 'Toolactiviteit tonen',
+    setAiShowToolCallsDesc:
+      'Voegt per uitgevoerde toolaanroep een korte regel toe in de chat; uit verbergt ze.',
     setAuthorName: 'Gebruikersnaam',
     setAuthorNameDesc:
       'Wordt weergegeven als auteur van opmerkingen en bijgehouden wijzigingen in Docs, Sheets en Slides. Laat leeg om de accountnaam van je computer te gebruiken.',
@@ -9676,6 +9826,15 @@ export const strings = {
     setAiOpenInNewDocs: 'Buka panel AI dalam dokumen baharu',
     setAiOpenInNewDocsDesc:
       'Jika dimatikan, dokumen yang baru dibuka bermula dengan panel AI dilipat; cukup satu klik apabila diperlukan.',
+    setAiShowStreaming: 'Strim respons AI',
+    setAiShowStreamingDesc:
+      'Apabila dimatikan, jawapan dipaparkan sepenuhnya setelah selesai dan bukannya secara beransur-ansur.',
+    setAiShowThinking: 'Tunjuk proses pemikiran',
+    setAiShowThinkingDesc:
+      'Memaparkan penaakulan model di bawah jawapan apabila pembekal menghantarnya; dimatikan akan menyembunyikannya.',
+    setAiShowToolCalls: 'Tunjuk aktiviti alat',
+    setAiShowToolCallsDesc:
+      'Menambah satu entri ringkas bagi setiap panggilan alat yang dilaksanakan dalam sembang; dimatikan akan menyembunyikannya.',
     setAuthorName: 'Nama pengguna',
     setAuthorNameDesc:
       'Dipaparkan sebagai pengarang komen dan perubahan dijejak dalam Docs, Sheets dan Slides. Biarkan kosong untuk menggunakan nama akaun komputer.',
@@ -10225,6 +10384,15 @@ export const strings = {
     setAiOpenInNewDocs: 'פתיחת לוח ה-AI במסמכים חדשים',
     setAiOpenInNewDocsDesc:
       'כאשר כבוי, מסמכים שנפתחו זה עתה מתחילים עם לוח ה-AI מקופל; לחיצה אחת מספיקה כשצריך.',
+    setAiShowStreaming: 'הצגת תשובות AI בזרימה',
+    setAiShowStreamingDesc:
+      'כאשר כבוי, התשובה מופיעה במלואה לאחר השלמתה במקום להיחשף בהדרגה.',
+    setAiShowThinking: 'הצגת תהליך החשיבה',
+    setAiShowThinkingDesc:
+      'מציג את ההיגיון של המודל מתחת לתשובה כשהספק שולח אותו; כשכבוי הוא מוסתר.',
+    setAiShowToolCalls: 'הצגת פעילות כלים',
+    setAiShowToolCallsDesc:
+      'מוסיף שורה קצרה לכל קריאת כלי שבוצעה בצ׳אט; כשכבוי היא מוסתרת.',
     setAuthorName: 'שם משתמש',
     setAuthorNameDesc:
       'מוצג כמחבר ההערות והשינויים במעקב ב‑Docs, Sheets ו‑Slides. השאירו ריק כדי להשתמש בשם חשבון המחשב.',
@@ -10764,6 +10932,15 @@ export const strings = {
     setAiOpenInNewDocs: 'नए दस्तावेज़ों में AI पैनल खोलें',
     setAiOpenInNewDocsDesc:
       'बंद होने पर, नए खोले गए दस्तावेज़ AI पैनल संक्षिप्त अवस्था में शुरू होते हैं; ज़रूरत पड़ने पर एक क्लिक में खुल जाता है।',
+    setAiShowStreaming: 'AI उत्तर स्ट्रीम करें',
+    setAiShowStreamingDesc:
+      'बंद होने पर, उत्तर पूरा होने पर एक साथ दिखता है बजाय इसके कि अंश-अंश दिखे।',
+    setAiShowThinking: 'सोच की प्रक्रिया दिखाएँ',
+    setAiShowThinkingDesc:
+      'जब प्रदाता भेजे तो उत्तर के नीचे मॉडल का तर्क दिखाता है; बंद होने पर पूरी तरह छिपा रहता है।',
+    setAiShowToolCalls: 'टूल गतिविधि दिखाएँ',
+    setAiShowToolCallsDesc:
+      'चैट में प्रत्येक निष्पादित टूल कॉल के लिए एक संक्षिप्त प्रविष्टि जोड़ता है; बंद होने पर छिप जाती है।',
     setAuthorName: 'उपयोगकर्ता नाम',
     setAuthorNameDesc:
       'Docs, Sheets और Slides में टिप्पणियों और ट्रैक किए गए परिवर्तनों के लेखक के रूप में दिखाया जाता है। कंप्यूटर खाता नाम उपयोग करने के लिए खाली छोड़ें।',
@@ -11303,6 +11480,12 @@ export const strings = {
       '關閉後，編輯器會隱藏 AI 側欄和側邊按鈕；功能區或選單中的 AI 操作仍可開啟面板，新文件也不會自動開啟。',
     setAiOpenInNewDocs: '在新文件中開啟 AI 面板',
     setAiOpenInNewDocsDesc: '關閉後，新開啟的文件預設收合 AI 面板；需要時點一下即可展開。',
+    setAiShowStreaming: '串流輸出',
+    setAiShowStreamingDesc: '關閉後，回答在完成前不逐字顯示，完成後一次顯示全文。',
+    setAiShowThinking: '思考過程',
+    setAiShowThinkingDesc: '顯示模型提供的推理過程；關閉後不顯示。',
+    setAiShowToolCalls: '工具呼叫',
+    setAiShowToolCallsDesc: '在對話中顯示每次工具呼叫的簡短動態；關閉後隱藏。',
     setAuthorName: '使用者名稱',
     setAuthorNameDesc:
       '作為註解和追蹤修訂的作者顯示在 Docs、Sheets、Slides 中。留空則使用電腦帳戶名稱。',

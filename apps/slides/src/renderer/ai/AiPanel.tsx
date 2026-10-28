@@ -1,4 +1,6 @@
 import {
+  aiPanelAutoWidth,
+  aiPanelClampWidth,
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
@@ -241,6 +243,9 @@ interface ChatEntry {
   text: string
   error?: string
   streaming?: boolean
+  /** model reasoning for this reply (showThinking): rendered as a collapsible
+   *  block, kept on the message so it survives stream end */
+  reasoning?: string
   /** the run failed because Genspark is signed out — render an inline sign-in button */
   loginRequired?: boolean
   tools?: ToolActivity[]
@@ -359,20 +364,17 @@ function AiTypingIndicator({ label }: { readonly label: string }) {
   )
 }
 
-/** Resizable panel width: always opens at the default (drag-resize lasts for
- * the session only); min/max match the Excel panel */
-const PANEL_WIDTH_DEFAULT = 360
-const PANEL_WIDTH_MIN = 280
-
 // A persisted width used to be restored here; drop the stale key so old
-// (possibly bug-shrunken) values never come back
+// (possibly bug-shrunken, pre-360-floor) values never come back — the shared
+// width rule then starts every session at the auto width
 localStorage.removeItem('slides-ai-panel-width')
 
-function clampPanelWidth(w: number): number {
-  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
-  // shell lays it out), so never let the ceiling drop below the minimum
-  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
+/** Display width for the current preference: window-following auto width until
+ *  the user drags, the clamped dragged width afterwards (never below 360) */
+function displayPanelWidth(preferred: number | null): number {
+  return preferred == null
+    ? aiPanelAutoWidth(window.innerWidth)
+    : aiPanelClampWidth(preferred, window.innerWidth)
 }
 
 const MODEL_BRIDGE: AiModelPickerBridge = {
@@ -415,7 +417,7 @@ export function AiPanel({
   const [input, setInput] = useState('')
   // Shared AI panel pref (Settings → General): the bespoke slides composer
   // must honor it like the shared AiComposer does.
-  const { spellcheck } = useAiPanelPrefs()
+  const { spellcheck, showStreaming, showThinking, showToolCalls } = useAiPanelPrefs()
   const [busy, setBusy] = useState(false)
   /** messages queued while a reply runs; the pump re-runs them through runWith on settle */
   const msgQueue = useChatRunQueue<{
@@ -498,11 +500,12 @@ export function AiPanel({
     attachScrollFadeRef.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 800)
   }
   const [dragOver, setDragOver] = useState(false)
-  // preferred = the user's chosen width (session only); panelWidth = what fits
-  // the current window. Deriving the display width from the preference means a
-  // transiently small window never permanently shrinks the panel.
-  const preferredWidthRef = useRef(PANEL_WIDTH_DEFAULT)
-  const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
+  // preferred = the user's dragged width (session only, null until first drag);
+  // panelWidth = what fits the current window. Without a dragged width the
+  // panel follows the window; a dragged width is clamped, so a transiently
+  // small window never permanently shrinks the panel.
+  const preferredWidthRef = useRef<number | null>(null)
+  const [panelWidth, setPanelWidth] = useState(() => displayPanelWidth(preferredWidthRef.current))
   const asideRef = useRef<HTMLElement>(null)
 
   // The .ai-dock wrapper owns the animated width (Excel-parity 180ms slide);
@@ -514,10 +517,11 @@ export function AiPanel({
   }, [panelWidth, open])
   const [resizing, setResizing] = useState(false)
 
-  // Re-derive the display width on window resize (max is 60% of the window);
+  // Re-derive the display width on window resize (the auto width grows and
+  // shrinks with the window; a dragged width is clamped to the 60% cap), so
   // growing the window back restores the preferred width
   useEffect(() => {
-    const onResize = () => setPanelWidth(clampPanelWidth(preferredWidthRef.current))
+    const onResize = () => setPanelWidth(displayPanelWidth(preferredWidthRef.current))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -778,6 +782,20 @@ export function AiPanel({
       next[next.length - 1] = { ...last, ...(typeof patch === 'function' ? patch(last) : patch) }
       return next
     })
+  }
+
+  // The loop's event closures are built once; prefs they gate on are read
+  // through refs so live setting changes apply without a remount
+  const showStreamingRef = useRef(showStreaming)
+  showStreamingRef.current = showStreaming
+  const showThinkingRef = useRef(showThinking)
+  showThinkingRef.current = showThinking
+  /** Reasoning delta from the loop's transport: attached to the streaming
+   *  assistant entry (showThinking off never accumulates or renders it) */
+  const onReasoningDeltaRef = useRef((_text: string) => {})
+  onReasoningDeltaRef.current = (text: string) => {
+    if (!showThinkingRef.current) return
+    patchLastAssistant((last) => ({ reasoning: (last.reasoning ?? '') + text }))
   }
 
   /** Update the last assistant message's progress card in real time (no spam; the same card updates in place). */
@@ -1368,7 +1386,10 @@ export function AiPanel({
     }
     accessRef.current = access
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current),
+      transport: createElectronTransport(
+        () => settingsRef.current,
+        (text) => onReasoningDeltaRef.current(text),
+      ),
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
@@ -1377,7 +1398,9 @@ export function AiPanel({
       events: {
         onText: (text) => {
           streamedTextRef.current = text
-          patchLastAssistant({ text })
+          // showStreaming off: hold the bubble pending (typing indicator) and
+          // reveal the full text when the run completes (onDone)
+          if (showStreamingRef.current) patchLastAssistant({ text })
         },
         onToolStart: (call) => {
           // Live "running" chip: replaced in place by onToolExecuted
@@ -2126,7 +2149,7 @@ export function AiPanel({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent) => {
-      const w = clampPanelWidth(aiPanelWidthAtPointer(ev.clientX))
+      const w = aiPanelClampWidth(aiPanelWidthAtPointer(ev.clientX), window.innerWidth)
       preferredWidthRef.current = w
       setPanelWidth(w)
     }
@@ -2238,7 +2261,9 @@ export function AiPanel({
                 {entry.role === 'user' && entry.skills && (
                   <AiSkillChips lang={lang} names={entry.skills} />
                 )}
-                {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+                {showToolCalls && entry.tools && entry.tools.length > 0 && (
+                  <ToolChipList tools={entry.tools} />
+                )}
                 {entry.text && (
                   <div dir="auto">
                     <Markdown text={entry.text} codeCopyLabel={t('aiCopyCode')} />
@@ -2276,12 +2301,17 @@ export function AiPanel({
           </div>
         )}
         {chat.map((entry, i) => {
+          // Nothing visible: no text/error/reasoning, and the tool entries are
+          // either absent or hidden by showToolCalls (edits-only turns keep
+          // their rollback affordance)
           if (
             entry.role === 'assistant' &&
             !entry.text &&
             !entry.streaming &&
             !entry.error &&
-            !entry.tools?.length
+            !entry.reasoning &&
+            !(showToolCalls && entry.tools?.length) &&
+            entry.snapshotId == null
           ) {
             return null
           }
@@ -2308,6 +2338,13 @@ export function AiPanel({
               {entry.role === 'user' && entry.skills && (
                 <AiSkillChips lang={lang} names={entry.skills} />
               )}
+              {entry.role === 'assistant' && showThinking && entry.reasoning && (
+                <ReasoningBlock
+                  text={entry.reasoning}
+                  streaming={entry.streaming}
+                  label={t('aiThinking')}
+                />
+              )}
               {entry.role === 'assistant' && !entry.text && entry.streaming ? (
                 <span className="ai-typing-row">
                   <AiTypingIndicator
@@ -2321,7 +2358,9 @@ export function AiPanel({
               ) : (
                 <span dir="auto">{entry.text}</span>
               )}
-              {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+              {showToolCalls && entry.tools && entry.tools.length > 0 && (
+                <ToolChipList tools={entry.tools} />
+              )}
               {entry.role === 'assistant' && entry.usage && (
                 <div className="ai-message-usage">
                   <AiUsageChip usage={entry.usage} lang={lang} />
@@ -2826,6 +2865,42 @@ function RollbackButton({ disabled, onClick }: { disabled: boolean; onClick: () 
       </svg>
       {tr('aiRollback')}
     </button>
+  )
+}
+
+/** Model reasoning block (showThinking): quiet collapsible attached to its
+ *  assistant message — expanded while streaming, collapsed afterwards, and the
+ *  manual toggle always wins (same pattern as the tool activity group). */
+function ReasoningBlock({
+  text,
+  streaming,
+  label,
+}: {
+  text: string
+  streaming?: boolean
+  label: string
+}) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = userOpen ?? !!streaming
+  return (
+    <div className="ai-reasoning">
+      <button
+        type="button"
+        className={`ai-reasoning-head${streaming ? ' running' : ''}`}
+        aria-expanded={open}
+        onClick={() => setUserOpen(!open)}
+      >
+        <span className="ai-reasoning-label">{label}</span>
+        <span className={`ai-tool-chip-caret${open ? ' open' : ''}`} aria-hidden>
+          ›
+        </span>
+      </button>
+      <div className={`ai-reasoning-body${open ? ' open' : ''}`}>
+        <div className="ai-reasoning-body-inner" dir="auto">
+          {text}
+        </div>
+      </div>
+    </div>
   )
 }
 

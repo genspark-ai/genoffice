@@ -73,6 +73,7 @@ export const ar = {
   aiStarterLaunchPost: 'اكتب إعلانًا عن إطلاق منتج',
   aiStarterEventOutline: 'أعدّ مخططًا لخطة فعالية',
   aiThinking: 'جارٍ التفكير',
+  aiReasoningBlock: 'عملية التفكير',
   aiWorkedSteps: 'اكتمل · {n} خطوات',
   aiGroupWorking: 'جارٍ العمل…',
   aiWorking: 'جارٍ المعالجة',

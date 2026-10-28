@@ -1,8 +1,10 @@
 import {
+  aiPanelClampWidth,
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
   type AiModelPickerBridge,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState } from 'react'
 import {
@@ -22,6 +24,7 @@ import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { AiSkillChips, AiSkillsMenu, createFileNav, Markdown } from '@genoffice/ui'
+import { loadPanelWidth, panelDisplayWidth, PANEL_WIDTH_KEY } from './panel-width'
 import { SHEET_NAV_SCHEME } from './sheet-nav'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -173,26 +176,6 @@ function SentAttachments({
   )
 }
 
-/** Resizable panel width: persisted, clamped to min/max, drives the .sheet-body grid column via --copilot-width */
-const PANEL_WIDTH_KEY = 'sheets-ai-panel-width'
-const PANEL_WIDTH_MIN = 280
-
-function clampPanelWidth(w: number): number {
-  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
-  // shell lays it out), so never let the ceiling drop below the minimum
-  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
-}
-
-function loadPanelWidth(): number | null {
-  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
-  // static bounds only — clamping against the window here would bake a
-  // transiently small viewport into the restored preference
-  return Number.isFinite(saved) && saved > 0
-    ? Math.min(Math.max(saved, PANEL_WIDTH_MIN), 720)
-    : null
-}
-
 export interface AiToolChip {
   readonly summary: string
   readonly isError: boolean
@@ -208,6 +191,9 @@ export interface AiChatMessage {
   readonly role: 'user' | 'assistant'
   readonly text: string
   readonly tools: readonly AiToolChip[]
+  /** model reasoning captured while the reply streamed; rendered as the
+   * collapsible thinking block when the showThinking pref is on */
+  readonly reasoning?: string | undefined
   readonly streaming?: boolean | undefined
   readonly isError?: boolean | undefined
   /** the run failed and this user message was rolled back out of the model context */
@@ -324,6 +310,9 @@ export function AiChatPanel({
   readonly onCollapse: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
+  // Live AI panel prefs (the shell broadcasts changes): the thinking block and
+  // the per-tool-call activity entries can each be switched off
+  const { showThinking, showToolCalls } = useAiPanelPrefs()
   /** messages queued while a reply runs; the pump re-sends them through onSend on settle */
   const msgQueue = useChatRunQueue<readonly AttachmentMeta[]>({
     busy: aiBusy,
@@ -400,29 +389,35 @@ export function AiChatPanel({
   }, [aiBusy])
 
   // preferred = the user's chosen width (the only value persisted); the CSS var
-  // gets the clamped display width. Deriving the display width from the
-  // preference means a transiently small window never permanently shrinks the panel.
+  // gets the display width derived from the preference and the live window, so
+  // a transiently small window never permanently shrinks the panel. Without a
+  // preference the panel tracks the window (auto width, never below 360).
   const preferredWidthRef = useRef<number | null>(null)
 
-  // Restore the persisted panel width (the grid column tracks --copilot-width on .sheet-body)
+  // Restore the persisted panel width when the panel opens (the grid column
+  // tracks --copilot-width on .sheet-body); legacy values below the 360 floor
+  // migrate up through the clamp
   useEffect(() => {
     if (!isOpen) return
-    const saved = loadPanelWidth()
-    if (saved === null) return
-    preferredWidthRef.current = saved
+    preferredWidthRef.current = loadPanelWidth()
     const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-    area?.style.setProperty('--copilot-width', `${clampPanelWidth(saved)}px`)
+    area?.style.setProperty(
+      '--copilot-width',
+      `${panelDisplayWidth(preferredWidthRef.current, window.innerWidth)}px`,
+    )
   }, [isOpen])
 
-  // Re-derive the display width on window resize (max is 60% of the window);
-  // growing the window back restores the preferred width
+  // Re-derive the display width on window resize: the cap and the auto width
+  // follow the live window, so the panel grows and shrinks with it
   useEffect(() => {
     if (!isOpen) return
     const onResize = (): void => {
       const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-      const preferred = preferredWidthRef.current
-      if (!area || preferred === null) return
-      area.style.setProperty('--copilot-width', `${clampPanelWidth(preferred)}px`)
+      if (!area) return
+      area.style.setProperty(
+        '--copilot-width',
+        `${panelDisplayWidth(preferredWidthRef.current, window.innerWidth)}px`,
+      )
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -450,7 +445,7 @@ export function AiChatPanel({
     document.body.style.userSelect = 'none'
     let width = 0
     const onMove = (ev: PointerEvent): void => {
-      width = clampPanelWidth(aiPanelWidthAtPointer(ev.clientX))
+      width = aiPanelClampWidth(aiPanelWidthAtPointer(ev.clientX), window.innerWidth)
       preferredWidthRef.current = width
       area.style.setProperty('--copilot-width', `${width}px`)
     }
@@ -635,7 +630,10 @@ export function AiChatPanel({
                 {entry.role === 'user' && entry.skills && (
                   <AiSkillChips lang={lang} names={entry.skills} />
                 )}
-                {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+                {showToolCalls && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+                {entry.role === 'assistant' && showThinking && entry.reasoning && (
+                  <ReasoningBlock text={entry.reasoning} streaming={false} />
+                )}
                 {entry.text && (
                   <div dir="auto">
                     <Markdown
@@ -722,7 +720,10 @@ export function AiChatPanel({
               </>
             ) : (
               <>
-                {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+                {showThinking && entry.reasoning && (
+                  <ReasoningBlock text={entry.reasoning} streaming={!!entry.streaming} />
+                )}
+                {showToolCalls && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.usage && (
                   <div className="ai-message-usage">
                     <AiUsageChip usage={entry.usage} lang={lang} />
@@ -740,7 +741,9 @@ export function AiChatPanel({
                   entry.streaming && (
                     <span className="ai-typing-row">
                       <AiTypingIndicator
-                        label={entry.tools.length > 0 ? t('aiWorking') : t('aiThinking')}
+                        label={
+                          showToolCalls && entry.tools.length > 0 ? t('aiWorking') : t('aiThinking')
+                        }
                       />
                     </span>
                   )
@@ -1127,6 +1130,43 @@ function StepIcon({ status }: { status: 'running' | 'done' | 'error' }) {
       <circle cx="12" cy="12" r="9" />
       <path d="m8.5 12.4 2.4 2.4 4.6-5" />
     </svg>
+  )
+}
+
+/** Collapsible model-reasoning block attached to the assistant reply: live
+ *  (expanded) while the reply streams, collapsed to its label once done, with a
+ *  manual toggle that always wins — same pattern as the tool-activity group. */
+function ReasoningBlock({
+  text,
+  streaming,
+}: {
+  readonly text: string
+  readonly streaming: boolean
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = userOpen ?? streaming
+
+  return (
+    <div className="ai-reasoning">
+      <button
+        type="button"
+        className="ai-reasoning-summary"
+        aria-expanded={open}
+        onClick={() => setUserOpen(!open)}
+      >
+        {streaming && !open && <span className="ai-tool-chip-spinner" aria-hidden />}
+        <span className="ai-reasoning-label">{t('aiThinkingBlock')}</span>
+        <span className={`ai-tool-chip-caret${open ? ' open' : ''}`} aria-hidden>
+          ›
+        </span>
+      </button>
+      <div className={`ai-reasoning-body${open ? ' open' : ''}`}>
+        <div className="ai-reasoning-text" dir="auto">
+          {text}
+        </div>
+      </div>
+    </div>
   )
 }
 

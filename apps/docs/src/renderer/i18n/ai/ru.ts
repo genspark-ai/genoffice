@@ -75,6 +75,7 @@ export const ru = {
   aiStarterLaunchPost: 'Напиши объявление о запуске продукта',
   aiStarterEventOutline: 'Составь план мероприятия',
   aiThinking: 'Думаю',
+  aiReasoningBlock: 'Размышления',
   aiWorkedSteps: 'Готово · {n} шагов',
   aiGroupWorking: 'Выполняется…',
   aiWorking: 'Обработка',

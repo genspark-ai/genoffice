@@ -43,5 +43,10 @@ export default defineConfig({
     setupFiles: [local('../../packages/docx-engine/tests/setup-equality.ts')],
     environment: 'jsdom',
     testTimeout: 20000,
+    // one worker per logical CPU oversubscribes hyperthreaded boxes (the KDF
+    // and layout tests starve past their timeouts while every worker redoes
+    // the shared transform/import work); 6 measured faster end-to-end and
+    // green there. Smaller machines keep their natural worker count.
+    maxWorkers: 6,
   },
 })

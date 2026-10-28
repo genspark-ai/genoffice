@@ -49,6 +49,7 @@ export const ru = {
   aiStop: 'Стоп',
   aiStopped: 'Остановлено',
   aiThinking: 'Думает',
+  aiReasoningLabel: 'Ход рассуждений',
   aiTimeoutError: 'Тайм-аут ответа ИИ',
   aiToolWebSearch: 'Веб-поиск',
   aiToolWebSearchDone: 'Поиск «{query}» · {count} результатов',

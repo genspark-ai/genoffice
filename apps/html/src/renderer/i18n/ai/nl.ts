@@ -49,6 +49,7 @@ export const nl = {
   aiStop: 'Stoppen',
   aiStopped: 'Gestopt',
   aiThinking: 'Denkt na',
+  aiReasoningLabel: 'Denkproces',
   aiTimeoutError: 'AI-antwoord time-out',
   aiToolWebSearch: 'Zoeken op internet',
   aiToolWebSearchDone: 'Gezocht naar "{query}" · {count} resultaten',

@@ -26,6 +26,7 @@ export const ru = {
   aiEmptyBodyLine1: 'Опишите нужное изменение или задайте вопрос о данных.',
   aiThinkingAria: 'Думает',
   aiThinking: 'Думает…',
+  aiThinkingBlock: 'Размышления',
   aiWorkedSteps: 'Готово · {n} шагов',
   aiGroupWorking: 'Выполняется…',
   aiWorking: 'Выполняется…',
