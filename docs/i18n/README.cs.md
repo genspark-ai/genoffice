@@ -249,6 +249,22 @@ ve viditelné záložce editoru, zatímco se díváte.
   Cursor a dalších agentů, stále na zařízení.
 - **Zdarma**, pro jednotlivce i týmy.
 
+## Provoz v prohlížeči
+
+Desktopová aplikace umí sama sebe servírovat i přes HTTP: spusťte ji s
+`genoffice --web-server` a otevřete `http://127.0.0.1:8931/` v panelu
+prohlížeče. Šest editorů jsou přesně ty balíčky, které načítá desktopové
+okno, a přes WebSocket mluví se stejnými enginy — soubory otevírejte a
+ukládejte z úvodní obrazovky, vše se renderuje stejnými pipeline.
+
+- `--web-port`, `--web-host` a `--web-token` službu přemístí nebo vyžadují
+  token (URL `?token=…` vypsaná při startu uloží prohlížeči cookie). Obsluha
+  na `0.0.0.0` vystavuje službu do LAN — nastavte token.
+- Malé headless API obaluje CLI pro skripty:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` vrátí souhrn struktury dokumentu.
+- Přetahování místních souborů a nativní tisk zůstávají jen na desktopu.
+
 ## AI backendy
 
 **Přihlaste se přes Genspark** a nemusíte nic nastavovat: volání modelů

@@ -392,6 +392,22 @@ trình soạn thảo Word hiện rõ. Cả hai được mô tả ở
   và các agent khác — vẫn ngay trên máy.
 - **Miễn phí**, cho cả cá nhân lẫn nhóm.
 
+## Dùng trong trình duyệt
+
+Ứng dụng desktop cũng có thể tự phục vụ qua HTTP: chạy với
+`genoffice --web-server` rồi mở `http://127.0.0.1:8931/` trong một tab
+trình duyệt. Sáu trình soạn thảo chính là những bundle giống hệt cửa sổ
+desktop tải và nói chuyện với cùng các engine qua WebSocket — mở và lưu tệp
+từ màn hình khởi đầu, mọi thứ đều kết xuất qua cùng các đường ống.
+
+- `--web-port`, `--web-host` và `--web-token` đổi nơi chạy của dịch vụ hoặc
+  bắt buộc token (URL `?token=…` in lúc khởi động đặt cookie cho trình duyệt).
+  Phục vụ trên `0.0.0.0` sẽ lộ dịch vụ ra LAN — hãy đặt token.
+- Một API headless nhỏ bọc CLI cho script:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` trả về tóm tắt cấu trúc tài liệu.
+- Kéo thả tệp cục bộ và in qua hệ điều hành vẫn chỉ có trên desktop.
+
 ## Các backend AI
 
 **Đăng nhập Genspark** và không có gì phải cấu hình: các lời gọi mô hình đi

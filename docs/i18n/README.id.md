@@ -252,6 +252,23 @@ terlihat sambil Anda menyaksikannya.
   Claude Desktop, Codex, Cursor, dan agen lainnya, tetap on-device.
 - **Gratis**, untuk individu maupun tim.
 
+## Menjalankan di peramban
+
+Aplikasi desktop juga bisa menyajikan dirinya lewat HTTP: jalankan dengan
+`genoffice --web-server` lalu buka `http://127.0.0.1:8931/` di tab peramban.
+Keenam editor adalah paket yang sama dengan yang dimuat jendela desktop dan
+berbicara dengan mesin yang sama lewat WebSocket — buka dan simpan berkas
+dari layar awal; semuanya dirender lewat alur yang sama.
+
+- `--web-port`, `--web-host`, dan `--web-token` memindahkan layanan atau
+  mewajibkan token (URL `?token=…` yang tercetak saat mulai memberi peramban
+  sebuah cookie). Menyajikan di `0.0.0.0` membuka layanan ke LAN — pasang
+  token.
+- API headless kecil membungkus CLI untuk skrip:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` mengembalikan ringkasan struktur dokumen.
+- Seret-dan-lepas berkas lokal serta pencetakan native tetap hanya di desktop.
+
 ## Backend AI
 
 **Masuk dengan Genspark** dan tidak ada yang perlu dikonfigurasi: panggilan

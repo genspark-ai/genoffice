@@ -253,6 +253,23 @@ editortabblad terwijl je toekijkt.
   Desktop, Codex, Cursor en andere agents, nog altijd on-device.
 - **Gratis**, voor individuen en teams.
 
+## In de browser gebruiken
+
+De desktop-app kan zichzelf ook via HTTP aanreichen: start met
+`genoffice --web-server` en open `http://127.0.0.1:8931/` in een browsertab.
+De zes editors zijn precies de bundles die het desktopvenster ook laadt en
+praten via een WebSocket met dezelfde engines — open en bewaar bestanden
+vanaf het startscherm; alles rendert door dezelfde pipelines.
+
+- `--web-port`, `--web-host` en `--web-token` verplaatsen de service of maken
+  een token verplicht (de bij het opstarten getoonde `?token=…`-URL geeft de
+  browser een cookie). Serveer op `0.0.0.0` en de service staat op het LAN —
+  stel een token in.
+- Een kleine headless API wikkelt de CLI voor scripts:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` geeft de structuursamenvatting van het document.
+- Slepen van lokale bestanden en afdrukken via het OS blijven desktop-only.
+
 ## AI-backends
 
 **Log in met Genspark** en er is niets te configureren: modelaanroepen lopen

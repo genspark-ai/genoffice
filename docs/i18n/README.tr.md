@@ -317,6 +317,23 @@ belgesi oluşturmasına izin verir.
   ajanların hizmetine, yine cihaz üzerinde sunar.
 - **Ücretsiz**, bireyler ve ekipler için aynı şekilde.
 
+## Tarayıcıda kullanım
+
+Masaüstü uygulama kendini HTTP üzerinden de sunabilir: `genoffice --web-server`
+ile başlatın ve tarayıcı sekmesinde `http://127.0.0.1:8931/` adresini açın.
+Altı düzenleyici, masaüstü penceresinin yüklediği paketlerin aynısıdır ve bir
+WebSocket üzerinden aynı motorlarla konuşur — dosyaları başlangıç ekranından
+açın ve kaydedin; her şey aynı işlem hatlarıyla oluşturulur.
+
+- `--web-port`, `--web-host` ve `--web-token` servisi taşır veya bir jeton
+  zorunlu kılar (başlangıçta yazdırılan `?token=…` adresi tarayıcıya çerez
+  bırakır). `0.0.0.0` üzerinde sunum, servisi yerel ağa açar — jeton belirleyin.
+- Küçük bir headless API, komut satırı aracını betikler için sarmalar:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` belgenin yapı özetini döndürür.
+- Yerel dosyaları sürükleyip bırakma ve yerel yazdırma yalnızca masaüstünde
+  çalışır.
+
 ## Yapay zekâ arka uçları
 
 **Genspark ile oturum açın**; yapılandırılacak hiçbir şey yoktur: model

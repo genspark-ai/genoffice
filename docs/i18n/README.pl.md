@@ -253,6 +253,24 @@ Word w widocznej karcie edytora, podczas gdy Ty patrzysz.
   Cursor i innych agentów — nadal lokalnie na urządzeniu.
 - **Bezpłatne**, dla pojedynczych osób i zespołów.
 
+## Użycie w przeglądarce
+
+Aplikacja desktopowa może też udostępniać samą siebie przez HTTP: uruchom ją
+poleceniem `genoffice --web-server`, a następnie otwórz `http://127.0.0.1:8931/`
+w karcie przeglądarki. Sześć edytorów to dokładnie te same paczki, które ładuje
+okno desktopowe, i rozmawiają one z tymi samymi silnikami przez WebSocket —
+otwieraj i zapisuj pliki z ekranu startowego, a wszystko renderują te same
+procesy.
+
+- `--web-port`, `--web-host` i `--web-token` przenoszą usługę lub wymuszają
+  token (adres `?token=…` wypisany przy starcie przekazuje przeglądarce
+  ciasteczko). Serwowanie na `0.0.0.0` wystawia usługę do LAN-u — ustaw token.
+- Małe bezgłowe API opakowuje CLI dla skryptów:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` zwraca podsumowanie struktury dokumentu.
+- Przeciąganie lokalnych plików i natywny druk pozostają zarezerwowane dla
+  desktopu.
+
 ## Silniki AI
 
 **Zaloguj się przez Genspark** i nie musisz niczego konfigurować: wywołania

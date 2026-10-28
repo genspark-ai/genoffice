@@ -254,6 +254,24 @@ mientras lo observas.
   Desktop, Codex, Cursor y otros agentes, siempre en el dispositivo.
 - **Gratis**, tanto para personas individuales como para equipos.
 
+## Usar en el navegador
+
+La aplicación de escritorio también puede servirse a sí misma por HTTP:
+arráncala con `genoffice --web-server` y abre `http://127.0.0.1:8931/` en una
+pestaña del navegador. Los seis editores son los mismos paquetes que carga la
+ventana de escritorio y hablan con los mismos motores por un WebSocket: abre
+y guarda archivos desde la pantalla de inicio y todo se renderiza por las
+mismas canalizaciones.
+
+- `--web-port`, `--web-host` y `--web-token` mueven el servicio o exigen un
+  token (la URL `?token=…` impresa al arrancar deja una cookie en el
+  navegador). Servir en `0.0.0.0` expone el servicio a la LAN: define un token.
+- Una pequeña API sin cabeza envuelve la CLI para scripts:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` devuelve el resumen de la estructura del documento.
+- Arrastrar archivos locales y la impresión nativa siguen siendo exclusivas
+  del escritorio.
+
 ## Backends de IA
 
 **Inicia sesión con Genspark** y no hay nada que configurar: las llamadas al

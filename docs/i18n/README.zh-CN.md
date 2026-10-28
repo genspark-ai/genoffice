@@ -228,6 +228,21 @@ Word 文档，供你实时查看。
   运行。
 - **免费**，个人和团队皆可使用。
 
+## 在浏览器中使用
+
+桌面应用也可以通过 HTTP 提供自己：用 `genoffice --web-server` 启动，然后在
+浏览器标签页打开 `http://127.0.0.1:8931/`。六个编辑器就是桌面窗口加载的同
+一套打包产物，通过 WebSocket 与同一批引擎对话——在起始页打开和保存文件，
+一切都经相同的管线渲染。
+
+- `--web-port`、`--web-host` 和 `--web-token` 可以移动服务端口或要求令牌
+  （启动时打印的 `?token=…` 链接会为浏览器种下 cookie）。监听 `0.0.0.0`
+  会把服务暴露到局域网——请设置令牌。
+- 内置一个面向脚本的无头 API，封装的是同一个 CLI：
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`；
+  `POST /api/info` 返回文档结构摘要。
+- 本地文件拖放与原生打印仍仅限桌面端。
+
 ## AI 后端
 
 **登录 Genspark**，无需任何配置：模型调用通过 Genspark 代理路由（Claude、GPT

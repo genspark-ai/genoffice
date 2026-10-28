@@ -255,6 +255,23 @@ tab editor yang kelihatan sementara anda memerhati.
   Claude Desktop, Codex, Cursor dan agen lain, masih di peranti sendiri.
 - **Percuma**, untuk individu dan pasukan.
 
+## Jalankan dalam pelayar
+
+Aplikasi desktop juga boleh menghidangkan dirinya melalui HTTP: mulakan dengan
+`genoffice --web-server` kemudian buka `http://127.0.0.1:8931/` dalam tab
+pelayar. Enam editor ialah pakej yang sama dimuatkan oleh tetingkap desktop
+dan bercakap dengan enjin yang sama melalui WebSocket — buka dan simpan fail
+dari skrin mula; semuanya dirender melalui saluran yang sama.
+
+- `--web-port`, `--web-host` dan `--web-token` mengalihkan perkhidmatan atau
+  mewajibkan token (URL `?token=…` yang dicetak semula permulaan memberi
+  pelayar satu kuki). Berkhidmat pada `0.0.0.0` mendedahkan perkhidmatan
+  kepada LAN — tetapkan token.
+- API headless kecil membungkus CLI untuk skrip:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `POST /api/info` mengembalikan ringkasan struktur dokumen.
+- Seret-dan-lepas fail setempat dan pencetakan natif kekal desktop sahaja.
+
 ## Bahagian belakang AI
 
 **Log masuk dengan Genspark** dan tidak ada apa-apa yang perlu ditetapkan:

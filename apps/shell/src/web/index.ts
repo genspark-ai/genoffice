@@ -1,9 +1,14 @@
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { WebSocketServer } from 'ws'
+import { app } from 'electron'
 import { attachWebBridge, broadcastWebEvent } from './bridge'
 import { installWebDialogPatch } from './web-dialogs'
 import { serveWebStatic, tokenValid, webRendererRoots, type RendererRoots } from './static'
+import { serveWebApi } from './api'
+import { createCliRunner, type CliRunner } from '../main/mcp/cli-runner'
 import { setWebPrintToPDFDelegate } from './web-contents'
 import { webPrintToPDF } from './web-print'
 
@@ -51,11 +56,31 @@ export function defaultWebConfig(): WebServerConfig {
   return { port: 8931, host: '127.0.0.1', token: null }
 }
 
+/** the same bundled CLI the MCP tools spawn (app's Node runtime + cli entry),
+ *  shared by the desktop runner in shell main so both paths stay one binary */
+export function bundledWebCliRunner(): CliRunner {
+  const exe = process.platform === 'win32' ? 'xlsx-sidecar.exe' : 'xlsx-sidecar'
+  const sidecar = app.isPackaged
+    ? join(process.resourcesPath, 'native', exe)
+    : join(app.getAppPath(), '..', 'sheets', 'native', 'xlsx-engine', 'target', 'release', exe)
+  return createCliRunner({
+    executable: process.execPath,
+    // app path is apps/shell: packages live one level above apps, the repo
+    // root two levels above (same layout the shell's own runner resolves)
+    entry: app.isPackaged
+      ? join(process.resourcesPath, 'cli', 'genoffice.cjs')
+      : join(app.getAppPath(), '..', '..', 'packages', 'cli', 'dist', 'genoffice.cjs'),
+    env: existsSync(sidecar) ? { XLSX_SIDECAR_PATH: sidecar } : {},
+  })
+}
+
 export async function startWebServer(
   overrides: Partial<WebServerConfig> = {},
+  deps: { apiRunner?: CliRunner } = {},
 ): Promise<WebServerHandle> {
   const config: WebServerConfig = { ...defaultWebConfig(), ...overrides }
   const roots: RendererRoots = webRendererRoots()
+  const apiRunner = deps.apiRunner ?? bundledWebCliRunner()
 
   installWebDialogPatch()
   setWebPrintToPDFDelegate(webPrintToPDF)
@@ -71,13 +96,18 @@ export async function startWebServer(
   })
 
   const server = createServer((req, res) => {
-    void serveWebStatic(req, res, { roots, token: config.token }).catch((err) => {
-      console.error('[web] request failed:', err)
-      if (!res.headersSent) {
-        res.writeHead(500)
-        res.end('internal error')
-      }
-    })
+    void serveWebApi(req, res, { token: config.token, runner: apiRunner })
+      .then((served) => {
+        if (served) return
+        return serveWebStatic(req, res, { roots, token: config.token })
+      })
+      .catch((err) => {
+        console.error('[web] request failed:', err)
+        if (!res.headersSent) {
+          res.writeHead(500)
+          res.end('internal error')
+        }
+      })
   })
 
   const wss = new WebSocketServer({ noServer: true })
