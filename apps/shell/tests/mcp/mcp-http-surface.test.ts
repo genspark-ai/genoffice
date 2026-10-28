@@ -40,6 +40,7 @@ const DEFAULT_NAMES = [
   'create_session',
   'get_app_info',
   'insert_content',
+  'insert_picture',
   'open_documents',
   'open_in_genoffice',
   'read_deck',
