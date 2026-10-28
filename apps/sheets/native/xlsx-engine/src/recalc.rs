@@ -585,7 +585,7 @@ fn references_an_external_workbook(formula: &str) -> bool {
         }
         let name_start = after;
         // word characters, or any non-ASCII byte: a CJK sheet name needs no
-        // quotes (`[1]数据!A1`), while a space does and lands in the branch above
+        // quotes (`[1]<cjk-name>!A1`), while a space does and lands in the branch above
         while after < bytes.len()
             && (bytes[after].is_ascii_alphanumeric()
                 || bytes[after] == b'_'
