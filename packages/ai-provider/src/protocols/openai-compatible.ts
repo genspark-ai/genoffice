@@ -2,7 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 import { aiFetch } from '../fetch'
 import { httpBodyDetail } from '../http-error'
 import { gensparkAttributionHeaders, opencodeSessionHeaders } from '../providers'
-import { modelEchoesReasoning } from '../registry'
+import { modelEchoesReasoning, modelNeedsReasoningNoneForTools } from '../registry'
 import type { AiChatResponse, AiProviderConfig } from '../types'
 import { createStreamWatchdog, type StreamWatchdog } from '../watchdog'
 import {
@@ -240,6 +240,11 @@ async function openAiCompatibleTurn(
               function: { name: t.name, description: t.description, parameters: t.inputSchema },
             })),
           }
+        : {}),
+      // gpt-5.6 rejects tool turns that carry its default reasoning effort;
+      // the API's own 400 offers effort none as the Chat Completions way out
+      ...(tools.length > 0 && modelNeedsReasoningNoneForTools(config.model)
+        ? { reasoning_effort: 'none' as const }
         : {}),
       ...(options.omitTemperature ? {} : { temperature: 0.3 }),
       ...options.bodyExtras,

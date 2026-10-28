@@ -65,3 +65,14 @@ export function modelLacksVision(model: string): boolean {
 export function modelEchoesReasoning(model: string): boolean {
   return /(^|\/)(minimax-m|deep-?seek-(v4|flash)|hy-?[34]([^\w]|$))/i.test(model)
 }
+
+/**
+ * Chat Completions serves these families' function calling only with
+ * reasoning_effort none — OpenAI's own 400 names the two options (the
+ * Responses API, which has no protocol here, or effort none), so tool turns
+ * pin the effort explicitly. Gated per family: gpt-5.5 and older keep
+ * accepting tools beside their default reasoning (genoffice#2295).
+ */
+export function modelNeedsReasoningNoneForTools(model: string): boolean {
+  return /(^|\/)gpt-5\.6([-/.]|$)/i.test(model)
+}

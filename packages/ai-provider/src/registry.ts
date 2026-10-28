@@ -13,6 +13,7 @@ import type { AiProviderConfig, AiProviderId, AiProviderMeta } from './types'
 /** The shipped model-family guesses live in ./model-heuristics; re-exported for callers. */
 export { normalizeBaseUrl } from './url-compose'
 export { modelEchoesReasoning, modelHasFixedSampling, modelLacksVision } from './model-heuristics'
+export { modelNeedsReasoningNoneForTools } from './model-heuristics'
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
 export type AiProtocol = 'anthropic' | 'gemini' | 'openai-compatible' | 'codex-app-server'
