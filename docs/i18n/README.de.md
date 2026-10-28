@@ -264,12 +264,13 @@ Desktop-Fenster lädt, und sprechen über einen WebSocket mit denselben
 Engines — Dateien über den Startbildschirm öffnen und speichern, alles
 rendert durch dieselben Pipelines.
 
-- `--web-port`, `--web-host` und `--web-token` verschieben den Dienst oder
-  machen einen Token Pflicht (die beim Start gedruckte `?token=…`-URL
-  hinterlegt ein Cookie im Browser). Auf `0.0.0.0` zu servieren legt den
-  Dienst im LAN offen — setze einen Token.
+- Der Dienst verlangt immer sein Zugriffstoken: Beim Start wird eine
+  `?token=…`-URL gedruckt, die dem Browser ein Cookie hinterlegt — teile
+  diese URL, nicht den nackten Port. `--web-port` und `--web-host` verschieben
+  ihn (binde `0.0.0.0` für dein LAN und öffne die gedruckte URL vom anderen
+  Gerät); `--web-token` setzt ein eigenes Token.
 - Eine kleine Headless-API umhüllt die CLI für Skripte:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` liefert die Strukturzusammenfassung des Dokuments.
 - Drag-and-Drop lokaler Dateien und natives Drucken bleiben dem Desktop
   vorbehalten.

@@ -260,12 +260,13 @@ desktop e parlano con gli stessi motori tramite un WebSocket: apri e salva
 file dalla schermata iniziale e tutto viene renderizzato dalle stesse
 pipeline.
 
-- `--web-port`, `--web-host` e `--web-token` spostano il servizio o rendono
-  obbligatorio un token (l'URL `?token=…` stampato all'avvio lascia un cookie
-  nel browser). Servire su `0.0.0.0` espone il servizio alla LAN: imposta un
-  token.
+- Il servizio richiede sempre il suo token di accesso: all'avvio viene
+  stampato un URL `?token=…` che lascia un cookie nel browser; condividi
+  quell'URL, non la porta nuda. `--web-port` e `--web-host` spostano il
+  servizio (associa `0.0.0.0` per la tua LAN e apri l'URL stampato dall'altro
+  dispositivo); `--web-token` fissa un token a tua scelta.
 - Una piccola API headless incapsula la CLI per gli script:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` restituisce il riepilogo della struttura del documento.
 - Il trascinamento di file locali e la stampa nativa restano solo desktop.
 

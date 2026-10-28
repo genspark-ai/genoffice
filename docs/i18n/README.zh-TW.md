@@ -288,11 +288,12 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 打包產物，透過 WebSocket 與同一批引擎對話——在起始頁開啟和儲存檔案，
 一切都經相同的管線渲染。
 
-- `--web-port`、`--web-host` 和 `--web-token` 可以移動服務連接埠或要求權杖
-  （啟動時列印的 `?token=…` 連結會為瀏覽器種下 cookie）。監聽 `0.0.0.0`
-  會把服務暴露到區域網路——請設定權杖。
+- 服務始終要求存取權杖：啟動時會列印一個 `?token=…` 連結，在瀏覽器開啟它
+  即種下 cookie——請分享這個連結而不是裸連接埠。`--web-port` 和 `--web-host`
+  可以移動服務（繫結 `0.0.0.0` 供區域網路存取，並在另一台裝置上開啟列印的
+  連結）；`--web-token` 可指定自選權杖。
 - 內建一個面向指令碼的無頭 API，封裝的是同一個 CLI：
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`；
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`；
   `POST /api/info` 回傳文件結構摘要。
 - 本地檔案拖放與原生列印仍僅限桌面端。
 

@@ -261,12 +261,13 @@ De zes editors zijn precies de bundles die het desktopvenster ook laadt en
 praten via een WebSocket met dezelfde engines — open en bewaar bestanden
 vanaf het startscherm; alles rendert door dezelfde pipelines.
 
-- `--web-port`, `--web-host` en `--web-token` verplaatsen de service of maken
-  een token verplicht (de bij het opstarten getoonde `?token=…`-URL geeft de
-  browser een cookie). Serveer op `0.0.0.0` en de service staat op het LAN —
-  stel een token in.
+- De service vraagt altijd om zijn toegangstoken: bij het opstarten wordt een
+  `?token=…`-URL getoond die de browser een cookie geeft — deel die URL, niet
+  de kale poort. `--web-port` en `--web-host` verplaatsen hem (bind `0.0.0.0`
+  voor je LAN en open de getoonde URL vanaf het andere apparaat);
+  `--web-token` stelt een eigen token in.
 - Een kleine headless API wikkelt de CLI voor scripts:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` geeft de structuursamenvatting van het document.
 - Slepen van lokale bestanden en afdrukken via het OS blijven desktop-only.
 

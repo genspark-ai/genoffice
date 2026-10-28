@@ -235,11 +235,12 @@ Word 文档，供你实时查看。
 一套打包产物，通过 WebSocket 与同一批引擎对话——在起始页打开和保存文件，
 一切都经相同的管线渲染。
 
-- `--web-port`、`--web-host` 和 `--web-token` 可以移动服务端口或要求令牌
-  （启动时打印的 `?token=…` 链接会为浏览器种下 cookie）。监听 `0.0.0.0`
-  会把服务暴露到局域网——请设置令牌。
+- 服务始终要求访问令牌：启动时会打印一个 `?token=…` 链接，在浏览器打开它
+  即种下 cookie——请分享这个链接而不是裸端口。`--web-port` 和 `--web-host`
+  可以移动服务（绑定 `0.0.0.0` 供局域网访问，并在另一台设备上打开打印的
+  链接）；`--web-token` 可指定自选令牌。
 - 内置一个面向脚本的无头 API，封装的是同一个 CLI：
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`；
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`；
   `POST /api/info` 返回文档结构摘要。
 - 本地文件拖放与原生打印仍仅限桌面端。
 

@@ -260,12 +260,13 @@ Keenam editor adalah paket yang sama dengan yang dimuat jendela desktop dan
 berbicara dengan mesin yang sama lewat WebSocket — buka dan simpan berkas
 dari layar awal; semuanya dirender lewat alur yang sama.
 
-- `--web-port`, `--web-host`, dan `--web-token` memindahkan layanan atau
-  mewajibkan token (URL `?token=…` yang tercetak saat mulai memberi peramban
-  sebuah cookie). Menyajikan di `0.0.0.0` membuka layanan ke LAN — pasang
-  token.
+- Layanan selalu menuntut token aksesnya: saat mulai dicetak URL `?token=…`
+  yang memberi peramban sebuah cookie — bagikan URL itu, bukan port polos.
+  `--web-port` dan `--web-host` memindahkannya (ikat `0.0.0.0` untuk LAN Anda
+  dan buka URL tercetak dari perangkat lain); `--web-token` menetapkan token
+  pilihan Anda.
 - API headless kecil membungkus CLI untuk skrip:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` mengembalikan ringkasan struktur dokumen.
 - Seret-dan-lepas berkas lokal serta pencetakan native tetap hanya di desktop.
 

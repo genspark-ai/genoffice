@@ -325,11 +325,13 @@ Altı düzenleyici, masaüstü penceresinin yüklediği paketlerin aynısıdır 
 WebSocket üzerinden aynı motorlarla konuşur — dosyaları başlangıç ekranından
 açın ve kaydedin; her şey aynı işlem hatlarıyla oluşturulur.
 
-- `--web-port`, `--web-host` ve `--web-token` servisi taşır veya bir jeton
-  zorunlu kılar (başlangıçta yazdırılan `?token=…` adresi tarayıcıya çerez
-  bırakır). `0.0.0.0` üzerinde sunum, servisi yerel ağa açar — jeton belirleyin.
+- Hizmet her zaman erişim jetonunu ister: başlangıçta yazdırılan
+  `?token=…` adresini tarayıcıda açmak bir çerez bırakır — çıplak portu değil
+  bu adresi paylaşın. `--web-port` ve `--web-host` servisi taşır (LAN'ınız için
+  `0.0.0.0` bağlayın ve yazdırılan adresi diğer cihazdan açın); `--web-token`
+  istediğiniz bir jetonu sabitler.
 - Küçük bir headless API, komut satırı aracını betikler için sarmalar:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` belgenin yapı özetini döndürür.
 - Yerel dosyaları sürükleyip bırakma ve yerel yazdırma yalnızca masaüstünde
   çalışır.

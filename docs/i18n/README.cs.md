@@ -257,11 +257,13 @@ prohlížeče. Šest editorů jsou přesně ty balíčky, které načítá deskt
 okno, a přes WebSocket mluví se stejnými enginy — soubory otevírejte a
 ukládejte z úvodní obrazovky, vše se renderuje stejnými pipeline.
 
-- `--web-port`, `--web-host` a `--web-token` službu přemístí nebo vyžadují
-  token (URL `?token=…` vypsaná při startu uloží prohlížeči cookie). Obsluha
-  na `0.0.0.0` vystavuje službu do LAN — nastavte token.
+- Služba vždy vyžaduje svůj přístupový token: při startu se vypíše adresa
+  `?token=…`, která prohlížeči předá cookie — sdílejte tuto adresu, ne holý
+  port. `--web-port` a `--web-host` ji přemístí (pro LAN připojte `0.0.0.0` a
+  vypsanou adresu otevřete na druhém zařízení); `--web-token` nastaví token
+  podle vaší volby.
 - Malé headless API obaluje CLI pro skripty:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` vrátí souhrn struktury dokumentu.
 - Přetahování místních souborů a nativní tisk zůstávají jen na desktopu.
 

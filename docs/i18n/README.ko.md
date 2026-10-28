@@ -254,11 +254,13 @@ Cursor 및 다른 모든 MCP 클라이언트는 스킬을 설치하거나 창을
 통신합니다. 시작 화면에서 파일을 열고 저장할 수 있으며, 렌더링도 같은
 파이프라인을 거칩니다.
 
-- `--web-port`, `--web-host`, `--web-token`으로 포트를 바꾸거나 토큰을
-  요구할 수 있습니다(시작 시 출력되는 `?token=…` URL이 브라우저에 쿠키를
-  남깁니다). `0.0.0.0`으로 서빙하면 LAN에 노출되므로 토큰을 설정하세요.
+- 서비스는 항상 액세스 토큰을 요구합니다. 시작 시 출력되는 `?token=…` URL을
+  브라우저에서 열면 쿠키가 설정됩니다. 공유할 때는 포트만이 아니라 이 URL을
+  공유하세요. `--web-port`와 `--web-host`로 위치를 옮길 수 있고(LAN용으로
+  `0.0.0.0`에 바인딩한 뒤 다른 기기에서 출력된 URL을 여세요), `--web-token`으로
+  원하는 토큰을 지정할 수 있습니다.
 - 스크립트를 위한 소형 헤드리스 API가 CLI를 감쌉니다:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`.
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`.
   `POST /api/info`는 문서 구조 요약을 반환합니다.
 - 로컬 파일 드래그앤드롭과 네이티브 인쇄는 데스크톱 전용입니다.
 

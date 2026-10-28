@@ -400,11 +400,12 @@ trình duyệt. Sáu trình soạn thảo chính là những bundle giống hệ
 desktop tải và nói chuyện với cùng các engine qua WebSocket — mở và lưu tệp
 từ màn hình khởi đầu, mọi thứ đều kết xuất qua cùng các đường ống.
 
-- `--web-port`, `--web-host` và `--web-token` đổi nơi chạy của dịch vụ hoặc
-  bắt buộc token (URL `?token=…` in lúc khởi động đặt cookie cho trình duyệt).
-  Phục vụ trên `0.0.0.0` sẽ lộ dịch vụ ra LAN — hãy đặt token.
+- Dịch vụ luôn yêu cầu token truy cập: khi khởi động sẽ in ra một URL
+  `?token=…` mà mở trong trình duyệt sẽ đặt cookie — hãy chia sẻ URL đó, không
+  chia sẻ cổng trần. `--web-port` và `--web-host` đổi nơi chạy (gắn `0.0.0.0`
+  cho LAN và mở URL đã in từ thiết bị khác); `--web-token` đặt token tùy chọn.
 - Một API headless nhỏ bọc CLI cho script:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` trả về tóm tắt cấu trúc tài liệu.
 - Kéo thả tệp cục bộ và in qua hệ điều hành vẫn chỉ có trên desktop.
 

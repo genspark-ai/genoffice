@@ -127,16 +127,17 @@ export async function startWebServer(
     console.error('[web] unhandled rejection:', reason)
   })
 
+  const bound = { host: config.host, port: config.port }
   const server = createServer((req, res) => {
-    if (!originHostOk(req)) {
+    if (!originHostOk(req, bound)) {
       res.writeHead(403)
       res.end('cross-origin request refused')
       return
     }
-    void serveWebApi(req, res, { token, runner: apiRunner })
+    void serveWebApi(req, res, { token, runner: apiRunner, port: config.port })
       .then((served) => {
         if (served) return
-        return serveWebStatic(req, res, { roots, token })
+        return serveWebStatic(req, res, { roots, token, port: config.port })
       })
       .catch((err) => {
         console.error('[web] request failed:', err)
@@ -152,7 +153,7 @@ export async function startWebServer(
     // the WebSocket is not governed by the browser's same-origin policy, so
     // the Origin check is what keeps a malicious page from driving the user's
     // session with its cookies; token check does the rest
-    if (!originHostOk(req) || !tokenValid(req, token)) {
+    if (!originHostOk(req, bound) || !tokenValid(req, token, config.port)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()
       return

@@ -51,8 +51,15 @@ export function serveWebDialog(
   })
 }
 
-/** bridge callback: the tab answered a dialog request */
-export function resolveWebDialog(id: number, payload: WebDialogResult): void {
+/** bridge callback: the tab answered a dialog request. Only the tab the
+ *  dialog was served to may answer it — one browser tab cannot resolve
+ *  another tab's pending dialog (and cannot cancel it either). */
+export function resolveWebDialog(
+  id: number,
+  payload: WebDialogResult,
+  tab: WebTabContents,
+): void {
+  if (dialogOwners.get(id) !== tab) return
   pending.get(id)?.(payload)
 }
 

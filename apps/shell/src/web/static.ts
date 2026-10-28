@@ -85,7 +85,7 @@ function rewriteText(app: string, text: string): string {
 const injectionFor = (app: string): string =>
   `<script src="/__web/client.js"></script><script src="/__web/preload-${app}.js"></script>`
 
-function serveFile(res: ServerResponse, file: string, app: string): void {
+function serveFile(res: ServerResponse, file: string, app: string, reqHost: string): void {
   const ext = extname(file).toLowerCase()
   const mime = MIME[ext] ?? 'application/octet-stream'
   const asText = TEXT_EXTS.has(ext)
@@ -93,7 +93,7 @@ function serveFile(res: ServerResponse, file: string, app: string): void {
   const rewritten = asText && REWRITTEN_APPS.has(app)
   if (rewritten) body = rewriteText(app, body as string)
   if (ext === '.html') {
-    body = injectIntoHtml(body as string, injectionFor(app))
+    body = injectIntoHtml(body as string, injectionFor(app), reqHost)
   }
   res.writeHead(200, {
     'Content-Type': mime,
@@ -103,19 +103,19 @@ function serveFile(res: ServerResponse, file: string, app: string): void {
   res.end(body)
 }
 
-export function injectIntoHtml(html: string, injection: string): string {
+export function injectIntoHtml(html: string, injection: string, reqHost: string): string {
   // the served page rewrites this app's media schemes to same-origin paths;
   // their CSP entries (img-src md-asset: …) become invalid sources, so drop
-  // them, and widen connect-src with a bare ws: scheme-source — the desktop
-  // CSP's ws://localhost:* misses a 127.0.0.1 or LAN origin. The rewritten
-  // path appears in the CSP more than once, so the scheme-source is removed
-  // wherever it occurs (anchor-free); the index.html carries no other
+  // them, and pin connect-src's WebSocket to this request's own host — the
+  // desktop CSP's ws://localhost:* misses a 127.0.0.1 or LAN serving host,
+  // and a bare ws: source would let the renderer open sockets anywhere. The
+  // rewritten path appears in the CSP more than once, so the scheme-source is
+  // removed wherever it occurs (anchor-free); the index.html carries no other
   // `/__media:`-shaped text (the bundles are separate files).
   html = html.replace(/\/__(?:media|mdasset|preview|htmlasset):/g, '')
-  // always append the bare ws: scheme-source: the desktop CSP's
-  // ws://localhost:* does not match a 127.0.0.1 or LAN serving host
+  const wsSource = `ws://${reqHost}`
   html = html.replace(/connect-src ([^"]*?)(?=")/, (m, list: string) =>
-    m.endsWith(' ws:') ? m : `connect-src ${list} ws:`,
+    list.includes(wsSource) ? m : `connect-src ${list} ${wsSource}`,
   )
   const moduleScript = /<script[^>]*type="module"[^>]*>/
   const match = moduleScript.exec(html)
@@ -202,42 +202,88 @@ function servePreview(res: ServerResponse, pathname: string): boolean {
 
 // ---- auth ----
 
-const TOKEN_COOKIE = 'genoffice_web_token'
+import { timingSafeEqual } from 'node:crypto'
 
-export function tokenValid(req: IncomingMessage, token: string): boolean {
-  const url = new URL(req.url ?? '/', 'http://localhost')
-  if (url.searchParams.get('token') === token) return true
-  const cookies = req.headers.cookie ?? ''
-  return cookies.split(/;\s*/).some((c) => c === `${TOKEN_COOKIE}=${token}`)
+/** the cookie name carries the port: cookies ignore ports, so a shared
+ *  `genoffice_web_token` would leak between two services on 127.0.0.1:* */
+export function tokenCookieName(port: number): string {
+  return `genoffice_web_token_${port}`
 }
 
-export function tokenCookieHeader(req: IncomingMessage, token: string): string | null {
+/** constant-time compare; equal-length guard keeps timingSafeEqual happy */
+function tokensEqual(given: string | null, expected: string): boolean {
+  if (!given) return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+export function tokenValid(
+  req: IncomingMessage,
+  token: string,
+  port: number,
+): boolean {
   const url = new URL(req.url ?? '/', 'http://localhost')
-  if (url.searchParams.get('token') !== token) return null
-  return `${TOKEN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict`
+  if (tokensEqual(url.searchParams.get('token'), token)) return true
+  const cookieName = tokenCookieName(port)
+  const cookies = req.headers.cookie ?? ''
+  for (const pair of cookies.split(/;\s*/)) {
+    const eq = pair.indexOf('=')
+    if (eq <= 0) continue
+    if (pair.slice(0, eq) === cookieName && tokensEqual(pair.slice(eq + 1), token)) return true
+  }
+  return false
+}
+
+export function tokenCookieHeader(req: IncomingMessage, token: string, port: number): string | null {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  if (!tokensEqual(url.searchParams.get('token'), token)) return null
+  return `${tokenCookieName(port)}=${token}; Path=/; HttpOnly; SameSite=Strict`
 }
 
 /**
  * DNS-rebinding / cross-site guard, applied to every HTTP request and the
- * WebSocket upgrade. A request that carries an Origin header (every browser
- * context does; top-level navigations and non-browser clients like curl do
- * not) must originate from this server's own host — a malicious page driving
- * `ws://127.0.0.1:8931/` or a form-POST to the API announces its origin and
- * is refused here. The Host header must be present and well-formed either way.
+ * WebSocket upgrade. Origin equality with the Host header is not enough — a
+ * rebound `evil.com:8931` sends both as evil.com — so the Host header itself
+ * must name a host this server is actually reachable on: the bound host (when
+ * specific) or a loopback name, always with the bound port. An Origin, when
+ * present, must still equal the Host (a cross-site page announcing itself is
+ * refused regardless).
  */
-export function originHostOk(req: IncomingMessage): boolean {
+export function originHostOk(
+  req: IncomingMessage,
+  bound: { host: string; port: number },
+): boolean {
   const host = req.headers.host
   if (!host || host.includes('\0') || host.length > 255) return false
-  const origin = req.headers.origin
-  if (!origin) return true
   let parsed: URL
   try {
-    parsed = new URL(origin)
+    parsed = new URL(`http://${host}`)
   } catch {
     return false
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-  return parsed.host === host
+  const port = Number(parsed.port)
+  if (!Number.isInteger(port) || port !== bound.port) return false
+  const wildcard = bound.host === '0.0.0.0' || bound.host === '::'
+  const hostname = parsed.hostname.toLowerCase()
+  const boundHost = bound.host.toLowerCase()
+  // loopback names always work; a concrete --web-host adds itself. A wildcard
+  // binding stays loopback-only in this check on purpose: LAN clients reach
+  // the service through a concrete interface address, and passing that as
+  // --web-host is what allows their Host header through.
+  const allowed = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+  if (!wildcard) allowed.add(boundHost)
+  if (!allowed.has(hostname)) return false
+  const origin = req.headers.origin
+  if (!origin) return true
+  let originUrl: URL
+  try {
+    originUrl = new URL(origin)
+  } catch {
+    return false
+  }
+  if (originUrl.protocol !== 'http:' && originUrl.protocol !== 'https:') return false
+  return originUrl.host === host
 }
 
 function unauthorized(res: ServerResponse): void {
@@ -286,16 +332,25 @@ app's start screen; files are read and written by the local service.</p>
 export async function serveWebStatic(
   req: IncomingMessage,
   res: ServerResponse,
-  options: { roots: RendererRoots; token: string | null },
+  options: { roots: RendererRoots; token: string; port: number },
 ): Promise<boolean> {
-  if (options.token && !tokenValid(req, options.token)) {
+  if (!tokenValid(req, options.token, options.port)) {
     unauthorized(res)
     return true
   }
-  const setCookie = options.token ? tokenCookieHeader(req, options.token) : null
+  const setCookie = tokenCookieHeader(req, options.token, options.port)
   if (setCookie) res.setHeader('Set-Cookie', setCookie)
 
   const url = new URL(req.url ?? '/', 'http://localhost')
+  // the printed URL carries ?token=…; once the cookie is set, bounce to the
+  // token-less form so the secret never lands in history or the Referer
+  if (url.searchParams.has('token')) {
+    const clean = new URL(url.toString())
+    clean.searchParams.delete('token')
+    res.writeHead(302, { Location: `${clean.pathname}${clean.search}` })
+    res.end()
+    return true
+  }
   const pathname = decodeURIComponent(url.pathname)
 
   if (pathname === '/' || pathname === '') {
@@ -304,6 +359,7 @@ export async function serveWebStatic(
     return true
   }
 
+  const reqHost = req.headers.host ?? '127.0.0.1'
   const media = await serveDocsMedia(res, pathname)
   if (media) return true
   if (await serveMarkdownMedia(res, pathname)) return true
@@ -340,7 +396,7 @@ export async function serveWebStatic(
     if (rest === '/' || rest === '') {
       const index = join(root, 'index.html')
       if (existsSync(index)) {
-        serveFile(res, index, appName)
+        serveFile(res, index, appName, reqHost)
         return true
       }
       res.writeHead(404, { 'Content-Type': 'text/plain' })
@@ -350,7 +406,7 @@ export async function serveWebStatic(
     const schemeUrl = `http://${appName}${rest}`
     const file = resolveRendererFile(new Map(Object.entries(options.roots)), schemeUrl)
     if (file && existsSync(file) && statSync(file).isFile()) {
-      serveFile(res, file, appName)
+      serveFile(res, file, appName, reqHost)
       return true
     }
   }

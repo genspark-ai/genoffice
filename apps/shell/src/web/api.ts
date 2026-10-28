@@ -176,11 +176,11 @@ function send(res: ServerResponse, result: ApiResult): void {
 export async function serveWebApi(
   req: IncomingMessage,
   res: ServerResponse,
-  options: { token: string | null; runner: CliRunner },
+  options: { token: string; runner: CliRunner; port: number },
 ): Promise<boolean> {
   const url = req.url ?? '/'
   if (!url.startsWith('/api/')) return false
-  if (options.token && !tokenValid(req, options.token)) {
+  if (!tokenValid(req, options.token, options.port)) {
     res.writeHead(401, { 'Content-Type': 'application/json' })
     res.end('{"error":"token required"}')
     return true

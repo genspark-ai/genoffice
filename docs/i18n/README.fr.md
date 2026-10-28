@@ -265,12 +265,13 @@ de bureau et parlent aux mêmes moteurs via un WebSocket — ouvrez et
 enregistrez des fichiers depuis l'écran d'accueil, tout passe par les mêmes
 pipelines de rendu.
 
-- `--web-port`, `--web-host` et `--web-token` déplacent le service ou rendent
-  un jeton obligatoire (l'URL `?token=…` affichée au démarrage dépose un
-  cookie dans le navigateur). Servir sur `0.0.0.0` expose le service au LAN —
-  définissez un jeton.
+- Le service exige toujours son jeton d'accès : au démarrage est affichée une
+  URL `?token=…` qui dépose un cookie dans le navigateur — partagez cette URL,
+  pas le port nu. `--web-port` et `--web-host` le déplacent (liez `0.0.0.0`
+  pour votre LAN et ouvrez l'URL affichée depuis l'autre appareil) ;
+  `--web-token` épingle un jeton de votre choix.
 - Une petite API headless enveloppe la CLI pour les scripts :
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf` ;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf` ;
   `POST /api/info` renvoie le résumé de la structure du document.
 - Le glisser-déposer de fichiers locaux et l'impression native restent
   réservés au bureau.

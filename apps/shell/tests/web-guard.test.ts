@@ -36,6 +36,8 @@ import { originHostOk, tokenValid } from '../src/web/static'
 import { parseWebServerArgv } from '../src/web/index'
 import { WebTabContents } from '../src/web/web-contents'
 
+const BOUND = { host: '127.0.0.1', port: 8931 }
+
 function reqWith(
   headers: Record<string, string>,
   url = '/docs/',
@@ -45,42 +47,70 @@ function reqWith(
 
 describe('web request guard', () => {
   it('allows requests without an Origin (curl, top-level navigations)', () => {
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931' }))).toBe(true)
+    expect(originHostOk(reqWith({ host: '127.0.0.1:8931' }), BOUND)).toBe(true)
   })
 
   it('requires a plausible Host header', () => {
-    expect(originHostOk(reqWith({}))).toBe(false)
-    expect(originHostOk(reqWith({ host: 'bad\0host' }))).toBe(false)
+    expect(originHostOk(reqWith({}), BOUND)).toBe(false)
+    expect(originHostOk(reqWith({ host: 'bad\0host' }), BOUND)).toBe(false)
   })
 
-  it('accepts an Origin that matches the served Host', () => {
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'http://127.0.0.1:8931' }))).toBe(
-      true,
-    )
+  it('accepts an Origin that matches a loopback or the bound host', () => {
     expect(
-      originHostOk(reqWith({ host: 'myhost.lan:8931', origin: 'http://myhost.lan:8931' })),
+      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'http://127.0.0.1:8931' }), BOUND),
+    ).toBe(true)
+    expect(originHostOk(reqWith({ host: 'localhost:8931' }), BOUND)).toBe(true)
+    expect(
+      originHostOk(reqWith({ host: 'myhost.lan:8931', origin: 'http://myhost.lan:8931' }), {
+        host: 'myhost.lan',
+        port: 8931,
+      }),
     ).toBe(true)
   })
 
+  it('refuses a rebound or foreign Host even when Origin agrees', () => {
+    // the DNS-rebinding case: evil.com resolves at 127.0.0.1, so Origin and
+    // Host agree — but the hostname is not one this server is served on
+    expect(
+      originHostOk(reqWith({ host: 'evil.com:8931', origin: 'http://evil.com:8931' }), BOUND),
+    ).toBe(false)
+    expect(originHostOk(reqWith({ host: 'evil.com:8931' }), BOUND)).toBe(false)
+  })
+
   it('refuses cross-site origins (another page driving the local service)', () => {
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'https://evil.example' }))).toBe(
-      false,
-    )
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'http://127.0.0.1:9999' }))).toBe(
-      false,
-    )
+    expect(
+      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'https://evil.example' }), BOUND),
+    ).toBe(false)
+    expect(
+      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'http://127.0.0.1:9999' }), BOUND),
+    ).toBe(false)
+  })
+
+  it('refuses a Host with the wrong or missing port', () => {
+    expect(originHostOk(reqWith({ host: '127.0.0.1:9999' }), BOUND)).toBe(false)
+    expect(originHostOk(reqWith({ host: '127.0.0.1' }), BOUND)).toBe(false)
   })
 
   it('refuses malformed or non-http origins', () => {
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'not a url' }))).toBe(false)
-    expect(originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'file:///etc' }))).toBe(false)
+    expect(
+      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'not a url' }), BOUND),
+    ).toBe(false)
+    expect(
+      originHostOk(reqWith({ host: '127.0.0.1:8931', origin: 'file:///etc' }), BOUND),
+    ).toBe(false)
   })
 
-  it('keeps requiring the token for cookies and query', () => {
-    const req = reqWith({ host: 'h', cookie: 'genoffice_web_token=t' })
-    expect(tokenValid(req, 't')).toBe(true)
-    expect(tokenValid(reqWith({ host: 'h' }, '/docs/?token=t'), 't')).toBe(true)
-    expect(tokenValid(reqWith({ host: 'h', cookie: 'genoffice_web_token=x' }), 't')).toBe(false)
+  it('keeps requiring the port-scoped token for cookies and query', () => {
+    const req = reqWith({ host: 'h', cookie: 'genoffice_web_token_8931=t' })
+    expect(tokenValid(req, 't', 8931)).toBe(true)
+    expect(tokenValid(reqWith({ host: 'h' }, '/docs/?token=t'), 't', 8931)).toBe(true)
+    expect(
+      tokenValid(reqWith({ host: 'h', cookie: 'genoffice_web_token_8931=x' }), 't', 8931),
+    ).toBe(false)
+    // a cookie scoped to another port does not authenticate here
+    expect(
+      tokenValid(reqWith({ host: 'h', cookie: 'genoffice_web_token_9999=t' }), 't', 8931),
+    ).toBe(false)
   })
 })
 
@@ -98,7 +128,6 @@ describe('web-server argv', () => {
   })
 
   it('a token-less invocation stays token-hungry at startup', () => {
-    // startWebServer generates when null; parse alone leaves it unset
     const parsed = parseWebServerArgv(['--web-server'])
     expect(parsed.enabled).toBe(true)
     expect(parsed.overrides.token).toBeUndefined()
@@ -107,7 +136,7 @@ describe('web-server argv', () => {
 
 describe('web tab once()', () => {
   it('fires once and removes itself from the listener set', () => {
-    const tab = new WebTabContents('/docs/')
+    const tab = new WebTabContents('/docs/?path=/x.docx')
     const calls: string[] = []
     tab.once('destroyed', () => calls.push('a'))
     tab.on('destroyed', () => calls.push('keep'))

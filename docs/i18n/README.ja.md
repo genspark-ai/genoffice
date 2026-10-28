@@ -216,12 +216,13 @@ Word ドキュメントを組み立てる様子を見守ることもできます
 同じエンジンとやり取りします。スタート画面からファイルを開いて保存でき、
 レンダリングも同じパイプラインを通ります。
 
-- `--web-port`、`--web-host`、`--web-token` でサービスの移動やトークン必須化が
-  できます（起動時に表示される `?token=…` 付き URL がブラウザーに Cookie を
-  渡します）。`0.0.0.0` で待ち受けるとサービスが LAN に公開されるため、
-  トークンを設定してください。
+- サービスは常にアクセストークンを要求します。起動時に表示される
+  `?token=…` 付き URL をブラウザーで開くと Cookie が渡されます。共有するのは
+  裸のポートではなくこの URL にしてください。`--web-port` と `--web-host` で
+  配置を変えられ（LAN 向けに `0.0.0.0` をバインドし、別の端末で表示された
+  URL を開きます）、`--web-token` で任意のトークンを指定できます。
 - スクリプト向けに CLI を wraps した小さなヘッドレス API もあります:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`。
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`。
   `POST /api/info` は文書構造の概要を返します。
 - ローカルファイルのドラッグ＆ドロップとネイティブ印刷はデスクトップ専用です。
 

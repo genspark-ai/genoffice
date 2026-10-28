@@ -32,10 +32,10 @@ type Res = { status: number; body: string | Buffer; headers: Record<string, stri
 async function get(
   roots: RendererRoots,
   url: string,
-  token: string | null = null,
-  cookie = '',
+  token: string | null = 'sekret',
+  cookie = 'genoffice_web_token_8931=sekret',
 ): Promise<Res> {
-  const req = { url, headers: { cookie } } as never
+  const req = { url, headers: { cookie, host: '127.0.0.1:8931' } } as never
   const resMock = {
     headers: {} as Record<string, string | undefined>,
     head: null as unknown as [number, Record<string, string>] | null,
@@ -51,7 +51,7 @@ async function get(
       if (typeof body === 'string' || Buffer.isBuffer(body)) this.chunks.push(Buffer.from(body))
     },
   }
-  await serveWebStatic(req, resMock as never, { roots, token })
+  await serveWebStatic(req, resMock as never, { roots, token: token ?? '', port: 8931 })
   const res: Res = {
     status: resMock.head?.[0] ?? 0,
     body: Buffer.concat(resMock.chunks),
@@ -95,7 +95,7 @@ describe('web static serving', () => {
     expect(html).toContain('<script src="/__web/client.js"></script>')
     expect(html).toContain('preload-docs.js')
     expect(html.indexOf('/__web/client.js')).toBeLessThan(html.indexOf('type="module"'))
-    expect(html).toMatch(/connect-src [^"]*ws:/)
+    expect(html).toMatch(/connect-src [^"]*ws:\/\/127\.0\.0\.1:8931/)
     // the rewritten scheme-source is invalid in a CSP and appears twice in the
     // docs meta (img-src + connect-src); both must go
     expect(html).not.toContain('/__media:')
@@ -132,13 +132,26 @@ describe('web static serving', () => {
 
   it('rejects a request without the token and accepts the cookie', async () => {
     const roots = fixtureRoot()
-    const denied = await get(roots, '/docs/', 'sekret')
+    const denied = await get(roots, '/docs/', null, 'genoffice_web_token_8931=sekret')
     expect(denied.status).toBe(401)
+    // the ?token= hop answers 302 to the token-less URL with the cookie set
     const viaQuery = await get(roots, '/docs/?token=sekret', 'sekret')
-    expect(viaQuery.status).toBe(200)
-    expect(viaQuery.headers['set-cookie']).toContain('genoffice_web_token=sekret')
-    const viaCookie = await get(roots, '/docs/', 'sekret', 'genoffice_web_token=sekret')
+    expect(viaQuery.status).toBe(302)
+    expect(viaQuery.headers['location']).toBe('/docs/')
+    expect(viaQuery.headers['set-cookie']).toContain('genoffice_web_token_8931=sekret')
+    const viaCookie = await get(roots, '/docs/')
     expect(viaCookie.status).toBe(200)
+    // a cookie for a different port does not authenticate here
+    const wrongPort = await get(roots, '/docs/', 'sekret', 'genoffice_web_token_9999=sekret')
+    expect(wrongPort.status).toBe(401)
+  })
+
+  it('redirects a ?token= URL to the token-less form with the cookie set', async () => {
+    const roots = fixtureRoot()
+    const res = await get(roots, '/docs/?token=sekret', 'sekret')
+    expect(res.status).toBe(302)
+    expect(res.headers['location']).toBe('/docs/')
+    expect(res.headers['set-cookie']).toContain('genoffice_web_token_8931=sekret')
   })
 
   it('does not serve files outside the renderer root', async () => {

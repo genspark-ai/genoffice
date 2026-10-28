@@ -262,11 +262,13 @@ okno desktopowe, i rozmawiają one z tymi samymi silnikami przez WebSocket —
 otwieraj i zapisuj pliki z ekranu startowego, a wszystko renderują te same
 procesy.
 
-- `--web-port`, `--web-host` i `--web-token` przenoszą usługę lub wymuszają
-  token (adres `?token=…` wypisany przy starcie przekazuje przeglądarce
-  ciasteczko). Serwowanie na `0.0.0.0` wystawia usługę do LAN-u — ustaw token.
+- Usługa zawsze wymaga tokenu dostępu: przy starcie wypisywany jest adres
+  `?token=…`, który przekazuje przeglądarce ciasteczko — udostępniaj ten
+  adres, nie sam port. `--web-port` i `--web-host` przenoszą usługę (powiąż
+  `0.0.0.0` dla swojego LAN-u i otwórz wypisany adres na drugim urządzeniu);
+  `--web-token` ustawia token według własnego wyboru.
 - Małe bezgłowe API opakowuje CLI dla skryptów:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` zwraca podsumowanie struktury dokumentu.
 - Przeciąganie lokalnych plików i natywny druk pozostają zarezerwowane dla
   desktopu.

@@ -188,7 +188,7 @@ export function attachWebBridge(
       } else if (t === 'send' && typeof frame.channel === 'string') {
         dispatchSend({ tab, ws }, frame.channel, Array.isArray(frame.args) ? frame.args : [])
       } else if (t === 'dialog-response' && Number.isFinite(Number(frame.id))) {
-        resolveWebDialog(Number(frame.id), frame.result as never)
+        resolveWebDialog(Number(frame.id), frame.result as never, tab)
       } else if (t === 'dialog-list' && Number.isFinite(Number(frame.id))) {
         void dispatchDialogList({ tab, ws }, Number(frame.id), frame.dir, frame.exts)
       } else if (t === 'dialog-start-dirs' && Number.isFinite(Number(frame.id))) {

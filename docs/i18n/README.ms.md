@@ -263,12 +263,13 @@ pelayar. Enam editor ialah pakej yang sama dimuatkan oleh tetingkap desktop
 dan bercakap dengan enjin yang sama melalui WebSocket — buka dan simpan fail
 dari skrin mula; semuanya dirender melalui saluran yang sama.
 
-- `--web-port`, `--web-host` dan `--web-token` mengalihkan perkhidmatan atau
-  mewajibkan token (URL `?token=…` yang dicetak semula permulaan memberi
-  pelayar satu kuki). Berkhidmat pada `0.0.0.0` mendedahkan perkhidmatan
-  kepada LAN — tetapkan token.
+- Perkhidmatan sentiasa menuntut token aksesnya: semasa mula dicetak URL
+  `?token=…` yang memberi pelayar satu kuki — kongsi URL itu, bukan port
+  kosong. `--web-port` dan `--web-host` mengalihkannya (ikat `0.0.0.0` untuk
+  LAN anda dan buka URL tercetak dari peranti lain); `--web-token` menetapkan
+  token pilihan anda.
 - API headless kecil membungkus CLI untuk skrip:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` mengembalikan ringkasan struktur dokumen.
 - Seret-dan-lepas fail setempat dan pencetakan natif kekal desktop sahaja.
 

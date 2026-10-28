@@ -68,7 +68,7 @@ describe('web dialogs', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(requests).toHaveLength(1)
     expect(requests[0].options).toMatchObject({ kind: 'save', title: 'Export' })
-    resolveWebDialog(requests[0].id, { canceled: false, filePath: '/tmp/x.pdf' })
+    resolveWebDialog(requests[0].id, { canceled: false, filePath: '/tmp/x.pdf' }, tab)
     await expect(result).resolves.toEqual({ canceled: false, filePath: '/tmp/x.pdf' })
     expect(nativeSave).not.toHaveBeenCalled()
   })
@@ -111,8 +111,23 @@ describe('web dialogs', () => {
     const result = runWithWebDispatch(tab, () => dialog.showOpenDialog({ title: 'Pick' }))
     await new Promise((r) => setTimeout(r, 20))
     expect(requests).toHaveLength(1)
-    resolveWebDialog(requests[0].id, { canceled: true })
+    resolveWebDialog(requests[0].id, { canceled: true }, tab)
     await expect(result).resolves.toEqual({ canceled: true, filePaths: [] })
+  })
+
+  it("one tab cannot answer another tab's dialog", async () => {
+    const a = tabWithCapturedDialogs()
+    const b = tabWithCapturedDialogs()
+    const dialog = (await import('electron')).dialog as unknown as {
+      showSaveDialog: (options: unknown) => Promise<unknown>
+    }
+    const result = runWithWebDispatch(a.tab, () => dialog.showSaveDialog({ title: 'A only' }))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(a.requests).toHaveLength(1)
+    resolveWebDialog(a.requests[0].id, { canceled: false, filePath: '/tmp/hijack' }, b.tab)
+    await new Promise((r) => setTimeout(r, 20))
+    resolveWebDialog(a.requests[0].id, { canceled: true }, a.tab)
+    await expect(result).resolves.toEqual({ canceled: true })
   })
 
   it('lists a directory for the overlay: dirs first, filtered, hidden skipped', async () => {

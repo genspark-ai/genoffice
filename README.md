@@ -312,11 +312,13 @@ The six editors are the same bundles the desktop window loads, talking to the
 same engines over a WebSocket — open and save files from the start screen,
 and everything renders through the same pipelines.
 
-- `--web-port`, `--web-host` and `--web-token` move the service or require a
-  token (the printed `?token=…` URL grants the browser a cookie). Serving on
-  `0.0.0.0` exposes the service to your LAN — set a token.
+- The service always requires its access token: startup prints a
+  `?token=…` URL that grants the browser a cookie — share that URL, not the
+  bare port. `--web-port` and `--web-host` move it (bind `0.0.0.0` for your
+  LAN and open the printed URL from the other device); `--web-token` pins a
+  token of your choice.
 - A small headless API wraps the CLI for scripts:
-  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx' > report.pdf`;
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
   `POST /api/info` returns the document's structure summary.
 - Drag-and-drop of local files and native printing stay desktop-only.
 
