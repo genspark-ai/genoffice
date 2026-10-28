@@ -640,7 +640,7 @@ function predecryptStreams(
     try {
       plain = decryptPayload(derived, PDFRef.of(obj.num, obj.gen), payload, false)
     } catch (err) {
-      throw new Error(`could not decrypt stream object ${obj.num}: ${String(err)}`)
+      throw new Error(`could not decrypt stream object ${obj.num}: ${String(err)}`, { cause: err })
     }
     edits.push({ start: obj.dataStart, end: obj.dataEnd, replacement: new Uint8Array(plain) })
     const indirect = /\/Length\s+(\d+)\s+(\d+)\s+R/.exec(dict)
