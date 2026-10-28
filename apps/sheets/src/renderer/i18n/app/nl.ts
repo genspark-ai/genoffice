@@ -1608,19 +1608,10 @@ export const nl = {
     'Zet de spellingcontrole aan (F7 en de Review-knop); uitgeschakeld tonen commentaarvakken geen golflijnen meer',
   appSpellOn: 'Spellingcontrole ingeschakeld.',
   appSpellOff: 'Spellingcontrole staat uit. Schakel deze in bij Controleren ▸ Controle.',
-  appSpellAiNote:
-    'De spellingcontrole draait op AI: de tekst van het blad wordt in batches naar het geconfigureerde model gestuurd.',
-  appSpellProgress: 'Controleren {done}/{total}…',
-  appSpellCollecting: 'Teksten verzamelen…',
-  appSpellStop: 'Stoppen',
   appSpellRecheck: 'Opnieuw controleren',
   appSpellNone: 'Geen verdachte spelfouten gevonden.',
-  appSpellCanceled: 'De controle is gestopt.',
   appSpellFindings: '{count} verdachte fouten. Klik op een rij om erheen te springen.',
   appSpellTruncated: 'Te veel tekstcellen; alleen de eerste zijn gecontroleerd.',
-  appSpellUnconfigured:
-    'Geen AI-service geconfigureerd. Stel er een in via Instellingen voordat je de controle gebruikt.',
-  appSpellError: 'Spellingcontrole mislukt: {error}',
   appSpellColWord: 'Verdacht',
   appSpellIgnore: 'Negeren',
   appSpellIgnoreAll: 'Alles negeren',
@@ -1630,4 +1621,7 @@ export const nl = {
   appSpellLearned: '"{word}" is toegevoegd aan de woordenlijst.',
   appSpellChanged: '{address} gecorrigeerd.',
   appSpellChangeFailed: 'Kan {address} niet corrigeren.',
+  appSpellUnavailable: 'Spellingcontrole is niet beschikbaar in dit venster.',
+  appSpellReplaceAll: 'Alle vervangen door "{suggestion}"',
+  appSpellChangedAll: '{count} cellen met "{word}" gecorrigeerd.',
 } satisfies Record<keyof typeof zh, string>

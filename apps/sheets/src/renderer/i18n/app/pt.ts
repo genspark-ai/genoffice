@@ -1612,19 +1612,10 @@ export const pt = {
     'Ativa a verificação ortográfica (F7 e o botão Revisão); desativada, as caixas de comentário deixam de mostrar sublinhados',
   appSpellOn: 'Verificação ortográfica ativada.',
   appSpellOff: 'A verificação ortográfica está desativada. Ative-a em Revisão ▸ Revisão de Texto.',
-  appSpellAiNote:
-    'A verificação usa IA: os textos da planilha são enviados em lotes ao modelo configurado.',
-  appSpellProgress: 'Verificando {done}/{total}…',
-  appSpellCollecting: 'Coletando textos…',
-  appSpellStop: 'Parar',
   appSpellRecheck: 'Verificar novamente',
   appSpellNone: 'Nenhum erro de ortografia suspeito encontrado.',
-  appSpellCanceled: 'A verificação foi interrompida.',
   appSpellFindings: '{count} erros suspeitos. Clique em uma linha para localizar.',
   appSpellTruncated: 'Células de texto demais; somente as primeiras foram verificadas.',
-  appSpellUnconfigured:
-    'Nenhum serviço de IA configurado. Configure um nas Configurações antes de usar a verificação.',
-  appSpellError: 'Falha na verificação: {error}',
   appSpellColWord: 'Suspeita',
   appSpellIgnore: 'Ignorar',
   appSpellIgnoreAll: 'Ignorar tudo',
@@ -1634,4 +1625,7 @@ export const pt = {
   appSpellLearned: '"{word}" foi adicionado ao dicionário.',
   appSpellChanged: '{address} corrigido.',
   appSpellChangeFailed: 'Não foi possível corrigir {address}.',
+  appSpellUnavailable: 'A verificação ortográfica não está disponível nesta janela.',
+  appSpellReplaceAll: 'Substituir tudo por "{suggestion}"',
+  appSpellChangedAll: 'Corrigidas {count} células de "{word}".',
 } satisfies Record<keyof typeof zh, string>

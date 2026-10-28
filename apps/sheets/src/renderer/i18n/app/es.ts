@@ -1615,19 +1615,10 @@ export const es = {
     'Activa la comprobación ortográfica (F7 y el botón de Revisar); desactivada, los cuadros de comentarios dejan de mostrar subrayados',
   appSpellOn: 'Comprobación ortográfica activada.',
   appSpellOff: 'La comprobación ortográfica está desactivada. Actívala en Revisar ▸ Corrección.',
-  appSpellAiNote:
-    'La comprobación se realiza con IA: los textos de la hoja se envían por lotes al modelo configurado.',
-  appSpellProgress: 'Comprobando {done}/{total}…',
-  appSpellCollecting: 'Recopilando textos…',
-  appSpellStop: 'Detener',
   appSpellRecheck: 'Volver a comprobar',
   appSpellNone: 'No se encontraron errores ortográficos sospechosos.',
-  appSpellCanceled: 'La comprobación se detuvo.',
   appSpellFindings: '{count} errores sospechosos. Haz clic en una fila para localizarlo.',
   appSpellTruncated: 'Demasiadas celdas de texto; solo se comprobaron las primeras.',
-  appSpellUnconfigured:
-    'No hay ningún servicio de IA configurado. Configura uno en Ajustes antes de usar la comprobación.',
-  appSpellError: 'Error de comprobación ortográfica: {error}',
   appSpellColWord: 'Sospechoso',
   appSpellIgnore: 'Omitir',
   appSpellIgnoreAll: 'Omitir todos',
@@ -1637,4 +1628,7 @@ export const es = {
   appSpellLearned: '"{word}" se agregó al diccionario.',
   appSpellChanged: '{address} corregido.',
   appSpellChangeFailed: 'No se pudo corregir {address}.',
+  appSpellUnavailable: 'La corrección ortográfica no está disponible en esta ventana.',
+  appSpellReplaceAll: 'Reemplazar todo por «{suggestion}»',
+  appSpellChangedAll: 'Se corrigieron {count} celdas de «{word}».',
 } satisfies Record<keyof typeof zh, string>

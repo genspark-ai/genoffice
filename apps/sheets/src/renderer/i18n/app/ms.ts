@@ -1570,19 +1570,10 @@ export const ms = {
     'Mengaktifkan semakan ejaan (F7 dan butang Semak Semula); apabila dimatikan, kotak komen tidak lagi menampilkan garis bergelombang',
   appSpellOn: 'Semakan ejaan diaktifkan.',
   appSpellOff: 'Semakan ejaan dimatikan. Aktifkannya pada Semak Semula ▸ Semakan.',
-  appSpellAiNote:
-    'Semakan ejaan dijalankan oleh AI: teks helaian dihantar secara berkumpulan kepada model yang dikonfigurasi.',
-  appSpellProgress: 'Menyemak {done}/{total}…',
-  appSpellCollecting: 'Mengumpul teks…',
-  appSpellStop: 'Henti',
   appSpellRecheck: 'Semak semula',
   appSpellNone: 'Tiada kesalahan ejaan yang disyaki ditemui.',
-  appSpellCanceled: 'Semakan dihentikan.',
   appSpellFindings: '{count} kesalahan disyaki. Klik baris untuk ke lokasinya.',
   appSpellTruncated: 'Terlalu banyak sel teks; hanya bahagian awal disemak.',
-  appSpellUnconfigured:
-    'Tiada perkhidmatan AI dikonfigurasi. Konfigurasikan dalam Tetapan sebelum menggunakan semakan ini.',
-  appSpellError: 'Semakan ejaan gagal: {error}',
   appSpellColWord: 'Disyaki',
   appSpellIgnore: 'Abaikan',
   appSpellIgnoreAll: 'Abaikan semua',
@@ -1592,4 +1583,7 @@ export const ms = {
   appSpellLearned: '"{word}" ditambah ke kamus.',
   appSpellChanged: '{address} dibetulkan.',
   appSpellChangeFailed: 'Gagal membetulkan {address}.',
+  appSpellUnavailable: 'Semakan ejaan tidak tersedia dalam tetingkap ini.',
+  appSpellReplaceAll: 'Ganti semua dengan "{suggestion}"',
+  appSpellChangedAll: '{count} sel dengan "{word}" telah dibetulkan.',
 } satisfies Record<keyof typeof zh, string>

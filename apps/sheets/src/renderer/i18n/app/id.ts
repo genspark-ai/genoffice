@@ -1571,19 +1571,10 @@ export const id = {
     'Mengaktifkan pemeriksaan ejaan (F7 dan tombol Tinjau); saat nonaktif, kotak komentar tidak lagi menampilkan garis bergelombang',
   appSpellOn: 'Pemeriksaan ejaan diaktifkan.',
   appSpellOff: 'Pemeriksaan ejaan nonaktif. Aktifkan di Tinjau ▸ Pemeriksaan.',
-  appSpellAiNote:
-    'Pemeriksaan ejaan dijalankan dengan AI: teks lembar dikirim dalam batch ke model yang dikonfigurasi.',
-  appSpellProgress: 'Memeriksa {done}/{total}…',
-  appSpellCollecting: 'Mengumpulkan teks…',
-  appSpellStop: 'Hentikan',
   appSpellRecheck: 'Periksa ulang',
   appSpellNone: 'Tidak ditemukan kesalahan ejaan yang dicurigai.',
-  appSpellCanceled: 'Pemeriksaan dihentikan.',
   appSpellFindings: '{count} kesalahan yang dicurigai. Klik baris untuk menemukannya.',
   appSpellTruncated: 'Terlalu banyak sel teks; hanya bagian awal yang diperiksa.',
-  appSpellUnconfigured:
-    'Belum ada layanan AI yang dikonfigurasi. Konfigurasikan di Pengaturan sebelum memakai pemeriksaan ini.',
-  appSpellError: 'Pemeriksaan ejaan gagal: {error}',
   appSpellColWord: 'Dicurigai',
   appSpellIgnore: 'Abaikan',
   appSpellIgnoreAll: 'Abaikan semua',
@@ -1593,4 +1584,7 @@ export const id = {
   appSpellLearned: '"{word}" ditambahkan ke kamus.',
   appSpellChanged: '{address} diperbaiki.',
   appSpellChangeFailed: 'Gagal memperbaiki {address}.',
+  appSpellUnavailable: 'Pemeriksaan ejaan tidak tersedia di jendela ini.',
+  appSpellReplaceAll: 'Ganti semua dengan "{suggestion}"',
+  appSpellChangedAll: '{count} sel dengan "{word}" telah diperbaiki.',
 } satisfies Record<keyof typeof zh, string>

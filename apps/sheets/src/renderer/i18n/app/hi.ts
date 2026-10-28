@@ -1566,19 +1566,10 @@ export const hi = {
     'वर्तनी जाँच (F7 और Review बटन) चालू करता है; बंद होने पर टिप्पणी बॉक्स लहरदार रेखाएँ नहीं दिखाते',
   appSpellOn: 'वर्तनी जाँच चालू कर दी गई।',
   appSpellOff: 'वर्तनी जाँच बंद है। इसे Review ▸ प्रूफ़िंग में चालू करें।',
-  appSpellAiNote:
-    'वर्तनी जाँच AI से होती है: शीट के टेक्स्ट कॉन्फ़िगर किए गए मॉडल को बैचों में भेजे जाते हैं।',
-  appSpellProgress: 'जाँच हो रही है {done}/{total}…',
-  appSpellCollecting: 'टेक्स्ट एकत्र किए जा रहे हैं…',
-  appSpellStop: 'रोकें',
   appSpellRecheck: 'फिर जाँचें',
   appSpellNone: 'कोई संदिग्ध वर्तनी त्रुटि नहीं मिली।',
-  appSpellCanceled: 'जाँच रो दी गई।',
   appSpellFindings: '{count} संदिग्ध त्रुटियाँ। स्थान पर जाने के लिए किसी पंक्ति पर क्लिक करें।',
   appSpellTruncated: 'टेक्स्ट सेल बहुत अधिक हैं; केवल पहले वाले जाँचे गए।',
-  appSpellUnconfigured:
-    'कोई AI सेवा कॉन्फ़िगर नहीं है। जाँच का उपयोग करने से पहले सेटिंग में इसे कॉन्फ़िगर करें।',
-  appSpellError: 'वर्तनी जाँच विफल: {error}',
   appSpellColWord: 'संदिग्ध',
   appSpellIgnore: 'अनदेखा करें',
   appSpellIgnoreAll: 'सभी अनदेखा करें',
@@ -1588,4 +1579,7 @@ export const hi = {
   appSpellLearned: '"{word}" शब्दकोश में जोड़ा गया।',
   appSpellChanged: '{address} ठीक किया गया।',
   appSpellChangeFailed: '{address} ठीक नहीं किया जा सका।',
+  appSpellUnavailable: 'इस विंडो में वर्तनी जाँच उपलब्ध नहीं है।',
+  appSpellReplaceAll: 'सबको "{suggestion}" से बदलें',
+  appSpellChangedAll: '"{word}" वाले {count} सेल ठीक किए गए।',
 } satisfies Record<keyof typeof zh, string>

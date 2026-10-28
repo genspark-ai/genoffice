@@ -1610,19 +1610,10 @@ export const it = {
     'Attiva il controllo ortografico (F7 e il pulsante Revisione); disattivato, le caselle dei commenti non mostrano più le sottolineature',
   appSpellOn: 'Controllo ortografico attivato.',
   appSpellOff: 'Il controllo ortografico è disattivato. Attivalo in Revisione ▸ Correzione.',
-  appSpellAiNote:
-    "Il controllo usa l'IA: i testi del foglio vengono inviati a lotti al modello configurato.",
-  appSpellProgress: 'Controllo {done}/{total}…',
-  appSpellCollecting: 'Raccolta dei testi…',
-  appSpellStop: 'Arresta',
   appSpellRecheck: 'Ricontrolla',
   appSpellNone: 'Nessun errore ortografico sospetto trovato.',
-  appSpellCanceled: 'Il controllo è stato arrestato.',
   appSpellFindings: '{count} errori sospetti. Fai clic su una riga per individuarlo.',
   appSpellTruncated: 'Troppe celle di testo; sono state controllate solo le prime.',
-  appSpellUnconfigured:
-    'Nessun servizio IA configurato. Configurane uno nelle Impostazioni prima di usare il controllo.',
-  appSpellError: 'Controllo non riuscito: {error}',
   appSpellColWord: 'Sospetto',
   appSpellIgnore: 'Ignora',
   appSpellIgnoreAll: 'Ignora tutti',
@@ -1632,4 +1623,7 @@ export const it = {
   appSpellLearned: '"{word}" è stato aggiunto al dizionario.',
   appSpellChanged: '{address} corretto.',
   appSpellChangeFailed: 'Impossibile correggere {address}.',
+  appSpellUnavailable: 'Il controllo ortografico non è disponibile in questa finestra.',
+  appSpellReplaceAll: 'Sostituisci tutto con «{suggestion}»',
+  appSpellChangedAll: 'Corrette {count} celle di «{word}».',
 } satisfies Record<keyof typeof zh, string>

@@ -1595,19 +1595,10 @@ export const pl = {
     'Włącza sprawdzanie pisowni (F7 i przycisk Recenzja); po wyłączeniu pola komentarzy przestają pokazywać faliste podkreślenia',
   appSpellOn: 'Sprawdzanie pisowni włączone.',
   appSpellOff: 'Sprawdzanie pisowni jest wyłączone. Włącz je w Recenzja ▸ Sprawdzanie.',
-  appSpellAiNote:
-    'Sprawdzanie pisowni działa przez AI: teksty arkusza są wysyłane partiami do skonfigurowanego modelu.',
-  appSpellProgress: 'Sprawdzanie {done}/{total}…',
-  appSpellCollecting: 'Zbieranie tekstów…',
-  appSpellStop: 'Zatrzymaj',
   appSpellRecheck: 'Sprawdź ponownie',
   appSpellNone: 'Nie znaleziono podejrzanych błędów pisowni.',
-  appSpellCanceled: 'Sprawdzanie zatrzymano.',
   appSpellFindings: 'Podejrzanych błędów: {count}. Kliknij wiersz, aby przejść.',
   appSpellTruncated: 'Zbyt wiele komórek z tekstem; sprawdzono tylko pierwsze.',
-  appSpellUnconfigured:
-    'Nie skonfigurowano usługi AI. Skonfiguruj ją w Ustawieniach przed użyciem sprawdzania.',
-  appSpellError: 'Sprawdzanie pisowni nie powiodło się: {error}',
   appSpellColWord: 'Podejrzane',
   appSpellIgnore: 'Ignoruj',
   appSpellIgnoreAll: 'Ignoruj wszystkie',
@@ -1617,4 +1608,7 @@ export const pl = {
   appSpellLearned: 'Słowo „{word}” dodano do słownika.',
   appSpellChanged: 'Poprawiono {address}.',
   appSpellChangeFailed: 'Nie udało się poprawić {address}.',
+  appSpellUnavailable: 'Sprawdzanie pisowni jest niedostępne w tym oknie.',
+  appSpellReplaceAll: 'Zamień wszystkie na „{suggestion}”',
+  appSpellChangedAll: 'Poprawiono {count} komórek ze słowem „{word}”.',
 } satisfies Record<keyof typeof zh, string>

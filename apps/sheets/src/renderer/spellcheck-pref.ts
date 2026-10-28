@@ -1,19 +1,15 @@
 /**
  * Sheets spelling preferences and dictionaries (Review → Proofing).
  *
- * Docs runs its spellcheck on the Chromium native checker (squiggle + native
- * right-click suggestions on its contenteditable body). Sheets' Univer cell
- * editor is canvas-rendered — its only DOM editable is a hidden 1px proxy
- * whose content Univer clears on every input event — so native squiggles and
- * native suggestions are architecturally unavailable there, and Electron
- * exposes no batch "check this text" API against the native checker. The F7 /
- * Review ▸ Spelling dialog therefore checks cell texts through the AI backend
- * (the same route docs' F7 proofread takes), and this module keeps the two
- * word lists that drive its white-listing, in docs' preference shape:
+ * The F7 / Review ▸ Spelling dialog checks cell texts against the frame's own
+ * spell engine (webFrame.isWordMisspelled / getWordSuggestions — Chromium
+ * Hunspell / the OS dictionary, the same checker docs' squiggles run on), so
+ * no cell text leaves the machine. This module keeps the two word lists that
+ * drive its white-listing, in docs' preference shape:
  *
  * - the on/off preference: localStorage, default on (docs: aidocs.spellcheck)
- * - "Add to Dictionary": persisted across sessions (docs writes the OS custom
- *   dictionary; the AI checker has no OS dictionary, so the list lives here)
+ * - "Add to Dictionary": persisted across sessions here (the dialog's
+ *   white-list; a future wiring could feed the OS custom dictionary instead)
  * - "Ignore All": session-only, like docs' spell-ignored map that is dropped
  *   when the document closes
  */

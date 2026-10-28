@@ -1639,19 +1639,10 @@ export const fr = {
   appSpellOn: 'Vérification orthographique activée.',
   appSpellOff:
     'La vérification orthographique est désactivée. Réactivez-la dans Révision ▸ Vérification.',
-  appSpellAiNote:
-    "La vérification s'appuie sur l'IA : les textes de la feuille sont envoyés par lots au modèle configuré.",
-  appSpellProgress: 'Vérification {done}/{total}…',
-  appSpellCollecting: 'Collecte des textes…',
-  appSpellStop: 'Arrêter',
   appSpellRecheck: 'Revérifier',
   appSpellNone: "Aucune faute d'orthographe suspectée.",
-  appSpellCanceled: 'Vérification interrompue.',
   appSpellFindings: '{count} fautes suspectées. Cliquez une ligne pour la localiser.',
   appSpellTruncated: 'Trop de cellules de texte ; seules les premières ont été vérifiées.',
-  appSpellUnconfigured:
-    "Aucun service d'IA configuré. Configurez-en un dans les paramètres avant d'utiliser la vérification.",
-  appSpellError: 'Échec de la vérification : {error}',
   appSpellColWord: 'Mot suspect',
   appSpellIgnore: 'Ignorer',
   appSpellIgnoreAll: 'Ignorer tout',
@@ -1661,4 +1652,7 @@ export const fr = {
   appSpellLearned: '« {word} » a été ajouté au dictionnaire.',
   appSpellChanged: '{address} corrigé.',
   appSpellChangeFailed: 'Impossible de corriger {address}.',
+  appSpellUnavailable: "La correction orthographique n'est pas disponible dans cette fenêtre.",
+  appSpellReplaceAll: 'Tout remplacer par « {suggestion} »',
+  appSpellChangedAll: '{count} cellules de « {word} » corrigées.',
 } satisfies Record<keyof typeof zh, string>

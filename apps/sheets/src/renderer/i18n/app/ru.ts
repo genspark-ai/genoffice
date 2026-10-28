@@ -1586,19 +1586,10 @@ export const ru = {
     'Включает проверку орфографии (F7 и кнопка на вкладке «Рецензирование»); при выключении поле комментариев больше не показывает подчёркивания',
   appSpellOn: 'Проверка орфографии включена.',
   appSpellOff: 'Проверка орфографии выключена. Включите её в Рецензирование ▸ Правописание.',
-  appSpellAiNote:
-    'Проверка выполняется с помощью ИИ: тексты листа отправляются настроенной модели пакетами.',
-  appSpellProgress: 'Проверка {done}/{total}…',
-  appSpellCollecting: 'Сбор текстов…',
-  appSpellStop: 'Остановить',
   appSpellRecheck: 'Проверить снова',
   appSpellNone: 'Подозрительных орфографических ошибок не найдено.',
-  appSpellCanceled: 'Проверка остановлена.',
   appSpellFindings: 'Подозрительных ошибок: {count}. Щёлкните строку, чтобы перейти.',
   appSpellTruncated: 'Слишком много текстовых ячеек; проверены только первые.',
-  appSpellUnconfigured:
-    'Служба ИИ не настроена. Настройте её в параметрах, прежде чем использовать проверку.',
-  appSpellError: 'Не удалось выполнить проверку: {error}',
   appSpellColWord: 'Сомнительное',
   appSpellIgnore: 'Пропустить',
   appSpellIgnoreAll: 'Пропустить все',
@@ -1608,4 +1599,7 @@ export const ru = {
   appSpellLearned: 'Слово «{word}» добавлено в словарь.',
   appSpellChanged: '{address} исправлено.',
   appSpellChangeFailed: 'Не удалось исправить {address}.',
+  appSpellUnavailable: 'Проверка орфографии недоступна в этом окне.',
+  appSpellReplaceAll: 'Заменить все на «{suggestion}»',
+  appSpellChangedAll: 'Исправлено {count} ячеек со словом «{word}».',
 } satisfies Record<keyof typeof zh, string>

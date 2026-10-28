@@ -5838,8 +5838,6 @@ export function App({
           isWithheld={(sheetId, row, column) =>
             (redactionIndexRef.current ?? NO_REDACTIONS).labelAt(sheetId, row, column) !== null
           }
-          aiConfigured={isAgentConfigured}
-          getSettings={() => aiSettingsRef.current}
           onJumpTo={(sheetId, row, column) => {
             void selectWorkbookRange(
               readContext(),

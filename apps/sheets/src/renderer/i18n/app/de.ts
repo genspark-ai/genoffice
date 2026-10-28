@@ -1628,20 +1628,11 @@ export const de = {
   appSpellOn: 'Rechtschreibprüfung eingeschaltet.',
   appSpellOff:
     'Die Rechtschreibprüfung ist aus. Aktivieren Sie sie unter Review ▸ Korrekturhilfen.',
-  appSpellAiNote:
-    'Die Rechtschreibprüfung läuft über KI: Die Blatttexte werden stapelweise an das konfigurierte Modell gesendet.',
-  appSpellProgress: 'Prüfung {done}/{total}…',
-  appSpellCollecting: 'Texte werden gesammelt…',
-  appSpellStop: 'Anhalten',
   appSpellRecheck: 'Erneut prüfen',
   appSpellNone: 'Keine verdächtigen Rechtschreibfehler gefunden.',
-  appSpellCanceled: 'Die Prüfung wurde angehalten.',
   appSpellFindings:
     '{count} verdächtige Fehler. Klicken Sie auf eine Zeile, um dorthin zu springen.',
   appSpellTruncated: 'Zu viele Textzellen; nur die ersten wurden geprüft.',
-  appSpellUnconfigured:
-    'Kein KI-Dienst konfiguriert. Richten Sie ihn in den Einstellungen ein, bevor Sie die Prüfung nutzen.',
-  appSpellError: 'Rechtschreibprüfung fehlgeschlagen: {error}',
   appSpellColWord: 'Verdächtig',
   appSpellIgnore: 'Ignorieren',
   appSpellIgnoreAll: 'Alle ignorieren',
@@ -1651,4 +1642,7 @@ export const de = {
   appSpellLearned: '„{word}“ wurde zum Wörterbuch hinzugefügt.',
   appSpellChanged: '{address} korrigiert.',
   appSpellChangeFailed: '{address} konnte nicht korrigiert werden.',
+  appSpellUnavailable: 'Die Rechtschreibprüfung ist in diesem Fenster nicht verfügbar.',
+  appSpellReplaceAll: 'Alle durch „{suggestion}“ ersetzen',
+  appSpellChangedAll: '{count} Zellen mit „{word}“ korrigiert.',
 } satisfies Record<keyof typeof zh, string>

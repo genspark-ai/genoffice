@@ -1546,19 +1546,10 @@ export const en = {
     'Enable the spelling check (F7 and the Review button); when off, comment boxes stop showing spelling squiggles',
   appSpellOn: 'Spelling check turned on.',
   appSpellOff: 'Spelling check is off. Turn it on in Review ▸ Proofing.',
-  appSpellAiNote:
-    'The spelling check runs on AI: sheet texts are sent in batches to the configured model.',
-  appSpellProgress: 'Checking {done}/{total}…',
-  appSpellCollecting: 'Collecting texts…',
-  appSpellStop: 'Stop',
   appSpellRecheck: 'Recheck',
   appSpellNone: 'No suspected misspellings found.',
-  appSpellCanceled: 'The check was stopped.',
   appSpellFindings: '{count} suspected misspellings. Click a row to locate it.',
   appSpellTruncated: 'Too many text cells; only the earlier ones were checked.',
-  appSpellUnconfigured:
-    'No AI service is configured. Configure one in Settings before using the spelling check.',
-  appSpellError: 'The spelling check failed: {error}',
   appSpellColWord: 'Suspect',
   appSpellIgnore: 'Ignore',
   appSpellIgnoreAll: 'Ignore All',
@@ -1568,4 +1559,7 @@ export const en = {
   appSpellLearned: '"{word}" was added to the dictionary.',
   appSpellChanged: 'Corrected {address}.',
   appSpellChangeFailed: 'Could not correct {address}.',
+  appSpellUnavailable: 'Spell checking is unavailable in this window.',
+  appSpellReplaceAll: 'Replace All with "{suggestion}"',
+  appSpellChangedAll: 'Corrected {count} cells of "{word}".',
 } satisfies Record<keyof typeof zh, string>
