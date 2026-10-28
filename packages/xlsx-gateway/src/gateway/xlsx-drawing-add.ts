@@ -209,7 +209,7 @@ export async function applyVisualAdditions(
 }
 
 /// Finds the sheet's drawing part, creating (and wiring) one if absent.
-async function ensureSheetDrawing(
+export async function ensureSheetDrawing(
   pkg: MutablePackage,
   worksheetPath: string,
   touchedEntries: Set<string>,

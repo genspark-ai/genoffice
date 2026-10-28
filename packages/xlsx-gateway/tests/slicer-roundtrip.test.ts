@@ -160,8 +160,27 @@ describe('slicer write + read round trip', () => {
     const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
     expect(worksheet).toContain('<x14:slicerList><x14:slicer r:id="rId1"/></x14:slicerList>')
     expect(worksheet).toContain(
-      '<x15:timelineRefs><x15:timelineRef r:id="rId2"/></x15:timelineRefs>',
+      '<x15:timelineRefs><x15:timelineRef r:id="rId3"/></x15:timelineRefs>',
     )
+    // the visible controls: a drawing part with one graphicFrame per control,
+    // wired from the worksheet
+    expect(worksheet).toContain('<drawing r:id="rId2"/>')
+    expect(sheetRels).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"',
+    )
+    const drawingPart = 'xl/drawings/drawing1.xml'
+    expect(await pkg.has(drawingPart)).toBe(true)
+    const drawing = await pkg.readText(drawingPart)
+    expect(drawing).toContain(
+      '<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" name="Region"/>',
+    )
+    expect(drawing).toContain(
+      '<tsle:timeslicer xmlns:tsle="http://schemas.microsoft.com/office/drawing/2010/timeslicer" name="Date"/>',
+    )
+    expect(drawing).toContain(
+      '<a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">',
+    )
+    expect((drawing.match(/<xdr:twoCellAnchor\b/g) ?? []).length).toBe(2)
 
     // Workbook rel + ext wiring.
     const workbookRels = await pkg.readText('xl/_rels/workbook.xml.rels')
@@ -192,6 +211,9 @@ describe('slicer write + read round trip', () => {
     )
     expect(contentTypes).toContain(
       '<Override PartName="/xl/timelineCaches/timelineCache1.xml" ContentType="application/vnd.ms-excel.timelineCache+xml"/>',
+    )
+    expect(contentTypes).toContain(
+      '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>',
     )
 
     // Read side restores identity, binding, and selection.

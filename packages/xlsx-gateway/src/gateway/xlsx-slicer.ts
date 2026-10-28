@@ -27,6 +27,7 @@
 import {
   allocatePartPath,
   appendRelationship,
+  ensureSheetDrawing,
   registerContentTypeOverride,
   relsPathFor,
   relativeTarget,
@@ -337,8 +338,55 @@ function buildTimelineCacheXml(
   )
 }
 
-// ─── extLst surgery (worksheet and workbook share the container shape) ─────
+// ─── On-sheet control (drawing graphicFrame) ────────────────────────────────
 
+/// The control's visible face lives in the worksheet's drawing part as a
+/// graphicFrame (sle:slicer / tsle:timeslicer). The slicer part alone is
+/// plumbing: without the frame Excel opens the file with no control on the
+/// sheet. An anchor that already names this control is left untouched — that
+/// is where Excel-authored geometry survives a rewrite.
+async function ensureControlFrame(
+  pkg: MutablePackage,
+  worksheetPath: string,
+  kind: 'slicer' | 'timeline',
+  name: string,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const drawing = await ensureSheetDrawing(pkg, worksheetPath, touchedEntries)
+  const xml = await pkg.readText(drawing.path)
+  const tag = kind === 'slicer' ? 'sle:slicer' : 'tsle:timeslicer'
+  if (new RegExp(`<${tag}\\b[^>]*\\bname="${escapeRegExp(name)}"`).test(xml)) return
+  // No session geometry: new controls land in a column of slots below the
+  // used range's first rows, offset per existing anchor so they do not stack.
+  const anchors = (xml.match(/<xdr:twoCellAnchor\b/g) ?? []).length
+  const fromCol = 8 + (anchors % 4) * 4
+  const fromRow = 2 + Math.floor(anchors / 4) * 14
+  const marker = (col: number, row: number) =>
+    `<xdr:col>${col}</xdr:col><xdr:colOff>0</xdr:colOff>` +
+    `<xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff>`
+  const control =
+    kind === 'slicer'
+      ? `<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer"` +
+        ` name="${escapeAttribute(name)}"/>`
+      : `<tsle:timeslicer xmlns:tsle="http://schemas.microsoft.com/office/drawing/2010/timeslicer"` +
+        ` name="${escapeAttribute(name)}"/>`
+  const frame =
+    '<xdr:twoCellAnchor editAs="oneCell">' +
+    `<xdr:from>${marker(fromCol, fromRow)}</xdr:from>` +
+    `<xdr:to>${marker(fromCol + 3, fromRow + 12)}</xdr:to>` +
+    '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr>' +
+    `<xdr:cNvPr id="${anchors + 2}" name="${escapeAttribute(name)}"/>` +
+    '<xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>' +
+    '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>' +
+    '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">' +
+    control +
+    '</a:graphicData></a:graphic><xdr:clientData/></xdr:graphicFrame>' +
+    '</xdr:twoCellAnchor>'
+  pkg.write(drawing.path, xml.replace('</xdr:wsDr>', `${frame}</xdr:wsDr>`))
+  touchedEntries.add(drawing.path)
+}
+
+// ─── extLst surgery (worksheet and workbook share the container shape) ─────
 interface ExtWiring {
   /// ext uri attribute value.
   readonly uri: string
@@ -748,6 +796,7 @@ async function writeControl(
     kind === 'slicer' ? WORKSHEET_SLICER_WIRING : WORKSHEET_TIMELINE_WIRING,
     touchedEntries,
   )
+  await ensureControlFrame(pkg, control.worksheetPath, kind, name, touchedEntries)
   return wiredWorkbook
 }
 
