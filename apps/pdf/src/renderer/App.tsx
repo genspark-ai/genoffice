@@ -134,12 +134,11 @@ import {
   remapOutlineTree,
 } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
-import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
+import type { PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
 import { CertSignDialog } from './CertSignDialog'
-import { ProtectionDialog } from './ProtectionDialog'
 import { BatesDialog } from './BatesDialog'
 import { buildBatesInserts, type BatesConfig } from './bates'
 import { SignaturesDialog, overallSignatureStatus } from './SignaturesDialog'
@@ -294,7 +293,6 @@ import {
   IconSign,
   IconCertSign,
   IconSignatures,
-  IconProtect,
   IconBates,
   IconPreviousField,
   IconNextField,
@@ -885,18 +883,9 @@ export default function App() {
   /** false until a password-protected document has been opened for editing by the
       session's own decryptor (pdf.js accepting the password is not the same claim) */
   const [sessionUnlocked, setSessionUnlocked] = useState(false)
-  /** protection the next save writes; null while the document saves plain */
-  const [encryption, setEncryption] = useState<PdfEncryptionInput | null>(null)
   /** password of the file on disk (null: it is plain) — a protection change makes it
       differ from `encryption.userPassword` until the save lands */
   const diskPasswordRef = useRef<string | null>(null)
-  /** the password the in-flight save is writing: it reaches diskPasswordRef
-      only once that save lands — the file on disk still carries the old one */
-  const pendingDiskPasswordRef = useRef<string | null | undefined>(undefined)
-  const [protectionDlg, setProtectionDlg] = useState(false)
-  /** the protection configuration differs from the file on disk (set, changed or
-      lifted since the last load); cleared by the post-save reload */
-  const [protectionDirty, setProtectionDirty] = useState(false)
   const [activeFormWidgetId, setActiveFormWidgetId] = useState<string | null>(null)
   const formControlRefs = useRef<Map<string, HTMLElement>>(new Map())
   const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
@@ -1253,24 +1242,12 @@ export default function App() {
           // handler must accept it too before the document counts as editable
           const password = passwordRef.current ?? ''
           const outcome = await window.pdfApi.decryptPdf(bytes, password)
-          if (outcome.ok) {
-            setEncryption({
-              userPassword: password,
-              ownerPassword: password,
-              permissions: outcome.permissions,
-            })
-            setSessionUnlocked(true)
-          } else {
-            setEncryption(null)
-            setSessionUnlocked(false)
-          }
+          setSessionUnlocked(outcome.ok)
           diskPasswordRef.current = password
         } else {
-          setEncryption(null)
           setSessionUnlocked(false)
           diskPasswordRef.current = null
         }
-        setProtectionDirty(false)
         for (let i = 1; i <= loaded.numPages; i++) {
           const page = await loaded.getPage(i)
           // Unrotated size; display size is derived by geom from the total rotation
@@ -2063,7 +2040,6 @@ export default function App() {
     deleted.size > 0 ||
     order !== null ||
     metadata !== null ||
-    protectionDirty ||
     (pendingOutline?.edited ?? false)
   const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
   const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
@@ -4370,7 +4346,6 @@ export default function App() {
     ...(diskPasswordRef.current !== null
       ? { decryption: { userPassword: diskPasswordRef.current } }
       : {}),
-    ...(encryption ? { encryption } : {}),
     ...(pendingOutline?.edited && pendingOutline.tree ? { outline: pendingOutline.tree } : {}),
   })
 
@@ -4465,12 +4440,6 @@ export default function App() {
       }
       if (result.skippedImageEdits && result.skippedImageEdits.length > 0) {
         noticeSkippedImages(result.skippedImageEdits)
-      }
-      // The write landed: a pending protection change is what the disk carries now
-      if (pendingDiskPasswordRef.current !== undefined) {
-        diskPasswordRef.current =
-          pendingDiskPasswordRef.current === '' ? null : pendingDiskPasswordRef.current
-        pendingDiskPasswordRef.current = undefined
       }
       // Reload: changes are in the file now, canvas renders directly, saved pending ops are cleared
       try {
@@ -7551,30 +7520,6 @@ export default function App() {
   const firstSignatureWidget =
     formWidgets.find((widget) => widget.kind === 'signature' && !formWidgetSigned(widget)) ?? null
 
-  const applyProtection = (result: {
-    userPassword: string
-    ownerPassword: string
-    permissions: PdfPermissions
-  }): void => {
-    setEncryption(result)
-    setProtectionDirty(true)
-    // the next save writes a file that only opens with the new password; the
-    // file ON DISK keeps the old one until that write lands, so the disk
-    // password follows the save instead of leading it
-    passwordRef.current = result.userPassword
-    pendingDiskPasswordRef.current = result.userPassword
-    setProtectionDlg(false)
-  }
-
-  const removeProtection = (): void => {
-    setEncryption(null)
-    setProtectionDirty(true)
-    // the next save writes plain; until then the disk file still needs the old password
-    passwordRef.current = undefined
-    pendingDiskPasswordRef.current = ''
-    setProtectionDlg(false)
-  }
-
   const openCertSignDialog = () => {
     if (dirty || saveInFlightRef.current !== null) {
       showNotice(t('certSaveFirst'))
@@ -8024,17 +7969,6 @@ export default function App() {
                       <IconCertSign />
                     </span>
                     <span>{t('certSign')}</span>
-                  </button>
-                  <button
-                    className="rb-big"
-                    disabled={readOnly || status !== 'ready'}
-                    data-tip={t('protectHint')}
-                    onClick={() => setProtectionDlg(true)}
-                  >
-                    <span className="rb-big-icon">
-                      <IconProtect />
-                    </span>
-                    <span>{t('protect')}</span>
                   </button>
                   {digitalSignatures.length > 0 && (
                     <button
@@ -10757,23 +10691,6 @@ export default function App() {
                   setPropsDlg(false)
                   applyEditOps([{ op: 'setMetadata', metadata: meta }])
                 }}
-              />
-            )}
-            {protectionDlg && (
-              <ProtectionDialog
-                t={t}
-                hasPassword={encryption !== null || documentEncrypted}
-                permissions={
-                  encryption?.permissions ?? {
-                    printing: true,
-                    modifying: true,
-                    annotating: true,
-                    copying: true,
-                  }
-                }
-                onApply={applyProtection}
-                onRemove={removeProtection}
-                onClose={() => setProtectionDlg(false)}
               />
             )}
             {batesDlg && (
