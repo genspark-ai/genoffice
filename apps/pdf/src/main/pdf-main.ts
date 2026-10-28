@@ -32,7 +32,7 @@ import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
 import { printJobOptions } from '@genoffice/electron-utils/print-job'
-import { WrongPasswordError, decryptDocument } from './pdf-crypt'
+import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
   ExportImagesRequest,
@@ -1242,6 +1242,9 @@ function registerPdfIpc(): void {
       return { ok: true as const, bytes: opened.bytes, permissions: opened.permissions }
     } catch (err) {
       if (err instanceof WrongPasswordError) return { ok: false as const, reason: 'wrong-password' }
+      if (err instanceof CertificateEncryptionError) {
+        return { ok: false as const, reason: 'certificate-encryption' }
+      }
       return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
     }
   })

@@ -1582,6 +1582,20 @@ export default function App() {
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {
+          // a certificate-encrypted document has no password to type: pdf.js
+          // reports it like a password failure, and the answer has to name the
+          // real reason instead of looping the prompt
+          try {
+            const raw = new Uint8Array(await window.pdfApi.readFile(path))
+            const probe = await window.pdfApi.decryptPdf(raw, '')
+            if (!probe.ok && probe.reason === 'certificate-encryption') {
+              showNotice(t('pwCertEncrypted'))
+              setStatus('error')
+              return
+            }
+          } catch {
+            /* classification is best-effort: the prompt still works without it */
+          }
           // like docs: a failed attempt clears the field alongside the error
           setPwWrong(passwordRef.current !== undefined)
           setPwInput('')

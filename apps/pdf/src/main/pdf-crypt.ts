@@ -32,6 +32,13 @@ export class WrongPasswordError extends Error {
   }
 }
 
+/** a certificate (public-key) encrypted document: there is no password to ask for */
+export class CertificateEncryptionError extends Error {
+  constructor() {
+    super('certificate encryption')
+  }
+}
+
 /** UTF-8 without a BOM, cut at the first NUL and at 127 bytes (§7.6.3.1) */
 function passwordBytes(password: string): Uint8Array {
   const utf8 = new TextEncoder().encode(password)
@@ -446,14 +453,279 @@ export function permissionsFromP(p: number): PdfPermissions {
   }
 }
 
-/** The document's first /ID element as raw bytes ('' when the file has none) */
-function documentId0(doc: PDFDocument): Uint8Array {
-  const id = doc.context.trailerInfo.ID
-  if (!(id instanceof PDFArray) || id.size() === 0) return new Uint8Array(0)
-  const hex0 = String(id.get(0)).replace(/^</, '').replace(/>$/, '')
-  const out = new Uint8Array(hex0.length / 2)
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex0.slice(i * 2, i * 2 + 2), 16)
+// ─── Byte-level pre-pass (object / cross-reference streams) ─────────────────
+/**
+ * pdf-lib parses the cross-reference data — and decompresses every /ObjStm —
+ * before any decryption here runs, so a real-world file (object streams, xref
+ * streams) throws inside the parser and never reaches the per-object pass. The
+ * streams are therefore decrypted on the raw bytes first: the cross-reference
+ * stream is never encrypted (§7.5.8.2), and an /ObjStm is encrypted as a whole
+ * (§7.5.7), so decrypting its payload is exactly what lets the parser read the
+ * objects inside. Strings of top-level objects stay for the per-object pass;
+ * objects inside an /ObjStm are not encrypted individually, so their strings
+ * must not be touched there.
+ */
+
+interface RawObject {
+  num: number
+  gen: number
+  dictStart: number
+  dictEnd: number
+  /** stream payload range; dataStart === -1 when the object has no stream */
+  dataStart: number
+  dataEnd: number
+}
+
+function hexToBytes(value: string): Uint8Array {
+  const clean = value.replace(/\s+/g, '')
+  const out = new Uint8Array(Math.ceil(clean.length / 2))
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2).padEnd(2, '0'), 16)
+  }
   return out
+}
+
+/** every top-level `N G obj`, with its dictionary and stream ranges */
+function scanRawObjects(text: string): RawObject[] {
+  const headers: { index: number; num: number; gen: number; dictStart: number }[] = []
+  const header = /(?:^|[\r\n\s])(\d+)\s+(\d+)\s+obj\b/g
+  let match: RegExpExecArray | null
+  while ((match = header.exec(text)) !== null) {
+    headers.push({
+      index: match.index,
+      num: Number(match[1]),
+      gen: Number(match[2]),
+      dictStart: header.lastIndex,
+    })
+  }
+  const out: RawObject[] = []
+  for (const [i, start] of headers.entries()) {
+    const limit = headers[i + 1]?.index ?? text.length
+    const slice = text.slice(start.dictStart, limit)
+    // the first `stream` after the header is the keyword: the payload starts
+    // past it, so a payload's own bytes cannot win the race
+    const streamAt = /\bstream(\r\n|\n|\r)/.exec(slice)
+    if (streamAt === null) {
+      const endobj = slice.indexOf('endobj')
+      const dictEnd = start.dictStart + (endobj === -1 ? slice.length : endobj)
+      out.push({
+        num: start.num,
+        gen: start.gen,
+        dictStart: start.dictStart,
+        dictEnd,
+        dataStart: -1,
+        dataEnd: -1,
+      })
+      continue
+    }
+    const dictEnd = start.dictStart + streamAt.index
+    const dataStart = start.dictStart + streamAt.index + streamAt[0].length
+    const dict = text.slice(start.dictStart, dictEnd)
+    const indirect = /\/Length\s+(\d+)\s+(\d+)\s+R/.exec(dict)
+    const direct = indirect === null ? /\/Length\s+(\d+)/.exec(dict) : null
+    let dataEnd = -1
+    if (direct !== null) {
+      const candidate = dataStart + Number(direct[1])
+      if (/^\s*endstream/.test(text.slice(candidate, candidate + 24))) dataEnd = candidate
+    }
+    if (dataEnd === -1) {
+      // no usable /Length (indirect, or a producer that got it wrong): the
+      // keyword bounds the payload; a producer's own EOL is not part of it
+      const endstream = text.indexOf('endstream', dataStart)
+      if (endstream === -1) {
+        out.push({
+          num: start.num,
+          gen: start.gen,
+          dictStart: start.dictStart,
+          dictEnd,
+          dataStart: -1,
+          dataEnd: -1,
+        })
+        continue
+      }
+      dataEnd = endstream
+      if (text.slice(dataEnd - 2, dataEnd) === '\r\n') dataEnd -= 2
+      else if (text[dataEnd - 1] === '\n' || text[dataEnd - 1] === '\r') dataEnd -= 1
+    }
+    out.push({
+      num: start.num,
+      gen: start.gen,
+      dictStart: start.dictStart,
+      dictEnd,
+      dataStart,
+      dataEnd,
+    })
+  }
+  return out
+}
+
+/** the /Encrypt dictionary as the file stores it (it is never encrypted itself) */
+function rawEncryptDict(text: string): { num: number; gen: number; body: string } | null {
+  const ref = /\/Encrypt\s+(\d+)\s+(\d+)\s+R/.exec(text)
+  if (ref === null) return null
+  const num = Number(ref[1])
+  const gen = Number(ref[2])
+  const found = scanRawObjects(text).find((o) => o.num === num && o.gen === gen)
+  if (found === undefined) return null
+  return { num, gen, body: text.slice(found.dictStart, found.dictEnd) }
+}
+
+function rawId0(text: string): Uint8Array {
+  const id = /\/ID\s*\[\s*<([0-9a-fA-F\s]+)>/.exec(text)
+  return id === null ? new Uint8Array(0) : hexToBytes(id[1]!)
+}
+
+/** the raw /Encrypt dictionary as a PDFDict, so deriveKey can read it */
+async function deriveKeyFromRaw(
+  body: string,
+  id0: Uint8Array,
+  password: string,
+  encryptMetadata: boolean,
+): Promise<Derived> {
+  const scratch = await PDFDocument.create()
+  const number = (name: string): number => {
+    const all = [...body.matchAll(new RegExp(`/${name}\\s+(-?\\d+)`, 'g'))].map((m) => Number(m[1]))
+    if (all.length === 0) return 0
+    // a crypt filter's own /Length counts bytes (16/32) while the root /Length
+    // counts bits (40/128/256): the larger value is the root's
+    return name === 'Length' ? Math.max(...all) : all[0]!
+  }
+  const hexBytes = (name: string): Uint8Array => {
+    const match = new RegExp(`/${name}\\s*<([0-9a-fA-F\\s]+)>`).exec(body)
+    return match === null ? new Uint8Array(0) : hexToBytes(match[1]!)
+  }
+  const cfm = /\/CFM\s*\/(AESV2|AESV3|V2)\b/.exec(body)?.[1] ?? 'V2'
+  const ue = hexBytes('UE')
+  const oe = hexBytes('OE')
+  const dict = scratch.context.obj({
+    R: number('R'),
+    V: number('V'),
+    Length: number('Length'),
+    P: number('P'),
+    O: PDFHexString.of(hex(hexBytes('O'))),
+    U: PDFHexString.of(hex(hexBytes('U'))),
+    ...(ue.length > 0 ? { UE: PDFHexString.of(hex(ue)) } : {}),
+    ...(oe.length > 0 ? { OE: PDFHexString.of(hex(oe)) } : {}),
+    CF: scratch.context.obj({ StdCF: scratch.context.obj({ CFM: cfm }) }),
+    ...(encryptMetadata ? {} : { EncryptMetadata: false }),
+  })
+  if (!(dict instanceof PDFDict)) throw new Error('could not build the encryption dictionary')
+  return deriveKey(dict, id0, password)
+}
+
+/** decrypt every top-level stream payload in place; returns the new bytes */
+function predecryptStreams(
+  bytes: Uint8Array,
+  derived: Derived,
+  encryptMetadata: boolean,
+): { bytes: Uint8Array; topLevel: Set<number> } {
+  const text = Buffer.from(bytes).toString('latin1')
+  const objects = scanRawObjects(text)
+  const topLevel = new Set(objects.map((o) => o.num))
+  const edits: { start: number; end: number; replacement: Uint8Array }[] = []
+  const indirectLengths = new Map<number, number>()
+  for (const obj of objects) {
+    if (obj.dataStart < 0) continue
+    const dict = text.slice(obj.dictStart, obj.dictEnd)
+    // the cross-reference stream is never encrypted, and a metadata stream is
+    // exempt when the document says so
+    if (/\/Type\s*\/XRef\b/.test(dict)) continue
+    if (!encryptMetadata && /\/Type\s*\/Metadata\b/.test(dict)) continue
+    const payload = bytes.subarray(obj.dataStart, obj.dataEnd)
+    let plain: Uint8Array
+    try {
+      plain = decryptPayload(derived, PDFRef.of(obj.num, obj.gen), payload, false)
+    } catch (err) {
+      throw new Error(`could not decrypt stream object ${obj.num}: ${String(err)}`)
+    }
+    edits.push({ start: obj.dataStart, end: obj.dataEnd, replacement: new Uint8Array(plain) })
+    const indirect = /\/Length\s+(\d+)\s+(\d+)\s+R/.exec(dict)
+    if (indirect !== null) {
+      indirectLengths.set(Number(indirect[1]), plain.length)
+      continue
+    }
+    const direct = /\/Length\s+(\d+)/.exec(dict)
+    if (direct !== null) {
+      const at = obj.dictStart + direct.index + direct[0].indexOf(direct[1]!)
+      edits.push({
+        start: at,
+        end: at + direct[1]!.length,
+        replacement: new TextEncoder().encode(String(plain.length)),
+      })
+    }
+  }
+  // an indirect /Length lives in an object of its own; its value is the only
+  // thing there, so the body is replaced wholesale
+  for (const obj of objects) {
+    const next = indirectLengths.get(obj.num)
+    if (next === undefined || obj.dataStart >= 0) continue
+    const raw = text.slice(obj.dictStart, obj.dictEnd)
+    const body = raw.trim()
+    if (!/^-?\d+$/.test(body)) continue
+    const at = obj.dictStart + raw.indexOf(body)
+    edits.push({
+      start: at,
+      end: at + body.length,
+      replacement: new TextEncoder().encode(String(next)),
+    })
+  }
+  if (edits.length === 0) return { bytes, topLevel }
+  edits.sort((a, b) => a.start - b.start)
+  // a plain Uint8Array, not a Node Buffer: pdf-lib's instance check runs in the
+  // renderer's realm under jsdom, where a Buffer is not one
+  let total = 0
+  let cursor = 0
+  for (const edit of edits) {
+    total += edit.start - cursor + edit.replacement.length
+    cursor = edit.end
+  }
+  total += bytes.length - cursor
+  const out = new Uint8Array(total)
+  let at = 0
+  cursor = 0
+  for (const edit of edits) {
+    out.set(bytes.subarray(cursor, edit.start), at)
+    at += edit.start - cursor
+    out.set(edit.replacement, at)
+    at += edit.replacement.length
+    cursor = edit.end
+  }
+  out.set(bytes.subarray(cursor), at)
+  return { bytes: out, topLevel }
+}
+
+/** decrypt the strings of top-level objects (ObjStm residents are already plain) */
+function decryptStringsOf(
+  doc: PDFDocument,
+  skip: PDFRef | null,
+  topLevel: Set<number>,
+  transform: (ref: PDFRef, data: Uint8Array) => Uint8Array,
+): void {
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    if (skip !== null && ref.toString() === skip.toString()) continue
+    if (!topLevel.has(ref.objectNumber) || obj instanceof PDFRawStream) continue
+    const walk = (node: unknown): void => {
+      if (node instanceof PDFDict) {
+        for (const [key, value] of node.entries()) {
+          if (value instanceof PDFString || value instanceof PDFHexString) {
+            node.set(key, PDFHexString.of(hex(transform(ref, value.asBytes()))))
+          } else {
+            walk(value)
+          }
+        }
+      } else if (node instanceof PDFArray) {
+        for (let i = 0; i < node.size(); i++) {
+          const value = node.get(i)
+          if (value instanceof PDFString || value instanceof PDFHexString) {
+            node.set(i, PDFHexString.of(hex(transform(ref, value.asBytes()))))
+          } else {
+            walk(value)
+          }
+        }
+      }
+    }
+    walk(obj)
+  }
 }
 
 export interface DecryptedPdf {
@@ -471,24 +743,34 @@ export interface DecryptedPdf {
  * then works on the document as if it had never been encrypted.
  */
 export async function decryptDocument(bytes: Uint8Array, password: string): Promise<DecryptedPdf> {
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
-  const encryptRef = doc.context.trailerInfo.Encrypt
-  const encryptDict = encryptRef ? doc.context.lookup(encryptRef) : undefined
-  if (!(encryptDict instanceof PDFDict)) {
-    return {
-      bytes,
-      permissions: permissionsFromP(-1),
-      neededPassword: false,
-    }
+  const text = Buffer.from(bytes).toString('latin1')
+  const encrypt = rawEncryptDict(text)
+  if (encrypt === null) {
+    return { bytes, permissions: permissionsFromP(-1), neededPassword: false }
   }
-  const derived = deriveKey(encryptDict, documentId0(doc), password)
-  transformPayloads(doc, encryptRef as PDFRef, (ref, data) =>
-    decryptPayload(derived, ref, data, true),
+  // a certificate-encrypted document carries /Recipients envelopes instead of
+  // the password entries: there is no password to type, and saying so is the
+  // whole answer this build can give
+  if (/\/Recipients\b/.test(encrypt.body) || /\/Filter\s*\/(?!Standard\b)/.test(encrypt.body)) {
+    throw new CertificateEncryptionError()
+  }
+  const encryptMetadata = !/\/EncryptMetadata\s+false/.test(encrypt.body)
+  const derived = await deriveKeyFromRaw(encrypt.body, rawId0(text), password, encryptMetadata)
+  // streams first, on the raw bytes: the parser cannot read an encrypted
+  // /ObjStm, and nothing below this line runs until it can
+  const pre = predecryptStreams(bytes, derived, encryptMetadata)
+  const doc = await PDFDocument.load(pre.bytes, { ignoreEncryption: true, updateMetadata: false })
+  const encryptRef = doc.context.trailerInfo.Encrypt
+  decryptStringsOf(
+    doc,
+    encryptRef instanceof PDFRef ? encryptRef : null,
+    pre.topLevel,
+    (ref, data) => decryptPayload(derived, ref, data, true),
   )
   delete (doc.context.trailerInfo as { Encrypt?: unknown }).Encrypt
   return {
     bytes: await doc.save({ useObjectStreams: false }),
-    permissions: permissionsFromP(uintOf(encryptDict, 'P')),
+    permissions: permissionsFromP(Number(/\/P\s+(-?\d+)/.exec(encrypt.body)?.[1] ?? -1)),
     neededPassword: password.length > 0,
   }
 }
