@@ -7684,9 +7684,11 @@ function floatingObjectDragPlugin(): Plugin {
           // A turned textbox sits static inside the rotated .box-rotator that owns
           // the float slot: translate the rotator (same target as the rotate
           // plugin's turnEl), or the box slides along the rotated axes
-          const visual = (isTextbox
-            ? (wrapper.querySelector('.box-rotator') ?? wrapper.querySelector('.doc-textbox'))
-            : wrapper.querySelector('.doc-img-crop, .doc-protected-img')) as HTMLElement | null
+          const visual = (
+            isTextbox
+              ? (wrapper.querySelector('.box-rotator') ?? wrapper.querySelector('.doc-textbox'))
+              : wrapper.querySelector('.doc-img-crop, .doc-protected-img')
+          ) as HTMLElement | null
           // Images may already carry a rotation/flip transform: the drag translate
           // must compose with it (prepended = applied in screen space) and the
           // original must come back on mouseup, or the orientation vanishes
