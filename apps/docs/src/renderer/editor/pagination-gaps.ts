@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
@@ -61,7 +61,13 @@ export const PaginationGapsExtension = Extension.create({
           apply(tr, set) {
             const next = tr.getMeta(key) as DecorationSet | undefined
             if (next) return next
-            return set.map(tr.mapping, tr.doc)
+            let removed: Set<unknown> | null = null
+            const mapped = set.map(tr.mapping, tr.doc, {
+              onRemove: (spec) => (removed ??= new Set()).add(spec),
+            })
+            if (!removed) return mapped
+            const kept = keptGaps(set, mapped, removed, tr)
+            return kept.length > 0 ? mapped.add(tr.doc, kept) : mapped
           },
         },
         props: {
@@ -73,6 +79,75 @@ export const PaginationGapsExtension = Extension.create({
     ]
   },
 })
+
+/** a page gap widget's spec: what keptGaps needs to put it back */
+interface GapWidgetSpec {
+  side: number
+  key: string
+  gapKind: GapKind
+  toDOM: () => HTMLElement
+  /** a block gap drawn mid-paragraph (its page-leading paragraph was joined
+   *  into the one before) */
+  inlineDOM?: () => HTMLElement
+}
+
+/** deleted characters around a break beyond which it is left to the next pass */
+const KEEP_GAP_MAX_DELETED = 200
+
+/**
+ * The page gaps a transaction's mapping dropped that stay, at their mapped
+ * position, until the next pass places them. A widget goes when the character
+ * on its side is deleted: a backspace at the start of a page dropped the break
+ * and ran the two pages' text together until the pass ~300 ms later. A break
+ * whose surrounding text is cut by only a few lines still stands; a longer
+ * cut moves whole pages and drops it as before. A block gap whose paragraph
+ * was joined into the one before stays at the join as a mid-paragraph gap.
+ */
+function keptGaps(
+  old: DecorationSet,
+  mapped: DecorationSet,
+  removed: Set<unknown>,
+  tr: Transaction,
+): Decoration[] {
+  const taken = new Set(
+    mapped.find(undefined, undefined, (spec) => spec.gapKind != null).map((d) => d.from),
+  )
+  const out: Decoration[] = []
+  for (const d of old.find(undefined, undefined, (spec) => removed.has(spec))) {
+    const spec = d.spec as Partial<GapWidgetSpec>
+    if ((spec.gapKind !== 'block' && spec.gapKind !== 'inline') || !spec.toDOM) continue
+    let p = d.from
+    let deleted = 0
+    for (const map of tr.mapping.maps) {
+      map.forEach((oldStart, oldEnd) => {
+        if (oldStart <= p && p <= oldEnd) deleted += oldEnd - oldStart
+      })
+      p = map.map(p, -1)
+    }
+    if (deleted > KEEP_GAP_MAX_DELETED || taken.has(p)) continue
+    const $p = tr.doc.resolve(p)
+    let widget: Decoration | null = null
+    if ($p.depth === 0) {
+      if (spec.gapKind === 'block') widget = Decoration.widget(p, spec.toDOM, spec)
+    } else if ($p.parent.inlineContent) {
+      if (spec.gapKind === 'inline') widget = Decoration.widget(p, spec.toDOM, spec)
+      else if (spec.inlineDOM) {
+        // a distinct key: the block gap's DOM must not be reused inside the text
+        const joined: GapWidgetSpec = {
+          side: -1,
+          key: `${spec.key}-joined`,
+          gapKind: 'inline',
+          toDOM: spec.inlineDOM,
+        }
+        widget = Decoration.widget(p, joined.toDOM, joined)
+      }
+    }
+    if (!widget) continue
+    taken.add(p)
+    out.push(widget)
+  }
+  return out
+}
 
 const rowFillKey = new PluginKey<DecorationSet>('paginationRowFills')
 
@@ -577,38 +652,37 @@ export function setPageGaps(
     // boundaryY in the key: a reused widget must not keep a stale boundary
     // (cols too: a table-structure edit must rebuild the spanning cell)
     const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0},${Math.round(metrics.pageLeft ?? -1)}`
-    decos.push(
-      Decoration.widget(
-        pos,
-        () => {
-          const el = makeGapEl(metrics, kind, gap.cols)
-          if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
-          // margins don't apply to table-rows and cuts are zero-height markers;
-          // tables inside mixed-column regions are out of scope anyway (v1)
-          if (gap.pullUp && kind !== 'cut' && kind !== 'table')
-            el.style.marginTop = `-${gap.pullUp}px`
-          if (notes) el.appendChild(notes)
-          if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
-            for (const hf of hfEls) el.appendChild(hf)
-          } else if (hfEls && kind === 'table') {
-            // table-row gaps position their strips inside the absolutely-filled cell;
-            // only zero-height cut markers still can't carry them
-            const fill = el.querySelector('.page-gap-table-fill')
-            if (fill) for (const hf of hfEls) fill.appendChild(hf)
-          }
-          return el
-        },
-        {
-          side: -1,
-          // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
-          // position without changing the page, so an ordinal key lets sameGaps
-          // skip the dispatch entirely and lets PM reuse the widget DOM when a
-          // dispatch does happen
-          // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
-          key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
-        },
-      ),
-    )
+    const build = (as: GapKind) => {
+      const el = makeGapEl(metrics, as, gap.cols)
+      if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
+      // margins don't apply to table-rows and cuts are zero-height markers;
+      // tables inside mixed-column regions are out of scope anyway (v1)
+      if (gap.pullUp && as !== 'cut' && as !== 'table') el.style.marginTop = `-${gap.pullUp}px`
+      if (notes) el.appendChild(notes)
+      if (hfEls && (as === 'block' || as === 'inline' || as === 'cell')) {
+        for (const hf of hfEls) el.appendChild(hf)
+      } else if (hfEls && as === 'table') {
+        // table-row gaps position their strips inside the absolutely-filled cell;
+        // only zero-height cut markers still can't carry them
+        const fill = el.querySelector('.page-gap-table-fill')
+        if (fill) for (const hf of hfEls) fill.appendChild(hf)
+      }
+      return el
+    }
+    const toDOM = () => build(kind)
+    const spec: GapWidgetSpec = {
+      side: -1,
+      // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
+      // position without changing the page, so an ordinal key lets sameGaps
+      // skip the dispatch entirely and lets PM reuse the widget DOM when a
+      // dispatch does happen
+      // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
+      key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
+      gapKind: kind,
+      toDOM,
+      inlineDOM: kind === 'block' ? () => build('inline') : undefined,
+    }
+    decos.push(Decoration.widget(pos, toDOM, spec))
     // repeated header rows (w:tblHeader) directly after the table gap: one widget per
     // cloned tr, side 0 so they land between the gap (side -1) and the split row
     if (kind === 'table' && gap.repeatHeaderEls?.length) {
