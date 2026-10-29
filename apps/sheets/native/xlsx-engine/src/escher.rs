@@ -105,7 +105,9 @@ pub(crate) fn parse_blips(dgg: &[u8]) -> Vec<Blip> {
             // BSE: btWin32, btMacOS, rgbUid(16), tag(2), cRef(4), foDelay(4),
             // cUsage, cbName, two unused bytes — then the named image.
             let name_len = bytes[29] as usize;
-            let blip = &bytes[36 + name_len..];
+            let Some(blip) = bytes.get(36 + name_len..) else {
+                continue;
+            };
             if blip.len() < 8 {
                 continue;
             }

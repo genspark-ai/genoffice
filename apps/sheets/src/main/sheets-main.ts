@@ -271,7 +271,7 @@ const tMain = createI18n({
     filterXlsm: 'Excel Macro-Enabled Workbooks',
     odsImportMsg: 'Convert this .{ext} workbook?',
     odsImportDetail:
-      'GenOffice edits .xlsx, not ODF. Values, formulas and dates carry over (formulas are rewritten into Excel syntax, and any that cannot be rewritten safely keeps its current result). Styles, column widths and charts are not carried over. The original file is never changed; the converted copy saves as .xlsx the first time you save.',
+      'GenOffice edits .xlsx, not ODF. Values, formulas and dates carry over (formulas are rewritten into Excel syntax, and any that cannot be rewritten safely keeps its current result). Pictures, merged cells, column widths and row heights come along too; other styling such as borders, and charts, are not carried over. The original file is never changed; the converted copy saves as .xlsx the first time you save.',
     odsImportConvertBtn: 'Convert and open',
     dlgAddAttachment: 'Add Attachments',
     filterSupported: 'Supported Files',
