@@ -121,6 +121,9 @@ function applyNormalTemplate(dd: DocDefaults): DocDefaults {
     italic: _it,
     color: _c,
     borderSides: _bs,
+    indentLeftTwips: _il,
+    indentRightTwips: _ir,
+    indentFirstLineTwips: _if,
     widowControl: _w,
     suppressAutoHyphens: _h,
     ...kept
@@ -249,6 +252,13 @@ export async function parseStyles(
     if (pPr && onOffOf(pPr, 'w:widowControl') === false) dd.widowControl = false
     const ddBorders = pPr ? paraBorderSidesOf(pPr, theme) : undefined
     if (ddBorders) dd.borderSides = ddBorders
+    const ddInd = pPr ? findChild(pPr, 'w:ind') : undefined
+    if (ddInd) {
+      const ind = indentTwipsOf(ddInd)
+      if (ind.left !== undefined) dd.indentLeftTwips = ind.left
+      if (ind.right !== undefined) dd.indentRightTwips = ind.right
+      if (ind.firstLine !== undefined) dd.indentFirstLineTwips = ind.firstLine
+    }
     if (Object.keys(dd).length > 0) docDefaults = dd
   }
   const linkedTemplate = await linksNormalTemplate(zip)

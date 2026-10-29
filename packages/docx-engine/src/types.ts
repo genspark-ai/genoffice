@@ -913,6 +913,18 @@ export interface HeaderFooter {
   /** editor-side: bytes of pictures inserted into the part, keyed by the
    *  placeholder token their drawing XML carries (see SaveOptions.newPictures) */
   newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
+  /** floating pictures moved or resized in the strip, keyed by HfImage.drawing */
+  pictureEdits?: Record<number, HfPictureEdit>
+  /** only pictureEdits changed: the part's text paragraphs keep their bytes */
+  pictureOnly?: boolean
+}
+
+/** a floating header/footer picture's new box, page-relative px (top-left corner) */
+export interface HfPictureEdit {
+  posXPx: number
+  posYPx: number
+  widthPx: number
+  heightPx: number
 }
 
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
@@ -968,6 +980,9 @@ export interface HfImage {
   anchorPara?: number
   /** source crop (a:srcRect) as fractions of the source picture (display-only) */
   crop?: { l: number; t: number; r: number; b: number }
+  /** ordinal of its <w:drawing> in the part XML: set on single-picture anchors,
+   *  the ones the strip can move and resize (HeaderFooter.pictureEdits keys) */
+  drawing?: number
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -2248,6 +2263,12 @@ export interface DocDefaults {
   lineRule?: 'auto' | 'atLeast' | 'exact'
   /** F1: raw line twips for atLeast/exact */
   lineRawTwips?: number
+  /** pPrDefault w:ind (twips, hanging as a negative first line): the base every
+   *  paragraph's indents inherit from, under any style. Google Docs exports
+   *  carry the document's first-line indent here */
+  indentLeftTwips?: number
+  indentRightTwips?: number
+  indentFirstLineTwips?: number
   /** F1: paragraph spacing before default (twips); undefined = not set in docDefaults */
   spaceBeforeTwips?: number
   /** F1: paragraph spacing after default (twips); undefined = not set in docDefaults */

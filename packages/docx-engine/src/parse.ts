@@ -5626,6 +5626,9 @@ const ANCHOR_HOSTS = new Set(['w:drawing', 'w:pict'])
 const TXBX_CONTENT = new Set(['w:txbxContent'])
 const WP_INLINE = new Set(['wp:inline'])
 const WP_ANCHOR = new Set(['wp:anchor'])
+/** the <w:drawing> elements of a header/footer part, in the order HfImage.drawing counts them */
+export const HF_DRAWING_RE = /<w:drawing[\s>][\s\S]*?<\/w:drawing>/g
+
 /** wp:docPr ids of the anchored drawings in a layout-table row / on a cell-run image (binds HfImage.anchorPara) */
 const hfRowAnchorIds = new WeakMap<HfParagraph, string[]>()
 const hfImageAnchorId = new WeakMap<HfImage, string>()
@@ -5950,8 +5953,10 @@ async function hfImages(
     const jc = /<w:jc w:val="(\w+)"/.exec(partXml.slice(pStart, at))?.[1]
     return jc === 'left' || jc === 'center' || jc === 'right' ? jc : undefined
   }
-  for (const m of partXml.matchAll(/<w:drawing[\s>][\s\S]*?<\/w:drawing>/g)) {
+  let drawingOrdinal = -1
+  for (const m of partXml.matchAll(HF_DRAWING_RE)) {
     const frag = m[0]
+    drawingOrdinal++
     if (fallbackDup(m.index!)) continue
     if (!/<wp:anchor[\s>]/.test(frag) && onCellRun(m.index!)) continue
     if (!/<wp:anchor[\s>]/.test(frag) && onTextRun(frag)) continue
@@ -6000,6 +6005,11 @@ async function hfImages(
         image.wrap = wrap === 'TopAndBottom' ? 'topBottom' : (wrap.toLowerCase() as HfImage['wrap'])
       }
       readAnchorPos(frag, image)
+      // one picture with its own extents: the strip can move and resize it
+      // (patchHfPicturesXml finds it again by this ordinal)
+      if (/<a:blip[\s>]/.test(frag) && (frag.match(/<pic:pic[\s>]/g) ?? []).length === 1) {
+        image.drawing = drawingOrdinal
+      }
       // inside a layout-table cell, column/margin offsets measure from that cell's text column
       if (image.posXPx != null && image.posHRel === 'margin' && onCellRun(m.index!)) {
         image.posXPx += hfCellColumnLeftPx(partXml, m.index!)
@@ -7681,15 +7691,29 @@ function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
       const hostPPr = /^<w:p\b[^>]*>\s*(<w:pPr>[\s\S]*?<\/w:pPr>)/.exec(xml)?.[1] ?? ''
       const eff = resolveParagraphPropsXml(hostPPr, rctx)
       const g = directParaGeometry(eff)
+      const floating = /<wp:anchor[\s>]/.test(xml)
+      // an in-line picture sits on a text line, which takes the chain's indents
+      // (style, docDefaults) like any other: a centered picture under a
+      // docDefaults first-line indent shifts right by half of it in Word. The
+      // wrapper has no data-style to bring them, so they travel inline; a float
+      // positions against the column and keeps only its direct ones
+      const indent =
+        !floating && !eff.indent.chars
+          ? {
+              indentLeftTwips: eff.indent.left,
+              indentRightTwips: eff.indent.right,
+              indentFirstLineTwips: eff.indent.firstLine,
+            }
+          : g
       // zero indents stay off the model: the wrapper has no style indent to cancel
-      if (g.indentLeftTwips) meta.imageParagraphIndentLeft = g.indentLeftTwips
-      if (g.indentRightTwips) meta.imageParagraphIndentRight = g.indentRightTwips
-      if (g.indentFirstLineTwips) meta.imageParagraphIndentFirstLine = g.indentFirstLineTwips
+      if (indent.indentLeftTwips) meta.imageParagraphIndentLeft = indent.indentLeftTwips
+      if (indent.indentRightTwips) meta.imageParagraphIndentRight = indent.indentRightTwips
+      if (indent.indentFirstLineTwips)
+        meta.imageParagraphIndentFirstLine = indent.indentFirstLineTwips
       // the picture node carries no data-style, so the chain's spacing (style,
       // docDefaults, builtin 0) has to travel inline. An unstyled floating
       // picture takes only its direct spacing: the base rule skips floats
       // because the anchor line inside already carries the default spacing
-      const floating = /<wp:anchor[\s>]/.test(xml)
       const chain = !floating || eff.styleId !== undefined
       const direct = (k: string) => eff.source[k] === 'direct'
       if (chain || direct('spaceBefore') || direct('spaceBeforeAuto')) {

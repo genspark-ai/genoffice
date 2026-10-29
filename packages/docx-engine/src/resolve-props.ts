@@ -204,6 +204,9 @@ function docDefaultsPLayer(d: DocDefaults | undefined): PLayer {
   if (d.spaceAfterTwips !== undefined) out.spaceAfter = d.spaceAfterTwips
   if (d.spaceBeforeAuto !== undefined) out.spaceBeforeAuto = d.spaceBeforeAuto
   if (d.spaceAfterAuto !== undefined) out.spaceAfterAuto = d.spaceAfterAuto
+  if (d.indentLeftTwips !== undefined) out.indentLeft = d.indentLeftTwips
+  if (d.indentRightTwips !== undefined) out.indentRight = d.indentRightTwips
+  if (d.indentFirstLineTwips !== undefined) out.indentFirstLine = d.indentFirstLineTwips
   const line = lineOf(d.lineRule, d.lineRawTwips, d.lineSpacing)
   if (line) out.line = line
   if (d.borderSides) out.borders = d.borderSides

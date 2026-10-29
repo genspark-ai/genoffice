@@ -387,6 +387,14 @@ export interface GapMetrics {
    *  documents center narrower pages); absent = the page spans the paper */
   pageLeft?: number
   pageWidth?: number
+  /** unused body height of the page the gap closes (px, inside marginBottom): its
+   *  text area ends this far below the gap's top (a dropped picture is anchored
+   *  to fit above it, imageDropPages) */
+  bodyPad?: number
+  /** text-area height of the page the gap closes (px, footnotes excluded): with
+   *  the previous gap's bottom it places that page's body bottom even when the
+   *  page's content ran past it */
+  bodyHeight?: number
 }
 
 /** Word drops the space-before of a block that opens a page after a natural
@@ -416,6 +424,8 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
   }
   gap.style.height = `${m.marginBottom + GAP_BAND + m.marginTop}px`
   gap.style.setProperty('--gap-mb', `${m.marginBottom}px`)
+  if (m.bodyPad) gap.dataset.bodyPad = m.bodyPad.toFixed(1)
+  if (m.bodyHeight) gap.dataset.bodyHeight = m.bodyHeight.toFixed(1)
   gap.style.setProperty('--gap-mt', `${m.marginTop}px`)
   // written even when zero: a page without a header push must clear the previous one
   if (m.sectionMarginTop !== undefined)

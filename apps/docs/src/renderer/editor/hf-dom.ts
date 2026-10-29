@@ -1299,6 +1299,15 @@ export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'l
   if (img.widthPx) el.style.width = `${img.widthPx}px`
   // hairline shapes (a 0.25pt rule) still get one device pixel, as in Word
   if (img.heightPx) el.style.height = `${Math.max(1, img.heightPx)}px`
+  if (img.drawing != null && img.widthPx && img.heightPx) {
+    // header editing moves and resizes it (hf-float-edit): its page box,
+    // the anchor translate resolved
+    el.dataset.hfDrawing = String(img.drawing)
+    el.dataset.pageX = (p.x + (img.widthPx * p.translateX) / 100).toFixed(2)
+    el.dataset.pageY = (p.y + (img.heightPx * p.translateY) / 100).toFixed(2)
+    el.dataset.boxW = String(img.widthPx)
+    el.dataset.boxH = String(img.heightPx)
+  }
   if (img.washout) el.style.filter = hfWashoutFilter(img.washout)
   return el
 }

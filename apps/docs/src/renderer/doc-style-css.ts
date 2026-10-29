@@ -744,11 +744,11 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // onto every textbox line regardless of the box's own runs/snapToGrid
     rules.push(`.doc-page .doc-textbox-para { line-height:${lh ?? cssGridLineBase()} }`)
     // Normal's first-line indent applies to plain body paragraphs (not lists —
-    // their geometry runs on --li-left/--li-hang)
-    if ((normal?.indentFirstLineTwips ?? 0) > 0) {
-      rules.push(
-        `.doc-page p { text-indent:${((normal!.indentFirstLineTwips as number) / 20).toFixed(1)}pt }`,
-      )
+    // their geometry runs on --li-left/--li-hang); docDefaults' is the base
+    // under it (Google Docs exports carry the document's indent there)
+    const firstLineTwips = normal?.indentFirstLineTwips ?? dd?.indentFirstLineTwips ?? 0
+    if (firstLineTwips > 0) {
+      rules.push(`.doc-page p { text-indent:${(firstLineTwips / 20).toFixed(1)}pt }`)
     }
     // Normal's left/right indents reach unstyled paragraphs only: styled ones
     // inherit through their basedOn chain (resolved into their own rule), and a

@@ -76,6 +76,7 @@ import {
   PAGE_MARK,
   placeholderText,
   type HeaderFooter,
+  type HfPictureEdit,
   type HfImage,
   type NoteInfo,
   type ParsedDocFull,
@@ -122,7 +123,16 @@ import {
   type HfEditorHandle,
 } from './editor/hf-editor'
 import type { HfAction, HfEditingInfo } from './components/ribbon-hf-tab'
-import { hfCommitTarget, hfLinked, resolveHf, withHfLink, type HfSectionState } from './hf-sections'
+import {
+  hfCommitTarget,
+  hfLinked,
+  hfTextCommit,
+  resolveHf,
+  withHfLink,
+  withHfPictureEdit,
+  type HfSectionState,
+} from './hf-sections'
+import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { textColorValue } from './editor/text-color'
 import { textOutlineCssValue } from './editor/text-outline'
@@ -1523,8 +1533,21 @@ export function App() {
     if (!target) return false
     // functional: two commits in one turn (Remove Page Numbers on both strips, an
     // editor exit racing an AI set) must both land
-    setSectionHfEdits((m) => ({ ...m, [target.key]: next }))
+    setSectionHfEdits((m) => ({ ...m, [target.key]: hfTextCommit(m[target.key], next) }))
     return true
+  }
+  /** a floating header picture moved or resized on section `si`'s strip (hf-float-edit) */
+  const commitHfPictureAt = (
+    si: number,
+    kind: 'header' | 'footer',
+    variant: HfView,
+    drawing: number,
+    edit: HfPictureEdit,
+  ) => {
+    setSectionHfEdits(
+      (m) =>
+        withHfPictureEdit({ ...hfState, edits: m }, si, kind, variant, drawing, edit)?.edits ?? m,
+    )
   }
   const setHfLink = (si: number, kind: 'header' | 'footer', variant: HfView, on: boolean) => {
     if (
@@ -4271,10 +4294,25 @@ export function App() {
             hfHasVisibleContent(gap.value, gap.images) ||
             gap.variant !== edge?.variant ||
             gap.section !== edge.section
+          // effective margins after header/footer push-down (an over-tall header pushes
+          // the body down); a titlePg section's first page uses the first-page variant's
+          // heights so the gap band matches the slice capacity (firstContentHeight)
+          const hfOfPage = (idx: number): { headerPx: number; footerPx: number } => {
+            const h = hfHs?.[slices[idx].section] ?? singleHfPx
+            return firsts[idx]
+              ? {
+                  headerPx: h.firstHeaderPx ?? h.headerPx,
+                  footerPx: h.firstFooterPx ?? h.footerPx,
+                }
+              : h
+          }
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
-            const hfH = hfHs?.[slices[pageIdx].section] ?? singleHfPx
+            // the push-down the page's body actually starts under: a first-page
+            // header taller than the default one moves that page's body, and its
+            // floats must measure from the same top or they land that much lower
+            const hfH = hfOfPage(pageIdx)
             const side = pageMargins(s, nums[pageIdx], mirrorMargins)
             return {
               pageW: twipsToPx(s.pageWidth),
@@ -4373,18 +4411,6 @@ export function App() {
             // gap = previous page's (its section's) bottom margin + inter-page band + this page's (its section's) top margin
             const prevSec = secList?.[slices[k].section]?.settings ?? section
             const nextSec = secList?.[slice.section]?.settings ?? section
-            // effective margins after header/footer push-down (an over-tall header pushes
-            // the body down); a titlePg section's first page uses the first-page variant's
-            // heights so the gap band matches the slice capacity (firstContentHeight)
-            const hfOfPage = (idx: number): { headerPx: number; footerPx: number } => {
-              const h = hfHs?.[slices[idx].section] ?? singleHfPx
-              return firsts[idx]
-                ? {
-                    headerPx: h.firstHeaderPx ?? h.headerPx,
-                    footerPx: h.firstFooterPx ?? h.footerPx,
-                  }
-                : h
-            }
             const nextHf = hfOfPage(k + 1)
             const prevHf = hfOfPage(k)
             const metrics = {
@@ -4491,7 +4517,9 @@ export function App() {
             // positioned from that page's origin (the gap's bottom edge is marginTop
             // above it), like PaginationPreview's per-page watermark layer
             for (const img of gapHeader.floats) {
-              hfEls.push(makeHfFloatImgEl(img, floatBoxOf(k + 1), 'gap'))
+              hfEls.push(
+                tagHfFloatEl(makeHfFloatImgEl(img, floatBoxOf(k + 1), 'gap'), gapHeader, k + 1),
+              )
             }
             const hfProps =
               hfEls.length > 0
@@ -4510,7 +4538,8 @@ export function App() {
             // in-table gaps carry no footnote area (absolute positioning inside a table-row is unreliable); footnotes stay in the end-of-document list
             let notes: HTMLElement | undefined
             let notesKey: string | undefined
-            let notesMetrics = metrics
+            // the page's text area (footnotes excluded): dropped pictures fit above its bottom
+            let notesMetrics = { ...metrics, bodyHeight: prevContentH - fnH }
             if (items.length > 0) {
               const contentW = twipsToPx(
                 prevSec.pageWidth - prevSec.marginLeft - prevSec.marginRight,
@@ -4525,7 +4554,7 @@ export function App() {
                 (id) => editNote('footnote', id),
               )
               notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
-              notesMetrics = { ...metrics, marginBottom: metrics.marginBottom + fnH }
+              notesMetrics = { ...notesMetrics, marginBottom: metrics.marginBottom + fnH }
             }
             const markShown = () => items.forEach((n) => gapIds.add(n.id))
             // split floating table: the boundary is one of its row cuts, so the
@@ -4546,7 +4575,11 @@ export function App() {
                 boundaryY: slice.start,
                 metrics:
                   pad > 0
-                    ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                    ? {
+                        ...notesMetrics,
+                        marginBottom: notesMetrics.marginBottom + pad,
+                        bodyPad: pad,
+                      }
                     : notesMetrics,
                 ...(pullUp > 0.5 ? { pullUp } : {}),
                 ...(blocks[i].breakBefore ||
@@ -4573,7 +4606,11 @@ export function App() {
                   boundaryY: slice.start,
                   metrics:
                     pad > 0
-                      ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                      ? {
+                          ...notesMetrics,
+                          marginBottom: notesMetrics.marginBottom + pad,
+                          bodyPad: pad,
+                        }
                       : notesMetrics,
                   ...(pullUp > 0.5 ? { pullUp } : {}),
                   ...hfProps,
@@ -4764,11 +4801,14 @@ export function App() {
           // first page has no gap widget; its floating header images ride a
           // dedicated zero-height widget at the document start
           if (slices.length > 0) {
-            const floats = pageHfOf(0, 'header').floats
+            const firstHeader = pageHfOf(0, 'header')
+            const floats = firstHeader.floats
             if (floats.length > 0) {
               const box = floatBoxOf(0)
               firstPageFloats = {
-                els: floats.map((img) => makeHfFloatImgEl(img, box, 'lead')),
+                els: floats.map((img) =>
+                  tagHfFloatEl(makeHfFloatImgEl(img, box, 'lead'), firstHeader, 0),
+                ),
                 key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginLeft)}·${Math.round(box.hostLeft ?? 0)}·${Math.round(box.marginTop)}·${Math.round(box.sectMarginTop)}·${Math.round(box.paperX ?? 0)}`,
               }
             }
@@ -6242,6 +6282,26 @@ export function App() {
     if (el) startGapHfEdit(el)
     else setHfAreaEditRequest({ kind, nonce: Date.now() })
   }
+  // floating header pictures: moved and resized in header editing, reached from
+  // the body by a double-click (Word)
+  const hfFloatEditRef = useRef({ open: openHfEditor, commit: commitHfPictureAt, editable: false })
+  hfFloatEditRef.current = {
+    open: openHfEditor,
+    commit: commitHfPictureAt,
+    editable: !readMode && !isProtected,
+  }
+  useEffect(() => {
+    const root = scrollContainerRef.current
+    if (!root) return
+    return installHfFloatEdit({
+      root,
+      editing: () => hfEditingRef.current != null,
+      editable: () => hfFloatEditRef.current.editable,
+      open: (pageIdx) => hfFloatEditRef.current.open('header', pageIdx),
+      commit: (t, edit) =>
+        hfFloatEditRef.current.commit(t.section, 'header', t.variant, t.drawing, edit),
+    })
+  }, [])
   const toggleEvenOddHf = (on: boolean) => {
     hfEditorRef.current?.exit()
     setEvenOddHf(on)

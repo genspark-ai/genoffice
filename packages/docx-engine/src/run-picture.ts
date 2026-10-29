@@ -4,8 +4,38 @@ import {
   resizeInlinePictureXml,
   swapAnchorWrap,
 } from './generate'
-import { runPictureAnchorOf } from './parse'
-import type { ImageWrap } from './types'
+import { HF_DRAWING_RE, runPictureAnchorOf } from './parse'
+import type { HfPictureEdit, ImageWrap } from './types'
+
+const EMU_PER_PX = 9525
+
+/**
+ * Write the floating pictures a header/footer strip moved or resized back into
+ * the part: each edited <w:drawing> (by its HfImage.drawing ordinal) is pinned
+ * to the page at its new top-left corner and takes the new extents. Every
+ * other byte of the part is kept.
+ */
+export function patchHfPicturesXml(partXml: string, edits: Record<number, HfPictureEdit>): string {
+  let ordinal = -1
+  return partXml.replace(HF_DRAWING_RE, (frag) => {
+    ordinal++
+    const edit = edits[ordinal]
+    if (!edit || !/<wp:anchor[\s>]/.test(frag)) return frag
+    const emu = (px: number) => Math.round(px * EMU_PER_PX)
+    const out = frag
+      // simplePos="1" places by wp:simplePos instead of the position elements
+      .replace(/(<wp:anchor\b[^>]*\bsimplePos=")(?:1|true)"/, '$10"')
+      .replace(
+        /<wp:positionH\b[\s\S]*?<\/wp:positionH>/,
+        `<wp:positionH relativeFrom="page"><wp:posOffset>${emu(edit.posXPx)}</wp:posOffset></wp:positionH>`,
+      )
+      .replace(
+        /<wp:positionV\b[\s\S]*?<\/wp:positionV>/,
+        `<wp:positionV relativeFrom="page"><wp:posOffset>${emu(edit.posYPx)}</wp:posOffset></wp:positionV>`,
+      )
+    return resizeAnchoredPictureXml(out, edit.widthPx, edit.heightPx)
+  })
+}
 
 /** The editor's geometry of a run-level picture (its docInlineImage attrs). */
 export interface RunPictureGeometry {

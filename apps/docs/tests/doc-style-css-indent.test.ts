@@ -44,6 +44,36 @@ describe('docStyleCss first-line indent', () => {
   })
 })
 
+describe('docStyleCss default first-line indent', () => {
+  const withNormal = (normal: StyleDisplay, docDefaults: Record<string, unknown>) => {
+    const styles = new Map<string, StyleInfo>()
+    styles.set('Normal', {
+      styleId: 'Normal',
+      name: 'normal',
+      type: 'paragraph',
+      isDefault: true,
+      display: normal,
+    } as StyleInfo)
+    return docStyleCss({ styles, docDefaults, blocks: [] } as unknown as ParsedDocFull)
+  }
+
+  it('a docDefaults first line reaches plain paragraphs under an indent-less Normal', () => {
+    // Google Docs exports: pPrDefault w:ind firstLine="708", empty Normal
+    expect(withNormal({}, { indentFirstLineTwips: 708 })).toContain(
+      '.doc-page p { text-indent:35.4pt }',
+    )
+  })
+
+  it("Normal's own first line wins over docDefaults, an explicit zero included", () => {
+    expect(withNormal({ indentFirstLineTwips: 400 }, { indentFirstLineTwips: 708 })).toContain(
+      '.doc-page p { text-indent:20.0pt }',
+    )
+    expect(withNormal({ indentFirstLineTwips: 0 }, { indentFirstLineTwips: 708 })).not.toMatch(
+      /\.doc-page p \{ text-indent/,
+    )
+  })
+})
+
 describe('docStyleCss toc style indent', () => {
   it('a toc style with its own left indent switches off the level ladder padding', () => {
     const css = docStyleCss(parsedWith('TOC2', { indentLeftTwips: 360 }))

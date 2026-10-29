@@ -12,7 +12,13 @@
  * Sections referencing the same parsed part show one another's pending edit,
  * since the save rewrites that shared part. No section is special-cased.
  */
-import type { HeaderFooter, HfImage, HfPartInfo, SectionInfo } from '@genoffice/docx-engine'
+import type {
+  HeaderFooter,
+  HfImage,
+  HfPartInfo,
+  HfPictureEdit,
+  SectionInfo,
+} from '@genoffice/docx-engine'
 import { hfFromPart, type HfVariantKey, type HfVariantsState, type HfView } from './doc-state'
 
 export type HfKind = 'header' | 'footer'
@@ -126,6 +132,41 @@ function pendingForRef(
   return undefined
 }
 
+/** results per edit map and image list: consumers compare image lists by identity */
+const editedImagesMemo = new WeakMap<
+  NonNullable<HeaderFooter['pictureEdits']>,
+  WeakMap<HfImage[], HfImage[]>
+>()
+
+/** the part's images with the strip's pending moves / resizes (page-relative boxes) applied */
+export function withHfPictureEdits(
+  images: HfImage[] | undefined,
+  value: HeaderFooter | null | undefined,
+): HfImage[] | undefined {
+  const edits = value?.pictureEdits
+  if (!images || !edits) return images
+  let memo = editedImagesMemo.get(edits)
+  if (!memo) editedImagesMemo.set(edits, (memo = new WeakMap()))
+  const hit = memo.get(images)
+  if (hit) return hit
+  const out = images.map((img): HfImage => {
+    const edit = img.drawing == null ? undefined : edits[img.drawing]
+    if (!edit) return img
+    const { posH: _h, posV: _v, anchorPara: _a, ...rest } = img
+    return {
+      ...rest,
+      posXPx: edit.posXPx,
+      posYPx: edit.posYPx,
+      posHRel: 'page',
+      posVRel: 'page',
+      widthPx: edit.widthPx,
+      heightPx: edit.heightPx,
+    }
+  })
+  memo.set(images, out)
+  return out
+}
+
 /** the section's own strip; undefined = it has none and inherits */
 export function ownHf(
   state: HfSectionState,
@@ -145,10 +186,13 @@ export function ownHf(
       ? docImages(state.parsed, kind, variant)
       : undefined
   const own = sec ? state.edits[editKey(sec.lastBlockIndex, kind, variant)] : undefined
-  if (own) return { value: own, images }
+  if (own) return { value: own, images: withHfPictureEdits(images, own) }
   if (rId) {
     const shared = pendingForRef(state, kind, variant, rId)
-    return { value: shared ?? hfFromPart(parts?.[rId]), images }
+    return {
+      value: shared ?? hfFromPart(parts?.[rId]),
+      images: withHfPictureEdits(images, shared),
+    }
   }
   // a lone section carries the document-level parse (no reference to look up)
   return single ? { value: docStrip(state.docStrips, kind, variant), images } : undefined
@@ -212,7 +256,49 @@ export function withHfEdit(
 ): Pick<HfSectionState, 'edits' | 'links'> | null {
   const target = hfCommitTarget(state, si, kind, variant, ownerAtOpen)
   if (!target) return null
-  return { edits: { ...state.edits, [target.key]: next }, links: state.links }
+  return {
+    edits: { ...state.edits, [target.key]: hfTextCommit(state.edits[target.key], next) },
+    links: state.links,
+  }
+}
+
+/**
+ * A content commit over a strip whose pictures may have moved: the moves stay
+ * (the strip editor's value predates the ones made while it was open) and
+ * the text now counts as edited.
+ */
+export function hfTextCommit(prev: HeaderFooter | undefined, next: HeaderFooter): HeaderFooter {
+  const { pictureOnly: _textKept, ...rest } = next
+  const pictureEdits = prev?.pictureEdits ?? next.pictureEdits
+  return pictureEdits ? { ...rest, pictureEdits } : rest
+}
+
+/**
+ * The pending maps after floating picture `drawing` of section `si`'s strip
+ * was moved or resized. A strip with no pending content keeps its text bytes
+ * (pictureOnly); one with an edit takes the move alongside it.
+ */
+export function withHfPictureEdit(
+  state: HfSectionState,
+  si: number,
+  kind: HfKind,
+  variant: HfView,
+  drawing: number,
+  edit: HfPictureEdit,
+): Pick<HfSectionState, 'edits' | 'links'> | null {
+  const target = hfCommitTarget(state, si, kind, variant)
+  if (!target) return null
+  const resolved = resolveHf(state, si, kind, variant).value ?? { text: '' }
+  const cur =
+    state.edits[target.key] ??
+    (Object.values(state.edits).includes(resolved) ? resolved : { ...resolved, pictureOnly: true })
+  return {
+    edits: {
+      ...state.edits,
+      [target.key]: { ...cur, pictureEdits: { ...cur.pictureEdits, [drawing]: edit } },
+    },
+    links: state.links,
+  }
 }
 
 /**
