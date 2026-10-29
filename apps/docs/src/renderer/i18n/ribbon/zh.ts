@@ -25,6 +25,7 @@ export const zh = {
   ribbonShapeFillTip: '填充所选形状的颜色',
   ribbonShapeOutline: '形状轮廓',
   ribbonShapeOutlineTip: '设置所选形状的轮廓颜色',
+  ribbonShapeOutlineWeight: '轮廓粗细',
   ribbonNoFill: '无填充',
   ribbonNoOutline: '无轮廓',
   // Picture Format

@@ -25,6 +25,7 @@ export const ar = {
   ribbonShapeFillTip: 'تعبئة الشكل المحدد بلون',
   ribbonShapeOutline: 'المخطط التفصيلي للشكل',
   ribbonShapeOutlineTip: 'اختيار لون المخطط التفصيلي للشكل المحدد',
+  ribbonShapeOutlineWeight: 'سماكة المخطط التفصيلي',
   ribbonNoFill: 'بلا تعبئة',
   ribbonNoOutline: 'بلا مخطط تفصيلي',
   ribbonRemoveBg: 'إزالة الخلفية',

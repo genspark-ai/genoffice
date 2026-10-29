@@ -1176,6 +1176,54 @@ export interface ShapeStylePatch {
   fillHex?: string | null
   /** outline color hex without '#'; null = no outline; undefined = keep */
   borderHex?: string | null
+  /** rotation in degrees clockwise; null or 0 clears a:xfrm@rot; undefined = keep */
+  rotDeg?: number | null
+  /** outline width in CSS px (a:ln@w = px * 9525 EMU); null clears the attribute; undefined = keep */
+  borderWidthPx?: number | null
+}
+
+/**
+ * Write a:xfrm@rot (60000ths of a degree clockwise) on a wps:spPr slice.
+ * null / 0 removes the attribute so Word saves a clean shape; a slice with no
+ * xfrm gets a bare one inserted in its schema position (xfrm comes first).
+ */
+function patchShapeRotation(spPr: string, rotDeg: number | null): string {
+  const norm = rotDeg == null ? 0 : ((rotDeg % 360) + 360) % 360
+  // 360deg wraps to 0: never write a full turn
+  const emu = Math.round(norm * 60000) % 21600000
+  const xfrm = /<a:xfrm\b[^>]*>/.exec(spPr)
+  if (!xfrm) {
+    if (emu === 0) return spPr
+    return spPr.replace(/^(<wps:spPr\b[^>]*>)/, `$1<a:xfrm rot="${emu}"/>`)
+  }
+  const tag =
+    emu === 0
+      ? xfrm[0].replace(/\s+rot="[^"]*"/, '')
+      : /\brot="/.test(xfrm[0])
+        ? xfrm[0].replace(/\brot="[^"]*"/, `rot="${emu}"`)
+        : xfrm[0].replace(/^<a:xfrm\b/, `<a:xfrm rot="${emu}"`)
+  return spPr.replace(xfrm[0], tag)
+}
+
+/**
+ * Write a:ln@w (EMU) on a wps:spPr slice. null removes the attribute (Word's
+ * own default hairline) and a slice with no a:ln gets one appended in its
+ * schema position, after the fill and before any effects.
+ */
+function patchShapeLineWidth(spPr: string, borderWidthPx: number | null): string {
+  const emu = borderWidthPx == null ? null : Math.max(1, Math.round(borderWidthPx * EMU_PER_PX))
+  const ln = /<a:ln\b[^>]*>/.exec(spPr)
+  if (!ln) {
+    if (emu === null) return spPr
+    return spPr.replace('</wps:spPr>', `<a:ln w="${emu}"/></wps:spPr>`)
+  }
+  const tag =
+    emu === null
+      ? ln[0].replace(/\s+w="[^"]*"/, '')
+      : /\bw="/.test(ln[0])
+        ? ln[0].replace(/\bw="[^"]*"/, `w="${emu}"`)
+        : ln[0].replace(/^<a:ln\b/, `<a:ln w="${emu}"`)
+  return spPr.replace(ln[0], tag)
 }
 
 /** Replace the first fill slot (a:solidFill/a:noFill) inside an XML slice. */
@@ -1193,7 +1241,16 @@ export function patchShapeStyles(
   paragraphXml: string,
   styles: ReadonlyArray<ShapeStylePatch | null | undefined>,
 ): string {
-  if (styles.every((s) => s == null || (s.fillHex === undefined && s.borderHex === undefined)))
+  if (
+    styles.every(
+      (s) =>
+        s == null ||
+        (s.fillHex === undefined &&
+          s.borderHex === undefined &&
+          s.rotDeg === undefined &&
+          s.borderWidthPx === undefined),
+    )
+  )
     return paragraphXml
   const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
   let out = ''
@@ -1204,7 +1261,14 @@ export function patchShapeStyles(
     if (!isBoxDrawing(drawingXml)) continue
     boxIndex++
     const style = styles[boxIndex]
-    if (!style || (style.fillHex === undefined && style.borderHex === undefined)) continue
+    if (
+      !style ||
+      (style.fillHex === undefined &&
+        style.borderHex === undefined &&
+        style.rotDeg === undefined &&
+        style.borderWidthPx === undefined)
+    )
+      continue
     const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
     if (spPrMatch) {
       let spPr = spPrMatch[0]
@@ -1226,6 +1290,8 @@ export function patchShapeStyles(
           )
         }
       }
+      if (style.rotDeg !== undefined) spPr = patchShapeRotation(spPr, style.rotDeg)
+      if (style.borderWidthPx !== undefined) spPr = patchShapeLineWidth(spPr, style.borderWidthPx)
       drawingXml = drawingXml.replace(spPrMatch[0], spPr)
     }
     out += paragraphXml.slice(cursor, drawing.start) + drawingXml
