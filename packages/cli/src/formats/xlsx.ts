@@ -16,6 +16,7 @@ import {
   type SheetFormulaValues,
   type SheetStructuralOps,
   type XlsxMutation,
+  FormulaCachedValue,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   nextFreeRelationshipId,
@@ -37,8 +38,10 @@ import {
   type StylesheetFormats,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-style-read'
 import { readFile } from 'node:fs/promises'
+import { z } from 'zod'
 import { atomicWriteFile } from '../../../../apps/sheets/src/main/atomic-write'
 import { XlsxSidecarClient } from '../../../../apps/sheets/src/main/xlsx-sidecar-client'
+import { planExternalLinkBreak } from '@genoffice/xlsx-gateway/gateway/xlsx-external-links'
 import { CliError, EXIT } from '../result'
 import { sheetNotFoundHints } from '../suggest'
 import { xlsxSidecarPath } from '../resources'
@@ -1136,6 +1139,8 @@ export async function writeWorkbook(
     renames?: Record<string, string>
     /** the declarative save payloads of the DSL ops the in-memory workbook cannot hold */
     gateway?: GatewayPayloads
+    /** cached formula results to write as `<v>` (formulas untouched) */
+    formulaValues?: readonly SheetFormulaValues[]
   } = {},
 ): Promise<WriteOutcome> {
   const { plan, structuralOps = [], renames = {}, gateway = EMPTY_PAYLOADS } = opts
@@ -1177,7 +1182,7 @@ export async function writeWorkbook(
   }
   let first: XlsxMutation
   try {
-    first = await save([])
+    first = await save(opts.formulaValues ?? [])
   } catch (err) {
     // the gateway fails closed with a sentence about the file (x14 rules, name clashes, table overlaps)
     throw new CliError(
@@ -1240,6 +1245,117 @@ export async function writeWorkbook(
       warning: `formula results not cached (${message}); the file is complete and recalculates on open`,
     }
   }
+}
+
+// ── external links (genoffice#2109) ────────────────────────────────────
+
+export interface ExternalLinkInfo {
+  index: number
+  rawTarget: string
+  source: string | null
+  reachable: boolean
+  sheetNames: string[]
+}
+
+/** The workbook's external links, as the file stores them: index (the `[n]`
+ * formulas use), the stored source path, the resolved local path, whether
+ * that file exists, and the source's sheet names. No source is opened. */
+export async function readExternalLinks(path: string): Promise<ExternalLinkInfo[]> {
+  await readFile(path)
+  return withSidecar(async (client) => {
+    // the sidecar returns the link array itself (the update command wraps
+    // one in a report object, this light list does not)
+    const result = (await client.readExternalLinks({ path })) as {
+      links?: {
+        index: number
+        rawTarget: string
+        source: string | null
+        reachable: boolean
+        sheetNames: string[]
+      }[]
+    }
+    return Array.isArray(result) ? result : (result.links ?? [])
+  })
+}
+
+const updateReportSchema = z.object({
+  links: z.array(
+    z.object({
+      index: z.number(),
+      reachable: z.boolean(),
+    }),
+  ),
+  cells: z.array(
+    z.object({
+      sheet: z.string(),
+      row: z.number(),
+      column: z.number(),
+      formatted: z.string(),
+      number: z.number().nullable().optional(),
+      formula: z.string(),
+    }),
+  ),
+})
+
+/** Re-reads every reachable source and writes the computed values as the
+ * formulas' cached `<v>` — formula text untouched, unreachable links keep
+ * their cache. Returns what changed and what stayed behind. */
+export async function updateExternalLinkCaches(
+  path: string,
+  outputPath: string,
+): Promise<{
+  updated: number
+  kept: number
+  reachable: number
+  broken: number
+}> {
+  await readFile(path)
+  const report = await withSidecar(async (client) =>
+    updateReportSchema.parse(await client.updateExternalLinks({ path })),
+  )
+  const writeable = report.cells.filter((cell) => cell.formatted !== '')
+  if (writeable.length > 0) {
+    const source = await readFile(path)
+    const bySheet = new Map<string, { row: number; column: number; value: FormulaCachedValue }[]>()
+    for (const cell of writeable) {
+      const isNumber = cell.number !== undefined && cell.number !== null
+      const isBool = !isNumber && /^(true|false)$/i.test(cell.formatted)
+      const list = bySheet.get(cell.sheet) ?? []
+      list.push({
+        // the gateway's group step adds 1 itself: rows and columns are 0-based
+        row: cell.row,
+        column: cell.column,
+        value: isNumber ? cell.number! : isBool ? /^true$/i.test(cell.formatted) : cell.formatted,
+      })
+      bySheet.set(cell.sheet, list)
+    }
+    const formulaValues = [...bySheet].map(([sheetName, cells]) => ({
+      sheetName,
+      cells,
+    }))
+    await writeWorkbook(source, [], outputPath, { formulaValues })
+  }
+  return {
+    updated: writeable.length,
+    kept: report.cells.length - writeable.length,
+    reachable: report.links.filter((link) => link.reachable).length,
+    broken: report.links.filter((link) => !link.reachable).length,
+  }
+}
+
+/** Breaks the given 1-based link indices: every formula referencing them
+ * becomes the literal its cached value holds, the links' parts disappear,
+ * and the surviving `[m]` indices renumber. */
+export async function breakExternalLinks(
+  path: string,
+  outputPath: string,
+  indices: readonly number[],
+): Promise<{ removedLinks: number }> {
+  const source = await readFile(path)
+  const mutation = await planExternalLinkBreak(await createBufferEntrySource(source), indices)
+  const result = await assembleWithJsZip(source, mutation)
+  await atomicWriteFile(outputPath, result.buffer)
+  return { removedLinks: indices.length }
 }
 
 /**

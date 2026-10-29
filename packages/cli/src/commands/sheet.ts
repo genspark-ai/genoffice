@@ -9,6 +9,9 @@ import {
   writeWorkbook,
   type CellInput,
   type ReadWhere,
+  readExternalLinks,
+  updateExternalLinkCaches,
+  breakExternalLinks,
 } from '../formats/xlsx'
 import { checkWorkbook, SHEET_CHECKS } from '../formats/xlsx-check'
 import { runWorkbookDsl, SUPPORTED_DSL_OPS, type DslOutcome } from '../formats/xlsx-dsl'
@@ -80,6 +83,17 @@ export const sheetCommand: CommandDef = {
       description:
         'apply: overwrite an existing --out file, or write while GenOffice has the file open',
     },
+    {
+      name: 'update',
+      description:
+        "links: re-read reachable sources and write the computed values as the formulas' cached values (formulas untouched)",
+    },
+    {
+      name: 'break',
+      value: 'indices',
+      description:
+        "links: break these 1-based link indices (comma-separated) — formulas become their cached values, the links' parts are removed and surviving links renumber",
+    },
   ],
   async run(args, ctx) {
     const [verb, file] = args.positionals
@@ -90,10 +104,12 @@ export const sheetCommand: CommandDef = {
         return apply(file, args, ctx)
       case 'check':
         return check(file, ctx)
+      case 'links':
+        return links(file, args, ctx)
       default:
         throw new CliError(
           EXIT.usage,
-          'expected "sheet read <file>", "sheet apply <file>" or "sheet check <file>"',
+          'expected "sheet read <file>", "sheet apply <file>", "sheet links <file>", or "sheet check <file>"',
           undefined,
           {
             reason: verb === undefined ? 'missing_argument' : 'invalid_argument',
@@ -186,6 +202,64 @@ function positiveInt(value: string | undefined, flag: string): number | undefine
       reason: 'invalid_argument',
     })
   return n
+}
+
+async function links(
+  file: string | undefined,
+  args: Args,
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  const path = resolveInput(file, ctx)
+  const breakFlag = flagString(args, 'break')
+  const update = flagBool(args, 'update')
+  if (breakFlag !== undefined && update) {
+    throw new CliError(
+      EXIT.usage,
+      '--break and --update cannot combine: an update re-reads the sources, a break severs them',
+      undefined,
+      { reason: 'invalid_argument' },
+    )
+  }
+  if (breakFlag !== undefined) {
+    const indices = breakFlag.split(',').map((part) => {
+      const n = Number(part.trim())
+      if (!Number.isInteger(n) || n < 1)
+        throw new CliError(
+          EXIT.usage,
+          `--break takes 1-based link indices (got ${part.trim()})`,
+          undefined,
+          { reason: 'invalid_argument' },
+        )
+      return n
+    })
+    const result = await breakExternalLinks(path, path, indices)
+    return {
+      summary: `broke ${result.removedLinks} link(s): formulas are now literals, surviving links renumbered`,
+      detail: { broken: indices, ...result },
+    }
+  }
+  if (update) {
+    const result = await updateExternalLinkCaches(path, path)
+    return {
+      summary:
+        `updated ${result.updated} formula cache(s) from ${result.reachable} reachable link(s)` +
+        (result.broken > 0 ? `; ${result.broken} broken link(s) kept their cached values` : ''),
+      detail: result,
+    }
+  }
+  const links = await readExternalLinks(path)
+  const reachable = links.filter((link) => link.reachable).length
+  return {
+    summary:
+      links.length === 0
+        ? `${basename(path)} has no external links`
+        : `${basename(path)}: ${links.length} external link(s), ${reachable} reachable`,
+    detail: {
+      links,
+      units:
+        'index is the [n] formulas use; source is the resolved path; reachable = the file exists',
+    },
+  }
 }
 
 async function apply(
