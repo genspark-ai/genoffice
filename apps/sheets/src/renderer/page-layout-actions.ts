@@ -5,6 +5,7 @@
  * per-sheet print settings; nothing renders in the grid (Univer has no
  * page-layout view), everything lands in the saved file.
  */
+import type { IDisposable } from '@univerjs/core'
 import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
 import type { PrinterInfo, WorkbookExportPdfRequest } from '../shared/desktop-api'
 import type { FWorksheet } from '@univerjs/sheets/facade'
@@ -637,17 +638,119 @@ async function activeSheetPrintPayload(
   return printRequest([document], `${document.fileName}.pdf`)
 }
 
+/// A cold load reaches preloadComplete before the formula engine's first pass
+/// lands in the model, so an export right after it prints formula cells
+/// empty. Force one calculation pass, wait for its end (bounded) and then let
+/// the model absorb the results (also bounded) — calculationEnd alone was not
+/// enough on a cold start.
+const FORMULA_SETTLE_TIMEOUT_MS = 30_000
+
+async function settleFormulasBeforePrint(ctx: PageLayoutContext): Promise<void> {
+  const runtime = ctx.univerRef.current
+  const workbook = runtime?.univerAPI.getActiveWorkbook()
+  if (!runtime || !workbook) return
+  /** formula cells of the whole workbook whose computed value has not landed */
+  const pendingFormulas = (): number => {
+    const snapshot = workbook.getSnapshot() as unknown as {
+      sheets?: Record<
+        string,
+        {
+          cellData?: Record<string, Record<string, { f?: unknown; v?: unknown }> | undefined>
+        }
+      >
+    } | null
+    let pending = 0
+    for (const sheet of Object.values(snapshot?.sheets ?? {})) {
+      for (const row of Object.values(sheet?.cellData ?? {})) {
+        for (const cell of Object.values(row ?? {})) {
+          if (cell?.f && (cell.v === undefined || cell.v === null)) pending += 1
+        }
+      }
+    }
+    return pending
+  }
+  if (pendingFormulas() === 0) return
+  const formula = runtime.univerAPI.getFormula()
+  const ended = new Promise<void>((resolve) => {
+    let disposable: IDisposable | undefined
+    disposable = formula.calculationEnd(() => {
+      disposable?.dispose()
+      resolve()
+    })
+  })
+  formula.executeCalculation()
+  await Promise.race([
+    ended,
+    new Promise<void>((resolve) => setTimeout(resolve, FORMULA_SETTLE_TIMEOUT_MS)),
+  ])
+  const deadline = Date.now() + FORMULA_SETTLE_TIMEOUT_MS
+  while (Date.now() < deadline && pendingFormulas() > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+/// Every visible, non-removed sheet laid out in order: the headless export's
+/// PDF stands for the whole file, so a chart or table on any other sheet must
+/// print too. Each sheet is made active before its layout — floating visuals
+/// install for the active sheet only — and the originally active sheet is
+/// restored afterwards.
+async function workbookPrintPayload(
+  ctx: PageLayoutContext,
+  messages: { readonly notLoaded: string; readonly preparing: string; readonly failed: string },
+): Promise<WorkbookExportPdfRequest | null> {
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  if (!workbook?.getActiveSheet()) {
+    ctx.setMessage(t('appActiveSheetUnavailable'))
+    return null
+  }
+  const state = ctx.lazyWorkbookRef.current
+  if (state && !(await loadWorkbookForPrint(ctx, state, messages))) return null
+
+  // The load awaited: take the workbook again, it may have changed meanwhile.
+  const current = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  if (!current?.getActiveSheet()) {
+    ctx.setMessage(t('appActiveSheetUnavailable'))
+    return null
+  }
+  if (ctx.lazyWorkbookRef.current !== state) return null
+
+  ctx.setMessage(messages.preparing)
+  await settleFormulasBeforePrint(ctx)
+
+  const activeId = current.getActiveSheet()?.getSheetId()
+  const sheets = current
+    .getSheets()
+    .filter(
+      (sheet) =>
+        !sheet.isSheetHidden() && !(state && isSheetRemoved(state.editJournal, sheet.getSheetId())),
+    )
+  const now = new Date()
+  const documents: SheetPrintDocument[] = []
+  for (const sheet of sheets) {
+    if (sheet.getSheetId() !== activeId) sheet.activate()
+    if (ctx.lazyWorkbookRef.current !== state) return null
+    documents.push(await sheetPrintDocument(ctx, state, sheet, {}, null, now, true))
+  }
+  if (activeId !== undefined) current.getSheetBySheetId(activeId)?.activate()
+  const baseName = (state?.file.name ?? 'Book1').replace(/\.[^.]+$/, '')
+  return printRequest(documents, `${baseName}.pdf`)
+}
+
 /// Lays the active sheet out as HTML with its Page Layout settings and asks
 /// the main process to render the PDF (hidden window + save dialog).
-/// `outPath` (headless export only) skips the dialog; resolves true when a
-/// PDF was written.
+/// `outPath` (headless export only) skips the dialog and prints every visible
+/// sheet after the formula engine has settled; resolves true when a PDF was
+/// written.
 export async function handleExportPdf(ctx: PageLayoutContext, outPath?: string): Promise<boolean> {
   try {
-    const payload = await activeSheetPrintPayload(ctx, {
+    const messages = {
       notLoaded: t('appPdfNeedsFullLoad'),
       preparing: t('appPdfRendering'),
       failed: t('appPdfExportFailed'),
-    })
+    }
+    const payload = outPath
+      ? await workbookPrintPayload(ctx, messages)
+      : await activeSheetPrintPayload(ctx, messages)
     if (!payload) return false
     const result = await window.desktopApi.exportPdf({
       ...payload,
