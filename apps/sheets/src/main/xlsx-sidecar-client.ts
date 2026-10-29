@@ -197,6 +197,11 @@ export class XlsxSidecarClient {
     )
   }
 
+  /** The link list only: no source is opened, nothing is evaluated. */
+  async readExternalLinks(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
   /**
    * Spawn the sidecar ahead of the first request to hide process cold-start.
    * The prewarm is best-effort: on Windows an unrunnable binary (corrupt,

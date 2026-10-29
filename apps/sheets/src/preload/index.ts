@@ -50,6 +50,11 @@ import type {
   UserSkillEntry,
 } from '../shared/desktop-api'
 import {
+  externalLinksRequestSchema,
+  externalLinksResultSchema,
+  externalLinksUpdateResultSchema,
+} from '../shared/desktop-api'
+import {
   HEADER_FOOTER_PICTURE_POSITION,
   IPC_CHANNELS,
   MAX_CREATE_DOCUMENT_CONTENT_CHARS,
@@ -228,6 +233,25 @@ const desktopApi: DesktopApi = {
     const validatedRequest = parseRecalcRequest(request)
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.recalcWorkbook, validatedRequest)
     return parseRecalcResult(result)
+  },
+  async readExternalLinks(request) {
+    const validatedRequest = externalLinksRequestSchema.parse(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.readExternalLinks,
+      validatedRequest,
+    )
+    return externalLinksResultSchema.parse(result)
+  },
+  async updateExternalLinks(request) {
+    const validatedRequest = externalLinksRequestSchema.parse(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.updateExternalLinks,
+      validatedRequest,
+    )
+    return externalLinksUpdateResultSchema.parse(result)
+  },
+  revealPath(path) {
+    ipcRenderer.send(IPC_CHANNELS.revealPath, path)
   },
   async readWorkbookMedia(request) {
     const validatedRequest = parseMediaRequest(request)

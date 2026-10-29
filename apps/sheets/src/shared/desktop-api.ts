@@ -3179,6 +3179,9 @@ export interface DesktopApi {
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
   readWorkbookRowOutline(request: WorkbookFormulaCellsRequest): Promise<WorkbookRowOutlineResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
+  readExternalLinks(request: { readonly path: string }): Promise<ExternalLinksResult>
+  updateExternalLinks(request: { readonly path: string }): Promise<ExternalLinksUpdateResult>
+  revealPath(path: string): void
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
   /**

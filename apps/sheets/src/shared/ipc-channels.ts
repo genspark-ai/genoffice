@@ -67,6 +67,9 @@ export const IPC_CHANNELS = {
   reopenWorkbook: 'workbook:reopen',
   readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
+  readExternalLinks: 'workbook:read-external-links',
+  updateExternalLinks: 'workbook:update-external-links',
+  revealPath: 'shell:reveal-path',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
   /** The cells the reader withheld from the model (xl/gxRedactions.json) */

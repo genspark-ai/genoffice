@@ -217,7 +217,7 @@ import { createMergeSkill } from './ai/merge-skill'
 import { mergeAttachedWorkbooks } from './merge-workbooks'
 import { createSearchSkill } from './ai/search-skill'
 import { createImageSkill } from './ai/image-skill'
-import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
+import { ATTACHMENT_IMAGE_EXTS, ExternalLinkStatus } from '../shared/desktop-api'
 import type {
   AttachmentAddResult,
   AttachmentMeta,
@@ -543,6 +543,8 @@ import {
 } from './formula-values'
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
 import { WatchWindowPanel, watchKey, type WatchCell, type WatchRowValue } from './WatchWindowPanel'
+import { ExternalLinksPanel } from './ExternalLinksPanel'
+import { applyExternalLinkValues } from './univer-sync'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
 import { workbookMediaDataUrl } from './workbook-media'
@@ -911,6 +913,9 @@ export function App({
   /// SlicerPanel).
   const [slicers, setSlicers] = useState<readonly SlicerUiState[]>([])
   const [watchOpen, setWatchOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(false)
+  const [linkStatuses, setLinkStatuses] = useState<ExternalLinkStatus[]>([])
+  const [linksBusy, setLinksBusy] = useState(false)
   const [watchCells, setWatchCells] = useState<readonly WatchCell[]>([])
   const [calcManual, setCalcManual] = useState(false)
   /// Non-null while the "Insert Slicer" field picker is open.
@@ -4486,6 +4491,10 @@ export function App({
       setWatchOpen((open) => !open)
       return
     }
+    if (command === 'external-links-panel') {
+      setLinksOpen((open) => !open)
+      return
+    }
     if (command === 'toggle-page-break-preview') {
       togglePageBreakPreview()
       return
@@ -5975,6 +5984,33 @@ export function App({
           onAddSelection={addWatchSelection}
           onRemove={(key) => setWatchCells(watchCells.filter((cell) => watchKey(cell) !== key))}
           onClose={() => setWatchOpen(false)}
+        />
+      )}
+      {linksOpen && (
+        <ExternalLinksPanel
+          links={linkStatuses}
+          busy={linksBusy}
+          onUpdate={() => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              setLinksBusy(true)
+              try {
+                const report = await window.desktopApi.updateExternalLinks({ path })
+                const linkRuntime = univerRef.current
+                if (!linkRuntime) return
+                applyExternalLinkValues(lazyWorkbookRef.current!, linkRuntime, report)
+                await handleSave('save')
+              } finally {
+                setLinksBusy(false)
+                const fresh = await window.desktopApi.readExternalLinks({ path })
+                setLinkStatuses(fresh.links)
+              }
+            })()
+          }}
+          onReveal={(source) => void window.desktopApi.revealPath(source)}
+          onClose={() => setLinksOpen(false)}
         />
       )}
     </>

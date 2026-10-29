@@ -8209,3 +8209,60 @@ export function lazyCellEditable(
     column <= loaded.endColumn
   )
 }
+
+/**
+ * Applies an external-links update (genoffice#2109): installs the freshly
+ * computed values into the recalc overlay so the grid shows them and the
+ * next save writes them as the formulas' cached `<v>` — the stored `[n]`
+ * formula text is untouched. Cells the sidecar left on the file's cache
+ * (unreachable source) are not in the report and keep their values.
+ */
+export function applyExternalLinkValues(
+  state: LazyWorkbookState,
+  runtime: UniverRuntime,
+  report: {
+    cells: readonly {
+      sheet: string
+      row: number
+      column: number
+      formatted: string
+      number?: number | null | undefined
+    }[]
+  },
+): { applied: number; sheets: number } {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return { applied: 0, sheets: 0 }
+  const idByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet.getSheetId()]),
+  )
+  const bySheet = new Map<string, Map<string, PinnedClosureCell>>()
+  let applied = 0
+  for (const cell of report.cells) {
+    // empty formatted = the sidecar kept the file's cache (unreachable, an
+    // error inside the span, past the inline cap): nothing to apply
+    if (cell.formatted === '') continue
+    const sheetId = idByName.get(cell.sheet.toLowerCase())
+    if (sheetId === undefined) continue
+    const overlay = bySheet.get(sheetId) ?? new Map<string, PinnedClosureCell>()
+    overlay.set(`${cell.row}:${cell.column}`, { v: cell.number ?? cell.formatted })
+    bySheet.set(sheetId, overlay)
+    applied += 1
+  }
+  for (const [sheetId, overlay] of bySheet) {
+    state.recalc.overlay.set(sheetId, overlay)
+    state.recalc.incompleteRuns.delete(sheetId)
+    const loaded = state.loadedRanges.get(sheetId)
+    const worksheet = workbook.getSheets().find((sheet) => sheet.getSheetId() === sheetId)
+    if (worksheet && loaded && overlay.size > 0) {
+      journalSuppression.active = true
+      loadAutoHeightSuppression.active = true
+      try {
+        applyPinnedOverlay(worksheet, overlay, undefined, loaded)
+      } finally {
+        journalSuppression.active = false
+        loadAutoHeightSuppression.active = false
+      }
+    }
+  }
+  return { applied, sheets: bySheet.size }
+}

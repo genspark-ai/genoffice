@@ -3234,6 +3234,27 @@ export function registerSheetsIpc(): void {
       cached: z.boolean().optional(),
     })
     .strict()
+  ipcMain.handle(IPC_CHANNELS.readExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const { path } = z
+      .object({ path: z.string().min(1) })
+      .strict()
+      .parse(input)
+    return entry.client.readExternalLinks({ path })
+  })
+  ipcMain.handle(IPC_CHANNELS.updateExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const { path } = z
+      .object({ path: z.string().min(1) })
+      .strict()
+      .parse(input)
+    return entry.client.updateExternalLinks({ path })
+  })
+  ipcMain.handle(IPC_CHANNELS.revealPath, (_event, path: unknown) => {
+    // Reveal only real files: a missing or forged path is a silent no-op.
+    if (typeof path !== 'string' || !existsSync(path)) return
+    shell.showItemInFolder(path)
+  })
   ipcMain.handle(IPC_CHANNELS.recalcWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const request = workbookRecalcRequestSchema.parse(input)
