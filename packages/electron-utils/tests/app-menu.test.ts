@@ -56,6 +56,8 @@ const LANGS = [
   'ms',
   'he',
   'hi',
+  'vi',
+  'tr',
   'zh-TW',
 ] as const
 
