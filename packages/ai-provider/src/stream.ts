@@ -3,6 +3,7 @@ import { withOutputCapFallback } from './output-cap'
 import { streamAnthropic } from './protocols/anthropic'
 import { streamGemini } from './protocols/gemini'
 import { streamOpenAiCompatible } from './protocols/openai-compatible'
+import { streamOpenAiResponses } from './protocols/openai-responses'
 import { streamCodexAppServer } from './codex-app-server'
 import type { StreamCallbacks } from './protocols/shared'
 import { getProviderAdapter, type AiProtocol } from './registry'
@@ -44,6 +45,11 @@ export async function streamForProvider(
       case 'gemini':
         return streamGemini(config, system, messages, tools, tokens, cb, baseUrl, {
           omitTemperature: endpoint.omitTemperature,
+          headers: endpoint.headers,
+          idleTimeoutMs: endpoint.idleTimeoutMs,
+        })
+      case 'openai-responses':
+        return streamOpenAiResponses(baseUrl, config, system, messages, tools, tokens, cb, {
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
         })

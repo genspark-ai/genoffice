@@ -240,13 +240,14 @@ describe('streamForProvider: temperature policy', () => {
   })
 
   // issue genspark-ai/genoffice#147: every model in the OpenAI BYOK dropdown is GPT-5.x,
-  // and api.openai.com 400s `max_tokens` for that family
+  // and api.openai.com 400s `max_tokens` for that family (gpt-5.5: chat/completions
+  // still takes max_completion_tokens; the 5.6 family is on the Responses path)
   it('caps OpenAI via max_completion_tokens and other vendors via max_tokens', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(okTurn()))
     vi.stubGlobal('fetch', fetchMock)
     await streamForProvider(
       'openai',
-      { apiKey: 'k', model: 'gpt-5.6-luna' },
+      { apiKey: 'k', model: 'gpt-5.5' },
       'sys',
       [],
       [],

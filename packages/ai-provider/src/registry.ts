@@ -1,5 +1,6 @@
 import { ANTHROPIC_BASE_URL } from './protocols/anthropic'
 import { GEMINI_BASE_URL } from './protocols/gemini'
+import { OPENAI_RESPONSES_MODEL_RE } from './protocols/openai-responses'
 import { AI_PROVIDERS, DEEPSEEK_V41_FLASH, GENSPARK_LLM_BASE_URLS } from './providers'
 import {
   customProtocolBaseUrl,
@@ -15,7 +16,8 @@ export { normalizeBaseUrl } from './url-compose'
 export { modelEchoesReasoning, modelHasFixedSampling, modelLacksVision } from './model-heuristics'
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
-export type AiProtocol = 'anthropic' | 'gemini' | 'openai-compatible' | 'codex-app-server'
+export type AiProtocol =
+  'anthropic' | 'gemini' | 'openai-compatible' | 'openai-responses' | 'codex-app-server'
 
 export interface ProviderCapabilities {
   /** How the provider authenticates: app login, user key, or the Codex CLI's existing login. */
@@ -171,11 +173,21 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   openai: {
     meta: metaOf('openai'),
     capabilities: { auth: 'api-key', vision: true },
-    // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
-    // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.openai.com/v1', {
-      useMaxCompletionTokens: true,
-    }),
+    // GPT-5.6-family tool turns 400 on chat/completions unless the reasoning
+    // effort is pinned away (genoffice#2295), so they route to the Responses
+    // API — which keeps reasoning beside tools. Every current OpenAI model
+    // accepts the renamed max_completion_tokens field, so it is safe
+    // endpoint-wide; other openai-compatible vendors (and the LiteLLM-backed
+    // Genspark proxy) still expect `max_tokens`. The GPT-6 family stays
+    // unlisted until its direct-API model ids are verifiable.
+    resolveEndpoint(config) {
+      if (OPENAI_RESPONSES_MODEL_RE.test(config.model ?? '')) {
+        return fixedEndpoint('openai-responses', 'https://api.openai.com/v1')(config)
+      }
+      return fixedEndpoint('openai-compatible', 'https://api.openai.com/v1', {
+        useMaxCompletionTokens: true,
+      })(config)
+    },
   },
   kimi: {
     meta: metaOf('kimi'),
