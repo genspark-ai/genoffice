@@ -49,6 +49,7 @@ import type {
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import { FoundSkills } from './FoundSkills'
+import { PluginsPane } from './PluginsPane'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -169,7 +170,7 @@ function CustomFontSizeInput({
 }
 
 export type SectionId =
-  'account' | 'aiModel' | 'aiMedia' | 'general' | 'integrations' | 'skills' | 'about'
+  'account' | 'aiModel' | 'aiMedia' | 'general' | 'integrations' | 'skills' | 'plugins' | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
@@ -178,6 +179,7 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'skills', labelKey: 'setSecSkills' },
+  { id: 'plugins', labelKey: 'setSecPlugins' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -239,6 +241,18 @@ function SectionIcon({ id }: { id: SectionId }) {
         />
         <path d="M9.5 3.5V7H13" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
         <path d="M5 10.5h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (id === 'plugins') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M4 6.5h2.8a1.2 1.2 0 1 1 2.4 0H12a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7.5a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
       </svg>
     )
   }
@@ -2393,6 +2407,7 @@ export function SettingsModal({
               <IntegrationsPane t={t} onStatus={(st) => onSkillUpdateDue?.(skillUpdateDue(st))} />
             )}
             {section === 'skills' && <FoundSkills t={t} />}
+            {section === 'plugins' && <PluginsPane t={t} />}
             {section === 'about' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAbout')}</h3>

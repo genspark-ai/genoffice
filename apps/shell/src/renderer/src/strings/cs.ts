@@ -243,6 +243,7 @@ export const cs: Dict = {
   setSecAbout: 'O aplikaci',
   setSecIntegrations: 'Integrace',
   setSecSkills: 'Dovednosti',
+  setSecPlugins: 'Zásuvné moduly',
   intgHeroTitle: 'Používejte GenOffice ze svého AI asistenta',
   intgHeroDesc:
     'Po připojení mohou Claude Code, Codex, Cursor, Claude Desktop a podobní asistenti za vás vytvářet, převádět, číst a upravovat soubory Word, Excel, PowerPoint, PDF a Markdown. Vše běží na tomto počítači; nic se neodesílá.',
@@ -587,6 +588,21 @@ export const cs: Dict = {
   setAuthorName: 'Uživatelské jméno',
   setAuthorNameDesc:
     'Zobrazuje se jako autor komentářů a sledovaných změn v Docs, Sheets a Slides. Ponechte prázdné pro použití názvu účtu počítače.',
+  intgPluginsDesc:
+    'Zásuvné moduly sdružují dovednosti, příkazy a deklarace MCP serverů pod jedním názvem. Složka nebo zip zásuvného modulu ve formátu Claude Code / ZCode se nainstaluje tak, jak je; při importu se nic nespouští.',
+  intgPluginsEmpty:
+    'Zatím nejsou nainstalované žádné zásuvné moduly. Nainstalujte složku nebo zip zásuvného modulu Claude Code a přidáte jeho dovednosti a příkazy.',
+  intgPluginsImportZip: 'Nainstalovat balíček zásuvného modulu (zip)…',
+  intgPluginsImportFolder: 'Nainstalovat složku zásuvného modulu…',
+  intgPluginsImportDone: '{name} byl nainstalován',
+  intgPluginsImportFailed: 'Instalace se nezdařila: {reason}',
+  intgPluginsRemove: 'Odebrat',
+  intgPluginsRemoveConfirm: 'Odebrat zásuvný modul „{name}“? Jeho složka se z GenOffice smaže.',
+  intgPluginsRemoved: '{name} byl odebrán',
+  intgPluginsMcpNote: 'Deklaruje MCP servery; jsou zde jen vypsány, nespouštějí se.',
+  intgPluginSkillsCount: 'Dovednosti: {count}',
+  intgPluginCommandsCount: 'Příkazy: {count}',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Hledat v příručce… (stiskněte /)',
   helpSearchLabel: 'Hledat v příručce',
   helpContentsLabel: 'Obsah příručky',

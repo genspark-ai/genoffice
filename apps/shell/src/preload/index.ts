@@ -36,7 +36,7 @@ import type {
   IntegrationsStatus,
   SkillInstallState,
 } from '../shared/integrations-api'
-import type { FoundSkill, RecommendedSkill, ForeignSkillCandidate } from '../shared/found-skill'
+import type { FoundSkill, RecommendedSkill, ForeignSkillCandidate, InstalledPlugin } from '../shared/found-skill'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 
@@ -193,6 +193,21 @@ const homeApi: HomeApi = {
   },
   async skillsImportForeign(sourcePath) {
     return (await ipcRenderer.invoke('ai:foreign-import', sourcePath)) as FoundSkill
+  },
+  async pluginsList() {
+    return (await ipcRenderer.invoke('ai:plugins-list')) as InstalledPlugin[]
+  },
+  async pluginsImportFolder() {
+    return (await ipcRenderer.invoke('ai:plugin-import-folder')) as InstalledPlugin | null
+  },
+  async pluginsImportZip() {
+    return (await ipcRenderer.invoke('ai:plugin-import-zip')) as InstalledPlugin | null
+  },
+  async pluginsSetEnabled(name, enabled) {
+    await ipcRenderer.invoke('ai:plugin-set-enabled', name, enabled)
+  },
+  async pluginsRemove(name) {
+    await ipcRenderer.invoke('ai:plugin-remove', name)
   },
   async openSkillsSettings() {
     await ipcRenderer.invoke('ai:open-skills-settings')

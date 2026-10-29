@@ -296,6 +296,7 @@ export const nl: Dict = {
   setSecAbout: 'Over',
   setSecIntegrations: 'Integraties',
   setSecSkills: 'Vaardigheden',
+  setSecPlugins: 'Plug-ins',
   intgHeroTitle: 'GenOffice gebruiken vanuit uw AI-assistent',
   intgHeroDesc:
     'Eenmaal verbonden kunnen Claude Code, Codex, Cursor, Claude Desktop en vergelijkbare assistenten Word-, Excel-, PowerPoint-, PDF- en Markdown-bestanden voor je maken, converteren, lezen en bewerken. Alles draait op deze computer; er wordt niets geüpload.',
@@ -594,6 +595,21 @@ export const nl: Dict = {
     'De AI-aanroep mislukte ({reason}); er is in plaats daarvan een sjabloon gevuld.',
   intgSkillCreatorBadReply:
     'Het AI-antwoord kon niet als SKILL.md worden gelezen; er is in plaats daarvan een sjabloon gevuld.',
+  intgPluginsDesc:
+    'Plug-ins bundelen vaardigheden, opdrachten en MCP-serverdeclaraties onder één naam. Een plug-inmap of -zip in Claude Code-/ZCode-formaat wordt as-is geïnstalleerd; bij het importeren wordt niets uitgevoerd.',
+  intgPluginsEmpty:
+    'Nog geen plug-ins geïnstalleerd. Installeer een Claude Code-plug-inmap of -zip om de vaardigheden en opdrachten toe te voegen.',
+  intgPluginsImportZip: 'Plug-inpakket (zip) installeren…',
+  intgPluginsImportFolder: 'Plug-inmap installeren…',
+  intgPluginsImportDone: '{name} geïnstalleerd',
+  intgPluginsImportFailed: 'Installeren mislukt: {reason}',
+  intgPluginsRemove: 'Verwijderen',
+  intgPluginsRemoveConfirm: 'Plug-in "{name}" verwijderen? De map wordt uit GenOffice verwijderd.',
+  intgPluginsRemoved: '{name} verwijderd',
+  intgPluginsMcpNote: 'Declareert MCP-servers; ze worden hier alleen getoond, niet uitgevoerd.',
+  intgPluginSkillsCount: '{count} vaardigheden',
+  intgPluginCommandsCount: '{count} opdrachten',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Zoek in de handleiding… (druk op /)',
   helpSearchLabel: 'Zoek in de handleiding',
   helpContentsLabel: 'Inhoud van de handleiding',

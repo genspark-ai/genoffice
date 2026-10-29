@@ -310,6 +310,7 @@ export const de: Dict = {
   setSecAbout: 'Über',
   setSecIntegrations: 'Integrationen',
   setSecSkills: 'Skills',
+  setSecPlugins: 'Plugins',
   intgHeroTitle: 'GenOffice aus Ihrem KI-Assistenten nutzen',
   intgHeroDesc:
     'Einmal verbunden, können Claude Code, Codex, Cursor, Claude Desktop und ähnliche Assistenten Word-, Excel-, PowerPoint-, PDF- und Markdown-Dateien für Sie erstellen, konvertieren, lesen und bearbeiten. Alles läuft auf diesem Rechner; nichts wird hochgeladen.',
@@ -608,6 +609,22 @@ export const de: Dict = {
     'Der KI-Aufruf ist fehlgeschlagen ({reason}); stattdessen wurde eine Vorlage ausgefüllt.',
   intgSkillCreatorBadReply:
     'Die KI-Antwort ließ sich nicht als SKILL.md lesen; stattdessen wurde eine Vorlage ausgefüllt.',
+  intgPluginsDesc:
+    'Plugins bündeln Skills, Befehle und MCP-Serverdeklarationen unter einem Namen. Ein Plugin-Ordner oder -Zip im Claude-Code-/ZCode-Format wird unverändert installiert; beim Import läuft nichts.',
+  intgPluginsEmpty:
+    'Noch keine Plugins installiert. Installiere einen Claude-Code-Plugin-Ordner oder ein Zip, um dessen Skills und Befehle hinzuzufügen.',
+  intgPluginsImportZip: 'Plugin-Paket (Zip) installieren…',
+  intgPluginsImportFolder: 'Plugin-Ordner installieren…',
+  intgPluginsImportDone: '{name} installiert',
+  intgPluginsImportFailed: 'Installation fehlgeschlagen: {reason}',
+  intgPluginsRemove: 'Entfernen',
+  intgPluginsRemoveConfirm: 'Plugin „{name}“ entfernen? Sein Ordner wird aus GenOffice gelöscht.',
+  intgPluginsRemoved: '{name} entfernt',
+  intgPluginsMcpNote:
+    'Deklariert MCP-Server; sie werden hier nur aufgelistet, aber nicht ausgeführt.',
+  intgPluginSkillsCount: '{count} Skills',
+  intgPluginCommandsCount: '{count} Befehle',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Handbuch durchsuchen… (/) drücken',
   helpSearchLabel: 'Handbuch durchsuchen',
   helpContentsLabel: 'Handbuchinhalt',

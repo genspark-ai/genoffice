@@ -19,6 +19,9 @@ export interface FoundSkill {
   path: string
   /** whether it talks about a format GenOffice opens, and on what */
   relevance: SkillRelevance
+  /** set when the skill rides in on a plugin: the plugin's name (the skill is
+   *  listed and invoked as `<plugin>:<name>`) */
+  plugin?: string
 }
 
 /** a skill GenOffice ships as a suggestion, with where the user stands on it */
@@ -49,4 +52,28 @@ export interface ForeignSkillCandidate {
   sourcePath: string
   /** a skill with this name already sits in our folder */
   alreadyImported: boolean
+}
+
+/** what a plugin carries, by component kind (prompt-level only: skills and
+ *  commands are markdown; an .mcp.json is reported but not run — GenOffice's
+ *  MCP support is a server, not a client) */
+export interface PluginComponents {
+  /** skill names as invoked: `<plugin>:<skill>` */
+  skills: string[]
+  /** command names as invoked: `<plugin>:<command>` */
+  commands: string[]
+  /** server names declared in the plugin's .mcp.json, display only */
+  mcpServers: string[]
+}
+
+/** one plugin installed under `<userData>/plugins/<name>/` */
+export interface InstalledPlugin {
+  name: string
+  version: string
+  description: string
+  author: string
+  enabled: boolean
+  components: PluginComponents
+  /** which manifest shape it carried: `.claude-plugin/plugin.json` or root-level */
+  format: 'claude' | 'plain'
 }

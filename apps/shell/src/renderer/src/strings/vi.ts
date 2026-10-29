@@ -293,6 +293,7 @@ export const vi: Dict = {
   setSecAbout: 'Giới thiệu',
   setSecIntegrations: 'Tích hợp',
   setSecSkills: 'Kỹ năng',
+  setSecPlugins: 'Tiện ích',
   intgHeroTitle: 'Sử dụng GenOffice từ trợ lý AI của bạn',
   intgHeroDesc:
     'Sau khi kết nối, Claude Code, Codex, Cursor, Claude Desktop và các trợ lý tương tự có thể tạo, chuyển đổi, đọc và chỉnh sửa các tệp Word, Excel, PowerPoint, PDF và Markdown cho bạn. Mọi thứ đều chạy trên máy tính này; không có gì được tải lên.',
@@ -588,6 +589,21 @@ export const vi: Dict = {
   intgSkillCreatorModelFailed: 'Gọi AI không thành công ({reason}); đã điền mẫu thay thế.',
   intgSkillCreatorBadReply:
     'Câu trả lời của AI không đọc được thành SKILL.md; đã điền mẫu thay thế.',
+  intgPluginsDesc:
+    'Tiện ích gộp các kỹ năng, lệnh và khai báo máy chủ MCP dưới một tên. Thư mục hoặc zip tiện ích theo định dạng Claude Code / ZCode được cài đặt nguyên trạng; không chạy gì khi nhập.',
+  intgPluginsEmpty:
+    'Chưa cài tiện ích nào. Cài thư mục hoặc zip tiện ích Claude Code để thêm kỹ năng và lệnh của nó.',
+  intgPluginsImportZip: 'Cài gói tiện ích (zip)…',
+  intgPluginsImportFolder: 'Cài thư mục tiện ích…',
+  intgPluginsImportDone: 'Đã cài {name}',
+  intgPluginsImportFailed: 'Cài đặt thất bại: {reason}',
+  intgPluginsRemove: 'Gỡ bỏ',
+  intgPluginsRemoveConfirm: 'Gỡ bỏ tiện ích "{name}"? Thư mục của nó sẽ bị xóa khỏi GenOffice.',
+  intgPluginsRemoved: 'Đã gỡ bỏ {name}',
+  intgPluginsMcpNote: 'Khai báo máy chủ MCP; chúng chỉ được liệt kê ở đây, chưa chạy.',
+  intgPluginSkillsCount: '{count} kỹ năng',
+  intgPluginCommandsCount: '{count} lệnh',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Tìm kiếm trong sổ tay… (nhấn /)',
   helpSearchLabel: 'Tìm kiếm trong sổ tay',
   helpContentsLabel: 'Mục lục sổ tay',

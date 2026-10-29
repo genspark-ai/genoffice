@@ -23,7 +23,7 @@ import type {
   KbSearchHit,
 } from '@genoffice/agent-core'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
-import type { FoundSkill, ForeignSkillCandidate } from './found-skill'
+import type { FoundSkill, ForeignSkillCandidate, InstalledPlugin } from './found-skill'
 
 export interface AttachmentAddResult {
   accepted: AttachmentInfo[]
@@ -293,6 +293,16 @@ export interface HomeApi {
   skillsForeignList(): Promise<ForeignSkillCandidate[]>
   /** import one scanner-vouched foreign file as a skill */
   skillsImportForeign(sourcePath: string): Promise<FoundSkill>
+  /** installed plugins (newest first), each with its component summary */
+  pluginsList(): Promise<InstalledPlugin[]>
+  /** pick a plugin folder and install it; null when the dialog is cancelled */
+  pluginsImportFolder(): Promise<InstalledPlugin | null>
+  /** pick a plugin zip and install it; null when the dialog is cancelled */
+  pluginsImportZip(): Promise<InstalledPlugin | null>
+  /** enable/disable one installed plugin by name */
+  pluginsSetEnabled(name: string, enabled: boolean): Promise<void>
+  /** remove one installed plugin by name */
+  pluginsRemove(name: string): Promise<void>
   /** open Settings › Integrations (the skills list) */
   openSkillsSettings(): Promise<void>
   /** full-text search over the corpus */

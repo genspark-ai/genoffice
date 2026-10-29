@@ -296,6 +296,7 @@ export const ms: Dict = {
   setSecAbout: 'Perihal',
   setSecIntegrations: 'Integrasi',
   setSecSkills: 'Kemahiran',
+  setSecPlugins: 'Pemalam',
   intgHeroTitle: 'Gunakan GenOffice daripada pembantu AI anda',
   intgHeroDesc:
     'Setelah disambungkan, Claude Code, Codex, Cursor, Claude Desktop dan pembantu serupa boleh mencipta, menukar, membaca dan mengedit fail Word, Excel, PowerPoint, PDF dan Markdown untuk anda. Semuanya berjalan di komputer ini; tiada apa yang dimuat naik.',
@@ -595,6 +596,21 @@ export const ms: Dict = {
   intgSkillCreatorModelFailed: 'Panggilan AI gagal ({reason}); templat diisi sebagai gantinya.',
   intgSkillCreatorBadReply:
     'Balasan AI tidak dapat dibaca sebagai SKILL.md; templat diisi sebagai gantinya.',
+  intgPluginsDesc:
+    'Pemalam menggabungkan kemahiran, arahan dan pengisytiharan pelayan MCP di bawah satu nama. Folder atau zip pemalam format Claude Code / ZCode dipasang seadanya; tiada apa yang dijalankan semasa import.',
+  intgPluginsEmpty:
+    'Belum ada pemalam dipasang. Pasang folder atau zip pemalam Claude Code untuk menambah kemahiran dan arahannya.',
+  intgPluginsImportZip: 'Pasang pakej pemalam (zip)…',
+  intgPluginsImportFolder: 'Pasang folder pemalam…',
+  intgPluginsImportDone: '{name} dipasang',
+  intgPluginsImportFailed: 'Gagal memasang: {reason}',
+  intgPluginsRemove: 'Buang',
+  intgPluginsRemoveConfirm: 'Buang pemalam "{name}"? Foldernya akan dipadam daripada GenOffice.',
+  intgPluginsRemoved: '{name} dibuang',
+  intgPluginsMcpNote: 'Mengisytiharkan pelayan MCP; hanya disenaraikan di sini, tidak dijalankan.',
+  intgPluginSkillsCount: '{count} kemahiran',
+  intgPluginCommandsCount: '{count} arahan',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Cari dalam manual… (tekan /)',
   helpSearchLabel: 'Cari dalam manual',
   helpContentsLabel: 'Kandungan manual',

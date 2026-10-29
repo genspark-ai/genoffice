@@ -305,6 +305,7 @@ export const id: Dict = {
   setSecAbout: 'Tentang',
   setSecIntegrations: 'Integrasi',
   setSecSkills: 'Keterampilan',
+  setSecPlugins: 'Plugin',
   intgHeroTitle: 'Gunakan GenOffice dari asisten AI Anda',
   intgHeroDesc:
     'Setelah terhubung, Claude Code, Codex, Cursor, Claude Desktop, dan asisten serupa dapat membuat, mengonversi, membaca, dan mengedit file Word, Excel, PowerPoint, PDF, dan Markdown untuk Anda. Semuanya berjalan di komputer ini; tidak ada yang diunggah.',
@@ -602,6 +603,21 @@ export const id: Dict = {
   intgSkillCreatorModelFailed: 'Panggilan AI gagal ({reason}); templat diisi sebagai gantinya.',
   intgSkillCreatorBadReply:
     'Balasan AI tidak dapat dibaca sebagai SKILL.md; templat diisi sebagai gantinya.',
+  intgPluginsDesc:
+    'Plugin menggabungkan skill, perintah, dan deklarasi server MCP dalam satu nama. Folder atau zip plugin format Claude Code / ZCode terpasang apa adanya; tidak ada yang dijalankan saat impor.',
+  intgPluginsEmpty:
+    'Belum ada plugin terpasang. Pasang folder atau zip plugin Claude Code untuk menambahkan skill dan perintahnya.',
+  intgPluginsImportZip: 'Pasang paket plugin (zip)…',
+  intgPluginsImportFolder: 'Pasang folder plugin…',
+  intgPluginsImportDone: '{name} terpasang',
+  intgPluginsImportFailed: 'Gagal memasang: {reason}',
+  intgPluginsRemove: 'Hapus',
+  intgPluginsRemoveConfirm: 'Hapus plugin "{name}"? Foldernya akan dihapus dari GenOffice.',
+  intgPluginsRemoved: '{name} dihapus',
+  intgPluginsMcpNote: 'Mendeklarasikan server MCP; hanya ditampilkan di sini, tidak dijalankan.',
+  intgPluginSkillsCount: '{count} skill',
+  intgPluginCommandsCount: '{count} perintah',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Cari di manual… (tekan /)',
   helpSearchLabel: 'Cari di manual',
   helpContentsLabel: 'Isi manual',

@@ -299,6 +299,7 @@ export const ar: Dict = {
   setSecAbout: 'حول',
   setSecIntegrations: 'التكاملات',
   setSecSkills: 'المهارات',
+  setSecPlugins: 'الإضافات',
   intgHeroTitle: 'استخدم GenOffice من مساعد الذكاء الاصطناعي',
   intgHeroDesc:
     'بعد الربط، يمكن لـ Claude Code وCodex وCursor وClaude Desktop والمساعدين المشابهين إنشاء ملفات Word وExcel وPowerPoint وPDF وMarkdown وتحويلها وقراءتها وتحريرها نيابةً عنك. كل شيء يعمل على هذا الجهاز؛ لا يُرفع أي شيء.',
@@ -586,6 +587,21 @@ export const ar: Dict = {
   intgSkillCreatorModelFailed: 'فشل نداء الذكاء الاصطناعي ({reason})؛ فتمت تعبئة قالب بدلًا منه.',
   intgSkillCreatorBadReply:
     'تعذّرت قراءة رد الذكاء الاصطناعي كملف SKILL.md؛ فتمت تعبئة قالب بدلًا منه.',
+  intgPluginsDesc:
+    'تجمع الإضافات المهارات والأوامر وتعريفات خوادم MCP تحت اسم واحد. يُثبَّت مجلد الإضافة أو ملف zip بصيغة Claude Code / ZCode كما هو، ولا يعمل أي شيء عند الاستيراد.',
+  intgPluginsEmpty:
+    'لم تُثبَّت أي إضافات بعد. ثبِّت مجلد إضافة أو ملف zip من Claude Code لإضافة مهاراتها وأوامرها.',
+  intgPluginsImportZip: 'تثبيت حزمة إضافة (zip)…',
+  intgPluginsImportFolder: 'تثبيت مجلد إضافة…',
+  intgPluginsImportDone: 'تم تثبيت {name}',
+  intgPluginsImportFailed: 'فشل التثبيت: {reason}',
+  intgPluginsRemove: 'إزالة',
+  intgPluginsRemoveConfirm: 'هل تريد إزالة الإضافة "{name}"؟ سيتم حذف مجلدها من GenOffice.',
+  intgPluginsRemoved: 'تمت إزالة {name}',
+  intgPluginsMcpNote: 'تُعرِّف خوادم MCP؛ تُدرج هنا فقط ولا يتم تشغيلها.',
+  intgPluginSkillsCount: 'المهارات: {count}',
+  intgPluginCommandsCount: 'الأوامر: {count}',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'البحث في الدليل… (اضغط /)',
   helpSearchLabel: 'البحث في الدليل',
   helpContentsLabel: 'فهرس الدليل',

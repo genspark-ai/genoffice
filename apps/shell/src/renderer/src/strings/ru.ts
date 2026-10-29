@@ -301,6 +301,7 @@ export const ru: Dict = {
   setSecAbout: 'О программе',
   setSecIntegrations: 'Интеграции',
   setSecSkills: 'Навыки',
+  setSecPlugins: 'Плагины',
   intgHeroTitle: 'Используйте GenOffice из своего ИИ-ассистента',
   intgHeroDesc:
     'После подключения Claude Code, Codex, Cursor, Claude Desktop и похожие ассистенты смогут создавать, конвертировать, читать и редактировать файлы Word, Excel, PowerPoint, PDF и Markdown за вас. Всё выполняется на этом компьютере; ничего не загружается.',
@@ -595,6 +596,21 @@ export const ru: Dict = {
   intgSkillCreatorModelFailed: 'Вызов ИИ не удался ({reason}); вместо этого заполнен шаблон.',
   intgSkillCreatorBadReply:
     'Ответ ИИ не удалось прочитать как SKILL.md; вместо этого заполнен шаблон.',
+  intgPluginsDesc:
+    'Плагины объединяют навыки, команды и объявления MCP-серверов под одним именем. Папка или zip плагина в формате Claude Code / ZCode устанавливается как есть; при импорте ничего не запускается.',
+  intgPluginsEmpty:
+    'Пока нет установленных плагинов. Установите папку или zip плагина Claude Code, чтобы добавить его навыки и команды.',
+  intgPluginsImportZip: 'Установить пакет плагина (zip)…',
+  intgPluginsImportFolder: 'Установить папку плагина…',
+  intgPluginsImportDone: 'Плагин {name} установлен',
+  intgPluginsImportFailed: 'Не удалось установить: {reason}',
+  intgPluginsRemove: 'Удалить',
+  intgPluginsRemoveConfirm: 'Удалить плагин «{name}»? Его папка будет удалена из GenOffice.',
+  intgPluginsRemoved: 'Плагин {name} удалён',
+  intgPluginsMcpNote: 'Объявляет MCP-серверы; они только перечислены здесь и не запускаются.',
+  intgPluginSkillsCount: 'Навыки: {count}',
+  intgPluginCommandsCount: 'Команды: {count}',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Поиск по руководству… (нажмите /)',
   helpSearchLabel: 'Поиск по руководству',
   helpContentsLabel: 'Содержание руководства',

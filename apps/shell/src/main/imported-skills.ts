@@ -94,22 +94,27 @@ export function readSkillBody(path: string): string {
   return fm?.body ?? ''
 }
 
-const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+/** the cap every import shares: 10 MB of copied or unpacked bytes */
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
 /**
- * A symlink is refused rather than dereferenced: `cpSync` without
- * `dereference` would carry the link across and the imported skill would keep
- * reaching back into whatever it points at, while dereferencing would copy in
- * arbitrarily much from anywhere on disk. The same walk bounds the copy.
+ * The walk every folder import — skill or plugin — makes before copying. A
+ * symlink is refused rather than dereferenced: `cpSync` without `dereference`
+ * would carry the link across and the imported folder would keep reaching back
+ * into whatever it points at, while dereferencing would copy in arbitrarily
+ * much from anywhere on disk. The same walk bounds the copy at the import cap.
+ * `what` is the noun the error messages name.
  */
-function inspectSkillDir(dir: string): void {
+export function inspectImportDir(dir: string, what: string): void {
   let rootIsLink: boolean
   try {
     rootIsLink = lstatSync(dir).isSymbolicLink()
   } catch {
-    throw new Error('the skill directory could not be read')
+    throw new Error(`the ${what} directory could not be read`)
   }
-  if (rootIsLink) throw new Error('the skill directory is a symlink, and imports refuse those')
+  if (rootIsLink) {
+    throw new Error(`the ${what} directory is a symlink, and imports refuse those`)
+  }
   let total = 0
   const stack: string[] = [dir]
   while (stack.length > 0) {
@@ -118,11 +123,11 @@ function inspectSkillDir(dir: string): void {
     try {
       entries = readdirSync(cur, { withFileTypes: true })
     } catch {
-      throw new Error('the skill directory could not be read')
+      throw new Error(`the ${what} directory could not be read`)
     }
     for (const entry of entries) {
       if (entry.isSymbolicLink()) {
-        throw new Error('the skill contains a symlink, and imports refuse those')
+        throw new Error(`the ${what} contains a symlink, and imports refuse those`)
       }
       const full = join(cur, entry.name)
       if (entry.isDirectory()) {
@@ -133,11 +138,11 @@ function inspectSkillDir(dir: string): void {
       try {
         size = statSync(full).size
       } catch {
-        throw new Error('the skill directory could not be read')
+        throw new Error(`the ${what} directory could not be read`)
       }
       total += size
       if (total > MAX_IMPORT_BYTES) {
-        throw new Error('the skill is larger than the 10 MB import cap')
+        throw new Error(`the ${what} is larger than the 10 MB import cap`)
       }
     }
   }
@@ -176,7 +181,7 @@ export function importSkillDir(skillDir: string, userDataDir: string): FoundSkil
   const dest = join(skillsRoot(userDataDir), basename(skillDir))
   if (existsSync(dest)) throw new Error('a skill of that name is already there')
   requireSkillMd(skillDir)
-  inspectSkillDir(skillDir)
+  inspectImportDir(skillDir, 'skill')
   cpSync(skillDir, dest, { recursive: true })
   return readBack(dest)
 }
@@ -368,7 +373,8 @@ export function importSkillMd(mdPath: string, userDataDir: string): FoundSkill {
   return writeSkillDoc(userDataDir, meta.name, synthesizeSkillDoc(meta))
 }
 
-function isSkillName(name: string): boolean {
+/** the folder-name rule every import shares — a skill or plugin is keyed by it */
+export function isSkillName(name: string): boolean {
   return /^[^/\\:*?"<>|]+$/.test(name) && isListedName(name)
 }
 
@@ -381,8 +387,13 @@ function isListedName(name: string): boolean {
  * Inflate one entry, giving up the moment it passes `limit`. A tiny archive can
  * declare and inflate to gigabytes, so the cap has to bite during inflation,
  * not after `async('nodebuffer')` has already handed back the whole payload.
+ * `what` names the import in the error message.
  */
-function inflateWithin(entry: JSZip.JSZipObject, limit: number): Promise<Buffer> {
+export function inflateWithin(
+  entry: JSZip.JSZipObject,
+  limit: number,
+  what: string,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
@@ -393,7 +404,7 @@ function inflateWithin(entry: JSZip.JSZipObject, limit: number): Promise<Buffer>
         if (size > limit) {
           stream.pause()
           stream.removeAllListeners('data')
-          reject(new Error('the skill is larger than the 10 MB import cap'))
+          reject(new Error(`the ${what} is larger than the 10 MB import cap`))
           return
         }
         chunks.push(chunk)
@@ -405,6 +416,23 @@ function inflateWithin(entry: JSZip.JSZipObject, limit: number): Promise<Buffer>
 
 const S_IFMT = 0o170000
 const S_IFLNK = 0o120000
+
+/**
+ * The checks every unpack runs on the entry names before any byte is written:
+ * an absolute or `..` name (zip-slip), a backslash where a separator was
+ * expected, and a symlink entry — the archive twin of `inspectImportDir`.
+ */
+export function assertSafeZipEntries(files: readonly JSZip.JSZipObject[]): void {
+  for (const f of files) {
+    const parts = f.name.split('/')
+    if (isAbsolute(f.name) || f.name.includes('\\') || parts.some((p) => p === '..' || p === '')) {
+      throw new Error(`the archive has an unsafe entry name: ${f.name}`)
+    }
+    if (f.unixPermissions != null && (Number(f.unixPermissions) & S_IFMT) === S_IFLNK) {
+      throw new Error('the archive contains a symlink, and imports refuse those')
+    }
+  }
+}
 
 /**
  * Unpack a zip the user picked into our skills folder.
@@ -424,15 +452,7 @@ export async function importSkillZip(zipPath: string, userDataDir: string): Prom
     throw new Error('the file is not a zip archive')
   }
   const files = Object.values(zip.files).filter((f) => !f.dir && !f.name.startsWith('__MACOSX/'))
-  for (const f of files) {
-    const parts = f.name.split('/')
-    if (isAbsolute(f.name) || f.name.includes('\\') || parts.some((p) => p === '..' || p === '')) {
-      throw new Error(`the archive has an unsafe entry name: ${f.name}`)
-    }
-    if (f.unixPermissions != null && (Number(f.unixPermissions) & S_IFMT) === S_IFLNK) {
-      throw new Error('the archive contains a symlink, and imports refuse those')
-    }
-  }
+  assertSafeZipEntries(files)
   const atRoot = files.find((f) => f.name === 'SKILL.md')
   const tops = new Set(files.map((f) => f.name.split('/')[0]))
   let prefix = ''
@@ -456,7 +476,7 @@ export async function importSkillZip(zipPath: string, userDataDir: string): Prom
   try {
     let total = 0
     for (const f of files) {
-      const bytes = await inflateWithin(f, MAX_IMPORT_BYTES - total)
+      const bytes = await inflateWithin(f, MAX_IMPORT_BYTES - total, 'skill')
       total += bytes.length
       const rel = f.name.slice(prefix.length).split('/').join(sep)
       const target = join(scratch, rel)
@@ -624,7 +644,7 @@ function importForeignSkillDir(skillDir: string, name: string, userDataDir: stri
   const dest = join(skillsRoot(userDataDir), name)
   if (existsSync(dest)) throw new Error('a skill of that name is already there')
   requireSkillMd(skillDir)
-  inspectSkillDir(skillDir)
+  inspectImportDir(skillDir, 'skill')
   cpSync(skillDir, dest, { recursive: true })
   return readBack(dest)
 }
@@ -711,7 +731,7 @@ export function writeSkill(
   let moved = false
   try {
     if (overwriting) {
-      inspectSkillDir(dest)
+      inspectImportDir(dest, 'skill')
       cpSync(dest, scratch, { recursive: true })
     }
     writeFileSync(join(scratch, 'SKILL.md'), text)
@@ -838,7 +858,7 @@ export function installRecommendedSkill(
   if (!existsSync(join(src, 'SKILL.md'))) throw new Error('unknown skill')
   const dest = join(skillsRoot(userDataDir), name)
   requireSkillMd(src)
-  inspectSkillDir(src)
+  inspectImportDir(src, 'skill')
   mkdirSync(skillsRoot(userDataDir), { recursive: true })
   const scratch = mkdtempSync(join(skillsRoot(userDataDir), '.install-'))
   // the user's copy steps aside rather than being deleted, so a failed swap puts it back

@@ -9,6 +9,7 @@ import {
   usableSkills,
   writeSkill,
 } from './imported-skills'
+import { pluginSkills, readPluginSkillBody } from './imported-plugins'
 import { createCliRunner, type CliRunner } from './mcp/cli-runner'
 import type { ForeignSkillCandidate, FoundSkill } from '../shared/found-skill'
 
@@ -20,11 +21,14 @@ import type { ForeignSkillCandidate, FoundSkill } from '../shared/found-skill'
  * `<userData>/skills` and read it in Integrations. This is the second half —
  * what the model gets, and what it may execute:
  *
- * - `ai:skills-list` and `ai:skill-text` hand out only what is installed in
- *   *our* folder. The coding agents' directories are candidates the user has
- *   not chosen, and until they click Import the model does not see them.
- *   `ai:skill-text` takes a name, never a path: the model cannot name a file,
- *   it can only pick an entry from the list this process vouched for.
+ * - `ai:skills-list` and `ai:skill-text` hand out what is installed in *our*
+ *   folder, plus the prompt-level components of the enabled plugins — listed
+ *   and invoked as `<plugin>:<name>`, read-only (the plugin's own files are
+ *   never written; editing happens on a user-owned copy the foreign-import
+ *   flow makes). On a name collision the user's skill wins and the plugin's is
+ *   dropped, so a plugin cannot shadow something the person wrote themselves.
+ *   Both channels take a name, never a path: the model cannot name a file, it
+ *   can only pick an entry from the list this process vouched for.
  * - `ai:skill-raw-text` and `ai:skill-save` are the settings editor's door on
  *   the same folder: the raw SKILL.md of a listed skill in, a written one out.
  *   Nothing new becomes runnable — a saved skill is still just instructions
@@ -105,11 +109,25 @@ function clip(text: string): string {
     : text
 }
 
+/**
+ * The listing `ai:skills-list` and `ai:skill-text` resolve against: the user's
+ * own skills first, then every enabled plugin's. On a name collision the USER
+ * skill wins and the plugin one is dropped — a plugin cannot shadow something
+ * the person wrote themselves, and the name the model saw keeps resolving to
+ * the user's entry.
+ */
+async function mergedSkills(userDataDir: string): Promise<FoundSkill[]> {
+  const user = await usableSkills(userDataDir)
+  const taken = new Set(user.map((s) => s.name))
+  const plugins = await pluginSkills(userDataDir)
+  return [...user, ...plugins.filter((s) => !taken.has(s.name))]
+}
+
 export function registerUserSkillsIpc(deps: UserSkillsDeps): void {
   const runner = (): CliRunner => deps.cliRunner()
 
   ipcMain.handle('ai:skills-list', async (): Promise<UserSkillEntry[]> => {
-    const skills = await usableSkills(app.getPath('userData'))
+    const skills = await mergedSkills(app.getPath('userData'))
     return skills.map(({ name, description, relevance }) => ({
       name,
       description,
@@ -121,10 +139,12 @@ export function registerUserSkillsIpc(deps: UserSkillsDeps): void {
     if (typeof name !== 'string' || name.trim() === '') {
       throw new Error('a skill name is required')
     }
-    const skills = await usableSkills(app.getPath('userData'))
-    const skill = skills.find((s) => s.name === name)
+    // the merged listing is the guard: a `<plugin>:<name>` entry resolves only
+    // by the name this process listed, and its file is read read-only — the
+    // settings editor's write doors below take user skills only
+    const skill = (await mergedSkills(app.getPath('userData'))).find((s) => s.name === name)
     if (!skill) throw new Error(`no installed skill named "${name}"`)
-    return clip(readSkillBody(skill.path))
+    return clip(skill.plugin ? readPluginSkillBody(skill.path) : readSkillBody(skill.path))
   })
 
   // the settings editor's pair: raw in (frontmatter included), fields out.

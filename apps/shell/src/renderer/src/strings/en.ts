@@ -292,6 +292,7 @@ export const en: Dict = {
   setSecAbout: 'About',
   setSecIntegrations: 'Integrations',
   setSecSkills: 'Skills',
+  setSecPlugins: 'Plugins',
   intgHeroTitle: 'Use GenOffice from your AI assistant',
   intgHeroDesc:
     'Once connected, Claude Code, Codex, Cursor, Claude Desktop and similar assistants can create, convert, read and edit Word, Excel, PowerPoint, PDF and Markdown files for you. Everything runs on this computer; nothing is uploaded.',
@@ -583,6 +584,21 @@ export const en: Dict = {
     'The AI call failed ({reason}); a template draft was filled in instead — edit it below.',
   intgSkillCreatorBadReply:
     'The AI reply could not be read as a SKILL.md; a template draft was filled in instead — edit it below.',
+  intgPluginsDesc:
+    'Plugins bundle skills, commands and MCP server declarations under one name. A Claude Code / ZCode-format plugin folder or zip installs as it is; nothing runs on import.',
+  intgPluginsEmpty:
+    'No plugins installed yet. Install a Claude Code plugin folder or zip to add its skills and commands.',
+  intgPluginsImportZip: 'Install plugin package (zip)…',
+  intgPluginsImportFolder: 'Install plugin folder…',
+  intgPluginsImportDone: 'Installed {name}',
+  intgPluginsImportFailed: 'Install failed: {reason}',
+  intgPluginsRemove: 'Remove',
+  intgPluginsRemoveConfirm: 'Remove the plugin "{name}"? Its folder is deleted from GenOffice.',
+  intgPluginsRemoved: 'Removed {name}',
+  intgPluginsMcpNote: 'Declares MCP servers; they are listed here but not run.',
+  intgPluginSkillsCount: '{count} skills',
+  intgPluginCommandsCount: '{count} commands',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Search the manual… (press /)',
   helpSearchLabel: 'Search the manual',
   helpContentsLabel: 'Manual contents',

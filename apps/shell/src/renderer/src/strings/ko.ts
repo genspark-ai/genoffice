@@ -298,6 +298,7 @@ export const ko: Dict = {
   setSecAbout: '정보',
   setSecIntegrations: '연동',
   setSecSkills: '스킬',
+  setSecPlugins: '플러그인',
   intgHeroTitle: 'AI 어시스턴트에서 GenOffice 사용하기',
   intgHeroDesc:
     '연결하면 Claude Code, Codex, Cursor, Claude Desktop 등의 어시스턴트가 Word, Excel, PowerPoint, PDF, Markdown 파일을 대신 만들고 변환하고 읽고 편집합니다. 모두 이 컴퓨터에서 처리되며 어떤 내용도 업로드되지 않습니다.',
@@ -588,6 +589,22 @@ export const ko: Dict = {
     'AI 모델이 설정되지 않아 답변으로 템플릿 초안을 만들었습니다. AI를 사용하려면 설정 → AI 모델에서 구성하세요.',
   intgSkillCreatorModelFailed: 'AI 호출에 실패했습니다({reason}). 대신 템플릿 초안을 만들었습니다.',
   intgSkillCreatorBadReply: 'AI 응답을 SKILL.md로 해석할 수 없어 템플릿 초안으로 대체했습니다.',
+  intgPluginsDesc:
+    '플러그인은 스킬, 명령, MCP 서버 선언을 하나의 이름으로 묶은 것입니다. Claude Code / ZCode 형식의 플러그인 폴더나 zip은 그대로 설치됩니다. 가져올 때 아무것도 실행되지 않습니다.',
+  intgPluginsEmpty:
+    '설치된 플러그인이 아직 없습니다. Claude Code 플러그인 폴더나 zip을 설치하면 해당 스킬과 명령이 추가됩니다.',
+  intgPluginsImportZip: '플러그인 패키지(zip) 설치…',
+  intgPluginsImportFolder: '플러그인 폴더 설치…',
+  intgPluginsImportDone: '{name} 설치됨',
+  intgPluginsImportFailed: '설치 실패: {reason}',
+  intgPluginsRemove: '제거',
+  intgPluginsRemoveConfirm:
+    '플러그인 "{name}"을(를) 제거할까요? 해당 폴더가 GenOffice에서 삭제됩니다.',
+  intgPluginsRemoved: '{name} 제거됨',
+  intgPluginsMcpNote: 'MCP 서버가 선언되어 있습니다. 여기에 표시만 되고 실행되지는 않습니다.',
+  intgPluginSkillsCount: '스킬 {count}개',
+  intgPluginCommandsCount: '명령 {count}개',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: '매뉴얼 검색…(/ 키로 포커스)',
   helpSearchLabel: '매뉴얼 검색',
   helpContentsLabel: '매뉴얼 목차',

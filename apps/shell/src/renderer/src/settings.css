@@ -950,6 +950,43 @@
   color: var(--text-secondary);
 }
 
+/* Plugins pane: the name line carries the version/author byline and the format
+   badge; the component counts sit below it as chips */
+.set-plug-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-plug-byline {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.set-plug-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.set-plug-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.set-plug-chip {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .set-intg-tab:hover {
   color: var(--text);
 }

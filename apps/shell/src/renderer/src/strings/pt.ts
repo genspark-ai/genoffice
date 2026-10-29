@@ -299,6 +299,7 @@ export const pt: Dict = {
   setSecAbout: 'Sobre',
   setSecIntegrations: 'Integrações',
   setSecSkills: 'Habilidades',
+  setSecPlugins: 'Plug-ins',
   intgHeroTitle: 'Use o GenOffice a partir do seu assistente de IA',
   intgHeroDesc:
     'Depois de conectados, Claude Code, Codex, Cursor, Claude Desktop e assistentes semelhantes podem criar, converter, ler e editar arquivos Word, Excel, PowerPoint, PDF e Markdown por você. Tudo roda neste computador; nada é enviado.',
@@ -599,6 +600,21 @@ export const pt: Dict = {
     'A chamada da IA falhou ({reason}); um rascunho básico foi preenchido no lugar.',
   intgSkillCreatorBadReply:
     'A resposta da IA não pôde ser lida como um SKILL.md; um rascunho básico foi preenchido no lugar.',
+  intgPluginsDesc:
+    'Os plug-ins agrupam habilidades, comandos e declarações de servidores MCP sob um único nome. Uma pasta ou um zip de plug-in no formato Claude Code / ZCode é instalado como está; nada é executado na importação.',
+  intgPluginsEmpty:
+    'Nenhum plug-in instalado. Instale uma pasta ou um zip de plug-in do Claude Code para adicionar suas habilidades e comandos.',
+  intgPluginsImportZip: 'Instalar pacote de plug-in (zip)…',
+  intgPluginsImportFolder: 'Instalar pasta de plug-in…',
+  intgPluginsImportDone: '{name} instalado',
+  intgPluginsImportFailed: 'Falha na instalação: {reason}',
+  intgPluginsRemove: 'Remover',
+  intgPluginsRemoveConfirm: 'Remover o plug-in "{name}"? A pasta dele será excluída do GenOffice.',
+  intgPluginsRemoved: '{name} removido',
+  intgPluginsMcpNote: 'Declara servidores MCP; eles são listados aqui, mas não são executados.',
+  intgPluginSkillsCount: '{count} habilidades',
+  intgPluginCommandsCount: '{count} comandos',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Pesquisar no manual… (pressione /)',
   helpSearchLabel: 'Pesquisar no manual',
   helpContentsLabel: 'Conteúdo do manual',

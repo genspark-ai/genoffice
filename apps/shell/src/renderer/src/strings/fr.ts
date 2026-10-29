@@ -307,6 +307,7 @@ export const fr: Dict = {
   setSecAbout: 'À propos',
   setSecIntegrations: 'Intégrations',
   setSecSkills: 'Compétences',
+  setSecPlugins: 'Extensions',
   intgHeroTitle: 'Utiliser GenOffice depuis votre assistant IA',
   intgHeroDesc:
     'Une fois connectés, Claude Code, Codex, Cursor, Claude Desktop et les assistants similaires peuvent créer, convertir, lire et modifier vos fichiers Word, Excel, PowerPoint, PDF et Markdown. Tout se passe sur cet ordinateur ; rien n’est envoyé.',
@@ -612,6 +613,22 @@ export const fr: Dict = {
     'L’appel à l’IA a échoué ({reason}) ; un brouillon-type a été rempli à la place.',
   intgSkillCreatorBadReply:
     'La réponse de l’IA n’a pas pu être lue comme un SKILL.md ; un brouillon-type a été rempli à la place.',
+  intgPluginsDesc:
+    'Les extensions regroupent des compétences, des commandes et des déclarations de serveurs MCP sous un seul nom. Un dossier ou un zip d’extension au format Claude Code / ZCode s’installe tel quel ; rien ne s’exécute à l’import.',
+  intgPluginsEmpty:
+    'Aucune extension installée. Installez un dossier ou un zip d’extension Claude Code pour ajouter ses compétences et commandes.',
+  intgPluginsImportZip: 'Installer un paquet d’extension (zip)…',
+  intgPluginsImportFolder: 'Installer un dossier d’extension…',
+  intgPluginsImportDone: '{name} installée',
+  intgPluginsImportFailed: 'Échec de l’installation : {reason}',
+  intgPluginsRemove: 'Supprimer',
+  intgPluginsRemoveConfirm:
+    'Supprimer l’extension « {name} » ? Son dossier sera supprimé de GenOffice.',
+  intgPluginsRemoved: '{name} supprimée',
+  intgPluginsMcpNote: 'Déclare des serveurs MCP ; ils sont listés ici mais pas exécutés.',
+  intgPluginSkillsCount: '{count} compétences',
+  intgPluginCommandsCount: '{count} commandes',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Rechercher dans le manuel… (appuyez sur /)',
   helpSearchLabel: 'Rechercher dans le manuel',
   helpContentsLabel: 'Sommaire du manuel',

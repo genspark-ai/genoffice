@@ -295,6 +295,7 @@ export const pl: Dict = {
   setSecAbout: 'O aplikacji',
   setSecIntegrations: 'Integracje',
   setSecSkills: 'Umiejętności',
+  setSecPlugins: 'Wtyczki',
   intgHeroTitle: 'Używaj GenOffice ze swojego asystenta AI',
   intgHeroDesc:
     'Po połączeniu Claude Code, Codex, Cursor, Claude Desktop i podobni asystenci mogą tworzyć, konwertować, czytać i edytować pliki Word, Excel, PowerPoint, PDF i Markdown za Ciebie. Wszystko działa na tym komputerze; nic nie jest przesyłane.',
@@ -591,6 +592,21 @@ export const pl: Dict = {
     'Wywołanie AI nie powiodło się ({reason}); w zamian wypełniono szablon.',
   intgSkillCreatorBadReply:
     'Odpowiedzi AI nie dało się odczytać jako SKILL.md; w zamian wypełniono szablon.',
+  intgPluginsDesc:
+    'Wtyczki łączą umiejętności, polecenia i deklaracje serwerów MCP pod jedną nazwą. Folder lub zip wtyczki w formacie Claude Code / ZCode instaluje się bez zmian; przy imporcie nic nie jest uruchamiane.',
+  intgPluginsEmpty:
+    'Brak zainstalowanych wtyczek. Zainstaluj folder lub zip wtyczki Claude Code, aby dodać jej umiejętności i polecenia.',
+  intgPluginsImportZip: 'Zainstaluj pakiet wtyczki (zip)…',
+  intgPluginsImportFolder: 'Zainstaluj folder wtyczki…',
+  intgPluginsImportDone: 'Zainstalowano {name}',
+  intgPluginsImportFailed: 'Instalacja nie powiodła się: {reason}',
+  intgPluginsRemove: 'Usuń',
+  intgPluginsRemoveConfirm: 'Usunąć wtyczkę „{name}”? Jej folder zostanie usunięty z GenOffice.',
+  intgPluginsRemoved: 'Usunięto {name}',
+  intgPluginsMcpNote: 'Deklaruje serwery MCP; są tu tylko wymienione, nie są uruchamiane.',
+  intgPluginSkillsCount: 'Umiejętności: {count}',
+  intgPluginCommandsCount: 'Polecenia: {count}',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Szukaj w podręczniku… (naciśnij /)',
   helpSearchLabel: 'Szukaj w podręczniku',
   helpContentsLabel: 'Spis podręcznika',

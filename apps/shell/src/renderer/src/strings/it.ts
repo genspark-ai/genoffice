@@ -299,6 +299,7 @@ export const it: Dict = {
   setSecAbout: 'Informazioni',
   setSecIntegrations: 'Integrazioni',
   setSecSkills: 'Competenze',
+  setSecPlugins: 'Plugin',
   intgHeroTitle: 'Usa GenOffice dal tuo assistente IA',
   intgHeroDesc:
     'Una volta collegati, Claude Code, Codex, Cursor, Claude Desktop e assistenti simili possono creare, convertire, leggere e modificare file Word, Excel, PowerPoint, PDF e Markdown per te. Tutto avviene su questo computer; nulla viene caricato.',
@@ -599,6 +600,22 @@ export const it: Dict = {
     'La chiamata all’IA non è riuscita ({reason}); è stato compilato un modello predefinito al suo posto.',
   intgSkillCreatorBadReply:
     'La risposta dell’IA non è stata leggibile come SKILL.md; è stato compilato un modello predefinito al suo posto.',
+  intgPluginsDesc:
+    'I plugin raggruppano competenze, comandi e dichiarazioni di server MCP sotto un unico nome. Una cartella o uno zip di plugin in formato Claude Code / ZCode viene installato così com’è; all’importazione non viene eseguito nulla.',
+  intgPluginsEmpty:
+    'Nessun plugin installato. Installa una cartella o uno zip di plugin di Claude Code per aggiungerne competenze e comandi.',
+  intgPluginsImportZip: 'Installa pacchetto plugin (zip)…',
+  intgPluginsImportFolder: 'Installa cartella plugin…',
+  intgPluginsImportDone: '{name} installato',
+  intgPluginsImportFailed: 'Installazione non riuscita: {reason}',
+  intgPluginsRemove: 'Rimuovi',
+  intgPluginsRemoveConfirm:
+    'Rimuovere il plugin "{name}"? La sua cartella sarà eliminata da GenOffice.',
+  intgPluginsRemoved: '{name} rimosso',
+  intgPluginsMcpNote: 'Dichiara server MCP; sono elencati qui ma non vengono eseguiti.',
+  intgPluginSkillsCount: '{count} competenze',
+  intgPluginCommandsCount: '{count} comandi',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'Cerca nel manuale… (premi /)',
   helpSearchLabel: 'Cerca nel manuale',
   helpContentsLabel: 'Indice del manuale',

@@ -302,6 +302,7 @@ export const ja: Dict = {
   setSecAbout: '情報',
   setSecIntegrations: '連携',
   setSecSkills: 'スキル',
+  setSecPlugins: 'プラグイン',
   intgHeroTitle: 'AI アシスタントから GenOffice を使う',
   intgHeroDesc:
     '接続すると、Claude Code、Codex、Cursor、Claude Desktop などのアシスタントが Word、Excel、PowerPoint、PDF、Markdown ファイルの作成・変換・読み取り・編集を代行します。すべてこの PC 上で完結し、何もアップロードされません。',
@@ -599,6 +600,22 @@ export const ja: Dict = {
     'AI の呼び出しに失敗しました（{reason}）。代わりにテンプレートの下書きを作成しました。',
   intgSkillCreatorBadReply:
     'AI の返答を SKILL.md として読み取れませんでした。代わりにテンプレートの下書きを作成しました。',
+  intgPluginsDesc:
+    'プラグインは、スキル・コマンド・MCP サーバー宣言を 1 つの名前にまとめたものです。Claude Code / ZCode 形式のプラグインフォルダーや zip はそのままインストールされます。インポート時に何も実行されません。',
+  intgPluginsEmpty:
+    'インストールされたプラグインはまだありません。Claude Code プラグインのフォルダーや zip をインストールすると、そのスキルとコマンドが追加されます。',
+  intgPluginsImportZip: 'プラグインパッケージ（zip）をインストール…',
+  intgPluginsImportFolder: 'プラグインフォルダーをインストール…',
+  intgPluginsImportDone: '{name} をインストールしました',
+  intgPluginsImportFailed: 'インストールに失敗しました：{reason}',
+  intgPluginsRemove: '削除',
+  intgPluginsRemoveConfirm:
+    'プラグイン「{name}」を削除しますか？フォルダーは GenOffice から削除されます。',
+  intgPluginsRemoved: '{name} を削除しました',
+  intgPluginsMcpNote: 'MCP サーバーが宣言されています。ここには表示されますが、実行はされません。',
+  intgPluginSkillsCount: 'スキル {count} 件',
+  intgPluginCommandsCount: 'コマンド {count} 件',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'マニュアル内を検索…（/ キーでフォーカス）',
   helpSearchLabel: 'マニュアル内を検索',
   helpContentsLabel: 'マニュアル目次',

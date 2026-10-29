@@ -295,6 +295,7 @@ export const hi: Dict = {
   setSecAbout: 'जानकारी',
   setSecIntegrations: 'इंटीग्रेशन',
   setSecSkills: 'कौशल',
+  setSecPlugins: 'प्लगइन',
   intgHeroTitle: 'अपने AI असिस्टेंट से GenOffice इस्तेमाल करें',
   intgHeroDesc:
     'कनेक्ट होने के बाद Claude Code, Codex, Cursor, Claude Desktop और ऐसे ही सहायक आपके लिए Word, Excel, PowerPoint, PDF और Markdown फ़ाइलें बना, बदल, पढ़ और संपादित कर सकते हैं। सब कुछ इसी कंप्यूटर पर चलता है; कुछ भी अपलोड नहीं होता।',
@@ -589,6 +590,21 @@ export const hi: Dict = {
   intgSkillCreatorModelFailed: 'AI कॉल विफल रहा ({reason}); उसकी जगह टेम्पलेट भरा गया है।',
   intgSkillCreatorBadReply:
     'AI का उत्तर SKILL.md के रूप में नहीं पढ़ा जा सका; उसकी जगह टेम्पलेट भरा गया है।',
+  intgPluginsDesc:
+    'प्लगइन कई स्किल, कमांड और MCP सर्वर घोषणाओं को एक ही नाम के तहत बाँधते हैं। Claude Code / ZCode फ़ॉर्मैट की प्लगइन फ़ोल्डर या zip जैसी है वैसी ही इंस्टॉल हो जाती है; इंपोर्ट करते समय कुछ भी नहीं चलता।',
+  intgPluginsEmpty:
+    'अभी कोई प्लगइन इंस्टॉल नहीं है। Claude Code प्लगइन फ़ोल्डर या zip इंस्टॉल करें, उसकी स्किल और कमांड जुड़ जाएँगी।',
+  intgPluginsImportZip: 'प्लगइन पैकेज (zip) इंस्टॉल करें…',
+  intgPluginsImportFolder: 'प्लगइन फ़ोल्डर इंस्टॉल करें…',
+  intgPluginsImportDone: '{name} इंस्टॉल हुआ',
+  intgPluginsImportFailed: 'इंस्टॉल विफल: {reason}',
+  intgPluginsRemove: 'हटाएँ',
+  intgPluginsRemoveConfirm: 'प्लगइन "{name}" हटाएँ? इसका फ़ोल्डर GenOffice से मिट जाएगा।',
+  intgPluginsRemoved: '{name} हटाया गया',
+  intgPluginsMcpNote: 'MCP सर्वर घोषित हैं; वे यहाँ सिर्फ़ सूची में हैं, चलाए नहीं जाते।',
+  intgPluginSkillsCount: '{count} स्किल',
+  intgPluginCommandsCount: '{count} कमांड',
+  intgPluginFormatClaude: 'Claude Code',
   helpSearchPlaceholder: 'मैनुअल में खोजें… (/) दबाएँ',
   helpSearchLabel: 'मैनुअल में खोजें',
   helpContentsLabel: 'मैनुअल की सामग्री',
