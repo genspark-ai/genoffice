@@ -7284,6 +7284,25 @@ function hfTextBoxOfAnchor(anchor: XNode): HfTextBox {
   const cy = parseInt(ext['cy'] ?? '', 10)
   if (cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
   if (cy > 0) box.heightPx = Math.round(cy / EMU_PER_PX)
+  // the shape's own spPr carries the display transform and outline: the
+  // rotation and stroke the strip renderer draws (Word turns header shapes
+  // like body ones — a rotated banner must not read as a straight one)
+  const wsp = findChild(
+    findChild(findChild(anchor, 'a:graphic') ?? {}, 'a:graphicData') ?? {},
+    'wps:wsp',
+  )
+  const spPr = findChild(wsp ?? {}, 'wps:spPr')
+  if (spPr) {
+    const rot = parseInt(attrsOf(findChild(spPr, 'a:xfrm') ?? {})['rot'] ?? '', 10)
+    if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+    const ln = findChild(spPr, 'a:ln')
+    const lnW = parseInt(ln ? (attrsOf(ln)['w'] ?? '') : '', 10)
+    if (Number.isFinite(lnW) && lnW > 0) box.borderWidthPx = emuToPx(lnW)
+    const stroke = attrsOf(findChild(findChild(ln ?? {}, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})[
+      'val'
+    ]
+    if (stroke) box.borderColor = stroke
+  }
   for (const child of childrenOf(anchor)) {
     const wrap = /^wp:wrap(None|Square|Tight|Through|TopAndBottom)$/.exec(nameOf(child) ?? '')?.[1]
     if (wrap)
@@ -7336,6 +7355,14 @@ function hfTextBoxOfVml(shape: XNode): HfTextBox {
   if (wrap === 'none' || wrap === 'square' || wrap === 'tight' || wrap === 'through')
     box.wrap = wrap
   else if (wrap === 'topAndBottom') box.wrap = 'topBottom'
+  // the VML shape's own style carries the same display transform and stroke
+  // as a DrawingML spPr (legacy .doc conversions rotate banners this way)
+  const rotation = parseFloat(/(?:^|;)\s*rotation:([^;]+)/.exec(style)?.[1] ?? '')
+  if (Number.isFinite(rotation) && rotation !== 0) box.rotDeg = rotation
+  const strokeW = vmlLengthPx(/(?:^|;)\s*strokeweight:([^;]+)/.exec(style)?.[1])
+  if (strokeW !== undefined && strokeW > 0) box.borderWidthPx = strokeW
+  const strokeColor = /(?:^|;)\s*strokecolor:\s*#([0-9a-fA-F]{6})/.exec(style)?.[1]
+  if (strokeColor) box.borderColor = strokeColor.toUpperCase()
   return box
 }
 

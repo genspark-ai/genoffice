@@ -51,9 +51,10 @@ const boxOf = (editor: Editor, pos: number): TextboxDisplay =>
 function shapeChrome(editor: Editor, pos: number) {
   const wrapper = editor.view.nodeDOM(pos) as HTMLElement
   const boxEl = wrapper.querySelector('.doc-textbox') as HTMLElement
+  const turnEl = (wrapper.querySelector('.box-rotator') ?? boxEl) as HTMLElement
   const handle = wrapper.querySelector('.box-rotate-handle') as HTMLElement
   boxEl.getBoundingClientRect = () => new DOMRect(100, 100, 100, 100)
-  return { wrapper, boxEl, handle }
+  return { wrapper, boxEl, turnEl, handle }
 }
 
 function mouseOn(target: EventTarget, type: string, x: number, y: number, shiftKey = false): void {
@@ -66,28 +67,28 @@ describe('shape rotation handle', () => {
   it('turns the shape about its box centre and keeps it selected', async () => {
     const editor = await openShapeDoc()
     const pos = selectShape(editor)
-    const { boxEl, handle } = shapeChrome(editor, pos)
+    const { turnEl, handle } = shapeChrome(editor, pos)
     expect(handle).not.toBeNull()
 
     // pointer due right of the centre = 0°, then due below it = 90° clockwise
     mouseOn(handle, 'mousedown', 200, 150)
     expect(editor.state.selection).toBeInstanceOf(NodeSelection)
     mouseOn(window, 'mousemove', 150, 200)
-    expect(boxEl.style.transform).toBe('rotate(90deg)')
+    expect(turnEl.style.transform).toBe('rotate(90deg)')
 
     mouseOn(window, 'mouseup', 150, 200)
     expect(boxOf(editor, pos).rotDeg).toBe(90)
     expect(editor.state.selection).toBeInstanceOf(NodeSelection)
     // the drag preview is gone: the inline transform is re-derived from the
     // committed model attrs by the node view (no stale preview angle)
-    expect(boxEl.style.transform).toBe('rotate(90deg)')
+    expect(turnEl.style.transform).toBe('rotate(90deg)')
     editor.destroy()
   })
 
   it('snaps to 15-degree steps while Shift is held', async () => {
     const editor = await openShapeDoc()
     const pos = selectShape(editor)
-    const { boxEl, handle } = shapeChrome(editor, pos)
+    const { turnEl, handle } = shapeChrome(editor, pos)
 
     mouseOn(handle, 'mousedown', 200, 150)
     // pointer 40° below the horizontal; plain rounding would commit 40
@@ -95,7 +96,7 @@ describe('shape rotation handle', () => {
     const x = 150 + Math.cos(rad) * 100
     const y = 150 + Math.sin(rad) * 100
     mouseOn(window, 'mousemove', x, y, true)
-    expect(boxEl.style.transform).toBe('rotate(45deg)')
+    expect(turnEl.style.transform).toBe('rotate(45deg)')
 
     mouseOn(window, 'mouseup', x, y, true)
     expect(boxOf(editor, pos).rotDeg).toBe(45)
@@ -109,8 +110,8 @@ describe('shape rotation handle', () => {
     editor.commands.updateAttributes('docProtected', {
       textboxes: [{ ...boxOf(editor, pos), rotDeg: 90 }],
     })
-    const { boxEl, handle } = shapeChrome(editor, pos)
-    expect(boxEl.style.transform).toBe('rotate(90deg)')
+    const { turnEl, handle } = shapeChrome(editor, pos)
+    expect(turnEl.style.transform).toBe('rotate(90deg)')
 
     mouseOn(handle, 'mousedown', 200, 150) // 0°
     mouseOn(window, 'mousemove', 150, 100) // -90° from the start angle
@@ -118,14 +119,14 @@ describe('shape rotation handle', () => {
 
     expect(boxOf(editor, pos).rotDeg).toBeUndefined()
     // 0 is the cleared state: the model re-render drops the inline transform
-    expect(boxEl.style.transform).toBe('')
+    expect(turnEl.style.transform).toBe('')
     editor.destroy()
   })
 
   it('leaves the shape untouched when the grip is pressed without a turn', async () => {
     const editor = await openShapeDoc()
     const pos = selectShape(editor)
-    const { boxEl, handle } = shapeChrome(editor, pos)
+    const { turnEl, handle } = shapeChrome(editor, pos)
 
     mouseOn(handle, 'mousedown', 200, 150)
     mouseOn(window, 'mousemove', 205, 150) // same ray: no angle change
@@ -133,7 +134,7 @@ describe('shape rotation handle', () => {
 
     expect(boxOf(editor, pos).rotDeg).toBeUndefined()
     // the drag preview is cleared and no transaction is committed
-    expect(boxEl.style.transform).toBe('')
+    expect(turnEl.style.transform).toBe('')
     editor.destroy()
   })
 
@@ -141,14 +142,38 @@ describe('shape rotation handle', () => {
     const editor = await openShapeDoc()
     const pos = selectShape(editor)
     editor.setEditable(false)
-    const { boxEl, handle } = shapeChrome(editor, pos)
+    const { turnEl, handle } = shapeChrome(editor, pos)
 
     mouseOn(handle, 'mousedown', 200, 150)
     mouseOn(window, 'mousemove', 150, 200)
     mouseOn(window, 'mouseup', 150, 200)
 
-    expect(boxEl.style.transform).toBe('')
+    expect(turnEl.style.transform).toBe('')
     expect(boxOf(editor, pos).rotDeg).toBeUndefined()
+    editor.destroy()
+  })
+
+  it('turns the chrome rotator, not the box, and flags the turned frame', async () => {
+    const editor = await openShapeDoc()
+    const pos = selectShape(editor)
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...boxOf(editor, pos), rotDeg: 30 }],
+    })
+    const { wrapper, boxEl, turnEl } = shapeChrome(editor, pos)
+    // the rotation lives on the chrome rotator (handles inside it turn along,
+    // Word's frame-follows-shape behavior); the box itself stays unturned in
+    // the editor and carries the flag that swaps the frame to the box outline
+    expect(turnEl.style.transform).toBe('rotate(30deg)')
+    expect(turnEl.querySelector('.box-resize-handle')).not.toBeNull()
+    expect(turnEl.querySelector('.box-rotate-handle')).not.toBeNull()
+    expect(boxEl.style.transform).toBe('')
+    expect(wrapper.classList.contains('has-turned-box')).toBe(true)
+    // back to 0: the rotator empties and the flag drops (wrapper frame returns)
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...boxOf(editor, pos), rotDeg: undefined }],
+    })
+    expect(turnEl.style.transform).toBe('')
+    expect(wrapper.classList.contains('has-turned-box')).toBe(false)
     editor.destroy()
   })
 })

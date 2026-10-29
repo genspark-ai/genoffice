@@ -1718,7 +1718,10 @@ export function textboxIsFilled(box: TextboxDisplay): boolean {
   return Boolean(box.fill || box.fillImageDataUrl)
 }
 
-export function textboxBoxStyle(box: TextboxDisplay, opts?: { inCell?: boolean }): string {
+export function textboxBoxStyle(
+  box: TextboxDisplay,
+  opts?: { inCell?: boolean; editorChrome?: boolean },
+): string {
   const boxW = box.widthPx ?? 189
   const boxH = box.heightPx ?? 113
   // Word keeps shape text inside the preset's text rectangle (e.g. the
@@ -1765,7 +1768,9 @@ export function textboxBoxStyle(box: TextboxDisplay, opts?: { inCell?: boolean }
         ? 'background-repeat:repeat'
         : 'background-repeat:no-repeat;background-size:100% 100%')
     : ''
-  const transforms = [box.rotDeg ? `rotate(${box.rotDeg}deg)` : '']
+  // the editor's chrome layer (.box-rotator) carries the rotation so the
+  // selection handles turn with the box; the box itself stays unturned there
+  const transforms = [box.rotDeg && !opts?.editorChrome ? `rotate(${box.rotDeg}deg)` : '']
   // Word keeps floating drawing objects on the page: a column-relative X that
   // would hang past a paper edge is pulled back on (Word-authored files carry
   // far-negative posOffsets; drawn literally the box leaves the page and cuts
@@ -2100,7 +2105,10 @@ function textboxRowSpec(para: TextboxParaDisplay): DomSpec {
   return ['div', attrs, ...cells]
 }
 
-export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean }): DomSpec {
+export function renderTextboxSpec(
+  box: TextboxDisplay,
+  opts?: { inCell?: boolean; editorChrome?: boolean },
+): DomSpec {
   const style = textboxBoxStyle(box, opts)
   const boxAttrs: Record<string, string> = {
     class: textboxIsFilled(box) ? 'doc-textbox doc-textbox-filled' : 'doc-textbox',
