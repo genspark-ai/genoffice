@@ -201,6 +201,7 @@ export const pt = {
   aiMindMapAskPrompt: 'Fale sobre "{label}" neste documento',
   aiMindMapJump: 'Ir para o trecho citado',
   aiMindMapExport: 'Exportar PNG',
+  aiMindMapExportSvg: 'Exportar SVG',
   aiMindMapReset: 'Redefinir visualização',
   aiMindMapExpand: 'Expandir ramo',
   aiMindMapCollapse: 'Recolher ramo',

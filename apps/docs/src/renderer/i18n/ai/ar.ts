@@ -194,6 +194,7 @@ export const ar = {
   aiMindMapAskPrompt: 'حدثني عن «{label}» في هذا المستند',
   aiMindMapJump: 'الانتقال إلى المقطع المشار إليه',
   aiMindMapExport: 'تصدير PNG',
+  aiMindMapExportSvg: 'تصدير SVG',
   aiMindMapReset: 'إعادة ضبط العرض',
   aiMindMapExpand: 'توسيع الفرع',
   aiMindMapCollapse: 'طي الفرع',

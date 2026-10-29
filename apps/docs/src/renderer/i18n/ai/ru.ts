@@ -198,6 +198,7 @@ export const ru = {
   aiMindMapAskPrompt: 'Расскажи про «{label}» в этом документе',
   aiMindMapJump: 'Перейти к цитируемому фрагменту',
   aiMindMapExport: 'Экспорт PNG',
+  aiMindMapExportSvg: 'Экспорт SVG',
   aiMindMapReset: 'Сбросить вид',
   aiMindMapExpand: 'Развернуть ветку',
   aiMindMapCollapse: 'Свернуть ветку',

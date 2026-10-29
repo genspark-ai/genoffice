@@ -190,6 +190,7 @@ export const he = {
   aiMindMapAskPrompt: 'ספר לי על «{label}» במסמך הזה',
   aiMindMapJump: 'מעבר לקטע המצוטט',
   aiMindMapExport: 'ייצוא PNG',
+  aiMindMapExportSvg: 'ייצוא SVG',
   aiMindMapReset: 'איפוס תצוגה',
   aiMindMapExpand: 'הרחב ענף',
   aiMindMapCollapse: 'כווץ ענף',

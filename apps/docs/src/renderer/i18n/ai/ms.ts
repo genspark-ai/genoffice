@@ -197,6 +197,7 @@ export const ms = {
   aiMindMapAskPrompt: 'Terangkan tentang "{label}" dalam dokumen ini',
   aiMindMapJump: 'Lompat ke petik yang dirujuk',
   aiMindMapExport: 'Eksport PNG',
+  aiMindMapExportSvg: 'Eksport SVG',
   aiMindMapReset: 'Set semula pandangan',
   aiMindMapExpand: 'Kembangkan cabang',
   aiMindMapCollapse: 'Lipat cabang',

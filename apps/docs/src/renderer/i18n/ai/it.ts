@@ -202,6 +202,7 @@ export const it = {
   aiMindMapAskPrompt: 'Parlami di "{label}" in questo documento',
   aiMindMapJump: 'Vai al passaggio citato',
   aiMindMapExport: 'Esporta PNG',
+  aiMindMapExportSvg: 'Esporta SVG',
   aiMindMapReset: 'Reimposta vista',
   aiMindMapExpand: 'Espandi ramo',
   aiMindMapCollapse: 'Comprimi ramo',

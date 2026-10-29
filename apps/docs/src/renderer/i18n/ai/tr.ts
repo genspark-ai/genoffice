@@ -195,6 +195,7 @@ export const tr = {
   aiMindMapAskPrompt: 'Bu belgedeki "{label}" hakkında bilgi ver',
   aiMindMapJump: 'Alıntılanan bloğa git',
   aiMindMapExport: 'PNG olarak dışa aktar',
+  aiMindMapExportSvg: 'SVG olarak dışa aktar',
   aiMindMapReset: 'Görünümü sıfırla',
   aiMindMapExpand: 'Dalı genişlet',
   aiMindMapCollapse: 'Dalı daralt',

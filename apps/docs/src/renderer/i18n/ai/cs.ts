@@ -198,6 +198,7 @@ export const cs = {
   aiMindMapAskPrompt: 'Pověz mi o „{label}“ v tomto dokumentu',
   aiMindMapJump: 'Přejít na citovanou pasáž',
   aiMindMapExport: 'Exportovat PNG',
+  aiMindMapExportSvg: 'Exportovat SVG',
   aiMindMapReset: 'Obnovit zobrazení',
   aiMindMapExpand: 'Rozbalit větev',
   aiMindMapCollapse: 'Sbalit větev',
