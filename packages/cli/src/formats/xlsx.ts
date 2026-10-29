@@ -178,6 +178,7 @@ interface RecalcCell {
   column: number
   formatted: string
   number?: number
+  boolean?: boolean
   isError?: boolean
 }
 
@@ -194,6 +195,13 @@ interface RecalcResult {
    * rewrite them; the caller reports them instead of claiming success.
    */
   staleSpillCells?: RecalcCell[]
+  /**
+   * Cells whose cache the audit kept although the engine now computes an
+   * error (a changed input turned the dependent into `#DIV/0!`, or the engine
+   * errs where Excel does not). They were not refreshed, so they must be
+   * reported rather than counted as current.
+   */
+  staleUnrefreshed?: RecalcCell[]
   /** set when the engine declined the audit; `stale` is then absent */
   auditSkipped?: RecalcAuditSkip
 }
@@ -1348,6 +1356,19 @@ interface FormulaEvaluation {
 }
 
 /**
+ * The cached value a cell's result becomes in the `<v>` patch: typed when the
+ * engine typed the result (error → `t="e"`, boolean → `t="b"` with the
+ * numeric 0/1, number as is), the display string otherwise. A boolean typed
+ * as text would cache `TRUE`/`FALSE` as `t="str"`, which Excel shows
+ * left-aligned until it recalculates.
+ */
+function cachedValueFor(cell: RecalcCell): FormulaCachedValue {
+  if (cell.isError) return { error: cell.formatted }
+  if (cell.boolean !== undefined) return cell.boolean
+  return cell.number ?? (cell.formatted === '' ? null : cell.formatted)
+}
+
+/**
  * One sidecar process per call: read the batch formulas' results and, from the
  * same import, every other formula cell whose cached `<v>` the edits left
  * stale. The engine evaluates the whole workbook, so dependents are found
@@ -1373,6 +1394,7 @@ async function evaluateFormulas(
     const dependents: string[] = []
     let stale: RecalcCell[] | undefined
     let staleSpillCells: RecalcCell[] | undefined
+    let staleUnrefreshed: RecalcCell[] | undefined
     let auditSkipped: RecalcAuditSkip | undefined
     let batchValues = 0
     if (bySheet.size === 0) {
@@ -1385,6 +1407,7 @@ async function evaluateFormulas(
       })) as RecalcResult
       stale = r.stale
       staleSpillCells = r.staleSpillCells
+      staleUnrefreshed = r.staleUnrefreshed
       auditSkipped = r.auditSkipped
     } else {
       let first = true
@@ -1400,6 +1423,9 @@ async function evaluateFormulas(
         // only the first request carries the audit; keep what it answered
         if (evaluated.stale !== undefined) stale = evaluated.stale
         if (evaluated.staleSpillCells !== undefined) staleSpillCells = evaluated.staleSpillCells
+        if (evaluated.staleUnrefreshed !== undefined) {
+          staleUnrefreshed = evaluated.staleUnrefreshed
+        }
         if (evaluated.auditSkipped) auditSkipped = evaluated.auditSkipped
         const values = evaluated.cells
           .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
@@ -1415,14 +1441,7 @@ async function evaluateFormulas(
               unparsed.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
               return { row: cell.row, column: cell.column, value: null }
             }
-            if (cell.isError) {
-              return { row: cell.row, column: cell.column, value: { error: cell.formatted } }
-            }
-            return {
-              row: cell.row,
-              column: cell.column,
-              value: (cell.number ?? (cell.formatted === '' ? null : cell.formatted)) as Scalar,
-            }
+            return { row: cell.row, column: cell.column, value: cachedValueFor(cell) }
           })
         // the refresh is keyed like the edits, by the file's original sheet name
         if (values.length) {
@@ -1448,9 +1467,7 @@ async function evaluateFormulas(
         dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
         continue
       }
-      const value: FormulaCachedValue = cell.isError
-        ? { error: cell.formatted }
-        : (cell.number ?? (cell.formatted === '' ? null : cell.formatted))
+      const value: FormulaCachedValue = cachedValueFor(cell)
       const cells = dependentsBySheet.get(sheet) ?? []
       cells.push({ row: cell.row, column: cell.column, value })
       dependentsBySheet.set(sheet, cells)
@@ -1460,6 +1477,15 @@ async function evaluateFormulas(
     // own, so the cached-value patch cannot rewrite them. Report them through
     // the same path as the other unrefreshable dependents.
     for (const cell of staleSpillCells ?? []) {
+      const sheet = originalName(cell.sheet)
+      if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
+      dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+    }
+    // The audit kept these caches against an engine error (never downgrade a
+    // usable cache), so they were not refreshed: a changed input legitimately
+    // turns a dependent into #DIV/0!/#N/A. Report them like the other
+    // unrefreshable dependents instead of claiming the caches are current.
+    for (const cell of staleUnrefreshed ?? []) {
       const sheet = originalName(cell.sheet)
       if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
       dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
@@ -1514,6 +1540,7 @@ interface RecalcRangeResult {
   cells: RecalcCell[]
   stale?: RecalcCell[]
   staleSpillCells?: RecalcCell[]
+  staleUnrefreshed?: RecalcCell[]
   auditSkipped?: RecalcAuditSkip
 }
 
@@ -1540,6 +1567,7 @@ async function recalcRange(
     result.cells.push(...r.cells)
     if (r.stale !== undefined) result.stale = r.stale
     if (r.staleSpillCells !== undefined) result.staleSpillCells = r.staleSpillCells
+    if (r.staleUnrefreshed !== undefined) result.staleUnrefreshed = r.staleUnrefreshed
     if (r.auditSkipped) result.auditSkipped = r.auditSkipped
   }
   return result

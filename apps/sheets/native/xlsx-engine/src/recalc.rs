@@ -61,6 +61,10 @@ pub struct RecalcCell {
     /// Raw numeric value when the cell evaluates to a number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<f64>,
+    /// Raw boolean when the cell evaluates to a boolean (`=A1>3`): the cache
+    /// for one is `t="b"` with the numeric 0/1, not the text `TRUE`/`FALSE`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boolean: Option<bool>,
     /// The engine typed the result as an error (`#DIV/0!`), as opposed to a
     /// formula whose text result merely spells one (`="#N/A"`).
     pub is_error: bool,
@@ -94,6 +98,14 @@ pub struct RecalcResult {
     /// reporting, not for patching.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale_spill_cells: Option<Vec<RecalcCell>>,
+    /// Formula and spill cells whose cache was kept although the engine now
+    /// computes an error: the audit never downgrades a usable cache to an
+    /// engine error (RATE/TEXT-style engine gaps), but a changed input can
+    /// legitimately turn a dependent into `#DIV/0!`/`#N/A`, so these caches
+    /// may be wrong. They were not refreshed — a caller may not claim the
+    /// cached values are current while this list is non-empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_unrefreshed: Option<Vec<RecalcCell>>,
     /// Set when the audit was requested but deliberately skipped; `stale` and
     /// `stale_spill_cells` are then absent and the caches were not checked.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -226,6 +238,7 @@ pub fn recalc_cells_reporting(
             cached: false,
             stale: Some(Vec::new()),
             stale_spill_cells: Some(Vec::new()),
+            stale_unrefreshed: Some(Vec::new()),
             audit_skipped: None,
         });
     }
@@ -280,24 +293,32 @@ pub fn recalc_cells_reporting(
     cache.entries.insert(key, entry);
     cache.evict_beyond_cap();
 
-    let (stale, stale_spill_cells) = match stale_audit {
-        Some(audit) => (Some(audit.cells), Some(audit.spill_cells)),
-        None => (None, None),
+    let (stale, stale_spill_cells, stale_unrefreshed) = match stale_audit {
+        Some(audit) => (
+            Some(audit.cells),
+            Some(audit.spill_cells),
+            Some(audit.unrefreshed),
+        ),
+        None => (None, None, None),
     };
     Ok(RecalcResult {
         cells,
         cached,
         stale,
         stale_spill_cells,
+        stale_unrefreshed,
         audit_skipped,
     })
 }
 
 /// What the fresh import's staged caches no longer agree with: formula cells
-/// (patchable on save) and array spill cells (report only, see `RecalcResult`).
+/// (patchable on save), array spill cells (report only, see `RecalcResult`)
+/// and the cells whose cache was kept against an engine error
+/// (`unrefreshed`, also report only).
 struct StaleAudit {
     cells: Vec<RecalcCell>,
     spill_cells: Vec<RecalcCell>,
+    unrefreshed: Vec<RecalcCell>,
 }
 
 fn run(
@@ -385,6 +406,7 @@ fn run(
                     }
                 }
                 let number = raw_number(&entry.model, sheet, row_1, column_1);
+                let boolean = raw_boolean(&entry.model, sheet, row_1, column_1);
                 let is_error = matches!(
                     entry.model.get_cell_type(sheet, row_1, column_1),
                     Ok(CellType::ErrorValue)
@@ -395,6 +417,7 @@ fn run(
                     column: column as u32,
                     formatted,
                     number,
+                    boolean,
                     is_error,
                     is_formula,
                 });
@@ -736,6 +759,14 @@ fn raw_number(model: &Model, sheet: u32, row: i32, column: i32) -> Option<f64> {
     }
 }
 
+fn raw_boolean(model: &Model, sheet: u32, row: i32, column: i32) -> Option<bool> {
+    use ironcalc::base::cell::CellValue;
+    match model.get_cell_value_by_index(sheet, row, column) {
+        Ok(CellValue::Boolean(value)) => Some(value),
+        _ => None,
+    }
+}
+
 /// A formula cell's identity and the cached `<v>` the file carried,
 /// captured before the model evaluates it away. Array-formula anchors carry
 /// their cached value the same way regular formulas do.
@@ -813,6 +844,7 @@ fn stale_cell(model: &Model, sheet: usize, row: i32, column: i32, is_formula: bo
             .get_formatted_cell_value(sheet_index, row, column)
             .unwrap_or_default(),
         number: raw_number(model, sheet_index, row, column),
+        boolean: raw_boolean(model, sheet_index, row, column),
         is_error: matches!(
             model.get_cell_type(sheet_index, row, column),
             Ok(CellType::ErrorValue)
@@ -826,6 +858,7 @@ fn stale_cell(model: &Model, sheet: usize, row: i32, column: i32, is_formula: bo
 /// value cells by the time this runs, so they are left alone.
 fn stale_cached_values(model: &Model, cached: CachedValues) -> StaleAudit {
     let mut cells = Vec::new();
+    let mut unrefreshed = Vec::new();
     for entry in cached.formulas {
         let Some(cell) = worksheet_cell(model, entry.sheet, entry.row, entry.column) else {
             continue;
@@ -844,8 +877,18 @@ fn stale_cached_values(model: &Model, cached: CachedValues) -> StaleAudit {
         // one case, TEXT() with a format code the engine cannot parse
         // another — and replacing the file's value with #NUM!/#VALUE! would
         // destroy a cache Excel computed correctly. The reverse (a cached
-        // error that now computes) stays reportable.
+        // error that now computes) stays reportable. The cache is kept, but
+        // the cell is listed as unrefreshed: a changed input legitimately
+        // turns dependents into #DIV/0!/#N/A, so the kept cache may be wrong
+        // and the caller may not claim the cached values are current.
         if is_error_value(computed) && !is_error_value(&entry.value) {
+            unrefreshed.push(stale_cell(
+                model,
+                entry.sheet,
+                entry.row,
+                entry.column,
+                true,
+            ));
             continue;
         }
         // An unevaluated cell has no answer to write; the file's cache stays.
@@ -872,8 +915,16 @@ fn stale_cached_values(model: &Model, cached: CachedValues) -> StaleAudit {
             continue;
         }
         // Same rule as formula cells: a spill the engine turns into an error
-        // keeps the value Excel spilled there.
+        // keeps the value Excel spilled there, and is listed as unrefreshed
+        // for the same reason.
         if matches!(v, SpillValue::Error(_)) && !matches!(entry.value, SpillValue::Error(_)) {
+            unrefreshed.push(stale_cell(
+                model,
+                entry.sheet,
+                entry.row,
+                entry.column,
+                false,
+            ));
             continue;
         }
         // A spill cell carries no `<f>` of its own, so the caller's
@@ -886,7 +937,11 @@ fn stale_cached_values(model: &Model, cached: CachedValues) -> StaleAudit {
             false,
         ));
     }
-    StaleAudit { cells, spill_cells }
+    StaleAudit {
+        cells,
+        spill_cells,
+        unrefreshed,
+    }
 }
 
 fn is_error_value(value: &FormulaValue) -> bool {
@@ -1750,6 +1805,7 @@ mod tests {
         let result = recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
         assert!(result.stale.is_none());
         assert!(result.stale_spill_cells.is_none());
+        assert!(result.stale_unrefreshed.is_none());
         assert!(result.audit_skipped.is_none());
     }
 
@@ -1994,6 +2050,7 @@ mod tests {
         assert_eq!(result.audit_skipped, Some(AuditSkipReason::Date1904));
         assert!(result.stale.is_none());
         assert!(result.stale_spill_cells.is_none());
+        assert!(result.stale_unrefreshed.is_none());
         assert!(result.cells.is_empty());
 
         let plain = dir.path().join("plain.xlsx");
@@ -2022,13 +2079,16 @@ mod tests {
         assert!(result.audit_skipped.is_none());
         assert_eq!(result.stale.unwrap().len(), 0);
         assert_eq!(result.stale_spill_cells.unwrap().len(), 0);
+        assert_eq!(result.stale_unrefreshed.unwrap().len(), 0);
     }
 
     /// The audit never downgrades a usable cache to an engine error. Here
     /// `TEXT` uses a format code IronCalc's formatter rejects (`mmss.0`,
     /// ECMA-376 built-in 47): Excel's cached text is right, the engine's
-    /// #VALUE! is not, so the cell is left alone. A cached error that now
-    /// computes is still reported.
+    /// #VALUE! is not, so the cache is left in place — but the cell is
+    /// reported as unrefreshed, because the caller may not claim the cached
+    /// values are current while a cache went unverified. A cached error that
+    /// now computes is still reported (and patchable).
     #[test]
     fn never_downgrades_a_usable_cache_to_an_engine_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -2044,8 +2104,15 @@ mod tests {
 
         let mut cache = RecalcCache::new();
         let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
-        // the engine's #VALUE! must not replace the valid text cache
+        // the engine's #VALUE! must not replace the valid text cache …
         assert!(find_stale(&result, 0, 1).is_none());
+        // … but the cell is listed: its cache was not refreshed
+        let unrefreshed = result.stale_unrefreshed.as_ref().unwrap();
+        let text = unrefreshed
+            .iter()
+            .find(|cell| cell.row == 0 && cell.column == 1)
+            .expect("the TEXT cell must be reported unrefreshed");
+        assert!(text.is_error);
         // the reverse direction stays reportable: a cached error that computes
         assert_eq!(
             find_stale(&result, 0, 4).map(|cell| (cell.number, cell.is_error)),
@@ -2057,6 +2124,95 @@ mod tests {
             Some(Some(10.0))
         );
         assert!(find_stale(&result, 0, 3).is_none());
+        assert!(unrefreshed.iter().all(|cell| cell.column == 1));
+    }
+
+    /// The maintainer's probe: A1 edited to 0 turns `D1 =10/A1` (cached 10)
+    /// into #DIV/0!. The stale number is never downgraded to the engine's
+    /// error, but the cell must be reported — silently keeping the old `<v>`
+    /// while claiming `cached_values` would leave a wrong answer in the file.
+    #[test]
+    fn reports_a_dependent_that_turned_into_an_engine_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("div0.xlsx");
+        let rows = r#"<row r="1"><c r="A1"><v>1</v></c><c r="D1"><f>10/A1</f><v>10</v></c></row>"#;
+        write_sheet_package(&path, false, &worksheet("A1:D1", rows));
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>1</v></c>",
+            "<c r=\"A1\"><v>0</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        // not patchable: the engine error must not replace the cached number
+        assert!(find_stale(&result, 0, 3).is_none());
+        let unrefreshed = result.stale_unrefreshed.expect("audit reported");
+        let cell = unrefreshed
+            .iter()
+            .find(|cell| cell.row == 0 && cell.column == 3)
+            .expect("D1 must be reported unrefreshed");
+        assert_eq!(cell.formatted, "#DIV/0!");
+        assert!(cell.is_error);
+    }
+
+    /// Excel caches a boolean formula result as `t="b"` with the numeric 0/1;
+    /// the reported cell carries the raw boolean so the gateway can write the
+    /// same shape instead of a `t="str"` `TRUE` text cache.
+    #[test]
+    fn reports_a_stale_boolean_dependent_as_a_boolean() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bool-stale.xlsx");
+        let rows = concat!(
+            r#"<row r="1"><c r="A1"><v>3</v></c>"#,
+            r#"<c r="C1" t="b"><f>A1&gt;3</f><v>0</v></c>"#,
+            r#"</row>"#
+        );
+        write_sheet_package(&path, false, &worksheet("A1:C1", rows));
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>3</v></c>",
+            "<c r=\"A1\"><v>10</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        let cell = find_stale(&result, 0, 2).expect("C1 should be stale");
+        assert_eq!(cell.boolean, Some(true));
+        assert_eq!(cell.number, None);
+        assert!(!cell.is_error);
+    }
+
+    /// The read path types boolean results too, so a freshly written `=A1>3`
+    /// gets a `t="b"` cache on the refresh pass as well.
+    #[test]
+    fn reads_a_boolean_result_as_a_boolean() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bool-read.xlsx");
+        write_fixture(&path, &[("A1", "3"), ("C1", "=A1>3")]);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(
+            &mut cache,
+            &path,
+            &[edit("A1", "10")],
+            &[RecalcRead {
+                sheet: "Sheet1".into(),
+                range: CellRange {
+                    start_row: 0,
+                    end_row: 0,
+                    start_column: 2,
+                    end_column: 2,
+                },
+            }],
+        )
+        .unwrap();
+        let cell = result.cells.into_iter().next().unwrap();
+        assert_eq!(cell.boolean, Some(true));
+        assert_eq!(cell.number, None);
+        assert!(!cell.is_error);
+        assert!(cell.is_formula);
     }
 
     /// A CSE array formula anchor is a formula cell whose cached first value

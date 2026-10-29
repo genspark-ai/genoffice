@@ -320,13 +320,63 @@ describe('sheet apply refreshes dependent formula caches (#2304)', () => {
     const cells = applyInput(dir, 'cells', [{ cell: 'E1', value: 9 }])
     const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
     expect(applied.code).toBe(0)
-    expect(applied.json().detail.cached_values).toBe(true)
+    // the TEXT cache survives (never downgraded to #VALUE!), but the audit
+    // could not refresh it: it is reported, and apply does not claim the
+    // cached values are current
+    expect(applied.json().detail.cached_values).toBe(false)
+    const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+    const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+    expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+    expect(dependents!.message).toContain('B1')
 
     const xml = await sheetPart(out)
     // the valid text cache survives; the genuinely stale number is refreshed
     expect(xml).toContain('<v>20:34.5</v>')
     expect(xml).not.toContain('<v>8</v>')
     expect(xml).toContain('<f>A1*2</f><v>10</v>')
+  })
+
+  it.skipIf(!sidecar)(
+    'reports a dependent that turned into an error instead of claiming its cache',
+    async () => {
+      const dir = tempDir()
+      // A1 edited to 0 turns D1 =10/A1 (cached 10) into #DIV/0! — the most
+      // common real dependent error. The stale number is never replaced by
+      // the engine's error, but it keeps a wrong answer unless reported.
+      const out = await formulaFixture(
+        dir,
+        'divzero',
+        'A1:D1',
+        '<row r="1"><c r="A1"><v>1</v></c><c r="D1"><f>10/A1</f><v>10</v></c></row>',
+      )
+      const cells = applyInput(dir, 'cells', [{ cell: 'A1', value: 0 }])
+      const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+      expect(applied.code).toBe(0)
+      expect(applied.json().detail.cached_values).toBe(false)
+      const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+      const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+      expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+      expect(dependents!.message).toContain('D1')
+
+      const xml = await sheetPart(out)
+      // the stale cache is left for Excel to recompute on open
+      expect(xml).toMatch(/<c r="D1"[^>]*><f>10\/A1<\/f><v>10<\/v><\/c>/)
+    },
+  )
+
+  it.skipIf(!sidecar)('caches a boolean result as t="b" with the numeric 0/1', async () => {
+    const dir = tempDir()
+    const out = await createWorkbook(dir, 'booleans', [[3, '=A1>3']])
+    // create evaluates the formula itself: the cache is Excel's boolean shape,
+    // not a t="str" TRUE text cache Excel would show left-aligned
+    expect(await sheetPart(out)).toMatch(/<c r="B1" t="b"><f>A1&gt;3<\/f><v>0<\/v><\/c>/)
+
+    // a value edit flips the dependent's boolean cache as a boolean too
+    const cells = applyInput(dir, 'cells', [{ cell: 'A1', value: 10 }])
+    const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.cached_values).toBe(true)
+    expect(await sheetPart(out)).toMatch(/<c r="B1" t="b"><f>A1&gt;3<\/f><v>1<\/v><\/c>/)
   })
 
   it.skipIf(!sidecar)(
