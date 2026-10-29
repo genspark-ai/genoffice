@@ -88,12 +88,74 @@
   ${EndIf}
 !macroend
 
+; "用 GenOffice 打开" — an explicit verb on the file's classic context menu,
+; registered under SystemFileAssociations so it never touches the user's
+; default program: it only adds a choice. The label is fixed at install time;
+; 2052 is zh-CN, everything else gets English.
+!macro GenOfficeRegisterOpenVerb EXT
+  StrCmp $LANGUAGE 2052 0 +3
+    StrCpy $0 "用 GenOffice 打开"
+    Goto +2
+  StrCpy $0 "Open with GenOffice"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.${EXT}\shell\GenOffice" "" $0
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.${EXT}\shell\GenOffice" "Icon" "$INSTDIR\GenOffice.exe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.${EXT}\shell\GenOffice\command" "" '"$INSTDIR\GenOffice.exe" "%1"'
+!macroend
+
+!macro GenOfficeUnregisterOpenVerb EXT
+  ; we only ever wrote this verb ourselves — nothing to preserve
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.${EXT}\shell\GenOffice"
+!macroend
+
+!macro GenOfficeRegisterOpenVerbs
+  !insertmacro GenOfficeRegisterOpenVerb "docx"
+  !insertmacro GenOfficeRegisterOpenVerb "xlsx"
+  !insertmacro GenOfficeRegisterOpenVerb "xlsm"
+  !insertmacro GenOfficeRegisterOpenVerb "pptx"
+  !insertmacro GenOfficeRegisterOpenVerb "xls"
+  !insertmacro GenOfficeRegisterOpenVerb "csv"
+  !insertmacro GenOfficeRegisterOpenVerb "tsv"
+  !insertmacro GenOfficeRegisterOpenVerb "ods"
+  !insertmacro GenOfficeRegisterOpenVerb "ots"
+  !insertmacro GenOfficeRegisterOpenVerb "odt"
+  !insertmacro GenOfficeRegisterOpenVerb "ott"
+  !insertmacro GenOfficeRegisterOpenVerb "odp"
+  !insertmacro GenOfficeRegisterOpenVerb "otp"
+  !insertmacro GenOfficeRegisterOpenVerb "pdf"
+  !insertmacro GenOfficeRegisterOpenVerb "md"
+  !insertmacro GenOfficeRegisterOpenVerb "markdown"
+  !insertmacro GenOfficeRegisterOpenVerb "html"
+  !insertmacro GenOfficeRegisterOpenVerb "htm"
+!macroend
+
+!macro GenOfficeUnregisterOpenVerbs
+  !insertmacro GenOfficeUnregisterOpenVerb "docx"
+  !insertmacro GenOfficeUnregisterOpenVerb "xlsx"
+  !insertmacro GenOfficeUnregisterOpenVerb "xlsm"
+  !insertmacro GenOfficeUnregisterOpenVerb "pptx"
+  !insertmacro GenOfficeUnregisterOpenVerb "xls"
+  !insertmacro GenOfficeUnregisterOpenVerb "csv"
+  !insertmacro GenOfficeUnregisterOpenVerb "tsv"
+  !insertmacro GenOfficeUnregisterOpenVerb "ods"
+  !insertmacro GenOfficeUnregisterOpenVerb "ots"
+  !insertmacro GenOfficeUnregisterOpenVerb "odt"
+  !insertmacro GenOfficeUnregisterOpenVerb "ott"
+  !insertmacro GenOfficeUnregisterOpenVerb "odp"
+  !insertmacro GenOfficeUnregisterOpenVerb "otp"
+  !insertmacro GenOfficeUnregisterOpenVerb "pdf"
+  !insertmacro GenOfficeUnregisterOpenVerb "md"
+  !insertmacro GenOfficeUnregisterOpenVerb "markdown"
+  !insertmacro GenOfficeUnregisterOpenVerb "html"
+  !insertmacro GenOfficeUnregisterOpenVerb "htm"
+!macroend
+
 !macro customInstall
   Push "$INSTDIR\resources\cli"
   Call GenOfficeAddToUserPath
   !insertmacro GenOfficeRegisterShellNew "docx" "Word Document"
   !insertmacro GenOfficeRegisterShellNew "xlsx" "Excel Workbook"
   !insertmacro GenOfficeRegisterShellNew "pptx" "PowerPoint Presentation"
+  !insertmacro GenOfficeRegisterOpenVerbs
   !insertmacro UPDATEFILEASSOC
 !macroend
 
@@ -105,6 +167,7 @@
   !insertmacro GenOfficeUnregisterShellNew "xlsx" "Excel Workbook"
   !insertmacro GenOfficeUnregisterShellNew "pptx" "PowerPoint Presentation"
   Pop $0
+  !insertmacro GenOfficeUnregisterOpenVerbs
   !insertmacro UPDATEFILEASSOC
 !macroend
 
