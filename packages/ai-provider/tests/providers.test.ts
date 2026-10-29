@@ -100,6 +100,24 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds CloudGPU with bare model ids (no vendor prefix)', () => {
+    const cloudgpu = AI_PROVIDERS.find((provider) => provider.id === 'cloudgpu')!
+    expect(cloudgpu.models).toEqual([
+      'deepseek-v4.1-flash',
+      'deepseek-v4-pro',
+      'glm-5.3-flash',
+      'kimi-k2.6',
+      'minimax-m3',
+    ])
+    expect(cloudgpu.defaultModel).toBe('deepseek-v4.1-flash')
+    expect(cloudgpu.models).toContain(cloudgpu.defaultModel)
+    expect(cloudgpu.needsBaseUrl).toBeUndefined()
+    expect(cloudgpu.keyPlaceholder).toBe('sk-...')
+    for (const model of cloudgpu.models) {
+      expect(model).not.toContain('/')
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)
