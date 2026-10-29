@@ -408,7 +408,8 @@ export async function chatOpenAiResponses(
   } catch {
     return { ok: false, error: `AI returned a non-JSON response: ${httpBodyDetail(bodyText)}` }
   }
-  if (json.error) return { ok: false, error: json.error.message }
+  if (json.error)
+    return { ok: false, error: json.error.message ?? 'The Responses API reported an error' }
   const content = (json.output ?? [])
     .filter((item) => item.type === 'message')
     .flatMap((item) => item.content ?? [])
