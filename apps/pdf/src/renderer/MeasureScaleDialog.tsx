@@ -45,7 +45,7 @@ export function MeasureScaleDialog({
         <div className="pdf-modal-title">{t('measureScaleTitle')}</div>
         <div className="pdf-modal-hint">{t('measureScalePrompt')}</div>
         <div className="pdf-field">
-          <label className="pdf-measure-row">
+          <label className="pdf-perm-row">
             <span>{t('measureScaleValue')}</span>
             <input
               type="number"
@@ -60,7 +60,7 @@ export function MeasureScaleDialog({
               }}
             />
           </label>
-          <label className="pdf-measure-row">
+          <label className="pdf-perm-row">
             <span>{t('measureScaleUnit')}</span>
             <input
               type="text"
