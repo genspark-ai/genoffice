@@ -5166,6 +5166,8 @@ export function buildSlidesMenu(): Menu {
         { type: 'separator' },
         { label: tm('menuSave'), accelerator: 'CmdOrCtrl+S', click: () => send('save') },
         { label: tm('menuSaveAs'), accelerator: 'CmdOrCtrl+Shift+S', click: () => send('save-as') },
+        // macOS has no File ribbon tab: this is its only AI naming entry
+        { label: labels.nameWithAi, click: () => send('name-with-ai') },
         { type: 'separator' },
         // The ribbon's File tab is Windows-only, so without these macOS had no way
         // to export or print at all

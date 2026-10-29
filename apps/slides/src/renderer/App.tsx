@@ -2338,6 +2338,7 @@ export function App() {
       if (cmd === 'open') void openDialog()
       else if (cmd === 'save') void save()
       else if (cmd === 'save-as') void saveAs()
+      else if (cmd === 'name-with-ai') void nameWithAi()
       // macOS has no File ribbon tab, so these only exist in the menu
       else if (cmd === 'export-pdf') void exportPdf()
       else if (cmd === 'export-images') void exportImages()
@@ -2365,6 +2366,7 @@ export function App() {
     openDialog,
     save,
     saveAs,
+    nameWithAi,
     exportPdf,
     exportImages,
     undo,
