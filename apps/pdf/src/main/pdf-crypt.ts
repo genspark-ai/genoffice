@@ -448,45 +448,70 @@ function replaceStream(
   context.assign(ref, PDFRawStream.of(dict, payload))
 }
 
+/** /Type /Metadata: exempt from encryption when the document says EncryptMetadata false */
+function isMetadataStream(stream: PDFStream): boolean {
+  return String(stream.dict.get(PDFName.of('Type'))) === '/Metadata'
+}
+
+/**
+ * Encrypt (or decrypt) every string reachable from a dictionary or array, at any
+ * depth. Strings in a stream's dictionary travel with the object like any other
+ * string of it (§7.6.3.2) — embedded-file /Params entries, /ModDate and friends —
+ * so a stream's dict is walked the same way as a plain dictionary.
+ */
+function replaceStrings(node: unknown, transform: (data: Uint8Array) => Uint8Array): void {
+  const walk = (current: unknown): void => {
+    if (current instanceof PDFDict) {
+      for (const [key, value] of current.entries()) {
+        if (value instanceof PDFString || value instanceof PDFHexString) {
+          current.set(key, PDFHexString.of(hex(transform(value.asBytes()))))
+        } else {
+          walk(value)
+        }
+      }
+    } else if (current instanceof PDFArray) {
+      for (let i = 0; i < current.size(); i++) {
+        const value = current.get(i)
+        if (value instanceof PDFString || value instanceof PDFHexString) {
+          current.set(i, PDFHexString.of(hex(transform(value.asBytes()))))
+        } else {
+          walk(value)
+        }
+      }
+    }
+  }
+  walk(node)
+}
+
 /** Every string and stream of the document, except the /Encrypt dict's own */
 function transformPayloads(
   doc: PDFDocument,
   skip: PDFRef | null,
   transform: (ref: PDFRef, data: Uint8Array, isString: boolean) => Uint8Array,
+  /** false when the source's /EncryptMetadata exempts metadata streams */
+  encryptMetadata = true,
 ): void {
   const context = doc.context
   for (const [ref, obj] of context.enumerateIndirectObjects()) {
     if (skip && ref.toString() === skip.toString()) continue
+    const strings = (data: Uint8Array): Uint8Array => transform(ref, data, true)
     if (obj instanceof PDFStream) {
+      if (!encryptMetadata && isMetadataStream(obj)) continue
       // pdf-lib's own content streams are PDFFlateStream, not PDFRawStream: only
       // raw streams were encrypted, so every rebuilt page's content stream was
       // written in plaintext inside a file declared encrypted — a corrupt save
       replaceStream(context, ref, obj, transform(ref, obj.getContents(), false))
+      // the stream's dictionary strings are object strings too (/Params /ModDate)
+      replaceStrings(obj.dict, strings)
       continue
     }
-    const walk = (node: unknown): void => {
-      if (node instanceof PDFDict) {
-        for (const [key, value] of node.entries()) {
-          if (value instanceof PDFString || value instanceof PDFHexString) {
-            const plain = transform(ref, value.asBytes(), true)
-            node.set(key, PDFHexString.of(hex(plain)))
-          } else {
-            walk(value)
-          }
-        }
-      } else if (node instanceof PDFArray) {
-        for (let i = 0; i < node.size(); i++) {
-          const value = node.get(i)
-          if (value instanceof PDFString || value instanceof PDFHexString) {
-            const plain = transform(ref, value.asBytes(), true)
-            if (plain !== value.asBytes()) node.set(i, PDFHexString.of(hex(plain)))
-          } else {
-            walk(value)
-          }
-        }
-      }
+    // a top-level indirect string object (a string that *is* the object) is not
+    // reachable from a dictionary walk
+    if (obj instanceof PDFString || obj instanceof PDFHexString) {
+      context.assign(ref, PDFHexString.of(hex(strings(obj.asBytes()))))
+      continue
     }
-    walk(obj)
+    replaceStrings(obj, strings)
   }
 }
 
@@ -634,79 +659,148 @@ function rawId0(text: string): Uint8Array {
   return id === null ? new Uint8Array(0) : hexToBytes(id[1]!)
 }
 
-/** the raw /Encrypt dictionary as a PDFDict, so deriveKey can read it */
-async function deriveKeyFromRaw(
-  body: string,
-  id0: Uint8Array,
-  password: string,
-  encryptMetadata: boolean,
-): Promise<{ derived: Derived; unlockedAs: UnlockedAs }> {
-  const scratch = await PDFDocument.create()
+/** the trailer /ID entries; a legacy file key (revision 4 and down) is derived from ID[0] */
+function rawFileId(text: string): Uint8Array[] {
+  const id = /\/ID\s*\[\s*<([0-9a-fA-F\s]*)>\s*<([0-9a-fA-F\s]*)>\s*\]/.exec(text)
+  if (id === null) return []
+  return [hexToBytes(id[1]!), hexToBytes(id[2]!)]
+}
+
+/** the /Encrypt dictionary reduced to the fields key derivation and re-emission need */
+export interface EncryptEntries {
+  filter: string
+  v: number
+  r: number
+  length: number
+  p: number
+  o: Uint8Array
+  u: Uint8Array
+  oe: Uint8Array
+  ue: Uint8Array
+  perms: Uint8Array
+  /** named crypt filters from /CF; /StmF and /StrF name the ones in use */
+  cf: Record<string, { cfm: string; authEvent?: string; lengthBytes?: number }>
+  stmF: string
+  strF: string
+  encryptMetadata: boolean
+}
+
+/** Everything a save needs to protect new bytes under the source file's own protection. */
+export interface OriginalProtection {
+  derived: Derived
+  entries: EncryptEntries
+  /** trailer /ID entries: a legacy file key is derived from ID[0] too */
+  fileId: Uint8Array[]
+}
+
+/** a hex "<...>" or literal "(...)" entry; producers write /O and /U both ways */
+function entryBytesOf(body: string, name: string): Uint8Array {
+  const hexMatch = new RegExp('/' + name + '\\s*<([0-9a-fA-F\\s]+)>').exec(body)
+  if (hexMatch !== null) return hexToBytes(hexMatch[1]!)
+  const literal = new RegExp('/' + name + '\\s*\\(((?:[^()\\\\]|\\\\.)*)\\)').exec(body)
+  if (literal === null) return new Uint8Array(0)
+  const raw = literal[1]!
+  const out: number[] = []
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '\\') {
+      out.push(raw.charCodeAt(i) & 0xff)
+      continue
+    }
+    const esc = raw[++i]
+    if (esc === undefined) break
+    if (esc === 'n') out.push(0x0a)
+    else if (esc === 'r') out.push(0x0d)
+    else if (esc === 't') out.push(0x09)
+    else if (esc === 'b') out.push(0x08)
+    else if (esc === 'f') out.push(0x0c)
+    else if (esc >= '0' && esc <= '7') {
+      let octal = esc
+      while (octal.length < 3 && raw[i + 1] >= '0' && raw[i + 1] <= '7') octal += raw[++i]
+      out.push(parseInt(octal, 8) & 0xff)
+    } else out.push(esc.charCodeAt(0) & 0xff) // escaped parentheses and backslash: itself
+  }
+  return new Uint8Array(out)
+}
+
+/** the raw /Encrypt dictionary body, reduced to what derivation and a re-emitting writer share */
+function readEncryptEntries(body: string): EncryptEntries {
   const number = (name: string): number => {
-    const all = [...body.matchAll(new RegExp(`/${name}\\s+(-?\\d+)`, 'g'))].map((m) => Number(m[1]))
+    const all = [...body.matchAll(new RegExp('/' + name + '\\s+(-?\\d+)', 'g'))].map((m) =>
+      Number(m[1]),
+    )
     if (all.length === 0) return 0
     // a crypt filter's own /Length counts bytes (16/32) while the root /Length
     // counts bits (40/128/256): the larger value is the root's
     return name === 'Length' ? Math.max(...all) : all[0]!
   }
-  /** a hex `<…>` or literal `(…)` entry; producers write /O and /U both ways */
-  const entryBytes = (name: string): Uint8Array => {
-    const hex = new RegExp(`/${name}\\s*<([0-9a-fA-F\\s]+)>`).exec(body)
-    if (hex !== null) return hexToBytes(hex[1]!)
-    const literal = new RegExp(`/${name}\\s*\\(((?:[^()\\\\]|\\\\.)*)\\)`).exec(body)
-    if (literal === null) return new Uint8Array(0)
-    const raw = literal[1]!
-    const out: number[] = []
-    for (let i = 0; i < raw.length; i++) {
-      if (raw[i] !== '\\') {
-        out.push(raw.charCodeAt(i) & 0xff)
-        continue
-      }
-      const esc = raw[++i]
-      if (esc === undefined) break
-      if (esc === 'n') out.push(0x0a)
-      else if (esc === 'r') out.push(0x0d)
-      else if (esc === 't') out.push(0x09)
-      else if (esc === 'b') out.push(0x08)
-      else if (esc === 'f') out.push(0x0c)
-      else if (esc >= '0' && esc <= '7') {
-        let octal = esc
-        while (octal.length < 3 && raw[i + 1] >= '0' && raw[i + 1] <= '7') octal += raw[++i]
-        out.push(parseInt(octal, 8) & 0xff)
-      } else out.push(esc.charCodeAt(0) & 0xff) // \( \) \\ and anything else: itself
+  // a crypt filter block; /StmF and /StrF name the one each payload class uses
+  const filters: Record<string, { cfm: string; authEvent?: string; lengthBytes?: number }> = {}
+  for (const match of body.matchAll(/\/(\w+)\s*<<([^<>]*)>>/g)) {
+    const inner = match[2] ?? ''
+    const authEvent = /\/AuthEvent\s*\/(\w+)/.exec(inner)?.[1]
+    const lengthBytes = /\/Length\s+(\d+)/.exec(inner)?.[1]
+    filters[match[1]!] = {
+      cfm: /\/CFM\s*\/(\w+)/.exec(inner)?.[1] ?? 'V2',
+      ...(authEvent === undefined ? {} : { authEvent }),
+      ...(lengthBytes === undefined ? {} : { lengthBytes: Number(lengthBytes) }),
     }
-    return new Uint8Array(out)
   }
-  // the cipher each payload class runs through: /StmF and /StrF name a crypt
-  // filter (or /Identity); the first /CFM anywhere may belong to another filter
-  const cfmOfName = (filter: string): string => {
-    if (filter === 'Identity') return 'Identity'
-    const block = new RegExp(`/${filter}\\s*<<([^<>]*)>>`).exec(body)?.[1]
-    return block === undefined ? 'V2' : (/\/CFM\s*\/(\w+)/.exec(block)?.[1] ?? 'V2')
+  return {
+    filter: /\/Filter\s*\/(\w+)/.exec(body)?.[1] ?? 'Standard',
+    v: number('V'),
+    r: number('R'),
+    length: number('Length'),
+    p: number('P'),
+    o: entryBytesOf(body, 'O'),
+    u: entryBytesOf(body, 'U'),
+    oe: entryBytesOf(body, 'OE'),
+    ue: entryBytesOf(body, 'UE'),
+    perms: entryBytesOf(body, 'Perms'),
+    cf: filters,
+    stmF: /\/StmF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF',
+    strF: /\/StrF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF',
+    encryptMetadata: !/\/EncryptMetadata\s+false/.test(body),
   }
-  const stmName = /\/StmF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF'
-  const strName = /\/StrF\s*\/(\w+)/.exec(body)?.[1] ?? 'StdCF'
-  const filters: Record<string, { CFM: string }> = {}
-  for (const name of new Set([stmName, strName, 'StdCF']))
-    if (name !== 'Identity') filters[name] = { CFM: cfmOfName(name) }
-  const ue = entryBytes('UE')
-  const oe = entryBytes('OE')
-  const dict = scratch.context.obj({
-    R: number('R'),
-    V: number('V'),
-    Length: number('Length'),
-    P: number('P'),
-    O: PDFHexString.of(hex(entryBytes('O'))),
-    U: PDFHexString.of(hex(entryBytes('U'))),
-    ...(ue.length > 0 ? { UE: PDFHexString.of(hex(ue)) } : {}),
-    ...(oe.length > 0 ? { OE: PDFHexString.of(hex(oe)) } : {}),
-    CF: scratch.context.obj(filters),
-    StmF: stmName,
-    StrF: strName,
-    ...(encryptMetadata ? {} : { EncryptMetadata: false }),
+}
+
+/** the /Encrypt dictionary to write; a carried protection re-emits the source's entries */
+function encryptDictFor(context: PDFDocument['context'], entries: EncryptEntries): PDFDict {
+  const filters: Record<string, PDFDict> = {}
+  for (const [name, filter] of Object.entries(entries.cf)) {
+    filters[name] = context.obj({
+      CFM: filter.cfm,
+      ...(filter.authEvent === undefined ? {} : { AuthEvent: filter.authEvent }),
+      ...(filter.lengthBytes === undefined ? {} : { Length: filter.lengthBytes }),
+    }) as PDFDict
+  }
+  const dict = context.obj({
+    Filter: entries.filter,
+    V: entries.v,
+    R: entries.r,
+    Length: entries.length,
+    P: entries.p,
+    O: PDFHexString.of(hex(entries.o)),
+    U: PDFHexString.of(hex(entries.u)),
+    ...(entries.oe.length > 0 ? { OE: PDFHexString.of(hex(entries.oe)) } : {}),
+    ...(entries.ue.length > 0 ? { UE: PDFHexString.of(hex(entries.ue)) } : {}),
+    ...(entries.perms.length > 0 ? { Perms: PDFHexString.of(hex(entries.perms)) } : {}),
+    ...(Object.keys(filters).length > 0 ? { CF: context.obj(filters) } : {}),
+    StmF: entries.stmF,
+    StrF: entries.strF,
+    ...(entries.encryptMetadata ? {} : { EncryptMetadata: false }),
   })
   if (!(dict instanceof PDFDict)) throw new Error('could not build the encryption dictionary')
-  return deriveKey(dict, id0, password)
+  return dict
+}
+
+/** the raw /Encrypt entries as a PDFDict, so deriveKey can read them */
+async function deriveKeyFromEntries(
+  entries: EncryptEntries,
+  id0: Uint8Array,
+  password: string,
+): Promise<{ derived: Derived; unlockedAs: UnlockedAs }> {
+  const scratch = await PDFDocument.create()
+  return deriveKey(encryptDictFor(scratch.context, entries), id0, password)
 }
 
 /** decrypt every top-level stream payload in place; returns the new bytes */
@@ -796,31 +890,26 @@ function decryptStringsOf(
   skip: PDFRef | null,
   topLevel: Set<number>,
   transform: (ref: PDFRef, data: Uint8Array) => Uint8Array,
+  encryptMetadata: boolean,
 ): void {
-  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+  const context = doc.context
+  for (const [ref, obj] of context.enumerateIndirectObjects()) {
     if (skip !== null && ref.toString() === skip.toString()) continue
-    if (!topLevel.has(ref.objectNumber) || obj instanceof PDFRawStream) continue
-    const walk = (node: unknown): void => {
-      if (node instanceof PDFDict) {
-        for (const [key, value] of node.entries()) {
-          if (value instanceof PDFString || value instanceof PDFHexString) {
-            node.set(key, PDFHexString.of(hex(transform(ref, value.asBytes()))))
-          } else {
-            walk(value)
-          }
-        }
-      } else if (node instanceof PDFArray) {
-        for (let i = 0; i < node.size(); i++) {
-          const value = node.get(i)
-          if (value instanceof PDFString || value instanceof PDFHexString) {
-            node.set(i, PDFHexString.of(hex(transform(ref, value.asBytes()))))
-          } else {
-            walk(value)
-          }
-        }
-      }
+    if (!topLevel.has(ref.objectNumber)) continue
+    const strings = (data: Uint8Array): Uint8Array => transform(ref, data)
+    // a stream's payload was decrypted on the raw bytes already; only its
+    // dictionary strings are left to this pass
+    if (obj instanceof PDFStream) {
+      if (!encryptMetadata && isMetadataStream(obj)) continue
+      replaceStrings(obj.dict, strings)
+      continue
     }
-    walk(obj)
+    // a top-level indirect string object (the string is the whole object)
+    if (obj instanceof PDFString || obj instanceof PDFHexString) {
+      context.assign(ref, PDFHexString.of(hex(strings(obj.asBytes()))))
+      continue
+    }
+    replaceStrings(obj, strings)
   }
 }
 
@@ -832,6 +921,8 @@ export interface DecryptedPdf {
   neededPassword: boolean
   /** which password opened it; the owner's ignores the /P limits */
   unlockedAs: UnlockedAs
+  /** the source file's own protection; absent when the source was plain */
+  protection?: OriginalProtection
 }
 
 /**
@@ -852,16 +943,11 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
   if (/\/Recipients\b/.test(encrypt.body) || /\/Filter\s*\/(?!Standard\b)/.test(encrypt.body)) {
     throw new CertificateEncryptionError()
   }
-  const encryptMetadata = !/\/EncryptMetadata\s+false/.test(encrypt.body)
-  const { derived, unlockedAs } = await deriveKeyFromRaw(
-    encrypt.body,
-    rawId0(text),
-    password,
-    encryptMetadata,
-  )
+  const entries = readEncryptEntries(encrypt.body)
+  const { derived, unlockedAs } = await deriveKeyFromEntries(entries, rawId0(text), password)
   // streams first, on the raw bytes: the parser cannot read an encrypted
   // /ObjStm, and nothing below this line runs until it can
-  const pre = predecryptStreams(bytes, derived, encryptMetadata)
+  const pre = predecryptStreams(bytes, derived, entries.encryptMetadata)
   const doc = await PDFDocument.load(pre.bytes, { ignoreEncryption: true, updateMetadata: false })
   const encryptRef = doc.context.trailerInfo.Encrypt
   decryptStringsOf(
@@ -869,6 +955,7 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
     encryptRef instanceof PDFRef ? encryptRef : null,
     pre.topLevel,
     (ref, data) => decryptPayload(derived, ref, data, true),
+    entries.encryptMetadata,
   )
   delete (doc.context.trailerInfo as { Encrypt?: unknown }).Encrypt
   return {
@@ -876,6 +963,8 @@ export async function decryptDocument(bytes: Uint8Array, password: string): Prom
     permissions: permissionsFromP(Number(/\/P\s+(-?\d+)/.exec(encrypt.body)?.[1] ?? -1)),
     neededPassword: password.length > 0,
     unlockedAs,
+    // the save path re-protects an unchanged document under these entries
+    protection: { derived, entries, fileId: rawFileId(text) },
   }
 }
 
@@ -928,27 +1017,24 @@ export function encryptDocument(doc: PDFDocument, protection: PdfProtection): vo
   ecb.setAutoPadding(false)
   const perms = new Uint8Array(Buffer.concat([ecb.update(permsData), ecb.final()]))
 
-  const encrypt = context.obj({
-    Filter: 'Standard',
-    V: 5,
-    R: 6,
-    Length: 256,
-    P: PDFNumber.of(permissionsToP(protection.permissions)),
-    O: PDFHexString.of(hex(o)),
-    U: PDFHexString.of(hex(u)),
-    OE: PDFHexString.of(hex(oe)),
-    UE: PDFHexString.of(hex(ue)),
-    Perms: PDFHexString.of(hex(perms)),
-  })
-  const cf = context.obj({
-    StdCF: context.obj({ CFM: 'AESV3', AuthEvent: 'DocOpen', Length: 32 }),
-  })
-  encrypt.set(PDFName.of('CF'), cf)
-  encrypt.set(PDFName.of('StmF'), PDFName.of('StdCF'))
-  encrypt.set(PDFName.of('StrF'), PDFName.of('StdCF'))
-  encrypt.set(PDFName.of('EncryptMetadata'), context.obj(true))
+  const entries: EncryptEntries = {
+    filter: 'Standard',
+    v: 5,
+    r: 6,
+    length: 256,
+    p,
+    o,
+    u,
+    oe,
+    ue,
+    perms,
+    cf: { StdCF: { cfm: 'AESV3', authEvent: 'DocOpen', lengthBytes: 32 } },
+    stmF: 'StdCF',
+    strF: 'StdCF',
+    encryptMetadata: true,
+  }
   const encryptRef = context.nextRef()
-  context.assign(encryptRef, encrypt)
+  context.assign(encryptRef, encryptDictFor(context, entries))
   context.trailerInfo.Encrypt = encryptRef
 
   if (!context.trailerInfo.ID) {
@@ -956,7 +1042,67 @@ export function encryptDocument(doc: PDFDocument, protection: PdfProtection): vo
     context.trailerInfo.ID = context.obj([PDFHexString.of(id), PDFHexString.of(id)])
   }
 
-  // both payload classes run through StdCF's AESV3 (StmF/StrF below)
+  // both payload classes run through StdCF's AESV3 (StmF/StrF in the entries)
   const derived: R6Encrypt = { revision: 6, fileKey, stmIdentity: false, strIdentity: false }
   transformPayloads(doc, encryptRef, (_ref, data) => encryptPayload(derived, data))
+}
+
+/**
+ * Protect a document under the source file's OWN protection: the /Encrypt
+ * entries the source carried are written back and the same file key encrypts
+ * the new bytes, so the user and owner passwords that opened the source still
+ * open the output. Only a protection change (a dialog save) writes new entries.
+ * Save with useObjectStreams: false, after running pdf-lib's flush.
+ */
+export function encryptDocumentWithOriginalProtection(
+  doc: PDFDocument,
+  protection: OriginalProtection,
+): void {
+  const context = doc.context
+  const encryptRef = context.nextRef()
+  context.assign(encryptRef, encryptDictFor(context, protection.entries))
+  context.trailerInfo.Encrypt = encryptRef
+  // A legacy (revision 4 and down) file key is derived from the trailer ID, so
+  // the output must keep the source's /ID entries: a fresh ID would make the
+  // password the file was sealed with stop working.
+  if (protection.fileId.length > 0) {
+    context.trailerInfo.ID = context.obj(
+      protection.fileId.map((bytes) => PDFHexString.of(hex(bytes))),
+    )
+  } else if (!context.trailerInfo.ID) {
+    const id = randomBytes(16).toString('hex').toUpperCase()
+    context.trailerInfo.ID = context.obj([PDFHexString.of(id), PDFHexString.of(id)])
+  }
+  transformPayloads(
+    doc,
+    encryptRef,
+    (ref, data, isString) => encryptPayloadUnder(protection.derived, ref, data, isString),
+    protection.entries.encryptMetadata,
+  )
+}
+
+/** Encrypt one payload the way its revision decrypts it (inverse of decryptPayload) */
+function encryptPayloadUnder(
+  derived: Derived,
+  ref: PDFRef,
+  data: Uint8Array,
+  isString: boolean,
+): Uint8Array {
+  if (derived.revision <= 4) {
+    // producers write an empty encrypted payload as empty bytes; AES-CBC would
+    // otherwise add an IV plus a padding block for nothing
+    if (data.length === 0) return data
+    const legacy = derived as LegacyEncrypt
+    const cfm = isString ? legacy.stringCfm : legacy.streamCfm
+    if (cfm === 'Identity') return data
+    if (cfm === 'AESV2') {
+      const key = legacyObjectKey(legacy.fileKey, ref, true)
+      const iv = randomBytes(16)
+      return new Uint8Array([...iv, ...aesCbc('encrypt', 128, key, iv, data, true)])
+    }
+    return rc4(legacyObjectKey(legacy.fileKey, ref, false), data)
+  }
+  const r6 = derived as R6Encrypt
+  if (isString ? r6.strIdentity : r6.stmIdentity) return data
+  return encryptPayload(r6, data)
 }

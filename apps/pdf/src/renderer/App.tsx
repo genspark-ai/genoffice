@@ -138,6 +138,7 @@ import {
 } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
 import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
+import { mayChangeProtection } from './protection-gate'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
@@ -1736,6 +1737,10 @@ export default function App() {
     status === 'ready' &&
     documentEncrypted &&
     (!sessionUnlocked || (diskLock !== null && !diskLock.unlockedAsOwner && !diskLock.modifying))
+  /** Only the owner password may change or lift protection: a user-password
+      session, even one allowed to modify the content, must not be able to strip
+      the owner's password. A plain document has no protection to lose. */
+  const protectionEditable = mayChangeProtection(readOnly, diskLock)
 
   useEffect(() => {
     if (
@@ -4578,6 +4583,8 @@ export default function App() {
     deletedPages: [...deleted],
     ...(order ? { pageOrder: visList } : {}),
     ...(metadata ? { metadata } : {}),
+    // false = keep the file's own /Encrypt entries, true = write the dialog's
+    protectionDirty,
     ...(diskPasswordRef.current !== null
       ? { decryption: { userPassword: diskPasswordRef.current } }
       : {}),
@@ -4637,12 +4644,12 @@ export default function App() {
       noteFlush.noteEdits !== noteEdits ||
       ocrBakeInserts.length > 0
     if (!anythingToSave || !filePath) return Promise.resolve(!anythingToSave)
-    // An owner-only file opened with its empty user password has no owner
-    // password to write back: rewriting it would hand ownership to anyone, so
-    // the save refuses until the owner password is typed (a protection change
-    // of the session's own — protectionDirty — supplies both passwords)
+    // Writing a protection with no owner password would hand ownership to
+    // anyone, so a protection change with both passwords empty is refused. An
+    // unchanged owner-only file is not affected: its own /Encrypt entries are
+    // carried over, so the save keeps the owner's password without knowing it.
     if (
-      !protectionDirty &&
+      protectionDirty &&
       encryption !== null &&
       encryption.userPassword === '' &&
       encryption.ownerPassword === ''
@@ -4835,7 +4842,21 @@ export default function App() {
           }
         : editsPayload(draftEdits, noteFlush, formFields)
     setSaveState('saving')
-    const result = await window.pdfApi.save({ path: filePath, targetPath, ...edits })
+    // the redaction copy is a save like any other: on a protected document the
+    // main process has to decrypt the source and re-protect the cleaned output
+    const protection = {
+      ...(encryption !== null ? { encryption } : {}),
+      ...(diskPasswordRef.current !== null
+        ? { decryption: { userPassword: diskPasswordRef.current } }
+        : {}),
+      protectionDirty,
+    }
+    const result = await window.pdfApi.save({
+      path: filePath,
+      targetPath,
+      ...edits,
+      ...protection,
+    })
     if (!result.ok) {
       opFailed(result.error)
       return false
@@ -4853,6 +4874,12 @@ export default function App() {
       // The main process has committed this path and its read grant. Reload the
       // sanitized bytes, clearing undo/search state that could expose old content.
       const scrollTop = scrollRef.current?.scrollTop ?? 0
+      // a protection change rode this save: the file on disk now needs the new password
+      if (pendingDiskPasswordRef.current !== undefined) {
+        diskPasswordRef.current =
+          pendingDiskPasswordRef.current === '' ? null : pendingDiskPasswordRef.current
+        pendingDiskPasswordRef.current = undefined
+      }
       setFilePath(targetPath)
       setStatus('loading')
       try {
@@ -7830,6 +7857,11 @@ export default function App() {
     ownerPassword: string
     permissions: PdfPermissions
   }): void => {
+    if (!mayChangeProtection(readOnly, diskLock)) {
+      showNotice(t('pwOwnerNeeded'))
+      setProtectionDlg(false)
+      return
+    }
     setEncryption(result)
     setProtectionDirty(true)
     // the next save writes a file that only opens with the new password; the
@@ -7841,6 +7873,11 @@ export default function App() {
   }
 
   const removeProtection = (): void => {
+    if (!mayChangeProtection(readOnly, diskLock)) {
+      showNotice(t('pwOwnerNeeded'))
+      setProtectionDlg(false)
+      return
+    }
     setEncryption(null)
     setProtectionDirty(true)
     // the next save writes plain; until then the disk file still needs the old password
@@ -8354,7 +8391,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    disabled={readOnly || status !== 'ready'}
+                    disabled={!protectionEditable || status !== 'ready'}
                     data-tip={t('protectHint')}
                     onClick={() => setProtectionDlg(true)}
                   >

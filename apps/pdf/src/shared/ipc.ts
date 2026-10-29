@@ -755,6 +755,13 @@ export interface SavePdfRequest {
   /** Present while the session works on a password-protected document: the source
       bytes are opened with the user password and the output is re-protected. */
   encryption?: PdfEncryptionInput
+  /**
+   * true when this save writes the protection in `encryption` (a dialog change),
+   * false when the source file's own /Encrypt entries are kept: the session
+   * usually holds only one of the two passwords, and re-deriving the key would
+   * replace both. Omitted by callers that always write `encryption`.
+   */
+  protectionDirty?: boolean
   /** Password of the file currently on disk, when it is protected — needed even when
       this save writes plain (protection removed): a password change makes it differ
       from `encryption.userPassword`. */

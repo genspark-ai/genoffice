@@ -4,13 +4,14 @@
  * AES-256 — because the whole point is agreement with independent
  * implementations; pdf.js is the second oracle for the encryptor's output.
  */
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFStream, PDFString } from 'pdf-lib'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { WrongPasswordError, decryptDocument, encryptDocument } from '../src/main/pdf-crypt'
-import { applySaveRequest } from '../src/main/save-pdf'
+import { applySaveRequest, savePdfToPath } from '../src/main/save-pdf'
 import type { SavePdfRequest } from '../src/shared/ipc'
 
 const fixture = (name: string): Uint8Array =>
@@ -241,5 +242,287 @@ describe('protection through the save pipeline', () => {
       decryption: { userPassword: 's3cret' },
     })
     expect(await textOf(bytes)).toContain(PROBE_TEXT)
+  })
+})
+
+/** hex for a PDFHexString built from latin1 text (what the fixtures' entries use) */
+const hexOf = (text: string): string => Buffer.from(text, 'latin1').toString('hex')
+
+const ALL_PERMISSIONS = { printing: true, modifying: true, annotating: true, copying: true }
+const NO_MODIFY = { printing: true, modifying: false, annotating: true, copying: true }
+
+function saveRequest(overrides: Partial<SavePdfRequest>): SavePdfRequest {
+  return {
+    path: 'fixture.pdf',
+    markups: [],
+    drawings: [],
+    formValues: [],
+    stamps: [],
+    ...overrides,
+  }
+}
+
+describe('payload string coverage', () => {
+  it('encrypts strings in stream dictionaries and top-level indirect strings', async () => {
+    const doc = await PDFDocument.load(fixture('plain-sample.pdf'), { updateMetadata: false })
+    const context = doc.context
+    const topLevelText = 'top-level indirect string'
+    const topLevelRef = context.nextRef()
+    context.assign(topLevelRef, PDFHexString.of(hexOf(topLevelText)))
+    // the shape an embedded file takes: /Params /ModDate on the stream's dictionary
+    const modDateText = 'D:20240101000000Z'
+    const streamRef = context.nextRef()
+    context.assign(
+      streamRef,
+      context.stream(new Uint8Array([1, 2, 3]), {
+        Type: 'EmbeddedFile',
+        Params: { ModDate: PDFHexString.of(hexOf(modDateText)) },
+      }),
+    )
+    encryptDocument(doc, { userPassword: 'pw', permissions: ALL_PERMISSIONS })
+    const sealed = await doc.save({ useObjectStreams: false })
+    const raw = Buffer.from(sealed).toString('latin1')
+    // neither string is on the wire as plaintext (the higher-level writers could
+    // not see either of them before)
+    expect(raw).not.toContain(topLevelText)
+    expect(raw).not.toContain(modDateText)
+
+    const reopened = await PDFDocument.load((await decryptDocument(sealed, 'pw')).bytes, {
+      updateMetadata: false,
+    })
+    const objects = [...reopened.context.enumerateIndirectObjects()]
+    const topLevel = objects.find(
+      ([, obj]) =>
+        (obj instanceof PDFHexString || obj instanceof PDFString) &&
+        Buffer.from(obj.asBytes()).toString('latin1') === topLevelText,
+    )
+    expect(topLevel).toBeTruthy()
+    const stream = objects
+      .map(([, obj]) => obj)
+      .find(
+        (obj) =>
+          obj instanceof PDFStream && String(obj.dict.get(PDFName.of('Type'))) === '/EmbeddedFile',
+      )
+    expect(stream).toBeInstanceOf(PDFStream)
+    const params = (stream as PDFStream).dict.lookup(PDFName.of('Params'))
+    expect(params).toBeInstanceOf(PDFDict)
+    const modDate = (params as PDFDict).lookup(PDFName.of('ModDate'))
+    expect(modDate).toBeInstanceOf(PDFHexString)
+    expect(Buffer.from((modDate as PDFHexString).asBytes()).toString('latin1')).toBe(modDateText)
+  })
+})
+
+describe('re-protecting an unchanged protection', () => {
+  /** a file sealed with distinct passwords, like a producer's protected export */
+  async function sealedWithDistinctPasswords(): Promise<Uint8Array> {
+    const doc = await PDFDocument.load(fixture('plain-sample.pdf'), { updateMetadata: false })
+    encryptDocument(doc, {
+      userPassword: 'user-pw',
+      ownerPassword: 'owner-pw',
+      permissions: NO_MODIFY,
+    })
+    return doc.save({ useObjectStreams: false })
+  }
+
+  it('keeps the source file user and owner passwords on an unchanged save', async () => {
+    const sealed = await sealedWithDistinctPasswords()
+    const { bytes } = await applySaveRequest(
+      sealed,
+      saveRequest({
+        decryption: { userPassword: 'user-pw' },
+        protectionDirty: false,
+        // what the session carries while protection is unchanged: only the one
+        // password it was opened with, and its own permission defaults
+        encryption: {
+          userPassword: 'user-pw',
+          ownerPassword: 'user-pw',
+          permissions: ALL_PERMISSIONS,
+        },
+      }),
+    )
+
+    // the reviewer's probe: the original owner password still opens the save
+    const asOwner = await decryptDocument(bytes, 'owner-pw')
+    expect(asOwner.unlockedAs).toBe('owner')
+    expect(await textOf(bytes, 'owner-pw')).toContain(PROBE_TEXT)
+    // the user password too, with the source /P rather than the session's
+    const asUser = await decryptDocument(bytes, 'user-pw')
+    expect(asUser.unlockedAs).toBe('user')
+    expect(asUser.permissions).toEqual(NO_MODIFY)
+    // and the output is still protected for a reader without a password
+    await expect(getDocument({ data: bytes.slice() }).promise).rejects.toThrow()
+    // the original /Encrypt entries themselves were carried over (new entries
+    // would carry fresh salts even for the same passwords)
+    const source = await decryptDocument(sealed, 'user-pw')
+    const saved = await decryptDocument(bytes, 'user-pw')
+    expect(saved.protection?.entries.o).toEqual(source.protection?.entries.o)
+    expect(saved.protection?.entries.u).toEqual(source.protection?.entries.u)
+    expect(saved.protection?.entries.ue).toEqual(source.protection?.entries.ue)
+    expect(saved.protection?.entries.oe).toEqual(source.protection?.entries.oe)
+  })
+
+  it('saves an owner-only file without knowing its owner password', async () => {
+    // the session holds only the empty user password; preserving the entries is
+    // what lets the owner password it never saw survive the save
+    const source = fixture('enc-r5-owneronly.pdf')
+    const before = await decryptDocument(source, '')
+    const { bytes } = await applySaveRequest(
+      source,
+      saveRequest({
+        decryption: { userPassword: '' },
+        protectionDirty: false,
+        encryption: { userPassword: '', ownerPassword: '', permissions: ALL_PERMISSIONS },
+      }),
+    )
+    const after = await decryptDocument(bytes, '')
+    expect(after.permissions).toEqual(before.permissions)
+    expect(after.protection?.entries.o).toEqual(before.protection?.entries.o)
+    expect(after.protection?.entries.u).toEqual(before.protection?.entries.u)
+  })
+
+  it('keeps both passwords when an owner session saves unchanged', async () => {
+    const sealed = await sealedWithDistinctPasswords()
+    const { bytes } = await applySaveRequest(
+      sealed,
+      saveRequest({
+        // the session that opened it held the owner password
+        decryption: { userPassword: 'owner-pw' },
+        protectionDirty: false,
+        encryption: {
+          userPassword: 'owner-pw',
+          ownerPassword: 'owner-pw',
+          permissions: ALL_PERMISSIONS,
+        },
+      }),
+    )
+    // the user password the session never knew still opens the save
+    const asUser = await decryptDocument(bytes, 'user-pw')
+    expect(asUser.unlockedAs).toBe('user')
+    expect(asUser.permissions).toEqual(NO_MODIFY)
+    expect((await decryptDocument(bytes, 'owner-pw')).unlockedAs).toBe('owner')
+  })
+
+  it.each(ENCRYPTED_FIXTURES)('re-protects %s with its own entries and file key', async (name) => {
+    const source = fixture(name)
+    const before = await decryptDocument(source, 's3cret')
+    const { bytes } = await applySaveRequest(
+      source,
+      saveRequest({
+        decryption: { userPassword: 's3cret' },
+        protectionDirty: false,
+        encryption: { userPassword: 's3cret', ownerPassword: 'other', permissions: NO_MODIFY },
+      }),
+    )
+    const after = await decryptDocument(bytes, 's3cret')
+    expect(after.protection?.entries.o).toEqual(before.protection?.entries.o)
+    expect(after.protection?.entries.u).toEqual(before.protection?.entries.u)
+    // the source /P survives, so this really is the carried protection and not
+    // a freshly derived one (those would carry NO_MODIFY from the session state)
+    expect(after.permissions).toEqual(before.permissions)
+    expect(await textOf(bytes, 's3cret')).toContain(PROBE_TEXT)
+    await expect(decryptDocument(bytes, 'wrong')).rejects.toBeInstanceOf(WrongPasswordError)
+  })
+
+  it('writes new entries when the protection is dirty', async () => {
+    const sealed = await sealedWithDistinctPasswords()
+    const { bytes } = await applySaveRequest(
+      sealed,
+      saveRequest({
+        decryption: { userPassword: 'user-pw' },
+        protectionDirty: true,
+        encryption: { userPassword: 'new-pw', permissions: ALL_PERMISSIONS },
+      }),
+    )
+    expect(await textOf(bytes, 'new-pw')).toContain(PROBE_TEXT)
+    await expect(decryptDocument(bytes, 'user-pw')).rejects.toBeInstanceOf(WrongPasswordError)
+  })
+
+  it('verifies content edits against a preserved protection', async () => {
+    // the read-back verification opens the SAVED bytes, so it needs the password
+    // the preserved output accepts (the disk one), not the session's guesses
+    const dir = mkdtempSync(join(tmpdir(), 'gen-pdf-crypt-'))
+    const source = join(dir, 'sealed.pdf')
+    const target = join(dir, 'saved.pdf')
+    writeFileSync(source, await sealedWithDistinctPasswords())
+    await savePdfToPath(
+      source,
+      target,
+      saveRequest({
+        path: source,
+        targetPath: target,
+        decryption: { userPassword: 'user-pw' },
+        protectionDirty: false,
+        encryption: {
+          userPassword: 'user-pw',
+          ownerPassword: 'user-pw',
+          permissions: ALL_PERMISSIONS,
+        },
+        textInserts: [
+          {
+            pageIndex: 0,
+            origin: [60, 200],
+            text: 'verified under preserved protection',
+            fontSize: 14,
+            color: [0.1, 0.2, 0.3],
+          },
+        ],
+      }),
+    )
+    const saved = new Uint8Array(readFileSync(target))
+    expect(await textOf(saved, 'owner-pw')).toContain('verified under preserved protection')
+  })
+})
+
+describe('redaction on a protected document', () => {
+  it('redacts the plaintext and protects the cleaned copy afterwards', async () => {
+    const { bytes } = await applySaveRequest(
+      fixture('enc-r5-aes256.pdf'),
+      saveRequest({
+        decryption: { userPassword: 's3cret' },
+        protectionDirty: false,
+        encryption: {
+          userPassword: 's3cret',
+          ownerPassword: 's3cret',
+          permissions: ALL_PERMISSIONS,
+        },
+        redactions: [{ pageIndex: 0, rect: [40, 40, 300, 160] }],
+      }),
+    )
+    // the redaction ran (PDFium can only do that on plaintext) and the output is
+    // still protected under the source's own protection, opening with s3cret
+    const text = await textOf(bytes, 's3cret')
+    expect(text.length).toBeGreaterThan(0)
+    expect((await decryptDocument(bytes, 's3cret')).permissions).toBeTruthy()
+    await expect(getDocument({ data: bytes.slice() }).promise).rejects.toThrow()
+  })
+
+  it('re-protects legacy protection after redaction', async () => {
+    const { bytes } = await applySaveRequest(
+      fixture('enc-r4-aes128.pdf'),
+      saveRequest({
+        decryption: { userPassword: 's3cret' },
+        protectionDirty: false,
+        encryption: { userPassword: 's3cret', ownerPassword: 's3cret', permissions: NO_MODIFY },
+        redactions: [{ pageIndex: 0, rect: [40, 40, 300, 160] }],
+      }),
+    )
+    const reopened = await decryptDocument(bytes, 's3cret')
+    expect(reopened.permissions).toEqual(
+      (await decryptDocument(fixture('enc-r4-aes128.pdf'), 's3cret')).permissions,
+    )
+  })
+
+  it('writes the new protection after redacting when the protection changed', async () => {
+    const { bytes } = await applySaveRequest(
+      fixture('enc-r5-aes256.pdf'),
+      saveRequest({
+        decryption: { userPassword: 's3cret' },
+        protectionDirty: true,
+        encryption: { userPassword: 'fresh-pw', permissions: ALL_PERMISSIONS },
+        redactions: [{ pageIndex: 0, rect: [40, 40, 300, 160] }],
+      }),
+    )
+    expect((await textOf(bytes, 'fresh-pw')).length).toBeGreaterThan(0)
+    await expect(decryptDocument(bytes, 's3cret')).rejects.toBeInstanceOf(WrongPasswordError)
   })
 })
