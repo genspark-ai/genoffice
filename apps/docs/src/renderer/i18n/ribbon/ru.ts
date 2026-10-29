@@ -25,6 +25,7 @@ export const ru = {
   ribbonShapeFillTip: 'Залить выбранную фигуру цветом',
   ribbonShapeOutline: 'Контур фигуры',
   ribbonShapeOutlineTip: 'Выбрать цвет контура выбранной фигуры',
+  ribbonShapeOutlineWeight: 'Толщина контура',
   ribbonNoFill: 'Нет заливки',
   ribbonNoOutline: 'Нет контура',
   ribbonRemoveBg: 'Удалить фон',

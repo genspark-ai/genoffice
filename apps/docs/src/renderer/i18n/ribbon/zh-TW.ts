@@ -25,6 +25,7 @@ export const zhTW = {
   ribbonShapeFillTip: '以色彩填滿選取的圖形',
   ribbonShapeOutline: '圖案外框',
   ribbonShapeOutlineTip: '選擇選取圖形的外框色彩',
+  ribbonShapeOutlineWeight: '外框粗細',
   ribbonNoFill: '無填滿',
   ribbonNoOutline: '無外框',
   ribbonRemoveBg: '移除背景',

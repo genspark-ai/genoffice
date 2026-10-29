@@ -26,6 +26,7 @@ export const ja = {
   ribbonShapeFillTip: '選択した図形を色で塗りつぶします',
   ribbonShapeOutline: '図形の枠線',
   ribbonShapeOutlineTip: '選択した図形の枠線の色を選択します',
+  ribbonShapeOutlineWeight: '枠線の太さ',
   ribbonNoFill: '塗りつぶしなし',
   ribbonNoOutline: '枠線なし',
   ribbonRemoveBg: '背景の削除',

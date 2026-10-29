@@ -6281,6 +6281,20 @@ export default function App() {
     void extractPagesToFile(pages.map((n) => n - 1))
   }
 
+  const reduceFileSize = async (): Promise<void> => {
+    if (!filePath) return
+    const outcome = await window.pdfApi.reduceFileSize(filePath)
+    if (!outcome.ok) {
+      if (!('canceled' in outcome)) showNotice(outcome.reason)
+      return
+    }
+    const savedPct =
+      outcome.bytesBefore > 0 ? Math.round((1 - outcome.bytesAfter / outcome.bytesBefore) * 100) : 0
+    // a run that came out bigger writes nothing and lands here as <= 0%: the
+    // toast says the file is already small instead of inventing a reduction
+    showNotice(savedPct > 0 ? t('reduceDone', { pct: savedPct }) : t('reduceAlreadySmall'))
+  }
+
   const insertPdf = (afterOrigIdx: number) => {
     // the flush bakes the visible order into the file, so the anchor becomes its visible position
     const afterPageIndex = visListOf(orderRef.current).indexOf(afterOrigIdx)
@@ -8571,6 +8585,30 @@ export default function App() {
                       <IconInsertPdf />
                     </span>
                     <span>{t('insertPdf')}</span>
+                  </button>
+                  <button
+                    className="rb-big"
+                    disabled={status !== 'ready' || readOnly}
+                    data-tip={t('reduceHint')}
+                    onClick={() => void reduceFileSize()}
+                  >
+                    <span className="rb-big-icon">
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M15.5 4.5 A 8.5 8.5 0 1 0 19.5 11" />
+                        <path d="M15.5 2.5 L15.5 7.5 L10.5 7.5" />
+                      </svg>
+                    </span>
+                    <span>{t('reduce')}</span>
                   </button>
                   <button
                     className="rb-big"

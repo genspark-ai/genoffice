@@ -1638,4 +1638,30 @@ export const fr = {
   appVisualFlipV: 'Retourner verticalement',
   appVisualFlipH: 'Retourner horizontalement',
   appCtxPasteVisual: "Coller l'image ou la forme",
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Orthographe',
+  appSpellBtnDetail: 'Vérifier le texte de la feuille (F7)',
+  appSpellToggle: "Vérifier l'orthographe",
+  appSpellToggleTip:
+    "Active la vérification orthographique (F7 et le bouton Révision) ; désactivée, les zones de commentaire n'affichent plus les soulignements",
+  appSpellOn: 'Vérification orthographique activée.',
+  appSpellOff:
+    'La vérification orthographique est désactivée. Réactivez-la dans Révision ▸ Vérification.',
+  appSpellRecheck: 'Revérifier',
+  appSpellNone: "Aucune faute d'orthographe suspectée.",
+  appSpellFindings: '{count} fautes suspectées. Cliquez une ligne pour la localiser.',
+  appSpellTruncated: 'Trop de cellules de texte ; seules les premières ont été vérifiées.',
+  appSpellColWord: 'Mot suspect',
+  appSpellIgnore: 'Ignorer',
+  appSpellIgnoreAll: 'Ignorer tout',
+  appSpellLearn: 'Ajouter au dictionnaire',
+  appSpellNoSuggestions: 'Aucune suggestion',
+  appSpellIgnoredAll: '« {word} » ne sera plus signalé pendant cette session.',
+  appSpellLearned: '« {word} » a été ajouté au dictionnaire.',
+  appSpellChanged: '{address} corrigé.',
+  appSpellChangeFailed: 'Impossible de corriger {address}.',
+  appSpellUnavailable: "La correction orthographique n'est pas disponible dans cette fenêtre.",
+  appSpellReplaceAll: 'Tout remplacer par « {suggestion} »',
+  appSpellChangedAll: '{count} cellules de « {word} » corrigées.',
 } satisfies Record<keyof typeof zh, string>

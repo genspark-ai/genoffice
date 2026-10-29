@@ -42,6 +42,40 @@ export interface OutlineGutterHandle {
   dispose(): void
 }
 
+/**
+ * The gutter's paint policy: triggers call `schedule`, frames run at most one
+ * paint, and the loop re-arms only while `paint` reports the geometry still
+ * moving — one stable frame sends it to sleep until the next trigger. An
+ * always-on loop here repainted 60 times a second whether anything changed or
+ * not, a steady wakeups floor on every open workbook (genoffice#2113).
+ */
+export function paintLoop(
+  requestFrame: (callback: () => void) => number,
+  cancelFrame: (handle: number) => void,
+  paint: () => boolean,
+): { schedule(): void; dispose(): void } {
+  let scheduled = false
+  let handle = 0
+  let disposed = false
+  const run = (): void => {
+    scheduled = false
+    if (disposed) return
+    if (paint()) schedule()
+  }
+  const schedule = (): void => {
+    if (disposed || scheduled) return
+    scheduled = true
+    handle = requestFrame(run)
+  }
+  return {
+    schedule,
+    dispose() {
+      disposed = true
+      cancelFrame(handle)
+    },
+  }
+}
+
 interface Hit {
   readonly x: number
   readonly y: number
@@ -176,8 +210,6 @@ export function installOutlineGutter(deps: OutlineGutterDeps): OutlineGutterHand
   let hits: { rows: Hit[]; cols: Hit[] } = { rows: [], cols: [] }
   let signature = ''
   let shown = false
-  let disposed = false
-  let frame = 0
   let groupCache: {
     key: string
     rows: OutlineGroup[]
@@ -445,6 +477,13 @@ export function installOutlineGutter(deps: OutlineGutterDeps): OutlineGutterHand
       render.scene.makeDirty(true)
     }
     const gridCanvas = render.engine.getCanvasElement()
+    // The grid canvas moves and resizes inside the host (ribbon toggle,
+    // sidebar, frozen panes); it only becomes known once a workbook resolves.
+    if (observedCanvas !== gridCanvas) {
+      if (observedCanvas) layoutObserver.unobserve(observedCanvas)
+      observedCanvas = gridCanvas
+      layoutObserver.observe(gridCanvas)
+    }
     const gridBounds = gridCanvas.getBoundingClientRect()
     const hostBounds = host.getBoundingClientRect()
     colCanvas.style.left = `${gridBounds.left - hostBounds.left}px`
@@ -543,27 +582,53 @@ export function installOutlineGutter(deps: OutlineGutterDeps): OutlineGutterHand
     hits = nextHits
   }
 
-  const tick = (): void => {
-    if (disposed) return
-    try {
-      paint()
-    } catch (error) {
-      // Render modules can be mid-rebuild while a workbook swaps in.
-      signature = ''
-      console.warn('[outline-gutter]', error)
-    }
-    frame = window.requestAnimationFrame(tick)
-  }
-  frame = window.requestAnimationFrame(tick)
+  const loop = paintLoop(
+    (callback) => window.requestAnimationFrame(callback),
+    (handle) => window.cancelAnimationFrame(handle),
+    () => {
+      const before = signature
+      try {
+        paint()
+      } catch (error) {
+        // Render modules can be mid-rebuild while a workbook swaps in.
+        signature = ''
+        console.warn('[outline-gutter]', error)
+      }
+      return signature !== before
+    },
+  )
+  loop.schedule()
+
+  // Triggers for the sleeping loop: scrolling and any command (zoom, freeze,
+  // row or column changes, outline commands, edits) come from Univer; DOM
+  // layout changes around the canvases come from the resize observer; theme
+  // flips from the attribute observer.
+  const scrollSub = runtime.univerAPI.addEvent(runtime.univerAPI.Event.Scroll, () =>
+    loop.schedule(),
+  )
+  const commandSub = runtime.univerAPI.onCommandExecuted(() => loop.schedule())
+  const layoutObserver = new ResizeObserver(() => loop.schedule())
+  layoutObserver.observe(host)
+  let observedCanvas: HTMLCanvasElement | null = null
+  const themeObserver = new MutationObserver(() => loop.schedule())
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme', 'class'],
+  })
+  themeObserver.observe(host, { attributes: true, attributeFilter: ['data-theme'] })
 
   return {
     refresh() {
       signature = ''
       groupCache = null
+      loop.schedule()
     },
     dispose() {
-      disposed = true
-      window.cancelAnimationFrame(frame)
+      loop.dispose()
+      scrollSub.dispose()
+      commandSub?.dispose?.()
+      layoutObserver.disconnect()
+      themeObserver.disconnect()
       rowCanvas.remove()
       colCanvas.remove()
       columnGutterBand.clear()

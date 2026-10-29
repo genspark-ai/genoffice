@@ -25,6 +25,7 @@ export const ms = {
   ribbonShapeFillTip: 'Isi bentuk yang dipilih dengan warna',
   ribbonShapeOutline: 'Rangka Bentuk',
   ribbonShapeOutlineTip: 'Pilih warna rangka bentuk yang dipilih',
+  ribbonShapeOutlineWeight: 'Ketebalan rangka',
   ribbonNoFill: 'Tiada Isian',
   ribbonNoOutline: 'Tiada Rangka',
   ribbonRemoveBg: 'Alih Keluar Latar Belakang',
