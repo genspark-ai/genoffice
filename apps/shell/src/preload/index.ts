@@ -23,6 +23,8 @@ import type {
   RecentEntry,
   RecentPage,
   RenameResult,
+  TemplateInfo,
+  TodoItem,
   UiLanguage,
   FileSearchPage,
   FileSearchRerank,
@@ -392,6 +394,23 @@ const homeApi: HomeApi = {
     ipcRenderer.on(HOME_CHANNELS.openSettings, listener)
     for (const target of pendingOpenSettings.splice(0)) handler(target)
     return () => ipcRenderer.removeListener(HOME_CHANNELS.openSettings, listener)
+  },
+  onPaletteOpen(handler) {
+    const listener = () => handler()
+    ipcRenderer.on(HOME_CHANNELS.paletteOpen, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.paletteOpen, listener)
+  },
+  async templatesList() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.templatesList)) as TemplateInfo[]
+  },
+  async newFromTemplate(id) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newFromTemplate, id)
+  },
+  async todosList() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.todosList)) as TodoItem[]
+  },
+  async todosSave(items) {
+    await ipcRenderer.invoke(HOME_CHANNELS.todosSave, items)
   },
   onAccountLogin(handler) {
     const listener = (_event: IpcRendererEvent, ev: AccountLoginEvent) => handler(ev)

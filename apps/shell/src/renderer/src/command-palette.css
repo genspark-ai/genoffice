@@ -1,0 +1,176 @@
+/* Command palette (Ctrl/Cmd+K): a centered top-of-screen overlay in the
+   Spotlight / PowerToys Run shape. Chrome tokens only (CLAUDE.md theming). */
+
+.cmd-overlay {
+  position: fixed;
+  inset: 0;
+  /* above the confirm-dialog overlay (z-index 100) and the settings modal (70):
+     the palette is summoned from anywhere, so it tops every surface but the
+     first-run onboarding coach (1000) */
+  z-index: 200;
+  display: flex;
+  /* Spotlight sits near the top rather than vertically centered */
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 24px 24px;
+  background: var(--color-bg-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.cmd-palette {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: 70vh;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-modal-strong);
+  overflow: hidden;
+}
+
+.cmd-input-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.cmd-search-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.cmd-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+}
+
+.cmd-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.cmd-esc {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.cmd-divider {
+  flex: 0 0 auto;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.cmd-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px 6px;
+}
+
+.cmd-group-title {
+  padding: 8px 10px 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-8);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cmd-row.active {
+  background: var(--bg-hover);
+}
+
+.cmd-row-icon {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  width: 22px;
+  color: var(--text-secondary);
+}
+
+/* a recent whose file failed to stat: dimmed like Home's missing rows, but
+   Enter still tries the open */
+.cmd-row.missing .cmd-row-title {
+  color: var(--text-tertiary);
+}
+
+.cmd-row-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cmd-row-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-row-detail {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-chip {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.cmd-empty {
+  flex: 1;
+  padding: 28px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.cmd-footer {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 11px;
+}

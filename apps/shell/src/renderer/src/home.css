@@ -1423,6 +1423,178 @@ body.vib .home {
   background: var(--danger-bg);
 }
 
+/* ── Todos sidebar widget ─────────────────────────────────── */
+
+/* a compact quick-capture card sitting under the folder tree: same quiet
+   header, same row rhythm as the tree above it, so the sidebar reads as one
+   column */
+.todo-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin-top: 10px;
+}
+
+.todo-head {
+  display: flex;
+  align-items: baseline;
+  padding: 0 10px 6px;
+}
+
+.todo-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+/* the count of open items, in the sidebar count column's style */
+.todo-count {
+  margin-left: auto;
+  min-width: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+
+.todo-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.todo-input:focus {
+  border-color: var(--accent);
+}
+
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px;
+  /* a long list scrolls inside the card instead of eating the sidebar */
+  max-height: 224px;
+  overflow-y: auto;
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  margin-bottom: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.todo-row:hover {
+  background: var(--bg-hover);
+}
+
+.todo-check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.todo-check:checked {
+  border-color: var(--accent);
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' stroke='%23fff' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 10px 10px no-repeat;
+}
+
+.todo-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* done: struck through and dimmed, like the recents' missing rows */
+.todo-text.done {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-tertiary);
+}
+
+/* the row's ✕ shows on hover only, like the folder row's "..." button */
+.todo-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  padding: 0;
+  transition: opacity 0.1s;
+}
+
+.todo-row:hover .todo-remove,
+.todo-remove:focus-visible {
+  opacity: 1;
+}
+
+.todo-remove:hover {
+  background: var(--bg-hover-strong);
+  color: var(--danger);
+}
+
+/* quiet footer action: small, muted, only present once something is done */
+.todo-clear {
+  align-self: flex-end;
+  margin-top: 2px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.todo-clear:hover {
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.todo-empty {
+  padding: 6px 10px 2px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
 /* ---- folder view: sub-folder rows ---- */
 
 .folder-heading {

@@ -252,6 +252,24 @@ export interface UserSkillEntry {
   relevant: boolean
 }
 
+/** one document template the template center offers */
+export interface TemplateInfo {
+  id: string
+  title: string
+  description: string
+  /** which app the generated file opens in */
+  kind: 'docx' | 'xlsx' | 'pptx' | 'md'
+  /** grouping, following the skills pane's categories (office, business, ...) */
+  category: string
+}
+
+/** one todo item on the Home sidebar widget */
+export interface TodoItem {
+  id: string
+  text: string
+  done: boolean
+}
+
 export interface HomeApi {
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
@@ -303,6 +321,16 @@ export interface HomeApi {
   pluginsSetEnabled(name: string, enabled: boolean): Promise<void>
   /** remove one installed plugin by name */
   pluginsRemove(name: string): Promise<void>
+  /** the template center's offerings */
+  templatesList(): Promise<TemplateInfo[]>
+  /** create a new document from one listed template and open it */
+  newFromTemplate(id: string): Promise<void>
+  /** the Home todo widget's items */
+  todosList(): Promise<TodoItem[]>
+  /** persist the todo list (whole-list write-through) */
+  todosSave(items: TodoItem[]): Promise<void>
+  /** the command palette was summoned globally (Ctrl/Cmd+K in the shell window) */
+  onPaletteOpen(handler: () => void): () => void
   /** open Settings › Integrations (the skills list) */
   openSkillsSettings(): Promise<void>
   /** full-text search over the corpus */
@@ -690,6 +718,11 @@ export const HOME_CHANNELS = {
   newMarkdown: 'home:new-markdown',
   newHtml: 'home:new-html',
   newPdf: 'home:new-pdf',
+  templatesList: 'home:templates-list',
+  newFromTemplate: 'home:new-from-template',
+  todosList: 'home:todos-list',
+  todosSave: 'home:todos-save',
+  paletteOpen: 'home:palette-open',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

@@ -642,6 +642,10 @@ const config = {
         to: 'shell-new',
         filter: ['*.docx', '*.xlsx', '*.pptx'],
       },
+      {
+        from: 'build/templates',
+        to: 'templates',
+      },
     ],
   },
   // Unlike win (which cross-compiles the sidecar to an explicit target

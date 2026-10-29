@@ -1,0 +1,53 @@
+[
+  {
+    "op": "merge_cells",
+    "sheet": "预算汇总",
+    "range": "A1:E1"
+  },
+  {
+    "op": "format_range",
+    "sheet": "预算汇总",
+    "range": "A1:E1",
+    "format": { "bold": true, "fontSize": 14, "horizontalAlign": "center" }
+  },
+  {
+    "op": "merge_cells",
+    "sheet": "预算汇总",
+    "range": "B2:C2"
+  },
+  { "op": "set_col_width", "sheet": "预算汇总", "column": "A", "widthPx": 120 },
+  { "op": "set_col_width", "sheet": "预算汇总", "column": "B", "widthPx": 130 },
+  { "op": "set_col_width", "sheet": "预算汇总", "column": "C", "widthPx": 130 },
+  { "op": "set_col_width", "sheet": "预算汇总", "column": "D", "widthPx": 120 },
+  { "op": "set_col_width", "sheet": "预算汇总", "column": "E", "widthPx": 90 },
+  {
+    "op": "format_range",
+    "sheet": "预算汇总",
+    "range": "A4:E4",
+    "format": { "bold": true, "fillColor": "#1F4E79", "fontColor": "#FFFFFF", "horizontalAlign": "center" }
+  },
+  {
+    "op": "format_range",
+    "sheet": "预算汇总",
+    "range": "A11:E11",
+    "format": { "bold": true, "fillColor": "#DDEBF7" }
+  },
+  { "op": "format_range", "sheet": "预算汇总", "range": "B5:D11", "format": { "numberFormat": "#,##0.00" } },
+  { "op": "format_range", "sheet": "预算汇总", "range": "E5:E11", "format": { "numberFormat": "0.0%" } },
+  {
+    "op": "format_range",
+    "sheet": "明细",
+    "range": "A1:F1",
+    "format": { "bold": true, "fillColor": "#1F4E79", "fontColor": "#FFFFFF", "horizontalAlign": "center" }
+  },
+  { "op": "set_col_width", "sheet": "明细", "column": "A", "widthPx": 220 },
+  { "op": "set_col_width", "sheet": "明细", "column": "B", "widthPx": 110 },
+  { "op": "set_col_width", "sheet": "明细", "column": "C", "widthPx": 130 },
+  { "op": "set_col_width", "sheet": "明细", "column": "D", "widthPx": 130 },
+  { "op": "set_col_width", "sheet": "明细", "column": "E", "widthPx": 120 },
+  { "op": "set_col_width", "sheet": "明细", "column": "F", "widthPx": 90 },
+  { "op": "format_range", "sheet": "明细", "range": "C2:E13", "format": { "numberFormat": "#,##0.00" } },
+  { "op": "format_range", "sheet": "明细", "range": "F2:F13", "format": { "numberFormat": "0.0%" } },
+  { "op": "set_freeze", "sheet": "明细", "rows": 1, "columns": 0 },
+  { "op": "set_filter", "sheet": "明细", "range": "A1:F13" }
+]

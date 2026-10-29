@@ -1,0 +1,74 @@
+[
+  {
+    "id": "weekly-report",
+    "title": "周报",
+    "description": "面向管理者的项目周报：工作概览、项目进展、关键指标、风险与下周计划。",
+    "kind": "docx",
+    "category": "office",
+    "file": "weekly-report.docx"
+  },
+  {
+    "id": "meeting-minutes",
+    "title": "会议纪要",
+    "description": "完整的会议纪要结构：会议信息、议题讨论、决议、行动项与遗留问题。",
+    "kind": "docx",
+    "category": "office",
+    "file": "meeting-minutes.docx"
+  },
+  {
+    "id": "project-report",
+    "title": "项目报告",
+    "description": "正式的项目阶段报告：摘要、里程碑、成果、风险、预算与决策请求。",
+    "kind": "docx",
+    "category": "business",
+    "file": "project-report.docx"
+  },
+  {
+    "id": "resume",
+    "title": "个人简历",
+    "description": "简洁专业的一页式简历：教育背景、工作与项目经历、技能与自我评价。",
+    "kind": "docx",
+    "category": "hr",
+    "file": "resume.docx"
+  },
+  {
+    "id": "budget",
+    "title": "团队预算表",
+    "description": "双表联动的预算表：分类汇总自动汇总明细，含使用率公式与筛选。",
+    "kind": "xlsx",
+    "category": "finance",
+    "file": "budget.xlsx"
+  },
+  {
+    "id": "tasks",
+    "title": "项目任务清单",
+    "description": "带进度统计的任务清单：优先级、状态、完成率公式与冻结表头筛选。",
+    "kind": "xlsx",
+    "category": "business",
+    "file": "tasks.xlsx"
+  },
+  {
+    "id": "reading-notes",
+    "title": "读书笔记",
+    "description": "结构化读书笔记：核心观点、章节摘录、行动启发与金句摘录。",
+    "kind": "md",
+    "category": "education",
+    "file": "reading-notes.md"
+  },
+  {
+    "id": "launch-plan",
+    "title": "产品发布计划",
+    "description": "产品发布的完整作战计划：里程碑、功能清单、灰度回滚与发布检查清单。",
+    "kind": "md",
+    "category": "marketing",
+    "file": "launch-plan.md"
+  },
+  {
+    "id": "kickoff-deck",
+    "title": "项目启动会",
+    "description": "六页项目启动会幻灯片：议程、背景、目标、时间计划与团队分工。",
+    "kind": "pptx",
+    "category": "business",
+    "file": "kickoff-deck.pptx"
+  }
+]

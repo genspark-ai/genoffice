@@ -46,6 +46,7 @@ import {
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
 import { rendererUrl, safeExternalUrl } from '@genoffice/electron-utils'
+import { HOME_CHANNELS } from '../shared/home-api'
 import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
 import { isSettledRect, tabStripHeight } from '../shared/tab-drag-geometry'
 import {
@@ -85,6 +86,17 @@ interface TabRecord {
 
 const HOME_ID = 'home'
 
+/** the live shell tab manager. main/index.ts owns its instance but hands it to
+ *  no one; feature IPC modules registered without injected deps (the template
+ *  center) reach the tab strip through this instead of a closure there. */
+let liveTabManager: { manager: TabManager; window: BrowserWindow } | null = null
+
+/** the shell's current tab manager, or null while the shell window is gone */
+export function shellTabManager(): TabManager | null {
+  const live = liveTabManager
+  return live && !live.window.isDestroyed() ? live.manager : null
+}
+
 /**
  * Owns every open tab (Home + docs + sheets) inside the shell's single
  * BrowserWindow. Docs/sheets tabs are WebContentsView children of that
@@ -114,6 +126,34 @@ export class TabManager {
    *  the path over after mount anyway. */
   private spareSheetsView: WebContentsView | null = null
   private spareSheetsTimer: ReturnType<typeof setTimeout> | null = null
+  /** views that already summon the command palette on Ctrl/Cmd+K */
+  private readonly paletteHooked = new WeakSet<WebContents>()
+
+  /**
+   * The command palette's global summon: Ctrl/Cmd+K in any of the shell
+   * window's surfaces (the home chrome or a document view) lands you on Home
+   * with the palette open. Attached per webContents — `web-contents-created`
+   * does not fire for this app's tab views, so activation is the hook point.
+   * Control combos arrive as rawKeyDown on Windows, keyDown elsewhere.
+   */
+  private installPaletteShortcut(wc: WebContents): void {
+    if (this.paletteHooked.has(wc) || wc.isDestroyed()) return
+    this.paletteHooked.add(wc)
+    wc.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' && input.type !== 'rawKeyDown') return
+      if (!input.control && !input.meta) return
+      if (input.key?.toLowerCase() !== 'k') return
+      event.preventDefault()
+      const win = this.shellWindow
+      if (win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+      this.openHomeTab()
+      win.webContents.send(HOME_CHANNELS.paletteOpen)
+    })
+  }
+
 
   constructor(
     private readonly shellWindow: BrowserWindow,
@@ -145,6 +185,8 @@ export class TabManager {
       this.reconcileAfterWindowRestore()
       setImmediate(() => this.reconcileAfterWindowRestore())
     })
+    liveTabManager = { manager: this, window: shellWindow }
+    this.installPaletteShortcut(shellWindow.webContents)
   }
 
   private scheduleSpareSheetsView(delayMs: number): void {
@@ -526,6 +568,7 @@ export class TabManager {
     // zero-size the view being activated (same guard as layout())
     if (target.view && isSettledRect(bounds)) target.view.setBounds(bounds)
     this.activeId = id
+    if (target.view) this.installPaletteShortcut(target.view.webContents)
     if (target.kind === 'sheets') this.scheduleSpareSheetsView(3000)
     else this.discardSpareSheetsView()
     this.refreshActiveTargets()

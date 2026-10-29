@@ -1,0 +1,80 @@
+{
+  "pages": [
+    {
+      "title": "项目启动会",
+      "type": "cover",
+      "layout": "cover_typography_hero",
+      "elements": [
+        { "type": "shape", "shape": "rect", "x": 0, "y": 0, "w": 1280, "h": 720, "fill": "#0E1A2B" },
+        { "type": "shape", "shape": "rect", "x": 0, "y": 640, "w": 1280, "h": 80, "fill": "#1F4E79" },
+        { "type": "text", "x": 90, "y": 250, "w": 1100, "h": 110, "paragraphs": [ { "align": "center", "runs": [ { "text": "项目启动会", "sizePt": 54, "bold": true, "color": "#FFFFFF" } ] } ] },
+        { "type": "text", "x": 90, "y": 380, "w": 1100, "h": 50, "paragraphs": [ { "align": "center", "runs": [ { "text": "〔填写项目名称〕 Kick-off", "sizePt": 24, "color": "#9FB3C8" } ] } ] },
+        { "type": "text", "x": 90, "y": 560, "w": 1100, "h": 40, "paragraphs": [ { "align": "center", "runs": [ { "text": "汇报人：〔填写姓名〕　·　〔填写日期〕", "sizePt": 16, "color": "#C8D4E0" } ] } ] }
+      ]
+    },
+    {
+      "title": "会议议程",
+      "type": "content",
+      "layout": "four_column_cards",
+      "elements": [
+        { "type": "text", "x": 80, "y": 60, "w": 900, "h": 80, "paragraphs": [ { "runs": [ { "text": "会议议程", "sizePt": 34, "bold": true, "color": "#0E1A2B" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 80, "y": 200, "w": 265, "h": 330, "fill": "#F2F6FA", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "align": "center", "runs": [ { "text": "01", "sizePt": 40, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "项目背景", "sizePt": 22, "bold": true, "color": "#0E1A2B" } ] }, { "align": "center", "spaceBeforePt": 8, "runs": [ { "text": "为什么做这件事", "sizePt": 14, "color": "#5A6B7D" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 365, "y": 200, "w": 265, "h": 330, "fill": "#F2F6FA", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "align": "center", "runs": [ { "text": "02", "sizePt": 40, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "目标与范围", "sizePt": 22, "bold": true, "color": "#0E1A2B" } ] }, { "align": "center", "spaceBeforePt": 8, "runs": [ { "text": "要达成什么", "sizePt": 14, "color": "#5A6B7D" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 650, "y": 200, "w": 265, "h": 330, "fill": "#F2F6FA", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "align": "center", "runs": [ { "text": "03", "sizePt": 40, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "计划与分工", "sizePt": 22, "bold": true, "color": "#0E1A2B" } ] }, { "align": "center", "spaceBeforePt": 8, "runs": [ { "text": "谁在什么时候交付", "sizePt": 14, "color": "#5A6B7D" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 935, "y": 200, "w": 265, "h": 330, "fill": "#F2F6FA", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "align": "center", "runs": [ { "text": "04", "sizePt": 40, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "风险与求助", "sizePt": 22, "bold": true, "color": "#0E1A2B" } ] }, { "align": "center", "spaceBeforePt": 8, "runs": [ { "text": "需要谁的支持", "sizePt": 14, "color": "#5A6B7D" } ] } ] }
+      ]
+    },
+    {
+      "title": "项目背景",
+      "type": "content",
+      "layout": "three_column_cards",
+      "elements": [
+        { "type": "text", "x": 80, "y": 60, "w": 900, "h": 80, "paragraphs": [ { "runs": [ { "text": "项目背景", "sizePt": 34, "bold": true, "color": "#0E1A2B" } ] } ] },
+        { "type": "text", "x": 80, "y": 170, "w": 1120, "h": 120, "paragraphs": [ { "lineSpacingPct": 140, "runs": [ { "text": "〔填写两到三句话：当前业务痛点、为什么现在启动、不做的代价〕", "sizePt": 18, "color": "#3B4A5A" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 80, "y": 340, "w": 350, "h": 240, "fill": "#EAF1F8", "paragraphs": [ { "align": "center", "runs": [ { "text": "现状", "sizePt": 20, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 12, "runs": [ { "text": "〔填写关键现状数据〕", "sizePt": 15, "color": "#3B4A5A" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 465, "y": 340, "w": 350, "h": 240, "fill": "#EAF1F8", "paragraphs": [ { "align": "center", "runs": [ { "text": "问题", "sizePt": 20, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 12, "runs": [ { "text": "〔填写核心问题〕", "sizePt": 15, "color": "#3B4A5A" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 850, "y": 340, "w": 350, "h": 240, "fill": "#EAF1F8", "paragraphs": [ { "align": "center", "runs": [ { "text": "机会", "sizePt": 20, "bold": true, "color": "#1F4E79" } ] }, { "align": "center", "spaceBeforePt": 12, "runs": [ { "text": "〔填写市场或内部机会〕", "sizePt": 15, "color": "#3B4A5A" } ] } ] }
+      ]
+    },
+    {
+      "title": "目标与关键结果",
+      "type": "data",
+      "layout": "kpi_row",
+      "elements": [
+        { "type": "text", "x": 80, "y": 60, "w": 900, "h": 80, "paragraphs": [ { "runs": [ { "text": "目标与关键结果", "sizePt": 34, "bold": true, "color": "#0E1A2B" } ] } ] },
+        { "type": "text", "x": 80, "y": 160, "w": 1120, "h": 60, "paragraphs": [ { "runs": [ { "text": "项目目标：〔填写一句话目标〕", "sizePt": 20, "color": "#1F4E79" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 80, "y": 280, "w": 350, "h": 260, "fill": "#0E1A2B", "paragraphs": [ { "align": "center", "runs": [ { "text": "KR1", "sizePt": 18, "bold": true, "color": "#8FB4DA" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写指标〕", "sizePt": 34, "bold": true, "color": "#FFFFFF" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写衡量方式〕", "sizePt": 14, "color": "#C8D4E0" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 465, "y": 280, "w": 350, "h": 260, "fill": "#0E1A2B", "paragraphs": [ { "align": "center", "runs": [ { "text": "KR2", "sizePt": 18, "bold": true, "color": "#8FB4DA" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写指标〕", "sizePt": 34, "bold": true, "color": "#FFFFFF" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写衡量方式〕", "sizePt": 14, "color": "#C8D4E0" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 850, "y": 280, "w": 350, "h": 260, "fill": "#0E1A2B", "paragraphs": [ { "align": "center", "runs": [ { "text": "KR3", "sizePt": 18, "bold": true, "color": "#8FB4DA" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写指标〕", "sizePt": 34, "bold": true, "color": "#FFFFFF" } ] }, { "align": "center", "spaceBeforePt": 10, "runs": [ { "text": "〔填写衡量方式〕", "sizePt": 14, "color": "#C8D4E0" } ] } ] }
+      ]
+    },
+    {
+      "title": "时间计划",
+      "type": "data",
+      "layout": "timeline",
+      "elements": [
+        { "type": "text", "x": 80, "y": 60, "w": 900, "h": 80, "paragraphs": [ { "runs": [ { "text": "时间计划", "sizePt": 34, "bold": true, "color": "#0E1A2B" } ] } ] },
+        { "type": "shape", "shape": "chevron", "x": 80, "y": 240, "w": 270, "h": 110, "fill": "#1F4E79", "paragraphs": [ { "align": "center", "runs": [ { "text": "需求确认", "sizePt": 18, "bold": true, "color": "#FFFFFF" } ] } ] },
+        { "type": "shape", "shape": "chevron", "x": 365, "y": 240, "w": 270, "h": 110, "fill": "#2E6DA4", "paragraphs": [ { "align": "center", "runs": [ { "text": "方案设计", "sizePt": 18, "bold": true, "color": "#FFFFFF" } ] } ] },
+        { "type": "shape", "shape": "chevron", "x": 650, "y": 240, "w": 270, "h": 110, "fill": "#3E7CB1", "paragraphs": [ { "align": "center", "runs": [ { "text": "开发联调", "sizePt": 18, "bold": true, "color": "#FFFFFF" } ] } ] },
+        { "type": "shape", "shape": "chevron", "x": 935, "y": 240, "w": 270, "h": 110, "fill": "#4A90C4", "paragraphs": [ { "align": "center", "runs": [ { "text": "上线验收", "sizePt": 18, "bold": true, "color": "#FFFFFF" } ] } ] },
+        { "type": "text", "x": 80, "y": 380, "w": 270, "h": 90, "paragraphs": [ { "align": "center", "runs": [ { "text": "〔填写日期区间〕", "sizePt": 14, "color": "#5A6B7D" } ], "spaceAfterPt": 4 }, { "align": "center", "runs": [ { "text": "〔填写交付物〕", "sizePt": 14, "color": "#3B4A5A" } ] } ] },
+        { "type": "text", "x": 365, "y": 380, "w": 270, "h": 90, "paragraphs": [ { "align": "center", "runs": [ { "text": "〔填写日期区间〕", "sizePt": 14, "color": "#5A6B7D" } ], "spaceAfterPt": 4 }, { "align": "center", "runs": [ { "text": "〔填写交付物〕", "sizePt": 14, "color": "#3B4A5A" } ] } ] },
+        { "type": "text", "x": 650, "y": 380, "w": 270, "h": 90, "paragraphs": [ { "align": "center", "runs": [ { "text": "〔填写日期区间〕", "sizePt": 14, "color": "#5A6B7D" } ], "spaceAfterPt": 4 }, { "align": "center", "runs": [ { "text": "〔填写交付物〕", "sizePt": 14, "color": "#3B4A5A" } ] } ] },
+        { "type": "text", "x": 935, "y": 380, "w": 270, "h": 90, "paragraphs": [ { "align": "center", "runs": [ { "text": "〔填写日期区间〕", "sizePt": 14, "color": "#5A6B7D" } ], "spaceAfterPt": 4 }, { "align": "center", "runs": [ { "text": "〔填写交付物〕", "sizePt": 14, "color": "#3B4A5A" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 80, "y": 520, "w": 1120, "h": 110, "fill": "#F2F6FA", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "align": "center", "runs": [ { "text": "里程碑：〔填写关键节点与验收标准〕", "sizePt": 16, "color": "#3B4A5A" } ] } ] }
+      ]
+    },
+    {
+      "title": "团队分工与风险",
+      "type": "content",
+      "layout": "two_column_split",
+      "elements": [
+        { "type": "text", "x": 80, "y": 60, "w": 900, "h": 80, "paragraphs": [ { "runs": [ { "text": "团队分工与风险", "sizePt": 34, "bold": true, "color": "#0E1A2B" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 80, "y": 180, "w": 545, "h": 420, "fill": "#FFFFFF", "stroke": { "color": "#B9CCE0", "widthPt": 1 }, "paragraphs": [ { "runs": [ { "text": "团队分工", "sizePt": 20, "bold": true, "color": "#1F4E79" } ] }, { "spaceBeforePt": 10, "runs": [ { "text": "产品：〔填写职责与负责人〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "研发：〔填写职责与负责人〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "设计：〔填写职责与负责人〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "测试：〔填写职责与负责人〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "协作方：〔填写外部依赖〕", "sizePt": 15, "color": "#3B4A5A" } ] } ] },
+        { "type": "shape", "shape": "roundRect", "x": 655, "y": 180, "w": 545, "h": 420, "fill": "#FFF6F2", "stroke": { "color": "#E0B9A8", "widthPt": 1 }, "paragraphs": [ { "runs": [ { "text": "主要风险", "sizePt": 20, "bold": true, "color": "#B4552D" } ] }, { "spaceBeforePt": 10, "runs": [ { "text": "风险一：〔填写风险与应对〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "风险二：〔填写风险与应对〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "风险三：〔填写风险与应对〕", "sizePt": 15, "color": "#3B4A5A" } ] }, { "spaceBeforePt": 8, "runs": [ { "text": "需要的支持：〔填写要协调的资源〕", "sizePt": 15, "color": "#3B4A5A" } ] } ] },
+        { "type": "text", "x": 80, "y": 640, "w": 1120, "h": 40, "paragraphs": [ { "align": "center", "runs": [ { "text": "谢谢 · 欢迎讨论　　联系人：〔填写姓名与联系方式〕", "sizePt": 14, "color": "#5A6B7D" } ] } ] }
+      ]
+    }
+  ]
+}

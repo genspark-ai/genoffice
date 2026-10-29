@@ -1,0 +1,50 @@
+[
+  {
+    "op": "merge_cells",
+    "sheet": "任务清单",
+    "range": "A1:I1"
+  },
+  {
+    "op": "format_range",
+    "sheet": "任务清单",
+    "range": "A1:I1",
+    "format": { "bold": true, "fontSize": 14, "horizontalAlign": "center" }
+  },
+  {
+    "op": "merge_cells",
+    "sheet": "任务清单",
+    "range": "B2:C2"
+  },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "A", "widthPx": 100 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "B", "widthPx": 240 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "C", "widthPx": 110 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "D", "widthPx": 90 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "E", "widthPx": 110 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "F", "widthPx": 110 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "G", "widthPx": 100 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "H", "widthPx": 100 },
+  { "op": "set_col_width", "sheet": "任务清单", "column": "I", "widthPx": 180 },
+  {
+    "op": "format_range",
+    "sheet": "任务清单",
+    "range": "A4:I4",
+    "format": { "bold": true, "fillColor": "#1F4E79", "fontColor": "#FFFFFF", "horizontalAlign": "center" }
+  },
+  {
+    "op": "format_range",
+    "sheet": "任务清单",
+    "range": "A14:I15",
+    "format": { "fillColor": "#F2F2F2" }
+  },
+  {
+    "op": "format_range",
+    "sheet": "任务清单",
+    "range": "A14:A15",
+    "format": { "bold": true }
+  },
+  { "op": "format_range", "sheet": "任务清单", "range": "E5:F12", "format": { "numberFormat": "yyyy-mm-dd" } },
+  { "op": "format_range", "sheet": "任务清单", "range": "H5:H12", "format": { "numberFormat": "0%" } },
+  { "op": "format_range", "sheet": "任务清单", "range": "I14:I15", "format": { "numberFormat": "0.0%" } },
+  { "op": "set_freeze", "sheet": "任务清单", "rows": 4, "columns": 0 },
+  { "op": "set_filter", "sheet": "任务清单", "range": "A4:I12" }
+]

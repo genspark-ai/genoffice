@@ -190,7 +190,7 @@ interface FakeShellWindow {
 function makeShellWindow(): FakeShellWindow {
   return {
     on: vi.fn(),
-    webContents: { once: vi.fn(), focus: vi.fn() },
+    webContents: { once: vi.fn(), focus: vi.fn(), on: vi.fn(), isDestroyed: vi.fn(() => false) },
     isDestroyed: vi.fn(() => false),
     isFocused: vi.fn(() => true),
     getContentBounds: () => ({ x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }),

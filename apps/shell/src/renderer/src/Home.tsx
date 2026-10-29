@@ -26,6 +26,10 @@ import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
+import { TemplateGallery } from './TemplateGallery'
+import { TEMPLATE_GALLERY_STRINGS } from './template-gallery-strings'
+import { CommandPalette } from './CommandPalette'
+import { TodoWidget } from './TodoWidget'
 import { skillUpdateDue } from './IntegrationsPane'
 import { bindRecentsChanged, onFilesChanged } from './file-events'
 import { aiSetupNeeded } from './ai-setup-state'
@@ -1494,6 +1498,9 @@ export function Home() {
   // bumped when the Jev settings change so the current results are judged again (or the order dropped)
   const [rerankSettingsTick, setRerankSettingsTick] = useState(0)
   const [settingsRequest, setSettingsRequest] = useState<SettingsTarget | null>(null)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => window.aiOffice.onPaletteOpen?.(() => setPaletteOpen(true)), [])
   useEffect(
     () =>
       window.aiOffice.onOpenSettings?.((target) =>
@@ -2304,6 +2311,21 @@ export function Home() {
             </span>
           </button>
         ))}
+        <button
+          className="quick-card"
+          onClick={() => setTemplatesOpen(true)}
+          data-tip={TEMPLATE_GALLERY_STRINGS[lang].subtitle}
+        >
+          <span className="quick-folder">
+            <FileBadge ext="docx" size={18} />
+          </span>
+          <span className="quick-text">
+            <span className="quick-title-row">
+              <span className="quick-title">{TEMPLATE_GALLERY_STRINGS[lang].title}</span>
+            </span>
+            <span className="quick-sub">{TEMPLATE_GALLERY_STRINGS[lang].subtitle}</span>
+          </span>
+        </button>
         <button
           className="quick-card"
           onClick={() => void window.aiOffice.browse()}
@@ -3585,6 +3607,7 @@ export function Home() {
         </nav>
         <div className="sidebar-divider" />
         {renderFolderPanel()}
+        <TodoWidget lang={lang} />
         <AccountEntry
           onStatusChange={handleAccountStatus}
           onFileSearchSettingsChange={() => setRerankSettingsTick((n) => n + 1)}
@@ -3739,6 +3762,8 @@ export function Home() {
       )}
 
       <DropToOpenOverlay />
+      {templatesOpen && <TemplateGallery lang={lang} onClose={() => setTemplatesOpen(false)} />}
+      {paletteOpen && <CommandPalette lang={lang} onClose={() => setPaletteOpen(false)} />}
     </div>
   )
 }
