@@ -20,6 +20,7 @@ const SKIP_CLASSES = new Set([
   'doc-protected-sectbreak',
   'doc-move-handle',
   'box-resize-handle',
+  'box-rotate-handle',
 ])
 
 const UNWRAP_CLASSES = new Set([

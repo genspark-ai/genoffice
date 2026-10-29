@@ -25,6 +25,7 @@ export const hi = {
   ribbonShapeFillTip: 'चयनित आकृति को रंग से भरें',
   ribbonShapeOutline: 'आकृति रूपरेखा',
   ribbonShapeOutlineTip: 'चयनित आकृति की रूपरेखा का रंग चुनें',
+  ribbonShapeOutlineWeight: 'रूपरेखा की मोटाई',
   ribbonNoFill: 'कोई भरण नहीं',
   ribbonNoOutline: 'कोई रूपरेखा नहीं',
   ribbonRemoveBg: 'पृष्ठभूमि हटाएँ',

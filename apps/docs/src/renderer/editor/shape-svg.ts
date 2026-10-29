@@ -142,12 +142,13 @@ export function shapeBackgroundImage(
   fillHex?: string,
   borderHex?: string,
   line?: LineRenderOpts,
+  strokeWidthPx?: number,
 ): string | null {
   const paths = isStraightLineKind(prst)
     ? straightLinePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2), line)
     : shapePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2))
   if (!paths) return null
-  return pathsBackgroundImage(paths, w, h, fillHex, borderHex)
+  return pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
 }
 
 function pathsBackgroundImage(
@@ -156,20 +157,30 @@ function pathsBackgroundImage(
   h: number,
   fillHex?: string,
   borderHex?: string,
+  strokeWidthPx?: number,
 ): string {
   const fill = fillHex ? `#${fillHex}` : 'none'
   const stroke = borderHex ? `#${borderHex}` : 'none'
+  // authored outline width (a:ln w in px); absent keeps the historical 2 / 2.5
+  const strokeWidth = strokeWidthPx === undefined ? undefined : R(Math.max(0.5, strokeWidthPx))
   const parts: string[] = []
   if (paths.main)
-    parts.push(`<path d="${paths.main}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`)
+    parts.push(
+      `<path d="${paths.main}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth ?? 2}"/>`,
+    )
   if (paths.fillOnly) parts.push(`<path d="${paths.fillOnly}" fill="${fill}" stroke="none"/>`)
   if (paths.strokeOnly)
     parts.push(
       `<path d="${paths.strokeOnly}" fill="none" ` +
-        `stroke="${stroke === 'none' ? fill : stroke}" stroke-width="2.5"/>`,
+        `stroke="${stroke === 'none' ? fill : stroke}" stroke-width="${strokeWidth ?? 2.5}"/>`,
     )
+  // a wide stroke needs more than the historical 1px inset, or the SVG viewport
+  // clips it at the edges of the box: grow the viewBox symmetrically around it
+  const inset = strokeWidth === undefined ? 1 : Math.max(1, R(strokeWidth / 2 + 0.5))
+  const viewW = strokeWidth === undefined ? w : R(w + 2 * (inset - 1))
+  const viewH = strokeWidth === undefined ? h : R(h + 2 * (inset - 1))
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="-1 -1 ${w} ${h}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${-inset} ${-inset} ${viewW} ${viewH}">` +
     parts.join('') +
     '</svg>'
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
@@ -205,6 +216,7 @@ export function custGeomBackgroundCss(
   h: number,
   fillHex?: string,
   borderHex?: string,
+  strokeWidthPx?: number,
 ): string {
   const sw = Math.max(8, w - 2)
   const sh = Math.max(8, h - 2)
@@ -213,7 +225,7 @@ export function custGeomBackgroundCss(
     fillOnly: geom.fillPath ? scaleNormPathD(geom.fillPath, sw, sh) : undefined,
     strokeOnly: geom.strokePath ? scaleNormPathD(geom.strokePath, sw, sh) : undefined,
   }
-  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex)
+  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }
 
@@ -225,8 +237,9 @@ export function shapeBackgroundCss(
   fillHex?: string,
   borderHex?: string,
   line?: LineRenderOpts,
+  strokeWidthPx?: number,
 ): string | null {
-  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex, line)
+  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex, line, strokeWidthPx)
   if (!image) return null
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }

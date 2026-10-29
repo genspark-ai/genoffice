@@ -71,6 +71,7 @@ describe('resolveGlobalShortcut routing', () => {
       [keyEvent('Digit1', meta), MAC, FORMAT_CELLS],
       [keyEvent('KeyG', ctrl), GRID, GO_TO],
       [keyEvent('F5'), GRID, GO_TO],
+      [keyEvent('F7'), GRID, cmd('spell-check')],
       [keyEvent('Backquote', ctrl), GRID, cmd('toggle-show-formulas')],
       [keyEvent('KeyK', meta), MAC, cmd('link-open')],
       [keyEvent('KeyM', metaShift), MAC, cmd('comment-new')],
@@ -122,6 +123,8 @@ describe('resolveGlobalShortcut routing', () => {
     ).toBeNull()
     expect(resolveGlobalShortcut(keyEvent('F11'), GRID)).toBeNull()
     expect(resolveGlobalShortcut(keyEvent('ArrowRight', alt), GRID)).toBeNull()
+    // F7 is the plain Excel Spelling key; Shift+F7 must stay unbound
+    expect(resolveGlobalShortcut(keyEvent('F7', shift), GRID)).toBeNull()
     expect(
       resolveGlobalShortcut(keyEvent('Equal', { altKey: true, metaKey: true }), MAC),
     ).toBeNull()
@@ -156,6 +159,7 @@ describe('guards', () => {
     ['Ctrl+1 (Format Cells)', keyEvent('Digit1', ctrl)],
     ['Ctrl+G (Go To)', keyEvent('KeyG', ctrl)],
     ['F5 (Go To)', keyEvent('F5')],
+    ['F7 (Spelling)', keyEvent('F7')],
     ['Ctrl+K (Link)', keyEvent('KeyK', ctrl)],
     ['Ctrl+` (Show Formulas)', keyEvent('Backquote', ctrl)],
     ['F9 (recalculate)', keyEvent('F9')],

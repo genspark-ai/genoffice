@@ -49,6 +49,8 @@ export interface RibbonFormatState {
   textboxSelected: boolean
   shapeFill: string | null
   shapeBorderColor: string | null
+  /** outline width of the selected shape in CSS px (a:ln w; null = Word's own default) */
+  shapeBorderWidthPx: number | null
   shapePrst: string | null
   /**
    * What the selected shape's own text agrees on, for the Shape Format Text
@@ -125,6 +127,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   textboxSelected: false,
   shapeFill: null,
   shapeBorderColor: null,
+  shapeBorderWidthPx: null,
   shapePrst: null,
   shapeHasText: false,
   shapeTextBold: false,
@@ -331,6 +334,9 @@ export function computeFormatState(
       : null,
     shapeBorderColor: Array.isArray(protAttrs.textboxes)
       ? str((protAttrs.textboxes[0] as { borderColor?: string } | undefined)?.borderColor)
+      : null,
+    shapeBorderWidthPx: Array.isArray(protAttrs.textboxes)
+      ? num((protAttrs.textboxes[0] as TextboxDisplay | undefined)?.borderWidthPx)
       : null,
     shapePrst: Array.isArray(protAttrs.textboxes)
       ? str((protAttrs.textboxes[0] as { prst?: string } | undefined)?.prst)

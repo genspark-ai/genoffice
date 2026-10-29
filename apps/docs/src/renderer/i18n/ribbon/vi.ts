@@ -25,6 +25,7 @@ export const vi = {
   ribbonShapeFillTip: 'Tô màu cho hình dạng đã chọn',
   ribbonShapeOutline: 'Viền hình dạng',
   ribbonShapeOutlineTip: 'Chọn màu viền cho hình dạng đã chọn',
+  ribbonShapeOutlineWeight: 'Độ dày đường viền',
   ribbonNoFill: 'Không tô màu',
   ribbonNoOutline: 'Không viền',
   ribbonRemoveBg: 'Xóa nền',

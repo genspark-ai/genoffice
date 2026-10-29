@@ -26,6 +26,7 @@ export const ko = {
   ribbonShapeFillTip: '선택한 도형을 색으로 채웁니다',
   ribbonShapeOutline: '도형 윤곽선',
   ribbonShapeOutlineTip: '선택한 도형의 윤곽선 색을 선택합니다',
+  ribbonShapeOutlineWeight: '윤곽선 두께',
   ribbonNoFill: '채우기 없음',
   ribbonNoOutline: '윤곽선 없음',
   ribbonRemoveBg: '배경 제거',

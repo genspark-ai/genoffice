@@ -168,12 +168,14 @@ async function buildExternalLinkFixture(): Promise<Buffer> {
     'xl/worksheets/sheet1.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<dimension ref="A1:C2"/>' +
+      '<dimension ref="A1:E2"/>' +
       '<sheetViews><sheetView workbookViewId="0"/></sheetViews>' +
       '<sheetFormatPr defaultRowHeight="15"/>' +
       '<sheetData>' +
       '<row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c>' +
-      '<c r="C1" t="str"><f>\'[1]Sheet1\'!A1&amp;" units"</f><v>42 units</v></c></row>' +
+      '<c r="C1" t="str"><f>\'[1]Sheet1\'!A1&amp;" units"</f><v>42 units</v></c>' +
+      '<c r="D1" t="str"><f>\'[1]Sheet Name\'!A1+1</f><v>7</v></c>' +
+      '<c r="E1" t="str"><f>\'[1]数据\'!A1+2</f><v>9</v></c></row>' +
       '<row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row>' +
       '</sheetData>' +
       '</worksheet>',
@@ -306,7 +308,7 @@ describe('sidecar IronCalc recalculation channel', () => {
           reads: [
             {
               sheet: 'Data',
-              range: { startRow: 0, endRow: 1, startColumn: 0, endColumn: 2 },
+              range: { startRow: 0, endRow: 1, startColumn: 0, endColumn: 4 },
             },
           ],
         }),
@@ -317,6 +319,9 @@ describe('sidecar IronCalc recalculation channel', () => {
       // the linked cells come back as plain cached values, not formulas
       expect(at(0, 0)).toMatchObject({ formatted: '84', isFormula: false })
       expect(at(0, 2)).toMatchObject({ formatted: '42 units', isFormula: false })
+      // a quoted sheet name with a space, and a CJK one, stay pinned too
+      expect(at(0, 3)).toMatchObject({ formatted: '7', isFormula: false })
+      expect(at(0, 4)).toMatchObject({ formatted: '9', isFormula: false })
       // dependents compute against those values instead of cascading
       expect(at(0, 1)).toMatchObject({ formatted: '85', isFormula: true })
       expect(at(1, 1)).toMatchObject({ formatted: '94', isFormula: true })
@@ -325,9 +330,9 @@ describe('sidecar IronCalc recalculation channel', () => {
     }
   })
 
-  // IronCalc has no CELL("filename"); its error must not displace the
-  // cached sheet-name text the file already carries.
-  it('omits erroring CELL("filename") cells so the cached value survives', async () => {
+  // IronCalc implements CELL("filename") since 0.9.1, so the sheet-name
+  // text now comes back computed instead of only as the file's cached value.
+  it('computes CELL("filename") cells to the sheet name', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xlsx-recalc-test-'))
     cleanups.push(directory)
     const path = join(directory, 'recalc.xlsx')
@@ -346,7 +351,9 @@ describe('sidecar IronCalc recalculation channel', () => {
           ],
         }),
       )
-      expect(result.cells).toEqual([])
+      expect(result.cells).toEqual([
+        expect.objectContaining({ row: 3, column: 1, formatted: 'Data', isFormula: true }),
+      ])
     } finally {
       client.stop()
     }

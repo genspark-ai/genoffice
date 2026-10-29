@@ -25,6 +25,7 @@ export const th = {
   ribbonShapeFillTip: 'เติมสีให้รูปร่างที่เลือก',
   ribbonShapeOutline: 'เส้นกรอบรูปร่าง',
   ribbonShapeOutlineTip: 'เลือกสีเส้นกรอบของรูปร่างที่เลือก',
+  ribbonShapeOutlineWeight: 'ความหนาของเส้นกรอบ',
   ribbonNoFill: 'ไม่เติมสี',
   ribbonNoOutline: 'ไม่มีเส้นกรอบ',
   ribbonRemoveBg: 'เอาพื้นหลังออก',

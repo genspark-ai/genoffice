@@ -70,6 +70,14 @@ export function lineBoxOf(shape: XNode, theme?: ThemeColors | null): TextboxDisp
     if (xfrmAttrs['flipH'] === '1' || xfrmAttrs['flipH'] === 'true') box.flipH = true
     if (xfrmAttrs['flipV'] === '1' || xfrmAttrs['flipV'] === 'true') box.flipV = true
   }
+  // a:xfrm rot (60000ths of a degree) and a:ln w (EMU) round-trip on lines the
+  // same way they do on text-bearing shapes, so a rotated/resized connector
+  // keeps its transform across save and reload
+  const rot = parseInt(xfrmAttrs['rot'] ?? '', 10)
+  if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+  const lnW = parseInt(ln ? (attrsOf(ln)['w'] ?? '') : '', 10)
+  if (Number.isFinite(lnW) && lnW > 0)
+    box.borderWidthPx = Math.round((lnW / EMU_PER_PX) * 100) / 100
   if (Number.isFinite(cy) && cy > 0) {
     box.heightPx = Math.round(cy / EMU_PER_PX)
     box.minHeightPx = box.heightPx

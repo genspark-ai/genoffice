@@ -25,6 +25,7 @@ export const nl = {
   ribbonShapeFillTip: 'De geselecteerde vorm met een kleur vullen',
   ribbonShapeOutline: 'Omtrek van vorm',
   ribbonShapeOutlineTip: 'De omtrekkleur van de geselecteerde vorm kiezen',
+  ribbonShapeOutlineWeight: 'Omtrekdikte',
   ribbonNoFill: 'Geen opvulling',
   ribbonNoOutline: 'Geen omtrek',
   ribbonRemoveBg: 'Achtergrond verwijderen',

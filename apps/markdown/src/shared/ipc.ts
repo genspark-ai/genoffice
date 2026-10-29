@@ -22,6 +22,8 @@ export const MARKDOWN_CHANNELS = {
   listWikiNotes: 'markdown:list-wiki-notes',
   /** create the note an unresolved `[[wiki link]]` names (never overwrites) */
   createWikiNote: 'markdown:create-wiki-note',
+  /** what `[[Note#` offers: the target note's headings and block ids */
+  wikiHeads: 'markdown:wiki-heads',
   /** notes whose links land on the given path (the backlinks panel) */
   wikiBacklinks: 'markdown:wiki-backlinks',
   wikiTags: 'markdown:wiki-tags',
@@ -103,6 +105,32 @@ export interface WikiCreateNoteRequest {
    * open on; the file part is what gets created.
    */
   target: string
+}
+
+/** a heading of the note `[[Note#` lists */
+export interface WikiHeadingEntry {
+  kind: 'heading'
+  /** heading text as the fragment addresses it, marker stripped */
+  text: string
+  level: number
+}
+
+/** a block id the note already carries, offered by `[[Note#^` */
+export interface WikiBlockIdEntry {
+  kind: 'block'
+  /** the id without the caret, as the completion adds its own */
+  id: string
+  /** the line's text before the marker, '' for a lone marker line */
+  text: string
+}
+
+export type WikiHeadEntry = WikiHeadingEntry | WikiBlockIdEntry
+
+export interface WikiHeadsRequest {
+  /** the link's file part as typed: `Note`, `folder/Note` */
+  target: string
+  /** absolute path of the open document, '' while untitled */
+  fromPath: string
 }
 
 export type WikiCreateNoteResult =
@@ -351,6 +379,12 @@ export interface MarkdownApi {
    * the target cannot name a note at all.
    */
   createWikiNote(request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult>
+  /**
+   * What `[[Note#` offers: resolve the typed target the way the resolver does
+   * and list that note's headings and block ids. Read-only — the suggester
+   * lists what is there, it never writes an id into another file.
+   */
+  wikiHeads(request: WikiHeadsRequest): Promise<WikiHeadEntry[]>
   /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
   wikiBacklinks(path: string): Promise<WikiBacklink[]>
   wikiTags(): Promise<{ tag: string; files: string[] }[]>

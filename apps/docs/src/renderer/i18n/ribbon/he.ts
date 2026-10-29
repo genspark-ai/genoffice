@@ -25,6 +25,7 @@ export const he = {
   ribbonShapeFillTip: 'מילוי הצורה שנבחרה בצבע',
   ribbonShapeOutline: 'מתאר צורה',
   ribbonShapeOutlineTip: 'בחירת צבע המתאר של הצורה שנבחרה',
+  ribbonShapeOutlineWeight: 'עובי המתאר',
   ribbonNoFill: 'ללא מילוי',
   ribbonNoOutline: 'ללא מתאר',
   ribbonRemoveBg: 'הסרת רקע',

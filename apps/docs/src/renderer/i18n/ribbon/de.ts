@@ -25,6 +25,7 @@ export const de = {
   ribbonShapeFillTip: 'Die ausgewählte Form mit einer Farbe füllen',
   ribbonShapeOutline: 'Formkontur',
   ribbonShapeOutlineTip: 'Konturfarbe der ausgewählten Form auswählen',
+  ribbonShapeOutlineWeight: 'Konturstärke',
   ribbonNoFill: 'Keine Füllung',
   ribbonNoOutline: 'Keine Kontur',
   ribbonRemoveBg: 'Hintergrund entfernen',
