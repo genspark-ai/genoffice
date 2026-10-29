@@ -21,6 +21,7 @@ pub mod find;
 pub mod odf;
 pub mod protocol;
 pub mod recalc;
+mod rels_normalize;
 mod richdata;
 mod shared_formulas;
 pub mod spreadsheetml;
