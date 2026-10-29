@@ -117,8 +117,10 @@ export const id = {
   appChartNoRepoint: 'Bagan ini tidak mendukung penetapan ulang rentang datanya.',
   appKeepOneSeries: 'Pertahankan setidaknya satu seri.',
   appNoCategoriesToSwitch: 'Tidak ada kategori untuk ditukar.',
-  appComboNoSelectData: 'Mengubah sumber data bagan kombinasi belum didukung.',
+  appSelectDataUnsupported: 'Mengubah sumber data jenis bagan ini belum didukung.',
   appSeriesName: 'Nama Seri',
+  appSeriesType: 'Jenis seri',
+  appSecondaryAxis: 'Sumbu sekunder',
   appValuesRange: 'Rentang Nilai',
   appCategoriesRange: 'Rentang Kategori',
   appKeepUnchanged: 'Biarkan tidak berubah',
@@ -199,6 +201,12 @@ export const id = {
   appInvalidGroupField: 'Bidang pengelompokan tidak valid.',
   appInvalidPageField: 'Bidang filter laporan tidak valid.',
   appPivotPageItemMissing: 'Item filter laporan "{item}" bukan anggota bidang "{label}".',
+  appInvalidPivotBaseField:
+    'Bidang dasar "Tampilkan nilai sebagai" harus berada di baris atau kolom.',
+  appPivotBaseFieldMissing:
+    'Mode "Tampilkan nilai sebagai" pada bidang nilai memerlukan bidang dasar.',
+  appPivotBaseFieldNotAxis: 'Bidang dasar "{label}" harus berada di baris atau kolom tabel pivot.',
+  appPivotBaseItemMissing: 'Item dasar "{item}" bukan anggota bidang "{label}".',
   appInvalidLabelFilterField: 'Bidang filter label tidak valid.',
   appInvalidValueFieldIndex: 'Indeks bidang nilai {index} tidak valid.',
   appInvalidValueField: 'Bidang nilai tidak valid.',
@@ -333,7 +341,7 @@ export const id = {
   appPivotSheetNoMove: 'Lembar ini berisi PivotTable — memindahkan rentang belum didukung.',
   appMergeOverTable:
     'Pilihan tumpang tindih dengan tabel Excel — menggabungkan sel di dalam tabel belum didukung.',
-  appTableFilterNoEdit: 'Filter lembar ini milik tabel Excel — pengeditannya belum dapat disimpan.',
+  appFilterToggleFailed: 'Filter tidak diterapkan — pilih dulu rentang yang berisi data Anda.',
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
   appDvNeedsIndexed:
     'Mengedit validasi data memerlukan lembar ini terindeks penuh dahulu — coba lagi sebentar lagi.',
@@ -574,8 +582,6 @@ export const id = {
   appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
   appCfRuleUnsaveable:
     'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
-  appSaveErrX14Dv:
-    'Sheet ini memiliki validasi data yang diperluas (x14); mengedit aturan validasinya belum didukung.',
   appSaveErrMultiSelectList:
     'Validasi daftar pilihan ganda tidak dapat disimpan ke xlsx — hapus aturan tersebut sebelum menyimpan.',
   appSaveErrX14Cf:
@@ -703,6 +709,7 @@ export const id = {
   appExportPdfTitle: 'Ekspor sebagai PDF',
   appSaveTitle: 'Simpan (⌘S)',
   appSaveAs: 'Simpan Sebagai',
+  aiNameFile: 'Beri nama dengan AI…',
   appUndo: 'Urungkan',
   appRedo: 'Ulangi',
   appUnsavedEditOne: '● {count} pengeditan belum disimpan',
@@ -1202,6 +1209,7 @@ export const id = {
   appGroupForecast: 'Prakiraan',
   appWhatIfAnalysis: 'Analisis Bagaimana-Jika',
   appGoalSeek: 'Pencarian Tujuan',
+  appDataTable: 'Tabel Data',
   appWhatIfTitle: 'Cari input untuk nilai target',
   appGoalSeekNeedsFormula: 'Sel target harus berisi rumus.',
   appGoalSeekByCellNotNumber: 'Sel yang diubah harus berisi angka atau kosong.',
@@ -1562,4 +1570,29 @@ export const id = {
   appVisualFlipV: 'Balik Vertikal',
   appVisualFlipH: 'Balik Horizontal',
   appCtxPasteVisual: 'Tempel Gambar atau Bentuk',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ejaan',
+  appSpellBtnDetail: 'Periksa teks lembar (F7)',
+  appSpellToggle: 'Periksa ejaan',
+  appSpellToggleTip:
+    'Mengaktifkan pemeriksaan ejaan (F7 dan tombol Tinjau); saat nonaktif, kotak komentar tidak lagi menampilkan garis bergelombang',
+  appSpellOn: 'Pemeriksaan ejaan diaktifkan.',
+  appSpellOff: 'Pemeriksaan ejaan nonaktif. Aktifkan di Tinjau ▸ Pemeriksaan.',
+  appSpellRecheck: 'Periksa ulang',
+  appSpellNone: 'Tidak ditemukan kesalahan ejaan yang dicurigai.',
+  appSpellFindings: '{count} kesalahan yang dicurigai. Klik baris untuk menemukannya.',
+  appSpellTruncated: 'Terlalu banyak sel teks; hanya bagian awal yang diperiksa.',
+  appSpellColWord: 'Dicurigai',
+  appSpellIgnore: 'Abaikan',
+  appSpellIgnoreAll: 'Abaikan semua',
+  appSpellLearn: 'Tambahkan ke kamus',
+  appSpellNoSuggestions: 'Tidak ada saran',
+  appSpellIgnoredAll: '"{word}" tidak akan ditandai lagi pada sesi ini.',
+  appSpellLearned: '"{word}" ditambahkan ke kamus.',
+  appSpellChanged: '{address} diperbaiki.',
+  appSpellChangeFailed: 'Gagal memperbaiki {address}.',
+  appSpellUnavailable: 'Pemeriksaan ejaan tidak tersedia di jendela ini.',
+  appSpellReplaceAll: 'Ganti semua dengan "{suggestion}"',
+  appSpellChangedAll: '{count} sel dengan "{word}" telah diperbaiki.',
 } satisfies Record<keyof typeof zh, string>

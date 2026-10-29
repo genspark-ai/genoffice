@@ -6,7 +6,6 @@ describe('localizeSaveError', () => {
   it('maps user-reachable gateway errors to localized messages', () => {
     const localized = [
       'Charts or tables on "Sheet1" cannot shift here.',
-      'This sheet has extended (x14) data validation — editing its rules is not supported yet.',
       'Multi-select list rules are Univer-only and cannot be saved to xlsx — delete the rule before saving.',
       'This range has extended conditional formatting (x14) that cannot be modified yet',
       'This range has a data-bar extension format (x14) that cannot be modified yet',

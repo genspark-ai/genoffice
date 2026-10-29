@@ -71,6 +71,8 @@ const BINDINGS: readonly Binding[] = [
   { code: 'Digit1', chord: { mod: true }, gate: 'grid', action: FORMAT_CELLS },
   { code: 'KeyG', chord: { mod: true }, gate: 'grid', action: GO_TO },
   { code: 'F5', chord: {}, gate: 'grid', action: GO_TO },
+  // Excel's F7: the Spelling dialog (Review ▸ Proofing here)
+  { code: 'F7', chord: {}, gate: 'grid', action: command('spell-check') },
   {
     code: 'Backquote',
     chord: { mod: true },

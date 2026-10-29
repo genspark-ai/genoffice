@@ -171,10 +171,10 @@ describe('insert actions use the measured frames', () => {
     text: { lines: [{ runs: [{ text: '\u2022', isBullet: true }, { text }] }] },
   })
   const slides = [
-    { ...wide, id: 'a', nodes: [] },
-    { ...wide, id: 'b', nodes: [titled('Agenda')] },
-    { ...wide, id: 'c', nodes: [] },
-    { ...wide, id: 'd', nodes: [] },
+    { ...wide, id: 'a', partPath: 'a', nodes: [] },
+    { ...wide, id: 'b', partPath: 'b', nodes: [titled('Agenda')] },
+    { ...wide, id: 'c', partPath: 'c', nodes: [] },
+    { ...wide, id: 'd', partPath: 'd', nodes: [] },
   ]
   const layouts = [
     { path: 'L1', name: 'Title Slide', layoutType: 'title', placeholders: [] },
@@ -358,11 +358,16 @@ describe('insert actions use the measured frames', () => {
     const fresh = {
       ...wide,
       id: 'new',
+      partPath: 'new',
       nodes: [{ ...body, placeholder: 'title', sourceId: 'ph1' }, body],
     }
     const cleared = { ...fresh, nodes: [fresh.nodes[0]] }
     const after = [slides[0], fresh, slides[1], slides[2], slides[3]]
-    api.addSlideWithLayout.mockResolvedValue({ slides: after, index: 1 })
+    api.addSlideWithLayout.mockResolvedValue({
+      slides: [fresh],
+      order: after.map((s) => s!.partPath),
+      index: 1,
+    })
     api.deleteElement.mockResolvedValue(cleared)
     vi.mocked(renderSlidesToPngBase64).mockResolvedValue(['P1', 'P2'])
     let n = 0
@@ -459,15 +464,17 @@ describe('insert actions use the measured frames', () => {
   })
 
   it('insertSummaryZoom with slide 1 (a section head) chosen lands at 0 without splitting or emptying sections', async () => {
-    const fresh = { ...wide, id: 'new', nodes: [] }
+    const fresh = { ...wide, id: 'new', partPath: 'new', nodes: [] }
     api.addSlideWithLayout.mockResolvedValue({
-      slides: [slides[0], fresh, slides[1], slides[2], slides[3]],
+      slides: [fresh],
+      order: ['a', 'new', 'b', 'c', 'd'],
       index: 1,
     })
     const moved = [fresh, slides[0], slides[1], slides[2], slides[3]]
     // What the engine really reports after the move: the summary slide folded into Intro
     api.moveSlide.mockResolvedValue({
-      slides: moved,
+      order: moved.map((s) => s.partPath),
+      slides: [],
       sections: [
         { id: '{A}', name: 'Intro', slideIndices: [0, 1, 2] },
         { id: '{B}', name: 'Body', slideIndices: [3, 4] },
@@ -503,9 +510,10 @@ describe('insert actions use the measured frames', () => {
   })
 
   it('insertSummaryZoom with a mid-deck first pick keeps the surrounding sections intact', async () => {
-    const fresh = { ...wide, id: 'new', nodes: [] }
+    const fresh = { ...wide, id: 'new', partPath: 'new', nodes: [] }
     api.addSlideWithLayout.mockResolvedValue({
-      slides: [slides[0], fresh, slides[1], slides[2], slides[3]],
+      slides: [fresh],
+      order: ['a', 'new', 'b', 'c', 'd'],
       index: 1,
     })
     api.addImageBytes.mockResolvedValue({ slide: fresh, sourceId: 'sp1' })

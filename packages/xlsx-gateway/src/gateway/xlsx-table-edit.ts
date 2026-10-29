@@ -35,7 +35,7 @@ const CONTENT_TYPES_PATH = '[Content_Types].xml'
 const TABLE_NAME_RULE = /^[\p{L}_\\][\p{L}\p{N}_.\\]*$/u
 const CELL_LIKE = /^(\$?[A-Za-z]{1,3}\$?[0-9]+|[rR]\d*[cC]\d*)$/
 
-interface LocatedTable {
+export interface LocatedTable {
   readonly path: string
   readonly relId: string
   readonly xml: string
@@ -59,10 +59,13 @@ export async function applyTableEdits(
   }
 }
 
-async function sheetTableParts(
+/// The table parts related from a worksheet, in relationship order. Shared
+/// with the filter save path, which routes table-overlapping filters into
+/// the table part instead of the worksheet.
+export async function sheetTableParts(
   pkg: MutablePackage,
   worksheetPath: string,
-): Promise<LocatedTable[]> {
+): Promise<readonly LocatedTable[]> {
   const relsPath = relsPathFor(worksheetPath)
   if (!(await pkg.has(relsPath))) return []
   const relsXml = await pkg.readText(relsPath)

@@ -226,6 +226,24 @@ export function GraphView({
     drawRef.current()
   }
 
+  // The overlay covers the ribbon strip, whose `-webkit-app-region: drag`
+  // swallows the presses the header (the close button among them) needs —
+  // `no-drag` on the button alone does not win while the strip keeps its
+  // region (the popover-open row flip exists for the same reason). Mark the
+  // open graph on <html> so the row yields, and dismiss on Escape the way a
+  // full-screen view elsewhere does (RedactMenu).
+  useEffect(() => {
+    document.documentElement.classList.add('markdown-graph-open')
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.documentElement.classList.remove('markdown-graph-open')
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
   return (
     <div className="graph-overlay" role="dialog" aria-label={t('graph')}>
       <div className="graph-head">

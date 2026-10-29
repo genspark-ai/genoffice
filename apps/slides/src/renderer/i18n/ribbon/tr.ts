@@ -32,6 +32,7 @@ export const tr = {
   ribbonFileOpen: 'Aç…',
   ribbonFileSave: 'Kaydet',
   ribbonFileSaveAs: 'Farklı Kaydet…',
+  aiNameFile: 'AI ile adlandır',
   ribbonFileExportPdf: 'PDF Olarak Dışa Aktar…',
   ribbonFilePrint: 'Yazdır…',
   ribbonFileExportImages: 'Resim Olarak Dışa Aktar…',

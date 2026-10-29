@@ -311,7 +311,21 @@ export function applyRevisions(
       if (removeNode) {
         if (tr.doc.childCount > 1) tr.delete(nodePos, nodePos + node.nodeSize)
       } else {
-        tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, blockRevision: null })
+        tr.setNodeMarkup(nodePos, undefined, {
+          ...node.attrs,
+          blockRevision: null,
+          paraMarkIns: null,
+          paraMarkDel: null,
+        })
+        // The paragraph carries the same write's run marks (a redline marks
+        // both); keeping the block keeps its text, so its marks must go too —
+        // otherwise a change the editor no longer lists stays pending forever
+        const markType = state.schema.marks[revisionKind]
+        if (markType) {
+          const from = nodePos
+          const to = nodePos + node.nodeSize
+          if (tr.doc.rangeHasMark(from, to, markType)) tr.removeMark(from, to, markType)
+        }
       }
       continue
     }

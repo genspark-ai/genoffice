@@ -118,8 +118,10 @@ export const ms = {
   appChartNoRepoint: 'Carta ini tidak menyokong penetapan semula julat datanya.',
   appKeepOneSeries: 'Kekalkan sekurang-kurangnya satu siri.',
   appNoCategoriesToSwitch: 'Tiada kategori untuk ditukar.',
-  appComboNoSelectData: 'Menukar sumber data carta kombo belum disokong.',
+  appSelectDataUnsupported: 'Menukar sumber data jenis carta ini tidak disokong.',
   appSeriesName: 'Nama Siri',
+  appSeriesType: 'Jenis siri',
+  appSecondaryAxis: 'Paksi sekunder',
   appValuesRange: 'Julat Nilai',
   appCategoriesRange: 'Julat Kategori',
   appKeepUnchanged: 'Kekalkan tanpa perubahan',
@@ -200,6 +202,12 @@ export const ms = {
   appInvalidGroupField: 'Medan pengumpulan tidak sah.',
   appInvalidPageField: 'Medan penapis laporan tidak sah.',
   appPivotPageItemMissing: 'Item penapis laporan "{item}" bukan ahli medan "{label}".',
+  appInvalidPivotBaseField:
+    'Medan asas "Tunjuk nilai sebagai" mesti berada dalam baris atau lajur.',
+  appPivotBaseFieldMissing: 'Mod "Tunjuk nilai sebagai" bagi medan nilai memerlukan medan asas.',
+  appPivotBaseFieldNotAxis:
+    'Medan asas "{label}" mesti berada dalam baris atau lajur jadual pangsi.',
+  appPivotBaseItemMissing: 'Item asas "{item}" bukan ahli medan "{label}".',
   appInvalidLabelFilterField: 'Medan penapis label tidak sah.',
   appInvalidValueFieldIndex: 'Indeks medan nilai {index} tidak sah.',
   appInvalidValueField: 'Medan nilai tidak sah.',
@@ -336,8 +344,7 @@ export const ms = {
   appPivotSheetNoMove: 'Helaian ini mengandungi Jadual Pangsi — pengalihan julat belum disokong.',
   appMergeOverTable:
     'Pilihan bertindih dengan jadual Excel — mencantumkan sel di dalam jadual belum disokong.',
-  appTableFilterNoEdit:
-    'Penapis helaian ini milik jadual Excel — pengeditannya belum boleh disimpan.',
+  appFilterToggleFailed: 'Penapis tidak digunakan — pilih dahulu julat yang mengandungi data anda.',
   appAutofillStreaming: 'AutoIsi ke kawasan yang masih distrim belum dibenarkan.',
   appDvNeedsIndexed:
     'Mengedit pengesahihan data memerlukan helaian ini diindeks sepenuhnya dahulu — cuba lagi sebentar.',
@@ -576,8 +583,6 @@ export const ms = {
   appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
   appCfRuleUnsaveable:
     'Peraturan pemformatan bersyarat ini tidak boleh disimpan ke xlsx — gunakan jenis peraturan lain.',
-  appSaveErrX14Dv:
-    'Helaian ini mempunyai pengesahihan data lanjutan (x14); pengeditan peraturan pengesahihannya belum disokong.',
   appSaveErrMultiSelectList:
     'Pengesahihan senarai berbilang pilihan tidak boleh disimpan ke xlsx — padamkan peraturan itu sebelum menyimpan.',
   appSaveErrX14Cf:
@@ -704,6 +709,7 @@ export const ms = {
   appExportPdfTitle: 'Eksport sebagai PDF',
   appSaveTitle: 'Simpan (⌘S)',
   appSaveAs: 'Simpan Sebagai',
+  aiNameFile: 'Namakan dengan AI…',
   appUndo: 'Buat Asal',
   appRedo: 'Buat Semula',
   appUnsavedEditOne: '● {count} suntingan belum disimpan',
@@ -1203,6 +1209,7 @@ export const ms = {
   appGroupForecast: 'Ramalan',
   appWhatIfAnalysis: 'Analisis Bagaimana-Jika',
   appGoalSeek: 'Cari Matlamat',
+  appDataTable: 'Jadual Data',
   appWhatIfTitle: 'Cari input untuk nilai sasaran',
   appGoalSeekNeedsFormula: 'Sel mesti mengandungi formula.',
   appGoalSeekByCellNotNumber: 'Sel yang diubah mesti mengandungi nombor atau kosong.',
@@ -1561,4 +1568,29 @@ export const ms = {
   appVisualFlipV: 'Balikkan Menegak',
   appVisualFlipH: 'Balikkan Mendatar',
   appCtxPasteVisual: 'Tampal Gambar atau Bentuk',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ejaan',
+  appSpellBtnDetail: 'Semak teks helaian (F7)',
+  appSpellToggle: 'Semak ejaan',
+  appSpellToggleTip:
+    'Mengaktifkan semakan ejaan (F7 dan butang Semak Semula); apabila dimatikan, kotak komen tidak lagi menampilkan garis bergelombang',
+  appSpellOn: 'Semakan ejaan diaktifkan.',
+  appSpellOff: 'Semakan ejaan dimatikan. Aktifkannya pada Semak Semula ▸ Semakan.',
+  appSpellRecheck: 'Semak semula',
+  appSpellNone: 'Tiada kesalahan ejaan yang disyaki ditemui.',
+  appSpellFindings: '{count} kesalahan disyaki. Klik baris untuk ke lokasinya.',
+  appSpellTruncated: 'Terlalu banyak sel teks; hanya bahagian awal disemak.',
+  appSpellColWord: 'Disyaki',
+  appSpellIgnore: 'Abaikan',
+  appSpellIgnoreAll: 'Abaikan semua',
+  appSpellLearn: 'Tambah ke kamus',
+  appSpellNoSuggestions: 'Tiada cadangan',
+  appSpellIgnoredAll: '"{word}" tidak akan ditandakan lagi dalam sesi ini.',
+  appSpellLearned: '"{word}" ditambah ke kamus.',
+  appSpellChanged: '{address} dibetulkan.',
+  appSpellChangeFailed: 'Gagal membetulkan {address}.',
+  appSpellUnavailable: 'Semakan ejaan tidak tersedia dalam tetingkap ini.',
+  appSpellReplaceAll: 'Ganti semua dengan "{suggestion}"',
+  appSpellChangedAll: '{count} sel dengan "{word}" telah dibetulkan.',
 } satisfies Record<keyof typeof zh, string>

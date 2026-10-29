@@ -371,6 +371,27 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'apikey-...',
   },
   {
+    id: 'runcrate',
+    label: 'Runcrate',
+    // Lab-namespaced ids exactly as GET api.runcrate.ai/v1/models lists them
+    // (2026-10-25, public endpoint, no key needed); the rest of the catalog
+    // works as-is when typed in. Chat, streaming and tool calls are
+    // live-verified; image support follows each id's catalog input_modalities,
+    // and the text-only ids (GLM-5.3, Qwen3.8 Flash, gpt-oss 120B) are covered
+    // by modelLacksVision().
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4.1-Flash-1017',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.6',
+      'Qwen/Qwen3.8-Flash',
+      'openai/gpt-oss-120b',
+    ],
+    defaultModel: 'deepseek-ai/DeepSeek-V4.1-Flash',
+    keyPlaceholder: 'rc_live_...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

@@ -288,6 +288,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill 未安装',
     intgStateInstalled: '已安装 skill {v} · 下次对话即可使用',
+    intgLegacyTitle: '旧版 skill 副本',
+    intgLegacyDesc:
+      'GenOffice 以前会把副本写进每个工具自己的目录。现在还有 {n} 份留在那里:工具仍在读取它们,所以永远拿不到当前版本。',
+    intgLegacyClean: '删除旧副本',
+    intgLegacyCleaned: '已删除 {n} 份旧副本,{k} 份被手动改过的保留未动。',
+    intgLegacyFailed: '删除旧副本失败:{msg}',
     intgOtherToggle: '没有列出我的助手',
     intgOtherDesc: '以下三种方式任选一种即可。装的是同一份 skill，不需要重复操作。',
     intgOtherFolderTitle: '任何能读取 SKILL.md 目录的助手',
@@ -802,6 +808,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill not installed',
     intgStateInstalled: 'Skill {v} installed · ready in your next chat',
+    intgLegacyTitle: 'Older skill copies',
+    intgLegacyDesc:
+      'GenOffice used to write a copy into the folder of each tool. {n} of them are still there: the tool keeps reading them, so they never get the current skill.',
+    intgLegacyClean: 'Remove old copies',
+    intgLegacyCleaned: 'Removed {n} old copies, {k} edited by hand left in place.',
+    intgLegacyFailed: 'Could not remove the old copies: {msg}',
     intgOtherToggle: 'My assistant is not listed',
     intgOtherDesc:
       'Pick any one of these three ways. They all install the same skill, so there is no need to do more than one.',
@@ -1326,6 +1338,12 @@ export const strings = {
     intgSkillVersion: 'kỹ năng {v}',
     intgStateMissing: 'Chưa cài đặt kỹ năng',
     intgStateInstalled: 'Đã cài đặt kỹ năng {v} · sẵn sàng cho cuộc trò chuyện tiếp theo của bạn',
+    intgLegacyTitle: 'Bản sao skill cũ',
+    intgLegacyDesc:
+      'Trước đây GenOffice ghi một bản sao vào thư mục riêng của từng công cụ. Còn {n} bản vẫn nằm đó: công cụ vẫn đọc chúng, nên chúng không bao giờ có bản skill hiện hành.',
+    intgLegacyClean: 'Xóa bản sao cũ',
+    intgLegacyCleaned: 'Đã xóa {n} bản sao cũ, giữ lại {k} bản đã sửa tay.',
+    intgLegacyFailed: 'Không xóa được bản sao cũ: {msg}',
     intgOtherToggle: 'Trợ lý của tôi không có trong danh sách',
     intgOtherDesc:
       'Chọn bất kỳ cách nào trong ba cách này. Tất cả đều cài đặt cùng một kỹ năng, vì vậy không cần làm nhiều hơn một cách.',
@@ -1854,6 +1872,12 @@ export const strings = {
     intgSkillVersion: 'beceri {v}',
     intgStateMissing: 'Beceri yüklü değil',
     intgStateInstalled: 'Beceri {v} yüklü · bir sonraki sohbetinizde hazır',
+    intgLegacyTitle: 'Eski skill kopyaları',
+    intgLegacyDesc:
+      'GenOffice eskiden her aracın kendi klasörüne bir kopya yazıyordu. Hâlâ orada {n} tane var: araç bunları okumaya devam ediyor, bu yüzden hiçbir zaman güncel skilli göremiyor.',
+    intgLegacyClean: 'Eski kopyaları kaldır',
+    intgLegacyCleaned: '{n} eski kopya kaldırıldı, elle düzenlenen {k} tanesi yerinde bırakıldı.',
+    intgLegacyFailed: 'Eski kopyalar kaldırılamadı: {msg}',
     intgOtherToggle: 'Asistanım listede yok',
     intgOtherDesc:
       'Bu üç yoldan herhangi birini seçin. Hepsi aynı beceriyi yükler, bu yüzden birden fazlasını yapmanıza gerek yok.',
@@ -2396,6 +2420,13 @@ export const strings = {
     intgSkillVersion: 'スキル {v}',
     intgStateMissing: 'スキル未インストール',
     intgStateInstalled: 'スキル {v} をインストール済み · 次のチャットから使えます',
+    intgLegacyTitle: '古い skill のコピー',
+    intgLegacyDesc:
+      'GenOffice はかつて各ツールのフォルダーごとにコピーを書き込んでいました。まだ {n} 個残っています:ツールはそれらを読み続けるため、現在の skill に更新されません。',
+    intgLegacyClean: '古いコピーを削除',
+    intgLegacyCleaned:
+      '古いコピーを {n} 個削除しました。手動で編集した {k} 個はそのまま残しました。',
+    intgLegacyFailed: '古いコピーを削除できませんでした: {msg}',
     intgOtherToggle: '使っているアシスタントが一覧にない',
     intgOtherDesc:
       '次の 3 つの方法からどれか 1 つを選んでください。どれも同じスキルをインストールするので、複数行う必要はありません。',
@@ -2929,6 +2960,12 @@ export const strings = {
     intgSkillVersion: '스킬 {v}',
     intgStateMissing: '스킬 미설치',
     intgStateInstalled: '스킬 {v} 설치됨 · 다음 대화부터 사용 가능',
+    intgLegacyTitle: '오래된 skill 사본',
+    intgLegacyDesc:
+      'GenOffice는 예전에 각 도구 폴더마다 사본을 썼습니다. 아직 {n}개가 남아 있습니다: 도구가 계속 읽기 때문에 현재 skill로 갱신되지 않습니다.',
+    intgLegacyClean: '오래된 사본 삭제',
+    intgLegacyCleaned: '오래된 사본 {n}개를 삭제했고, 직접 수정한 {k}개는 그대로 두었습니다.',
+    intgLegacyFailed: '오래된 사본을 삭제하지 못했습니다: {msg}',
     intgOtherToggle: '내 어시스턴트가 목록에 없음',
     intgOtherDesc:
       '다음 세 가지 방법 중 하나만 선택하세요. 모두 같은 스킬을 설치하므로 여러 번 할 필요가 없습니다.',
@@ -3469,6 +3506,13 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill non installé',
     intgStateInstalled: 'Skill {v} installé · prêt pour votre prochaine discussion',
+    intgLegacyTitle: 'Anciennes copies du skill',
+    intgLegacyDesc:
+      "GenOffice écrivait autrefois une copie dans le dossier de chaque outil. Il en reste {n} : l'outil continue de les lire, donc elles ne reçoivent jamais le skill actuel.",
+    intgLegacyClean: 'Supprimer les anciennes copies',
+    intgLegacyCleaned:
+      '{n} anciennes copies supprimées, {k} modifiées à la main laissées en place.',
+    intgLegacyFailed: 'Impossible de supprimer les anciennes copies : {msg}',
     intgOtherToggle: "Mon assistant n'est pas dans la liste",
     intgOtherDesc:
       "Choisissez une seule de ces trois méthodes. Elles installent toutes le même skill : inutile d'en faire plusieurs.",
@@ -4019,6 +4063,12 @@ export const strings = {
     intgSkillVersion: 'Skill {v}',
     intgStateMissing: 'Skill nicht installiert',
     intgStateInstalled: 'Skill {v} installiert · ab dem nächsten Chat bereit',
+    intgLegacyTitle: 'Alte Skill-Kopien',
+    intgLegacyDesc:
+      'GenOffice schrieb früher eine Kopie in den Ordner jedes Werkzeugs. {n} davon liegen noch dort: Das Werkzeug liest sie weiter, sie bekommen also nie den aktuellen Skill.',
+    intgLegacyClean: 'Alte Kopien entfernen',
+    intgLegacyCleaned: '{n} alte Kopien entfernt, {k} von Hand bearbeitete stehen gelassen.',
+    intgLegacyFailed: 'Alte Kopien konnten nicht entfernt werden: {msg}',
     intgOtherToggle: 'Mein Assistent ist nicht aufgeführt',
     intgOtherDesc:
       'Wählen Sie genau einen dieser drei Wege. Alle installieren denselben Skill, mehr als einer ist nicht nötig.',
@@ -4567,6 +4617,13 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill no instalado',
     intgStateInstalled: 'Skill {v} instalado · listo en tu próximo chat',
+    intgLegacyTitle: 'Copias antiguas de la skill',
+    intgLegacyDesc:
+      'GenOffice escribía antes una copia en la carpeta de cada herramienta. Quedan {n}: la herramienta sigue leyéndolas, así que nunca reciben la skill actual.',
+    intgLegacyClean: 'Quitar las copias antiguas',
+    intgLegacyCleaned:
+      'Se quitaron {n} copias antiguas; {k} editadas a mano se dejaron en su sitio.',
+    intgLegacyFailed: 'No se pudieron quitar las copias antiguas: {msg}',
     intgOtherToggle: 'Mi asistente no aparece',
     intgOtherDesc:
       'Elige solo una de estas tres formas. Todas instalan el mismo skill, así que no hace falta hacer más de una.',
@@ -5100,6 +5157,12 @@ export const strings = {
     intgSkillVersion: 'สกิล {v}',
     intgStateMissing: 'ยังไม่ติดตั้งสกิล',
     intgStateInstalled: 'ติดตั้งสกิล {v} แล้ว · พร้อมใช้ในแชตถัดไป',
+    intgLegacyTitle: 'สำเนา skill เก่า',
+    intgLegacyDesc:
+      'เมื่อก่อน GenOffice เขียนสำเนาไว้ในโฟลเดอร์ของแต่ละเครื่องมือ ตอนนี้ยังเหลือ {n} ชุด: เครื่องมือยังอ่านไฟล์เหล่านั้น จึงไม่เคยได้ skill ปัจจุบัน',
+    intgLegacyClean: 'ลบสำเนาเก่า',
+    intgLegacyCleaned: 'ลบสำเนาเก่าแล้ว {n} ชุด เก็บไว้ {k} ชุดที่แก้ไขด้วยมือ',
+    intgLegacyFailed: 'ลบสำเนาเก่าไม่สำเร็จ: {msg}',
     intgOtherToggle: 'ไม่พบผู้ช่วยของฉันในรายการ',
     intgOtherDesc:
       'เลือกเพียงวิธีใดวิธีหนึ่งจากสามวิธีนี้ ทุกวิธีติดตั้งสกิลเดียวกัน จึงไม่ต้องทำมากกว่าหนึ่งวิธี',
@@ -5632,6 +5695,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill belum terpasang',
     intgStateInstalled: 'Skill {v} terpasang · siap di obrolan berikutnya',
+    intgLegacyTitle: 'Salinan skill lama',
+    intgLegacyDesc:
+      'Dulu GenOffice menulis satu salinan ke folder tiap alat. Masih ada {n} yang tertinggal: alat itu tetap membacanya, jadi tidak pernah dapat skill yang sekarang.',
+    intgLegacyClean: 'Hapus salinan lama',
+    intgLegacyCleaned: '{n} salinan lama dihapus, {k} yang diedit manual tetap dibiarkan.',
+    intgLegacyFailed: 'Gagal menghapus salinan lama: {msg}',
     intgOtherToggle: 'Asisten saya tidak ada di daftar',
     intgOtherDesc:
       'Pilih salah satu saja dari tiga cara ini. Semuanya memasang skill yang sama, jadi tidak perlu lebih dari satu.',
@@ -6168,6 +6237,12 @@ export const strings = {
     intgSkillVersion: 'скилл {v}',
     intgStateMissing: 'Скилл не установлен',
     intgStateInstalled: 'Скилл {v} установлен · готов к следующему чату',
+    intgLegacyTitle: 'Старые копии skill',
+    intgLegacyDesc:
+      'Раньше GenOffice записывал копию в папку каждого инструмента. Их ещё осталось {n}: инструмент продолжает их читать, поэтому они никогда не получают текущий skill.',
+    intgLegacyClean: 'Удалить старые копии',
+    intgLegacyCleaned: 'Удалено старых копий: {n}; отредактированных вручную оставлено: {k}.',
+    intgLegacyFailed: 'Не удалось удалить старые копии: {msg}',
     intgOtherToggle: 'Моего ассистента нет в списке',
     intgOtherDesc:
       'Выберите только один из трёх способов. Все они устанавливают один и тот же скилл, повторять не нужно.',
@@ -6703,6 +6778,12 @@ export const strings = {
     intgSkillVersion: 'المهارة {v}',
     intgStateMissing: 'المهارة غير مثبّتة',
     intgStateInstalled: 'المهارة {v} مثبّتة · جاهزة في محادثتك التالية',
+    intgLegacyTitle: 'نسخ skill القديمة',
+    intgLegacyDesc:
+      'كان GenOffice يكتب نسخة في مجلد كل أداة. ما زالت هناك {n}: الأداة ما زالت تقرأها، فلا تصل إليها نسخة skill الحالية أبدًا.',
+    intgLegacyClean: 'إزالة النسخ القديمة',
+    intgLegacyCleaned: 'أُزيلت {n} نسخة قديمة، وأُبقيت {k} نسخة عدّلها المستخدم يدويًا.',
+    intgLegacyFailed: 'تعذّرت إزالة النسخ القديمة: {msg}',
     intgOtherToggle: 'مساعدي غير موجود في القائمة',
     intgOtherDesc:
       'اختر طريقة واحدة فقط من هذه الطرق الثلاث. جميعها تثبّت المهارة نفسها، فلا حاجة لأكثر من واحدة.',
@@ -7231,6 +7312,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill não instalado',
     intgStateInstalled: 'Skill {v} instalado · pronto no seu próximo chat',
+    intgLegacyTitle: 'Cópias antigas do skill',
+    intgLegacyDesc:
+      'O GenOffice antes gravava uma cópia na pasta de cada ferramenta. Ainda há {n} lá: a ferramenta continua a lê-las, por isso nunca recebem o skill atual.',
+    intgLegacyClean: 'Remover cópias antigas',
+    intgLegacyCleaned: '{n} cópias antigas removidas, {k} editadas à mão foram mantidas.',
+    intgLegacyFailed: 'Não foi possível remover as cópias antigas: {msg}',
     intgOtherToggle: 'Meu assistente não está na lista',
     intgOtherDesc:
       'Escolha apenas uma destas três formas. Todas instalam o mesmo skill, então não é preciso fazer mais de uma.',
@@ -7765,6 +7852,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill non installato',
     intgStateInstalled: 'Skill {v} installato · pronto nella prossima chat',
+    intgLegacyTitle: 'Copie obsolete dello skill',
+    intgLegacyDesc:
+      'Prima GenOffice scriveva una copia nella cartella di ogni strumento. Ne restano {n}: lo strumento continua a leggerle, quindi non ricevono mai lo skill attuale.',
+    intgLegacyClean: 'Rimuovi le copie obsolete',
+    intgLegacyCleaned: '{n} copie obsolete rimosse, {k} modificate a mano lasciate al loro posto.',
+    intgLegacyFailed: 'Impossibile rimuovere le copie obsolete: {msg}',
     intgOtherToggle: 'Il mio assistente non è in elenco',
     intgOtherDesc:
       'Scegli una sola di queste tre strade. Installano tutte lo stesso skill, quindi non serve farne più di una.',
@@ -8297,6 +8390,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill niezainstalowany',
     intgStateInstalled: 'Skill {v} zainstalowany · gotowy w następnym czacie',
+    intgLegacyTitle: 'Stare kopie wtyczki',
+    intgLegacyDesc:
+      'GenOffice wcześniej zapisywał kopię w folderze każdego narzędzia. Wciąż jest tam {n}: narzędzie czyta je dalej, więc nigdy nie dostają aktualnej wtyczki.',
+    intgLegacyClean: 'Usuń stare kopie',
+    intgLegacyCleaned: 'Usunięto {n} starych kopii, {k} edytowanych ręcznie zostawiono.',
+    intgLegacyFailed: 'Nie udało się usunąć starych kopii: {msg}',
     intgOtherToggle: 'Mojego asystenta nie ma na liście',
     intgOtherDesc:
       'Wybierz tylko jeden z tych trzech sposobów. Wszystkie instalują ten sam skill, więc nie trzeba robić więcej niż jednego.',
@@ -8779,6 +8878,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill není nainstalován',
     intgStateInstalled: 'Skill {v} nainstalován · připraven v příštím chatu',
+    intgLegacyTitle: 'Staré kopie skillu',
+    intgLegacyDesc:
+      'GenOffice dříve zapisoval kopii do složky každého nástroje. Pořád jich tam je {n}: nástroj je stále čte, takže se k nim nikdy nedostane aktuální skill.',
+    intgLegacyClean: 'Odebrat staré kopie',
+    intgLegacyCleaned: 'Odebráno {n} starých kopií, {k} ručně upravených ponecháno.',
+    intgLegacyFailed: 'Staré kopie se nepodařilo odebrat: {msg}',
     intgOtherToggle: 'Můj asistent v seznamu není',
     intgOtherDesc:
       'Zvolte pouze jeden z těchto tří způsobů. Všechny instalují stejný skill, takže není třeba dělat více než jeden.',
@@ -9352,6 +9457,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill niet geïnstalleerd',
     intgStateInstalled: 'Skill {v} geïnstalleerd · klaar in uw volgende chat',
+    intgLegacyTitle: 'Oude skillkopieën',
+    intgLegacyDesc:
+      'GenOffice schreef vroeger een kopie in de map van elke tool. Er staan er nog {n}: de tool leest ze nog, dus ze krijgen nooit de huidige skill.',
+    intgLegacyClean: 'Oude kopieën verwijderen',
+    intgLegacyCleaned: '{n} oude kopieën verwijderd, {k} met de hand bewerkte laten we staan.',
+    intgLegacyFailed: 'Kon de oude kopieën niet verwijderen: {msg}',
     intgOtherToggle: 'Mijn assistent staat er niet bij',
     intgOtherDesc:
       'Kies één van deze drie manieren. Ze installeren allemaal dezelfde skill, dus meer dan één is niet nodig.',
@@ -9883,6 +9994,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'Skill belum dipasang',
     intgStateInstalled: 'Skill {v} dipasang · sedia dalam sembang seterusnya',
+    intgLegacyTitle: 'Salinan skill lama',
+    intgLegacyDesc:
+      'GenOffice dahulu menulis salinan ke dalam folder setiap alatan. Masih ada {n} di sana: alatan itu masih membacanya, jadi ia tidak pernah menerima skill semasa.',
+    intgLegacyClean: 'Buang salinan lama',
+    intgLegacyCleaned: '{n} salinan lama dibuang, {k} yang disunting secara manual dikekalkan.',
+    intgLegacyFailed: 'Gagal membuang salinan lama: {msg}',
     intgOtherToggle: 'Pembantu saya tiada dalam senarai',
     intgOtherDesc:
       'Pilih satu sahaja daripada tiga cara ini. Semuanya memasang skill yang sama, jadi tidak perlu lebih daripada satu.',
@@ -10409,6 +10526,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'ה-skill לא מותקן',
     intgStateInstalled: 'skill {v} מותקן · מוכן בשיחה הבאה',
+    intgLegacyTitle: 'עותקי skill ישנים',
+    intgLegacyDesc:
+      'GenOffice כתב בעבר עותק בתיקייה של כל כלי. עדיין נשארו שם {n}: הכלי ממשיך לקרוא אותם, ולכן הם לעולם לא מקבלים את ה-skill הנוכחי.',
+    intgLegacyClean: 'הסר עותקים ישנים',
+    intgLegacyCleaned: 'הוסרו {n} עותקים ישנים, {k} שעורכו ידנית נותרו במקומם.',
+    intgLegacyFailed: 'לא ניתן להסיר את העותקים הישנים: {msg}',
     intgOtherToggle: 'העוזר שלי לא מופיע ברשימה',
     intgOtherDesc:
       'בחרו רק דרך אחת מבין השלוש. כולן מתקינות את אותו skill, ולכן אין צורך ביותר מאחת.',
@@ -10928,6 +11051,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill इंस्टॉल नहीं है',
     intgStateInstalled: 'skill {v} इंस्टॉल हो गया · अगली चैट में तैयार',
+    intgLegacyTitle: 'पुरानी skill प्रतियाँ',
+    intgLegacyDesc:
+      'GenOffice पहले हर टूल के अपने फ़ोल्डर में एक प्रति लिखता था। अभी भी {n} वहाँ हैं: टूल उन्हें पढ़ता रहता है, इसलिए उन्हें कभी मौजूदा skill नहीं मिलती।',
+    intgLegacyClean: 'पुरानी प्रतियाँ हटाएँ',
+    intgLegacyCleaned: '{n} पुरानी प्रतियाँ हटा दी गईं, {k} हाथ से बदली गई प्रतियाँ बनी रखी गईं।',
+    intgLegacyFailed: 'पुरानी प्रतियाँ नहीं हटाई जा सकीं: {msg}',
     intgOtherToggle: 'मेरा असिस्टेंट सूची में नहीं है',
     intgOtherDesc:
       'इन तीन तरीकों में से कोई एक ही चुनें। सभी एक ही skill इंस्टॉल करते हैं, इसलिए एक से ज़्यादा की ज़रूरत नहीं।',
@@ -11442,6 +11571,12 @@ export const strings = {
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill 未安裝',
     intgStateInstalled: '已安裝 skill {v} · 下次對話即可使用',
+    intgLegacyTitle: '舊版 skill 副本',
+    intgLegacyDesc:
+      'GenOffice 以前會把副本寫進每個工具自己的目錄。現在還有 {n} 份留在那裡:工具仍在讀取它們,所以永遠拿不到目前版本。',
+    intgLegacyClean: '刪除舊副本',
+    intgLegacyCleaned: '已刪除 {n} 份舊副本,{k} 份被手動改過的保留不動。',
+    intgLegacyFailed: '刪除舊副本失敗:{msg}',
     intgOtherToggle: '沒有列出我的助理',
     intgOtherDesc: '以下三種方式任選一種即可。安裝的是同一份 skill，不需要重複操作。',
     intgOtherFolderTitle: '任何能讀取 SKILL.md 資料夾的助理',

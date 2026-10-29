@@ -46,6 +46,14 @@ interface ApplyOpsInput {
   ops: unknown[]
   dryRun?: boolean
 }
+interface InsertPictureInput {
+  url: string
+  afterBlockIndex?: number
+  width?: number | string
+  height?: number | string
+  float?: unknown
+  altText?: string
+}
 
 /** mirror of AiPanel's clearAiHighlights: auto-accept the external edit, keeping undo history */
 function clearAiChangedFlags(editor: Editor): void {
@@ -144,6 +152,21 @@ async function runCommand(
       if (outcome.isError) throw new Error(mcpErrorText(outcome.output))
       if (input.dryRun !== true) clearAiChangedFlags(editor)
       return { summary: outcome.summary, output: outcome.output, mutated: outcome.mutated }
+    }
+
+    case 'insert_picture': {
+      const input = (payload ?? {}) as InsertPictureInput
+      // The shared executor validates the url scheme, the block-index range, the
+      // size fields and the float spec, and fetches the image exactly like the
+      // built-in agent's insert_picture (its stale-index guard applies too).
+      const outcome = await executeTool(
+        editor,
+        { id: 'mcp', name: 'insert_picture', input: { ...input } },
+        numIdsFor(ctx),
+      )
+      if (outcome.isError) throw new Error(mcpErrorText(outcome.output))
+      clearAiChangedFlags(editor)
+      return { summary: outcome.summary, mutated: outcome.mutated }
     }
 
     case 'read_document': {

@@ -4,6 +4,12 @@
 
 use super::*;
 
+/// The worksheet extension carrying x14 data validations. Excel parks
+/// cross-sheet rules in an extension of its own; the x14 conditional
+/// formatting extension ({78C0D931-…}) is a different one, and Excel
+/// ignores validation rules placed there.
+pub(crate) const X14_DV_EXT_URI: &str = "{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}";
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn index_worksheet(
     workbook_path: &Path,
@@ -73,6 +79,17 @@ pub(crate) fn index_worksheet(
     let mut protected_ranges: Vec<ProtectedRangeInfo> = Vec::new();
     let mut dv_rule: Option<DataValidationRule> = None;
     let mut in_dv_formula = false;
+    // x14:dataValidation delivers its sqref as an <xm:sqref> child after the
+    // formulas (the legacy form carries it as an attribute); these track
+    // that pending child while one is open.
+    let mut dv_x14 = false;
+    let mut in_dv_sqref = false;
+    let mut dv_sqref_text = String::new();
+    // The extension the reader is inside. The x14 form of a validation rule
+    // only counts inside Excel's x14 data-validation extension; the same
+    // element in another extension (the conditional-formatting one) is a
+    // rule Excel ignores.
+    let mut in_x14_dv_ext = false;
     let mut data_validations: Vec<DataValidationRule> = Vec::new();
     let mut page_print = PagePrintInfo::default();
     // customSheetView carries its own print elements; only sheet-level ones
@@ -250,6 +267,8 @@ pub(crate) fn index_worksheet(
                     {
                         formula.push_str(&decoded);
                     }
+                } else if in_dv_sqref {
+                    dv_sqref_text.push_str(&decoded);
                 }
             }
             Event::GeneralRef(reference) => {
@@ -279,6 +298,8 @@ pub(crate) fn index_worksheet(
                     {
                         formula.push_str(&decoded);
                     }
+                } else if in_dv_sqref {
+                    dv_sqref_text.push_str(&decoded);
                 }
             }
             Event::End(element) if element.local_name().as_ref() == b"f" => {
@@ -630,10 +651,34 @@ pub(crate) fn index_worksheet(
                     range.has_password = true;
                 }
             }
+            Event::Start(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = attribute_value(&reader, &element, b"uri")?
+                    .is_some_and(|uri| uri.eq_ignore_ascii_case(X14_DV_EXT_URI));
+            }
+            Event::Empty(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = false;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"ext" => {
+                in_x14_dv_ext = false;
+            }
             Event::Start(element) if element.local_name().as_ref() == b"dataValidation" => {
-                dv_rule = parse_dv_rule(&reader, &element)?;
+                // Legacy rules carry sqref as an attribute; the x14
+                // extension form has none (it arrives as an <xm:sqref>
+                // child), so the attribute's presence selects the shape.
+                if attribute_value(&reader, &element, b"sqref")?.is_some() {
+                    dv_x14 = false;
+                    dv_rule = parse_dv_rule(&reader, &element)?;
+                } else if in_x14_dv_ext {
+                    dv_x14 = true;
+                    dv_rule = Some(x14_dv_rule(&reader, &element)?);
+                }
+                // An x14-shaped rule outside the data-validation extension is
+                // not a rule: Excel ignores it there, so it is not read as
+                // one either.
             }
             Event::Empty(element) if element.local_name().as_ref() == b"dataValidation" => {
+                // A self-closing x14 form has no room for its <xm:sqref>
+                // child, so only the legacy shape is usable here.
                 if let Some(rule) = parse_dv_rule(&reader, &element)? {
                     data_validations.push(rule);
                 }
@@ -651,10 +696,32 @@ pub(crate) fn index_worksheet(
             {
                 in_dv_formula = false;
             }
+            Event::Start(element)
+                if element.local_name().as_ref() == b"sqref" && dv_x14 && dv_rule.is_some() =>
+            {
+                in_dv_sqref = true;
+                dv_sqref_text.clear();
+            }
+            Event::End(element)
+                if element.local_name().as_ref() == b"sqref" && dv_x14 && dv_rule.is_some() =>
+            {
+                in_dv_sqref = false;
+                if let Some(rule) = &mut dv_rule {
+                    rule.ranges = dv_sqref_text
+                        .split_whitespace()
+                        .filter_map(parse_area_reference)
+                        .collect();
+                }
+            }
             Event::End(element) if element.local_name().as_ref() == b"dataValidation" => {
                 if let Some(rule) = dv_rule.take() {
-                    data_validations.push(rule);
+                    // An x14 entry without a usable <xm:sqref> names no
+                    // cells; drop it like an unparsable legacy one.
+                    if !rule.ranges.is_empty() {
+                        data_validations.push(rule);
+                    }
                 }
+                dv_x14 = false;
             }
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"conditionalFormatting" =>
@@ -1008,11 +1075,28 @@ pub(crate) fn parse_dv_rule<R: std::io::BufRead>(
     if ranges.is_empty() {
         return Ok(None);
     }
+    Ok(Some(dv_rule_attributes(reader, element, ranges)?))
+}
+
+/// An x14:dataValidation open tag: same attributes as the legacy form, with
+/// the sqref left for the <xm:sqref> child that closes the element.
+fn x14_dv_rule<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+) -> Result<DataValidationRule, SidecarError> {
+    dv_rule_attributes(reader, element, Vec::new())
+}
+
+fn dv_rule_attributes<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+    ranges: Vec<MergedRange>,
+) -> Result<DataValidationRule, SidecarError> {
     let flag = |name: &[u8]| -> Result<bool, SidecarError> {
         Ok(attribute_value(reader, element, name)?
             .is_some_and(|value| value == "1" || value == "true"))
     };
-    Ok(Some(DataValidationRule {
+    Ok(DataValidationRule {
         ranges,
         rule_type: attribute_value(reader, element, b"type")?.unwrap_or_else(|| "none".into()),
         operator: attribute_value(reader, element, b"operator")?,
@@ -1026,7 +1110,7 @@ pub(crate) fn parse_dv_rule<R: std::io::BufRead>(
         error: attribute_value(reader, element, b"error")?,
         prompt_title: attribute_value(reader, element, b"promptTitle")?,
         prompt: attribute_value(reader, element, b"prompt")?,
-    }))
+    })
 }
 
 pub(crate) fn parse_cf_rule<R: std::io::BufRead>(

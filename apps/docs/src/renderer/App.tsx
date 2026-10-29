@@ -339,6 +339,7 @@ import { showToast } from './components/toast-bus'
 import { setTableAutoFit, toggleRepeatHeaderRows } from './editor/table-properties'
 import { distributeSelectedColumns } from './editor/table-sizing'
 import {
+  deleteTableColumn,
   distributeRowsEvenly,
   editableOrToast,
   ensureCaretInTable,
@@ -346,7 +347,7 @@ import {
   selectTablePart,
   splitTableAtSelection,
 } from './editor/table-ops'
-import { deleteColumn, deleteRow, deleteTable, mergeCells } from '@tiptap/pm/tables'
+import { deleteRow, deleteTable, mergeCells } from '@tiptap/pm/tables'
 import { PromptModal } from './components/PromptModal'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { WordCountDialog, type DocStats } from './components/WordCountDialog'
@@ -413,6 +414,7 @@ import {
   newFile as newFileImpl,
   printDoc as printDocImpl,
   save as saveImpl,
+  suggestedSaveAsName,
   writeRecoveryCopy as writeRecoveryCopyImpl,
   type FileActionContext,
   type PendingPdfExport,
@@ -758,7 +760,7 @@ const TABLE_MENU_COMMANDS: Partial<Record<MenuCommand, (widthPx: number) => Comm
   'table-insert-cols-left': (w) => insertRowsOrColumns(1, 'left', w),
   'table-insert-cols-right': (w) => insertRowsOrColumns(1, 'right', w),
   'table-delete-table': () => deleteTable,
-  'table-delete-columns': () => deleteColumn,
+  'table-delete-columns': () => deleteTableColumn,
   'table-delete-rows': () => deleteRow,
   'table-select-table': () => selectTablePart('table'),
   'table-select-column': () => selectTablePart('column'),
@@ -2370,6 +2372,19 @@ export function App() {
     },
     [],
   )
+
+  /**
+   * The reader asked the model for a name on a document that already has one.
+   *
+   * The stem is a proposal for the Save As dialog, never a rename: the dialog
+   * is where the reader confirms, and moving a file that may be open elsewhere
+   * or synced is not ours to do quietly.
+   */
+  const nameWithAi = useCallback(async () => {
+    const proposed = await suggestedSaveAsName(fileCtxRef.current)
+    if (!proposed) return
+    await saveImpl(fileCtxRef.current, true, false, proposed)
+  }, [])
 
   // inserting a section break needs one save for the new section to take effect; the
   // flag is consumed in the render after state commit, guaranteeing the save closure
@@ -6861,6 +6876,7 @@ export function App() {
       else if (format === 'md') void exportMarkdown()
       else exportImages()
     },
+    onNameWithAi: () => void nameWithAi(),
     onToggleAi: () => setShowAi((v) => !v),
     onSection: (next: SectionSettings) => {
       // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)

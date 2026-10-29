@@ -96,7 +96,12 @@ function replaceControlCharacters(value: string): string {
 }
 
 function sanitizeAssetName(input: string): string {
-  const raw = basename(input.replace(/\\/g, '/'))
+  // path.win32.basename reads a leading <letter>: as a drive prefix and
+  // strips it before the sanitizer ever sees the colon (a:b.png ->
+  // b.png on Windows, a_b.png elsewhere). Replace colons first so the
+  // sanitizer - not the platform's path semantics - decides what a
+  // colon becomes, identically on every platform.
+  const raw = basename(input.replace(/\\/g, '/').replace(/:/g, '_'))
   const rawExt = extname(raw)
   const ext = /^\.[a-z0-9]{1,10}$/i.test(rawExt) ? rawExt.toLowerCase() : ''
   const maxStem = 140 - ext.length
@@ -391,6 +396,32 @@ export async function resolveSafeRelativeImagePath(
       stat(candidate),
     ])
     if (!info.isFile() || !isPathInside(realDocumentDir, realCandidate)) return null
+    return realCandidate
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The realpath of an image target served from the vault wiki root — the same
+ * root {@link resolveWikiLinks} walks (no second definition), so a cross-folder
+ * picture embed `![[attachments/x.png]]` that resolves also renders. A target
+ * must sit under the root lexically and after realpath resolution (a symlink
+ * out of the vault is refused); `null` = refuse the serve.
+ */
+export async function resolveSafeVaultImagePath(
+  root: string,
+  target: string,
+): Promise<string | null> {
+  const vaultRoot = resolve(root)
+  if (!isInDocDir(target, vaultRoot)) return null
+  try {
+    const [realRoot, realCandidate, info] = await Promise.all([
+      realpath(vaultRoot),
+      realpath(target),
+      stat(target),
+    ])
+    if (!info.isFile() || !isInDocDir(realCandidate, realRoot)) return null
     return realCandidate
   } catch {
     return null

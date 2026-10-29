@@ -114,8 +114,10 @@ export const cs = {
   appChartNoRepoint: 'Tento graf nepodporuje změnu svých datových oblastí.',
   appKeepOneSeries: 'Ponechte alespoň jednu řadu.',
   appNoCategoriesToSwitch: 'Žádné kategorie k přepnutí.',
-  appComboNoSelectData: 'Změna zdroje dat kombinovaného grafu zatím není podporována.',
+  appSelectDataUnsupported: 'Změna zdroje dat tohoto typu grafu není podporována.',
   appSeriesName: 'Název řady',
+  appSeriesType: 'Typ řady',
+  appSecondaryAxis: 'Sekundární osa',
   appValuesRange: 'Oblast hodnot',
   appCategoriesRange: 'Oblast kategorií',
   appKeepUnchanged: 'Ponechat beze změny',
@@ -196,6 +198,12 @@ export const cs = {
   appInvalidGroupField: 'Neplatné pole seskupení.',
   appInvalidPageField: 'Neplatné pole filtru sestavy.',
   appPivotPageItemMissing: 'Položka filtru „{item}“ není členem pole „{label}“.',
+  appInvalidPivotBaseField:
+    'Základní pole režimu „Zobrazit hodnoty jako“ musí být v řádcích nebo sloupcích.',
+  appPivotBaseFieldMissing: 'Režim „Zobrazit hodnoty jako“ pole hodnot vyžaduje základní pole.',
+  appPivotBaseFieldNotAxis:
+    'Základní pole „{label}“ musí být v řádcích nebo sloupcích kontingenční tabulky.',
+  appPivotBaseItemMissing: 'Základní položka „{item}“ není členem pole „{label}“.',
   appInvalidLabelFilterField: 'Pole filtru popisků je neplatné.',
   appInvalidValueFieldIndex: 'Index pole hodnot {index} je neplatný.',
   appInvalidValueField: 'Neplatné pole hodnot.',
@@ -336,7 +344,7 @@ export const cs = {
     'Tento list obsahuje kontingenční tabulku — přesouvání oblastí zatím není podporováno.',
   appMergeOverTable:
     'Výběr se překrývá s tabulkou Excelu — slučování buněk v tabulce zatím není podporováno.',
-  appTableFilterNoEdit: 'Filtr tohoto listu patří tabulce Excelu — jeho úpravu zatím nelze uložit.',
+  appFilterToggleFailed: 'Filtr nebyl použit — nejprve vyberte oblast s daty.',
   appAutofillStreaming:
     'Automatické vyplnění do oblasti, která se stále načítá, zatím není povoleno.',
   appDvNeedsIndexed:
@@ -577,8 +585,6 @@ export const cs = {
   appSaveFailed: 'Sešit nelze uložit.',
   appCfRuleUnsaveable:
     'Toto pravidlo podmíněného formátování nelze uložit do xlsx — přepněte na jiný typ pravidla.',
-  appSaveErrX14Dv:
-    'Tento list má rozšířené (x14) ověření dat; úprava jeho pravidel ověření zatím není podporována.',
   appSaveErrMultiSelectList:
     'Ověření seznamem s vícenásobným výběrem nelze uložit do xlsx — před uložením pravidlo odstraňte.',
   appSaveErrX14Cf: 'Tato oblast má rozšířené (x14) podmíněné formátování a zatím ji nelze měnit.',
@@ -704,6 +710,7 @@ export const cs = {
   appExportPdfTitle: 'Exportovat do PDF',
   appSaveTitle: 'Uložit (⌘S)',
   appSaveAs: 'Uložit jako',
+  aiNameFile: 'Pojmenovat pomocí AI…',
   appUndo: 'Zpět',
   appRedo: 'Znovu',
   appUnsavedEditOne: '● {count} neuložená úprava',
@@ -1203,6 +1210,7 @@ export const cs = {
   appGroupForecast: 'Prognóza',
   appWhatIfAnalysis: 'Citlivostní analýza',
   appGoalSeek: 'Hledání řešení',
+  appDataTable: 'Datová tabulka',
   appWhatIfTitle: 'Najít vstup pro cílovou hodnotu',
   appGoalSeekNeedsFormula: 'Nastavená buňka musí obsahovat vzorec.',
   appGoalSeekByCellNotNumber: 'Měněná buňka musí obsahovat prosté číslo nebo být prázdná.',
@@ -1559,4 +1567,29 @@ export const cs = {
   appVisualFlipV: 'Převrátit svisle',
   appVisualFlipH: 'Převrátit vodorovně',
   appCtxPasteVisual: 'Vložit obrázek nebo obrazec',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Pravopis',
+  appSpellBtnDetail: 'Zkontrolovat text listu (F7)',
+  appSpellToggle: 'Kontrola pravopisu',
+  appSpellToggleTip:
+    'Zapne kontrolu pravopisu (F7 a tlačítko Revize); po vypnutí pole komentářů nezobrazují vlnkové podtržení',
+  appSpellOn: 'Kontrola pravopisu zapnuta.',
+  appSpellOff: 'Kontrola pravopisu je vypnutá. Zapněte ji v Revize ▸ Kontrola.',
+  appSpellRecheck: 'Zkontrolovat znovu',
+  appSpellNone: 'Nenalezeny žádné podezřelé pravopisné chyby.',
+  appSpellFindings: 'Podezřelých chyb: {count}. Kliknutím na řádek přejdete na buňku.',
+  appSpellTruncated: 'Příliš mnoho textových buněk; zkontrolovány byly jen první.',
+  appSpellColWord: 'Podezřelé',
+  appSpellIgnore: 'Ignorovat',
+  appSpellIgnoreAll: 'Ignorovat vše',
+  appSpellLearn: 'Přidat do slovníku',
+  appSpellNoSuggestions: 'Žádné návrhy',
+  appSpellIgnoredAll: 'Slovo „{word}“ už se v této relaci nebude označovat.',
+  appSpellLearned: 'Slovo „{word}“ bylo přidáno do slovníku.',
+  appSpellChanged: 'Opraveno {address}.',
+  appSpellChangeFailed: '{address} se nepodařilo opravit.',
+  appSpellUnavailable: 'Kontrola pravopisu není v tomto okně k dispozici.',
+  appSpellReplaceAll: 'Nahradit vše za „{suggestion}“',
+  appSpellChangedAll: 'Opraveno {count} buněk se slovem „{word}“.',
 } satisfies Record<keyof typeof zh, string>

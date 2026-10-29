@@ -2,6 +2,10 @@
 /// rule set of a dirty sheet and this module rewrites the worksheet's
 /// `<dataValidations>` section from it (mirroring the CF/filter recipe).
 /// Mappings are the exact inverse of the read-side install in App.tsx.
+/// Rules only xlsx's 2009 x14 extension can hold (a formula referencing
+/// another sheet) ride in the worksheet extLst's x14:dataValidations block
+/// instead, paired with nothing in the legacy section — the fallback shape
+/// Excel itself writes for those rules.
 
 import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
 
@@ -39,6 +43,23 @@ const DV_ERROR_STYLE_NAMES: Record<number, string | undefined> = {
   2: 'warning',
 }
 
+/// The worksheet extLst extension carrying x14 data validations. Excel
+/// declares it with this uri; the {78C0D931-…} extension is the x14
+/// conditional-formatting one, and Excel ignores validation rules parked
+/// there — so the block gets an extension of its own.
+const X14_DV_EXT_URI = '{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}'
+const X14_XMLNS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
+const XM_XMLNS = 'http://schemas.microsoft.com/office/excel/2006/main'
+const X14_DV_SECTION_RE =
+  /<x14:dataValidations\b[^>]*>[\s\S]*?<\/x14:dataValidations>|<x14:dataValidations\b[^>]*\/>/g
+const X14_DV_ENTRY_RE =
+  /<x14:dataValidation\b[^>]*>[\s\S]*?<\/x14:dataValidation>|<x14:dataValidation\b[^>]*\/>/g
+const X14_DV_EXT_OPEN_RE = new RegExp(
+  `<ext\\b[^>]*\\buri="${X14_DV_EXT_URI.replace(/[{}]/g, '\\$&')}"[^>]*>`,
+  'i',
+)
+const EXT_OPEN_RE = /<ext\b[^>]*>/g
+
 export interface DvApplyOptions {
   /** keep the existing rules, replace those on the same ranges, drop `remove`, add the rest */
   readonly append?: boolean | undefined
@@ -51,30 +72,20 @@ export function applyDvRules(
   options: DvApplyOptions = {},
 ): string {
   if (options.append) return appendDvRules(worksheetXml, rules, options.remove ?? [])
-  if (/<x14:dataValidation\b/.test(worksheetXml)) {
-    throw new DvEditError(
-      'This sheet has extended (x14) data validation — editing its rules is not ' +
-        'supported yet.',
-    )
-  }
-  const xml = worksheetXml.replace(
+  const prepared = rules.map(prepareRule)
+  const legacy = prepared.filter((rule) => !rule.needsX14)
+  const x14 = prepared.filter((rule) => rule.needsX14)
+  let xml = worksheetXml.replace(
     /<dataValidations\b[^>]*>[\s\S]*?<\/dataValidations>|<dataValidations\b[^>]*\/>/g,
     '',
   )
-  if (rules.length === 0) return xml
-
-  const body = rules.map(serializeRule).join('')
-  const section = `<dataValidations count="${rules.length}">${body}</dataValidations>`
-  const anchor =
-    /<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
+  if (legacy.length > 0) {
+    xml = insertDvSection(
       xml,
+      `<dataValidations count="${legacy.length}">${legacy.map(legacyEntry).join('')}</dataValidations>`,
     )
-  if (anchor) {
-    return xml.slice(0, anchor.index) + section + xml.slice(anchor.index)
   }
-  const end = xml.lastIndexOf('</worksheet>')
-  if (end === -1) throw new DvEditError('Worksheet has no closing element.')
-  return xml.slice(0, end) + section + xml.slice(end)
+  return reconcileX14DataValidations(xml, x14.map(x14Entry).join(''))
 }
 
 const DV_SECTION_RE =
@@ -86,6 +97,7 @@ function appendDvRules(
   rules: readonly DvWireRule[],
   remove: readonly DvCellArea[],
 ): string {
+  const prepared = rules.map(prepareRule)
   const section = DV_SECTION_RE.exec(worksheetXml)
   const replaced = new Set(
     [...rules.flatMap((rule) => rule.ranges), ...remove].map((area) => normalizeRef(toRef(area))),
@@ -105,12 +117,21 @@ function appendDvRules(
           entry.replace(/\bsqref="[^"]*"/, () => `sqref="${remaining.join(' ')}"`),
     )
   }
-  const entries = [...kept, ...rules.map(serializeRule)]
-  const xml = section ? worksheetXml.replace(section[0], '') : worksheetXml
-  if (entries.length === 0) return xml
-  const body = `<dataValidations count="${entries.length}">${entries.join('')}</dataValidations>`
-  if (section) return xml.slice(0, section.index) + body + xml.slice(section.index)
-  return insertBeforeTail(xml, body)
+  const entries = [...kept, ...prepared.filter((rule) => !rule.needsX14).map(legacyEntry)]
+  let xml = section ? worksheetXml.replace(section[0], '') : worksheetXml
+  if (entries.length > 0) {
+    const body = `<dataValidations count="${entries.length}">${entries.join('')}</dataValidations>`
+    xml = section
+      ? xml.slice(0, section.index) + body + xml.slice(section.index)
+      : insertDvSection(xml, body)
+  }
+  // Same takeover semantics for the file's x14 entries: they lose the areas
+  // the batch claims and keep the rest verbatim; x14-only additions append.
+  const x14Entries = [
+    ...survivingX14Entries(worksheetXml, replaced),
+    ...prepared.filter((rule) => rule.needsX14).map(x14Entry),
+  ]
+  return reconcileX14DataValidations(xml, x14Entries.join(''))
 }
 
 /** `A1:A1` and `$A$1` name the same cell as `A1`; `A:A` / `1:1` expand to the full grid. */
@@ -124,7 +145,7 @@ function normalizeRef(ref: string): string {
   return b === undefined || b === a ? a! : `${a}:${b}`
 }
 
-function insertBeforeTail(xml: string, section: string): string {
+function insertDvSection(xml: string, section: string): string {
   const anchor =
     /<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
       xml,
@@ -135,7 +156,20 @@ function insertBeforeTail(xml: string, section: string): string {
   return xml.slice(0, end) + section + xml.slice(end)
 }
 
-function serializeRule(wireRule: DvWireRule): string {
+/// One wire rule after validation and normalization, holding the OOXML-level
+/// formula texts once (shared by the legacy and x14 serializers) and the
+/// verdict on which of the two shapes can carry it.
+interface PreparedRule {
+  readonly ranges: readonly DvCellArea[]
+  /** OOXML type; undefined is the attribute-less "any" form */
+  readonly type: string | undefined
+  readonly rule: Record<string, unknown>
+  readonly formula1: string | undefined
+  readonly formula2: string | undefined
+  readonly needsX14: boolean
+}
+
+function prepareRule(wireRule: DvWireRule): PreparedRule {
   if (wireRule.ranges.length === 0) {
     throw new DvEditError('A data-validation rule has no ranges.')
   }
@@ -169,14 +203,57 @@ function serializeRule(wireRule: DvWireRule): string {
   if (type !== undefined && !DV_TYPES.has(type)) {
     throw new DvEditError(`Unsupported data-validation type "${rawType}".`)
   }
-
-  const attrs: string[] = []
-  if (type !== undefined) attrs.push(`type="${type}"`)
   const operator = rule.operator === undefined ? undefined : String(rule.operator)
   if (operator !== undefined && operator !== '') {
     if (!DV_OPERATORS.has(operator)) {
       throw new DvEditError(`Unsupported data-validation operator "${operator}".`)
     }
+  }
+  errorStyleName(rule.errorStyle)
+  const formula1 = formulaText(type, rule.formula1)
+  const formula2 = formulaText(type, rule.formula2)
+  return {
+    ranges: wireRule.ranges,
+    type,
+    rule,
+    formula1,
+    formula2,
+    needsX14: needsX14Extension(type, rule, formula1, formula2),
+  }
+}
+
+/// The one feature the 2006 legacy grammar cannot hold: a formula qualified
+/// with a sheet name. Excel parks exactly those rules in the x14 extension
+/// (leaving no legacy twin), so the save matches that shape. A list literal
+/// is only ever a reference when the model value starts with `=`.
+function needsX14Extension(
+  type: string | undefined,
+  rule: Record<string, unknown>,
+  formula1: string | undefined,
+  formula2: string | undefined,
+): boolean {
+  if (type === 'list') {
+    return String(rule.formula1 ?? '').startsWith('=') && sheetQualified(formula1)
+  }
+  return sheetQualified(formula1) || sheetQualified(formula2)
+}
+
+/// A `!` behind a sheet name (quoted, bare, or a 3-D pair) qualifies the
+/// reference onto another sheet; an in-sheet formula has no such token.
+const SHEET_QUALIFIED_RE =
+  /(?:^|[^A-Za-z0-9_.])(?:'[^']+'|[A-Za-z_][A-Za-z0-9_.]*)(?::(?:'[^']+'|[A-Za-z_][A-Za-z0-9_.]*))?!/
+
+function sheetQualified(formula: string | undefined): boolean {
+  return formula !== undefined && SHEET_QUALIFIED_RE.test(formula)
+}
+
+/// Attributes shared verbatim by the legacy and x14 entry forms.
+function entryAttributes(prepared: PreparedRule): string[] {
+  const attrs: string[] = []
+  const { type, rule } = prepared
+  if (type !== undefined) attrs.push(`type="${type}"`)
+  const operator = rule.operator === undefined ? undefined : String(rule.operator)
+  if (operator !== undefined && operator !== '') {
     // "between" is the OOXML default; only operator-carrying types keep it.
     if (operator !== 'between' && type !== undefined && type !== 'list' && type !== 'custom') {
       attrs.push(`operator="${operator}"`)
@@ -201,12 +278,190 @@ function serializeRule(wireRule: DvWireRule): string {
       attrs.push(`${attribute}="${escapeXmlAttribute(value)}"`)
     }
   }
-  attrs.push(`sqref="${wireRule.ranges.map(toRef).join(' ')}"`)
+  return attrs
+}
 
-  const formulas = serializeFormulas(type, rule)
+function legacyEntry(prepared: PreparedRule): string {
+  const attrs = [...entryAttributes(prepared), `sqref="${prepared.ranges.map(toRef).join(' ')}"`]
+  const formulas = legacyFormulas(prepared)
   return formulas === ''
     ? `<dataValidation ${attrs.join(' ')}/>`
     : `<dataValidation ${attrs.join(' ')}>${formulas}</dataValidation>`
+}
+
+function legacyFormulas(prepared: PreparedRule): string {
+  return (
+    (prepared.formula1 === undefined
+      ? ''
+      : `<formula1>${escapeXmlText(prepared.formula1)}</formula1>`) +
+    (prepared.formula2 === undefined
+      ? ''
+      : `<formula2>${escapeXmlText(prepared.formula2)}</formula2>`)
+  )
+}
+
+/// The x14 twin: same attributes, formulas wrapped one level deeper in
+/// <xm:f>, and the ranges as an <xm:sqref> child instead of an attribute.
+function x14Entry(prepared: PreparedRule): string {
+  const formulas =
+    (prepared.formula1 === undefined
+      ? ''
+      : `<x14:formula1><xm:f>${escapeXmlText(prepared.formula1)}</xm:f></x14:formula1>`) +
+    (prepared.formula2 === undefined
+      ? ''
+      : `<x14:formula2><xm:f>${escapeXmlText(prepared.formula2)}</xm:f></x14:formula2>`)
+  const attrs = entryAttributes(prepared).join(' ')
+  return (
+    `<x14:dataValidation ${attrs}>${formulas}` +
+    `<xm:sqref>${prepared.ranges.map(toRef).join(' ')}</xm:sqref></x14:dataValidation>`
+  )
+}
+
+/// Rewrites the worksheet's x14:dataValidations block to `entriesXml` (empty
+/// removes it). The block lives in its own {CCE6A557} extension — Excel's
+/// x14 data-validation extension — never in the {78C0D931} one, which
+/// carries conditional formatting and whose validation rules Excel ignores.
+/// An extension left without elements and an extLst left without extensions
+/// go away so deleted rules leave no husks.
+function reconcileX14DataValidations(xml: string, entriesXml: string): string {
+  if (entriesXml === '' && !/<x14:dataValidations\b/.test(xml)) return xml
+  xml = removeX14DvBlocks(xml)
+  if (entriesXml === '') return dropEmptyX14DvExt(xml)
+  const count = (entriesXml.match(/<x14:dataValidation\b/g) ?? []).length
+  const block =
+    `<x14:dataValidations xmlns:x14="${X14_XMLNS}" xmlns:xm="${XM_XMLNS}" count="${count}">` +
+    `${entriesXml}</x14:dataValidations>`
+  const extOpen = X14_DV_EXT_OPEN_RE.exec(xml)
+  if (extOpen) {
+    if (extOpen[0].endsWith('/>')) {
+      return (
+        xml.slice(0, extOpen.index) +
+        `<ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_XMLNS}">${block}</ext>` +
+        xml.slice(extOpen.index + extOpen[0].length)
+      )
+    }
+    // The extension holds the block and nothing else Excel writes there, so
+    // the block goes in right before the extension closes.
+    const close = xml.indexOf('</ext>', extOpen.index)
+    if (close === -1) throw new DvEditError('The data-validation extension element is malformed.')
+    return xml.slice(0, close) + block + xml.slice(close)
+  }
+  // No {CCE6A557} extension yet: only the worksheet-level extLst (past
+  // sheetData) qualifies — cells may carry their own extLst.
+  const ext = `<ext uri="${X14_DV_EXT_URI}" xmlns:x14="${X14_XMLNS}">${block}</ext>`
+  const extLstClose = xml.lastIndexOf('</extLst>')
+  if (extLstClose !== -1 && extLstClose > xml.lastIndexOf('</sheetData>')) {
+    return xml.slice(0, extLstClose) + ext + xml.slice(extLstClose)
+  }
+  const worksheetClose = xml.lastIndexOf('</worksheet>')
+  if (worksheetClose === -1) throw new DvEditError('Worksheet has no closing element.')
+  return xml.slice(0, worksheetClose) + `<extLst>${ext}</extLst>` + xml.slice(worksheetClose)
+}
+
+/// One worksheet extLst extension element: its open tag, its content and
+/// the `</ext>` closing it. ext elements never nest.
+interface X14Ext {
+  readonly start: number
+  readonly openEnd: number
+  readonly end: number
+}
+
+/// The ext element holding `index`, if any: the last `<ext …>` open tag
+/// before it whose `</ext>` still comes after.
+function extAround(xml: string, index: number): X14Ext | null {
+  let found: X14Ext | null = null
+  for (const match of xml.matchAll(EXT_OPEN_RE)) {
+    const start = match.index ?? 0
+    if (start >= index) break
+    if (match[0].endsWith('/>')) continue
+    const openEnd = start + match[0].length
+    const close = xml.indexOf('</ext>', openEnd)
+    if (close === -1) continue
+    const end = close + '</ext>'.length
+    if (end <= index) continue
+    found = { start, openEnd, end }
+  }
+  return found
+}
+
+/// Removes the worksheet's x14:dataValidations blocks. Excel keeps the block
+/// in the {CCE6A557} extension, but a file written by an older build may
+/// hold it in the conditional-formatting one, whose rules Excel ignores; the
+/// extension the removal empties goes with it, since an extension without
+/// elements is what Excel flags for repair.
+function removeX14DvBlocks(xml: string): string {
+  let out = xml
+  for (const block of [...out.matchAll(X14_DV_SECTION_RE)].reverse()) {
+    const index = block.index ?? 0
+    const ext = extAround(out, index)
+    const removed = block[0].length
+    out = out.slice(0, index) + out.slice(index + removed)
+    if (ext === null) continue
+    // The block sat inside the extension, so its end moved up by its size.
+    const end = ext.end - removed
+    if (out.slice(ext.openEnd, end - '</ext>'.length).includes('<')) continue
+    out = dropExt(out, { start: ext.start, openEnd: ext.openEnd, end })
+  }
+  return out
+}
+
+/// Removes the ext element and the extLst around it when that was its only
+/// extension — an extLst without extensions is what Excel flags for repair.
+function dropExt(xml: string, ext: X14Ext): string {
+  const stripped = xml.slice(0, ext.start) + xml.slice(ext.end)
+  // The enclosing extLst (a malformed worksheet may leave the ext bare);
+  // drop it too when this was its only extension.
+  const lstOpenAt = xml.lastIndexOf('<extLst', ext.start)
+  if (lstOpenAt === -1) return stripped
+  const lstOpen = /<extLst\b[^>]*>/.exec(xml.slice(lstOpenAt, ext.start))?.[0]
+  if (lstOpen === undefined) return stripped
+  const lstInnerStart = lstOpenAt + lstOpen.length
+  const lstClose = xml.indexOf('</extLst>', lstInnerStart)
+  if (lstClose === -1 || lstClose < ext.start) return stripped
+  const inner = xml.slice(lstInnerStart, ext.start) + xml.slice(ext.end, lstClose)
+  if (inner.includes('<')) return stripped
+  return xml.slice(0, lstOpenAt) + xml.slice(lstClose + '</extLst>'.length)
+}
+
+/// Removes the {CCE6A557} extension when it holds no elements, and the
+/// extLst when that in turn left it without extensions.
+function dropEmptyX14DvExt(xml: string): string {
+  const extOpen = X14_DV_EXT_OPEN_RE.exec(xml)
+  if (!extOpen || extOpen[0].endsWith('/>')) return xml
+  const close = xml.indexOf('</ext>', extOpen.index)
+  if (close === -1) return xml
+  const start = extOpen.index
+  if (xml.slice(start + extOpen[0].length, close).includes('<')) return xml
+  return dropExt(xml, {
+    start,
+    openEnd: start + extOpen[0].length,
+    end: close + '</ext>'.length,
+  })
+}
+
+/// The file's own x14 entries for append mode: each loses the areas the batch
+/// takes over (dropped when none remain, re-ranged otherwise) and keeps the
+/// rest of its bytes verbatim — the same discipline as the legacy section.
+function survivingX14Entries(xml: string, replaced: ReadonlySet<string>): string[] {
+  const kept: string[] = []
+  for (const match of xml.matchAll(X14_DV_ENTRY_RE)) {
+    const entry = match[0]
+    const sqref = /<xm:sqref>([^<]*)<\/xm:sqref>/.exec(entry)?.[1] ?? ''
+    const areas = sqref.split(/\s+/).filter(Boolean)
+    const remaining = areas.filter((area) => !replaced.has(normalizeRef(area)))
+    if (remaining.length === 0) continue
+    kept.push(
+      remaining.length === areas.length
+        ? entry
+        : // function replacer: the surviving areas are document-controlled and
+          // a string replacement would expand $& / $1 in them
+          entry.replace(
+            /<xm:sqref>[^<]*<\/xm:sqref>/,
+            () => `<xm:sqref>${remaining.join(' ')}</xm:sqref>`,
+          ),
+    )
+  }
+  return kept
 }
 
 function errorStyleName(value: unknown): string | undefined {
@@ -216,15 +471,6 @@ function errorStyleName(value: unknown): string | undefined {
     throw new DvEditError(`Unsupported data-validation error style "${String(value)}".`)
   }
   return DV_ERROR_STYLE_NAMES[style]
-}
-
-function serializeFormulas(type: string | undefined, rule: Record<string, unknown>): string {
-  const formula1 = formulaText(type, rule.formula1)
-  const formula2 = formulaText(type, rule.formula2)
-  return (
-    (formula1 === undefined ? '' : `<formula1>${escapeXmlText(formula1)}</formula1>`) +
-    (formula2 === undefined ? '' : `<formula2>${escapeXmlText(formula2)}</formula2>`)
-  )
 }
 
 /// Inverse of the install-side formula transforms: list literals regain their

@@ -30,11 +30,24 @@ import {
   type DrawingAnchor,
   type ImageAdd,
   relsPathFor,
+  resolveChartPivotSource,
   resolveRelTarget,
   type ShapeAdd,
 } from './xlsx-drawing-add'
-import { applyTableAdditions, type TableArea, type TableStyleOptions } from './xlsx-table-add'
-import { applyTableEdits, type TableEdit } from './xlsx-table-edit'
+import {
+  applyTableAdditions,
+  areasOverlap,
+  areaToRef,
+  parseRef,
+  type TableArea,
+  type TableStyleOptions,
+} from './xlsx-table-add'
+import {
+  applyTableEdits,
+  sheetTableParts,
+  type LocatedTable,
+  type TableEdit,
+} from './xlsx-table-edit'
 import type { PivotFilterDef } from '../domain/pivot-filters'
 import {
   applyPivotAdditions,
@@ -43,7 +56,12 @@ import {
   type PivotValueSpec,
 } from './xlsx-pivot-add'
 import type { SheetFilterState } from './xlsx-filter'
-import { applyFilterState } from './xlsx-filter'
+import {
+  applyFilterState,
+  applyRowVisibilityState,
+  applyTableFilterState,
+  FilterEditError,
+} from './xlsx-filter'
 import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
 import { escapeRegExp } from './xlsx-sheets'
 import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
@@ -1463,13 +1481,9 @@ export async function planCellEditsToXlsx(
     worksheetXmls.set(state.sheetName, applyPageSetupState(worksheetXml, state))
   }
 
-  // Filter snapshots run after structural replay and cell edits, so their
-  // coordinates and row set match the sheet's final content.
-  for (const state of filterStates) {
-    const worksheetXml = worksheetXmls.get(state.sheetName)
-    if (worksheetXml === undefined) continue
-    worksheetXmls.set(state.sheetName, applyFilterState(worksheetXml, state))
-  }
+  // Filter snapshots used to run here, before the worksheet flush; they now
+  // run after the table edit/add phases (see applyRoutedFilterState below) so
+  // the routing sees the sheets' final table geometry.
 
   for (const [sheetName, worksheetXml] of worksheetXmls) {
     const worksheetPath = worksheetPaths.get(sheetName)
@@ -1510,7 +1524,12 @@ export async function planCellEditsToXlsx(
           additionPaths.get(addition.sheetName) ??
           (await resolveWorksheetPath(pkg, addition.sheetName)),
         anchor: addition.anchor,
-        chart: addition.chart,
+        // A pivot-bound chart resolves its pivotTable part into the
+        // chartSpace pivotSource name here, where the sheet name is known.
+        chart:
+          addition.chart === undefined
+            ? undefined
+            : await resolveChartPivotSource(pkg, addition.sheetName, addition.chart),
         shape: addition.shape,
         image: addition.image,
       })
@@ -1589,6 +1608,21 @@ export async function planCellEditsToXlsx(
       })
     }
     await applyTableAdditions(pkg, resolvedTables, touchedEntries)
+  }
+
+  // Filter snapshots run after structural replay, cell edits, and the table
+  // phases, so their coordinates and row set match the sheet's final content
+  // and the routing sees the final table geometry: a filter range inside an
+  // Excel table lands in the table part (Excel keeps table filters there,
+  // never on the worksheet); every other range keeps the worksheet element.
+  if (filterStates.length > 0) {
+    for (const state of filterStates) {
+      const worksheetPath =
+        additionPaths.get(state.sheetName) ??
+        worksheetPaths.get(state.sheetName) ??
+        (await resolveWorksheetPath(pkg, state.sheetName))
+      await applyRoutedFilterState(pkg, worksheetPath, state, touchedEntries)
+    }
   }
 
   // New sparklines also run on the flushed worksheet XML (extLst is the
@@ -2317,6 +2351,78 @@ function findSheetElement(workbookXml: string, sheetName: string): SheetElement 
 
 function isMissingPartError(error: unknown): boolean {
   return error instanceof Error && /was not found\.|Workbook is missing /.test(error.message)
+}
+
+/// One declarative filter snapshot onto its final home. Excel keeps a
+/// ListObject's filter in the table part; the worksheet only ever carries
+/// row visibility for it (a worksheet autoFilter overlapping a table is
+/// invalid OOXML). Routing is geometric: exactly one table can contain the
+/// range because tables never overlap. A range that straddles a table
+/// boundary cannot be represented in either place, so it fails closed. A
+/// contained range whose table part is gone (Convert to Range in this same
+/// save) falls back to the worksheet element — Excel's own conversion
+/// semantics.
+async function applyRoutedFilterState(
+  pkg: PackageEditor,
+  worksheetPath: string,
+  state: SheetFilterState,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const match = state.filter?.range ?? state.visibilityRange
+  let routed: { table: LocatedTable; area: TableArea } | undefined
+  for (const table of await sheetTableParts(pkg, worksheetPath)) {
+    const area = tablePartArea(table)
+    if (area === null) continue
+    const contains =
+      area.startRow <= match.startRow &&
+      match.endRow <= area.endRow &&
+      area.startColumn <= match.startColumn &&
+      match.endColumn <= area.endColumn
+    if (contains) {
+      routed = { table, area }
+      continue
+    }
+    if (areasOverlap(area, match)) {
+      throw new FilterEditError(
+        `The filter range overlaps Excel table ${areaToRef(area)} without sitting ` +
+          'inside it — filter within the table, or clear the table first.',
+      )
+    }
+  }
+  const worksheetXml = await pkg.readText(worksheetPath)
+  if (routed === undefined) {
+    pkg.write(worksheetPath, applyFilterState(worksheetXml, state))
+    touchedEntries.add(worksheetPath)
+    return
+  }
+  const { table, area } = routed
+  pkg.write(
+    table.path,
+    applyTableFilterState(table.xml, { area, ...tablePartCounts(table.xml) }, state.filter),
+  )
+  touchedEntries.add(table.path)
+  pkg.write(worksheetPath, applyRowVisibilityState(worksheetXml, state))
+  touchedEntries.add(worksheetPath)
+}
+
+function tablePartArea(table: LocatedTable): TableArea | null {
+  const ref = /<table\b[^>]*\bref="([^"]+)"/.exec(table.xml)?.[1]
+  if (ref === undefined) return null
+  try {
+    return parseRef(ref)
+  } catch {
+    return null
+  }
+}
+
+function tablePartCounts(tableXml: string): {
+  headerRowCount: number
+  totalsRowCount: number
+} {
+  return {
+    headerRowCount: Number(/<table\b[^>]*?\bheaderRowCount="(\d+)"/.exec(tableXml)?.[1] ?? '1'),
+    totalsRowCount: Number(/<table\b[^>]*?\btotalsRowCount="(\d+)"/.exec(tableXml)?.[1] ?? '0'),
+  }
 }
 
 async function resolveWorksheetPath(

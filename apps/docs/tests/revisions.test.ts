@@ -109,6 +109,29 @@ describe('accept / reject all', () => {
       editor.destroy()
     }
   })
+
+  it('resolving a whole-paragraph block revision also clears its run marks', () => {
+    // a redline on disk marks the runs AND wraps the block; the editor holds
+    // both, and resolving the block must not leave the run marks pending
+    const blockIns = { kind: 'ins', author: 'Alice', date: '2026-07-01T10:00:00Z' }
+    const blockDel = { kind: 'del', author: 'Bob', date: '2026-07-02T10:00:00Z' }
+    const redline = () => [
+      para(text('kept')),
+      { ...para(text('added', [ins()])), attrs: { docxIndex: null, blockRevision: blockIns } },
+      { ...para(text('gone', [del()])), attrs: { docxIndex: null, blockRevision: blockDel } },
+    ]
+    const accepted = createEditor(redline())
+    acceptAllRevisions(accepted)
+    expect(accepted.state.doc.textContent).toBe('keptadded')
+    expect(collectRevisions(accepted.state.doc)).toHaveLength(0)
+    accepted.destroy()
+
+    const rejected = createEditor(redline())
+    rejectAllRevisions(rejected)
+    expect(rejected.state.doc.textContent).toBe('keptgone')
+    expect(collectRevisions(rejected.state.doc)).toHaveLength(0)
+    rejected.destroy()
+  })
 })
 
 describe('accept / reject current + navigation', () => {

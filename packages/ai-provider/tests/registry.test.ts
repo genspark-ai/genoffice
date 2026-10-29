@@ -133,6 +133,7 @@ describe('provider registry', () => {
       ['opper', 'claude-sonnet-4-6', 'https://api.opper.ai/v3/compat'],
       ['cheaperinference', 'claude-sonnet-5', 'https://api.cheaperinference.com/v1'],
       ['atlascloud', 'deepseek-ai/deepseek-v4-pro', 'https://api.atlascloud.ai/v1'],
+      ['runcrate', 'deepseek-ai/DeepSeek-V4.1-Flash', 'https://api.runcrate.ai/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {
       expect(AI_PROVIDER_ADAPTERS[id].resolveEndpoint(config(model))).toEqual({
@@ -471,6 +472,16 @@ describe('modelLacksVision', () => {
   it('leaves the direct GLM and MiniMax providers untouched by the Atlas Cloud rule', () => {
     expect(modelLacksVision('glm-5.3')).toBe(false)
     expect(modelLacksVision('MiniMax-M3')).toBe(false)
+  })
+
+  it('holds back the text-only Runcrate ids but not its multimodal ones', () => {
+    expect(modelLacksVision('zai-org/GLM-5.3')).toBe(true)
+    expect(modelLacksVision('Qwen/Qwen3.8-Flash')).toBe(true)
+    expect(modelLacksVision('openai/gpt-oss-120b')).toBe(true)
+    expect(modelLacksVision('deepseek-ai/DeepSeek-V4.1-Flash')).toBe(false)
+    expect(modelLacksVision('deepseek-ai/DeepSeek-V4.1-Flash-1017')).toBe(false)
+    expect(modelLacksVision('zai-org/GLM-5.3-Flash')).toBe(false)
+    expect(modelLacksVision('moonshotai/Kimi-K2.6')).toBe(false)
   })
 
   it('matches case-insensitively like its sibling matchers', () => {

@@ -124,6 +124,7 @@ export async function handleSave(
   mode: 'save' | 'save-as' | 'recovery',
   quiet = false,
   explicitTarget?: { path: string; overwrite: boolean },
+  defaultName?: string,
 ): Promise<SaveOutcome> {
   const state = ctx.lazyWorkbookRef.current
   // Captured at save start (the Ctrl+S moment): the post-save session swap
@@ -217,9 +218,10 @@ export async function handleSave(
     .filter((sheetId) => !isSheetRemoved(state.editJournal, sheetId))
     .map((sheetId) => ({
       sheetId,
-      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref }) => ({
+      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref, password }) => ({
         name,
         sqref,
+        ...(password ? { password } : {}),
       })),
     }))
   const themeState =
@@ -486,6 +488,8 @@ export async function handleSave(
       ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
       ...(quiet ? { quiet: true } : {}),
       ...(csvContent === undefined ? {} : { csvContent }),
+      // a name the reader (or the model, via the ribbon) chose for the dialog
+      ...(defaultName === undefined ? {} : { defaultName }),
       // MCP explicit-path save: main skips the Save-As dialog for these
       ...(explicitTarget
         ? { targetPath: explicitTarget.path, overwrite: explicitTarget.overwrite }
@@ -678,7 +682,6 @@ export function stripIpcErrorWrapper(message: string): string {
 /// stable substring; unmatched messages surface verbatim (English) as before.
 const SAVE_ERROR_PATTERNS = [
   ['cannot shift here', 'appStructuralShiftBlocked'],
-  ['extended (x14) data validation', 'appSaveErrX14Dv'],
   ['Multi-select list rules', 'appSaveErrMultiSelectList'],
   ['extended conditional formatting (x14)', 'appSaveErrX14Cf'],
   ['data-bar extension format (x14)', 'appSaveErrX14Cf'],

@@ -69,6 +69,33 @@ describe('updateVisualAdd', () => {
     expect(journal.visualAdds[0]?.text).toBe('Text')
   })
 
+  it('carries a pivot chart table path into the save wire schema', () => {
+    const journal = createEditJournal()
+    recordVisualAdd(journal, {
+      ...textBox(),
+      id: 'added-pivotchart-abc-1',
+      kind: 'chart',
+      chart: {
+        chartTypes: ['barChart'],
+        barDirection: 'col',
+        title: 'Pivot Chart',
+        pivotTablePath: 'xl/pivotTables/pivotTable1.xml',
+        series: [{ name: 'S', categories: ['a'], values: [1] }],
+      },
+    })
+    const addition = toSaveVisualAdds(journal)[0]
+    expect(() => workbookVisualAddSchema.parse(addition)).not.toThrow()
+    expect(addition?.chart?.pivotTablePath).toBe('xl/pivotTables/pivotTable1.xml')
+    // Regular session charts keep no marker.
+    recordVisualAdd(journal, {
+      ...textBox(),
+      id: 'added-chart-abc-2',
+      kind: 'chart',
+      chart: { chartTypes: ['barChart'], title: 'Plain', series: [] },
+    })
+    expect(toSaveVisualAdds(journal)[1]?.chart?.pivotTablePath).toBeUndefined()
+  })
+
   it('drops a session visual outright on removal', () => {
     const journal = createEditJournal()
     recordVisualAdd(journal, textBox())

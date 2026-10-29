@@ -25,6 +25,7 @@ export const zh = {
   ribbonShapeFillTip: '填充所选形状的颜色',
   ribbonShapeOutline: '形状轮廓',
   ribbonShapeOutlineTip: '设置所选形状的轮廓颜色',
+  ribbonShapeOutlineWeight: '轮廓粗细',
   ribbonNoFill: '无填充',
   ribbonNoOutline: '无轮廓',
   // Picture Format
@@ -67,6 +68,7 @@ export const zh = {
   ribbonOpen: '打开…',
   ribbonSave: '保存',
   ribbonSaveAs: '另存为…',
+  ribbonNameWithAi: '以 AI 命名…',
   ribbonConvert: '转换',
   ribbonConvertTip: '转换为 PDF、HTML、Markdown 或图片',
   ribbonConvertPdf: '转换为 PDF…',

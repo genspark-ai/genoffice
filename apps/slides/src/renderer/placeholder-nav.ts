@@ -6,6 +6,7 @@
 import type { RenderNode } from '@genoffice/pptx-render'
 import type { ActionCtx } from './action-context'
 import type { EditParagraph } from '../shared/ipc'
+import { mergeSlideUpdate } from '../shared/slide-update'
 import { FIT_WIDTH } from './app-constants'
 import { isEditableText } from './konva-adapter'
 import { paragraphsBlank } from './textbox-insert'
@@ -59,8 +60,10 @@ export async function nextPlaceholder(
     ctx.setSelectedIds([editing.sourceId])
     return
   }
-  const first = firstPlaceholderId(r.slides[r.index]?.nodes ?? [])
-  ctx.setSlides(r.slides)
+  const first = firstPlaceholderId(
+    r.slides.find((s) => s.partPath === r.order[r.index])?.nodes ?? [],
+  )
+  ctx.setSlides((slides) => mergeSlideUpdate(slides, r))
   ctx.setCurrent(r.index)
   ctx.setSelectedSlides([r.index])
   ctx.setSelectedIds(first ? [first] : [])

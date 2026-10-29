@@ -54,6 +54,12 @@ export const IconUnderline = () => (
     <path d="M5.89 19.5 L18.11 19.5" strokeWidth={1.85} />
   </Icon>
 )
+/** Wavy line: three quadratic humps, the squiggly-markup glyph */
+export const IconSquiggly = () => (
+  <Icon>
+    <path d="M4.2 13.1 C5.7 10.4 7.2 10.4 8.7 13.1 C10.2 15.8 11.7 15.8 13.2 13.1 C14.7 10.4 16.2 10.4 17.7 13.1 C19.2 15.8 20.7 15.8 22.2 13.1" />
+  </Icon>
+)
 export const IconStrike = () => (
   <Icon>
     <path d="M16.29 7.21 C15.72 5.52 14.03 4.5 12 4.5 C9.52 4.5 7.71 5.85 7.71 7.88 C7.71 9.46 8.73 10.36 10.65 10.93" />
@@ -95,6 +101,18 @@ export const IconNote = () => (
     <path d="M8.25 9.32 L15.75 9.32 M8.25 12 L13.07 12" />
   </Icon>
 )
+/** Insertion mark: the proofreader's caret wedge */
+export const IconCaret = () => (
+  <Icon>
+    <path d="M5.8 16.2 L12 9.4 L18.2 16.2" />
+  </Icon>
+)
+/** Regular pentagon outline */
+export const IconPolygon = () => (
+  <Icon>
+    <path d="M12 4.2 L19.6 9.7 L16.7 18.7 L7.3 18.7 L4.4 9.7 Z" />
+  </Icon>
+)
 export const IconSign = () => (
   <Icon>
     <path d="M5.5 15.1 C7.8 12.3 9.5 9 9.2 7 C9 5.7 7.9 5.9 7.6 7.4 C7.2 9.6 8.6 13.4 10.5 14.9 C12 16.1 13.9 15.3 14.7 13.8 C15.1 13 15.9 13 16.3 13.8 C16.7 14.7 17.7 15 18.5 14.4" />
@@ -107,6 +125,19 @@ export const IconCertSign = () => (
     <circle cx="12" cy="9.5" r="4.5" />
     <path d="M9.6 9.6 L11.2 11.2 L14.6 7.8" />
     <path d="M9 13.4 L7.5 19.5 L12 17.4 L16.5 19.5 L15 13.4" />
+  </Icon>
+)
+/** Bates numbering: a # with a page corner */
+export const IconBates = () => (
+  <Icon>
+    <path d="M9 5 L7 19 M13 5 L11 19 M6.5 9 L17.5 9 M5.8 14 L16.8 14" />
+  </Icon>
+)
+/** Measurement: a ruler with tick marks */
+export const IconMeasure = () => (
+  <Icon>
+    <rect x="3.5" y="9" width="17" height="7" rx="1" />
+    <path d="M7.5 9 V12 M12 9 V13.5 M16.5 9 V12" />
   </Icon>
 )
 /** Signature panel: a shield with a check mark */

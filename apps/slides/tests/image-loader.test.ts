@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { metafileToDataUrl } from '@genoffice/docx-engine/metafile'
-import { createImageLoader, MAX_METAFILE_BASE64_CHARS } from '../src/renderer/image-loader'
+import {
+  createImageLoader,
+  MAX_METAFILE_BASE64_CHARS,
+  setImageSource,
+} from '../src/renderer/image-loader'
 
 vi.mock('@genoffice/docx-engine/metafile', () => ({
   metafileToDataUrl: vi.fn(async () => 'data:image/png;base64,AA=='),
@@ -129,6 +133,43 @@ describe('metafile rasterization waits for private fonts', () => {
     expect(metafileToDataUrl).toHaveBeenCalledTimes(1)
   })
 
+  it('fetches lazy EMF bytes and rasterizes them under the original URL key', async () => {
+    const bytes = new Uint8Array([1, 0, 0, 0])
+    const url = 'genoffice-slide-media://archive/test?mime=image%2Fx-emf'
+    const fetchMedia = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ 'Content-Length': String(bytes.length) }),
+      arrayBuffer: async () => bytes.buffer,
+    }))
+    vi.stubGlobal('fetch', fetchMedia)
+    const apply = vi.fn()
+    const loader = createImageLoader(apply)
+    loader.load([url])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMedia).toHaveBeenCalledWith(url)
+    expect(metafileToDataUrl).toHaveBeenCalledWith(bytes, 'image/x-emf', { maxSidePx: 2048 })
+    img('data:image/png;base64,AA==').onload!()
+    expect(flushed(apply)).toEqual([[url]])
+  })
+
+  it('refuses oversized lazy metafiles from the response length before reading bytes', async () => {
+    const arrayBuffer = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        headers: new Headers({ 'Content-Length': String(MAX_METAFILE_BASE64_CHARS) }),
+        arrayBuffer,
+      })),
+    )
+    const loader = createImageLoader(vi.fn())
+    loader.load(['genoffice-slide-media://archive/test?mime=image%2Fx-wmf'])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(arrayBuffer).not.toHaveBeenCalled()
+    expect(metafileToDataUrl).not.toHaveBeenCalled()
+    expect(loader.pending()).toBe(0)
+  })
+
   it('refuses oversized metafiles before base64 decoding', async () => {
     const apply = vi.fn()
     const loader = createImageLoader(apply, 16, 100)
@@ -139,4 +180,26 @@ describe('metafile rasterization waits for private fonts', () => {
     expect(metafileToDataUrl).not.toHaveBeenCalled()
     expect(apply).not.toHaveBeenCalled()
   })
+})
+
+it('sets anonymous CORS before assigning slide media sources only', () => {
+  const assignments: Array<[string, string | null]> = []
+  const image = {
+    crossOrigin: null as string | null,
+    set src(url: string) {
+      assignments.push([url, this.crossOrigin])
+    },
+  }
+  setImageSource(image as HTMLImageElement, 'genoffice-slide-media://archive/image')
+  const other = {
+    crossOrigin: null as string | null,
+    set src(url: string) {
+      assignments.push([url, this.crossOrigin])
+    },
+  }
+  setImageSource(other as HTMLImageElement, 'data:image/png;base64,AA==')
+  expect(assignments).toEqual([
+    ['genoffice-slide-media://archive/image', 'anonymous'],
+    ['data:image/png;base64,AA==', null],
+  ])
 })

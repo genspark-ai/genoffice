@@ -243,7 +243,7 @@ describe('lazyGateError', () => {
     expect(lazyGateError(state, { op: 'set_filter', sheetId: 'new1', range: 'A1:B5' })).toBeNull()
   })
 
-  it('blocks filter edits on table-owned filters', () => {
+  it('allows filter edits on table-owned filters — the save routes them into the table part', () => {
     const state = lazyState({
       filterOrigins: new Map([
         [
@@ -259,7 +259,7 @@ describe('lazyGateError', () => {
         column: 'A',
         values: ['x'],
       }),
-    ).toContain('table')
+    ).toBeNull()
   })
 
   it('blocks set_data_validation until the sheet is indexed', () => {

@@ -115,8 +115,10 @@ export const hi = {
   appChartNoRepoint: 'यह चार्ट अपनी डेटा श्रेणियों को फिर से निर्दिष्ट करने का समर्थन नहीं करता।',
   appKeepOneSeries: 'कम से कम एक शृंखला रखें।',
   appNoCategoriesToSwitch: 'बदलने के लिए कोई श्रेणियाँ नहीं हैं।',
-  appComboNoSelectData: 'कॉम्बो चार्ट का डेटा स्रोत बदलना अभी समर्थित नहीं है।',
+  appSelectDataUnsupported: 'इस चार्ट प्रकार का डेटा स्रोत बदलना समर्थित नहीं है।',
   appSeriesName: 'शृंखला नाम',
+  appSeriesType: 'श्रृंखला प्रकार',
+  appSecondaryAxis: 'द्वितीय अक्ष',
   appValuesRange: 'मान श्रेणी',
   appCategoriesRange: 'श्रेणी सीमा',
   appKeepUnchanged: 'अपरिवर्तित रखें',
@@ -196,6 +198,13 @@ export const hi = {
   appInvalidGroupField: 'अमान्य समूहन फ़ील्ड।',
   appInvalidPageField: 'अमान्य रिपोर्ट फ़िल्टर फ़ील्ड।',
   appPivotPageItemMissing: 'रिपोर्ट फ़िल्टर आइटम "{item}" फ़ील्ड "{label}" का सदस्य नहीं है।',
+  appInvalidPivotBaseField:
+    '"मान इस रूप में दिखाएँ" का आधार फ़ील्ड पंक्तियों या कॉलम में होना चाहिए।',
+  appPivotBaseFieldMissing:
+    'वैल्यू फ़ील्ड के "मान इस रूप में दिखाएँ" मोड के लिए आधार फ़ील्ड आवश्यक है।',
+  appPivotBaseFieldNotAxis:
+    'आधार फ़ील्ड "{label}" पिवट तालिका की पंक्तियों या कॉलम में होना चाहिए।',
+  appPivotBaseItemMissing: 'आधार आइटम "{item}" फ़ील्ड "{label}" का सदस्य नहीं है।',
   appInvalidLabelFilterField: 'लेबल फ़िल्टर फ़ील्ड अमान्य है।',
   appInvalidValueFieldIndex: 'मान फ़ील्ड अनुक्रमांक {index} अमान्य है।',
   appInvalidValueField: 'अमान्य मान फ़ील्ड।',
@@ -335,8 +344,7 @@ export const hi = {
   appPivotSheetNoMove: 'इस शीट में पिवट टेबल है — श्रेणियाँ स्थानांतरित करना अभी समर्थित नहीं है।',
   appMergeOverTable:
     'चयन Excel तालिका से ओवरलैप करता है — तालिका के भीतर सेल मर्ज करना अभी समर्थित नहीं है।',
-  appTableFilterNoEdit:
-    'इस शीट का फ़िल्टर एक Excel तालिका का है — इसका संपादन अभी सहेजा नहीं जा सकता।',
+  appFilterToggleFailed: 'फ़िल्टर लागू नहीं हुआ — पहले वह रेंज चुनें जिसमें आपका डेटा है।',
   appAutofillStreaming:
     'जो क्षेत्र अभी स्ट्रीम होकर लोड हो रहा है, उसमें स्वतः भरण की अनुमति अभी नहीं है।',
   appDvNeedsIndexed:
@@ -575,8 +583,6 @@ export const hi = {
   appSaveFailed: 'कार्यपुस्तिका सहेजी नहीं जा सकी।',
   appCfRuleUnsaveable:
     'यह सशर्त स्वरूपण नियम xlsx में सहेजा नहीं जा सकता — कृपया दूसरा नियम प्रकार चुनें।',
-  appSaveErrX14Dv:
-    'इस शीट में विस्तारित (x14) डेटा सत्यापन है; इसके सत्यापन नियमों का संपादन अभी समर्थित नहीं है।',
   appSaveErrMultiSelectList:
     'बहु-चयन सूची सत्यापन xlsx में सहेजा नहीं जा सकता — सहेजने से पहले वह नियम हटाएँ।',
   appSaveErrX14Cf: 'इस श्रेणी में विस्तारित (x14) सशर्त स्वरूपण है, इसे अभी बदला नहीं जा सकता।',
@@ -703,6 +709,7 @@ export const hi = {
   appExportPdfTitle: 'PDF के रूप में निर्यात करें',
   appSaveTitle: 'सहेजें (⌘S)',
   appSaveAs: 'इस रूप में सहेजें',
+  aiNameFile: 'AI से नाम दें…',
   appUndo: 'पूर्ववत करें',
   appRedo: 'फिर से करें',
   appUnsavedEditOne: '● {count} असहेजा संपादन',
@@ -1201,6 +1208,7 @@ export const hi = {
   appGroupForecast: 'पूर्वानुमान',
   appWhatIfAnalysis: 'क्या-यदि विश्लेषण',
   appGoalSeek: 'लक्ष्य खोज',
+  appDataTable: 'डेटा टेबल',
   appWhatIfTitle: 'लक्ष्य मान के लिए इनपुट खोजें',
   appGoalSeekNeedsFormula: 'सेट सेल में सूत्र होना चाहिए।',
   appGoalSeekByCellNotNumber: 'बदले जाने वाले सेल में संख्या हो या वह खाली हो।',
@@ -1557,4 +1565,29 @@ export const hi = {
   appVisualFlipV: 'लंबवत पलटें',
   appVisualFlipH: 'क्षैतिज पलटें',
   appCtxPasteVisual: 'चित्र या आकृति पेस्ट करें',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'वर्तनी',
+  appSpellBtnDetail: 'शीट टेक्स्ट जाँचें (F7)',
+  appSpellToggle: 'वर्तनी जाँचें',
+  appSpellToggleTip:
+    'वर्तनी जाँच (F7 और Review बटन) चालू करता है; बंद होने पर टिप्पणी बॉक्स लहरदार रेखाएँ नहीं दिखाते',
+  appSpellOn: 'वर्तनी जाँच चालू कर दी गई।',
+  appSpellOff: 'वर्तनी जाँच बंद है। इसे Review ▸ प्रूफ़िंग में चालू करें।',
+  appSpellRecheck: 'फिर जाँचें',
+  appSpellNone: 'कोई संदिग्ध वर्तनी त्रुटि नहीं मिली।',
+  appSpellFindings: '{count} संदिग्ध त्रुटियाँ। स्थान पर जाने के लिए किसी पंक्ति पर क्लिक करें।',
+  appSpellTruncated: 'टेक्स्ट सेल बहुत अधिक हैं; केवल पहले वाले जाँचे गए।',
+  appSpellColWord: 'संदिग्ध',
+  appSpellIgnore: 'अनदेखा करें',
+  appSpellIgnoreAll: 'सभी अनदेखा करें',
+  appSpellLearn: 'शब्दकोश में जोड़ें',
+  appSpellNoSuggestions: 'कोई सुझाव नहीं',
+  appSpellIgnoredAll: 'इस सत्र में "{word}" को दोबारा चिह्नित नहीं किया जाएगा।',
+  appSpellLearned: '"{word}" शब्दकोश में जोड़ा गया।',
+  appSpellChanged: '{address} ठीक किया गया।',
+  appSpellChangeFailed: '{address} ठीक नहीं किया जा सका।',
+  appSpellUnavailable: 'इस विंडो में वर्तनी जाँच उपलब्ध नहीं है।',
+  appSpellReplaceAll: 'सबको "{suggestion}" से बदलें',
+  appSpellChangedAll: '"{word}" वाले {count} सेल ठीक किए गए।',
 } satisfies Record<keyof typeof zh, string>

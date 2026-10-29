@@ -115,9 +115,10 @@ export const ru = {
   appChartNoRepoint: 'Эта диаграмма не поддерживает переназначение диапазонов данных.',
   appKeepOneSeries: 'Оставьте хотя бы один ряд.',
   appNoCategoriesToSwitch: 'Нет категорий для переключения.',
-  appComboNoSelectData:
-    'Изменение источника данных комбинированной диаграммы пока не поддерживается.',
+  appSelectDataUnsupported: 'Изменение источника данных для этого типа диаграмм не поддерживается.',
   appSeriesName: 'Имя ряда',
+  appSeriesType: 'Тип ряда',
+  appSecondaryAxis: 'Вспомогательная ось',
   appValuesRange: 'Диапазон значений',
   appCategoriesRange: 'Диапазон категорий',
   appKeepUnchanged: 'Оставить без изменений',
@@ -201,6 +202,13 @@ export const ru = {
   appInvalidGroupField: 'Недопустимое поле группировки.',
   appInvalidPageField: 'Недопустимое поле фильтра отчёта.',
   appPivotPageItemMissing: 'Элемент фильтра «{item}» не входит в поле «{label}».',
+  appInvalidPivotBaseField:
+    'Базовое поле режима «Показать значения как» должно находиться в строках или столбцах.',
+  appPivotBaseFieldMissing:
+    'Для режима «Показать значения как» поля значений требуется базовое поле.',
+  appPivotBaseFieldNotAxis:
+    'Базовое поле «{label}» должно находиться в строках или столбцах сводной таблицы.',
+  appPivotBaseItemMissing: 'Базовый элемент «{item}» не входит в поле «{label}».',
   appInvalidLabelFilterField: 'Поле фильтра подписей недопустимо.',
   appInvalidValueFieldIndex: 'Индекс поля значений {index} недопустим.',
   appInvalidValueField: 'Недопустимое поле значений.',
@@ -342,8 +350,7 @@ export const ru = {
     'Этот лист содержит сводную таблицу — перемещение диапазонов пока не поддерживается.',
   appMergeOverTable:
     'Выделение пересекается с таблицей Excel — объединение ячеек внутри таблицы пока не поддерживается.',
-  appTableFilterNoEdit:
-    'Фильтр этого листа принадлежит таблице Excel — его изменение пока нельзя сохранить.',
+  appFilterToggleFailed: 'Фильтр не применён — сначала выделите диапазон с данными.',
   appAutofillStreaming:
     'Автозаполнение в область, которая ещё загружается потоково, пока не разрешено.',
   appDvNeedsIndexed:
@@ -590,8 +597,6 @@ export const ru = {
   appSaveFailed: 'Не удаётся сохранить книгу.',
   appCfRuleUnsaveable:
     'Это правило условного форматирования нельзя сохранить в xlsx — выберите другой тип правила.',
-  appSaveErrX14Dv:
-    'На этом листе есть расширенная (x14) проверка данных; редактирование её правил проверки пока не поддерживается.',
   appSaveErrMultiSelectList:
     'Проверку данных со списком множественного выбора нельзя сохранить в xlsx — удалите это правило перед сохранением.',
   appSaveErrX14Cf:
@@ -722,6 +727,7 @@ export const ru = {
   appExportPdfTitle: 'Экспорт в PDF',
   appSaveTitle: 'Сохранить (⌘S)',
   appSaveAs: 'Сохранить как',
+  aiNameFile: 'Назвать с помощью ИИ…',
   appUndo: 'Отменить',
   appRedo: 'Вернуть',
   appUnsavedEditOne: '● Несохранённых изменений: {count}',
@@ -1221,6 +1227,7 @@ export const ru = {
   appGroupForecast: 'Прогноз',
   appWhatIfAnalysis: 'Анализ «что если»',
   appGoalSeek: 'Подбор параметра',
+  appDataTable: 'Таблица данных',
   appWhatIfTitle: 'Найти вход для целевого значения',
   appGoalSeekNeedsFormula: 'Целевая ячейка должна содержать формулу.',
   appGoalSeekByCellNotNumber: 'Изменяемая ячейка должна содержать число или быть пустой.',
@@ -1577,4 +1584,29 @@ export const ru = {
   appVisualFlipV: 'Отразить сверху вниз',
   appVisualFlipH: 'Отразить слева направо',
   appCtxPasteVisual: 'Вставить рисунок или фигуру',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Орфография',
+  appSpellBtnDetail: 'Проверить текст листа (F7)',
+  appSpellToggle: 'Проверка орфографии',
+  appSpellToggleTip:
+    'Включает проверку орфографии (F7 и кнопка на вкладке «Рецензирование»); при выключении поле комментариев больше не показывает подчёркивания',
+  appSpellOn: 'Проверка орфографии включена.',
+  appSpellOff: 'Проверка орфографии выключена. Включите её в Рецензирование ▸ Правописание.',
+  appSpellRecheck: 'Проверить снова',
+  appSpellNone: 'Подозрительных орфографических ошибок не найдено.',
+  appSpellFindings: 'Подозрительных ошибок: {count}. Щёлкните строку, чтобы перейти.',
+  appSpellTruncated: 'Слишком много текстовых ячеек; проверены только первые.',
+  appSpellColWord: 'Сомнительное',
+  appSpellIgnore: 'Пропустить',
+  appSpellIgnoreAll: 'Пропустить все',
+  appSpellLearn: 'Добавить в словарь',
+  appSpellNoSuggestions: 'Нет вариантов',
+  appSpellIgnoredAll: 'Слово «{word}» больше не помечается в этом сеансе.',
+  appSpellLearned: 'Слово «{word}» добавлено в словарь.',
+  appSpellChanged: '{address} исправлено.',
+  appSpellChangeFailed: 'Не удалось исправить {address}.',
+  appSpellUnavailable: 'Проверка орфографии недоступна в этом окне.',
+  appSpellReplaceAll: 'Заменить все на «{suggestion}»',
+  appSpellChangedAll: 'Исправлено {count} ячеек со словом «{word}».',
 } satisfies Record<keyof typeof zh, string>

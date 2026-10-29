@@ -128,6 +128,59 @@ describe('image wrap in the editor', () => {
     editor.destroy()
   })
 
+  it('drops an in-line picture where it was let go, measured without its own line', async () => {
+    const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const { editor } = await openImageDoc(
+      paragraph('A') + IMAGE_PARAGRAPH_XML + paragraph('B') + paragraph('C') + paragraph('D'),
+    )
+    let imagePos = -1
+    const paragraphPositions: number[] = []
+    editor.state.doc.forEach((node, pos) => {
+      if (node.type.name === 'docProtected') imagePos = pos
+      else if (node.type.name === 'docParagraph') paragraphPositions.push(pos)
+    })
+    expect(editor.state.doc.nodeAt(imagePos)?.attrs.imageWrap).toBeNull()
+
+    const rect = (left: number, top: number, width: number, height: number) =>
+      new DOMRect(left, top, width, height)
+    const wrapper = editor.view.nodeDOM(imagePos) as HTMLElement
+    // the picture's 200px line pushes B..D down; once the drop takes it out of
+    // the flow they move up (D sits after a 40px gap)
+    const shownTops = [40, 300, 360, 460]
+    const flowTops = [40, 100, 160, 260]
+    paragraphPositions.forEach((pos, index) => {
+      const dom = editor.view.nodeDOM(pos) as HTMLElement
+      dom.getBoundingClientRect = () =>
+        rect(100, (wrapper.style.display === 'none' ? flowTops : shownTops)[index], 500, 60)
+    })
+    wrapper.getBoundingClientRect = () => rect(100, 100, 500, 200)
+    const imageBox = wrapper.querySelector<HTMLElement>('.doc-img-wrap')!
+    imageBox.getBoundingClientRect = () => rect(200, 100, 100, 200)
+
+    imageBox.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 250, clientY: 150 }),
+    )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 250, clientY: 300 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 250, clientY: 300 }))
+
+    // the top lands at 250: C (160..220) is the nearest paragraph above it —
+    // not D below, which would need a negative offset lifting it over C
+    expect(editor.state.doc.content.content.map((node) => node.type.name)).toEqual([
+      'docParagraph',
+      'docParagraph',
+      'docProtected',
+      'docParagraph',
+      'docParagraph',
+    ])
+    expect(editor.state.doc.child(3).textContent).toBe('C')
+    const moved = editor.state.selection instanceof NodeSelection && editor.state.selection.node
+    expect(moved && moved.attrs.imageWrap).toBe('square-left')
+    expect(moved && moved.attrs.imageOffsetXEmu).toBe(100 * 9525)
+    expect(moved && moved.attrs.imageOffsetYEmu).toBe((250 - 160) * 9525)
+    expect(wrapper.style.display).toBe('')
+    editor.destroy()
+  })
+
   it('resizes from a northwest handle and keeps the opposite corner fixed', async () => {
     const { editor } = await openImageDoc()
     const emu = 9525

@@ -105,11 +105,12 @@ const GRAPHICS_GUARD_EMIT_SHARE = 0.35
 const GUARD_WHITE_MIN = 0xf2
 
 function isNearWhiteHex(hex: string): boolean {
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return false
+  const v = (hex ?? '').trim()
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return false
   return (
-    parseInt(hex.slice(0, 2), 16) >= GUARD_WHITE_MIN &&
-    parseInt(hex.slice(2, 4), 16) >= GUARD_WHITE_MIN &&
-    parseInt(hex.slice(4, 6), 16) >= GUARD_WHITE_MIN
+    parseInt(v.slice(0, 2), 16) >= GUARD_WHITE_MIN &&
+    parseInt(v.slice(2, 4), 16) >= GUARD_WHITE_MIN &&
+    parseInt(v.slice(4, 6), 16) >= GUARD_WHITE_MIN
   )
 }
 

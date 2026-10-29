@@ -8,6 +8,8 @@ export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
   save: 'pdf:save',
+  pickAttachmentFile: 'pdf:pick-attachment-file',
+  exportAttachment: 'pdf:export-attachment',
   requestRedactionCopy: 'pdf:request-redaction-copy',
   autoRename: 'pdf:auto-rename',
   isUntitled: 'pdf:is-untitled',
@@ -21,6 +23,9 @@ export const PDF_CHANNELS = {
   pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
   insertPdf: 'pdf:insert-pdf',
+  compareReadPdf: 'pdf:compare-read-pdf',
+  compareReadOpen: 'pdf:compare-read-open',
+  reduceFileSize: 'pdf:reduce-file-size',
   insertBlankPage: 'pdf:insert-blank-page',
   splitPdf: 'pdf:split-pdf',
   mergePdf: 'pdf:merge-pdf',
@@ -245,7 +250,7 @@ export interface CreateDocumentResult {
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
-export type MarkupType = 'highlight' | 'underline' | 'strikeout'
+export type MarkupType = 'highlight' | 'underline' | 'strikeout' | 'squiggly'
 
 /** A text markup to write; quads are 4-point groups in PDF coords (y up) [x1,yTop,x2,yTop,x1,yBottom,x2,yBottom] */
 export interface MarkupInput {
@@ -258,12 +263,12 @@ export interface MarkupInput {
 
 /** Delete an annotation already saved in the file. Object number is only a lookup
     hint; subtype + rect guard against (and recover from) object renumbering by a rewrite.
-    'note' targets Text (comment) annotations. */
+    'note' targets Text (comment) annotations, 'polygon' Polygon shape annotations. */
 export interface AnnotDeleteInput {
   pageIndex: number
   /** PDF object number (pdf.js annotation id "123R" → 123) */
   objNum: number
-  subtype: MarkupType | 'note'
+  subtype: MarkupType | 'note' | 'polygon'
   /** Annotation /Rect in PDF user space, for fallback matching */
   rect: [number, number, number, number]
   /** /Contents to match. Required identity for notes: every comment of a thread shares
@@ -323,7 +328,34 @@ export type DrawingInput =
       destPage?: number
     }
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
+  | {
+      /** Calibrated measurement: a Line annotation whose label shows the real-world
+          length the session computed (the file stays geometry-only). */
+      kind: 'measure'
+      pageIndex: number
+      color: [number, number, number]
+      width: number
+      from: [number, number]
+      to: [number, number]
+      /** Displayed text, e.g. "2.35 m" — non-empty, ≤ 64 chars */
+      label: string
+    }
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
+  | {
+      /** Text insertion mark placed by a click; written as a Caret annotation with
+          its own appearance stream (no viewer synthesises one) */
+      kind: 'caret'
+      pageIndex: number
+      color: [number, number, number]
+      /** PDF user space insertion point */
+      point: [number, number]
+    }
+  | (DrawBase & {
+      /** Closed polygon placed vertex by vertex; stroke-only (no /IC fill) */
+      kind: 'polygon'
+      /** Each corner in PDF user space; at least 3 */
+      vertices: [number, number][]
+    })
   | {
       /** Image signature/stamp placed by the user; written as a Stamp annotation */
       kind: 'image'
@@ -468,6 +500,10 @@ export interface TextInsertInput {
   align?: 'left' | 'center' | 'right'
   /** Final displayed page rotation; insertion matrix counter-rotates text into screen space. */
   rotate?: number
+  /** PDF text render mode 3 — present, selectable and searchable, never painted.
+      The OCR bake layer's inserts: white glyphs would still show on grey paper,
+      photos and dark headers, and light up under selection. */
+  invisible?: boolean
 }
 
 /** Dry-run match result for one pending text edit */
@@ -677,6 +713,19 @@ export interface BlankPageInput {
   height: number
 }
 
+/** An embedded file to add on the next save */
+export interface PdfAttachmentAdd {
+  name: string
+  bytesBase64: string
+  description?: string
+}
+
+/** Embedded-file edits for the next save: removals run first, then additions */
+export interface PdfAttachmentOps {
+  add?: PdfAttachmentAdd[]
+  remove?: string[]
+}
+
 export interface SavePdfRequest {
   path: string
   /**
@@ -717,6 +766,24 @@ export interface SavePdfRequest {
   /** New page order (array of original page indices, excluding deleted); omitted if unreordered */
   pageOrder?: number[]
   metadata?: MetadataInput
+  /** Full bookmark-tree replacement, written when the user edited the outline.
+   * Every entry must carry an explicit page target (0-based index); entries
+   * the writer cannot rebuild exactly make the save refuse the replacement
+   * (the file's own /Outlines stay untouched). */
+  outline?: OutlineEntryInput[]
+
+  /** Embedded-file edits, applied after every content stage */
+  attachments?: PdfAttachmentOps
+}
+
+/** One bookmark of a replacement outline; children nest one level deeper */
+export interface OutlineEntryInput {
+  title: string
+  /** 0-based page index the bookmark jumps to */
+  pageIndex: number
+  /** Vertical position on the page, PDF user space; null keeps the default */
+  top?: number | null
+  children?: OutlineEntryInput[]
 }
 
 /** A text edit that could not be matched to the document at save time and was skipped */
@@ -923,6 +990,52 @@ export interface PdfApi {
   openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
+  /** Pick a second document for Compare and read its per-page text (the pick is
+      main-side; no grant and no bytes travel to the render side) */
+  compareReadPdf(): Promise<
+    | { ok: true; name: string; pageCount: number; pages: string[] }
+    | { ok: false; canceled: true }
+    | { ok: false; reason: string }
+  >
+  /** The open document's own per-page text, extracted main-side by the same
+      pdfium engine as the picked side — two engines break lines differently,
+      and the diff would report phantom changes on identical files */
+  compareReadOpen(
+    path: string,
+  ): Promise<
+    { ok: true; name: string; pageCount: number; pages: string[] } | { ok: false; reason: string }
+  >
+  /** Ask for a file to embed (open dialog); the bytes come back base64-encoded */
+  pickAttachmentFile(): Promise<
+    | { ok: true; name: string; bytesBase64: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; reason: string }
+  >
+  /** Save an embedded file's bytes to a user-chosen path (save dialog defaults to its name) */
+  exportAttachment(
+    path: string,
+    name: string,
+    bytesBase64: string,
+  ): Promise<
+    | { ok: true; targetPath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; reason: string }
+  >
+  /** Reduce file size: re-compress streams and downsample oversized Flate images.
+      The picked save target (main-side dialog) receives the shrunk copy; the open
+      document is untouched and reloads from the target when the caller asks. */
+  reduceFileSize(path: string): Promise<
+    | {
+        ok: true
+        targetPath: string
+        bytesBefore: number
+        bytesAfter: number
+        streamsRecompressed: number
+        imagesDownsampled: number
+      }
+    | { ok: false; canceled: true }
+    | { ok: false; reason: string }
+  >
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>
   /** Creates a redacted working copy on first apply; subsequent applies save that copy in place. */

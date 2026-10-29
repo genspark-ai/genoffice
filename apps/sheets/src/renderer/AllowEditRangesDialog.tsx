@@ -11,6 +11,14 @@ import { useModalDialog } from './modal-dialog'
 export interface AllowEditRange {
   readonly name: string
   readonly sqref: string
+  /// Plaintext password for a new range; hashed before anything touches disk,
+  /// so this is never a stored secret.
+  readonly password?: string
+  /// Set for a range that carries a password; true together with `locked` only
+  /// when the hash is not known to this session (a file's own hash), which is
+  /// what makes the row unchangeable here.
+  readonly hasPassword?: boolean
+  readonly locked?: boolean
 }
 
 const RANGE_REF = /^\$?[A-Za-z]{1,3}\$?\d{1,7}(?::\$?[A-Za-z]{1,3}\$?\d{1,7})?$/
@@ -24,8 +32,8 @@ export function AllowEditRangesDialog({
   readonly ranges: readonly AllowEditRange[]
   /// Seed for the range input (the active cell), '' when unknown.
   readonly defaultRef: string
-  /// Returns an error message, or null on success.
-  readonly onApply: (ranges: readonly AllowEditRange[]) => string | null
+  /// Returns an error message, or null on success (async allowed: hashing).
+  readonly onApply: (ranges: readonly AllowEditRange[]) => string | null | Promise<string | null>
   readonly onClose: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
@@ -37,6 +45,7 @@ export function AllowEditRangesDialog({
     }
   })
   const [reference, setReference] = useState(defaultRef)
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const add = (): void => {
@@ -50,20 +59,35 @@ export function AllowEditRangesDialog({
       setError(t('dlgRangeRefInvalid'))
       return
     }
-    const next = [...working, { name: trimmedName, sqref: trimmedRef.replaceAll('$', '') }]
+    const next = [
+      ...working,
+      {
+        name: trimmedName,
+        sqref: trimmedRef.replaceAll('$', ''),
+        ...(password.trim() === '' ? {} : { password: password.trim() }),
+      },
+    ]
     setWorking(next)
     setError(null)
     setName(`Range${next.length + 1}`)
     setReference('')
+    setPassword('')
   }
 
+  const [applying, setApplying] = useState(false)
+
   const apply = (): void => {
-    const failed = onApply(working)
-    if (failed !== null) {
-      setError(failed)
-      return
-    }
-    onClose()
+    setApplying(true)
+    void Promise.resolve(onApply(working))
+      .then((failed) => {
+        if (failed !== null) {
+          setError(failed)
+          setApplying(false)
+          return
+        }
+        onClose()
+      })
+      .catch(() => setApplying(false))
   }
 
   const modal = useModalDialog(onClose)
@@ -83,10 +107,19 @@ export function AllowEditRangesDialog({
             <ul className="allow-edit-list">
               {working.map((range) => (
                 <li key={range.name}>
-                  <span className="allow-edit-name">{range.name}</span>
+                  <span className="allow-edit-name">
+                    {range.name}
+                    {range.locked === true && (
+                      <span className="allow-edit-lock" aria-hidden="true">
+                        {' 🔒'}
+                      </span>
+                    )}
+                  </span>
                   <span className="allow-edit-ref">{range.sqref}</span>
                   <button
                     className="secondary"
+                    disabled={range.locked === true}
+                    title={range.locked === true ? t('dlgRangeLocked') : undefined}
                     onClick={() => setWorking(working.filter((entry) => entry.name !== range.name))}
                   >
                     {t('dlgRangeDelete')}
@@ -112,6 +145,17 @@ export function AllowEditRangesDialog({
                 }}
               />
             </label>
+            <label>
+              {t('dlgRangePassword')}
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') add()
+                }}
+              />
+            </label>
           </div>
           <div className="dialog-actions-inline">
             <button className="secondary" onClick={add}>
@@ -128,7 +172,7 @@ export function AllowEditRangesDialog({
           <button className="secondary" onClick={onClose}>
             {t('dlgCancel')}
           </button>
-          <button className="primary-action" onClick={apply}>
+          <button className="primary-action" disabled={applying} onClick={apply}>
             {t('dlgOk')}
           </button>
         </div>

@@ -19,7 +19,7 @@ export interface OpDoc {
 export const OP_DOCS: Record<string, OpDoc> = {
   // ── annotate ──────────────────────────────────────────────────────────
   addMarkup: {
-    sig: '{markup:{pageIndex,type:"highlight"|"underline"|"strikeout",color:[r,g,b],quads:[[x1,yT,x2,yT,x1,yB,x2,yB],…]}} — quads payload; use markup_text instead',
+    sig: '{markup:{pageIndex,type:"highlight"|"underline"|"squiggly"|"strikeout",color:[r,g,b],quads:[[x1,yT,x2,yT,x1,yB,x2,yB],…]}} — quads payload; use markup_text instead',
     group: 'annotate',
     aiCallable: false,
   },
@@ -40,7 +40,7 @@ export const OP_DOCS: Record<string, OpDoc> = {
     aiCallable: false,
   },
   addDrawing: {
-    sig: '{drawing:{kind:"ink"|"rect"|"ellipse"|"line"|"arrow"|"image"|"note",pageIndex,…},formWidgetId?} — geometry payload; use add_note for comments',
+    sig: '{drawing:{kind:"ink"|"rect"|"ellipse"|"line"|"arrow"|"polygon"|"caret"|"image"|"note",pageIndex,…},formWidgetId?} — geometry payload; use add_note for comments',
     group: 'annotate',
     aiCallable: false,
   },

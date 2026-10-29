@@ -121,9 +121,10 @@ export const pt = {
   appChartNoRepoint: 'Este gráfico não permite redefinir os intervalos de dados.',
   appKeepOneSeries: 'Mantenha pelo menos uma série.',
   appNoCategoriesToSwitch: 'Não há categorias para alternar.',
-  appComboNoSelectData:
-    'Alterar a fonte de dados de um gráfico de combinação ainda não é suportado.',
+  appSelectDataUnsupported: 'Não há suporte para alterar a origem de dados deste tipo de gráfico.',
   appSeriesName: 'Nome da série',
+  appSeriesType: 'Tipo de série',
+  appSecondaryAxis: 'Eixo secundário',
   appValuesRange: 'Intervalo de valores',
   appCategoriesRange: 'Intervalo de categorias',
   appKeepUnchanged: 'Manter inalterado',
@@ -207,6 +208,13 @@ export const pt = {
   appInvalidGroupField: 'Campo de agrupamento inválido.',
   appInvalidPageField: 'Campo de filtro de relatório inválido.',
   appPivotPageItemMissing: 'O item de filtro "{item}" não pertence ao campo "{label}".',
+  appInvalidPivotBaseField:
+    'O campo base de "Mostrar valores como" deve estar em linhas ou colunas.',
+  appPivotBaseFieldMissing:
+    'O modo "Mostrar valores como" de um campo de valores precisa de um campo base.',
+  appPivotBaseFieldNotAxis:
+    'O campo base "{label}" deve estar nas linhas ou colunas da tabela dinâmica.',
+  appPivotBaseItemMissing: 'O item base "{item}" não pertence ao campo "{label}".',
   appInvalidLabelFilterField: 'O campo do filtro de rótulo é inválido.',
   appInvalidValueFieldIndex: 'O índice do campo de valores {index} é inválido.',
   appInvalidValueField: 'Campo de valores inválido.',
@@ -357,8 +365,8 @@ export const pt = {
     'Esta planilha contém uma Tabela Dinâmica — mover intervalos ainda não é suportado.',
   appMergeOverTable:
     'A seleção sobrepõe uma tabela do Excel — mesclar células dentro de uma tabela ainda não é suportado.',
-  appTableFilterNoEdit:
-    'O filtro desta planilha pertence a uma tabela do Excel — a edição ainda não pode ser salva.',
+  appFilterToggleFailed:
+    'O filtro não foi aplicado — selecione primeiro o intervalo com seus dados.',
   appAutofillStreaming:
     'O preenchimento automático em uma área ainda em streaming não é permitido por enquanto.',
   appDvNeedsIndexed:
@@ -613,8 +621,6 @@ export const pt = {
   appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
   appCfRuleUnsaveable:
     'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
-  appSaveErrX14Dv:
-    'Esta planilha tem validação de dados estendida (x14); editar suas regras de validação ainda não é suportado.',
   appSaveErrMultiSelectList:
     'A validação de lista de seleção múltipla não pode ser salva em xlsx — exclua a regra antes de salvar.',
   appSaveErrX14Cf:
@@ -742,6 +748,7 @@ export const pt = {
   appExportPdfTitle: 'Exportar como PDF',
   appSaveTitle: 'Salvar (⌘S)',
   appSaveAs: 'Salvar Como',
+  aiNameFile: 'Nomear com IA…',
   appUndo: 'Desfazer',
   appRedo: 'Refazer',
   appUnsavedEditOne: '● {count} edição não salva',
@@ -1242,6 +1249,7 @@ export const pt = {
   appGroupForecast: 'Previsão',
   appWhatIfAnalysis: 'Teste de Hipóteses',
   appGoalSeek: 'Atingir meta',
+  appDataTable: 'Tabela de dados',
   appWhatIfTitle: 'Resolver uma entrada para um valor-alvo',
   appGoalSeekNeedsFormula: 'A célula deve conter uma fórmula.',
   appGoalSeekByCellNotNumber: 'A célula a alterar deve conter um número ou estar vazia.',
@@ -1603,4 +1611,29 @@ export const pt = {
   appVisualFlipV: 'Inverter verticalmente',
   appVisualFlipH: 'Inverter horizontalmente',
   appCtxPasteVisual: 'Colar imagem ou forma',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ortografia',
+  appSpellBtnDetail: 'Verificar o texto da planilha (F7)',
+  appSpellToggle: 'Verificar ortografia',
+  appSpellToggleTip:
+    'Ativa a verificação ortográfica (F7 e o botão Revisão); desativada, as caixas de comentário deixam de mostrar sublinhados',
+  appSpellOn: 'Verificação ortográfica ativada.',
+  appSpellOff: 'A verificação ortográfica está desativada. Ative-a em Revisão ▸ Revisão de Texto.',
+  appSpellRecheck: 'Verificar novamente',
+  appSpellNone: 'Nenhum erro de ortografia suspeito encontrado.',
+  appSpellFindings: '{count} erros suspeitos. Clique em uma linha para localizar.',
+  appSpellTruncated: 'Células de texto demais; somente as primeiras foram verificadas.',
+  appSpellColWord: 'Suspeita',
+  appSpellIgnore: 'Ignorar',
+  appSpellIgnoreAll: 'Ignorar tudo',
+  appSpellLearn: 'Adicionar ao dicionário',
+  appSpellNoSuggestions: 'Sem sugestões',
+  appSpellIgnoredAll: '"{word}" não será mais sinalizado nesta sessão.',
+  appSpellLearned: '"{word}" foi adicionado ao dicionário.',
+  appSpellChanged: '{address} corrigido.',
+  appSpellChangeFailed: 'Não foi possível corrigir {address}.',
+  appSpellUnavailable: 'A verificação ortográfica não está disponível nesta janela.',
+  appSpellReplaceAll: 'Substituir tudo por "{suggestion}"',
+  appSpellChangedAll: 'Corrigidas {count} células de "{word}".',
 } satisfies Record<keyof typeof zh, string>

@@ -13,15 +13,18 @@ import {
   PDFRef,
   PDFSignature,
   PDFString,
+  StandardFonts,
   TextAlignment,
   degrees,
   rgb,
 } from 'pdf-lib'
 import type { PDFPage } from 'pdf-lib'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
+import { applyAttachments } from './pdf-attachments'
 import type {
   BlankPageInput,
   DrawingInput,
+  OutlineEntryInput,
   FormFieldInput,
   FormWidgetEditInput,
   FormValueInput,
@@ -118,7 +121,8 @@ const quadBounds = (q: number[]) => {
  * Acrobat/Preview/pdfjs all render from AP for consistent results.
  * Highlight uses Multiply blending to mimic a highlighter; underline/strikeout are stroked
  * segments drawn along the "visual bottom edge" (pageRot is the page's final /Rotate;
- * at 90/270 line height runs along the x axis).
+ * at 90/270 line height runs along the x axis); squiggly is a repeating wave on the
+ * same edge.
  */
 function markupAppearance(
   pdfDoc: PDFDocument,
@@ -133,6 +137,24 @@ function markupAppearance(
     for (const q of m.quads) {
       const [x1, y1, x2, y2] = quadBounds(q)
       ops.push(`${num(x1)} ${num(y1)} ${num(x2 - x1)} ${num(y2 - y1)} re f`)
+    }
+  } else if (m.type === 'squiggly') {
+    const t = 0.08 // same visual bottom-edge offset as underline
+    ops.push(`${r} ${g} ${b} RG`)
+    for (const q of m.quads) {
+      const [x1, y1, x2, y2] = quadBounds(q)
+      const h = pageRot % 180 === 0 ? y2 - y1 : x2 - x1
+      ops.push(`${Math.max(0.8, num(h * 0.06))} w`)
+      // The perpendicular points the way the wave bulges: from the visual bottom
+      // edge into the text, which is -x at rot 90 and -y at rot 180
+      if (pageRot === 90) {
+        squigglyOps(ops, x2 - h * t, y1, 0, 1, -1, 0, y2 - y1)
+      } else if (pageRot === 270) {
+        squigglyOps(ops, x1 + h * t, y1, 0, 1, 1, 0, y2 - y1)
+      } else {
+        const y = pageRot === 180 ? y2 - h * t : y1 + h * t
+        squigglyOps(ops, x1, y, 1, 0, 0, pageRot === 180 ? -1 : 1, x2 - x1)
+      }
     }
   } else {
     const t = m.type === 'underline' ? 0.08 : 0.46
@@ -168,6 +190,7 @@ const SUBTYPE: Record<MarkupInput['type'], string> = {
   highlight: 'Highlight',
   underline: 'Underline',
   strikeout: 'StrikeOut',
+  squiggly: 'Squiggly',
 }
 
 /**
@@ -216,6 +239,46 @@ function appendAnnot(pdfDoc: PDFDocument, page: PDFPage, annotRef: PDFRef): void
   } else {
     page.node.set(PDFName.of('Annots'), pdfDoc.context.obj([annotRef]))
   }
+}
+
+/**
+ * One squiggly (wavy underline) stroke: repeating quadratic Bezier humps along a
+ * baseline, started and ended on the wave's midline — period ≈ 4 user units,
+ * amplitude ≈ 1.5. The midline sits one amplitude above the underline position so
+ * troughs stay inside the quad (the /AP BBox clips). (dx,dy) walks the line, (px,py)
+ * is its unit perpendicular.
+ */
+function squigglyOps(
+  ops: string[],
+  ax: number,
+  ay: number,
+  dx: number,
+  dy: number,
+  px: number,
+  py: number,
+  length: number,
+): void {
+  const half = 2 // half period
+  const amp = 1.5
+  const at = (d: number, off: number) =>
+    `${num(ax + dx * d + px * off)} ${num(ay + dy * d + py * off)}`
+  ops.push(`${at(0, amp)} m`)
+  let side = 1
+  let from = 0
+  while (from < length) {
+    const to = Math.min(from + half, length)
+    // The quadratic hump PDF has no operator for, written as the cubic that
+    // reproduces it: control points at 1/3 and 2/3 of the segment, 4/3 of the
+    // apex above the midline (a symmetric cubic peaks at 3/4 of its control
+    // height). A single 'v' control point skewed the hump and pushed the
+    // troughs below the midline.
+    const ctrl = amp + (side * 4 * amp) / 3
+    const third = (to - from) / 3
+    ops.push(`${at(from + third, ctrl)} ${at(from + 2 * third, ctrl)} ${at(to, amp)} c`)
+    from = to
+    side = -side
+  }
+  ops.push('S')
 }
 
 /** 4-segment Bezier approximation of an ellipse */
@@ -277,6 +340,114 @@ async function addImageStamp(
   annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
   setVisualSignatureMetadata(annot, d.formFieldName)
   appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+}
+
+/**
+ * Full /Outlines replacement from an edited bookmark tree. Every entry
+ * carries an explicit page target (validated up front — a page index beyond
+ * the document aborts the whole replacement before anything is registered),
+ * so the graph is rebuilt deterministically: /First//Last//Next//Prev
+ * pointers, /Count as each item's visible-descendant tally, and /Dest
+ * [page /XYZ 0 top null] (top null keeps the viewer's zoom). The root dict
+ * replaces the catalog's /Outlines wholesale — untouched documents never
+ * reach this path (the request omits `outline`), so existing bookmarks stay
+ * byte-identical unless the user edited the tree.
+ *
+ * `deleted` is the set of pages the same save removes. A bookmark on a page
+ * that is leaving the document would carry a /Dest to a page no longer in the
+ * page tree, so that entry goes with the page — and so do its children, which
+ * hang off it. The /Dest itself is a page *reference*, not an index, so the
+ * entries that survive a deletion elsewhere still point at the right page.
+ */
+function applyOutline(
+  pdfDoc: PDFDocument,
+  entries: readonly OutlineEntryInput[],
+  deleted: ReadonlySet<number>,
+): void {
+  /** The tree without the entries whose page is being deleted. */
+  const prune = (list: readonly OutlineEntryInput[]): OutlineEntryInput[] =>
+    list
+      .filter((entry) => !deleted.has(entry.pageIndex))
+      .map((entry) => ({
+        ...entry,
+        children: entry.children?.length ? prune(entry.children) : undefined,
+      }))
+
+  const kept = prune(entries)
+  // Every entry went with a deleted page: the edit has nothing left to say,
+  // so the file's own /Outlines stay as they are rather than being replaced by
+  // an empty graph. An empty tree the reader made is a different thing — that
+  // is a deliberate "no bookmarks", and it is written.
+  if (entries.length > 0 && kept.length === 0) return
+
+  const verify = (list: readonly OutlineEntryInput[]): void => {
+    for (const entry of list) {
+      const title = typeof entry.title === 'string' ? entry.title.trim() : ''
+      if (title === '') throw new Error('Outline entries need a non-empty title.')
+      if (
+        !Number.isInteger(entry.pageIndex) ||
+        entry.pageIndex < 0 ||
+        entry.pageIndex >= pdfDoc.getPageCount()
+      ) {
+        throw new Error(`Outline entry "${title}" points at page ${entry.pageIndex}.`)
+      }
+      if (entry.children?.length) verify(entry.children)
+    }
+  }
+  verify(kept)
+
+  const pages = pdfDoc.getPages()
+  const rootRef = pdfDoc.context.register(pdfDoc.context.obj({ Type: 'Outlines' }))
+
+  /** Registers the list's items under parentRef; returns first/last refs and
+      the subtree's total item count (each item's /Count is set from its own
+      children's return). */
+  const build = (
+    list: readonly OutlineEntryInput[],
+    parentRef: PDFRef,
+  ): { first: PDFRef | null; last: PDFRef | null; total: number } => {
+    let first: PDFRef | null = null
+    let previous: PDFRef | null = null
+    let count = 0
+    for (const entry of list) {
+      const page = pages[entry.pageIndex]!
+      const dict = pdfDoc.context.obj({
+        Title: PDFHexString.fromText(entry.title.trim()),
+        Parent: parentRef,
+        Dest: pdfDoc.context.obj([
+          page.ref,
+          PDFName.of('XYZ'),
+          0,
+          typeof entry.top === 'number' ? num(entry.top) : null,
+          null,
+        ]),
+      })
+      const ref = pdfDoc.context.register(dict)
+      count += 1
+      if (previous !== null) {
+        ;(pdfDoc.context.lookup(previous, PDFDict) as PDFDict).set(PDFName.of('Next'), ref)
+        dict.set(PDFName.of('Prev'), previous)
+      }
+      if (first === null) first = ref
+      previous = ref
+      if (entry.children?.length) {
+        const child = build(entry.children, ref)
+        if (child.first) dict.set(PDFName.of('First'), child.first)
+        if (child.last) dict.set(PDFName.of('Last'), child.last)
+        dict.set(PDFName.of('Count'), PDFNumber.of(child.total))
+        count += child.total
+      }
+    }
+    return { first, last: previous, total: count }
+  }
+
+  const top = build(kept, rootRef)
+  const root = pdfDoc.context.lookup(rootRef, PDFDict) as PDFDict
+  // An empty tree is a valid outline root: no /First means no entries.
+  if (top.first) root.set(PDFName.of('First'), top.first)
+  if (top.last) root.set(PDFName.of('Last'), top.last)
+  root.set(PDFName.of('Count'), PDFNumber.of(top.total))
+  pdfDoc.catalog.set(PDFName.of('Outlines'), rootRef)
 }
 
 /**
@@ -435,14 +606,24 @@ function noteAppearance(
   })
 }
 
-/** Drawing annots: hand-written AP for Ink/Square/Circle/Line; notes get an AP
- *  icon so Preview (Quartz) draws them instead of nothing. */
+/** The caret wedge: the insertion point is the tip, the arms reach half a box out
+ *  and two thirds of it down — the renderer's chevron, filled. */
+const CARET_HALF_WIDTH = 8
+const CARET_DEPTH = 6
+
+/** Drawing annots: hand-written AP for every shape (Ink/Square/Circle/Line, Caret,
+ *  Polygon); notes get an AP icon so Preview (Quartz) draws them instead of nothing.
+ *  The AP is what makes a saved shape visible: pdf.js has no default appearance for
+ *  a Caret and pdfium's generator covers neither Caret nor Polygon, so both would
+ *  come back blank in GenOffice, Preview, Chrome or Edge. */
 function addDrawing(
   pdfDoc: PDFDocument,
   page: PDFPage,
   d: DrawingInput,
   /** localId → registered ref of notes written earlier in this request (reply parenting) */
   noteRefs?: Map<string, PDFRef>,
+  /** the label font's ref for measure drawings (their appearance names /F1) */
+  measureFontRef?: PDFRef,
 ): void {
   if (d.kind === 'image') return // handled by addImageStamp (needs async embed)
   if (d.kind === 'link') return // handled by addLinkAnnot (needs the page list)
@@ -483,6 +664,67 @@ function addDrawing(
     return
   }
 
+  if (d.kind === 'caret') {
+    const [x, y] = d.point
+    const rect = [num(x - 10), num(y - 10), num(x + 10), num(y + 10)]
+    // The wedge as a filled path: the tip is the insertion point, the arms open
+    // downwards. The AP BBox is the annotation rect — a viewer maps BBox → /Rect,
+    // so the two must match or the mark is scaled.
+    const ops = [
+      `${r} ${g} ${b} rg`,
+      `${num(x)} ${num(y)} m ${num(x - CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l ${num(x + CARET_HALF_WIDTH)} ${num(y - CARET_DEPTH)} l f`,
+    ]
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Caret',
+      Rect: rect,
+      F: 4,
+      P: page.ref,
+      C: d.color,
+      AP: { N: pdfDoc.context.register(ap) },
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+    appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+    return
+  }
+
+  if (d.kind === 'polygon') {
+    const xs = d.vertices.map((v) => v[0])
+    const ys = d.vertices.map((v) => v[1])
+    const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(num)
+    // The vertices as a closed stroked path, like Ink/Line: round caps and joins
+    // match the renderer's preview, and the stroke is the annotation's own color.
+    const ops = [`${num(d.width)} w 1 J 1 j ${r} ${g} ${b} RG`]
+    d.vertices.forEach(([vx, vy], i) => {
+      ops.push(`${num(vx)} ${num(vy)} ${i === 0 ? 'm' : 'l'}`)
+    })
+    ops.push('h S')
+    const ap = pdfDoc.context.stream(ops.join('\n'), {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: rect,
+    })
+    const annot = pdfDoc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Polygon',
+      Rect: rect,
+      Vertices: d.vertices.flat().map(num),
+      F: 4,
+      P: page.ref,
+      C: d.color,
+      BS: { W: d.width },
+      AP: { N: pdfDoc.context.register(ap) },
+    })
+    annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
+    appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+    return
+  }
+
   const ops: string[] = [`${num(d.width)} w 1 J 1 j ${r} ${g} ${b} RG`]
   let xs: number[] = []
   let ys: number[] = []
@@ -514,6 +756,28 @@ function addDrawing(
     ops.push(`${num(fx)} ${num(fy)} m ${num(tx)} ${num(ty)} l S`)
     xs = [fx, tx]
     ys = [fy, ty]
+    if (d.kind === 'measure') {
+      // the label rides the line's own angle at its midpoint, flipped into
+      // left-to-right when the line runs right-to-left; the whole appearance
+      // rotates with the page like any other annotation's. The label takes the
+      // drawing's own colour, matching the on-screen preview.
+      const mx = (fx + tx) / 2
+      const my = (fy + ty) / 2
+      const ang = Math.atan2(ty - fy, tx - fx)
+      const flip = Math.abs(ang) > Math.PI / 2
+      const tilt = flip ? ang + Math.PI : ang
+      ops.push(`BT ${r} ${g} ${b} rg /F1 9 Tf`)
+      ops.push(
+        `${num(Math.cos(tilt))} ${num(Math.sin(tilt))} ${num(-Math.sin(tilt))} ${num(Math.cos(tilt))} ${num(mx)} ${num(my + 6)} Tm`,
+      )
+      const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+      ops.push(`(${esc}) Tj ET`)
+      // Helvetica 9pt averages ~4.5pt per glyph, and the extent follows the
+      // label's tilt — an axis-aligned half-width clipped steep lines
+      const halfW = (d.label.length * 4.5) / 2
+      xs.push(mx + Math.cos(tilt) * halfW, mx - Math.cos(tilt) * halfW)
+      ys.push(my + 6 + Math.sin(tilt) * halfW, my + 6 - Math.sin(tilt) * halfW)
+    }
     if (d.kind === 'arrow') {
       const ang = Math.atan2(ty - fy, tx - fx)
       const len = Math.max(9, d.width * 4.5)
@@ -534,7 +798,16 @@ function addDrawing(
     Math.max(...xs) + pad,
     Math.max(...ys) + pad,
   ]
-  const ap = pdfDoc.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', BBox: rect })
+  // Preview and Acrobat synthesize nothing for an unresolvable font reference:
+  // the label's /F1 must be reachable through the form's /Resources
+  const ap = pdfDoc.context.stream(ops.join('\n'), {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: rect,
+    ...(d.kind === 'measure' && measureFontRef
+      ? { Resources: { Font: { F1: measureFontRef } } }
+      : {}),
+  })
   const annot = pdfDoc.context.obj({
     Type: 'Annot',
     Subtype: subtype,
@@ -548,6 +821,10 @@ function addDrawing(
   if (d.kind === 'ink') annot.set(PDFName.of('InkList'), pdfDoc.context.obj(d.paths))
   if (d.kind === 'line' || d.kind === 'arrow') {
     annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+  }
+  if (d.kind === 'measure') {
+    annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(d.label))
   }
   annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
   if (d.kind === 'ink') setVisualSignatureMetadata(annot, d.formFieldName)
@@ -1317,12 +1594,19 @@ export async function applySaveRequest(
     if (page && validMarkup(m)) addMarkup(pdfDoc, page, m)
   }
   const noteRefs = new Map<string, PDFRef>()
-  for (const d of request.drawings ?? []) {
+  // the measure label's font: standard-14 Helvetica, no bytes to embed — but
+  // only when a measure drawing is actually written, so saves without one
+  // leave the document's font dict untouched
+  const drawings = request.drawings ?? []
+  const measureFontRef = drawings.some((d) => d.kind === 'measure')
+    ? (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
+    : undefined
+  for (const d of drawings) {
     const page = pages[d.pageIndex]
     if (!page) continue
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
     else if (d.kind === 'link') addLinkAnnot(pdfDoc, pages, page, d)
-    else addDrawing(pdfDoc, page, d, noteRefs)
+    else addDrawing(pdfDoc, page, d, noteRefs, measureFontRef)
   }
   // Note content edits go after the drawings: replies added above locate their /IRT
   // parent by its old contents, which an earlier in-place rewrite would break. An
@@ -1354,6 +1638,11 @@ export async function applySaveRequest(
     })
   }
   if (request.metadata) applyMetadata(pdfDoc, request.metadata)
+  if (request.outline !== undefined && request.outline !== null) {
+    // A bookmark on a page this save removes cannot be written as a /Dest —
+    // that page is leaving the page tree — so those entries go with it.
+    applyOutline(pdfDoc, request.outline, new Set(request.deletedPages ?? []))
+  }
   // Page thumbnails and producer piece-info can retain a pre-redaction rendering of
   // the same page. They are page-local derived data, so remove them for every affected
   // page before the native final serialization.
@@ -1391,6 +1680,7 @@ export async function applySaveRequest(
         PDFHexString.fromText(JSON.stringify(staticFormFills)),
       )
   }
+  if (request.attachments) applyAttachments(pdfDoc, request.attachments)
   refreshFieldAppearances(pdfDoc)
   let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
   // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the

@@ -10,6 +10,7 @@ import {
   chartCategoryFormat,
   chartSupportsDataLabels,
   formatCategoryLabel,
+  isComboChartTypes,
   scatterAxisBounds,
   splitSheetRef,
   valueAxisScale,
@@ -1858,10 +1859,13 @@ function withChartEdit(chart: ChartMetadata, edit: ChartEditData | undefined): C
   return applyChartStateEdit(chart, edit) as ChartMetadata
 }
 
-/// A chart converts only when it has exactly one supported plot type.
+/// A chart converts when it is one supported plot type, or a bar+line combo
+/// ('combo' — converting collapses the whole chart onto the target family).
 /// Single-plot column/bar/line/area/pie/doughnut charts convert; everything
-/// else (scatter, combos, 3D) fails closed at save time — reject up front.
+/// else (scatter, radar, richer combos, 3D) fails closed at save time —
+/// reject up front.
 export function convertibleType(chart: ChartMetadata): string | null {
+  if (isComboChartTypes(chart.chartTypes)) return 'combo'
   if (chart.chartTypes.length !== 1) return null
   const only = chart.chartTypes[0]
   if (only === 'lineChart') return 'line'
@@ -2782,10 +2786,18 @@ function ChartEditor({
             className="chart-editor-type"
             ariaLabel={t('appTypeLabel')}
             value={chartType}
-            options={CHART_TYPE_OPTIONS.map((option) => ({
-              value: option.value,
-              label: t(option.labelKey),
-            }))}
+            options={[
+              // A combo has no single current type: the placeholder labels
+              // the mixed state and is not pickable (picking a real family
+              // converts the whole chart).
+              ...(convertible === 'combo'
+                ? [{ value: 'combo', label: t('appChartCombo'), disabled: true }]
+                : []),
+              ...CHART_TYPE_OPTIONS.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
+              })),
+            ]}
             onPick={setChartType}
           />
         </label>

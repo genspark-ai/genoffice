@@ -7,6 +7,9 @@ import { groupLabel, isValidGrouping, type PivotFieldGrouping } from '../domain/
 import {
   defaultDataFieldCaption,
   showDataAsIsPercent,
+  showDataAsNeedsBaseField,
+  showDataAsNeedsBaseItem,
+  showDataAsToOoxml,
   type PivotAggregation,
   type PivotShowDataAs,
 } from '../domain/pivot-value-modes'
@@ -51,6 +54,12 @@ export interface PivotValueSpec {
   readonly numFmt?: string | undefined
   /// "Show values as" mode (ECMA-376 dataField@showDataAs); undefined = normal.
   readonly showDataAs?: PivotShowDataAs | undefined
+  /// "Show values as" base field: index into fieldNames, restricted to the
+  /// row/column dimension fields; required by the base-field modes.
+  readonly baseFieldIndex?: number | undefined
+  /// Base item index within the base field's member list (rowLevelItems /
+  /// colLevelItems order); required by difference / percentDiff / percentOf.
+  readonly baseItemIndex?: number | undefined
   /// Custom caption; undefined = "Sum of <field>".
   readonly name?: string | undefined
   /// Calculated field: formula (references source field names, basic arithmetic)
@@ -539,6 +548,34 @@ function validateAddition(addition: PivotAddition): void {
       `Pivot "${addition.name}" with a column field supports exactly one values entry.`,
     )
   }
+  // "Show values as" base fields live on the row/column axes; a base item must
+  // be a member of the base field's level.
+  const dimensionFieldSet = new Set([...addition.rowFieldIndices, ...colFieldIndices])
+  for (const value of addition.values) {
+    const mode = value.showDataAs
+    if (mode === undefined) continue
+    if (!showDataAsNeedsBaseField(mode)) continue
+    const baseFieldIndex = value.baseFieldIndex
+    if (baseFieldIndex === undefined || !inBounds(baseFieldIndex)) {
+      throw new PivotAddError(`Pivot "${addition.name}" has a missing base field.`)
+    }
+    if (!dimensionFieldSet.has(baseFieldIndex)) {
+      throw new PivotAddError(
+        `Pivot "${addition.name}" has a base field outside the row/column dimensions.`,
+      )
+    }
+    if (showDataAsNeedsBaseItem(mode)) {
+      const rowLevel = addition.rowFieldIndices.indexOf(baseFieldIndex)
+      const items =
+        rowLevel >= 0
+          ? rowLevelItemsOf(addition)[rowLevel]!
+          : colLevelItemsOf(addition)[colFieldIndices.indexOf(baseFieldIndex)]!
+      const baseItemIndex = value.baseItemIndex
+      if (baseItemIndex === undefined || baseItemIndex < 0 || baseItemIndex >= items.length) {
+        throw new PivotAddError(`Pivot "${addition.name}" has a missing base item.`)
+      }
+    }
+  }
   // Multi-level axes must carry per-level member tables and a row-by-row
   // (column-by-column) layout, otherwise valid rowItems/colItems cannot be
   // generated; rows and columns share the same consistency checks.
@@ -839,13 +876,19 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
         : showDataAsIsPercent(value.showDataAs)
           ? 10
           : 0
-      // None of the supported modes references a base field/item; baseField/baseItem
-      // keep their defaults.
+      // Base-field modes write their real baseField/baseItem (ECMA-376
+      // dataField attributes); the rest keep Excel's 0/0 defaults.
+      const needsBase = value.showDataAs !== undefined && showDataAsNeedsBaseField(value.showDataAs)
+      const needsItem = value.showDataAs !== undefined && showDataAsNeedsBaseItem(value.showDataAs)
+      const baseField = needsBase ? (value.baseFieldIndex ?? 0) : 0
+      const baseItem = needsItem ? (value.baseItemIndex ?? 0) : 0
+      const showDataAsAttr =
+        value.showDataAs === undefined ? '' : ` showDataAs="${showDataAsToOoxml(value.showDataAs)}"`
       return (
         `<dataField name="${escapeAttribute(caption)}" fld="${fld}"` +
         `${subtotal === null ? '' : ` subtotal="${subtotal}"`}` +
-        `${value.showDataAs === undefined ? '' : ` showDataAs="${value.showDataAs}"`}` +
-        ' baseField="0" baseItem="0"' +
+        `${showDataAsAttr}` +
+        ` baseField="${baseField}" baseItem="${baseItem}"` +
         `${numFmtId !== 0 ? ` numFmtId="${numFmtId}"` : ''}/>`
       )
     })

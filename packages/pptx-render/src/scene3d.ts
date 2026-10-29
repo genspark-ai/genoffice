@@ -439,7 +439,7 @@ function cameraMatrix(latDeg: number, lonDeg: number, revDeg: number): Mat3 {
 const PX_PER_MM100 = 96 / 2540
 
 function parseRgb(color: string): [number, number, number] {
-  const h = color.replace(/^#/, '')
+  const h = (color ?? '').trim().replace(/^#/, '')
   if (/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(h)) {
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
   }

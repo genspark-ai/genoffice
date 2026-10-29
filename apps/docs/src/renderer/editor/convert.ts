@@ -26,7 +26,8 @@ import {
   patchTextboxParas,
   generateTableModelXml,
   inlinePictureDrawingXml,
-  resizeInlinePictureXml,
+  patchRunPictureXml,
+  type RunPictureGeometry,
   NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
@@ -2602,7 +2603,13 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         }
         if (genBox) {
           xml = patchShapeStyles(xml, [
-            { fillHex: genBox.fill ?? null, borderHex: genBox.borderColor ?? null },
+            {
+              fillHex: genBox.fill ?? null,
+              borderHex: genBox.borderColor ?? null,
+              // undefined keeps the generated XML untouched when never edited
+              rotDeg: genBox.rotDeg ?? undefined,
+              borderWidthPx: genBox.borderWidthPx ?? undefined,
+            },
           ])
         }
         // apply wrap changes for floating textboxes/shapes
@@ -3234,9 +3241,23 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
       (box.borderColor ?? null) !== (initial[index].borderColor ?? null)
         ? (box.borderColor ?? null)
         : undefined
-    if (fillHex === undefined && borderHex === undefined) return null
+    // rotation 0 is the cleared state: patch@rot is removed (null/0), so an
+    // absent attribute and rotDeg 0 compare equal
+    const rotDeg =
+      (box.rotDeg ?? 0) !== (initial[index].rotDeg ?? 0) ? (box.rotDeg ?? 0) : undefined
+    const borderWidthPx =
+      (box.borderWidthPx ?? null) !== (initial[index].borderWidthPx ?? null)
+        ? (box.borderWidthPx ?? null)
+        : undefined
+    if (
+      fillHex === undefined &&
+      borderHex === undefined &&
+      rotDeg === undefined &&
+      borderWidthPx === undefined
+    )
+      return null
     changed = true
-    return { fillHex, borderHex }
+    return { fillHex, borderHex, rotDeg, borderWidthPx }
   })
   return changed ? styles : null
 }
@@ -3672,7 +3693,20 @@ export function inlineToRuns(content: PmNode[]): Run[] {
       const w = Number(node.attrs?.widthPx)
       const h = Number(node.attrs?.heightPx)
       let xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
-      if (xml && !rule && w > 0 && h > 0) xml = resizeInlinePictureXml(xml, w, h)
+      // size, wrap and position edits; untouched geometry keeps the bytes
+      if (xml && !rule) {
+        const a = node.attrs ?? {}
+        xml = patchRunPictureXml(xml, {
+          widthPx: w > 0 ? w : null,
+          heightPx: h > 0 ? h : null,
+          wrap: (a.wrap as ImageWrap | null) ?? null,
+          offsetXEmu: (a.offsetXEmu as number | null) ?? null,
+          offsetYEmu: (a.offsetYEmu as number | null) ?? null,
+          relH: (a.relH as RunPictureGeometry['relH']) ?? null,
+          relV: (a.relV as RunPictureGeometry['relV']) ?? null,
+          lineCenterV: !!a.lineCenterV,
+        })
+      }
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),

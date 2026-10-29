@@ -117,8 +117,10 @@ export const tr = {
   appChartNoRepoint: 'Bu grafik veri aralıklarının yeniden yönlendirilmesini desteklemiyor.',
   appKeepOneSeries: 'En az bir seri tutun.',
   appNoCategoriesToSwitch: 'Değiştirilecek kategori yok.',
-  appComboNoSelectData: 'Birleşik grafiğin veri kaynağını değiştirmek henüz desteklenmiyor.',
+  appSelectDataUnsupported: 'Bu grafik türünde veri kaynağını değiştirmek desteklenmiyor.',
   appSeriesName: 'Seri Adı',
+  appSeriesType: 'Seri Türü',
+  appSecondaryAxis: 'İkincil Eksen',
   appValuesRange: 'Değer Aralığı',
   appCategoriesRange: 'Kategori Aralığı',
   appKeepUnchanged: 'Değiştirmeden bırak',
@@ -200,6 +202,13 @@ export const tr = {
   appInvalidGroupField: 'Geçersiz gruplama alanı.',
   appInvalidPageField: 'Geçersiz rapor filtresi alanı.',
   appPivotPageItemMissing: 'Rapor filtresi öğesi "{item}", "{label}" alanının üyesi değil.',
+  appInvalidPivotBaseField:
+    '"Değerleri göster" temel alanı Satırlar veya Sütunlar üzerinde olmalıdır.',
+  appPivotBaseFieldMissing:
+    'Bir değer alanının "değerleri göster" modu için bir temel alan gerekir.',
+  appPivotBaseFieldNotAxis:
+    'Temel alan "{label}" pivot satırları veya sütunları üzerinde olmalıdır.',
+  appPivotBaseItemMissing: 'Temel öğe "{item}", "{label}" alanının bir üyesi değil.',
   appInvalidLabelFilterField: 'Etiket filtresi alanı geçersiz.',
   appInvalidValueFieldIndex: 'Değer alanı dizini {index} geçersiz.',
   appInvalidValueField: 'Geçersiz değer alanı.',
@@ -338,8 +347,7 @@ export const tr = {
   appPivotSheetNoMove: 'Bu sayfa bir PivotTable içeriyor — aralık taşıma henüz desteklenmiyor.',
   appMergeOverTable:
     'Seçim bir Excel tablosuyla çakışıyor — tablo içinde hücre birleştirme henüz desteklenmiyor.',
-  appTableFilterNoEdit:
-    'Bu sayfanın filtresi bir Excel tablosuna ait — düzenlenmesi henüz kaydedilemiyor.',
+  appFilterToggleFailed: 'Filtre uygulanmadı — önce verilerinizin bulunduğu aralığı seçin.',
   appAutofillStreaming: 'Hâlâ akışla yüklenen bir alana otomatik doldurmaya henüz izin verilmiyor.',
   appDvNeedsIndexed:
     'Veri doğrulamayı düzenlemek için önce bu sayfanın tamamen dizinlenmesi gerekir — birazdan yeniden deneyin.',
@@ -501,7 +509,32 @@ export const tr = {
   appDedupeSelectRows: 'Önce yinelenenler için denetlenecek satırları seçin.',
   appNoDuplicates: 'Seçimde yinelenen satır bulunamadı.',
   appDuplicatesRemoved: '{count} yinelenen satır kaldırıldı.',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Yazım Denetimi',
+  appSpellBtnDetail: 'Sayfa metnini denetle (F7)',
+  appSpellToggle: 'Yazımı Denetle',
+  appSpellToggleTip:
+    'Yazım denetimini açar (F7 ve Gözden Geçir düğmesi); kapalıyken yorum kutuları yazım dalgalanması göstermez',
+  appSpellOn: 'Yazım denetimi açıldı.',
+  appSpellOff: 'Yazım denetimi kapalı. Gözden Geçir ▸ Yazım Denetimi’nden açın.',
+  appSpellRecheck: 'Yeniden denetle',
+  appSpellNone: 'Şüpheli yazım hatası bulunamadı.',
+  appSpellFindings: '{count} şüpheli yazım hatası. Satıra tıklayarak konumlayın.',
+  appSpellTruncated: 'Çok fazla metin hücresi var; yalnızca öncekiler denetlendi.',
+  appSpellColWord: 'Şüpheli',
+  appSpellIgnore: 'Yok say',
+  appSpellIgnoreAll: 'Tümünü yok say',
+  appSpellLearn: 'Sözlüğe ekle',
+  appSpellNoSuggestions: 'Öneri yok',
+  appSpellIgnoredAll: '"{word}" bu oturumda bir daha işaretlenmeyecek.',
+  appSpellLearned: '"{word}" sözlüğe eklendi.',
+  appSpellChanged: '{address} düzeltildi.',
+  appSpellChangeFailed: '{address} düzeltilemedi.',
   appLinksNeedFile: 'Bağlantıları düzenlemek için bir XLSX dosyası açın.',
+  appSpellUnavailable: 'Yazım denetimi bu pencerede kullanılamıyor.',
+  appSpellReplaceAll: 'Tümünü "{suggestion}" ile değiştir',
+  appSpellChangedAll: '"{word}" içeren {count} hücre düzeltildi.',
   appLinkRemoved: 'Bağlantı kaldırıldı.',
   appLinkInvalid: 'Bir web adresi (https://…) veya Sayfa1!A1 gibi bir sayfa başvurusu girin.',
   appLinkSaved: 'Bağlantı kaydedildi — izlemek için hücreye tıklayın.',
@@ -577,8 +610,6 @@ export const tr = {
   appSaveFailed: 'Çalışma kitabı kaydedilemiyor.',
   appCfRuleUnsaveable:
     'Bu koşullu biçimlendirme kuralı xlsx’e kaydedilemez — başka bir kural türüne geçin.',
-  appSaveErrX14Dv:
-    'Bu sayfada genişletilmiş (x14) veri doğrulama var; doğrulama kurallarını düzenlemek henüz desteklenmiyor.',
   appSaveErrMultiSelectList:
     'Çoklu seçim liste doğrulaması xlsx’e kaydedilemez — kaydetmeden önce kuralı silin.',
   appSaveErrX14Cf:
@@ -708,6 +739,7 @@ export const tr = {
   appExportPdfTitle: 'PDF olarak dışa aktar',
   appSaveTitle: 'Kaydet (⌘S)',
   appSaveAs: 'Farklı Kaydet',
+  aiNameFile: 'AI ile adlandır',
   appUndo: 'Geri Al',
   appRedo: 'Yinele',
   appUnsavedEditOne: '● {count} kaydedilmemiş düzenleme',
@@ -1207,6 +1239,7 @@ export const tr = {
   appGroupForecast: 'Tahmin',
   appWhatIfAnalysis: 'Durum Çözümlemesi',
   appGoalSeek: 'Hedef Ara',
+  appDataTable: 'Veri Tablosu',
   appWhatIfTitle: 'Bir hedef değer için girdiyi çöz',
   appGoalSeekNeedsFormula: 'Ayarlanacak hücre bir formül içermelidir.',
   appGoalSeekByCellNotNumber: 'Değişecek hücre düz bir sayı içermeli veya boş olmalıdır.',

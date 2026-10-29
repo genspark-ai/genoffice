@@ -121,8 +121,10 @@ export const es = {
   appChartNoRepoint: 'Este gráfico no admite reasignar sus rangos de datos.',
   appKeepOneSeries: 'Conserve al menos una serie.',
   appNoCategoriesToSwitch: 'No hay categorías que intercambiar.',
-  appComboNoSelectData: 'Cambiar el origen de datos de un gráfico combinado aún no se admite.',
+  appSelectDataUnsupported: 'No se admite cambiar el origen de datos de este tipo de gráfico.',
   appSeriesName: 'Nombre de la serie',
+  appSeriesType: 'Tipo de serie',
+  appSecondaryAxis: 'Eje secundario',
   appValuesRange: 'Rango de valores',
   appCategoriesRange: 'Rango de categorías',
   appKeepUnchanged: 'Mantener sin cambios',
@@ -207,6 +209,13 @@ export const es = {
   appInvalidGroupField: 'Campo de agrupación no válido.',
   appInvalidPageField: 'Campo de filtro de informe no válido.',
   appPivotPageItemMissing: 'El elemento de filtro "{item}" no pertenece al campo "{label}".',
+  appInvalidPivotBaseField:
+    'El campo base de "Mostrar valores como" debe estar en filas o columnas.',
+  appPivotBaseFieldMissing:
+    'El modo "Mostrar valores como" de un campo de valores necesita un campo base.',
+  appPivotBaseFieldNotAxis:
+    'El campo base "{label}" debe estar en las filas o columnas de la tabla dinámica.',
+  appPivotBaseItemMissing: 'El elemento base "{item}" no pertenece al campo "{label}".',
   appInvalidLabelFilterField: 'El campo del filtro de etiquetas no es válido.',
   appInvalidValueFieldIndex: 'El índice de campo de valores {index} no es válido.',
   appInvalidValueField: 'Campo de valores no válido.',
@@ -355,8 +364,7 @@ export const es = {
   appPivotSheetNoMove: 'Esta hoja contiene una tabla dinámica — mover rangos aún no se admite.',
   appMergeOverTable:
     'La selección se superpone con una tabla de Excel — combinar celdas dentro de una tabla aún no es compatible.',
-  appTableFilterNoEdit:
-    'El filtro de esta hoja pertenece a una tabla de Excel — su edición aún no se puede guardar.',
+  appFilterToggleFailed: 'No se aplicó el filtro: seleccione primero el rango con los datos.',
   appAutofillStreaming:
     'Aún no se permite el autorrelleno hacia un área que todavía se está cargando por streaming.',
   appDvNeedsIndexed:
@@ -615,8 +623,6 @@ export const es = {
   appSaveFailed: 'No se puede guardar el libro.',
   appCfRuleUnsaveable:
     'Esta regla de formato condicional no se puede guardar en xlsx — use otro tipo de regla.',
-  appSaveErrX14Dv:
-    'Esta hoja tiene validación de datos extendida (x14); editar sus reglas de validación aún no es compatible.',
   appSaveErrMultiSelectList:
     'La validación de lista de selección múltiple no se puede guardar en xlsx — elimine la regla antes de guardar.',
   appSaveErrX14Cf:
@@ -745,6 +751,7 @@ export const es = {
   appExportPdfTitle: 'Exportar como PDF',
   appSaveTitle: 'Guardar (⌘S)',
   appSaveAs: 'Guardar como',
+  aiNameFile: 'Nombrar con IA…',
   appUndo: 'Deshacer',
   appRedo: 'Rehacer',
   appUnsavedEditOne: '● {count} edición sin guardar',
@@ -1245,6 +1252,7 @@ export const es = {
   appGroupForecast: 'Previsión',
   appWhatIfAnalysis: 'Análisis de hipótesis',
   appGoalSeek: 'Buscar objetivo',
+  appDataTable: 'Tabla de datos',
   appWhatIfTitle: 'Resolver una entrada para un valor objetivo',
   appGoalSeekNeedsFormula: 'La celda debe contener una fórmula.',
   appGoalSeekByCellNotNumber: 'La celda a cambiar debe contener un número o estar vacía.',
@@ -1606,4 +1614,29 @@ export const es = {
   appVisualFlipV: 'Voltear verticalmente',
   appVisualFlipH: 'Voltear horizontalmente',
   appCtxPasteVisual: 'Pegar imagen o forma',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ortografía',
+  appSpellBtnDetail: 'Comprobar el texto de la hoja (F7)',
+  appSpellToggle: 'Comprobar ortografía',
+  appSpellToggleTip:
+    'Activa la comprobación ortográfica (F7 y el botón de Revisar); desactivada, los cuadros de comentarios dejan de mostrar subrayados',
+  appSpellOn: 'Comprobación ortográfica activada.',
+  appSpellOff: 'La comprobación ortográfica está desactivada. Actívala en Revisar ▸ Corrección.',
+  appSpellRecheck: 'Volver a comprobar',
+  appSpellNone: 'No se encontraron errores ortográficos sospechosos.',
+  appSpellFindings: '{count} errores sospechosos. Haz clic en una fila para localizarlo.',
+  appSpellTruncated: 'Demasiadas celdas de texto; solo se comprobaron las primeras.',
+  appSpellColWord: 'Sospechoso',
+  appSpellIgnore: 'Omitir',
+  appSpellIgnoreAll: 'Omitir todos',
+  appSpellLearn: 'Agregar al diccionario',
+  appSpellNoSuggestions: 'Sin sugerencias',
+  appSpellIgnoredAll: '"{word}" no se volverá a marcar en esta sesión.',
+  appSpellLearned: '"{word}" se agregó al diccionario.',
+  appSpellChanged: '{address} corregido.',
+  appSpellChangeFailed: 'No se pudo corregir {address}.',
+  appSpellUnavailable: 'La corrección ortográfica no está disponible en esta ventana.',
+  appSpellReplaceAll: 'Reemplazar todo por «{suggestion}»',
+  appSpellChangedAll: 'Se corrigieron {count} celdas de «{word}».',
 } satisfies Record<keyof typeof zh, string>

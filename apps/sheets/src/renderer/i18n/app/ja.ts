@@ -118,8 +118,10 @@ export const ja = {
   appChartNoRepoint: 'このグラフはデータ範囲の再指定に対応していません。',
   appKeepOneSeries: '少なくとも 1 つの系列を残してください。',
   appNoCategoriesToSwitch: '切り替えられる分類がありません。',
-  appComboNoSelectData: '組み合わせグラフのデータソース変更には未対応です。',
+  appSelectDataUnsupported: 'このグラフの種類はデータソースの変更に未対応です。',
   appSeriesName: '系列名',
+  appSeriesType: '系列の種類',
+  appSecondaryAxis: '第2軸',
   appValuesRange: '数値範囲',
   appCategoriesRange: '分類範囲',
   appKeepUnchanged: '変更しない',
@@ -206,6 +208,12 @@ export const ja = {
   appInvalidPageField: 'レポート フィルターのフィールドが無効です。',
   appPivotPageItemMissing:
     'レポート フィルターの項目「{item}」はフィールド「{label}」のメンバーではありません。',
+  appInvalidPivotBaseField: '「値の表示方法」の基準フィールドは行または列に配置してください。',
+  appPivotBaseFieldMissing: '値フィールドの「値の表示方法」には基準フィールドが必要です。',
+  appPivotBaseFieldNotAxis:
+    '基準フィールド「{label}」はピボットテーブルの行または列に配置してください。',
+  appPivotBaseItemMissing:
+    '基準アイテム「{item}」はフィールド「{label}」のメンバーではありません。',
   appInvalidLabelFilterField: 'ラベルフィルターのフィールドが無効です。',
   appInvalidValueFieldIndex: '値フィールドのインデックス {index} が無効です。',
   appInvalidValueField: '値フィールドが無効です。',
@@ -350,8 +358,8 @@ export const ja = {
     'このシートにはピボットテーブルが含まれています — 範囲の移動には未対応です。',
   appMergeOverTable:
     '選択範囲が Excel テーブルと重なっています — テーブル内のセル結合は現時点では対応していません。',
-  appTableFilterNoEdit:
-    'このシートのフィルターは Excel テーブルに属しています — 編集内容は現時点では保存できません。',
+  appFilterToggleFailed:
+    'フィルターは適用されませんでした — 先にデータを含む範囲を選択してください。',
   appAutofillStreaming: 'ストリーミング読み込み中の範囲へのオートフィルはまだ許可されていません。',
   appDvNeedsIndexed:
     'データの入力規則を編集するには、このシートのインデックス作成が完了している必要があります — しばらくしてからお試しください。',
@@ -609,8 +617,6 @@ export const ja = {
   appSaveFailed: 'ブックを保存できません。',
   appCfRuleUnsaveable:
     'この条件付き書式ルールは xlsx に保存できません — 別のルールの種類をお使いください。',
-  appSaveErrX14Dv:
-    'このシートには拡張(x14)のデータの入力規則があり、その入力規則の編集はまだサポートされていません。',
   appSaveErrMultiSelectList:
     '複数選択リストの入力規則は xlsx に保存できません — 保存する前にそのルールを削除してください。',
   appSaveErrX14Cf: 'この範囲には拡張(x14)の条件付き書式があり、今のところ変更できません。',
@@ -741,6 +747,7 @@ export const ja = {
   appExportPdfTitle: 'PDF としてエクスポート',
   appSaveTitle: '保存（⌘S）',
   appSaveAs: '名前を付けて保存',
+  aiNameFile: 'AI で名前を変更…',
   appUndo: '元に戻す',
   appRedo: 'やり直し',
   appUnsavedEditOne: '● 未保存の編集 {count} 件',
@@ -1250,6 +1257,7 @@ export const ja = {
   appGroupForecast: '予測',
   appWhatIfAnalysis: 'What-If 分析',
   appGoalSeek: 'ゴールシーク',
+  appDataTable: 'データテーブル',
   appWhatIfTitle: '目標値から入力を逆算',
   appGoalSeekNeedsFormula: '数式入力セルには数式が必要です。',
   appGoalSeekByCellNotNumber: '変化させるセルは数値または空白にしてください。',
@@ -1609,4 +1617,29 @@ export const ja = {
   appVisualFlipV: '上下反転',
   appVisualFlipH: '左右反転',
   appCtxPasteVisual: '図または図形を貼り付け',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'スペル チェック',
+  appSpellBtnDetail: 'ワークシートのテキストをチェック (F7)',
+  appSpellToggle: 'スペル チェック',
+  appSpellToggleTip:
+    'スペル チェック（F7 と Review ボタン）を有効にします。オフにするとコメント入力欄のスペルの波線が消えます',
+  appSpellOn: 'スペル チェックをオンにしました。',
+  appSpellOff: 'スペル チェックはオフです。Review ▸ 校対 からオンにできます。',
+  appSpellRecheck: '再チェック',
+  appSpellNone: '疑わしいスペルミスは見つかりませんでした。',
+  appSpellFindings: '疑わしいスペルミスが {count} 件あります。行をクリックすると移動します。',
+  appSpellTruncated: 'テキスト セルが多すぎるため、前半のみチェックしました。',
+  appSpellColWord: '疑わしい語',
+  appSpellIgnore: '無視',
+  appSpellIgnoreAll: 'すべて無視',
+  appSpellLearn: '辞書に追加',
+  appSpellNoSuggestions: '修正候補なし',
+  appSpellIgnoredAll: 'このセッションでは「{word}」を表示しません。',
+  appSpellLearned: '「{word}」を辞書に追加しました。',
+  appSpellChanged: '{address} を修正しました。',
+  appSpellChangeFailed: '{address} を修正できませんでした。',
+  appSpellUnavailable: 'このウィンドウではスペルチェックを利用できません。',
+  appSpellReplaceAll: 'すべて「{suggestion}」に置換',
+  appSpellChangedAll: '「{word}」を {count} か所修正しました。',
 } satisfies Record<keyof typeof zh, string>

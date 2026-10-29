@@ -159,15 +159,16 @@ export function resolveThemeColor(
   const slot = THEME_COLOR_SLOTS[themeColor]
   if (!slot) return null
   const base = (colors[slot] as string | undefined) ?? SLOT_FALLBACK[slot]
-  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
+  const baseTrimmed = (base ?? '').trim()
+  if (!baseTrimmed || !/^[0-9A-Fa-f]{6}$/.test(baseTrimmed)) return null
   const factorOf = (hex?: string) => {
     const v = hex ? parseInt(hex, 16) : NaN
     return Number.isFinite(v) ? Math.max(0, Math.min(255, v)) / 255 : null
   }
   const s = factorOf(shade)
   const t = factorOf(tint)
-  if (s === null && t === null) return base.toUpperCase()
-  const [h, sat, l0] = rgbToHsl([0, 2, 4].map((i) => parseInt(base.slice(i, i + 2), 16) / 255))
+  if (s === null && t === null) return baseTrimmed.toUpperCase()
+  const [h, sat, l0] = rgbToHsl([0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16) / 255))
   let l = l0
   if (s !== null) l *= s
   if (t !== null) l = l * t + (1 - t)

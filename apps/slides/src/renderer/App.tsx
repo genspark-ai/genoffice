@@ -33,6 +33,7 @@ import type {
   TransitionKind,
 } from '../shared/ipc'
 import { baseName } from '../shared/base-name'
+import { mergeBroadcastUpdate, mergeSlideUpdate } from '../shared/slide-update'
 import { SlideCanvas, selectionChromeColor, type SlideCanvasHandle } from './SlideCanvas'
 import { tableCellOverlayBox } from './table-hit'
 import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
@@ -969,9 +970,20 @@ export function App() {
   // so the selection stays valid; a same-element conflict resolves last-write-wins.
   useEffect(
     () =>
-      window.slidesApi.onDeckChanged?.(({ slides: all }) => {
-        setSlides(all)
-        setCurrent((c) => Math.min(c, Math.max(0, all.length - 1)))
+      window.slidesApi.onDeckChanged?.(({ slides: all, order }) => {
+        setSlides((current) =>
+          order
+            ? (mergeBroadcastUpdate(current, { slides: all, order }, () => {
+                void window.slidesApi
+                  .getRenderSlides()
+                  .then((slides) => {
+                    if (slides) setSlides(slides)
+                  })
+                  .catch((error) => console.error('Failed to refresh deck:', error))
+              }) ?? current)
+            : all,
+        )
+        setCurrent((c) => Math.min(c, Math.max(0, (order?.length ?? all.length) - 1)))
         // The broadcast also fires for undo back to a clean state — ask the
         // session instead of assuming the change dirtied it
         void window.slidesApi.isDirty?.().then((d) => setDirty(!!d))
@@ -1018,6 +1030,7 @@ export function App() {
   }, [autoSave, path, editing, editingCell, save])
 
   const saveAs = useCallback(() => fileActions.saveAs(() => ctxRef.current), [])
+  const nameWithAi = useCallback(() => fileActions.nameWithAi(() => ctxRef.current), [])
   const exportImages = useCallback(() => fileActions.exportImages(ctxRef.current), [])
   const exportPdf = useCallback(() => void fileActions.exportPdf(ctxRef.current), [])
 
@@ -3290,6 +3303,7 @@ export function App() {
         onUndo={() => void undo()}
         onRedo={() => void redo()}
         onSaveAs={() => void saveAs()}
+        onNameWithAi={() => void nameWithAi()}
         onExportPdf={() => void exportPdf()}
         onPrint={() => setPrintDlgOpen(true)}
         onExportImages={() => void exportImages()}
@@ -4648,8 +4662,8 @@ export function App() {
             setCurrent(si)
             setSelectedIds([id])
           }}
-          onReplaced={(all) => {
-            setSlides(all)
+          onReplaced={(update) => {
+            setSlides((current) => mergeSlideUpdate(current, update))
             setDirty(true)
           }}
           onClose={() => setFindOpen(false)}

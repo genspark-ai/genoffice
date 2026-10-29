@@ -28,7 +28,15 @@ export const SKILL_NAME = 'genoffice'
 export const LEDGER_KEY = 'agentSkillInstalls'
 
 export type AgentId =
-  'claude-code' | 'codex' | 'cursor' | 'gemini' | 'copilot' | 'opencode' | 'windsurf'
+  | 'claude-code'
+  | 'agents'
+  | 'codex'
+  | 'cursor'
+  | 'gemini'
+  | 'windsurf'
+  | 'openclaw'
+  | 'copilot'
+  | 'opencode'
 
 export interface AgentTarget {
   id: AgentId
@@ -69,7 +77,13 @@ interface AgentDef {
   /** the folder whose presence means the tool is installed */
   probe: (env: NodeJS.ProcessEnv, home: string) => string
   /** the skills directory, relative to the probe folder unless absolute */
-  skills: (probe: string) => string
+  skills: (probe: string, env: NodeJS.ProcessEnv, home: string) => string
+  /**
+   * false for a row kept only so `agentConfigDir` still finds the dotfolder
+   * (`genoffice mcp` needs it): the tool reads `~/.agents/skills`, so installing
+   * the skill there gets no per-tool row
+   */
+  skillsTarget: boolean
 }
 
 const AGENTS: readonly AgentDef[] = [
@@ -78,58 +92,115 @@ const AGENTS: readonly AgentDef[] = [
     label: 'Claude Code',
     probe: (env, home) => env.CLAUDE_CONFIG_DIR || join(home, '.claude'),
     skills: (p) => join(p, 'skills'),
+    skillsTarget: true,
   },
   {
-    id: 'codex',
-    label: 'Codex',
-    probe: (env, home) => env.CODEX_HOME || join(home, '.codex'),
-    skills: (p) => join(p, 'skills'),
-  },
-  {
-    id: 'cursor',
-    label: 'Cursor',
-    probe: (_env, home) => join(home, '.cursor'),
-    skills: (p) => join(p, 'skills'),
-  },
-  {
-    id: 'gemini',
-    label: 'Gemini CLI',
-    probe: (_env, home) => join(home, '.gemini'),
-    skills: (p) => join(p, 'skills'),
-  },
-  {
-    id: 'copilot',
-    label: 'GitHub Copilot',
-    probe: (_env, home) => join(home, '.copilot'),
-    skills: (p) => join(p, 'skills'),
-  },
-  {
-    id: 'opencode',
-    label: 'OpenCode',
-    probe: (env, home) => join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode'),
-    skills: (p) => join(p, 'skills'),
+    // the cross-tool skills directory: these tools read `~/.agents/skills` and
+    // need no folder of their own, so one row installs for all of them
+    id: 'agents',
+    label: '.agents (Codex / Cursor / Gemini CLI / Copilot / OpenCode / dsh …)',
+    probe: (env, home) =>
+      [
+        join(home, '.agents'),
+        env.CODEX_HOME || join(home, '.codex'),
+        join(home, '.cursor'),
+        join(home, '.gemini'),
+        join(home, '.copilot'),
+        join(home, '.dsh'),
+        join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode'),
+      ].find(isDir) ?? join(home, '.agents'),
+    skills: (_p, _env, home) => join(home, '.agents', 'skills'),
+    skillsTarget: true,
   },
   {
     id: 'windsurf',
     label: 'Windsurf',
     probe: (_env, home) => join(home, '.codeium', 'windsurf'),
     skills: (p) => join(p, 'skills'),
+    skillsTarget: true,
+  },
+  {
+    id: 'openclaw',
+    label: 'OpenClaw',
+    probe: (_env, home) => join(home, '.openclaw'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: true,
+  },
+  {
+    id: 'codex',
+    label: 'Codex',
+    probe: (env, home) => env.CODEX_HOME || join(home, '.codex'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    probe: (_env, home) => join(home, '.cursor'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    probe: (_env, home) => join(home, '.gemini'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    probe: (_env, home) => join(home, '.copilot'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    probe: (env, home) => join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
   },
 ]
 
+/**
+ * The skills directories the layout before the shared `.agents` row wrote to.
+ * Codex, Cursor, Gemini CLI, Copilot and OpenCode now read `~/.agents/skills`,
+ * so a copy this app wrote in one of these folders is a stale duplicate: the
+ * tool still finds it — Cursor loads `~/.codex` for compatibility, Gemini CLI
+ * treats `~/.gemini/skills` as a tier of its own — and nothing ever updates
+ * it again, while the pane reports the shared copy as current. Claude Code,
+ * Windsurf and OpenClaw keep their own folders, so theirs are current.
+ */
+const LEGACY_SKILL_DIRS: readonly {
+  id: AgentId
+  dir: (env: NodeJS.ProcessEnv, home: string) => string
+}[] = [
+  { id: 'codex', dir: (env, home) => join(env.CODEX_HOME || join(home, '.codex'), 'skills') },
+  { id: 'cursor', dir: (_env, home) => join(home, '.cursor', 'skills') },
+  { id: 'gemini', dir: (_env, home) => join(home, '.gemini', 'skills') },
+  { id: 'copilot', dir: (_env, home) => join(home, '.copilot', 'skills') },
+  {
+    id: 'opencode',
+    dir: (env, home) => join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode', 'skills'),
+  },
+]
+
+/** The skills install targets, in pane order: the shared row first, per-tool rows after. */
 export function agentIds(): AgentId[] {
-  return AGENTS.map((a) => a.id)
+  return AGENTS.filter((a) => a.skillsTarget).map((a) => a.id)
 }
 
-/** Agents whose dotfolder exists; the folder standing in for "installed" is a heuristic, so a stale one only adds a row. */
+/** Install rows whose probe folder exists; the folder standing in for "installed" is a heuristic, so a stale one only adds a row. */
 export function detectAgents(
   env: NodeJS.ProcessEnv = process.env,
   home = homedir(),
 ): AgentTarget[] {
   const out: AgentTarget[] = []
   for (const a of AGENTS) {
+    if (!a.skillsTarget) continue
     const probe = a.probe(env, home)
-    if (isDir(probe)) out.push({ id: a.id, label: a.label, skillsDir: a.skills(probe) })
+    if (isDir(probe)) out.push({ id: a.id, label: a.label, skillsDir: a.skills(probe, env, home) })
   }
   return out
 }
@@ -144,14 +215,29 @@ export function agentConfigDir(
   return a ? a.probe(env, home) : null
 }
 
+/** The product name for any id of the table, skills row or not. */
+export function agentLabel(id: AgentId): string {
+  return AGENTS.find((x) => x.id === id)?.label ?? id
+}
+
+/** Whether the dotfolder probed for `id` exists — the MCP twin of a detect row, for tools that install no skill row. */
+export function agentPresent(
+  id: AgentId,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): boolean {
+  const a = AGENTS.find((x) => x.id === id)
+  return a ? isDir(a.probe(env, home)) : false
+}
+
 export function agentTarget(
   id: AgentId,
   env: NodeJS.ProcessEnv = process.env,
   home = homedir(),
 ): AgentTarget | null {
   const a = AGENTS.find((x) => x.id === id)
-  if (!a) return null
-  return { id: a.id, label: a.label, skillsDir: a.skills(a.probe(env, home)) }
+  if (!a || !a.skillsTarget) return null
+  return { id: a.id, label: a.label, skillsDir: a.skills(a.probe(env, home), env, home) }
 }
 
 export interface SkillFrontmatter {
@@ -284,6 +370,93 @@ export function uninstallSkill(skillsDir: string, ledger: SkillLedger): boolean 
   } catch {}
   delete ledger[path]
   return true
+}
+
+export interface LegacySkillCopy {
+  /** the tool whose dotfolder held the copy */
+  agent: AgentId
+  /** product name, shown as is */
+  label: string
+  /** the skills directory that holds the copy */
+  skillsDir: string
+  /** `<skillsDir>/genoffice/SKILL.md` */
+  path: string
+  /** the copy still holds the bytes this app wrote */
+  ours: boolean
+}
+
+export interface LegacySweep {
+  /** the copies this app wrote and removed */
+  removed: LegacySkillCopy[]
+  /** the copies edited by hand: left in place, for the user to judge */
+  kept: LegacySkillCopy[]
+}
+
+/**
+ * The legacy per-tool copies this app wrote, read from the ledger. A path the
+ * ledger does not know was not written by this app and is not ours to touch.
+ */
+export function findLegacySkillCopies(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): LegacySkillCopy[] {
+  const out: LegacySkillCopy[] = []
+  for (const legacy of LEGACY_SKILL_DIRS) {
+    const skillsDir = legacy.dir(env, home)
+    const path = skillFilePath(skillsDir)
+    const entry = ledger[path]
+    if (!entry) continue
+    let ours = false
+    try {
+      ours = sha256(readFileSync(path, 'utf-8')) === entry.sha256
+    } catch {}
+    out.push({ agent: legacy.id, label: agentLabel(legacy.id), skillsDir, path, ours })
+  }
+  return out
+}
+
+/**
+ * Remove the legacy per-tool copies this app wrote. Only a copy the ledger
+ * knows and whose bytes still match what was written goes: an edited copy is
+ * the user's work, so it is kept and reported instead.
+ */
+export function sweepLegacySkillCopies(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): LegacySweep {
+  const removed: LegacySkillCopy[] = []
+  const kept: LegacySkillCopy[] = []
+  for (const copy of findLegacySkillCopies(ledger, env, home)) {
+    if (!copy.ours) {
+      kept.push(copy)
+      continue
+    }
+    rmSync(copy.path, { force: true })
+    const dir = join(copy.skillsDir, SKILL_NAME)
+    try {
+      if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true })
+    } catch {}
+    delete ledger[copy.path]
+    removed.push(copy)
+  }
+  return { removed, kept }
+}
+
+/**
+ * Whether the shared `.agents` row holds a copy this app wrote. The legacy
+ * copies are only removed once the current one is in place, so a machine never
+ * goes from "the tool finds a skill" to "the tool finds nothing".
+ */
+export function currentSkillInstalled(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): boolean {
+  const shared = AGENTS.find((a) => a.id === 'agents')
+  if (!shared) return false
+  return Boolean(ledger[skillFilePath(shared.skills(shared.probe(env, home), env, home))])
 }
 
 /** `genoffice/SKILL.md` inside a zip: the layout claude.ai and the desktop apps accept for an uploaded skill. */

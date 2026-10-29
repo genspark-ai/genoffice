@@ -122,9 +122,11 @@ export const fr = {
   appChartNoRepoint: 'Ce graphique ne permet pas de redéfinir ses plages de données.',
   appKeepOneSeries: 'Conservez au moins une série.',
   appNoCategoriesToSwitch: 'Aucune catégorie à permuter.',
-  appComboNoSelectData:
-    "La modification de la source de données d'un graphique combiné n'est pas encore prise en charge.",
+  appSelectDataUnsupported:
+    "La modification de la source de données de ce type de graphique n'est pas prise en charge.",
   appSeriesName: 'Nom de la série',
+  appSeriesType: 'Type de série',
+  appSecondaryAxis: 'Axe secondaire',
   appValuesRange: 'Plage de valeurs',
   appCategoriesRange: 'Plage de catégories',
   appKeepUnchanged: 'Conserver tel quel',
@@ -213,6 +215,13 @@ export const fr = {
   appInvalidPageField: 'Champ de filtre du rapport non valide.',
   appPivotPageItemMissing:
     "L'élément de filtre « {item} » n'est pas un membre du champ « {label} ».",
+  appInvalidPivotBaseField:
+    'Le champ de base de « Afficher les valeurs en » doit se trouver en lignes ou en colonnes.',
+  appPivotBaseFieldMissing:
+    "Le mode « Afficher les valeurs en » d'un champ de valeurs nécessite un champ de base.",
+  appPivotBaseFieldNotAxis:
+    'Le champ de base « {label} » doit se trouver dans les lignes ou les colonnes du tableau croisé.',
+  appPivotBaseItemMissing: "L'élément de base « {item} » n'est pas un membre du champ « {label} ».",
   appInvalidLabelFilterField: "Le champ du filtre d'étiquettes n'est pas valide.",
   appInvalidValueFieldIndex: "L'index de champ de valeurs {index} n'est pas valide.",
   appInvalidValueField: 'Champ de valeurs non valide.',
@@ -367,8 +376,8 @@ export const fr = {
     "Cette feuille contient un tableau croisé dynamique — le déplacement de plages n'est pas encore pris en charge.",
   appMergeOverTable:
     'La sélection chevauche un tableau Excel — la fusion de cellules dans un tableau n’est pas encore prise en charge.',
-  appTableFilterNoEdit:
-    'Le filtre de cette feuille appartient à un tableau Excel — sa modification ne peut pas encore être enregistrée.',
+  appFilterToggleFailed:
+    'Le filtre n’a pas été appliqué — sélectionnez d’abord la plage qui contient vos données.',
   appAutofillStreaming:
     "La recopie automatique vers une zone encore en cours de chargement en flux n'est pas encore autorisée.",
   appDvNeedsIndexed:
@@ -633,8 +642,6 @@ export const fr = {
   appSaveFailed: "Impossible d'enregistrer le classeur.",
   appCfRuleUnsaveable:
     'Cette règle de mise en forme conditionnelle ne peut pas être enregistrée en xlsx — utilisez un autre type de règle.',
-  appSaveErrX14Dv:
-    "Cette feuille comporte une validation des données étendue (x14) ; la modification de ses règles de validation n'est pas encore prise en charge.",
   appSaveErrMultiSelectList:
     "La validation par liste à sélection multiple ne peut pas être enregistrée en xlsx — supprimez la règle avant d'enregistrer.",
   appSaveErrX14Cf:
@@ -768,6 +775,7 @@ export const fr = {
   appExportPdfTitle: 'Exporter en PDF',
   appSaveTitle: 'Enregistrer (⌘S)',
   appSaveAs: 'Enregistrer sous',
+  aiNameFile: "Nommer avec l'IA…",
   appUndo: 'Annuler',
   appRedo: 'Rétablir',
   appUnsavedEditOne: '● {count} modification non enregistrée',
@@ -1267,6 +1275,7 @@ export const fr = {
   appGroupForecast: 'Prévision',
   appWhatIfAnalysis: 'Analyse de scénarios',
   appGoalSeek: 'Valeur cible',
+  appDataTable: 'Table de données',
   appWhatIfTitle: 'Trouver une entrée pour une valeur cible',
   appGoalSeekNeedsFormula: 'La cellule à définir doit contenir une formule.',
   appGoalSeekByCellNotNumber: 'La cellule à modifier doit contenir un nombre ou être vide.',
@@ -1629,4 +1638,30 @@ export const fr = {
   appVisualFlipV: 'Retourner verticalement',
   appVisualFlipH: 'Retourner horizontalement',
   appCtxPasteVisual: "Coller l'image ou la forme",
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Orthographe',
+  appSpellBtnDetail: 'Vérifier le texte de la feuille (F7)',
+  appSpellToggle: "Vérifier l'orthographe",
+  appSpellToggleTip:
+    "Active la vérification orthographique (F7 et le bouton Révision) ; désactivée, les zones de commentaire n'affichent plus les soulignements",
+  appSpellOn: 'Vérification orthographique activée.',
+  appSpellOff:
+    'La vérification orthographique est désactivée. Réactivez-la dans Révision ▸ Vérification.',
+  appSpellRecheck: 'Revérifier',
+  appSpellNone: "Aucune faute d'orthographe suspectée.",
+  appSpellFindings: '{count} fautes suspectées. Cliquez une ligne pour la localiser.',
+  appSpellTruncated: 'Trop de cellules de texte ; seules les premières ont été vérifiées.',
+  appSpellColWord: 'Mot suspect',
+  appSpellIgnore: 'Ignorer',
+  appSpellIgnoreAll: 'Ignorer tout',
+  appSpellLearn: 'Ajouter au dictionnaire',
+  appSpellNoSuggestions: 'Aucune suggestion',
+  appSpellIgnoredAll: '« {word} » ne sera plus signalé pendant cette session.',
+  appSpellLearned: '« {word} » a été ajouté au dictionnaire.',
+  appSpellChanged: '{address} corrigé.',
+  appSpellChangeFailed: 'Impossible de corriger {address}.',
+  appSpellUnavailable: "La correction orthographique n'est pas disponible dans cette fenêtre.",
+  appSpellReplaceAll: 'Tout remplacer par « {suggestion} »',
+  appSpellChangedAll: '{count} cellules de « {word} » corrigées.',
 } satisfies Record<keyof typeof zh, string>

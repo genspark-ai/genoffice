@@ -117,8 +117,10 @@ export const pl = {
   appChartNoRepoint: 'Ten wykres nie obsługuje zmiany zakresów danych.',
   appKeepOneSeries: 'Zachowaj co najmniej jedną serię.',
   appNoCategoriesToSwitch: 'Brak kategorii do przełączenia.',
-  appComboNoSelectData: 'Zmiana źródła danych wykresu kombi nie jest jeszcze obsługiwana.',
+  appSelectDataUnsupported: 'Zmiana źródła danych tego typu wykresu nie jest obsługiwana.',
   appSeriesName: 'Nazwa serii',
+  appSeriesType: 'Typ serii',
+  appSecondaryAxis: 'Oś pomocnicza',
   appValuesRange: 'Zakres wartości',
   appCategoriesRange: 'Zakres kategorii',
   appKeepUnchanged: 'Pozostaw bez zmian',
@@ -203,6 +205,12 @@ export const pl = {
   appInvalidGroupField: 'Nieprawidłowe pole grupowania.',
   appInvalidPageField: 'Nieprawidłowe pole filtru raportu.',
   appPivotPageItemMissing: 'Element filtru „{item}” nie należy do pola „{label}”.',
+  appInvalidPivotBaseField:
+    'Pole podstawowe trybu „Pokaż wartości jako” musi znajdować się w wierszach lub kolumnach.',
+  appPivotBaseFieldMissing: 'Tryb „Pokaż wartości jako” pola wartości wymaga pola podstawowego.',
+  appPivotBaseFieldNotAxis:
+    'Pole podstawowe „{label}” musi znajdować się w wierszach lub kolumnach tabeli przestawnej.',
+  appPivotBaseItemMissing: 'Element podstawowy „{item}” nie należy do pola „{label}”.',
   appInvalidLabelFilterField: 'Pole filtru etykiet jest nieprawidłowe.',
   appInvalidValueFieldIndex: 'Indeks pola wartości {index} jest nieprawidłowy.',
   appInvalidValueField: 'Nieprawidłowe pole wartości.',
@@ -351,8 +359,7 @@ export const pl = {
     'Ten arkusz zawiera tabelę przestawną — przenoszenie zakresów nie jest jeszcze obsługiwane.',
   appMergeOverTable:
     'Zaznaczenie nachodzi na tabelę programu Excel — scalanie komórek w tabeli nie jest jeszcze obsługiwane.',
-  appTableFilterNoEdit:
-    'Filtr tego arkusza należy do tabeli programu Excel — edycji nie można jeszcze zapisać.',
+  appFilterToggleFailed: 'Filtr nie został zastosowany — najpierw zaznacz zakres z danymi.',
   appAutofillStreaming:
     'Autouzupełnianie do obszaru, który wciąż jest ładowany strumieniowo, nie jest jeszcze dozwolone.',
   appDvNeedsIndexed:
@@ -599,8 +606,6 @@ export const pl = {
   appSaveFailed: 'Nie można zapisać skoroszytu.',
   appCfRuleUnsaveable:
     'Tej reguły formatowania warunkowego nie można zapisać w xlsx — użyj innego typu reguły.',
-  appSaveErrX14Dv:
-    'Ten arkusz ma rozszerzoną (x14) poprawność danych; edytowanie jej reguł nie jest jeszcze obsługiwane.',
   appSaveErrMultiSelectList:
     'Poprawności danych z listą wielokrotnego wyboru nie można zapisać w xlsx — usuń regułę przed zapisaniem.',
   appSaveErrX14Cf:
@@ -729,6 +734,7 @@ export const pl = {
   appExportPdfTitle: 'Eksportuj jako PDF',
   appSaveTitle: 'Zapisz (⌘S)',
   appSaveAs: 'Zapisz jako',
+  aiNameFile: 'Nazwij za pomocą AI…',
   appUndo: 'Cofnij',
   appRedo: 'Wykonaj ponownie',
   appUnsavedEditOne: '● {count} niezapisana zmiana',
@@ -1229,6 +1235,7 @@ export const pl = {
   appGroupForecast: 'Prognoza',
   appWhatIfAnalysis: 'Analiza warunkowa',
   appGoalSeek: 'Szukaj wyniku',
+  appDataTable: 'Tabela danych',
   appWhatIfTitle: 'Znajdź wejście dla wartości docelowej',
   appGoalSeekNeedsFormula: 'Komórka musi zawierać formułę.',
   appGoalSeekByCellNotNumber: 'Zmieniana komórka musi zawierać liczbę lub być pusta.',
@@ -1586,4 +1593,29 @@ export const pl = {
   appVisualFlipV: 'Odbij w pionie',
   appVisualFlipH: 'Odbij w poziomie',
   appCtxPasteVisual: 'Wklej obraz lub kształt',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Pisownia',
+  appSpellBtnDetail: 'Sprawdź tekst arkusza (F7)',
+  appSpellToggle: 'Sprawdzanie pisowni',
+  appSpellToggleTip:
+    'Włącza sprawdzanie pisowni (F7 i przycisk Recenzja); po wyłączeniu pola komentarzy przestają pokazywać faliste podkreślenia',
+  appSpellOn: 'Sprawdzanie pisowni włączone.',
+  appSpellOff: 'Sprawdzanie pisowni jest wyłączone. Włącz je w Recenzja ▸ Sprawdzanie.',
+  appSpellRecheck: 'Sprawdź ponownie',
+  appSpellNone: 'Nie znaleziono podejrzanych błędów pisowni.',
+  appSpellFindings: 'Podejrzanych błędów: {count}. Kliknij wiersz, aby przejść.',
+  appSpellTruncated: 'Zbyt wiele komórek z tekstem; sprawdzono tylko pierwsze.',
+  appSpellColWord: 'Podejrzane',
+  appSpellIgnore: 'Ignoruj',
+  appSpellIgnoreAll: 'Ignoruj wszystkie',
+  appSpellLearn: 'Dodaj do słownika',
+  appSpellNoSuggestions: 'Brak sugestii',
+  appSpellIgnoredAll: 'Słowo „{word}” nie będzie już oznaczane w tej sesji.',
+  appSpellLearned: 'Słowo „{word}” dodano do słownika.',
+  appSpellChanged: 'Poprawiono {address}.',
+  appSpellChangeFailed: 'Nie udało się poprawić {address}.',
+  appSpellUnavailable: 'Sprawdzanie pisowni jest niedostępne w tym oknie.',
+  appSpellReplaceAll: 'Zamień wszystkie na „{suggestion}”',
+  appSpellChangedAll: 'Poprawiono {count} komórek ze słowem „{word}”.',
 } satisfies Record<keyof typeof zh, string>

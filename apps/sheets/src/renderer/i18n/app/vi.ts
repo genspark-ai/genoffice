@@ -116,8 +116,10 @@ export const vi = {
   appChartNoRepoint: 'Biểu đồ này không hỗ trợ chỉ định lại vùng dữ liệu.',
   appKeepOneSeries: 'Giữ lại ít nhất một chuỗi.',
   appNoCategoriesToSwitch: 'Không có danh mục nào để chuyển đổi.',
-  appComboNoSelectData: 'Chưa hỗ trợ thay đổi nguồn dữ liệu của biểu đồ kết hợp.',
+  appSelectDataUnsupported: 'Chưa hỗ trợ thay đổi nguồn dữ liệu của loại biểu đồ này.',
   appSeriesName: 'Tên chuỗi',
+  appSeriesType: 'Loại chuỗi',
+  appSecondaryAxis: 'Trục phụ',
   appValuesRange: 'Vùng giá trị',
   appCategoriesRange: 'Vùng danh mục',
   appKeepUnchanged: 'Giữ nguyên',
@@ -197,6 +199,12 @@ export const vi = {
   appInvalidGroupField: 'Trường nhóm không hợp lệ.',
   appInvalidPageField: 'Trường bộ lọc báo cáo không hợp lệ.',
   appPivotPageItemMissing: 'Mục bộ lọc "{item}" không thuộc trường "{label}".',
+  appInvalidPivotBaseField:
+    'Trường cơ sở của "Hiển thị giá trị dưới dạng" phải nằm trong hàng hoặc cột.',
+  appPivotBaseFieldMissing:
+    'Chế độ "Hiển thị giá trị dưới dạng" của trường giá trị cần một trường cơ sở.',
+  appPivotBaseFieldNotAxis: 'Trường cơ sở "{label}" phải nằm trong hàng hoặc cột của bảng trục.',
+  appPivotBaseItemMissing: 'Mục cơ sở "{item}" không thuộc trường "{label}".',
   appInvalidLabelFilterField: 'Trường lọc nhãn không hợp lệ.',
   appInvalidValueFieldIndex: 'Chỉ mục trường giá trị {index} không hợp lệ.',
   appInvalidValueField: 'Trường giá trị không hợp lệ.',
@@ -330,8 +338,7 @@ export const vi = {
   appPivotSheetNoMove: 'Trang tính này chứa PivotTable — chưa hỗ trợ di chuyển vùng.',
   appMergeOverTable:
     'Vùng chọn chồng chéo với một bảng Excel — chưa hỗ trợ hợp nhất các ô bên trong bảng.',
-  appTableFilterNoEdit:
-    'Bộ lọc của trang tính này thuộc về một bảng Excel — việc chỉnh sửa nó hiện chưa thể lưu.',
+  appFilterToggleFailed: 'Bộ lọc chưa được áp dụng — hãy chọn phạm vi chứa dữ liệu trước.',
   appAutofillStreaming: 'Chưa cho phép tự động điền vào khu vực vẫn đang tải theo luồng.',
   appDvNeedsIndexed:
     'Chỉnh sửa xác thực dữ liệu yêu cầu trang tính này phải được lập chỉ mục đầy đủ trước — vui lòng thử lại sau giây lát.',
@@ -567,8 +574,6 @@ export const vi = {
   appSaveFailed: 'Không thể lưu sổ làm việc.',
   appCfRuleUnsaveable:
     'Quy tắc định dạng có điều kiện này không thể lưu vào xlsx — hãy chuyển sang loại quy tắc khác.',
-  appSaveErrX14Dv:
-    'Trang tính này có xác thực dữ liệu mở rộng (x14); chưa hỗ trợ chỉnh sửa quy tắc xác thực của nó.',
   appSaveErrMultiSelectList:
     'Xác thực danh sách đa lựa chọn không thể lưu vào xlsx — hãy xóa quy tắc trước khi lưu.',
   appSaveErrX14Cf: 'Vùng này có định dạng có điều kiện mở rộng (x14) và chưa thể sửa đổi.',
@@ -695,6 +700,7 @@ export const vi = {
   appExportPdfTitle: 'Xuất dưới dạng PDF',
   appSaveTitle: 'Lưu (⌘S)',
   appSaveAs: 'Lưu dưới dạng',
+  aiNameFile: 'Đặt tên bằng AI…',
   appUndo: 'Hoàn tác',
   appRedo: 'Làm lại',
   appUnsavedEditOne: '● {count} chỉnh sửa chưa lưu',
@@ -1193,6 +1199,7 @@ export const vi = {
   appGroupForecast: 'Dự báo',
   appWhatIfAnalysis: 'Phân tích What-If',
   appGoalSeek: 'Tìm kiếm mục tiêu (Goal Seek)',
+  appDataTable: 'Bảng dữ liệu',
   appWhatIfTitle: 'Giải tìm đầu vào cho một giá trị mục tiêu',
   appGoalSeekNeedsFormula: 'Ô đặt phải chứa một công thức.',
   appGoalSeekByCellNotNumber: 'Ô thay đổi phải chứa một số thuần túy hoặc để trống.',
@@ -1548,4 +1555,29 @@ export const vi = {
   appVisualFlipV: 'Lật dọc',
   appVisualFlipH: 'Lật ngang',
   appCtxPasteVisual: 'Dán ảnh hoặc hình',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Chính tả',
+  appSpellBtnDetail: 'Kiểm tra văn bản trang tính (F7)',
+  appSpellToggle: 'Kiểm tra chính tả',
+  appSpellToggleTip:
+    'Bật kiểm tra chính tả (F7 và nút Review); khi tắt, hộp nhận xét không còn hiện gạch chân sóng',
+  appSpellOn: 'Đã bật kiểm tra chính tả.',
+  appSpellOff: 'Kiểm tra chính tả đang tắt. Bật trong Review ▸ Kiểm tra.',
+  appSpellRecheck: 'Kiểm tra lại',
+  appSpellNone: 'Không tìm thấy lỗi chính tả đáng ngờ.',
+  appSpellFindings: '{count} lỗi đáng ngờ. Bấm một hàng để đi tới.',
+  appSpellTruncated: 'Quá nhiều ô văn bản; chỉ kiểm tra các ô đầu tiên.',
+  appSpellColWord: 'Đáng ngờ',
+  appSpellIgnore: 'Bỏ qua',
+  appSpellIgnoreAll: 'Bỏ qua tất cả',
+  appSpellLearn: 'Thêm vào từ điển',
+  appSpellNoSuggestions: 'Không có gợi ý',
+  appSpellIgnoredAll: '"{word}" sẽ không bị đánh dấu nữa trong phiên này.',
+  appSpellLearned: 'Đã thêm "{word}" vào từ điển.',
+  appSpellChanged: 'Đã sửa {address}.',
+  appSpellChangeFailed: 'Không thể sửa {address}.',
+  appSpellUnavailable: 'Kiểm tra chính tả không khả dụng trong cửa sổ này.',
+  appSpellReplaceAll: 'Thay tất cả bằng "{suggestion}"',
+  appSpellChangedAll: 'Đã sửa {count} ô chứa "{word}".',
 } satisfies Record<keyof typeof zh, string>

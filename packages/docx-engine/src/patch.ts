@@ -1691,7 +1691,17 @@ export async function saveDocx(
         ` w:author="${escapeXmlAttr(revision.author)}"` +
         (revision.date ? ` w:date="${escapeXmlAttr(revision.date)}"` : '') +
         (revision.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(revision.dateUtc)}"` : '')
-      xml = `<w:${revision.kind}${attrs}>${xml}</w:${revision.kind}>`
+      // Word's shape for a whole text paragraph is the run marks plus the
+      // record on the paragraph mark (w:pPr/w:rPr) — a w:ins wrapper around
+      // w:p is the shape for tables, and neither Word nor LibreOffice
+      // resolves it as a tracked change on a paragraph. A paragraph without
+      // run marks of its own (a deleted image paragraph has none to carry
+      // the strikethrough) stays on the wrapper.
+      if (/^<w:p[\s/>]/.test(xml) && new RegExp(`<w:${revision.kind}[\\s>]`).test(xml)) {
+        xml = markParagraphRevision(xml, revision.kind, attrs)
+      } else {
+        xml = `<w:${revision.kind}${attrs}>${xml}</w:${revision.kind}>`
+      }
     }
     if (fbDocxIndex !== undefined && fb.kind !== 'original') {
       const nested = (nestedOpaque.get(fbDocxIndex) ?? []).join('')
@@ -2961,6 +2971,42 @@ function maxDocPrId(documentXml: string): number {
 function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
   let next = maxBookmarkId(documentXml) + 1
   return () => next++
+}
+
+/**
+ * Marks the paragraph mark of a whole inserted/deleted paragraph: the record
+ * rides `w:pPr/w:rPr` (`w:ins`/`w:del`, CT_ParaRPr's first elements), which
+ * is the shape Word's own Compare writes and every reader resolves — accept
+ * drops the paragraph, reject keeps it. An existing record of the same kind
+ * is left alone.
+ */
+function markParagraphRevision(paragraphXml: string, kind: 'ins' | 'del', attrs: string): string {
+  const record = `<w:${kind}${attrs}/>`
+  const selfClosed = /^<w:p\/>/.test(paragraphXml)
+  const open = selfClosed ? '<w:p>' : paragraphXml.slice(0, paragraphXml.indexOf('>') + 1)
+  const rest = selfClosed ? paragraphXml.slice('<w:p/>'.length) : paragraphXml.slice(open.length)
+  const pPrAt = rest.search(/<w:pPr(?:\s|>)/)
+  if (pPrAt !== -1) {
+    // already marked: a redline saved again must not grow a second record
+    const marked = new RegExp(`<w:rPr[\\s>]((?:(?!</w:rPr>)[\\s\\S])*)<w:${kind}[\\s/]`).test(rest)
+    if (marked) return paragraphXml
+  }
+  if (pPrAt === -1) {
+    return `${open}<w:pPr><w:rPr>${record}</w:rPr></w:pPr>${rest}`
+  }
+  const rPrAt = rest.indexOf('<w:rPr', pPrAt)
+  const pPrCloseAt = rest.indexOf('</w:pPr>', pPrAt)
+  if (rPrAt !== -1 && (pPrCloseAt === -1 || rPrAt < pPrCloseAt)) {
+    // CT_ParaRPr order: w:ins/w:del come first
+    const rPrOpenEnd = rest.indexOf('>', rPrAt) + 1
+    return rest.slice(0, rPrOpenEnd) + record + rest.slice(rPrOpenEnd)
+  }
+  // no rPr yet: it goes before a pPrChange if one is there (CT_PPr order),
+  // else right before the pPr closes
+  const changeAt = rest.indexOf('<w:pPrChange', pPrAt)
+  const at = changeAt !== -1 && (pPrCloseAt === -1 || changeAt < pPrCloseAt) ? changeAt : pPrCloseAt
+  if (at === -1) return `${open}<w:pPr><w:rPr>${record}</w:rPr></w:pPr>${rest}`
+  return open + rest.slice(0, at) + `<w:rPr>${record}</w:rPr>` + rest.slice(at)
 }
 
 /** revision w:id is unique across every annotation in the part, so start above all existing ids */
