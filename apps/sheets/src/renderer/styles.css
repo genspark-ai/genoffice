@@ -6287,6 +6287,63 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+/* Spelling panel (F7 / Review ▸ Proofing) rides the find-replace panel chrome;
+   these only add its note line, selected row and the suggestion chips. */
+
+.find-replace-panel .spell-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .fr-results tbody tr.spell-selected {
+  background: var(--accent-soft);
+}
+
+.find-replace-panel .spell-detail {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.find-replace-panel .spell-detail-text {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.find-replace-panel .spell-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.find-replace-panel .spell-suggestion {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent-dark);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.find-replace-panel .spell-suggestion:hover {
+  background: var(--hover);
+}
+
+.find-replace-panel .spell-no-suggestion {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .spell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* The stock Univer find dialog is replaced by .find-replace-panel; it still
    mounts (its controller carries the find-session lifecycle) but must never
    show. Keyed on the component marker because the portal wrapper carries no

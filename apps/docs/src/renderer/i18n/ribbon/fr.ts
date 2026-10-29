@@ -25,6 +25,7 @@ export const fr = {
   ribbonShapeFillTip: 'Remplir la forme sélectionnée avec une couleur',
   ribbonShapeOutline: 'Contour de forme',
   ribbonShapeOutlineTip: 'Choisir la couleur du contour de la forme sélectionnée',
+  ribbonShapeOutlineWeight: 'Épaisseur du contour',
   ribbonNoFill: 'Aucun remplissage',
   ribbonNoOutline: 'Sans contour',
   ribbonRemoveBg: "Supprimer l'arrière-plan",

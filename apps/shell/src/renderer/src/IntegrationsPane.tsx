@@ -65,7 +65,11 @@ export function IntegrationsPane({
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
   /** one-line outcome shown until the next action: installed hint, saved zip path, copied */
-  const [notice, setNotice] = useState<{ agentId?: AgentId; text: string } | null>(null)
+  const [notice, setNotice] = useState<{
+    agentId?: AgentId
+    legacy?: boolean
+    text: string
+  } | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -139,6 +143,24 @@ export function IntegrationsPane({
     if (path) setNotice({ text: t('intgSavedTo', { path }) })
   }
 
+  /** the per-tool copies the shared `.agents` row replaced: still read, never updated */
+  const cleanLegacy = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await api()!.sweepLegacySkillCopies()
+      setNotice({
+        legacy: true,
+        text: t('intgLegacyCleaned', { n: res.removed.length, k: res.kept.length }),
+      })
+      await refresh()
+    } catch (err) {
+      setNotice({ legacy: true, text: t('intgLegacyFailed', { msg: String(err) }) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const confirmBlock = (p: Pending) => (
     <div className="set-intg-confirm" role="group">
       <div className="set-field-desc">
@@ -168,6 +190,7 @@ export function IntegrationsPane({
   }
 
   const bundled = status.skillVersion
+  const legacy = status.legacy ?? []
   const cliTooOld =
     status.skillNeedsCli &&
     status.cli.version &&
@@ -288,6 +311,32 @@ export function IntegrationsPane({
             </div>
           )
         })}
+
+        {legacy.length > 0 && (
+          <div className="set-intg-row" data-agent="legacy">
+            <div className="set-field">
+              <div className="set-field-text">
+                <div className="set-field-stack">
+                  <div className="set-field-label">{t('intgLegacyTitle')}</div>
+                  <div className="set-field-desc">{t('intgLegacyDesc', { n: legacy.length })}</div>
+                  <ul className="set-intg-legacy">
+                    {legacy.map((c) => (
+                      <li key={c.path} className="set-intg-legacy-item">
+                        {c.label} — {c.path}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="set-intg-actions">
+                <button className="set-btn" disabled={busy} onClick={() => void cleanLegacy()}>
+                  {t('intgLegacyClean')}
+                </button>
+              </div>
+            </div>
+            {notice?.legacy && <div className="set-field-desc set-intg-notice">{notice.text}</div>}
+          </div>
+        )}
 
         <details className="set-intg-details" open={status.agents.length === 0}>
           <summary>{t('intgOtherToggle')}</summary>

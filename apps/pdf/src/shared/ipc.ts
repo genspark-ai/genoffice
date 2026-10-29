@@ -23,6 +23,7 @@ export const PDF_CHANNELS = {
   insertPdf: 'pdf:insert-pdf',
   compareReadPdf: 'pdf:compare-read-pdf',
   compareReadOpen: 'pdf:compare-read-open',
+  reduceFileSize: 'pdf:reduce-file-size',
   insertBlankPage: 'pdf:insert-blank-page',
   splitPdf: 'pdf:split-pdf',
   mergePdf: 'pdf:merge-pdf',
@@ -325,6 +326,18 @@ export type DrawingInput =
       destPage?: number
     }
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
+  | {
+      /** Calibrated measurement: a Line annotation whose label shows the real-world
+          length the session computed (the file stays geometry-only). */
+      kind: 'measure'
+      pageIndex: number
+      color: [number, number, number]
+      width: number
+      from: [number, number]
+      to: [number, number]
+      /** Displayed text, e.g. "2.35 m" — non-empty, ≤ 64 chars */
+      label: string
+    }
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
   | {
       /** Text insertion mark placed by a click; written as a Caret annotation with
@@ -973,6 +986,21 @@ export interface PdfApi {
     path: string,
   ): Promise<
     { ok: true; name: string; pageCount: number; pages: string[] } | { ok: false; reason: string }
+  >
+  /** Reduce file size: re-compress streams and downsample oversized Flate images.
+      The picked save target (main-side dialog) receives the shrunk copy; the open
+      document is untouched and reloads from the target when the caller asks. */
+  reduceFileSize(path: string): Promise<
+    | {
+        ok: true
+        targetPath: string
+        bytesBefore: number
+        bytesAfter: number
+        streamsRecompressed: number
+        imagesDownsampled: number
+      }
+    | { ok: false; canceled: true }
+    | { ok: false; reason: string }
   >
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>

@@ -5644,6 +5644,37 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
+/* round rotation handle of a selected shape (PowerPoint's turn grip above the
+   box): dragging it turns the shape about its centre; Shift snaps to 15° */
+.box-rotate-handle {
+  position: absolute;
+  z-index: 4;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--word-blue);
+  border-radius: 50%;
+  background: var(--docs-paper);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-protected-textboxes:hover > .box-rotate-handle,
+.ProseMirror-focused .doc-protected-textboxes.ProseMirror-selectednode > .box-rotate-handle,
+.doc-protected-chart:hover > .box-rotate-handle,
+.ProseMirror-focused .doc-protected-chart.ProseMirror-selectednode > .box-rotate-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-content-editing > .box-rotate-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Native ProseMirror tables: no vertical gap of their own (Word) */
 .doc-page > .doc-table {
   margin: 0;

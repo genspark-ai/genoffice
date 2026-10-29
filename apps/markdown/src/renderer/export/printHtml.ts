@@ -34,7 +34,7 @@ img { max-width: 100%; height: auto; }
 .md-diagram-preview svg { max-width: 100%; height: auto; }
 .tableWrapper { margin: 0.8em 0; }
 table { border-collapse: collapse; width: 100%; margin: 0; break-inside: avoid; }
-th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; }
+th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; overflow-wrap: anywhere; }
 th > p, td > p { margin: 0; }
 th { background: #f6f8fa; font-weight: 600; }
 ul[data-type='taskList'] { list-style: none; padding-left: 0.4em; }

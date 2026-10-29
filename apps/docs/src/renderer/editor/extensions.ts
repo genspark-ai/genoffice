@@ -5025,7 +5025,7 @@ export const DocProtected = Node.create({
     }
   },
   addProseMirrorPlugins() {
-    return [imageResizePlugin(), floatingObjectDragPlugin()]
+    return [imageResizePlugin(), shapeRotatePlugin(), floatingObjectDragPlugin()]
   },
 })
 
@@ -5409,9 +5409,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
       } else children.unshift(['div', { class: 'doc-anchor-strut' }, ['br']])
     }
     if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
-    // corner resize handle; multi-box nodes keep per-box autogrow semantics only
+    // corner resize + round rotation handles; multi-box nodes keep per-box
+    // autogrow semantics only
     if (boxes.length === 1 && !diagram) {
       children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
+      children.push(['span', { class: 'box-rotate-handle', contenteditable: 'false' }])
     }
     // page-type w:br the anchor paragraph carries next to the boxes: Word keeps
     // the anchor's flow line, so render the break chip as a stray line (nonzero
@@ -6980,6 +6982,93 @@ function imageResizePlugin(): Plugin {
                 Number(node.attrs.imageOffsetYEmu) + Math.round((startH - h) * EMU_PER_PX)
             }
             view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, attrs))
+          }
+          window.addEventListener('mousemove', onMove)
+          window.addEventListener('mouseup', onUp)
+          return true
+        },
+      },
+    },
+  })
+}
+
+/**
+ * Round rotation grip of a selected shape: drag around the box centre to turn
+ * it (PowerPoint parity). Shift snaps the angle to 15° steps. The live preview
+ * rewrites the visual box transform; the commit stores the angle as the box's
+ * model rotDeg (a:xfrm@rot), so saving and the node view's own textbox style
+ * keep the shape turned.
+ */
+function shapeRotatePlugin(): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          if (event.button !== 0) return false
+          const target = event.target as HTMLElement
+          if (!target.classList?.contains('box-rotate-handle')) return false
+          // read-only docs offer no rotation: swallow the press on the grip so
+          // it cannot fall through to the move/resize handlers
+          if (!view.editable) return true
+          const wrapper = target.closest('.doc-protected') as HTMLElement | null
+          const boxEl = wrapper?.querySelector('.doc-textbox') as HTMLElement | null
+          if (!wrapper || !boxEl) return false
+          // the node view's document position (same walk as the resize handle)
+          let pos = -1
+          view.state.doc.descendants((node, p) => {
+            if (pos !== -1) return false
+            if (node.type.name === 'docProtected' && view.nodeDOM(p) === wrapper) pos = p
+            return pos === -1
+          })
+          if (pos === -1) return false
+          const node = view.state.doc.nodeAt(pos)
+          const boxes = node?.attrs.textboxes as TextboxDisplay[] | null
+          if (!Array.isArray(boxes) || boxes.length !== 1) return false
+          event.preventDefault()
+          view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+
+          // client coordinates make the gesture zoom-independent (CSS zoom scales
+          // the rect and the pointer alike); the box centre stays the pivot even
+          // when the box is already turned (a centred-origin rotation keeps it)
+          const rect = boxEl.getBoundingClientRect()
+          const centreX = rect.left + rect.width / 2
+          const centreY = rect.top + rect.height / 2
+          const startRot = Number(boxes[0].rotDeg ?? 0)
+          const pointerAngle = (e: MouseEvent): number =>
+            (Math.atan2(e.clientY - centreY, e.clientX - centreX) * 180) / Math.PI
+          const startAngle = pointerAngle(event)
+          const angleAt = (e: MouseEvent): number => {
+            const raw = Math.round(startRot + pointerAngle(e) - startAngle)
+            const deg = ((raw % 360) + 360) % 360
+            // Shift snaps to the 15° grid, like Word/PowerPoint
+            return e.shiftKey ? (Math.round(deg / 15) * 15) % 360 : deg
+          }
+          const baseTransform = boxEl.style.transform
+          let deg = startRot
+          const onMove = (e: MouseEvent) => {
+            deg = angleAt(e)
+            boxEl.style.transform = `rotate(${deg}deg)`
+          }
+          const onUp = (e: MouseEvent) => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+            deg = angleAt(e)
+            // drop the drag preview; a real turn is re-rendered from the model
+            // attrs by the node view, a click without a turn restores the box
+            boxEl.style.transform = baseTransform
+            if (deg === startRot) return
+            const currentNode = view.state.doc.nodeAt(pos)
+            const currentBoxes = currentNode?.attrs.textboxes as TextboxDisplay[] | null
+            if (!currentNode || !Array.isArray(currentBoxes) || currentBoxes.length !== 1) return
+            const [box, ...rest] = currentBoxes
+            // 0 is the cleared state: drop rotDeg so save strips a:xfrm@rot
+            const turned = deg === 0 ? { ...box, rotDeg: undefined } : { ...box, rotDeg: deg }
+            const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+              ...currentNode.attrs,
+              textboxes: [turned, ...rest],
+            })
+            // keep the shape selected so the handles stay reachable
+            view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
           }
           window.addEventListener('mousemove', onMove)
           window.addEventListener('mouseup', onUp)

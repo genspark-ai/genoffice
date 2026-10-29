@@ -325,6 +325,40 @@ describe('genoffice sheet apply --ops: gateway-written features', () => {
     expect(names).toEqual(['Sales', 'Table1'])
   })
 
+  it.skipIf(!sidecar)(
+    'charts a formula column: the sidecar fills the snapshot before the numeric check',
+    async () => {
+      const dir = tempDir()
+      const out = await book(dir)
+      expect(
+        (
+          await apply(out, [
+            {
+              op: 'set_range',
+              range: 'D1:D4',
+              values: [['total'], ['=B2*C2'], ['=B3*C3'], ['=B4*C4']],
+            },
+          ])
+        ).code,
+      ).toBe(0)
+      const r = await apply(out, [
+        { op: 'add_chart', chartType: 'column', dataRange: 'D1:D4', anchorCell: 'F2' },
+      ])
+      expect(r.code).toBe(0)
+      const chart = (await parts(out)).get('xl/charts/chart1.xml')!
+      expect(chart).toMatch(/<c:f>'sales'!\$D\$2:\$D\$4<\/c:f>/)
+
+      // formulas written in the same batch stay rejected: the sidecar reads the
+      // file on disk, which does not hold the batch's own writes yet
+      const sameBatch = await apply(out, [
+        { op: 'set_range', range: 'E1:E4', values: [['x'], ['=B2*2'], ['=B3*2'], ['=B4*2']] },
+        { op: 'add_chart', chartType: 'column', dataRange: 'E1:E4' },
+      ])
+      expect(sameBatch.code).toBe(1)
+      expect(sameBatch.json().message).toContain('numeric column')
+    },
+  )
+
   it('manages defined names, protection and sheet tabs', async () => {
     const dir = tempDir()
     const out = await book(dir)

@@ -118,7 +118,7 @@ import {
   setTableLookOption,
   toggleRepeatHeaderRows,
 } from '../editor/table-properties'
-import { useI18n, type StringKey } from '../i18n/locale'
+import { useI18n, type StringKey, type TFunc } from '../i18n/locale'
 import type { MergeDataSource } from '../../shared/ipc'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import { pxToTwips, twipsToPx } from '../units'
@@ -600,6 +600,46 @@ const ARRANGE_ORDER_ITEMS: Array<
   ['appSendBackward', IconSendBackward, sendBackward],
   ['appSendToBack', IconSendToBack, sendToBack],
 ]
+/**
+ * Shape Format ▸ outline weight gallery, in points — the weights Word offers.
+ * The model stores CSS px (1 pt = 12700 EMU = 4/3 px), so a pick converts
+ * through `outlineWidthPxOf` and the trigger maps the stored width back.
+ */
+const SHAPE_OUTLINE_WEIGHTS_PT = [
+  '0.25',
+  '0.5',
+  '0.75',
+  '1',
+  '1.5',
+  '2.25',
+  '3',
+  '4.5',
+  '6',
+] as const
+const PX_PER_PT = 4 / 3
+
+/** a gallery weight in points as CSS px, rounded like the docx parser (1.5 pt -> 2 px) */
+const outlineWidthPxOf = (pt: number): number => Math.round(pt * PX_PER_PT * 100) / 100
+
+/** a stored px width back in points, rounded the same way (2 px -> 1.5 pt) */
+const outlineWidthPtOf = (px: number): number => Math.round((px / PX_PER_PT) * 100) / 100
+
+/** the gallery option matching a stored width; null when the box has none or an off-gallery one */
+const outlineWeightOptionOf = (px: number | null): string | null => {
+  if (px == null) return null
+  const pt = outlineWidthPtOf(px)
+  return SHAPE_OUTLINE_WEIGHTS_PT.find((weight) => Number(weight) === pt) ?? null
+}
+
+/**
+ * Trigger text for the weight picker: the matching gallery option (the trigger
+ * then reads as that option's label), the box's own off-gallery width, or the
+ * control name while the shape still carries Word's default width.
+ */
+function outlineWeightValueOf(px: number | null, tr: TFunc): string {
+  if (px == null) return tr('ribbonShapeOutlineWeight')
+  return outlineWeightOptionOf(px) ?? tr('ribbonPtValue', { n: String(outlineWidthPtOf(px)) })
+}
 const HF_TABS = ['headerFooter'] as const
 type RibbonTab =
   | (typeof TABS)[number]
@@ -1008,8 +1048,17 @@ function RibbonInner({
     }
   }, [inShape])
 
-  /** apply fill/outline to the selected floating box (first box of the node) */
-  const setShapeStyle = (patch: { fill?: string | null; borderColor?: string | null }) => {
+  /**
+   * apply fill/outline/rotation/weight to the selected floating box (first box
+   * of the node). Null deletes the attribute so the file keeps Word's own
+   * default instead of an explicit no-op value.
+   */
+  const setShapeStyle = (patch: {
+    fill?: string | null
+    borderColor?: string | null
+    rotDeg?: number | null
+    borderWidthPx?: number | null
+  }) => {
     if (!canEdit) return
     const attrs = editor.getAttributes('docProtected')
     const boxes = attrs?.textboxes as TextboxDisplay[] | null
@@ -1023,11 +1072,37 @@ function RibbonInner({
       if (patch.borderColor) box.borderColor = patch.borderColor
       else delete box.borderColor
     }
+    if ('rotDeg' in patch) {
+      if (patch.rotDeg) box.rotDeg = patch.rotDeg
+      else delete box.rotDeg
+    }
+    if ('borderWidthPx' in patch) {
+      if (patch.borderWidthPx) box.borderWidthPx = patch.borderWidthPx
+      else delete box.borderWidthPx
+    }
     editor
       .chain()
       .focus()
       .updateAttributes('docProtected', { textboxes: [box, ...boxes.slice(1)] })
       .run()
+  }
+
+  /**
+   * rotate the selected shape by `delta` degrees clockwise (Word's quarter
+   * turns): the stored angle is normalized to 0-359 and dropped once it is 0.
+   */
+  const setShapeRotation = (delta: number) => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    const boxes = attrs?.textboxes as TextboxDisplay[] | null
+    if (!Array.isArray(boxes) || boxes.length === 0) return
+    const rotDeg = ((Math.round((boxes[0].rotDeg ?? 0) + delta) % 360) + 360) % 360
+    setShapeStyle({ rotDeg: rotDeg || null })
+  }
+
+  /** set the selected shape's outline width from one of Word's weights, in points */
+  const setShapeOutlineWidth = (pt: number) => {
+    setShapeStyle({ borderWidthPx: outlineWidthPxOf(pt) })
   }
 
   /**
@@ -2327,6 +2402,20 @@ function RibbonInner({
                     />
                   )}
                 </div>
+                <Dropdown
+                  className="rb-wrap-dd"
+                  disabled={!canEdit}
+                  tip={t('ribbonShapeOutlineWeight')}
+                  value={outlineWeightValueOf(fs.shapeBorderWidthPx, t)}
+                  options={SHAPE_OUTLINE_WEIGHTS_PT.map((pt) => ({
+                    value: pt,
+                    label: t('ribbonPtValue', { n: pt }),
+                  }))}
+                  onPick={(v) => {
+                    if (!canEdit) return
+                    setShapeOutlineWidth(Number(v))
+                  }}
+                />
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupShapeStyles')}</div>
             </div>
@@ -2428,6 +2517,30 @@ function RibbonInner({
                     <Icon size={17} />
                   </button>
                 ))}
+                <button
+                  className="table-tool-button"
+                  disabled={!canEdit}
+                  data-tip={t('ribbonRotateRight')}
+                  aria-label={t('ribbonRotateRight')}
+                  onClick={() => {
+                    if (!canEdit) return
+                    setShapeRotation(90)
+                  }}
+                >
+                  <IconRotateRight size={17} />
+                </button>
+                <button
+                  className="table-tool-button"
+                  disabled={!canEdit}
+                  data-tip={t('ribbonRotateLeft')}
+                  aria-label={t('ribbonRotateLeft')}
+                  onClick={() => {
+                    if (!canEdit) return
+                    setShapeRotation(-90)
+                  }}
+                >
+                  <IconRotateLeft size={17} />
+                </button>
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
             </div>

@@ -25,6 +25,7 @@ export const es = {
   ribbonShapeFillTip: 'Rellenar la forma seleccionada con un color',
   ribbonShapeOutline: 'Contorno de forma',
   ribbonShapeOutlineTip: 'Elegir el color de contorno de la forma seleccionada',
+  ribbonShapeOutlineWeight: 'Grosor del contorno',
   ribbonNoFill: 'Sin relleno',
   ribbonNoOutline: 'Sin contorno',
   ribbonRemoveBg: 'Quitar fondo',

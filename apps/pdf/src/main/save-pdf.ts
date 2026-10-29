@@ -13,6 +13,7 @@ import {
   PDFRef,
   PDFSignature,
   PDFString,
+  StandardFonts,
   TextAlignment,
   degrees,
   rgb,
@@ -620,6 +621,8 @@ function addDrawing(
   d: DrawingInput,
   /** localId → registered ref of notes written earlier in this request (reply parenting) */
   noteRefs?: Map<string, PDFRef>,
+  /** the label font's ref for measure drawings (their appearance names /F1) */
+  measureFontRef?: PDFRef,
 ): void {
   if (d.kind === 'image') return // handled by addImageStamp (needs async embed)
   if (d.kind === 'link') return // handled by addLinkAnnot (needs the page list)
@@ -752,6 +755,28 @@ function addDrawing(
     ops.push(`${num(fx)} ${num(fy)} m ${num(tx)} ${num(ty)} l S`)
     xs = [fx, tx]
     ys = [fy, ty]
+    if (d.kind === 'measure') {
+      // the label rides the line's own angle at its midpoint, flipped into
+      // left-to-right when the line runs right-to-left; the whole appearance
+      // rotates with the page like any other annotation's. The label takes the
+      // drawing's own colour, matching the on-screen preview.
+      const mx = (fx + tx) / 2
+      const my = (fy + ty) / 2
+      const ang = Math.atan2(ty - fy, tx - fx)
+      const flip = Math.abs(ang) > Math.PI / 2
+      const tilt = flip ? ang + Math.PI : ang
+      ops.push(`BT ${r} ${g} ${b} rg /F1 9 Tf`)
+      ops.push(
+        `${num(Math.cos(tilt))} ${num(Math.sin(tilt))} ${num(-Math.sin(tilt))} ${num(Math.cos(tilt))} ${num(mx)} ${num(my + 6)} Tm`,
+      )
+      const esc = d.label.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+      ops.push(`(${esc}) Tj ET`)
+      // Helvetica 9pt averages ~4.5pt per glyph, and the extent follows the
+      // label's tilt — an axis-aligned half-width clipped steep lines
+      const halfW = (d.label.length * 4.5) / 2
+      xs.push(mx + Math.cos(tilt) * halfW, mx - Math.cos(tilt) * halfW)
+      ys.push(my + 6 + Math.sin(tilt) * halfW, my + 6 - Math.sin(tilt) * halfW)
+    }
     if (d.kind === 'arrow') {
       const ang = Math.atan2(ty - fy, tx - fx)
       const len = Math.max(9, d.width * 4.5)
@@ -772,7 +797,16 @@ function addDrawing(
     Math.max(...xs) + pad,
     Math.max(...ys) + pad,
   ]
-  const ap = pdfDoc.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', BBox: rect })
+  // Preview and Acrobat synthesize nothing for an unresolvable font reference:
+  // the label's /F1 must be reachable through the form's /Resources
+  const ap = pdfDoc.context.stream(ops.join('\n'), {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: rect,
+    ...(d.kind === 'measure' && measureFontRef
+      ? { Resources: { Font: { F1: measureFontRef } } }
+      : {}),
+  })
   const annot = pdfDoc.context.obj({
     Type: 'Annot',
     Subtype: subtype,
@@ -786,6 +820,10 @@ function addDrawing(
   if (d.kind === 'ink') annot.set(PDFName.of('InkList'), pdfDoc.context.obj(d.paths))
   if (d.kind === 'line' || d.kind === 'arrow') {
     annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+  }
+  if (d.kind === 'measure') {
+    annot.set(PDFName.of('L'), pdfDoc.context.obj([...d.from, ...d.to]))
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(d.label))
   }
   annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
   if (d.kind === 'ink') setVisualSignatureMetadata(annot, d.formFieldName)
@@ -1555,12 +1593,19 @@ export async function applySaveRequest(
     if (page && validMarkup(m)) addMarkup(pdfDoc, page, m)
   }
   const noteRefs = new Map<string, PDFRef>()
-  for (const d of request.drawings ?? []) {
+  // the measure label's font: standard-14 Helvetica, no bytes to embed — but
+  // only when a measure drawing is actually written, so saves without one
+  // leave the document's font dict untouched
+  const drawings = request.drawings ?? []
+  const measureFontRef = drawings.some((d) => d.kind === 'measure')
+    ? (await pdfDoc.embedFont(StandardFonts.Helvetica)).ref
+    : undefined
+  for (const d of drawings) {
     const page = pages[d.pageIndex]
     if (!page) continue
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
     else if (d.kind === 'link') addLinkAnnot(pdfDoc, pages, page, d)
-    else addDrawing(pdfDoc, page, d, noteRefs)
+    else addDrawing(pdfDoc, page, d, noteRefs, measureFontRef)
   }
   // Note content edits go after the drawings: replies added above locate their /IRT
   // parent by its old contents, which an earlier in-place rewrite would break. An

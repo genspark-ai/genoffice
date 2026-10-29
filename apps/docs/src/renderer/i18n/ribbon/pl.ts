@@ -25,6 +25,7 @@ export const pl = {
   ribbonShapeFillTip: 'Wypełnij zaznaczony kształt kolorem',
   ribbonShapeOutline: 'Kontury kształtu',
   ribbonShapeOutlineTip: 'Wybierz kolor konturu zaznaczonego kształtu',
+  ribbonShapeOutlineWeight: 'Grubość konturu',
   ribbonNoFill: 'Brak wypełnienia',
   ribbonNoOutline: 'Brak konturu',
   ribbonRemoveBg: 'Usuń tło',
