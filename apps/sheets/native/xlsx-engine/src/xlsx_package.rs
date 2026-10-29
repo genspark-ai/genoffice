@@ -21,33 +21,105 @@ pub(crate) struct SheetSpec {
     pub(crate) state: Option<&'static str>,
 }
 
+/// The drawing of one sheet: its parts go beside the sheet's own, numbered by
+/// sheet (`drawing3.xml` belongs to `sheet3.xml`). `media` names are unique
+/// across the whole package.
+pub(crate) struct SheetArt {
+    pub(crate) xml: String,
+    /// The drawing's relationship part: one image reference per `rId`.
+    pub(crate) rels: String,
+    /// (part name, bytes) — `xl/media/image1.png` and friends.
+    pub(crate) media: Vec<(String, Vec<u8>)>,
+}
+
 /// Writes the whole package. `sheet_xmls` runs in the same order as `sheets`:
-/// entry *n* becomes `xl/worksheets/sheet{n}.xml`.
+/// entry *n* becomes `xl/worksheets/sheet{n}.xml`. `art` runs alongside it —
+/// one optional drawing per sheet.
 pub(crate) fn write_package(
     target: &Path,
     sheets: &[SheetSpec],
     defined_names: &str,
     sheet_xmls: &[String],
+    art: &[Option<SheetArt>],
 ) -> Result<(), SidecarError> {
     let file = File::create(target)?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    let mut add = |name: &str, content: &str| -> Result<(), SidecarError> {
+
+    fn add(
+        writer: &mut ZipWriter<File>,
+        name: &str,
+        content: &str,
+        options: SimpleFileOptions,
+    ) -> Result<(), SidecarError> {
         writer.start_file(name, options)?;
         writer.write_all(content.as_bytes())?;
         Ok(())
-    };
+    }
+    fn add_binary(
+        writer: &mut ZipWriter<File>,
+        name: &str,
+        content: &[u8],
+        options: SimpleFileOptions,
+    ) -> Result<(), SidecarError> {
+        writer.start_file(name, options)?;
+        writer.write_all(content)?;
+        Ok(())
+    }
 
-    add("[Content_Types].xml", &content_types_xml(sheets.len()))?;
-    add("_rels/.rels", ROOT_RELS)?;
-    add("xl/workbook.xml", &workbook_xml(sheets, defined_names))?;
     add(
+        &mut writer,
+        "[Content_Types].xml",
+        &content_types_xml(sheets.len(), art),
+        options,
+    )?;
+    add(&mut writer, "_rels/.rels", ROOT_RELS, options)?;
+    add(
+        &mut writer,
+        "xl/workbook.xml",
+        &workbook_xml(sheets, defined_names),
+        options,
+    )?;
+    add(
+        &mut writer,
         "xl/_rels/workbook.xml.rels",
         &workbook_rels_xml(sheets.len()),
+        options,
     )?;
-    add("xl/styles.xml", STYLES_XML)?;
+    add(&mut writer, "xl/styles.xml", STYLES_XML, options)?;
     for (index, xml) in sheet_xmls.iter().enumerate() {
-        add(&format!("xl/worksheets/sheet{}.xml", index + 1), xml)?;
+        add(
+            &mut writer,
+            &format!("xl/worksheets/sheet{}.xml", index + 1),
+            xml,
+            options,
+        )?;
+        if let Some(art) = art.get(index).and_then(Option::as_ref) {
+            let n = index + 1;
+            add(
+                &mut writer,
+                &format!("xl/worksheets/_rels/sheet{n}.xml.rels"),
+                &worksheet_rels_xml(n),
+                options,
+            )?;
+            add(
+                &mut writer,
+                &format!("xl/drawings/drawing{n}.xml"),
+                &art.xml,
+                options,
+            )?;
+            add(
+                &mut writer,
+                &format!("xl/drawings/_rels/drawing{n}.xml.rels"),
+                &art.rels,
+                options,
+            )?;
+        }
+    }
+    for entry in art.iter().flatten() {
+        for (name, bytes) in &entry.media {
+            add_binary(&mut writer, name, bytes, options)?;
+        }
     }
     writer.finish()?.sync_all()?;
     Ok(())
@@ -55,7 +127,8 @@ pub(crate) fn write_package(
 
 /// The `<worksheet>` wrapper: a dimension, then the parts the schema fixes in
 /// this order — `cols` before the data, and the dialect's trailing parts
-/// (merges, filters) after it.
+/// (merges, the drawing reference) after it. The `r` namespace is declared
+/// even when unused so callers can append `<drawing r:id>` freely.
 pub(crate) fn worksheet_document(
     dimension: &str,
     columns: &str,
@@ -64,7 +137,7 @@ pub(crate) fn worksheet_document(
 ) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="{dimension}"/>{columns}<sheetData>{sheet_data}</sheetData>{tail}</worksheet>"#,
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="{dimension}"/>{columns}<sheetData>{sheet_data}</sheetData>{tail}</worksheet>"#,
     )
 }
 
@@ -167,15 +240,47 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-fn content_types_xml(sheet_count: usize) -> String {
+fn content_types_xml(sheet_count: usize, art: &[Option<SheetArt>]) -> String {
     let overrides: String = (1..=sheet_count)
         .map(|index| format!(
             r#"<Override PartName="/xl/worksheets/sheet{index}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>"#,
         ))
         .collect();
+    let drawings: String = art
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| entry.as_ref().map(|_| index + 1))
+        .map(|n| format!(
+            r#"<Override PartName="/xl/drawings/drawing{n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>"#,
+        ))
+        .collect();
+    let mut extensions = String::new();
+    if art
+        .iter()
+        .flatten()
+        .any(|entry| entry.media.iter().any(|(name, _)| name.ends_with(".png")))
+    {
+        extensions.push_str(r#"<Default Extension="png" ContentType="image/png"/>"#);
+    }
+    if art
+        .iter()
+        .flatten()
+        .any(|entry| entry.media.iter().any(|(name, _)| name.ends_with(".jpg")))
+    {
+        extensions.push_str(r#"<Default Extension="jpg" ContentType="image/jpeg"/>"#);
+    }
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>{overrides}</Types>"#,
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>{extensions}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>{overrides}{drawings}</Types>"#,
+    )
+}
+
+/// A sheet with a drawing gets one relationship, at the first free id — the
+/// minimal writer emits no other sheet-level relationships.
+fn worksheet_rels_xml(n: usize) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing{n}.xml"/></Relationships>"#,
     )
 }
 

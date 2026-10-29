@@ -27,6 +27,7 @@ pub mod spreadsheetml;
 mod visuals;
 
 mod cell_images;
+mod escher;
 mod refs;
 mod sparklines;
 mod table_styles;
@@ -35,6 +36,7 @@ mod tests;
 mod types;
 mod workbook;
 mod worksheet;
+mod xls_biff;
 mod xlsx_package;
 mod xml_util;
 
