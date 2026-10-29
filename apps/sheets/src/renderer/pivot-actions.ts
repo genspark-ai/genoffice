@@ -1174,9 +1174,17 @@ export function restoreSlicerPanels(
       selectedX === null
         ? members.map((item) => item.member)
         : members.filter((item) => selectedX.includes(item.x)).map((item) => item.member)
+    // The control lives on the sheet its worksheet rel names, which for
+    // dashboard files is not the pivot's sheet. Saving uses this id to wire
+    // the rel/ext/frame; the pivot's sheet would strand the original control
+    // and leave one slicer part referenced from two sheets.
+    const panelSheetId =
+      entry.sheetId !== '' && state.file.sheets.some((sheet) => sheet.id === entry.sheetId)
+        ? entry.sheetId
+        : host.sheet.id
     slicers.push({
       id: `slicer-${Date.now().toString(36)}-${slicers.length + 1}`,
-      sheetId: host.sheet.id,
+      sheetId: panelSheetId,
       pivotPath: host.pivot.path,
       field,
       fieldName,

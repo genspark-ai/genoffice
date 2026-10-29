@@ -224,30 +224,77 @@ async function pivotCacheIdOf(pkg: MutablePackage, pivotPath: string): Promise<n
   return parsed
 }
 
-/// Geometry attributes worth keeping when rewriting an Excel-authored part
-/// (our session model has no geometry; the file's survives the rewrite).
-function carryOverGeometry(existingXml: string): string {
-  const element = new RegExp(`<slicer(?:\\s[^>]*)?/>`).exec(existingXml)?.[0]
-  if (element === undefined) return ''
-  let carried = ''
-  for (const name of ['rowHeight', 'columnCount', 'style', 'showCaption', 'startItem']) {
-    const value = attr(element, name)
-    if (value !== undefined) carried += ` ${name}="${escapeAttribute(value)}"`
-  }
-  return carried
+interface RawAttribute {
+  readonly name: string
+  /// The attribute exactly as written (escaped), ready to concatenate.
+  readonly raw: string
 }
 
-function buildSlicerPartXml(name: string, cacheName: string, caption: string, carried: string) {
+/// Attributes of a start-tag string with their original entity escaping, so
+/// Excel-authored attributes survive a part rewrite verbatim.
+function rawAttributes(startTag: string): RawAttribute[] {
+  const attributes: RawAttribute[] = []
+  for (const match of startTag.matchAll(/([A-Za-z_][\w.:-]*)\s*=\s*("[^"]*"|'[^']*')/g)) {
+    attributes.push({ name: match[1]!, raw: `${match[1]}=${match[2]}` })
+  }
+  return attributes
+}
+
+/// Everything an Excel-authored slicer part carries beyond the identity and
+/// selection the session owns: namespace declarations and flags on the
+/// container, the control's layout/style attributes (rowHeight, columnCount,
+/// style, showCaption, startItem, lockedPosition, xr10:uid, …), and its child
+/// content (an extLst).
+interface CarriedSlicerPart {
+  readonly root: string
+  readonly attributes: string
+  readonly inner: string
+}
+
+function carryOverSlicerPart(existingXml: string | null): CarriedSlicerPart {
+  const xml = existingXml ?? ''
+  const rootTag = /<slicers\b[^>]*>/.exec(xml)?.[0] ?? ''
+  let root = ''
+  for (const attribute of rawAttributes(rootTag)) {
+    // We state the slicer namespace ourselves; every other declaration (and
+    // mc:Ignorable) belongs to the file.
+    if (attribute.name === 'xmlns') continue
+    root += ` ${attribute.raw}`
+  }
+  const control = /<slicer\b[^>]*?(\/?)>/.exec(xml)
+  if (control === null) return { root, attributes: '', inner: '' }
+  const start = control[0]
+  let attributes = ''
+  for (const attribute of rawAttributes(start)) {
+    // name/cache/caption are the session's; rowHeight is re-added below when
+    // the file carried none.
+    if (['name', 'cache', 'caption'].includes(attribute.name)) continue
+    attributes += ` ${attribute.raw}`
+  }
+  let inner = ''
+  if (!start.endsWith('/>')) {
+    const startEnd = control.index + start.length
+    const close = xml.indexOf('</slicer>', startEnd)
+    if (close !== -1) inner = xml.slice(startEnd, close)
+  }
+  return { root, attributes, inner }
+}
+
+function buildSlicerPartXml(
+  name: string,
+  cacheName: string,
+  caption: string,
+  carried: CarriedSlicerPart,
+) {
   // rowHeight is required for Excel to lay the control out; a fresh control
   // gets Excel's own default (241300 EMU ≈ a quarter inch), an updated one
   // keeps whatever the file carried.
-  const geometry = carried.includes('rowHeight') ? carried : `${carried} rowHeight="241300"`
-  return (
-    `${XML_DECL}<slicers xmlns="${X14_NS}">` +
+  const rowHeight = carried.attributes.includes('rowHeight=') ? '' : ' rowHeight="241300"'
+  const element =
     `<slicer name="${escapeAttribute(name)}" cache="${escapeAttribute(cacheName)}"` +
-    ` caption="${escapeAttribute(caption)}"${geometry}/>` +
-    '</slicers>'
-  )
+    ` caption="${escapeAttribute(caption)}"${carried.attributes}${rowHeight}`
+  const control = carried.inner === '' ? `${element}/>` : `${element}>${carried.inner}</slicer>`
+  return `${XML_DECL}<slicers xmlns="${X14_NS}"${carried.root}>${control}</slicers>`
 }
 
 function buildSlicerCacheXml(
@@ -256,20 +303,47 @@ function buildSlicerCacheXml(
   binding: { readonly tabId: number; readonly name: string },
   pivotCacheId: number,
   items: readonly SlicerItemWrite[],
+  existingXml: string | null,
 ): string {
+  const existing = existingXml ?? ''
+  // Attributes Excel owns (xr10:uid, mc:Ignorable, its namespace
+  // declarations) and the tabular's ordering flags (sortOrder, customListSort,
+  // showMissing, crossFilter) survive a rewrite; the session owns only the
+  // cache identity, the binding, and the item selection.
+  let root = ''
+  const rootTag = /<slicerCacheDefinition\b[^>]*>/.exec(existing)?.[0] ?? ''
+  for (const attribute of rawAttributes(rootTag)) {
+    if (['name', 'sourceName', 'xmlns', 'xmlns:r'].includes(attribute.name)) continue
+    root += ` ${attribute.raw}`
+  }
+  let tabular = ''
+  let hasCrossFilter = false
+  const tabularTag = /<tabular\b[^>]*>/.exec(existing)?.[0] ?? ''
+  for (const attribute of rawAttributes(tabularTag)) {
+    if (attribute.name === 'pivotCacheId') continue
+    if (attribute.name === 'crossFilter') hasCrossFilter = true
+    tabular += ` ${attribute.raw}`
+  }
+  if (!hasCrossFilter) tabular += ' crossFilter="showItemsWithDataAtTop"'
+  const extLstStart = existing.indexOf('<extLst')
+  const extLstClose = existing.lastIndexOf('</extLst>')
+  const extLst =
+    extLstStart !== -1 && extLstClose > extLstStart
+      ? existing.slice(extLstStart, extLstClose + '</extLst>'.length)
+      : ''
   const itemsXml = items
     .map((item) => `<i x="${item.x}"${item.selected ? ' s="1"' : ''}/>`)
     .join('')
   return (
-    `${XML_DECL}<slicerCacheDefinition xmlns="${X14_NS}" xmlns:r="${REL_NS}"` +
+    `${XML_DECL}<slicerCacheDefinition xmlns="${X14_NS}" xmlns:r="${REL_NS}"${root}` +
     ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
     `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
     '<data>' +
     // pivotCacheId mirrors the pivot cache definition's x14 ext below — the
     // two must match or Excel repairs the file ('Removed Part: slicerCache')
-    `<tabular pivotCacheId="${pivotCacheId}" crossFilter="showItemsWithDataAtTop">` +
+    `<tabular pivotCacheId="${pivotCacheId}"${tabular}>` +
     `<items count="${items.length}">${itemsXml}</items>` +
-    '</tabular></data></slicerCacheDefinition>'
+    `</tabular></data>${extLst}</slicerCacheDefinition>`
   )
 }
 
@@ -293,10 +367,12 @@ async function pivotCacheDefinitionPathOf(
   return null
 }
 
-/// The pivotCacheDefinition's x14 ext (MS-XLSX): slicerData="1" plus the
-/// slicer-space pivotCacheId that tabular@pivotCacheId must equal. Nothing
-/// else writes it, so a slicer-bound cache gains it here (and a rewritten
-/// cache keeps it current).
+/// The pivotCacheDefinition's x14 ext (MS-XLSX 2.6.33): the slicer-space
+/// pivotCacheId, which MUST be non-zero when a slicer cache uses the cache
+/// (tabular@pivotCacheId carries the same value). No slicerData: that flag is
+/// only for OLAP slicer sources and MUST be "false" for our tabular
+/// (worksheet-pivot) caches — writing slicerData="1" made Excel remove the
+/// whole slicer cache part as a repair ("Removed Feature: Slicer Cache").
 async function ensurePivotCacheSlicerExt(
   pkg: MutablePackage,
   workbookXml: string,
@@ -312,7 +388,7 @@ async function ensurePivotCacheSlicerExt(
   const xml = await pkg.readText(definitionPath)
   const extElement =
     `<ext uri="${PIVOT_CACHE_SLICER_EXT_URI}" xmlns:x14="${X14_NS}">` +
-    `<x14:pivotCacheDefinition pivotCacheId="${cacheId}" slicerData="1"/></ext>`
+    `<x14:pivotCacheDefinition pivotCacheId="${cacheId}"/></ext>`
   let patched: string
   const existing = new RegExp(
     `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>`,
@@ -430,7 +506,7 @@ async function ensureControlFrame(
     '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>' +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">' +
     control +
-    '</a:graphicData></a:graphic><xdr:clientData/></xdr:graphicFrame>' +
+    '</a:graphicData></a:graphic></xdr:graphicFrame>' +
     '</mc:Choice>' +
     // a reader without the slicer extension draws the fallback shape instead
     // of repairing the file (what Excel itself writes for down-level clients)
@@ -442,6 +518,9 @@ async function ensureControlFrame(
     '<xdr:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></xdr:txBody>' +
     '</xdr:sp></mc:Fallback>' +
     '</mc:AlternateContent>' +
+    // clientData belongs to the anchor, not to the graphicFrame: inside the
+    // frame Excel repairs the drawing ('Repaired Records: Drawing').
+    '<xdr:clientData/>' +
     '</xdr:twoCellAnchor>'
   pkg.write(drawing.path, xml.replace('</xdr:wsDr>', `${frame}</xdr:wsDr>`))
   touchedEntries.add(drawing.path)
@@ -768,19 +847,60 @@ async function worksheetsReferencing(
 
 // ─── Write entry point ─────────────────────────────────────────────────────
 
+/// Workbook members that follow <definedNames> in the CT_Workbook sequence.
+/// Creating the container has to land before the first of them: an existing
+/// <extLst> (we add one for the slicer caches) must stay the last child.
+const AFTER_DEFINED_NAMES = [
+  '<calcPr',
+  '<oleSize',
+  '<customWorkbookViews',
+  '<pivotCaches',
+  '<smartTagPr',
+  '<smartTagTypes',
+  '<webPublishing',
+  '<fileRecoveryPr',
+  '<webPublishObjects',
+  '<extLst',
+] as const
+
 /// The hidden `Slicer_<name>` definedName Excel writes per control: it keeps
-/// slicer names inside the workbook's name space. Add to an existing
-/// <definedNames>, else create the element (schema position: after sheets).
+/// slicer names inside the workbook's name space. Excel writes `#N/A` as the
+/// value — the name is a marker, not a reference — and a restore-then-save
+/// must refresh the existing entry rather than add a second one.
 function addSlicerDefinedName(workbookXml: string, name: string): string {
-  const definedName = `<definedName name="Slicer_${escapeAttribute(name)}" hidden="1">${escapeAttribute(name)}</definedName>`
+  const element = `<definedName name="Slicer_${escapeAttribute(name)}" hidden="1">#N/A</definedName>`
+  const existing = new RegExp(
+    `<definedName\\b[^>]*\\bname="Slicer_${escapeRegExp(escapeAttribute(name))}"[^>]*>[^<]*</definedName>`,
+  )
+  if (existing.test(workbookXml)) return workbookXml.replace(existing, element)
+  // A self-closing <definedNames/> (openpyxl and others write it) is opened up
+  // in place; appending a second container after </sheets> is a schema
+  // violation Excel repairs.
+  const selfClosing = /<definedNames\b[^>]*\/>/.exec(workbookXml)
+  if (selfClosing) {
+    return (
+      workbookXml.slice(0, selfClosing.index) +
+      `<definedNames>${element}</definedNames>` +
+      workbookXml.slice(selfClosing.index + selfClosing[0].length)
+    )
+  }
   const close = workbookXml.lastIndexOf('</definedNames>')
-  if (close !== -1) return workbookXml.slice(0, close) + definedName + workbookXml.slice(close)
+  if (close !== -1) return workbookXml.slice(0, close) + element + workbookXml.slice(close)
   const sheetsClose = workbookXml.lastIndexOf('</sheets>')
-  if (sheetsClose === -1) throw new SlicerAddError('The workbook part lists no sheets.')
+  const workbookClose = workbookXml.lastIndexOf('</workbook>')
+  if (sheetsClose === -1 || workbookClose === -1) {
+    throw new SlicerAddError('The workbook part is malformed.')
+  }
+  let insertAt = workbookClose
+  const afterSheets = sheetsClose + '</sheets>'.length
+  for (const member of AFTER_DEFINED_NAMES) {
+    const match = workbookXml.indexOf(member, afterSheets)
+    if (match !== -1 && match < insertAt) insertAt = match
+  }
   return (
-    workbookXml.slice(0, sheetsClose + '</sheets>'.length) +
-    `<definedNames>${definedName}</definedNames>` +
-    workbookXml.slice(sheetsClose + '</sheets>'.length)
+    workbookXml.slice(0, insertAt) +
+    `<definedNames>${element}</definedNames>` +
+    workbookXml.slice(insertAt)
   )
 }
 
@@ -829,14 +949,19 @@ async function writeControl(
     control.name ??
     uniqueName(sanitizeNameBase(control.caption || control.sourceName), takenControlNames)
 
+  // Rewrites keep what Excel authored on the parts themselves (geometry,
+  // style, ordering flags, extLst); a fresh part starts from our defaults.
+  const existingPart = (await pkg.has(partPath)) ? await pkg.readText(partPath) : null
+  const existingCache = (await pkg.has(cachePath)) ? await pkg.readText(cachePath) : null
   const cacheXml = buildSlicerCacheXml(
     cacheName,
     control.sourceName,
     binding,
     pivotCacheId,
     control.items,
+    existingCache,
   )
-  if (await pkg.has(cachePath)) pkg.write(cachePath, cacheXml)
+  if (existingCache !== null) pkg.write(cachePath, cacheXml)
   else pkg.add(cachePath, cacheXml)
   touchedEntries.add(cachePath)
   await registerContentTypeOverride(pkg, cachePath, SLICER_CACHE_CONTENT_TYPE, touchedEntries)
@@ -854,10 +979,14 @@ async function writeControl(
   let wiredWorkbook = addExtRef(workbookXml, WORKBOOK_SLICER_WIRING, relId, '</workbook>')
   wiredWorkbook = addSlicerDefinedName(wiredWorkbook, name)
 
-  // The control part (rewrites an existing one, preserving its geometry).
-  const existingPart = (await pkg.has(partPath)) ? await pkg.readText(partPath) : null
-  const carried = existingPart === null ? '' : carryOverGeometry(existingPart)
-  const partXml = buildSlicerPartXml(name, cacheName, control.caption, carried)
+  // The control part (rewrites an existing one, preserving its geometry,
+  // style, and child content).
+  const partXml = buildSlicerPartXml(
+    name,
+    cacheName,
+    control.caption,
+    carryOverSlicerPart(existingPart),
+  )
   if (existingPart === null) pkg.add(partPath, partXml)
   else pkg.write(partPath, partXml)
   touchedEntries.add(partPath)

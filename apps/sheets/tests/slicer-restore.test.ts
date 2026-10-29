@@ -85,6 +85,30 @@ describe('restoreSlicerPanels', () => {
     expect(slicer.cacheName).toBe('Slicer_Region')
   })
 
+  it('puts the panel on the control sheet when it sits away from its pivot', () => {
+    // Dashboard shape: the pivot lives on Data (sheet-1) while the slicer
+    // control is hosted by Dash (sheet-2). Saving has to wire the panel's own
+    // sheet; the pivot's sheet would strand the original rel/ext/frame.
+    const workbook = state() as unknown as {
+      file: { sheets: { id: string; pivotTables: unknown[] }[] }
+    }
+    workbook.file.sheets.push({ id: 'sheet-2', pivotTables: [] })
+    const restored = restoreSlicerPanels(workbook as unknown as LazyWorkbookState, [
+      slicerEntry({ sheetId: 'sheet-2' }),
+    ])
+    expect(restored).toHaveLength(1)
+    expect(restored[0]!.sheetId).toBe('sheet-2')
+    // the pivot binding still comes from the sheet that hosts the pivot
+    expect(restored[0]!.pivotPath).toBe(PIVOT_PATH)
+  })
+
+  it('falls back to the pivot sheet when the control sheet is unknown', () => {
+    const restored = restoreSlicerPanels(state(), [slicerEntry({ sheetId: '' })])
+    expect(restored[0]!.sheetId).toBe('sheet-1')
+    const foreign = restoreSlicerPanels(state(), [slicerEntry({ sheetId: 'sheet-9' })])
+    expect(foreign[0]!.sheetId).toBe('sheet-1')
+  })
+
   it('treats a cache without an item list as unfiltered', () => {
     const restored = restoreSlicerPanels(state(), [slicerEntry({ selectedItems: null })])
     expect(restored[0]!.selected).toEqual([0, 1, 2])
