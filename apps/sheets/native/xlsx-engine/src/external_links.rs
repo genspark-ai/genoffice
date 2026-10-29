@@ -12,6 +12,19 @@
 //! source cell errors, whose range explodes past the inline cap, or that is
 //! one instance of a shared formula is left on its cached value too: a stale
 //! number beats a wrong one.
+//!
+//! # Known gaps in the inlined semantics
+//!
+//! Inlining flattens a live range into an array constant (or a bare scalar),
+//! which is a value, not a reference: `OFFSET`/`ROW`/`COLUMN`/`INDIRECT` over
+//! an external range answer against the values and lose the source's shape,
+//! and a multi-cell span in a scalar context (`=[1]S!A1:A3*2`) implicitly
+//! intersects to a single cell rather than spilling per row. External defined
+//! names (`[1]!Name`) and 3-D spans over the source are not inlined at all —
+//! a formula still carrying such a spelling after the rewrite stays whole on
+//! its cache. And a source cell that holds a formula but no cached `<v>`
+//! (openpyxl-written files) inlines as `0` — a plausible number rather than a
+//! "stay cached"; Excel would have computed the source formula.
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
@@ -20,7 +33,9 @@ use ironcalc::base::Model;
 use ironcalc::base::types::{Cell, CellType, FormulaValue};
 
 use crate::SidecarError;
-use crate::recalc::references_an_external_workbook;
+use crate::recalc::{
+    blank_text_literals, pin_unparsable_formulas, references_an_external_workbook,
+};
 use crate::rels_normalize::load_model;
 
 /// One `[n]` link of the workbook, as the report carries it.
@@ -36,9 +51,14 @@ pub struct ExternalLinkStatus {
     pub sheet_names: Vec<String>,
 }
 
-/// One external-formula cell of the report: its freshly computed value when
+/// One external-formula cell of the report, exactly one entry per
+/// external-formula cell of the workbook: its freshly computed value when
 /// every link it references was reachable and inlinable, its cached value
-/// otherwise. `formula` is always the stored `[1]…` spelling.
+/// otherwise — never a mix, since one span that cannot go live aborts the
+/// whole formula (a leftover `[n]…` would evaluate `#ERROR!` through the
+/// spans that did inline). `formula` is always the stored `[1]…` spelling.
+/// `row` and `column` are 0-based here; the IronCalc model the values were
+/// computed in addresses the same cells 1-based.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalLinkCell {
@@ -162,10 +182,10 @@ fn relationship_targets(rels_xml: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
     if let Ok(doc) = roxmltree::Document::parse(rels_xml) {
         for node in doc.descendants() {
-            if node.tag_name().name() == "Relationship" {
-                if let (Some(id), Some(target)) = (node.attribute("Id"), node.attribute("Target")) {
-                    out.insert(id.to_string(), target.to_string());
-                }
+            if node.tag_name().name() == "Relationship"
+                && let (Some(id), Some(target)) = (node.attribute("Id"), node.attribute("Target"))
+            {
+                out.insert(id.to_string(), target.to_string());
             }
         }
     }
@@ -177,10 +197,10 @@ fn external_sheet_names(part_xml: &str) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(doc) = roxmltree::Document::parse(part_xml) {
         for node in doc.descendants() {
-            if node.tag_name().name() == "sheetName" {
-                if let Some(val) = node.attribute("val") {
-                    out.push(val.to_string());
-                }
+            if node.tag_name().name() == "sheetName"
+                && let Some(val) = node.attribute("val")
+            {
+                out.push(val.to_string());
             }
         }
     }
@@ -214,38 +234,47 @@ fn external_link_path(archive: &mut zip::ZipArchive<std::fs::File>, part: &str) 
 fn resolve_external_path(workbook: &Path, raw: &str) -> Option<PathBuf> {
     let raw = raw.trim();
     if let Some(rest) = raw.strip_prefix("file://") {
-        return match rest.strip_prefix('/') {
-            // file:///C:/… — a local spelling
-            Some(path) => Some(PathBuf::from(percent_decode(path))),
-            // file://server/share/… — an UNC spelling
-            None => {
-                let (host, path) = rest.split_once('/')?;
-                Some(PathBuf::from(format!(
-                    "\\\\{host}\\{}",
-                    percent_decode(path).replace('/', "\\")
-                )))
+        if let Some(path) = rest.strip_prefix('/') {
+            // `file:///C:/…` spells a drive: the third slash separates the
+            // authority from the path and the path itself starts at the drive
+            // letter. Any other `file:///…` is a POSIX absolute path (Excel
+            // for Mac, LibreOffice, openpyxl) whose leading slash IS the path
+            // — stripping it would resolve the target against the process's
+            // cwd and make a sitting-on-disk source look gone.
+            if starts_with_drive(path) {
+                return Some(PathBuf::from(percent_decode(path)));
             }
-        };
+            return Some(PathBuf::from(percent_decode(rest)));
+        }
+        // file://server/share/… — an UNC spelling
+        let (host, path) = rest.split_once('/')?;
+        return Some(PathBuf::from(format!(
+            "\\\\{host}\\{}",
+            percent_decode(path).replace('/', "\\")
+        )));
     }
-    if raw.starts_with("//") {
+    if let Some(rest) = raw.strip_prefix("//") {
         return Some(PathBuf::from(format!(
             "\\\\{}",
-            percent_decode(&raw[2..]).replace('/', "\\")
+            percent_decode(rest).replace('/', "\\")
         )));
     }
     // any other scheme (https://, http://, ftp://) is not a readable file
     if raw.contains("://") {
         return None;
     }
-    let bytes = raw.as_bytes();
-    if raw.starts_with('\\')
-        || Path::new(raw).is_absolute()
-        || (bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.get(1) == Some(&b':'))
-    {
+    if raw.starts_with('\\') || Path::new(raw).is_absolute() || starts_with_drive(raw) {
         return Some(Path::new(raw).to_path_buf());
     }
     let base = workbook.parent()?;
     Some(normalize_path(&base.join(raw)))
+}
+
+/// `C:/…` (or `C:\…`): a Windows drive spelling — absolute on Windows, and
+/// relative-looking everywhere else.
+fn starts_with_drive(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.get(1) == Some(&b':')
 }
 
 fn percent_decode(text: &str) -> String {
@@ -253,14 +282,13 @@ fn percent_decode(text: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut at = 0;
     while at < bytes.len() {
-        if bytes[at] == b'%' {
-            if let Some(hex) = bytes.get(at + 1..at + 3) {
-                if let Ok(value) = u8::from_str_radix(&String::from_utf8_lossy(hex), 16) {
-                    out.push(value);
-                    at += 3;
-                    continue;
-                }
-            }
+        if bytes[at] == b'%'
+            && let Some(hex) = bytes.get(at + 1..at + 3)
+            && let Ok(value) = u8::from_str_radix(&String::from_utf8_lossy(hex), 16)
+        {
+            out.push(value);
+            at += 3;
+            continue;
         }
         out.push(bytes[at]);
         at += 1;
@@ -336,9 +364,17 @@ pub(crate) fn update_external_link_values(
         }
     }
 
+    // recalc's own pin, for the same reason recalc applies it: IronCalc
+    // cannot evaluate the `[n]…` spellings it was not rewritten away, so
+    // every external formula (and every unparsable one) the update does not
+    // rewrite would evaluate #ERROR! here and cascade through its dependents.
+    // Pinning stands the file's cached value in for those cells first —
+    // collected above, since a pin replaces the formula cell — so a rewritten
+    // cell's dependents compute against caches, never against an error.
+    pin_unparsable_formulas(&mut model);
+
     let mut rewritten: Vec<(u32, i32, i32)> = Vec::new();
-    let mut cells: Vec<ExternalLinkCell> = Vec::new();
-    for (sheet, row, column, text, cached) in &pending {
+    for (sheet, row, column, text, _) in &pending {
         // the rewrite output carries the formula's own leading `=`, which is
         // exactly the user-input form set_user_input expects
         let applied = rewrite_formula(text, &statuses, &mut sources)
@@ -346,25 +382,16 @@ pub(crate) fn update_external_link_values(
             .is_some();
         if applied {
             rewritten.push((*sheet, *row, *column));
-            continue;
         }
-        // skipped: the file's cached value stands (genoffice#235)
-        cells.push(ExternalLinkCell {
-            sheet: model.workbook.worksheets[*sheet as usize].name.clone(),
-            row: (*row - 1) as u32,
-            column: (*column - 1) as u32,
-            formatted: cached.formatted(),
-            number: cached.number(),
-            formula: text.clone(),
-        });
     }
     if !rewritten.is_empty() {
         model.evaluate();
     }
+    // One report entry per cell: rewritten cells read the model, the rest
+    // report the file's cached value (genoffice#235).
+    let mut cells: Vec<ExternalLinkCell> = Vec::new();
     for (sheet, row, column, text, cached) in &pending {
-        let rewritten_now = rewritten
-            .iter()
-            .any(|(s, r, c)| s == sheet && r == row && c == column);
+        let rewritten_now = rewritten.contains(&(*sheet, *row, *column));
         let (formatted, number) = if rewritten_now {
             (
                 model
@@ -400,9 +427,12 @@ fn raw_number(model: &Model, sheet: u32, row: i32, column: i32) -> Option<f64> {
 }
 
 /// The file-cached value of a formula cell, for cells the update skips.
-#[derive(Debug, Clone, Copy)]
+/// Carries the same kinds recalc's `PinnedValue` does — a `t="str"` cache is
+/// a real string, not a blank.
+#[derive(Debug, Clone)]
 enum CachedValue {
     Number(f64),
+    Text(String),
     Bool(bool),
     Missing,
 }
@@ -411,6 +441,7 @@ impl CachedValue {
     fn of(value: &FormulaValue) -> CachedValue {
         match value {
             FormulaValue::Number(number) => CachedValue::Number(*number),
+            FormulaValue::Text(text) => CachedValue::Text(text.clone()),
             FormulaValue::Boolean(flag) => CachedValue::Bool(*flag),
             _ => CachedValue::Missing,
         }
@@ -423,12 +454,12 @@ impl CachedValue {
         }
     }
 
-    /// A skipped cell's report value. The cached text spelling is not carried
-    /// — the model holds only the value kind here, and the caller's file
-    /// already has the exact spelling; the number is what an update changes.
+    /// A skipped cell's report value: the file's own cache, spelled the way
+    /// the model carries it — numbers bare, text as the string itself.
     fn formatted(&self) -> String {
         match self {
             CachedValue::Number(number) => number.to_string(),
+            CachedValue::Text(text) => text.clone(),
             CachedValue::Bool(true) => "TRUE".into(),
             CachedValue::Bool(false) => "FALSE".into(),
             CachedValue::Missing => String::new(),
@@ -439,29 +470,47 @@ impl CachedValue {
 /// Rewrites every `[n]Sheet!REF` span of one formula into an inline literal
 /// of the live source's values. `None` leaves the formula on its cached
 /// value: a referenced link unreachable, a sheet or range the source cannot
-/// answer, an error cell inside the span.
+/// answer, an error cell inside the span. Any one span failing aborts the
+/// whole formula — a leftover `[n]…` would evaluate `#ERROR!` and poison the
+/// value the spans that did inline computed. External defined names
+/// (`[1]!Name`) and 3-D spans over the source are not inlinable and abort
+/// the same way: the whole cell stays on its cache rather than half-live.
 fn rewrite_formula(
     text: &str,
     links: &[ExternalLinkStatus],
     sources: &mut [Option<Model<'static>>],
 ) -> Option<String> {
-    let bytes = text.as_bytes();
+    // Span detection runs on the literal-blanked text: a `[1]Sheet1!A2`
+    // inside a string literal is text the formula concatenates, not a span
+    // to inline. Blanking replaces each character with spaces of the same
+    // byte length, so spans found in the blanked copy copy straight out of
+    // the original by offset. A blanked byte is never a reference start
+    // (starts are `[` and `'`), so one space check gates them all.
+    let code = blank_text_literals(text);
+    let bytes = code.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut copied = 0usize;
     let mut at = 0usize;
     let mut changed = false;
     while at < bytes.len() {
-        let Some((start, after_bang, link_index, sheet_name)) = external_ref_start(text, at) else {
+        if bytes[at] == b' ' {
+            at += 1;
+            continue;
+        }
+        let Some((start, after_bang, link_index, sheet_name)) = external_ref_start(&code, at)
+        else {
             at += 1;
             continue;
         };
-        let Some((end, span)) = parse_ref_span(text, after_bang) else {
-            at += 1;
-            continue;
+        let Some((end, span)) = parse_ref_span(&code, after_bang) else {
+            // a recognized external reference whose span does not parse
+            // (3-D over the source, a deleted `#REF!` range): abort, never
+            // rewrite the neighbours
+            return None;
         };
         let Some(literal) = inline_literal(links, sources, link_index, &sheet_name, span) else {
-            at += 1;
-            continue;
+            // this span cannot go live: the whole formula stays on its cache
+            return None;
         };
         out.push_str(&text[copied..start]);
         out.push_str(&literal);
@@ -473,6 +522,12 @@ fn rewrite_formula(
         return None;
     }
     out.push_str(&text[copied..]);
+    // A spelling the span scanner does not recognize (`[1]!Name`, an external
+    // defined name) must not survive into set_user_input: IronCalc stores the
+    // formula unparsable and the cell evaluates `#ERROR!` as if it were live.
+    if references_an_external_workbook(&out) {
+        return None;
+    }
     Some(out)
 }
 
@@ -644,6 +699,13 @@ fn parse_ref_span(text: &str, at: usize) -> Option<(usize, RefSpan)> {
 /// rows by `;`). Full-column and full-row spans are bounded to the source
 /// sheet's used extent; anything past the cap, a missing sheet, or an error
 /// cell inside the span skips the whole formula.
+///
+/// The array constant is a value, not a reference: `OFFSET`/`ROW`/`COLUMN`/
+/// `INDIRECT` over an external range answer against the values and lose the
+/// source's shape (the row of a 1×N constant is 1, not the source rows), and
+/// a multi-cell span in a scalar context (`=[1]S!A1:A3*2`) implicitly
+/// intersects to one cell rather than spilling per row — where Excel's live
+/// recalculation would spill or shift with the formula's own row.
 fn inline_literal(
     links: &[ExternalLinkStatus],
     sources: &mut [Option<Model<'static>>],
@@ -735,6 +797,11 @@ fn used_extent(model: &Model, sheet: u32) -> (u32, u32) {
 /// One cell of the source as an inline literal: numbers bare, text quoted
 /// with doubled quotes, booleans spelled, empty as `0` (Excel's own answer
 /// for a blank external cell). An error cell skips the whole formula.
+///
+/// Known gap: a source cell holding a formula but no cached `<v>` —
+/// openpyxl writes those — reads as an empty cell here and inlines as `0`, a
+/// plausible wrong number rather than a "stay cached". Excel would compute
+/// the source formula; the throwaway source model never evaluates it.
 fn cell_literal(model: &Model, sheet: u32, row: u32, column: u32) -> Option<String> {
     use ironcalc::base::cell::CellValue;
     let row_1 = row as i32 + 1;
@@ -855,6 +922,69 @@ mod tests {
         writer.finish().unwrap();
     }
 
+    /// The dependent workbook with TWO external links: link 1's target is
+    /// given verbatim (the tests pass a `file:///…` URI or a relative path),
+    /// link 2's target never exists. Five formula cells probe the partial
+    /// rewrite: a formula mixing both links, link 2's own cell, a dependent
+    /// of that cell, a text cache on the gone link, and a `[1]…` spelling
+    /// inside a string literal.
+    pub(crate) fn write_two_link_dependent_fixture(path: &Path, target1: &str, target2: &str) {
+        let entries: [(&str, &str); 10] = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/><Override PartName="/xl/externalLinks/externalLink2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><externalReferences><externalReference r:id="rId3"/><externalReference r:id="rId4"/></externalReferences></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+            (
+                "xl/externalLinks/externalLink1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1"><v>10</v></cell></row></sheetDataSet></externalBook></externalLink>"#,
+            ),
+            (
+                "xl/externalLinks/_rels/externalLink1.xml.rels",
+                &format!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="{target1}" TargetMode="External"/></Relationships>"#
+                ),
+            ),
+            (
+                "xl/externalLinks/externalLink2.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1"><v>5</v></cell></row></sheetDataSet></externalBook></externalLink>"#,
+            ),
+            (
+                "xl/externalLinks/_rels/externalLink2.xml.rels",
+                &format!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="{target2}" TargetMode="External"/></Relationships>"#
+                ),
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C3"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1+[2]Sheet1!A1</f><v>99</v></c><c r="B1" t="str"><f>[2]Sheet1!B1&amp;"!"</f><v>Total!</v></c><c r="C1" t="str"><f>[1]Sheet1!A1&amp;"[1]Sheet1!A2"</f><v>old</v></c></row><row r="2"><c r="A2"><f>[2]Sheet1!A1</f><v>5</v></c></row><row r="3"><c r="A3"><f>[1]Sheet1!A1+A2</f><v>15</v></c></row></sheetData></worksheet>"#,
+            ),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
     fn cell_of<'a>(report: &'a ExternalLinksReport, formula: &str) -> &'a ExternalLinkCell {
         report
             .cells
@@ -917,6 +1047,64 @@ mod tests {
         assert_eq!(cell_of(&report, "SUM([1]Sheet1!A1:B3)").formatted, "60");
     }
 
+    /// A partial rewrite pins, it does not poison: two links, the first
+    /// reachable through a POSIX-absolute `file:///Users/…`-shaped URI (the
+    /// leading slash must survive resolution), the second gone. A formula
+    /// mixing both stays whole on its cache and reports once; the gone
+    /// link's own cell and its dependents keep their caches instead of
+    /// cascading `#ERROR!`; a text cache reports its text; and a `[1]…`
+    /// spelling inside a string literal stays text.
+    #[test]
+    fn update_pins_the_cache_through_a_partial_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        write_source_fixture(&dir.path().join("source.xlsx"));
+        let path = dir.path().join("book.xlsx");
+        let target = format!("file://{}", dir.path().join("source.xlsx").display());
+        write_two_link_dependent_fixture(&path, &target, "gone.xlsx");
+        let report = update_external_link_values(&path).unwrap();
+
+        assert_eq!(report.links.len(), 2);
+        assert!(
+            report.links[0].reachable,
+            "a file:///Users/… target keeps its leading slash: {:?}",
+            report.links[0].source
+        );
+        assert!(!report.links[1].reachable);
+
+        // exactly one report entry per external-formula cell
+        assert_eq!(report.cells.len(), 5);
+        assert_eq!(
+            report
+                .cells
+                .iter()
+                .filter(|cell| cell.formula == "=[1]Sheet1!A1+[2]Sheet1!A1")
+                .count(),
+            1
+        );
+
+        // one span of the mixed formula inlines, the other cannot: the whole
+        // formula aborts and the file's cached value stands
+        let mixed = cell_of(&report, "[1]Sheet1!A1+[2]Sheet1!A1");
+        assert_eq!((mixed.formatted.as_str(), mixed.number), ("99", Some(99.0)));
+        // the gone link's own cell: cached, never an error
+        let gone = cell_of(&report, "[2]Sheet1!A1");
+        assert_eq!((gone.formatted.as_str(), gone.number), ("5", Some(5.0)));
+        // its dependent computes against the pinned cache, not against the
+        // #ERROR! an unpinned formula would evaluate to
+        let dependent = cell_of(&report, "[1]Sheet1!A1+A2");
+        assert_eq!(
+            (dependent.formatted.as_str(), dependent.number),
+            ("15", Some(15.0))
+        );
+        // a text cache survives the skip
+        let text = cell_of(&report, "[2]Sheet1!B1&\"!\"");
+        assert_eq!((text.formatted.as_str(), text.number), ("Total!", None));
+        // the span inside the string literal is text, not a reference: only
+        // the live `[1]Sheet1!A1` inlines
+        let literal = cell_of(&report, "[1]Sheet1!A1&\"[1]Sheet1!A2\"");
+        assert_eq!(literal.formatted, "10[1]Sheet1!A2");
+    }
+
     /// Path resolution, Excel-style: file URIs, UNC spellings, drive paths
     /// and folder-relative targets.
     #[test]
@@ -925,6 +1113,12 @@ mod tests {
         assert_eq!(
             resolve_external_path(workbook, "file:///C:/data/source.xlsx").unwrap(),
             PathBuf::from("C:/data/source.xlsx")
+        );
+        // Excel for Mac, LibreOffice and openpyxl spell a POSIX source with
+        // all three slashes; the leading slash is part of the path
+        assert_eq!(
+            resolve_external_path(workbook, "file:///Users/me/source.xlsx").unwrap(),
+            PathBuf::from("/Users/me/source.xlsx")
         );
         assert_eq!(
             resolve_external_path(workbook, "source.xlsx").unwrap(),

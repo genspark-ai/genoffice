@@ -459,7 +459,11 @@ enum PinnedValue {
 /// cached values (openpyxl writes an empty `<v/>`) imports as zero, which
 /// would pin a number nobody computed. Those cells keep their #ERROR!,
 /// which the renderer already declines to display.
-fn pin_unparsable_formulas(model: &mut Model) {
+/// Also the pin behind the external-links update pass
+/// (`external_links::update_external_link_values`): its throwaway model must
+/// keep the same caches standing so rewritten cells' dependents compute
+/// against them instead of cascading #ERROR!.
+pub(crate) fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
     use ironcalc::base::types::{Cell, FormulaValue};
     let names: Vec<String> = model
@@ -600,8 +604,10 @@ pub(crate) fn references_an_external_workbook(formula: &str) -> bool {
 
 /// The formula with every `"..."` literal replaced by spaces of the same byte
 /// length, so a sheet name mentioned inside text does not count as a reference
-/// and byte offsets still line up with the original.
-fn blank_text_literals(formula: &str) -> String {
+/// and byte offsets still line up with the original. Also the span gate for
+/// the external-links rewrite: a `[1]Sheet!A1` inside a string literal is
+/// text, never a span to inline.
+pub(crate) fn blank_text_literals(formula: &str) -> String {
     let mut out = String::with_capacity(formula.len());
     let mut in_text = false;
     for char in formula.chars() {
