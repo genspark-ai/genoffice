@@ -181,10 +181,21 @@ interface RecalcCell {
   isError?: boolean
 }
 
+/** Why the engine skipped a requested stale-cache audit (recalc.rs `AuditSkipReason`). */
+type RecalcAuditSkip = 'date1904'
+
 interface RecalcResult {
   cells: RecalcCell[]
   /** formula cells whose cached `<v>` disagreed with the engine (reportStale) */
   stale?: RecalcCell[]
+  /**
+   * Array-formula spill cells whose cached `<v>` disagreed with the engine.
+   * They carry no formula of their own, so the cached-value save cannot
+   * rewrite them; the caller reports them instead of claiming success.
+   */
+  staleSpillCells?: RecalcCell[]
+  /** set when the engine declined the audit; `stale` is then absent */
+  auditSkipped?: RecalcAuditSkip
 }
 
 /** One short-lived sidecar process per call; the CLI has no session to keep alive. */
@@ -1226,22 +1237,23 @@ export async function writeWorkbook(
     }
   }
   try {
-    const { values, uncached, unparsed, dependents, batchValues } = await evaluateFormulas(
-      outputPath,
-      formulaCells,
-      renames,
-    )
+    const { values, uncached, unparsed, dependents, batchValues, auditSkipped } =
+      await evaluateFormulas(outputPath, formulaCells, renames)
     if (values.length) {
       const second = await save(values)
       await atomicWriteFile(outputPath, second.buffer)
     }
-    const dependentsWarning = dependents.length
-      ? `${dependents.length} formula(s) that depend on the edited cells could not be recalculated (${list(dependents)}); they keep their previous cached values and recalculate on open`
-      : undefined
+    // A skipped audit (the engine has no 1904 date system support) means no
+    // cache was compared, so no cache may be claimed current.
+    const dependentsWarning = auditSkipped
+      ? DEPENDENTS_NOT_AUDITED_1904
+      : dependents.length
+        ? `${dependents.length} formula(s) that depend on the edited cells could not be recalculated (${list(dependents)}); they keep their previous cached values and recalculate on open`
+        : undefined
     if (formulaCells.length === 0) {
       return {
         ...base,
-        cachedValues: dependents.length === 0,
+        cachedValues: !auditSkipped && dependents.length === 0,
         ...(dependentsWarning ? { dependentsWarning } : {}),
       }
     }
@@ -1254,13 +1266,18 @@ export async function writeWorkbook(
         ...(dependentsWarning ? { dependentsWarning } : {}),
       }
     }
-    if (uncached.length === 0 && unparsed.length === 0 && dependents.length === 0) {
+    if (
+      !auditSkipped &&
+      uncached.length === 0 &&
+      unparsed.length === 0 &&
+      dependents.length === 0
+    ) {
       return { ...base, cachedValues: true }
     }
     const skipped = uncached.length + unparsed.length
     return {
       ...base,
-      cachedValues: skipped < formulaCells.length && dependents.length === 0,
+      cachedValues: !auditSkipped && skipped < formulaCells.length && dependents.length === 0,
       ...(uncached.length ? { uncached } : {}),
       ...(unparsed.length ? { unparsed } : {}),
       ...(uncached.length
@@ -1308,6 +1325,12 @@ const UNPARSED_RESULT = '#ERROR!'
 /** Value edit without the engine: formula caches it depends on stay as they are. */
 const DEPENDENTS_WITHOUT_ENGINE =
   'the xlsx engine was not found, so formula cells that depend on the edited cells keep their previous cached values; they recalculate when the file opens in Excel'
+/**
+ * The engine has no 1904 date system support, so it cannot tell whether this
+ * workbook's caches are stale: the audit is skipped and nothing is claimed.
+ */
+const DEPENDENTS_NOT_AUDITED_1904 =
+  'this workbook uses the 1904 date system, which the local formula engine does not implement, so it cannot tell which formula caches the edits left stale; cells that depend on the edited cells keep their previous cached values and recalculate when the file opens in Excel'
 const list = (cells: readonly string[]) =>
   cells.slice(0, 3).join(', ') + (cells.length > 3 ? ', …' : '')
 
@@ -1320,6 +1343,8 @@ interface FormulaEvaluation {
   dependents: string[]
   /** how many of the formulas written in this batch produced a value */
   batchValues: number
+  /** set when the engine declined the stale-cache audit (see RecalcResult) */
+  auditSkipped?: RecalcAuditSkip
 }
 
 /**
@@ -1347,6 +1372,8 @@ async function evaluateFormulas(
     const unparsed: string[] = []
     const dependents: string[] = []
     let stale: RecalcCell[] | undefined
+    let staleSpillCells: RecalcCell[] | undefined
+    let auditSkipped: RecalcAuditSkip | undefined
     let batchValues = 0
     if (bySheet.size === 0) {
       // value-only edits: nothing to read, just audit the written file
@@ -1357,7 +1384,8 @@ async function evaluateFormulas(
         reportStale: true,
       })) as RecalcResult
       stale = r.stale
-      if (stale === undefined) throw new Error('the xlsx engine did not report stale formulas')
+      staleSpillCells = r.staleSpillCells
+      auditSkipped = r.auditSkipped
     } else {
       let first = true
       for (const [sheet, cells] of bySheet) {
@@ -1371,6 +1399,8 @@ async function evaluateFormulas(
         first = false
         // only the first request carries the audit; keep what it answered
         if (evaluated.stale !== undefined) stale = evaluated.stale
+        if (evaluated.staleSpillCells !== undefined) staleSpillCells = evaluated.staleSpillCells
+        if (evaluated.auditSkipped) auditSkipped = evaluated.auditSkipped
         const values = evaluated.cells
           .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
           .map((cell) => {
@@ -1400,8 +1430,14 @@ async function evaluateFormulas(
           batchValues += values.length
         }
       }
-      if (stale === undefined) throw new Error('the xlsx engine did not report stale formulas')
     }
+    // A skipped audit is a normal answer — the engine cannot judge this
+    // workbook (a date system it does not implement) — while a missing answer
+    // after asking for one is a contract violation.
+    if (auditSkipped) {
+      return { values: out, uncached, unparsed, dependents, batchValues, auditSkipped }
+    }
+    if (stale === undefined) throw new Error('the xlsx engine did not report stale formulas')
     // Every other formula cell the import found stale is a dependent of the
     // edit. Refresh the ones with a usable result; report the rest honestly.
     const dependentsBySheet = new Map<string, SheetFormulaValues['cells'][number][]>()
@@ -1420,6 +1456,14 @@ async function evaluateFormulas(
       dependentsBySheet.set(sheet, cells)
     }
     for (const [sheet, cells] of dependentsBySheet) out.push({ sheetName: sheet, cells })
+    // Spill cells belong to an array formula but carry no formula of their
+    // own, so the cached-value patch cannot rewrite them. Report them through
+    // the same path as the other unrefreshable dependents.
+    for (const cell of staleSpillCells ?? []) {
+      const sheet = originalName(cell.sheet)
+      if (wanted.has(`${sheet} ${cell.row} ${cell.column}`)) continue
+      dependents.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+    }
     return { values: out, uncached, unparsed, dependents, batchValues }
   })
 }
@@ -1466,15 +1510,21 @@ export function recalcBands(bounds: Bounds, cap = RECALC_CELL_CAP): Bounds[] {
   return bands
 }
 
+interface RecalcRangeResult {
+  cells: RecalcCell[]
+  stale?: RecalcCell[]
+  staleSpillCells?: RecalcCell[]
+  auditSkipped?: RecalcAuditSkip
+}
+
 async function recalcRange(
   client: XlsxSidecarClient,
   path: string,
   sheet: string,
   bounds: Bounds,
   reportStale = false,
-): Promise<{ cells: RecalcCell[]; stale?: RecalcCell[] }> {
-  const cells: RecalcCell[] = []
-  let stale: RecalcCell[] | undefined
+): Promise<RecalcRangeResult> {
+  const result: RecalcRangeResult = { cells: [] }
   // one band per request: the recalc worker is single-flight
   for (const range of recalcBands(bounds)) {
     const r = (await client.recalcCells({
@@ -1483,12 +1533,16 @@ async function recalcRange(
       reads: [{ sheet, range }],
       // the audit compares against the caches a fresh import staged, so only
       // the first request of the sidecar process can carry it
-      ...(reportStale && stale === undefined ? { reportStale: true } : {}),
+      ...(reportStale && result.stale === undefined && !result.auditSkipped
+        ? { reportStale: true }
+        : {}),
     })) as RecalcResult
-    cells.push(...r.cells)
-    if (r.stale !== undefined) stale = r.stale
+    result.cells.push(...r.cells)
+    if (r.stale !== undefined) result.stale = r.stale
+    if (r.staleSpillCells !== undefined) result.staleSpillCells = r.staleSpillCells
+    if (r.auditSkipped) result.auditSkipped = r.auditSkipped
   }
-  return { cells, stale }
+  return result
 }
 
 /**

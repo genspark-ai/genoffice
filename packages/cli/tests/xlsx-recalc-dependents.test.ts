@@ -24,6 +24,54 @@ async function rewritePart(
   writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }))
 }
 
+/** Replaces one package part wholesale. */
+async function replacePart(path: string, name: string, content: string): Promise<void> {
+  const zip = await JSZip.loadAsync(readFileSync(path))
+  zip.file(name, content)
+  writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }))
+}
+
+/**
+ * A real (created) package whose single worksheet part is replaced with
+ * hand-written rows: only the formula engine can produce an array formula, and
+ * the audit tests need exact caches.
+ */
+async function formulaFixture(
+  dir: string,
+  name: string,
+  dimension: string,
+  rows: string,
+): Promise<string> {
+  const out = await createWorkbook(dir, name, [[1]])
+  await replacePart(
+    out,
+    'xl/worksheets/sheet1.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="${dimension}"/><sheetData>${rows}</sheetData></worksheet>`,
+  )
+  return out
+}
+
+/** The fixture above, declared as a 1904 date system workbook. */
+async function date1904Fixture(
+  dir: string,
+  name: string,
+  dimension: string,
+  rows: string,
+): Promise<string> {
+  const out = await formulaFixture(dir, name, dimension, rows)
+  await rewritePart(out, 'xl/workbook.xml', (xml) =>
+    xml.replace('<sheets>', '<workbookPr date1904="1"/><sheets>'),
+  )
+  return out
+}
+
+function applyInput(dir: string, name: string, cells: unknown): string {
+  const path = join(dir, `${name}.json`)
+  writeFileSync(path, JSON.stringify(cells))
+  return path
+}
+
 /**
  * The issue's repro: A2=3 and B2="=A2*2" evaluated on create (cached 6), so a
  * value-only edit of A2 leaves B2's <v> at the old number.
@@ -197,4 +245,139 @@ describe('sheet apply refreshes dependent formula caches (#2304)', () => {
       else process.env.XLSX_SIDECAR_PATH = previous
     }
   })
+
+  it.skipIf(!sidecar)(
+    'skips the audit on a 1904 date system workbook and keeps its caches',
+    async () => {
+      const dir = tempDir()
+      // The archive says date1904="1": Excel's serial for 2024-01-01 is 43830,
+      // 1462 lower than the 1900 system's 45292 IronCalc would compute.
+      const out = await date1904Fixture(
+        dir,
+        'dates1904',
+        'A1:B1',
+        '<row r="1"><c r="A1"><f>DATE(2024,1,1)</f><v>43830</v></c><c r="B1"><f>A1+1</f><v>43831</v></c></row>',
+      )
+      const cells = applyInput(dir, 'cells', [{ cell: 'C1', value: 9 }])
+
+      const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+      expect(applied.code).toBe(0)
+      // the engine cannot judge these caches, so apply must not claim they are current
+      expect(applied.json().detail.cached_values).toBe(false)
+      const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+      const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+      expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+      expect(dependents!.message).toMatch(/1904/)
+
+      const xml = await sheetPart(out)
+      // the date caches Excel wrote survive untouched
+      expect(xml).toContain('<f>DATE(2024,1,1)</f><v>43830</v>')
+      expect(xml).toContain('<f>A1+1</f><v>43831</v>')
+      // and the edit itself was written
+      expect(xml).toMatch(/<c r="C1"[^>]*><v>9<\/v><\/c>/)
+    },
+  )
+
+  it.skipIf(!sidecar)(
+    'does not claim cached values when the audit is skipped for a batch formula',
+    async () => {
+      const dir = tempDir()
+      // A value plus a date formula: the apply writes one new formula, and the
+      // existing formula's cache cannot be audited on this date system.
+      const out = await date1904Fixture(
+        dir,
+        'dates1904batch',
+        'A1:B1',
+        '<row r="1"><c r="A1"><v>5</v></c><c r="B1"><f>DATE(2024,1,1)</f><v>43830</v></c></row>',
+      )
+      const cells = applyInput(dir, 'cells', [{ cell: 'C1', formula: '=A1*2' }])
+
+      const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+      expect(applied.code).toBe(0)
+      expect(applied.json().detail).toMatchObject({ formulas: 1, cached_values: false })
+      const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+      const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+      expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+      expect(dependents!.message).toMatch(/1904/)
+
+      const xml = await sheetPart(out)
+      // the written formula got the engine's value; the date cache is untouched
+      expect(xml).toContain('<f>A1*2</f><v>10</v>')
+      expect(xml).toContain('<f>DATE(2024,1,1)</f><v>43830</v>')
+    },
+  )
+
+  it.skipIf(!sidecar)('never replaces a usable cache with an engine error', async () => {
+    const dir = tempDir()
+    // IronCalc's formatter rejects the ECMA-376 `mmss.0` pattern, so the
+    // engine's TEXT() answer is #VALUE! while the file carries Excel's text.
+    const out = await formulaFixture(
+      dir,
+      'textformat',
+      'A1:D1',
+      '<row r="1"><c r="A1"><v>5</v></c><c r="B1" t="str"><f>TEXT(A1,"mmss.0")</f><v>20:34.5</v></c><c r="C1"><f>A1*2</f><v>10</v></c><c r="D1"><f>A1*2</f><v>8</v></c></row>',
+    )
+    const cells = applyInput(dir, 'cells', [{ cell: 'E1', value: 9 }])
+    const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.cached_values).toBe(true)
+
+    const xml = await sheetPart(out)
+    // the valid text cache survives; the genuinely stale number is refreshed
+    expect(xml).toContain('<v>20:34.5</v>')
+    expect(xml).not.toContain('<v>8</v>')
+    expect(xml).toContain('<f>A1*2</f><v>10</v>')
+  })
+
+  it.skipIf(!sidecar)(
+    'refreshes a dependent CSE array formula anchor and reports its spill cells',
+    async () => {
+      const dir = tempDir()
+      const out = await formulaFixture(
+        dir,
+        'cse',
+        'A1:A3',
+        '<row r="1"><c r="A1"><v>5</v></c></row><row r="2"><c r="A2"><f t="array" ref="A2:A3">A1*2</f><v>6</v></c></row><row r="3"><c r="A3"><v>6</v></c></row>',
+      )
+      const cells = applyInput(dir, 'cells', [{ cell: 'A1', value: 7 }])
+      const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+      expect(applied.code).toBe(0)
+      // the spill cell cannot be rewritten in place: no claim of success
+      expect(applied.json().detail.cached_values).toBe(false)
+      const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+      const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+      expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+      expect(dependents!.message).toContain('A3')
+
+      const xml = await sheetPart(out)
+      // the array anchor's own cache is patchable and was refreshed
+      expect(xml).toContain('<f t="array" ref="A2:A3">A1*2</f><v>14</v>')
+      // the spill cell keeps the previous cache and Excel recomputes on open
+      expect(xml).toMatch(/<c r="A3"[^>]*><v>6<\/v><\/c>/)
+    },
+  )
+
+  it.skipIf(!sidecar)(
+    'reports a stale dynamic-array spill cell instead of claiming success',
+    async () => {
+      const dir = tempDir()
+      const out = await formulaFixture(
+        dir,
+        'dynamic',
+        'A1:A3',
+        '<row r="1"><c r="A1"><v>1</v></c></row><row r="2"><c r="A2" cm="1"><f t="array" ref="A2:A3">_xlfn.SEQUENCE(2)</f><v>1</v></c></row><row r="3"><c r="A3" cm="1"><v>99</v></c></row>',
+      )
+      const cells = applyInput(dir, 'cells', [{ cell: 'B1', value: 9 }])
+      const applied = await run(['sheet', 'apply', out, '--cells', cells, '--json'])
+      expect(applied.code).toBe(0)
+      expect(applied.json().detail.cached_values).toBe(false)
+      const warnings = (applied.json().warnings ?? []) as { code: string; message: string }[]
+      const dependents = warnings.find((w) => w.code === 'dependents_not_recalculated')
+      expect(dependents, JSON.stringify(warnings)).toBeTruthy()
+      expect(dependents!.message).toContain('A3')
+
+      // the spilled value is left for Excel to recompute
+      expect(await sheetPart(out)).toMatch(/<c r="A3"[^>]*><v>99<\/v><\/c>/)
+    },
+  )
 })

@@ -105,7 +105,10 @@ pub enum Command {
         #[serde(default)]
         reads: Vec<RecalcRead>,
         /// Also report formula cells whose cached `<v>` disagrees with the
-        /// engine's computed value (the host refreshes them on save).
+        /// engine's computed value (the host refreshes them on save), plus
+        /// array spill cells it cannot refresh. Omitted from the answer when
+        /// the engine skips the audit (a `date1904` workbook): the result then
+        /// carries `auditSkipped` with the reason instead.
         #[serde(default)]
         report_stale: bool,
     },
