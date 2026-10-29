@@ -10,12 +10,13 @@
 //! normal sidecar error and the renderer keeps showing cached values.
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use ironcalc::base::Model;
-use ironcalc::base::types::CellType;
+use ironcalc::base::types::{Cell, CellType, FormulaValue};
 use serde::{Deserialize, Serialize};
 
 use crate::rels_normalize::load_model;
@@ -72,6 +73,10 @@ pub struct RecalcResult {
     pub cells: Vec<RecalcCell>,
     /// True when a resident model served this request (no file re-import).
     pub cached: bool,
+    /// Formula cells whose computed value differs from the cached `<v>` the
+    /// file carried on import. Only present when the request asked for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<Vec<RecalcCell>>,
 }
 
 type EditKey = (String, u32, u32);
@@ -152,6 +157,20 @@ pub fn recalc_cells(
     edits: &[RecalcEdit],
     reads: &[RecalcRead],
 ) -> Result<RecalcResult, SidecarError> {
+    recalc_cells_reporting(cache, path, edits, reads, false)
+}
+
+/// [`recalc_cells`] with an optional stale-cache audit: with `report_stale`
+/// the result lists every formula cell whose computed value differs from the
+/// cached `<v>` the file carried on import. The audit compares against values
+/// only an import stages, so it always works on a fresh model (`cached: false`).
+pub fn recalc_cells_reporting(
+    cache: &mut RecalcCache,
+    path: &Path,
+    edits: &[RecalcEdit],
+    reads: &[RecalcRead],
+    report_stale: bool,
+) -> Result<RecalcResult, SidecarError> {
     if edits.len() > MAX_RECALC_EDITS {
         return Err(SidecarError::InvalidRequest(format!(
             "Too many recalc edits (limit {MAX_RECALC_EDITS})."
@@ -174,6 +193,16 @@ pub fn recalc_cells(
             "Recalc read exceeds {MAX_RECALC_READ_CELLS} cells."
         )));
     }
+    // An edit can only leave a cached formula value stale when the workbook
+    // holds formulas at all. Finding that out by importing costs seconds on a
+    // formula-free data workbook, so scan the worksheet parts first.
+    if report_stale && reads.is_empty() && !workbook_has_formulas(path)? {
+        return Ok(RecalcResult {
+            cells: Vec::new(),
+            cached: false,
+            stale: Some(Vec::new()),
+        });
+    }
 
     let metadata = std::fs::metadata(path).map_err(|error| SidecarError::Io(error.to_string()))?;
     let mtime = metadata
@@ -194,12 +223,15 @@ pub fn recalc_cells(
                     .any(|edit| edit.sheet == key.0 && edit.row == key.1 && edit.column == key.2)
             })
     });
+    // The audit compares against the caches the import staged; a resident
+    // model has already evaluated them away.
+    let resident = if report_stale { None } else { resident };
     let cached = resident.is_some();
 
     // IronCalc's importer is strict and can panic on non-Excel producers
     // (missing cellStyles, whitespace nodes); contain that to this request.
-    let (entry, cells) = catch_unwind(AssertUnwindSafe(|| {
-        run(resident, path, mtime, size, edits, reads)
+    let (entry, cells, stale) = catch_unwind(AssertUnwindSafe(|| {
+        run(resident, path, mtime, size, edits, reads, report_stale)
     }))
     .map_err(|_| {
         SidecarError::Workbook("The formula engine could not process this workbook.".into())
@@ -211,7 +243,11 @@ pub fn recalc_cells(
     cache.entries.insert(key, entry);
     cache.evict_beyond_cap();
 
-    Ok(RecalcResult { cells, cached })
+    Ok(RecalcResult {
+        cells,
+        cached,
+        stale,
+    })
 }
 
 fn run(
@@ -221,7 +257,8 @@ fn run(
     size: u64,
     edits: &[RecalcEdit],
     reads: &[RecalcRead],
-) -> Result<(ResidentModel, Vec<RecalcCell>), SidecarError> {
+    report_stale: bool,
+) -> Result<(ResidentModel, Vec<RecalcCell>, Option<Vec<RecalcCell>>), SidecarError> {
     let mut entry = match resident {
         Some(entry) => entry,
         None => {
@@ -237,6 +274,10 @@ fn run(
             }
         }
     };
+
+    // The staged `<v>` values are the file's own caches: they only exist
+    // before the first evaluation replaces them with the engine's results.
+    let cached_formulas = report_stale.then(|| snapshot_formula_values(&entry.model));
 
     let mut dirty = false;
     for edit in edits {
@@ -310,7 +351,8 @@ fn run(
             }
         }
     }
-    Ok((entry, cells))
+    let stale = cached_formulas.map(|snapshot| stale_formula_values(&entry.model, snapshot));
+    Ok((entry, cells, stale))
 }
 
 /// IronCalc writes a sheet name that needs quoting without its quotes when it
@@ -461,7 +503,6 @@ enum PinnedValue {
 /// which the renderer already declines to display.
 fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
-    use ironcalc::base::types::{Cell, FormulaValue};
     let names: Vec<String> = model
         .workbook
         .worksheets
@@ -642,6 +683,170 @@ fn raw_number(model: &Model, sheet: u32, row: i32, column: i32) -> Option<f64> {
     match model.get_cell_value_by_index(sheet, row, column) {
         Ok(CellValue::Number(value)) => Some(value),
         _ => None,
+    }
+}
+
+/// A formula cell's identity, formula text and the cached `<v>` the file
+/// carried — captured before the model evaluates it away.
+struct CachedFormula {
+    sheet: usize,
+    row: i32,
+    column: i32,
+    /// R1C1 text (IronCalc's shared-formula form): enough to spot RATE().
+    formula: String,
+    value: FormulaValue,
+}
+
+fn snapshot_formula_values(model: &Model) -> Vec<CachedFormula> {
+    let mut out = Vec::new();
+    for (sheet, worksheet) in model.workbook.worksheets.iter().enumerate() {
+        for (row, column, cell) in worksheet.sheet_data.cells() {
+            let Cell::CellFormula { f, v, .. } = cell.as_ref() else {
+                continue;
+            };
+            out.push(CachedFormula {
+                sheet,
+                row,
+                column,
+                formula: worksheet
+                    .shared_formulas
+                    .get(*f as usize)
+                    .cloned()
+                    .unwrap_or_default(),
+                value: v.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// The formula cells whose evaluated value disagrees with the cached `<v>`
+/// the file carried. Cells pinned to their cache (external-workbook
+/// references) are value cells by the time this runs, so they are left alone.
+fn stale_formula_values(model: &Model, cached: Vec<CachedFormula>) -> Vec<RecalcCell> {
+    let mut stale = Vec::new();
+    for entry in cached {
+        let Some(cell) = model
+            .workbook
+            .worksheets
+            .get(entry.sheet)
+            .and_then(|worksheet| worksheet.cell(entry.row, entry.column))
+        else {
+            continue;
+        };
+        let Cell::CellFormula { v, .. } = cell.as_ref() else {
+            continue;
+        };
+        if formula_values_agree(&entry.value, v) {
+            continue;
+        }
+        let sheet = entry.sheet as u32;
+        let formatted = model
+            .get_formatted_cell_value(sheet, entry.row, entry.column)
+            .unwrap_or_default();
+        // The same engine gap the read path skips: RATE's Newton solver dies
+        // near -100% where Excel converges (#185) — keep the file's cache.
+        if formatted == "#NUM!" && entry.formula.to_uppercase().contains("RATE(") {
+            continue;
+        }
+        let is_error = matches!(
+            model.get_cell_type(sheet, entry.row, entry.column),
+            Ok(CellType::ErrorValue)
+        );
+        stale.push(RecalcCell {
+            sheet: model.workbook.worksheets[entry.sheet].name.clone(),
+            // IronCalc coordinates are 1-based; the wire is 0-based like `reads`.
+            row: (entry.row - 1) as u32,
+            column: (entry.column - 1) as u32,
+            formatted,
+            number: raw_number(model, sheet, entry.row, entry.column),
+            is_error,
+            is_formula: true,
+        });
+    }
+    stale
+}
+
+fn formula_values_agree(cached: &FormulaValue, computed: &FormulaValue) -> bool {
+    match (cached, computed) {
+        (FormulaValue::Number(a), FormulaValue::Number(b)) => numbers_agree(*a, *b),
+        (FormulaValue::Text(a), FormulaValue::Text(b)) => a == b,
+        (FormulaValue::Boolean(a), FormulaValue::Boolean(b)) => a == b,
+        (FormulaValue::Error { ei: a, .. }, FormulaValue::Error { ei: b, .. }) => a == b,
+        _ => false,
+    }
+}
+
+/// Excel keeps at most 15 significant digits in a cached `<v>`; two doubles
+/// that agree there are the same cached number. Without this tolerance an
+/// unrelated formula whose result Excel rounded would be rewritten on every
+/// edit over the last bits of an f64.
+fn numbers_agree(a: f64, b: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    if a.is_nan() && b.is_nan() {
+        return true;
+    }
+    if !a.is_finite() || !b.is_finite() {
+        return false;
+    }
+    (a - b).abs() <= a.abs().max(b.abs()) * 1e-13
+}
+
+/// True when any worksheet part carries a `<f>` element. A stale-cache audit
+/// needs the workbook imported; scanning the deflated worksheet parts first
+/// lets a formula-free workbook skip that import entirely.
+fn workbook_has_formulas(path: &Path) -> Result<bool, SidecarError> {
+    let file = std::fs::File::open(path).map_err(|error| SidecarError::Io(error.to_string()))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| {
+        SidecarError::Workbook(format!(
+            "The formula engine could not read the workbook archive: {error}"
+        ))
+    })?;
+    let mut names = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            SidecarError::Workbook(format!(
+                "The formula engine could not read the workbook archive: {error}"
+            ))
+        })?;
+        let name = entry.name().to_owned();
+        if name.starts_with("xl/worksheets/") && name.ends_with(".xml") {
+            names.push(name);
+        }
+    }
+    for name in names {
+        let mut entry = archive.by_name(&name).map_err(|error| {
+            SidecarError::Workbook(format!("The formula engine could not read {name}: {error}"))
+        })?;
+        if part_has_formula(&mut entry)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Streaming `<f` scan: a worksheet XML can be hundreds of MB, and only the
+/// presence of a formula matters. The two-byte match can straddle a chunk.
+fn part_has_formula(part: &mut impl Read) -> Result<bool, SidecarError> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut previous_was_lt = false;
+    loop {
+        let read = part
+            .read(&mut buffer)
+            .map_err(|error| SidecarError::Io(error.to_string()))?;
+        if read == 0 {
+            return Ok(false);
+        }
+        let chunk = &buffer[..read];
+        if previous_was_lt && chunk[0] == b'f' {
+            return Ok(true);
+        }
+        if chunk.windows(2).any(|pair| pair == b"<f") {
+            return Ok(true);
+        }
+        previous_was_lt = chunk.last() == Some(&b'<');
     }
 }
 
@@ -1306,6 +1511,134 @@ mod tests {
         assert!(b1.is_formula);
     }
 
+    /// Rewrites one package part in place, the way an outside writer leaves a
+    /// file whose inputs and cached formula values disagree.
+    fn patch_entry(path: &Path, name: &str, from: &str, to: &str) {
+        use std::io::{Read, Write};
+
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+        let mut entries = Vec::new();
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).unwrap();
+            let entry_name = entry.name().to_owned();
+            let mut content = Vec::new();
+            entry.read_to_end(&mut content).unwrap();
+            entries.push((entry_name, content));
+        }
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (entry_name, content) in entries {
+            let content = if entry_name == name {
+                let text = String::from_utf8(content).unwrap();
+                let patched = text.replace(from, to);
+                assert_ne!(patched, text, "fixture part never carried {from:?}");
+                patched.into_bytes()
+            } else {
+                content
+            };
+            writer.start_file(entry_name, options).unwrap();
+            writer.write_all(&content).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    /// A value edit through an outside writer: A1 changed, B1's cached <v> not.
+    #[test]
+    fn reports_the_dependents_a_value_edit_left_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stale.xlsx");
+        write_fixture(&path, &[("A1", "3"), ("B1", "=A1*2"), ("C1", "=B1+1")]);
+        // A1 = 5, its cache rewritten, B1/C1 still carry the old results
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>3</v></c>",
+            "<c r=\"A1\"><v>5</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        assert!(!result.cached);
+        assert!(result.cells.is_empty());
+        let stale = result.stale.unwrap();
+        let at = |column: u32| {
+            stale
+                .iter()
+                .find(|cell| cell.row == 0 && cell.column == column)
+                .unwrap_or_else(|| panic!("column {column} was not reported stale"))
+        };
+        // the direct dependent and the one behind it, across the chain
+        assert_eq!((at(1).formatted.as_str(), at(1).number), ("10", Some(10.0)));
+        assert_eq!((at(2).formatted.as_str(), at(2).number), ("11", Some(11.0)));
+        assert!(at(1).is_formula);
+        assert!(at(2).is_formula);
+    }
+
+    #[test]
+    fn reports_no_stale_cells_when_the_caches_agree() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        assert_eq!(result.stale.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn only_reports_stale_cells_when_the_request_asks_for_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("quiet.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        assert!(result.stale.is_none());
+    }
+
+    #[test]
+    fn finds_formula_cells_without_importing_the_workbook() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("formulas.xlsx");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        // Padding pushes the final "<f>" across the scan's 64 KiB chunk edge.
+        let padding = " ".repeat(64 * 1024 - 1);
+        let sheet = format!(
+            "<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData>{padding}<f>1+1</f></worksheet>"
+        );
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
+        writer.write_all(sheet.as_bytes()).unwrap();
+        // A workbook IronCalc could not import (no workbook part) still answers
+        // the scan, proving the audit never reaches the importer.
+        writer.start_file("[Content_Types].xml", options).unwrap();
+        writer.write_all(b"<Types/>").unwrap();
+        writer.finish().unwrap();
+        assert!(workbook_has_formulas(&path).unwrap());
+
+        let plain = dir.path().join("plain.xlsx");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&plain).unwrap());
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
+        writer.write_all(
+            b"<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData></worksheet>",
+        )
+        .unwrap();
+        writer.finish().unwrap();
+        assert!(!workbook_has_formulas(&plain).unwrap());
+
+        // no formulas: the audit answers empty without importing anything
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &plain, &[], &[], true).unwrap();
+        assert_eq!(result.stale.unwrap().len(), 0);
+        assert!(result.cells.is_empty());
+        assert_eq!(cache.entries.len(), 0);
+    }
     /// An openpyxl-shaped workbook: the worksheet relationships use absolute
     /// OPC targets (`/xl/comments/comment1.xml`), and the comment part exists
     /// unless `include_comments` is false.
@@ -1405,4 +1738,5 @@ mod tests {
             "{message}"
         );
     }
+
 }

@@ -1063,8 +1063,11 @@ export async function planCellEditsToXlsx(
     pkg.add(addition.path, cloneXml)
   }
 
+  // Formula caches can be refreshed on a sheet the user did not edit (a
+  // cross-sheet dependent), so those worksheets must be loaded too.
   const sheetNames = new Set([
     ...edits.map((edit) => edit.sheetName),
+    ...formulaValues.map((sheet) => sheet.sheetName),
     ...bulkConstantFills.map((fill) => fill.sheetName),
     ...structuralOps.map((sheet) => sheet.sheetName),
     ...filterStates.map((state) => state.sheetName),
