@@ -33,9 +33,9 @@ const drawingmlBox = (spPrExtra: string) =>
   '<wps:txbx><w:txbxContent><w:p><w:r><w:t>Confidential</w:t></w:r></w:p></w:txbxContent></wps:txbx>' +
   '<wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
 
-const vmlBox = (styleExtra: string) =>
-  `<w:r><w:pict><v:shape style="position:absolute;margin-left:20pt;margin-top:20pt;width:180pt;height:40pt;${styleExtra}">` +
-  '<v:textbox><w:txbxContent><w:p><w:r><w:t>Confidential</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
+const vmlBox = (styleExtra: string, shapeAttrs = '', preChildren = '') =>
+  `<w:r><w:pict><v:shape${shapeAttrs} style="position:absolute;margin-left:20pt;margin-top:20pt;width:180pt;height:40pt;${styleExtra}">` +
+  `${preChildren}<v:textbox><w:txbxContent><w:p><w:r><w:t>Confidential</w:t></w:r></w:p></w:txbxContent></v:textbox>` +
   '</v:shape></w:pict></w:r>'
 
 /** First floating box of the parsed footer strip (throws a clear failure when absent). */
@@ -73,14 +73,36 @@ describe('header/footer floating shapes keep their transform and outline', () =>
     expect(box.borderColor).toBe('C00000')
   })
 
-  it('parses rotation, strokeweight and strokecolor off a legacy VML shape', async () => {
+  // stroke lives on the shape's attributes (the style-attribute form is one
+  // Word never writes), gated like the body path: on unless stroked="f" or a
+  // v:stroke child says off, defaulting to black
+  it('parses strokeweight and strokecolor off the VML shape attributes', async () => {
     const parsed = await parseWithFooter(
-      vmlBox('rotation:30;strokeweight:2.25pt;strokecolor:#4472C4'),
+      vmlBox('rotation:30', ' strokecolor="#4472C4" strokeweight="2.25pt"'),
     )
     const box = firstBox(parsed)
     expect(box.rotDeg).toBe(30)
     expect(box.borderWidthPx).toBe(3)
     expect(box.borderColor).toBe('4472C4')
+  })
+
+  it('a VML box with no stroke attrs keeps the default black frame', async () => {
+    const parsed = await parseWithFooter(vmlBox('rotation:30'))
+    const box = firstBox(parsed)
+    expect(box.rotDeg).toBe(30)
+    expect(box.borderColor).toBe('000000')
+    expect(box.borderWidthPx).toBeUndefined()
+  })
+
+  it('stroked="f" and a v:stroke on="f" child both leave the box bare', async () => {
+    const attrOff = await parseWithFooter(vmlBox('', ' stroked="f"'))
+    const offBox = firstBox(attrOff)
+    expect(offBox.borderColor).toBeUndefined()
+    expect(offBox.borderWidthPx).toBeUndefined()
+    const childOff = await parseWithFooter(vmlBox('', '', '<v:stroke on="f"/>'))
+    const strokeOffBox = firstBox(childOff)
+    expect(strokeOffBox.borderColor).toBeUndefined()
+    expect(strokeOffBox.borderWidthPx).toBeUndefined()
   })
 
   // legacy VML expresses rotation as plain degrees, as negative/360+ turns, or

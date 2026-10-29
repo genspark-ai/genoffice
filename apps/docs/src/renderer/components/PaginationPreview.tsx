@@ -614,7 +614,10 @@ export function hoistPlan(wfs: FloatBox[]): { boxes: FloatBox[]; mixed: boolean 
 
 /** horizontal slot of a floating box's inline position (hoist CSS corrects each slot from column to page) */
 export function hoistSlotOf(f: { el: HTMLElement }): 'left' | 'center' | 'right' | null {
-  const st = f.el.getAttribute('style') ?? ''
+  // the float slot style (left/clamp/right) lives on the .box-rotator that
+  // owns the box, not on the box itself (same carrier lookup as absBoxes)
+  const carrier = f.el.parentElement?.classList.contains('box-rotator') ? f.el.parentElement : f.el
+  const st = carrier.getAttribute('style') ?? ''
   // a paper-edge X renders as calc(<px> - var(--doc-margin-left)), a column X
   // clamped onto the paper as clamp(<floor>, <px>, <cap>): both are left slots
   if (/(?:^|;)\s*left:\s*(?:calc\(|clamp\([^,]*,\s*)?-?[\d.]+px/.test(st)) return 'left'
@@ -858,7 +861,7 @@ export function hoistWindowCss(wins: ReadonlyMap<number, ReadonlySet<string>>): 
   for (const [pg, keys] of wins) {
     for (const key of keys) {
       const w = `.pv-page[data-pv-page="${pg}"] .pv-content[data-pv-win]:not([data-pv-win="${key}"]) [data-pv-hoist='1'][data-pin-win="${key}"]`
-      rules.push(`${w} > .doc-textbox,${w} > .doc-img-wrap{visibility:hidden;}`)
+      rules.push(`${w} > .doc-textbox,${w} > .box-rotator,${w} > .doc-img-wrap{visibility:hidden;}`)
     }
   }
   return rules.join('\n')

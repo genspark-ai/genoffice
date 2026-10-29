@@ -7360,10 +7360,15 @@ function hfTextBoxOfVml(shape: XNode): HfTextBox {
   // the shared helper normalizes the negative / 360+ and 1/65536-degree forms
   const rot = vmlRotationDeg(style)
   if (rot != null) box.rotDeg = rot
-  const strokeW = vmlLengthPx(/(?:^|;)\s*strokeweight:([^;]+)/.exec(style)?.[1])
-  if (strokeW !== undefined && strokeW > 0) box.borderWidthPx = strokeW
-  const strokeColor = /(?:^|;)\s*strokecolor:\s*#([0-9a-fA-F]{6})/.exec(style)?.[1]
-  if (strokeColor) box.borderColor = strokeColor.toUpperCase()
+  // stroke lives on the shape's attributes (style-attribute stroke props are a
+  // form Word does not write), gated like the body path: VML strokes default
+  // to on/black unless stroked="f" or a v:stroke child switches them off
+  const shapeAttrs = attrsOf(shape)
+  if (!vmlFlagOff(shapeAttrs['stroked']) && !vmlStrokeChildOff(shape)) {
+    box.borderColor = vmlColorHex(shapeAttrs['strokecolor']) ?? '000000'
+    const weight = vmlStrokeWeightPx(shapeAttrs['strokeweight'])
+    if (weight !== undefined) box.borderWidthPx = weight
+  }
   return box
 }
 

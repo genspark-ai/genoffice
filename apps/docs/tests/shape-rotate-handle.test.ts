@@ -16,10 +16,12 @@ import { textboxBoxStyle } from '../src/renderer/editor/protected-render'
 import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 
 /**
- * A gallery rect with textbox content; the explicit posOffset mirrors a
- * dragged shape (a center-aligned drawing re-resolves its wrap on parse).
+ * A gallery roundRect with textbox content (a plain rect stores no prst, and
+ * the drag preview only activates on a shape body that carries one); the
+ * explicit posOffset mirrors a dragged shape (a center-aligned drawing
+ * re-resolves its wrap on parse).
  */
-const SHAPE_XML = buildShapeParagraphXml({ prst: 'rect', withTextbox: true, id: 42 }).replace(
+const SHAPE_XML = buildShapeParagraphXml({ prst: 'roundRect', withTextbox: true, id: 42 }).replace(
   '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>',
   '<wp:positionH relativeFrom="column"><wp:posOffset>500000</wp:posOffset></wp:positionH>',
 )
@@ -270,6 +272,34 @@ describe('shape rotation handle', () => {
     })
     expect(rotator.style.transform).toBe('')
     expect(wrapper.classList.contains('has-turned-box')).toBe(false)
+    editor.destroy()
+  })
+
+  it('the move-drag preview translates the rotator (screen space), not the box inside it', async () => {
+    const editor = await openShapeDoc()
+    const pos = selectShape(editor)
+    const box = boxOf(editor, pos)
+    // turn the shape first: the live preview must slide along screen axes —
+    // on the box inside the rotated layer a rightward drag moved it down
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...box, rotDeg: 90 }],
+    })
+    const wrapper = editor.view.nodeDOM(pos) as HTMLElement
+    const turnedBox = wrapper.querySelector('.doc-textbox') as HTMLElement
+    const rotator = wrapper.querySelector('.box-rotator') as HTMLElement
+    expect(rotator.style.transform).toBe('rotate(90deg)')
+    expect(turnedBox.style.transform).toBe('')
+
+    turnedBox.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }),
+    )
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 140, clientY: 100 }))
+    // the translate lands on the rotator, prepended so it moves in screen
+    // space ahead of the rotation (same target the rotate plugin's turnEl uses)
+    expect(rotator.style.transform).toBe('translate(40px, 0px) rotate(90deg)')
+    expect(turnedBox.style.transform).toBe('')
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 140, clientY: 100 }))
+    expect(rotator.style.transform).toBe('rotate(90deg)')
     editor.destroy()
   })
 

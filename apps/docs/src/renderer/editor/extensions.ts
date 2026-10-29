@@ -7680,10 +7680,13 @@ function floatingObjectDragPlugin(): Plugin {
 
           // Visual feedback: apply CSS translate during drag. Cropped pictures put
           // rot/flip (and the front/behind offset) on the overflow-hidden crop
-          // wrapper — translate that, or the image slides inside the fixed window
-          const visual = wrapper.querySelector(
-            isTextbox ? '.doc-textbox' : '.doc-img-crop, .doc-protected-img',
-          ) as HTMLElement | null
+          // wrapper — translate that, or the image slides inside the fixed window.
+          // A turned textbox sits static inside the rotated .box-rotator that owns
+          // the float slot: translate the rotator (same target as the rotate
+          // plugin's turnEl), or the box slides along the rotated axes
+          const visual = (isTextbox
+            ? (wrapper.querySelector('.box-rotator') ?? wrapper.querySelector('.doc-textbox'))
+            : wrapper.querySelector('.doc-img-crop, .doc-protected-img')) as HTMLElement | null
           // Images may already carry a rotation/flip transform: the drag translate
           // must compose with it (prepended = applied in screen space) and the
           // original must come back on mouseup, or the orientation vanishes
