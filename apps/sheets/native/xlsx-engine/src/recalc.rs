@@ -548,7 +548,7 @@ fn references_a_sheet_of_this_workbook(formula: &str, names: &[String]) -> bool 
 /// and `!` to count as a workbook index. A name with spaces or CJK
 /// characters only appears quoted, and Excel forbids `[` inside a sheet
 /// name, so a `'` right before the bracket is always the external form.
-fn references_an_external_workbook(formula: &str) -> bool {
+pub(crate) fn references_an_external_workbook(formula: &str) -> bool {
     let code = blank_text_literals(formula);
     let bytes = code.as_bytes();
     for (at, byte) in bytes.iter().enumerate() {

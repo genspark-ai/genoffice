@@ -182,6 +182,14 @@ export class XlsxSidecarClient {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 
+  /** External links (genoffice#2109): list the workbook's `[n]` links with
+   * their resolved sources and, for each external-formula cell, the freshly
+   * computed value when the source is reachable — the stored formula keeps
+   * its indexed spelling, so the caller updates only the cached `<v>`. */
+  async updateExternalLinks(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'update_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
   /**
    * Spawn the sidecar ahead of the first request to hide process cold-start.
    * The prewarm is best-effort: on Windows an unrunnable binary (corrupt,
