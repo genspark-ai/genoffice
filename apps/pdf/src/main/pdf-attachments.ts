@@ -122,6 +122,7 @@ function writeTree(doc: PDFDocument, tree: PDFDict | null, slots: Map<string, Sl
   const array = context.obj(flat)
   if (tree) {
     tree.set(PDFName.of('Names'), array)
+    tree.delete(PDFName.of('Limits'))
     return
   }
   const created = context.register(context.obj({ Names: array }))
