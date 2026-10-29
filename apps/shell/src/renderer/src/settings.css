@@ -941,29 +941,6 @@
   word-break: break-all;
 }
 
-.set-intg-examples {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.set-intg-example {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 6px 8px 12px;
-  border-radius: 8px;
-  background: var(--surface-subtle);
-}
-
-.set-intg-example-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--text-primary);
-  user-select: text;
-}
-
 /* the path about to be written, shown before any write happens */
 .set-intg-confirm {
   display: flex;
