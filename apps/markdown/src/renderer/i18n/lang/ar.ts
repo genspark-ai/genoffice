@@ -31,6 +31,7 @@ export const ar = {
   aiPartialAdopt: 'احتفاظ',
   aiPartialDiscard: 'تجاهل',
   aiToolSetFm: 'تحديث خصائص المستند',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'المحدد: {words} كلمة',
   aiScopeSelectionTip: 'تعليمات إعادة الصياغة تُطبق افتراضيًا على التحديد فقط؛ انقر للمعاينة',
   aiScopeClearTitle: 'إلغاء نطاق التحديد',

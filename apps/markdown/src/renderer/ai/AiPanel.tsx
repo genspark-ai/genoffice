@@ -7,15 +7,23 @@ import {
   AiSkillChips,
   AiSkillsMenu,
   useAiPanelPrefs,
+  useAiSlash,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+  ReactNode,
+} from 'react'
 import {
   AgentLoop,
   composeSkills,
+  skillContextVars,
   streamText,
   withAttachedSkills,
   type MindMapTreeNode,
+  type SkillVars,
 } from '@genoffice/agent-core'
 import {
   activeProvider,
@@ -44,6 +52,7 @@ import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import { clearAiHighlights } from '../editor/aiHighlight'
 import { setInactiveSelectionShown } from '../editor/inactiveSelection'
+import { redactTextBetween } from '../editor/redact'
 import { createMarkdownSkill, MARKDOWN_RULES } from './markdown-skill'
 import { MindMapCard } from './MindMapCard'
 import {
@@ -74,6 +83,12 @@ const NON_ASIAN_WORD_RE = /[A-Za-z0-9À-ɏ]+(?:['-][A-Za-z0-9À-ɏ]+)*/g
 
 function countWords(text: string): number {
   return (text.match(ASIAN_RE) ?? []).length + (text.match(NON_ASIAN_WORD_RE) ?? []).length
+}
+
+/** base name of the open file, for a skill body's ${FILE_NAME}; an unsaved document has none */
+function fileNameOf(path: string | null): string | undefined {
+  const base = path?.split(/[\\/]/).pop()
+  return base || undefined
 }
 
 const MAX_SNAPSHOTS = 20
@@ -115,6 +130,8 @@ interface ChatEntry {
 
 /** longest selection excerpt echoed on a user bubble */
 const SCOPE_TEXT_MAX = 200
+/** longest selection text a skill body sees as ${SELECTION} */
+const SKILL_SELECTION_MAX = 500
 
 /** structured, not the serialized file text: a body starting with `---` must
  *  never be re-parsed as a frontmatter block on rollback */
@@ -666,7 +683,11 @@ export function AiPanel({
   /** retryScope: null = a retry that had no scope; undefined = capture the live selection */
 
   /** the attached skills' full text in front of the request; a skill that vanished is skipped */
-  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+  const withSkillBodies = async (
+    instruction: string,
+    names: readonly string[],
+    vars?: SkillVars,
+  ) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
       names.map(async (name) => {
@@ -680,6 +701,7 @@ export function AiPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      vars,
     )
   }
 
@@ -689,6 +711,21 @@ export function AiPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: prompt,
+    onAttachSkill: (name, { start, end }) => {
+      setPrompt((prev) => prev.slice(0, start) + prev.slice(end))
+      setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+      const ta = inputRef.current
+      if (!ta) return
+      ta.focus()
+      requestAnimationFrame(() => ta.setSelectionRange(start, start))
+    },
+  })
 
   const send = (
     text: string,
@@ -717,6 +754,16 @@ export function AiPanel({
           ? selectionScopeQuote()
           : undefined
     lastScopeRef.current = scope
+    // Skill context vars are read here, at send time: ${SELECTION} is the range
+    // this run targets (the same redacted view the agent's own context shows),
+    // ${FILE_NAME} the saved file's base name — an unsaved document leaves the
+    // variable absent, and an absent variable stays literal in the body.
+    const skillVars = skillContextVars({
+      lang: langRef.current,
+      app: tGlobal('aiSkillApp'),
+      fileName: fileNameOf(filePathRef.current),
+      selection: selectionSkillText(),
+    })
     // the popover input / composer own the DOM selection now: keep the targeted range visible until the run ends
     if (scope) setInactiveSelectionShown(depsRef.current.getEditor(), true)
     setChat((prev) => [
@@ -737,7 +784,7 @@ export function AiPanel({
     void (async () => {
       try {
         settingsRef.current = await window.markdownApi.getAiSettings()
-        const withSkills = await withSkillBodies(instruction, sentSkills)
+        const withSkills = await withSkillBodies(instruction, sentSkills, skillVars)
         if (!mountedRef.current) return
         await loop.run(withSkills)
       } catch (err) {
@@ -808,6 +855,18 @@ export function AiPanel({
       label: t('aiScopeSelection', { words: countWords(text) }),
       text: text.length > SCOPE_TEXT_MAX ? `${text.slice(0, SCOPE_TEXT_MAX)}…` : text,
     }
+  }
+
+  /** the selection a skill body sees as ${SELECTION}: the redacted view the
+   *  agent's own per-turn context shows (hidden words stay placeholders),
+   *  block gaps kept as line breaks, hard-capped well under the context budget */
+  const selectionSkillText = (): string | undefined => {
+    const ed = depsRef.current.getEditor()
+    if (!ed || ed.state.selection.empty) return undefined
+    const { from, to } = ed.state.selection
+    const text = redactTextBetween(ed.getJSON() as never, from, to).trim()
+    if (!text) return undefined
+    return text.length > SKILL_SELECTION_MAX ? `${text.slice(0, SKILL_SELECTION_MAX)}…` : text
   }
 
   // the frozen-range highlight ends with the run, or as soon as the editor is focused again
@@ -1175,7 +1234,17 @@ export function AiPanel({
         </div>
       )}
 
-      <div className="ai-composer">
+      <div
+        className="ai-composer"
+        onKeyDownCapture={(e) => {
+          // AiComposer (packages/ui) owns the textarea's onKeyDown; capture on
+          // this container runs the palette ahead of it, and stopping
+          // propagation keeps a consumed key from also sending or stopping
+          if (e.target !== inputRef.current) return
+          if (slash.onKeyDown(e as unknown as ReactKeyboardEvent<HTMLTextAreaElement>))
+            e.stopPropagation()
+        }}
+      >
         {activePartial && (
           <div className="ai-queue ai-partial-card" role="group" aria-label={t('aiPartialTitle')}>
             <div className="ai-queue-head">
@@ -1210,6 +1279,7 @@ export function AiPanel({
             onFocus={(qid) => onQueueFocus?.(qid)}
           />
         )}
+        {slash.element}
         <AiComposer
           queueStrip={
             <AiQueueStrip

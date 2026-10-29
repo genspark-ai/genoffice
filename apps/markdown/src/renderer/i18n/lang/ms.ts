@@ -32,6 +32,7 @@ export const ms = {
   aiPartialAdopt: 'Simpan',
   aiPartialDiscard: 'Buang',
   aiToolSetFm: 'Kemas kini sifat dokumen',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Dipilih: {words} patah perkataan',
   aiScopeSelectionTip:
     'Arahan tulis semula secara lalai hanya terpakai pada pilihan; klik untuk pratonton',

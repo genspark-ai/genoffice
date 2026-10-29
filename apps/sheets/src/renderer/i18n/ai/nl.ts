@@ -114,4 +114,5 @@ export const nl = {
   aiScopeRangeTip:
     'AI leest "deze kolom / deze rijen / het geselecteerde deel" als dit bereik; bij verzenden wordt het voor de hele run vastgezet',
   aiScopeClearTitle: 'Bereikbereik wissen en het hele blad gebruiken',
+  aiAppName: 'Spreadsheets',
 } satisfies Record<keyof typeof zh, string>

@@ -32,6 +32,7 @@ export const pt = {
   aiPartialAdopt: 'Manter',
   aiPartialDiscard: 'Descartar',
   aiToolSetFm: 'Atualizar propriedades do documento',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Selecionado: {words} palavras',
   aiScopeSelectionTip:
     'Instruções de reescrita aplicam-se por padrão à seleção; clique para pré-visualizar',

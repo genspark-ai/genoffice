@@ -31,6 +31,7 @@ export const ko = {
   aiPartialAdopt: '사용',
   aiPartialDiscard: '버리기',
   aiToolSetFm: '문서 속성 업데이트',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: '선택됨: {words}자',
   aiScopeSelectionTip: '다시 쓰기류 지시는 기본적으로 선택 영역에만 적용됩니다. 클릭하여 미리 보기',
   aiScopeClearTitle: '선택 범위 해제',

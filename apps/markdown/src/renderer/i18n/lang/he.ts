@@ -31,6 +31,7 @@ export const he = {
   aiPartialAdopt: 'לשמור',
   aiPartialDiscard: 'להשליך',
   aiToolSetFm: 'עדכון מאפייני המסמך',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'נבחרו: {words} מילים',
   aiScopeSelectionTip: 'הוראות שכתוב חלות כברירת מחדל על הבחירה בלבד; לחץ לתצוגה מקדימה',
   aiScopeClearTitle: 'ביטול טווח הבחירה',

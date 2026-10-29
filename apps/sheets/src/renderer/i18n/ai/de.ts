@@ -115,4 +115,5 @@ export const de = {
   aiScopeRangeTip:
     'Die KI versteht „diese Spalte / diese Zeilen / die Auswahl“ als diesen Bereich; beim Senden wird er für den Lauf fixiert',
   aiScopeClearTitle: 'Bereichsvorgabe aufheben und das ganze Blatt verwenden',
+  aiAppName: 'Tabellen',
 } satisfies Record<keyof typeof zh, string>

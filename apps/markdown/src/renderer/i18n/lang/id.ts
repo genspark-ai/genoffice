@@ -31,6 +31,7 @@ export const id = {
   aiPartialAdopt: 'Simpan',
   aiPartialDiscard: 'Buang',
   aiToolSetFm: 'Perbarui properti dokumen',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Terpilih: {words} kata',
   aiScopeSelectionTip:
     'Instruksi penulisan ulang secara default hanya berlaku pada teks terpilih; klik untuk pratinjau',

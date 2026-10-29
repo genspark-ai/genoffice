@@ -196,6 +196,7 @@ import {
 import { scopeLabel, type AiChatMessage } from './ai/AiChatPanel'
 import { pruneFailedExchange } from './ai/retry-prune'
 import { parseSheetNavHref } from './ai/sheet-nav'
+import { sheetSkillVars } from './ai/skill-vars'
 import {
   boundsToA1,
   clampBoundsToExtent,
@@ -1701,8 +1702,14 @@ export function App({
     return images
   }
 
-  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
-  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+  /** the attached skills' full text in front of the request; a skill that vanished is skipped.
+   *  The bodies expand against the app context: language, product, workbook name, and the
+   *  frozen selection scope the run itself interprets "this column" against. */
+  const withSkillBodies = async (
+    instruction: string,
+    names: readonly string[],
+    scope: FrozenSelection | null | undefined,
+  ) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
       names.map(async (name) => {
@@ -1716,6 +1723,18 @@ export function App({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      sheetSkillVars({
+        lang: getLang(),
+        app: t('aiAppName'),
+        ...(workbookFile?.name ? { fileName: workbookFile.name } : {}),
+        scope,
+        sheetNameOf: (sheetId) =>
+          univerRef.current?.univerAPI
+            .getActiveWorkbook()
+            ?.getSheetBySheetId(sheetId)
+            ?.getSheetName(),
+        readValues: (addresses, sheetId) => readCellsImpl(readContext(), addresses, sheetId),
+      }),
     )
   }
 
@@ -1730,7 +1749,8 @@ export function App({
     // Freeze the selection scope for the whole run: users go on clicking around
     // while the AI works, so a live read would retarget "this column" mid-run.
     // Released in onDone/onError, which own the rest of the run teardown.
-    setAiRunScope(aiScopeDismissed ? null : aiScope)
+    const runScope = aiScopeDismissed ? null : aiScope
+    setAiRunScope(runScope)
     aiApplyPromisesRef.current = []
     runLastTextRef.current = ''
     runReasoningRef.current = ''
@@ -1740,13 +1760,13 @@ export function App({
     appendChat({ role: 'assistant', text: '', tools: [], streaming: true })
     void collectImageAttachments(sentAttachments)
       .then(async (images) => {
-        const modelInstruction = await withSkillBodies(instruction, sentSkills)
+        const modelInstruction = await withSkillBodies(instruction, sentSkills, runScope)
         runStartingRef.current = false
         loop.run(modelInstruction, images)
       })
       .catch(async () => {
         // an unreadable image must not strand the run, nor drop the skills the user attached
-        const modelInstruction = await withSkillBodies(instruction, sentSkills).catch(
+        const modelInstruction = await withSkillBodies(instruction, sentSkills, runScope).catch(
           () => instruction,
         )
         runStartingRef.current = false

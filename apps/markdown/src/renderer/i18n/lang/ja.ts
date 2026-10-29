@@ -32,6 +32,7 @@ export const ja = {
   aiPartialAdopt: '採用',
   aiPartialDiscard: '破棄',
   aiToolSetFm: 'ドキュメントのプロパティを更新',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: '選択中: {words} 文字',
   aiScopeSelectionTip: '書き換え系の指示は既定で選択範囲にのみ適用されます。クリックでプレビュー',
   aiScopeClearTitle: '選択範囲を解除',

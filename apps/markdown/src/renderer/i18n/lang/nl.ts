@@ -32,6 +32,7 @@ export const nl = {
   aiPartialAdopt: 'Behouden',
   aiPartialDiscard: 'Weggooien',
   aiToolSetFm: 'Documenteigenschappen bijwerken',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Geselecteerd: {words} woorden',
   aiScopeSelectionTip:
     'Herschrijfopdrachten gelden standaard alleen voor de selectie; klik voor een voorbeeld',

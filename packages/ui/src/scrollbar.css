@@ -1,0 +1,57 @@
+/*
+ * Overlay-style scrollbars. The track and thumb stay transparent until the
+ * pointer is over the scroll area (or focus is inside it — keyboard users
+ * have no hover), so long panes read clean. The lane width never changes —
+ * the track is always there, just invisible — so content never reflows when
+ * the thumb appears.
+ *
+ * The thumb reads as a 4px pill centered in a 10px lane: the transparent
+ * border eats the lane's edges and `background-clip: padding-box` keeps the
+ * fill inside. Colors come from the theme tokens, so dark mode follows.
+ *
+ * Apply as a single class on the scrolling element: <div class="g-scroll">.
+ * The standard `scrollbar-*` properties ride along for engines that dropped
+ * the webkit pseudos; Chromium prefers the ::-webkit-scrollbar block when
+ * both are present.
+ */
+.g-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.g-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+.g-scroll::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  min-width: 40px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.g-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.g-scroll:hover,
+.g-scroll:focus-within {
+  scrollbar-color: var(--text-tertiary) transparent;
+}
+
+.g-scroll:hover::-webkit-scrollbar-thumb,
+.g-scroll:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--text-tertiary);
+}
+
+.g-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-secondary);
+}
+
+.g-scroll::-webkit-scrollbar-thumb:active {
+  background-color: var(--text-secondary);
+}

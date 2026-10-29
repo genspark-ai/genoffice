@@ -113,4 +113,5 @@ export const vi = {
   aiScopeRangeTip:
     'AI sẽ hiểu "cột này / các hàng này / phần đã chọn" là dải ô này và vùng này sẽ được cố định cho lượt chạy sau khi bạn gửi',
   aiScopeClearTitle: 'Bỏ phạm vi dải ô và áp dụng cho toàn bộ trang tính',
+  aiAppName: 'Bảng tính',
 } satisfies Record<keyof typeof zh, string>

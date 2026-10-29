@@ -9,6 +9,7 @@ import {
   createIpcTransport,
   createKnowledgeBaseSkill,
   RUN_GENOFFICE_TOOL,
+  skillContextVars,
   withAttachedSkills,
   type AgentImage,
   type AttachmentInfo,
@@ -28,6 +29,7 @@ import {
   createFileNav,
   Markdown,
   useAiPanelPrefs,
+  useAiSlash,
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
@@ -620,7 +622,11 @@ export function KbAskPanel({
     return images
   }
 
-  /** the attached skills' full text in front of the question; a skill that vanished is skipped */
+  /** the attached skills' full text in front of the question; a skill that vanished is skipped.
+   * The bodies expand against this panel's own context: APP carries the sidebar's
+   * localized label for this surface, LANGUAGE and TODAY follow the UI language,
+   * and FILE_NAME/SELECTION are left out — the corpus chat has no document, so
+   * those placeholders stay literal in the body. */
   const withSkillBodies = async (instruction: string, names: readonly string[]) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
@@ -635,6 +641,7 @@ export function KbAskPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      skillContextVars({ lang, app: t('navAsk') }),
     )
   }
 
@@ -644,6 +651,27 @@ export function KbAskPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+
+  // Slash palette on the composer: typing `/skill` opens the picker above the
+  // textarea; picking one strikes the token from the draft, puts the caret
+  // where it stood, and attaches the skill — an attached skill stays attached.
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef: composerRef,
+    value: draft,
+    onAttachSkill: (name, { start, end }) => {
+      setDraft(draft.slice(0, start) + draft.slice(end))
+      setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+      requestAnimationFrame(() => {
+        const ta = composerRef.current
+        if (!ta) return
+        ta.focus()
+        ta.setSelectionRange(start, start)
+      })
+    },
+  })
 
   // Retry and other programmatic turns: the composer draft is not theirs to clear
   const askWith = async (
@@ -766,7 +794,18 @@ export function KbAskPanel({
   }
 
   return (
-    <div className={`kb-ask${dragOver ? ' kb-ask-dragover' : ''}`} {...dropProps}>
+    <div
+      className={`kb-ask${dragOver ? ' kb-ask-dragover' : ''}`}
+      {...dropProps}
+      onKeyDownCapture={(e: React.KeyboardEvent) => {
+        // AiComposer owns the textarea's onKeyDown, so the palette eats its
+        // keys here in the capture phase instead: a consumed Enter must not
+        // send the half-typed token. Only the composer's textarea is gated.
+        if (e.target !== composerRef.current) return
+        // the cast only widens currentTarget, which the palette never reads
+        if (slash.onKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>)) e.stopPropagation()
+      }}
+    >
       {dragOver && (
         <div className="kb-ask-drop" aria-hidden="true">
           {t('askDropFiles')}
@@ -1011,6 +1050,7 @@ export function KbAskPanel({
           {attachNotice}
         </p>
       )}
+      {slash.element}
       <AiComposer
         value={draft}
         busy={busy}
@@ -1026,6 +1066,7 @@ export function KbAskPanel({
         sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
         sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
         stopIcon={<img src={sendStop} alt="" aria-hidden />}
+        textareaRef={composerRef}
         header={
           <>
             <AskAttachments

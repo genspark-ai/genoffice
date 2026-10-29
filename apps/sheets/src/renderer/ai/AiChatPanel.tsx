@@ -5,6 +5,7 @@ import {
   AiModelPicker,
   type AiModelPickerBridge,
   useAiPanelPrefs,
+  useAiSlash,
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState } from 'react'
 import {
@@ -517,6 +518,28 @@ export function AiChatPanel({
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
 
+  const listSkillsForMenu = async () =>
+    (await window.desktopApi.skillsList()).map(({ name, description }) => ({ name, description }))
+
+  /** Slash palette over the composer: typing "/name" filters the skills, a pick
+      strikes the token, attaches the skill and leaves the caret where it began. */
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: prompt,
+    onAttachSkill: (name, range) => {
+      onPromptChange(prompt.slice(0, range.start) + prompt.slice(range.end))
+      if (!attachedSkills.includes(name)) onToggleSkill(name)
+      requestAnimationFrame(() => {
+        const ta = inputRef.current
+        if (!ta) return
+        ta.focus()
+        ta.setSelectionRange(range.start, range.start)
+      })
+    },
+  })
+
   if (!isOpen) {
     // the sidebar setting is off: nothing to show until an explicit AI action opens the panel
     if (hideRail) return <></>
@@ -550,9 +573,6 @@ export function AiChatPanel({
       window.setTimeout(() => setCopiedKey((cur) => (cur === key ? null : cur)), 1200)
     })
   }
-
-  const listSkillsForMenu = async () =>
-    (await window.desktopApi.skillsList()).map(({ name, description }) => ({ name, description }))
 
   const send = (): void => {
     if (!canSend) return
@@ -901,7 +921,15 @@ export function AiChatPanel({
         )}
       </div>
 
-      <div className="ai-composer">
+      {/* The shared AiComposer owns the textarea's keydown (Enter sends, Esc
+          stops), so the palette listens on the way down: a key it consumes is
+          stopped here and never reaches that handling. */}
+      <div
+        className="ai-composer"
+        onKeyDownCapture={(e: React.KeyboardEvent) => {
+          if (slash.onKeyDown(e as React.KeyboardEvent<HTMLTextAreaElement>)) e.stopPropagation()
+        }}
+      >
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
           queueStrip={
@@ -1060,6 +1088,7 @@ export function AiChatPanel({
           }}
           onPasteFiles={onPasteFiles}
         />
+        {slash.element}
       </div>
     </aside>
   )

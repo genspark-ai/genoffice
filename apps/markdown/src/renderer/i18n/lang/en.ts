@@ -32,6 +32,7 @@ export const en = {
   aiPartialAdopt: 'Keep',
   aiPartialDiscard: 'Discard',
   aiToolSetFm: 'Update document properties',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Selected: {words} words',
   aiScopeSelectionTip: 'Rewrite-style requests apply to the selection by default; click to preview',
   aiScopeClearTitle: 'Clear the selection scope',

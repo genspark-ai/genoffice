@@ -14,7 +14,15 @@ export type {
   ToolExecution,
 } from './types'
 export { composeSkills } from './skill'
-export { withAttachedSkills, type AttachedSkill } from './attached-skills'
+export {
+  withAttachedSkills,
+  expandSkillBody,
+  splitSkillArgs,
+  skillContextVars,
+  type AttachedSkill,
+  type SkillVars,
+  type SkillContextInput,
+} from './attached-skills'
 export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
 export type { KnowledgeBaseDeps, KbFileInfo, KbSearchHit, KbReadPage } from './knowledge-base-skill'
 export {

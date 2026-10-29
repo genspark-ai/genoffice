@@ -605,6 +605,11 @@
   border-color: var(--danger, var(--accent, var(--text-primary)));
 }
 
+/* single-line twin of the multiline rule, so a refused field says so in color */
+.set-input.set-input-invalid {
+  border-color: var(--danger, var(--accent, var(--text-primary)));
+}
+
 .set-ai-note {
   padding: 8px 0 2px;
   line-height: 1.5;
@@ -789,6 +794,48 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* the import menu: one trigger in the toolbar, the two low-frequency entries
+   (zip / folder) inside a popover so the header keeps an even rhythm */
+.set-intg-import {
+  position: relative;
+}
+
+.set-intg-import > .set-btn svg {
+  margin-left: 4px;
+}
+
+.set-intg-import-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  min-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+}
+
+.set-intg-import-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.set-intg-import-item:hover {
+  background: var(--bg-hover);
 }
 
 .set-intg-details {
@@ -1020,6 +1067,333 @@
 
 .set-intg-path {
   text-align: left;
+}
+
+/* Skills pane: the editor, the AI creator and the foreign importer share one
+   stacked form. The doc fields inside it align on a fixed label column (the
+   settings rows keep inputs at 46%, which these are not) */
+.set-intg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.set-intg-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.set-intg-form-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.set-intg-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* the pane scrolls — the primary action stays reachable at its bottom edge */
+  position: sticky;
+  bottom: 0;
+  padding: 10px 0;
+  background: var(--surface);
+}
+
+/* ── Skills pane: the doc fields ── */
+
+/* the label column every doc field aligns on; a query container so a narrow
+   pane can stack labels above fields instead of squeezing both */
+.set-intg-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  container-type: inline-size;
+}
+
+.set-intg-doc-field {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+}
+
+/* the label rides at the input's text height, not the row's middle */
+.set-intg-doc-field > .set-field-label {
+  padding-top: 7px;
+}
+
+.set-intg-doc-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* the name row: the slug input with its quiet generate-from-description action */
+.set-intg-doc-name {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.set-intg-doc-name .set-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-intg-suggest {
+  flex-shrink: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.set-intg-suggest:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.set-intg-suggest:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+/* the body field's quiet toolbar: the insert-parameter dropdown, right-aligned
+   above the textarea, reusing the import menu's popover pattern */
+.set-intg-doc-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.set-intg-import > .set-intg-suggest svg {
+  margin-left: 4px;
+}
+
+/* the vocabulary entries carry a token plus its one-line gloss, so they need
+   more room and may wrap, unlike the import menu's short single-line items */
+.set-intg-param-menu {
+  min-width: 300px;
+}
+
+.set-intg-param-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 10px;
+  white-space: normal;
+}
+
+.set-intg-param-token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.set-intg-param-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* under each field: the writing hint (or refusal) on the left, a counter right */
+.set-intg-doc-hint {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.set-intg-doc-hint-bad {
+  color: var(--danger);
+}
+
+.set-intg-doc-hint-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* a soft counter: quiet until it goes over, then it says so in color */
+.set-intg-doc-count {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-intg-doc-count.over {
+  color: var(--danger);
+}
+
+/* narrow panes drop the label column: labels stack above their fields */
+@container (max-width: 480px) {
+  .set-intg-doc-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .set-intg-doc-field > .set-field-label {
+    padding-top: 0;
+  }
+}
+
+/* ── Skills pane: the editor's live preview ── */
+
+/* the wrapper is the query container, so the one-or-two-column switch measures
+   the width the editor actually got, not the window behind it */
+.set-intg-editor-wrap {
+  container-type: inline-size;
+}
+
+.set-intg-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.set-intg-editor-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.set-intg-editor-side {
+  min-width: 0;
+}
+
+/* fields on the left, the file being written on the right */
+@container (min-width: 620px) {
+  .set-intg-editor {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .set-intg-editor-main {
+    flex: 1 1 58%;
+  }
+
+  .set-intg-editor-side {
+    flex: 1 1 42%;
+  }
+}
+
+.set-intg-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.set-intg-preview-hint {
+  margin: 2px 0 0;
+}
+
+/* the exact SKILL.md: a muted mono panel, frontmatter set off from the body.
+   Long lines wrap — a preview reassures, it is not a byte dump */
+.set-intg-preview-code {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  max-height: 460px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* the frontmatter half: quiet fences, emphasized keys */
+.set-intg-preview-fence {
+  color: var(--text-tertiary);
+}
+
+.set-intg-preview-key {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* ── Skills pane: the foreign importer ── */
+
+/* rows grouped under per-product headings (brand names, never translated) */
+.set-intg-foreign-group {
+  margin-top: 4px;
+}
+
+.set-intg-foreign-source {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* the whole row is the checkbox's label: one click anywhere toggles it */
+.set-intg-foreign-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.set-intg-foreign-row:last-child {
+  border-bottom: none;
+}
+
+.set-intg-foreign-check {
+  flex-shrink: 0;
+  margin: 2px 0 0;
+}
+
+.set-intg-foreign-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-intg-foreign-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* the per-row verdict of a failed import, shown under the row it belongs to */
+.set-intg-foreign-fail {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* an already-imported row reads as done: nothing to check, nothing to press */
+.set-intg-foreign-row:has(.set-intg-foreign-check:disabled) {
+  cursor: default;
+}
+
+.set-intg-foreign-row.imported .set-intg-foreign-name {
+  color: var(--text-secondary);
+}
+
+.set-intg-foreign-row.imported .set-field-desc {
+  color: var(--text-tertiary);
 }
 
 /* Settings → About: the one-click update entry next to the version row */

@@ -196,10 +196,10 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
       const file = await pick({
         title: String(title ?? ''),
         properties: ['openFile'],
-        filters: [{ name: 'Skill package', extensions: ['zip', 'md'] }],
+        filters: [{ name: 'Skill package', extensions: ['zip', 'md', 'mdc'] }],
       })
       if (!file) return null
-      return /\.md$/i.test(file)
+      return /\.(md|mdc)$/i.test(file)
         ? importSkillMd(file, app.getPath('userData'))
         : importSkillZip(file, app.getPath('userData'))
     },

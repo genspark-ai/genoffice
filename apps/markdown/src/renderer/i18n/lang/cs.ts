@@ -32,6 +32,7 @@ export const cs = {
   aiPartialAdopt: 'Ponechat',
   aiPartialDiscard: 'Zahodit',
   aiToolSetFm: 'Aktualizovat vlastnosti dokumentu',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Vybráno: {words} slov',
   aiScopeSelectionTip:
     'Požadavky na přepsání se ve výchozím nastavení vztahují na výběr; kliknutím zobrazíte náhled',

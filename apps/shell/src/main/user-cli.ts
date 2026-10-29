@@ -1,8 +1,16 @@
 import { app, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { HomeCliError, inPlaceTarget, validateHomeCliArgs } from './home-cli'
-import { readSkillBody, usableSkills } from './imported-skills'
+import {
+  importForeignSkill,
+  readSkillBody,
+  scanForeignSkills,
+  skillRawText,
+  usableSkills,
+  writeSkill,
+} from './imported-skills'
 import { createCliRunner, type CliRunner } from './mcp/cli-runner'
+import type { ForeignSkillCandidate, FoundSkill } from '../shared/found-skill'
 
 /**
  * The AI panel's door to the skills a user installed, and to the CLI those
@@ -17,6 +25,16 @@ import { createCliRunner, type CliRunner } from './mcp/cli-runner'
  *   not chosen, and until they click Import the model does not see them.
  *   `ai:skill-text` takes a name, never a path: the model cannot name a file,
  *   it can only pick an entry from the list this process vouched for.
+ * - `ai:skill-raw-text` and `ai:skill-save` are the settings editor's door on
+ *   the same folder: the raw SKILL.md of a listed skill in, a written one out.
+ *   Nothing new becomes runnable — a saved skill is still just instructions
+ *   the next turn may read.
+ * - `ai:foreign-skills` and `ai:foreign-import` offer the prompt files the
+ *   other agent products keep on this machine as import candidates. The scan
+ *   runs here — never in the renderer — and the import runs it again before
+ *   writing, so a sourcePath the renderer sends back is an echo of a path this
+ *   process vouched for moments ago, never authority of its own. A candidate
+ *   is not an installed skill: until it is imported, the model does not see it.
  * - `ai:run-cli` spawns the bundled `genoffice` CLI and nothing else — the
  *   executable is resolved here, so an argv is a command line for our own
  *   document tool, not a general shell. `--json` is appended by the runner,
@@ -107,6 +125,50 @@ export function registerUserSkillsIpc(deps: UserSkillsDeps): void {
     const skill = skills.find((s) => s.name === name)
     if (!skill) throw new Error(`no installed skill named "${name}"`)
     return clip(readSkillBody(skill.path))
+  })
+
+  // the settings editor's pair: raw in (frontmatter included), fields out.
+  // Same boundary as ai:skill-text — `name` only ever names a listed skill,
+  // and the overwrite flag is what separates save from clobber.
+  ipcMain.handle('ai:skill-raw-text', async (_e, name: unknown): Promise<string> => {
+    if (typeof name !== 'string') throw new Error('unknown skill')
+    return skillRawText(app.getPath('userData'), name)
+  })
+
+  ipcMain.handle('ai:skill-save', (_e, request: unknown): FoundSkill => {
+    const r = (request ?? {}) as {
+      name?: unknown
+      description?: unknown
+      body?: unknown
+      allowOverwrite?: unknown
+    }
+    if (
+      typeof r.name !== 'string' ||
+      typeof r.description !== 'string' ||
+      typeof r.body !== 'string'
+    ) {
+      throw new Error('a name, a description and a body are required')
+    }
+    return writeSkill(
+      app.getPath('userData'),
+      r.name,
+      { description: r.description, body: r.body },
+      { allowOverwrite: r.allowOverwrite === true },
+    )
+  })
+
+  ipcMain.handle('ai:foreign-skills', async (): Promise<ForeignSkillCandidate[]> =>
+    scanForeignSkills(app.getPath('home'), app.getPath('userData')),
+  )
+
+  // the sourcePath came from the renderer, so the import re-runs the scan and
+  // only writes a path that fresh scan vouched for — the rule every path-taking
+  // handler here follows, applied to a write
+  ipcMain.handle('ai:foreign-import', async (_e, sourcePath: unknown): Promise<FoundSkill> => {
+    if (typeof sourcePath !== 'string' || sourcePath.trim() === '') {
+      throw new Error('a source path is required')
+    }
+    return importForeignSkill(sourcePath, app.getPath('home'), app.getPath('userData'))
   })
 
   ipcMain.handle('ai:run-cli', async (e: IpcMainInvokeEvent, args: unknown) => {

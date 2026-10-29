@@ -10,9 +10,15 @@ import {
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
-import { AgentLoop, composeSkills, withAttachedSkills } from '@genoffice/agent-core'
-import type { AgentImage } from '@genoffice/agent-core'
+import {
+  AgentLoop,
+  composeSkills,
+  skillContextVars,
+  withAttachedSkills,
+} from '@genoffice/agent-core'
+import type { AgentImage, SkillVars } from '@genoffice/agent-core'
 import { activeProvider, type AiSettings } from '@genoffice/ai-provider/browser'
+import type { Lang } from '@genoffice/i18n'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import {
@@ -27,10 +33,11 @@ import {
   copyMarkdownRich,
   Markdown,
   useChatRunQueue,
+  useAiSlash,
   type AiScopeQuoteData,
   type AiTokenUsageView,
 } from '@genoffice/ui'
-import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
+import { aiAppName, aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -70,8 +77,10 @@ import { EditQueueCard } from './EditQueueCard'
 import {
   buildQueueInstruction,
   buildQueueSummary,
+  excerptOf,
   liveItems,
   resolveQueue,
+  truncate,
   type EditQueueItem,
 } from './edit-queue'
 import { buildProjection } from './redact'
@@ -186,6 +195,35 @@ function AttachmentList({
 
 const MAX_SNAPSHOTS = 20
 const TOOL_OUTPUT_MAX_CHARS = 2000
+/** cap on the SELECTION skill variable (agent-core's guidance: ≤ 500 chars is plenty) */
+const SKILL_SELECTION_MAX_CHARS = 500
+
+/**
+ * The context variables an attached skill's body expands (${APP}, ${LANGUAGE},
+ * ${TODAY}, ${FILE_NAME}, ${SELECTION}), read live from the document. The
+ * selection is the selected element's excerpt — the redaction projection, not
+ * the source, so a span the user withheld from the AI cannot ride along — and
+ * an unsaved document contributes no FILE_NAME rather than an empty one.
+ */
+function buildSkillVars(access: HtmlDocAccess, lang: Lang, hideSelection: boolean): SkillVars {
+  let selection: string | undefined
+  if (!hideSelection) {
+    const map = access.getMap()
+    const sid = access.getSelectedSid()
+    const entry = sid !== null ? map.bySid.get(sid) : undefined
+    if (entry)
+      selection = truncate(
+        excerptOf(buildProjection(access.getText(), map), entry),
+        SKILL_SELECTION_MAX_CHARS,
+      )
+  }
+  return skillContextVars({
+    lang,
+    app: aiAppName(lang),
+    fileName: access.getFilePath()?.replace(/^.*[/\\]/, ''),
+    selection,
+  })
+}
 
 interface ToolActivity {
   name: string
@@ -409,8 +447,16 @@ export function AiPanel({
   }
   const pickAttachments = async () => mergeAttachments(await window.htmlApi.pickAttachments())
 
-  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
-  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+  /**
+   * The attached skills' full text in front of the request; a skill that vanished is
+   * skipped. The vars were frozen by the caller at send time, so a skill quotes the
+   * selection the user saw when hitting send, not one picked during the pre-run reads.
+   */
+  const withSkillBodies = async (
+    instruction: string,
+    names: readonly string[],
+    vars?: SkillVars,
+  ) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
       names.map(async (name) => {
@@ -424,6 +470,7 @@ export function AiPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      vars,
     )
   }
 
@@ -433,6 +480,23 @@ export function AiPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+  /** the composer's `/skill` palette; a pick strikes the token, keeps the caret where the slash stood, and pins the skill to the draft */
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: prompt,
+    onAttachSkill: (name, { start, end }) => {
+      setPrompt(prompt.slice(0, start) + prompt.slice(end))
+      setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+      requestAnimationFrame(() => {
+        const ta = inputRef.current
+        if (!ta) return
+        ta.focus()
+        ta.setSelectionRange(start, start)
+      })
+    },
+  })
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -1014,6 +1078,12 @@ export function AiPanel({
     // skills ride with this one message only: the chips clear like attachments do
     const sentSkills = attachSkills ? attachedSkillsRef.current : []
     if (sentSkills.length > 0) setAttachedSkills([])
+    // read the skill context here, synchronously: the selection and file can move
+    // while the pre-run reads (settings, image bytes) are in flight
+    const skillVars =
+      sentSkills.length > 0
+        ? buildSkillVars(depsRef.current.access, langRef.current, queueRun)
+        : undefined
     stickToBottomRef.current = true
     queueRunRef.current = queueRun
     lastQueueRunRef.current = queueRun
@@ -1049,7 +1119,7 @@ export function AiPanel({
         settingsRef.current = await window.htmlApi.getAiSettings()
         const images = sentAtts.length > 0 ? await collectImages(sentAtts) : []
         if (!mountedRef.current || seq !== sendSeqRef.current) return
-        const withSkills = await withSkillBodies(instruction, sentSkills)
+        const withSkills = await withSkillBodies(instruction, sentSkills, skillVars)
         if (!mountedRef.current || seq !== sendSeqRef.current) return
         await loop.run(withSkills, images.length > 0 ? images : undefined)
       } catch (err) {
@@ -1584,6 +1654,12 @@ export function AiPanel({
       <div
         className="ai-composer"
         style={activeClarify || activeBrief || activePartial ? { display: 'none' } : undefined}
+        onKeyDownCapture={(e) => {
+          // capture runs ahead of the shared composer's own Enter/Escape: a key the palette ate must not also send
+          if (slash.onKeyDown(e as unknown as React.KeyboardEvent<HTMLTextAreaElement>)) {
+            e.stopPropagation()
+          }
+        }}
       >
         {chat.length === 0 && docEmpty && (
           <div className="ai-intent-bar">
@@ -1657,6 +1733,7 @@ export function AiPanel({
           </div>
         )}
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+        {slash.element}
         <AiComposer
           queueStrip={
             <AiQueueStrip

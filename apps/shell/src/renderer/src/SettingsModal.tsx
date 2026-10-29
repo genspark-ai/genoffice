@@ -2073,7 +2073,9 @@ export function SettingsModal({
               </button>
             ))}
           </nav>
-          <div className={'set-pane' + (section === 'aiModel' ? ' set-pane-ai-model' : '')}>
+          <div
+            className={'set-pane g-scroll' + (section === 'aiModel' ? ' set-pane-ai-model' : '')}
+          >
             {section === 'account' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAccount')}</h3>

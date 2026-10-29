@@ -33,6 +33,7 @@ export const de = {
   aiPartialAdopt: 'Behalten',
   aiPartialDiscard: 'Verwerfen',
   aiToolSetFm: 'Dokumenteigenschaften aktualisieren',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Ausgewählt: {words} Wörter',
   aiScopeSelectionTip:
     'Umschreib-Anweisungen wirken standardmäßig nur auf die Auswahl; zum Vorschauen klicken',

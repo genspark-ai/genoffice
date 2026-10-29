@@ -12,12 +12,14 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   AgentLoop,
   composeSkills,
+  skillContextVars,
   withAttachedSkills,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
   type AgentImage,
   type ToolDisplay,
 } from '@genoffice/agent-core'
-import type { RenderSlide } from '@genoffice/pptx-render'
+import type { Lang } from '@genoffice/i18n'
+import type { GroupRenderNode, RenderNode, RenderSlide } from '@genoffice/pptx-render'
 import {
   activeProvider,
   imageGenerationAvailable,
@@ -44,6 +46,7 @@ import {
   type ResolveFailure,
 } from './edit-queue'
 import { createFilesSkill } from './files-skill'
+import { textForModel } from './redact-view'
 import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import {
@@ -66,6 +69,7 @@ import {
   addTokenUsage,
   copyMarkdownRich,
   useAiPanelPrefs,
+  useAiSlash,
   useChatRunQueue,
   type AiScopeQuoteData,
   type AiTokenUsageView,
@@ -387,6 +391,69 @@ const MODEL_BRIDGE: AiModelPickerBridge = {
   onSettingsChanged: (handler) => window.slidesApi.onAiSettingsChanged(handler),
   gskLoggedIn: () => window.slidesApi.aiGskStatus().then((s) => !!s?.loggedIn),
   openModelSettings: () => window.slidesApi.openAiModelSettings().catch(() => {}),
+}
+
+/** The panel's own product word per UI language — what a skill's `${APP}`
+ *  expands to. The same word the ribbon's Slides group uses, so a skill body
+ *  reads like the rest of the app's copy in that language. */
+const SLIDES_APP_NAME: Record<Lang, string> = {
+  zh: '幻灯片',
+  en: 'Slides',
+  ja: 'スライド',
+  ko: '슬라이드',
+  fr: 'Diapositives',
+  de: 'Folien',
+  es: 'Diapositivas',
+  th: 'สไลด์',
+  id: 'Slide',
+  ru: 'Слайды',
+  ar: 'شرائح',
+  pt: 'Slides',
+  it: 'Diapositive',
+  pl: 'Slajdy',
+  cs: 'Snímky',
+  nl: "Dia's",
+  ms: 'Slaid',
+  he: 'שקופיות',
+  hi: 'स्लाइड्स',
+  'zh-TW': '投影片',
+  vi: 'Trang chiếu',
+}
+
+/** Cap on the `${SELECTION}` a skill body receives: a skill parameter is
+ *  instructions, not a channel to ferry deck content past the tools. */
+const SKILL_SELECTION_MAX_CHARS = 500
+
+/**
+ * The selected elements' text on one slide, as the model may read it: every
+ * element goes through `textForModel`, so withheld spans reach a skill as
+ * their markers, never as words. Selecting a group selects its content, so
+ * the walk descends into children. '' when nothing selected carries text.
+ */
+function selectedTextForModel(
+  slide: RenderSlide | undefined,
+  selectedIds: readonly string[],
+): string {
+  if (!slide || selectedIds.length === 0) return ''
+  const wanted = new Set(selectedIds)
+  const texts: string[] = []
+  const pushText = (node: RenderNode): void => {
+    if (node.type === 'group') {
+      for (const child of (node as GroupRenderNode).children) pushText(child)
+      return
+    }
+    const text = textForModel(node).trim()
+    if (text) texts.push(text)
+  }
+  const visit = (nodes: readonly RenderNode[]): void => {
+    for (const node of nodes) {
+      if (wanted.has(node.sourceId) || (node.durableId != null && wanted.has(node.durableId)))
+        pushText(node)
+      else if (node.type === 'group') visit((node as GroupRenderNode).children)
+    }
+  }
+  visit(slide.nodes)
+  return texts.join('\n')
 }
 
 export function AiPanel({
@@ -1816,9 +1883,29 @@ export function AiPanel({
       })
   }
 
-  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
+  /**
+   * The attached skills' full text in front of the request; a skill that
+   * vanished is skipped. The bodies expand the standard context vars, read
+   * before the skill fetches so the canvas cannot move under them: the UI
+   * language, the panel's product word, the open deck's file name (an unsaved
+   * deck has none), and the selected elements' text on the current slide
+   * (withheld spans stay redacted, capped at 500 chars).
+   */
   const withSkillBodies = async (instruction: string, names: readonly string[]) => {
     if (names.length === 0) return instruction
+    const selection = selectedTextForModel(
+      slidesRef.current[currentRef.current],
+      selectedRef.current,
+    )
+    const vars = skillContextVars({
+      lang,
+      app: SLIDES_APP_NAME[lang],
+      fileName: currentFilePath?.split(/[\\/]/).pop(),
+      selection:
+        selection.length > SKILL_SELECTION_MAX_CHARS
+          ? `${selection.slice(0, SKILL_SELECTION_MAX_CHARS - 1)}…`
+          : selection,
+    })
     const bodies = await Promise.all(
       names.map(async (name) => {
         try {
@@ -1831,6 +1918,7 @@ export function AiPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      vars,
     )
   }
 
@@ -1840,6 +1928,21 @@ export function AiPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: input,
+    onAttachSkill: (name, { start, end }) => {
+      setInput(input.slice(0, start) + input.slice(end))
+      setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.setSelectionRange(start, start)
+      })
+    },
+  })
 
   /** One page of a queue submission — runWith's bookkeeping minus the composer and the user bubble */
   const runQueuePage = (instruction: string) =>
@@ -2522,6 +2625,7 @@ export function AiPanel({
           )}
           {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
           <div className="ai-input-box">
+            {slash.element}
             <AiQueueStrip
               items={msgQueue.queued}
               labels={AI_QUEUE_LABELS[lang]}
@@ -2611,6 +2715,7 @@ export function AiPanel({
                 setInput(e.target.value)
               }}
               onKeyDown={(e) => {
+                if (slash.onKeyDown(e)) return
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   if (aiSetupNeeded) return

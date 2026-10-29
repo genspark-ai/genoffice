@@ -31,6 +31,7 @@ export const th = {
   aiPartialAdopt: 'เก็บไว้',
   aiPartialDiscard: 'ทิ้ง',
   aiToolSetFm: 'อัปเดตคุณสมบัติเอกสาร',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'เลือกแล้ว {words} คำ',
   aiScopeSelectionTip: 'คำสั่งเขียนใหม่จะมีผลกับส่วนที่เลือกโดยค่าเริ่มต้น คลิกเพื่อดูตัวอย่าง',
   aiScopeClearTitle: 'ยกเลิกขอบเขตที่เลือก',

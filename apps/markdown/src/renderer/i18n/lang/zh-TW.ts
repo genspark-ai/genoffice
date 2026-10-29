@@ -31,6 +31,7 @@ export const zhTW = {
   aiPartialAdopt: '採用',
   aiPartialDiscard: '放棄',
   aiToolSetFm: '更新文件屬性',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: '已選中 {words} 字',
   aiScopeSelectionTip: '改寫類指令預設只作用於選中內容;點擊預覽',
   aiScopeClearTitle: '取消選中範圍',

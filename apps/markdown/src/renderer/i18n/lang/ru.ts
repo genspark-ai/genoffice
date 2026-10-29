@@ -32,6 +32,7 @@ export const ru = {
   aiPartialAdopt: 'Оставить',
   aiPartialDiscard: 'Отменить',
   aiToolSetFm: 'Обновление свойств документа',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Выделено: {words} слов',
   aiScopeSelectionTip:
     'Инструкции на переписывание по умолчанию применяются к выделению; нажмите для предпросмотра',

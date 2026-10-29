@@ -32,6 +32,7 @@ export const pl = {
   aiPartialAdopt: 'Zachowaj',
   aiPartialDiscard: 'Odrzuć',
   aiToolSetFm: 'Aktualizacja właściwości dokumentu',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Zaznaczono: {words} słów',
   aiScopeSelectionTip:
     'Polecenia przepisania domyślnie dotyczą tylko zaznaczenia; kliknij, aby zobaczyć podgląd',

@@ -28,6 +28,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -45,9 +46,11 @@ import {
   readSkillBody,
   recommendedSkills,
   removeSkill,
+  skillRawText,
   skillVersion,
   skillsRoot,
   usableSkills,
+  writeSkill,
 } from '../src/main/imported-skills'
 
 /** a scratch tree: <root>/save/skills/<name>/SKILL.md (ours) and <root>/src/<name>/… (to import) */
@@ -249,12 +252,70 @@ describe('importSkillZip', () => {
     cleanup()
   })
 
-  it('refuses a markdown file without skill frontmatter', () => {
+  it('imports a markdown file without frontmatter from its sanitized stem', () => {
     const { root, save, cleanup } = scaffold()
-    const md = join(root, 'notes.md')
-    writeFileSync(md, '# just notes\n')
-    expect(() => importSkillMd(md, save)).toThrow(/frontmatter/)
-    expect(existsSync(join(save, 'skills', 'notes'))).toBe(false)
+    const md = join(root, 'Trip Planner.md')
+    writeFileSync(md, 'Turn notes into a docx itinerary.\n\nStep one.\n')
+    const imported = importSkillMd(md, save)
+    expect(imported.name).toBe('trip-planner')
+    expect(imported.path).toBe(join(save, 'skills', 'trip-planner', 'SKILL.md'))
+    expect(imported.description).toBe('Turn notes into a docx itinerary.')
+    expect(readFileSync(imported.path, 'utf8')).toBe(
+      '---\nname: trip-planner\ndescription: Turn notes into a docx itinerary.\n---\n\nTurn notes into a docx itinerary.\n\nStep one.\n',
+    )
+    expect(readSkillBody(imported.path)).toBe('Turn notes into a docx itinerary.\n\nStep one.\n')
+    expect(() => importSkillMd(md, save)).toThrow(/already there/)
+    cleanup()
+  })
+
+  it('derives a description from a first line that carries markdown markers', () => {
+    const { root, save, cleanup } = scaffold()
+    writeFileSync(join(root, 'heading.md'), '# Build a **docx** report\n\nStep one.\n')
+    expect(importSkillMd(join(root, 'heading.md'), save).description).toBe('Build a docx report')
+    writeFileSync(join(root, 'listing.md'), '- Convert pdf to html\n')
+    expect(importSkillMd(join(root, 'listing.md'), save).description).toBe('Convert pdf to html')
+    cleanup()
+  })
+
+  it('imports a Cursor .mdc rule: description from its frontmatter, other keys kept', () => {
+    const { root, save, cleanup } = scaffold()
+    const mdc = join(root, 'ts-rules.mdc')
+    writeFileSync(
+      mdc,
+      '---\ndescription: Use type imports\nglobs: **/*.ts\nalwaysApply: false\n---\n\nUse `import type`.\n',
+    )
+    const imported = importSkillMd(mdc, save)
+    expect(imported.name).toBe('ts-rules')
+    expect(imported.description).toBe('Use type imports')
+    expect(readFileSync(imported.path, 'utf8')).toBe(
+      '---\nname: ts-rules\ndescription: Use type imports\nglobs: **/*.ts\nalwaysApply: false\n---\n\nUse `import type`.\n',
+    )
+    expect(readSkillBody(imported.path)).toBe('Use `import type`.\n')
+    cleanup()
+  })
+
+  it('imports a .mdc rule with no frontmatter like any plain note', () => {
+    const { root, save, cleanup } = scaffold()
+    const mdc = join(root, 'plain-rule.mdc')
+    writeFileSync(mdc, 'Prefer tables over images in a xlsx export.\n')
+    const imported = importSkillMd(mdc, save)
+    expect(imported.name).toBe('plain-rule')
+    expect(imported.description).toBe('Prefer tables over images in a xlsx export.')
+    cleanup()
+  })
+
+  it('falls back to the name as a description when the file says nothing', () => {
+    const { root, save, cleanup } = scaffold()
+    writeFileSync(join(root, 'silent.md'), '\n\n')
+    expect(importSkillMd(join(root, 'silent.md'), save).description).toBe('silent')
+    cleanup()
+  })
+
+  it('refuses a stem nothing usable can be derived from', () => {
+    const { root, save, cleanup } = scaffold()
+    writeFileSync(join(root, '...md'), 'words\n')
+    expect(() => importSkillMd(join(root, '...md'), save)).toThrow('cannot be used as a skill name')
+    expect(existsSync(join(save, 'skills'))).toBe(false)
     cleanup()
   })
 
@@ -356,6 +417,147 @@ describe('importSkillZip', () => {
     const file = join(root, 'not.zip')
     writeFileSync(file, 'plain text')
     await expect(importSkillZip(file, save)).rejects.toThrow('not a zip')
+    cleanup()
+  })
+})
+
+describe('writeSkill', () => {
+  it('creates a skill folder with the built SKILL.md and lists it', async () => {
+    const { save, cleanup } = scaffold()
+    const skill = writeSkill(save, 'meeting-notes', {
+      description: 'Turn notes into a docx report',
+      body: '1. Read the notes.\n2. Write the report.\n',
+    })
+    expect(skill.name).toBe('meeting-notes')
+    expect(skill.path).toBe(join(save, 'skills', 'meeting-notes', 'SKILL.md'))
+    expect(skill.description).toBe('Turn notes into a docx report')
+    expect(readFileSync(skill.path, 'utf8')).toBe(
+      '---\nname: meeting-notes\ndescription: Turn notes into a docx report\n---\n\n1. Read the notes.\n2. Write the report.\n',
+    )
+    expect(readSkillBody(skill.path)).toBe('1. Read the notes.\n2. Write the report.\n')
+    expect((await usableSkills(save)).map((s) => s.name)).toEqual(['meeting-notes'])
+    cleanup()
+  })
+
+  it('keeps a wrapped description on one frontmatter line', () => {
+    const { save, cleanup } = scaffold()
+    const skill = writeSkill(save, 'wrapped', {
+      description: 'Turn notes into\na docx report',
+      body: 'body',
+    })
+    expect(skill.description).toBe('Turn notes into a docx report')
+    expect(readFileSync(skill.path, 'utf8')).toContain(
+      'description: Turn notes into a docx report\n',
+    )
+    cleanup()
+  })
+
+  it('refuses to overwrite an existing skill without the flag, and leaves it alone', () => {
+    const { save, cleanup } = scaffold({ mine: SKILL('mine', 'Mine', 'mine wins') })
+    expect(() => writeSkill(save, 'mine', { description: 'Theirs', body: 'theirs' })).toThrow(
+      'already there',
+    )
+    expect(readSkillBody(join(save, 'skills', 'mine', 'SKILL.md'))).toBe('mine wins\n')
+    cleanup()
+  })
+
+  it('overwrites with the flag, keeping the folder’s other files', () => {
+    const { save, src, cleanup } = scaffold({}, { 'folder-skill': SKILL('x', 'A docx thing') })
+    importSkillDir(join(src, 'folder-skill'), save)
+    writeFileSync(join(save, 'skills', 'folder-skill', 'reference.md'), 'grid rules')
+    const skill = writeSkill(
+      save,
+      'folder-skill',
+      { description: 'New', body: 'new body' },
+      { allowOverwrite: true },
+    )
+    expect(readSkillBody(skill.path)).toBe('new body')
+    expect(existsSync(join(save, 'skills', 'folder-skill', 'reference.md'))).toBe(true)
+    expect(readdirSync(join(save, 'skills')).filter((n) => n.startsWith('.'))).toEqual([])
+    cleanup()
+  })
+
+  it('refuses names a created folder cannot carry', () => {
+    const { save, cleanup } = scaffold()
+    for (const bad of [
+      '',
+      'a/b',
+      'a\\b',
+      'with:colon',
+      'ends?',
+      '.hidden',
+      '..',
+      'ends.',
+      'ends ',
+      ' pad',
+    ]) {
+      expect(() => writeSkill(save, bad, { description: 'd', body: 'b' })).toThrow(
+        'cannot be used as a skill name',
+      )
+    }
+    expect(existsSync(join(save, 'skills'))).toBe(false)
+    cleanup()
+  })
+
+  it('requires a description and caps the size', () => {
+    const { save, cleanup } = scaffold()
+    expect(() => writeSkill(save, 'no-desc', { description: '  ', body: 'b' })).toThrow(
+      'a description is required',
+    )
+    expect(() =>
+      writeSkill(save, 'heavy', {
+        description: 'd',
+        body: Buffer.alloc(11 * 1024 * 1024, 97).toString(),
+      }),
+    ).toThrow('import cap')
+    expect(existsSync(join(save, 'skills'))).toBe(false)
+    cleanup()
+  })
+
+  it('leaves no scratch behind when the final rename fails', () => {
+    const { save, cleanup } = scaffold()
+    const dest = join(save, 'skills', 'fresh')
+    h.failRenameTo = dest
+    try {
+      expect(() => writeSkill(save, 'fresh', { description: 'd', body: 'b' })).toThrow('disk full')
+    } finally {
+      h.failRenameTo = ''
+    }
+    expect(readdirSync(join(save, 'skills'))).toEqual([])
+    cleanup()
+  })
+
+  it('restores the previous copy when an overwrite swap fails half-way', () => {
+    const { save, cleanup } = scaffold({ mine: SKILL('mine', 'Mine', 'mine wins') })
+    const dest = join(save, 'skills', 'mine')
+    h.failRenameTo = dest
+    try {
+      expect(() =>
+        writeSkill(save, 'mine', { description: 'New', body: 'theirs' }, { allowOverwrite: true }),
+      ).toThrow('disk full')
+    } finally {
+      h.failRenameTo = ''
+    }
+    expect(readSkillBody(join(dest, 'SKILL.md'))).toBe('mine wins\n')
+    expect(readdirSync(join(save, 'skills')).filter((n) => n.startsWith('.'))).toEqual([])
+    cleanup()
+  })
+})
+
+describe('skillRawText', () => {
+  it('returns the whole SKILL.md of a listed skill, frontmatter included', async () => {
+    const { save, cleanup } = scaffold({ mine: SKILL('mine', 'A docx thing', 'Step one.') })
+    expect(await skillRawText(save, 'mine')).toBe(SKILL('mine', 'A docx thing', 'Step one.'))
+    cleanup()
+  })
+
+  it('refuses names the listing never showed', async () => {
+    const { save, root, cleanup } = scaffold({ mine: SKILL('mine', 'A docx thing') })
+    writeFileSync(join(root, 'secret.md'), 'not a skill')
+    for (const bad of ['nope', '../secret', 'a/b', '.hidden', '', 'mine.md']) {
+      await expect(skillRawText(save, bad)).rejects.toThrow('unknown skill')
+    }
+    expect(readFileSync(join(root, 'secret.md'), 'utf8')).toBe('not a skill')
     cleanup()
   })
 })

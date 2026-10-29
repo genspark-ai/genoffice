@@ -116,4 +116,5 @@ export const es = {
   aiScopeRangeTip:
     'La IA interpreta «esta columna / estas filas / la parte seleccionada» como este rango, y al enviar queda fijo durante toda la ejecución',
   aiScopeClearTitle: 'Quitar el ámbito del rango y usar toda la hoja',
+  aiAppName: 'Hojas de cálculo',
 } satisfies Record<keyof typeof zh, string>

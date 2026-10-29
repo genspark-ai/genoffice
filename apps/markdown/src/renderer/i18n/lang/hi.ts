@@ -31,6 +31,7 @@ export const hi = {
   aiPartialAdopt: 'रखें',
   aiPartialDiscard: 'छोड़ें',
   aiToolSetFm: 'दस्तावेज़ गुण अपडेट करें',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'चयनित: {words} शब्द',
   aiScopeSelectionTip:
     'फिर से लिखने के निर्देश डिफ़ॉल्ट रूप से केवल चयन पर लागू होते हैं; पूर्वावलोकन के लिए क्लिक करें',

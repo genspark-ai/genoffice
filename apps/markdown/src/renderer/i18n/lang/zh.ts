@@ -32,6 +32,7 @@ export const zh = {
   aiPartialAdopt: '采用',
   aiPartialDiscard: '放弃',
   aiToolSetFm: '更新文档属性',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: '已选中 {words} 字',
   aiScopeSelectionTip: '改写类指令默认只作用于选中内容;点击预览',
   aiScopeClearTitle: '取消选中范围',

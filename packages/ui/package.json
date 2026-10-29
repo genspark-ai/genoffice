@@ -23,7 +23,9 @@
     "./image-viewer.css": "./src/image-viewer.css",
     "./fonts/*": "./src/fonts/*",
     "./ai-model-picker.css": "./src/ai-model-picker.css",
-    "./ai-skills.css": "./src/ai-skills.css"
+    "./ai-skills.css": "./src/ai-skills.css",
+    "./ai-slash.css": "./src/ai-slash.css",
+    "./scrollbar.css": "./src/scrollbar.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

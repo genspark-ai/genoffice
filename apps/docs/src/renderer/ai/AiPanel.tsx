@@ -14,14 +14,17 @@ import {
   copyMarkdownRich,
   type AiTokenUsageView,
   useAiPanelPrefs,
+  useAiSlash,
   useChatRunQueue,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyDown } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import {
   AgentLoop,
   composeSkills,
+  skillContextVars,
   withAttachedSkills,
   createKnowledgeBaseSkill,
   streamText,
@@ -156,6 +159,13 @@ interface ChatEntry {
 
 /** longest selection excerpt echoed on a user bubble */
 const SCOPE_TEXT_MAX = 200
+
+/** longest selection a skill's ${SELECTION} expands to (the model gets more than the chip echo) */
+const SKILL_SELECTION_MAX = 500
+
+/** the product the panel lives in — the name the window title and the agent system
+ *  prompt carry; a brand string, identical in every locale */
+const APP_NAME = 'GenOffice Docs'
 
 /** clickable starter prompts for the empty state (fill the input, do not send) —
  * blank documents get generation starters, documents with content get edit starters */
@@ -342,6 +352,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
   filePath?: string | null
+  /** the open document's display name (what the titlebar shows); feeds ${FILE_NAME} for attached skills */
+  fileName?: string | null
   /** queued selection-scoped edits (owned by App, which also owns the anchors) */
   editQueue?: DocsEditQueueItem[]
   onQueueEditInstruction?: (qid: string, instruction: string) => void
@@ -383,6 +395,7 @@ export function AiPanel({
   onExpand,
   onCollapse,
   filePath,
+  fileName,
   editQueue = [],
   onQueueEditInstruction,
   onQueueRemove,
@@ -1097,6 +1110,18 @@ export function AiPanel({
     }
   }
 
+  /** the selection a skill's ${SELECTION} expands to — same redaction as the scope
+   *  quote, but the model's copy is capped at 500 chars, not the chip echo's 200 */
+  const skillSelectionText = (): string | undefined => {
+    const { from, to, empty } = editor.state.selection
+    if (empty) return undefined
+    const text = redactTextBetween(editor.getJSON() as RedactableNode, from, to, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!text) return undefined
+    return text.length > SKILL_SELECTION_MAX ? `${text.slice(0, SKILL_SELECTION_MAX)}…` : text
+  }
+
   // the frozen-range highlight ends with the run, or as soon as the editor is focused again
   useEffect(() => {
     if (!busy) setInactiveSelectionShown(editor, false)
@@ -1197,6 +1222,9 @@ export function AiPanel({
           ? selectionScopeQuote()
           : undefined
     lastScopeRef.current = scope
+    // ${SELECTION} freezes with the scope quote: a skill must see the range the user
+    // targeted at send, not wherever the caret sits once the waits settle
+    const skillSelection = sentSkills.length > 0 ? skillSelectionText() : undefined
     // the popover input / composer own the DOM selection now: keep the targeted range visible until the run ends
     if (scope) setInactiveSelectionShown(editor, true)
     instructionRef.current = instruction
@@ -1258,12 +1286,18 @@ export function AiPanel({
         setDocImagePlan(plan)
         const merged =
           docImages && docImages.images.length > 0 ? [...images, ...docImages.images] : images
-        return loop.run(await withSkillBodies(instruction, sentSkills), merged)
+        return loop.run(await withSkillBodies(instruction, sentSkills, skillSelection), merged)
       })
   }
 
-  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
-  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+  /** the attached skills' full text in front of the request; a skill that vanished is skipped.
+   *  The standard context vars ride along: language and product from the panel, the file
+   *  name from the open document, and the selection frozen at send. */
+  const withSkillBodies = async (
+    instruction: string,
+    names: readonly string[],
+    selection: string | undefined,
+  ) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
       names.map(async (name) => {
@@ -1277,6 +1311,7 @@ export function AiPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      skillContextVars({ lang, app: APP_NAME, fileName: fileName ?? undefined, selection }),
     )
   }
 
@@ -1286,6 +1321,41 @@ export function AiPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: input,
+    onAttachSkill: (name, { start, end }) => {
+      setInput(input.slice(0, start) + input.slice(end))
+      setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.setSelectionRange(start, start)
+      })
+    },
+  })
+  // AiComposer owns the textarea's React onKeyDown (Enter sends, Esc stops) in
+  // @genoffice/ui, so the palette hooks the node itself: a keydown listener on
+  // the textarea runs before React's root delegation, and a key the palette
+  // consumes stops there so the composer never sees it.
+  const slashKeyDownRef = useRef(slash.onKeyDown)
+  slashKeyDownRef.current = slash.onKeyDown
+  useEffect(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    const onKey = (e: KeyboardEvent) => {
+      const wrapped = {
+        key: e.key,
+        nativeEvent: e,
+        preventDefault: () => e.preventDefault(),
+      } as unknown as ReactKeyDown<HTMLTextAreaElement>
+      if (slashKeyDownRef.current(wrapped)) e.stopPropagation()
+    }
+    ta.addEventListener('keydown', onKey)
+    return () => ta.removeEventListener('keydown', onKey)
+  }, [inputRef])
 
   const cancel = () => {
     msgQueue.hold()
@@ -1977,6 +2047,7 @@ export function AiPanel({
             </>
           }
         />
+        {slash.element}
       </div>
     </aside>
   )

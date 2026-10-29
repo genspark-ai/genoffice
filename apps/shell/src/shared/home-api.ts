@@ -23,6 +23,7 @@ import type {
   KbSearchHit,
 } from '@genoffice/agent-core'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
+import type { FoundSkill, ForeignSkillCandidate } from './found-skill'
 
 export interface AttachmentAddResult {
   accepted: AttachmentInfo[]
@@ -279,6 +280,19 @@ export interface HomeApi {
   skillsList(): Promise<UserSkillEntry[]>
   /** one installed skill's body, by name */
   skillText(name: string): Promise<string>
+  /** the raw SKILL.md of one listed skill (frontmatter included), for the editor */
+  skillsRawText(name: string): Promise<string>
+  /** write a skill from the settings editor; `allowOverwrite` replaces an existing one */
+  skillsSave(
+    name: string,
+    description: string,
+    body: string,
+    allowOverwrite?: boolean,
+  ): Promise<FoundSkill>
+  /** prompt files other agent products keep on this machine, offered for import */
+  skillsForeignList(): Promise<ForeignSkillCandidate[]>
+  /** import one scanner-vouched foreign file as a skill */
+  skillsImportForeign(sourcePath: string): Promise<FoundSkill>
   /** open Settings › Integrations (the skills list) */
   openSkillsSettings(): Promise<void>
   /** full-text search over the corpus */

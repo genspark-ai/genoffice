@@ -36,7 +36,7 @@ import type {
   IntegrationsStatus,
   SkillInstallState,
 } from '../shared/integrations-api'
-import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
+import type { FoundSkill, RecommendedSkill, ForeignSkillCandidate } from '../shared/found-skill'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 
@@ -176,6 +176,23 @@ const homeApi: HomeApi = {
   },
   async skillText(name) {
     return ipcRenderer.invoke('ai:skill-text', name)
+  },
+  async skillsRawText(name) {
+    return ipcRenderer.invoke('ai:skill-raw-text', name)
+  },
+  async skillsSave(name, description, body, allowOverwrite) {
+    return (await ipcRenderer.invoke('ai:skill-save', {
+      name,
+      description,
+      body,
+      allowOverwrite,
+    })) as FoundSkill
+  },
+  async skillsForeignList() {
+    return (await ipcRenderer.invoke('ai:foreign-skills')) as ForeignSkillCandidate[]
+  },
+  async skillsImportForeign(sourcePath) {
+    return (await ipcRenderer.invoke('ai:foreign-import', sourcePath)) as FoundSkill
   },
   async openSkillsSettings() {
     await ipcRenderer.invoke('ai:open-skills-settings')

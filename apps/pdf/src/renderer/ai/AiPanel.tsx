@@ -10,8 +10,17 @@ import {
   useAiPanelPrefs,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop, withAttachedSkills } from '@genoffice/agent-core'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react'
+import {
+  AgentLoop,
+  skillContextVars,
+  withAttachedSkills,
+  type SkillVars,
+} from '@genoffice/agent-core'
 import {
   activeProvider,
   endpointSupportsVision,
@@ -29,6 +38,7 @@ import {
   AiUsageChip,
   addTokenUsage,
   copyMarkdownRich,
+  useAiSlash,
   useChatRunQueue,
   type AiScopeQuoteData,
   type AiTokenUsageView,
@@ -106,6 +116,10 @@ interface ChatEntry {
 /** longest selection excerpt echoed on a user bubble */
 const SCOPE_TEXT_MAX = 200
 
+/** longest selection text offered to a skill body's ${SELECTION}; the core
+ *  leaves the cap to the caller, and 500 chars is plenty for a model hint */
+const SKILL_SELECTION_MAX = 500
+
 type Phase = 'thinking' | 'replying' | 'working'
 
 interface PendingConfirm {
@@ -148,6 +162,8 @@ export function AiPanel({
   showStreamingRef.current = showStreaming
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
+  /** the composer textarea; the slash palette anchors above it */
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const [attachedSkills, setAttachedSkills] = useState<string[]>([])
   const attachedSkillsRef = useRef(attachedSkills)
   attachedSkillsRef.current = attachedSkills
@@ -646,6 +662,9 @@ export function AiPanel({
     runUsageRef.current = undefined
     // skills ride with this one message only: the chips clear like a draft does
     const sentSkills = attachSkills ? attachedSkillsRef.current : []
+    // context vars freeze at send like the scope quote does — a selection made
+    // while the skill bodies load must not leak into the run that already left
+    const sentVars = sentSkills.length > 0 ? skillVars() : undefined
     if (sentSkills.length > 0) setAttachedSkills([])
     setChat((prev) => [
       ...prev,
@@ -671,7 +690,7 @@ export function AiPanel({
         // Vision gate: text-only endpoints never collect (zero behavior change)
         const plan = settings && endpointSupportsVision(settings) ? await collectVisionPlan() : null
         visionAttachmentRef.current = plan ? pageImageAnnotation(plan) : null
-        await loop.run(await withSkillBodies(instruction, sentSkills), plan?.images)
+        await loop.run(await withSkillBodies(instruction, sentSkills, sentVars), plan?.images)
       } catch (err) {
         patchLast({
           streaming: false,
@@ -688,8 +707,33 @@ export function AiPanel({
     loopRef.current?.cancel()
   }
 
+  /** Selection text for a skill body's ${SELECTION}: the mouseup-cached
+   *  selection, whitespace-collapsed and capped where the caller must. */
+  const skillSelection = (): string | undefined => {
+    const sel = apiRef.current.selection()?.text.replace(/\s+/g, ' ').trim()
+    if (!sel) return undefined
+    return sel.length > SKILL_SELECTION_MAX ? `${sel.slice(0, SKILL_SELECTION_MAX)}…` : sel
+  }
+
+  /** The standard context variables offered to attached skill bodies, sourced
+   *  at send time from the same surface the tools read: the open file's name
+   *  (omitted when no document is open, never an empty substitution), the
+   *  cached selection, and the UI language. The product keeps the name "PDF"
+   *  in every language, so it needs no translation. */
+  const skillVars = (): SkillVars =>
+    skillContextVars({
+      lang: langRef.current,
+      app: 'PDF',
+      fileName: apiRef.current.fileName() || undefined,
+      selection: skillSelection(),
+    })
+
   /** the attached skills' full text in front of the request; a skill that vanished is skipped */
-  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+  const withSkillBodies = async (
+    instruction: string,
+    names: readonly string[],
+    vars?: SkillVars,
+  ) => {
     if (names.length === 0) return instruction
     const bodies = await Promise.all(
       names.map(async (name) => {
@@ -703,6 +747,7 @@ export function AiPanel({
     return withAttachedSkills(
       instruction,
       bodies.filter((b): b is { name: string; body: string } => b !== null),
+      vars,
     )
   }
 
@@ -712,6 +757,24 @@ export function AiPanel({
     setAttachedSkills((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
+
+  /** the palette's pick: strike the `/query` token, keep the caret where it
+   *  stood, and attach the skill (a pick must never detach an attached one) */
+  const attachSlashSkill = (name: string, range: { start: number; end: number }): void => {
+    setPrompt((prev) => prev.slice(0, range.start) + prev.slice(range.end))
+    setAttachedSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(range.start, range.start)
+    })
+  }
+  const slash = useAiSlash({
+    lang,
+    listSkills: listSkillsForMenu,
+    inputRef,
+    value: prompt,
+    onAttachSkill: attachSlashSkill,
+  })
 
   /** Enter while a reply runs: the draft joins the queue above the composer */
   const enqueueDraft = () => {
@@ -1018,7 +1081,16 @@ export function AiPanel({
         {busy && <AiTypingIndicator label={typingLabel} />}
       </div>
 
-      <div className="ai-composer">
+      <div
+        className="ai-composer"
+        onKeyDownCapture={(e: ReactKeyboardEvent) => {
+          // the shared AiComposer owns the textarea's keydown: the palette
+          // runs first here in capture, and a key it consumed is stopped
+          // before the composer's Enter-send/Escape-stop can see it
+          if (slash.onKeyDown(e as ReactKeyboardEvent<HTMLTextAreaElement>)) e.stopPropagation()
+        }}
+      >
+        {slash.element}
         <AiComposer
           queueStrip={
             <AiQueueStrip
@@ -1035,6 +1107,7 @@ export function AiPanel({
           onQueue={enqueueDraft}
           queuePlaceholder={AI_QUEUE_LABELS[lang].queuePlaceholder}
           value={prompt}
+          textareaRef={inputRef}
           busy={busy}
           header={
             (hasScopeSelection || attachedSkills.length > 0) && (

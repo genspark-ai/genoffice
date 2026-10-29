@@ -91,6 +91,35 @@ export function aiLangDirective(lang: Lang): string {
   return AI_LANG_DIRECTIVES[lang]
 }
 
+/** The product this panel lives in, in the user's language (the APP skill variable). Same wording as the shell's app titles. */
+const AI_APP_NAMES: Record<Lang, string> = {
+  zh: 'HTML 编辑器',
+  'zh-TW': 'HTML 編輯器',
+  en: 'The HTML editor',
+  it: "L'editor HTML",
+  pl: 'Edytor HTML',
+  cs: 'Editor HTML',
+  nl: 'De HTML-editor',
+  ms: 'Editor HTML',
+  ja: 'HTML エディター',
+  ko: 'HTML 편집기',
+  fr: 'L’éditeur HTML',
+  de: 'Der HTML-Editor',
+  es: 'El editor HTML',
+  th: 'ตัวแก้ไข HTML',
+  id: 'Editor HTML',
+  ru: 'Редактор HTML',
+  ar: 'محرّر HTML',
+  pt: 'O editor HTML',
+  he: 'עורך ה-HTML',
+  hi: 'HTML एडिटर',
+  vi: 'Trình soạn thảo HTML',
+}
+
+export function aiAppName(lang: Lang): string {
+  return AI_APP_NAMES[lang]
+}
+
 const LocaleContext = createContext<{ lang: Lang; dictsRev: number }>({
   lang: 'zh',
   dictsRev: 0,

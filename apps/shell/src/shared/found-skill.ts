@@ -29,3 +29,24 @@ export interface RecommendedSkill extends FoundSkill {
   /** missing: not installed; installed: same version in our folder; outdated: ours is older */
   state: 'missing' | 'installed' | 'outdated'
 }
+
+/** the products whose command/skill files the foreign-skills scanner knows */
+export type ForeignSkillSource = 'claude' | 'codex' | 'cursor' | 'windsurf' | 'opencode' | 'pi'
+
+/**
+ * A prompt file another agent product keeps on this machine — a Claude Code
+ * command, a Codex prompt, a Cursor rule — offered for import as a GenOffice
+ * skill. Name and description are derived (frontmatter first, filename and
+ * first prose line as fallback); nothing here is executable.
+ */
+export interface ForeignSkillCandidate {
+  name: string
+  description: string
+  source: ForeignSkillSource
+  /** absolute path of the file the scanner read; the importer re-derives the
+   *  list and only imports paths it vouched for, so this never crosses the
+   *  IPC boundary as authority */
+  sourcePath: string
+  /** a skill with this name already sits in our folder */
+  alreadyImported: boolean
+}

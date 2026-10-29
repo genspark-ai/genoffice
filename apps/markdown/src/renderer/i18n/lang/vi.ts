@@ -32,6 +32,7 @@ export const vi = {
   aiPartialAdopt: 'Giữ lại',
   aiPartialDiscard: 'Hủy bỏ',
   aiToolSetFm: 'Cập nhật thuộc tính tài liệu',
+  aiSkillApp: 'Markdown',
   aiScopeSelection: 'Đã chọn: {words} từ',
   aiScopeSelectionTip:
     'Các yêu cầu viết lại mặc định sẽ áp dụng cho phần đã chọn; nhấp để xem trước',
