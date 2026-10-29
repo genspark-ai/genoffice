@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { platform } from 'node:process'
 import { describe, expect, it } from 'vitest'
 import { uniqueGeneratedPdfPath } from '../src/main/generated-output'
 

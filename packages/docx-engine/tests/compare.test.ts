@@ -67,9 +67,7 @@ describe('document comparison (tracked changes)', () => {
     // Compare marks the paragraph mark instead (w:pPr/w:rPr)
     expect(xml).not.toMatch(/<w:ins\b[^>]*>\s*<w:p[\s/>]/)
     expect(xml).toContain('<w:pPr><w:rPr><w:ins ')
-    expect(xml).toMatch(
-      new RegExp(`<w:ins w:id="\\d+" w:author="${AUTHOR}" w:date="${DATE}"/>`),
-    )
+    expect(xml).toMatch(new RegExp(`<w:ins w:id="\\d+" w:author="${AUTHOR}" w:date="${DATE}"/>`))
     // the text runs still carry their own insertion
     expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:r>\s*<w:t(?:\s[^>]*)?>A brand new paragraph/)
     expect(summary.insertedParagraphs).toBe(1)
@@ -109,7 +107,9 @@ describe('document comparison (tracked changes)', () => {
       const out = applyTrackedChangesXml(await xml, mode)
       expect(out.remaining).toBe(0)
       expect(out.applied).toBeGreaterThan(0)
-      const text = [...out.xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('')
+      const text = [...out.xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
+        .map((m) => m[1])
+        .join('')
       expect(text).toContain(expected[0])
       expect(text).toContain(expected[1])
       expect(text).not.toContain(mode === 'accept' ? 'brown' : 'red')
