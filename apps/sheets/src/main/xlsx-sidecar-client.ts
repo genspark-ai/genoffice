@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 
+import type { ExternalLinksUpdateResult } from '../shared/desktop-api'
+
 const PROTOCOL_VERSION = 1
 const REQUEST_TIMEOUT_MS = 30_000
 // Archive commands stream whole workbooks; large files need more headroom.
@@ -185,9 +187,16 @@ export class XlsxSidecarClient {
   /** External links (genoffice#2109): list the workbook's `[n]` links with
    * their resolved sources and, for each external-formula cell, the freshly
    * computed value when the source is reachable — the stored formula keeps
-   * its indexed spelling, so the caller updates only the cached `<v>`. */
-  async updateExternalLinks(input: { readonly path: string }): Promise<unknown> {
-    return this.request({ command: 'update_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+   * its indexed spelling, so the caller updates only the cached `<v>`. Cell
+   * `row`/`column` are 0-based in the report (IronCalc, which computes the
+   * values, addresses the same cells 1-based). */
+  async updateExternalLinks(input: {
+    readonly path: string
+  }): Promise<ExternalLinksUpdateResult> {
+    return this.request<ExternalLinksUpdateResult>(
+      { command: 'update_external_links', ...input },
+      ARCHIVE_TIMEOUT_MS,
+    )
   }
 
   /**
@@ -237,10 +246,10 @@ export class XlsxSidecarClient {
     )
   }
 
-  private request(
+  private request<T = unknown>(
     command: Readonly<Record<string, unknown>>,
     timeoutMs: number = REQUEST_TIMEOUT_MS,
-  ): Promise<unknown> {
+  ): Promise<T> {
     const child = this.ensureStarted()
     const requestId = crypto.randomUUID()
     const payload = JSON.stringify({
@@ -262,7 +271,9 @@ export class XlsxSidecarClient {
         reject(new Error('XLSX sidecar request timed out.'))
       }, timeoutMs)
       this.pending.set(requestId, {
-        resolve,
+        // the queue erases T: the reply arrives as unknown and typed callers
+        // assert through the request<T> return type
+        resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
         command: String(commandName),
