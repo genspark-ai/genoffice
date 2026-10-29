@@ -5644,6 +5644,37 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
+/* round rotation handle of a selected shape (PowerPoint's turn grip above the
+   box): dragging it turns the shape about its centre; Shift snaps to 15° */
+.box-rotate-handle {
+  position: absolute;
+  z-index: 4;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--word-blue);
+  border-radius: 50%;
+  background: var(--docs-paper);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-protected-textboxes:hover > .box-rotate-handle,
+.ProseMirror-focused .doc-protected-textboxes.ProseMirror-selectednode > .box-rotate-handle,
+.doc-protected-chart:hover > .box-rotate-handle,
+.ProseMirror-focused .doc-protected-chart.ProseMirror-selectednode > .box-rotate-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-content-editing > .box-rotate-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Native ProseMirror tables: no vertical gap of their own (Word) */
 .doc-page > .doc-table {
   margin: 0;
@@ -6668,6 +6699,51 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin: 2px auto;
 }
 
+/* Floating run pictures reach into the paragraphs after their anchor, which
+   are positioned (lead shift) and paint over them: lift the picture so clicks
+   select, move and resize it instead of landing in the text, and an
+   in-front-of-text picture covers that text like Word. :where() keeps the
+   wrap-obstacle overlay rule below in charge of the position */
+.doc-page
+  :where(
+    img.doc-inline-img--wrap-square-left,
+    img.doc-inline-img--wrap-square-right,
+    img.doc-inline-img--wrap-tight-left,
+    img.doc-inline-img--wrap-tight-right,
+    img.doc-inline-img--wrap-through-left,
+    img.doc-inline-img--wrap-through-right,
+    img.doc-inline-img--wrap-topBottom
+  ) {
+  position: relative;
+  z-index: 1;
+}
+
+.doc-page :where(.doc-inline-img-anchor > img:not(.doc-inline-img--behind)) {
+  z-index: 1;
+}
+
+/* the selected floating run picture: its frame and handles are an overlay
+   (floatingRunPicturePlugin); the picture keeps its own box */
+.ProseMirror-focused img.doc-inline-img.ProseMirror-selectednode,
+.ProseMirror-focused .doc-inline-img-anchor.ProseMirror-selectednode > img {
+  outline: 2px solid var(--word-blue);
+}
+
+.doc-run-pic-frame {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.doc-run-pic-frame > .img-resize-handle {
+  display: block;
+  pointer-events: auto;
+}
+
+body.docs-run-pic-dragging .doc-run-pic-frame {
+  display: none;
+}
+
 /* wrap-obstacle mode (syncWrapObstacles): the paragraph's lines take the
    measured gap through its padding, while its own side-wrapped run pictures
    stay at their anchor offsets as overlays (Word allowOverlap) instead of
@@ -7667,6 +7743,22 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-protected.img-wrap-topBottom {
   text-align: center;
+}
+
+/* Paragraphs are positioned (lead shift) and so paint over floats: lift a
+   side-wrapped picture above the full-width boxes of the paragraphs wrapping
+   around it, or clicks on the picture land in the text and it can no longer
+   be selected, moved or resized (same fix as floating tables below) */
+.doc-page
+  .doc-protected[data-doc-protected='image']:is(
+    .img-wrap-square-left,
+    .img-wrap-square-right,
+    .img-wrap-tight-left,
+    .img-wrap-tight-right,
+    .img-wrap-through-left,
+    .img-wrap-through-right
+  ) {
+  z-index: 1;
 }
 
 /* floating tables (w:tblpPr): text flows around the free side. Paragraphs are

@@ -297,3 +297,164 @@ describe('print and PDF workbook readiness coordination', () => {
     expect(exportPdfMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('headless export (outPath): every sheet, formulas settled', () => {
+  let messages: string[] = []
+  let exportPdfMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.mocked(preloadEntireWorkbook).mockReset()
+    setModuleLang('en')
+    messages = []
+    exportPdfMock = vi.fn().mockResolvedValue({ canceled: false, path: 'D:/book.pdf' })
+    vi.stubGlobal('window', {
+      desktopApi: {
+        printWorkbook: vi.fn().mockResolvedValue({ ok: true }),
+        exportPdf: exportPdfMock,
+      },
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** a worksheet mock whose identity answers through `id`; layout reads the same values as the old mock */
+  function mockSheet(id: string, name: string, hidden = false) {
+    return {
+      getSheetId: () => id,
+      getSheetName: () => name,
+      getLastRow: () => 1,
+      getLastColumn: () => 1,
+      getRowHeight: () => 20,
+      getColumnWidth: () => 100,
+      getMergedRanges: () => [],
+      getRange: () => ({
+        getValues: () => [['A1']],
+        getDisplayValues: () => [['A1']],
+        getCellStyleData: () => null,
+      }),
+      getMaxRows: () => 10,
+      getMaxColumns: () => 10,
+      isSheetHidden: () => hidden,
+      activate: vi.fn(),
+    }
+  }
+
+  function headlessContext(sheetCells: Record<string, unknown> = {}) {
+    const sheet1 = mockSheet('sheet-1', 'Data')
+    const sheet2 = mockSheet('sheet-2', 'Charts')
+    const hidden = mockSheet('sheet-3', 'Hidden', true)
+    let snapshot: unknown = {
+      sheets: {
+        'sheet-1': { name: 'Data', cellData: { 0: { 0: sheetCells } } },
+        'sheet-2': { name: 'Charts', cellData: {} },
+      },
+    }
+    const calculate = vi.fn()
+    let calculationEnd: ((state: number) => void) | null = null
+    const workbook = {
+      getActiveSheet: () => sheet1,
+      getActiveRange: () => null,
+      getSheets: () => [sheet1, sheet2, hidden],
+      getSheetBySheetId: (id: string) =>
+        id === 'sheet-1' ? sheet1 : id === 'sheet-2' ? sheet2 : hidden,
+      getSnapshot: () => snapshot,
+    }
+    const runtime = {
+      univerAPI: {
+        getActiveWorkbook: () => workbook,
+        getFormula: () => ({
+          executeCalculation: calculate,
+          calculationEnd: (cb: (state: number) => void) => {
+            calculationEnd = cb
+            return { dispose: () => undefined }
+          },
+        }),
+      },
+    } as unknown as UniverRuntime
+    const state = {
+      file: {
+        name: 'book.xlsx',
+        sessionId: 'session-123',
+        sheets: [
+          { id: 'sheet-1', name: 'Data', rowCount: 10, columnCount: 10 },
+          { id: 'sheet-2', name: 'Charts', rowCount: 10, columnCount: 10 },
+          { id: 'sheet-3', name: 'Hidden', rowCount: 10, columnCount: 10 },
+        ],
+        visuals: [],
+      },
+      flags: { preloadComplete: true, preloadRunning: false },
+      editJournal: createEditJournal(),
+      sheetFilePageSetups: new Map(),
+      sheetPageBreaks: new Map(),
+    } as unknown as LazyWorkbookState
+    return {
+      ctx: {
+        univerRef: { current: runtime },
+        lazyWorkbookRef: { current: state },
+        setMessage: (message: string) => messages.push(message),
+        setPendingEdits: vi.fn(),
+        requestVisualInstall: vi.fn(),
+        runOps: () => Promise.reject(new Error('not used')),
+      } as PageLayoutContext,
+      sheet1,
+      sheet2,
+      calculate,
+      formulasComputed: () => {
+        snapshot = {
+          sheets: {
+            'sheet-1': { name: 'Data', cellData: { 0: { 0: { ...sheetCells, v: 42 } } } },
+            'sheet-2': { name: 'Charts', cellData: {} },
+          },
+        }
+      },
+      fireCalculationEnd: () => calculationEnd?.(1),
+    }
+  }
+
+  it('prints every visible sheet, each activated for its visuals, and restores the active one', async () => {
+    const h = headlessContext()
+    expect(await handleExportPdf(h.ctx, 'D:/book.pdf')).toBe(true)
+    const request = exportPdfMock.mock.calls[0]?.[0]
+    expect(request.fileName).toBe('book.pdf')
+    // one page block per sheet: the hidden third sheet is not in the file
+    const pages = request.html.match(/<div class="page /g) ?? []
+    expect(pages).toHaveLength(2)
+    // the non-active sheet was activated before its layout; the active one
+    // is re-activated once at the end (the restore), never inside the loop
+    expect(h.sheet2.activate).toHaveBeenCalledTimes(1)
+    expect(h.sheet1.activate).toHaveBeenCalledTimes(1)
+    expect(messages).toContain('Exported D:/book.pdf.')
+  })
+
+  it('the ribbon export still prints the active sheet only', async () => {
+    const h = headlessContext()
+    expect(await handleExportPdf(h.ctx)).toBe(true)
+    const request = exportPdfMock.mock.calls[0]?.[0]
+    expect(request.html.match(/<div class="page /g) ?? []).toHaveLength(1)
+    expect(h.calculate).not.toHaveBeenCalled()
+  })
+
+  it('forces a calculation pass and waits for the values before printing', async () => {
+    const h = headlessContext({ f: '=B2*C2' })
+    const pdf = handleExportPdf(h.ctx, 'D:/book.pdf')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(h.calculate).toHaveBeenCalled()
+    // the engine finishes: values land, calculationEnd fires
+    h.formulasComputed()
+    h.fireCalculationEnd()
+    expect(await pdf).toBe(true)
+    expect(exportPdfMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a formula engine that never settles still exports after the bound', async () => {
+    vi.useFakeTimers()
+    const h = headlessContext({ f: '=B2*C2' })
+    const pdf = handleExportPdf(h.ctx, 'D:/book.pdf')
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await pdf).toBe(true)
+    expect(h.calculate).toHaveBeenCalled()
+    expect(exportPdfMock).toHaveBeenCalledTimes(1)
+  })
+})

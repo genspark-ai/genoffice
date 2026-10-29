@@ -1510,6 +1510,11 @@ export const DocInlineImage = Node.create({
       } else if (wrap.endsWith('-left')) {
         margin.left = pageX ? `calc(${px(tx)}${pageX})` : px(tx)
         styles.push('max-width:none')
+      } else if (wrap === 'topBottom') {
+        // an explicit X leaves the centred slot, like the block-picture path
+        margin.left = pageX ? `calc(${px(tx)}${pageX})` : px(tx)
+        margin.right = 'auto'
+        styles.push('max-width:none')
       }
     }
     let sliverGuard: string | null = null
@@ -1566,6 +1571,8 @@ export const DocInlineImage = Node.create({
           attrs['data-cell-lift'] = '1'
         }
       }
+      // a topBottom band starts its offset below the anchor line (it cannot rise above it)
+      if (wrap === 'topBottom' && ty > 0) margin.top = px(ty + qt + bandGap)
     }
     // a page-relative Y above the body top lifts the float there (Word draws
     // the picture at its page position; the anchor line stays below the band)
@@ -1614,7 +1621,7 @@ export const DocInlineImage = Node.create({
     }
   },
   addProseMirrorPlugins() {
-    return [inlinePictureResizePlugin()]
+    return [inlinePictureResizePlugin(), floatingRunPicturePlugin()]
   },
 })
 
@@ -5025,7 +5032,7 @@ export const DocProtected = Node.create({
     }
   },
   addProseMirrorPlugins() {
-    return [imageResizePlugin(), floatingObjectDragPlugin()]
+    return [imageResizePlugin(), shapeRotatePlugin(), floatingObjectDragPlugin()]
   },
 })
 
@@ -5409,9 +5416,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
       } else children.unshift(['div', { class: 'doc-anchor-strut' }, ['br']])
     }
     if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
-    // corner resize handle; multi-box nodes keep per-box autogrow semantics only
+    // corner resize + round rotation handles; multi-box nodes keep per-box
+    // autogrow semantics only
     if (boxes.length === 1 && !diagram) {
       children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
+      children.push(['span', { class: 'box-rotate-handle', contenteditable: 'false' }])
     }
     // page-type w:br the anchor paragraph carries next to the boxes: Word keeps
     // the anchor's flow line, so render the break chip as a stray line (nonzero
@@ -6683,60 +6692,316 @@ function inlinePictureResizePlugin(): Plugin {
           event.stopPropagation()
           view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
           view.focus()
-
-          const zoomEl = wrapper.closest('.doc-zoom') as HTMLElement | null
-          const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
-          const attrs = view.state.doc.nodeAt(pos)?.attrs ?? {}
-          const startW = Number(attrs.widthPx) > 0 ? Number(attrs.widthPx) : img.offsetWidth
-          const startH = Number(attrs.heightPx) > 0 ? Number(attrs.heightPx) : img.offsetHeight
-          if (!(startW > 0) || !(startH > 0)) return false
-          const startX = event.clientX
-          const startY = event.clientY
-          const west = direction.includes('w')
-          const east = direction.includes('e')
-          const north = direction.includes('n')
-          const south = direction.includes('s')
-          const sizeAt = (e: MouseEvent) => {
-            const dx = (e.clientX - startX) / zoom
-            const dy = (e.clientY - startY) / zoom
-            if ((west || east) && (north || south)) {
-              const delta =
-                (dx * (west ? -1 : 1) * startW + dy * (north ? -1 : 1) * startH) /
-                Math.max(1, startW * startW + startH * startH)
-              const scale = Math.max(Math.max(12 / startW, 12 / startH), 1 + delta)
-              return { w: startW * scale, h: startH * scale }
-            }
-            if (west || east) return { w: Math.max(12, startW + (west ? -dx : dx)), h: startH }
-            return { w: startW, h: Math.max(12, startH + (north ? -dy : dy)) }
-          }
-          const priorStyle = img.getAttribute('style')
-          const onMove = (e: MouseEvent) => {
-            const { w, h } = sizeAt(e)
-            img.style.width = `${w}px`
-            img.style.height = `${h}px`
-            img.style.maxWidth = 'none'
-          }
-          const onUp = (e: MouseEvent) => {
-            window.removeEventListener('mousemove', onMove)
-            window.removeEventListener('mouseup', onUp)
-            if (priorStyle == null) img.removeAttribute('style')
-            else img.setAttribute('style', priorStyle)
-            const { w, h } = sizeAt(e)
-            const node = view.state.doc.nodeAt(pos)
-            if (!node || node.type.name !== 'docInlineImage') return
-            const next = {
-              widthPx: Math.max(1, Math.round(w)),
-              heightPx: Math.max(1, Math.round(h)),
-            }
-            if (next.widthPx === Math.round(startW) && next.heightPx === Math.round(startH)) return
-            // the picture stays selected (handles and the Picture tab) after the resize
-            const tr = view.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...next })
-            view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
-          }
-          window.addEventListener('mousemove', onMove)
-          window.addEventListener('mouseup', onUp)
-          return true
+          return startRunPictureResize(view, pos, img, direction, event)
         },
+      },
+    },
+  })
+}
+
+/** CSS zoom of the page canvas around el: client px divided by it are CSS px */
+function canvasZoomOf(el: Element): number {
+  const zoomEl = el.closest('.doc-zoom') as HTMLElement | null
+  return zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
+}
+
+/**
+ * Word-style handle drag on a run picture: corners keep the aspect ratio,
+ * edges free one side. A floating picture placed by offsets also shifts on a
+ * west / north drag, so the opposite edge stays put. onPreview runs after
+ * every live frame (the floating picture's handle overlay follows it).
+ */
+function startRunPictureResize(
+  view: EditorView,
+  pos: number,
+  img: HTMLImageElement,
+  direction: ImageResizeHandle,
+  event: MouseEvent,
+  onPreview?: () => void,
+): boolean {
+  const zoom = canvasZoomOf(img)
+  const attrs = view.state.doc.nodeAt(pos)?.attrs ?? {}
+  const startW = Number(attrs.widthPx) > 0 ? Number(attrs.widthPx) : img.offsetWidth
+  const startH = Number(attrs.heightPx) > 0 ? Number(attrs.heightPx) : img.offsetHeight
+  if (!(startW > 0) || !(startH > 0)) return false
+  const startX = event.clientX
+  const startY = event.clientY
+  const west = direction.includes('w')
+  const east = direction.includes('e')
+  const north = direction.includes('n')
+  const south = direction.includes('s')
+  const sizeAt = (e: MouseEvent) => {
+    const dx = (e.clientX - startX) / zoom
+    const dy = (e.clientY - startY) / zoom
+    if ((west || east) && (north || south)) {
+      const delta =
+        (dx * (west ? -1 : 1) * startW + dy * (north ? -1 : 1) * startH) /
+        Math.max(1, startW * startW + startH * startH)
+      const scale = Math.max(Math.max(12 / startW, 12 / startH), 1 + delta)
+      return { w: startW * scale, h: startH * scale }
+    }
+    if (west || east) return { w: Math.max(12, startW + (west ? -dx : dx)), h: startH }
+    return { w: startW, h: Math.max(12, startH + (north ? -dy : dy)) }
+  }
+  const priorStyle = img.getAttribute('style')
+  const onMove = (e: MouseEvent) => {
+    const { w, h } = sizeAt(e)
+    img.style.width = `${w}px`
+    img.style.height = `${h}px`
+    img.style.maxWidth = 'none'
+    onPreview?.()
+  }
+  const onUp = (e: MouseEvent) => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    if (priorStyle == null) img.removeAttribute('style')
+    else img.setAttribute('style', priorStyle)
+    const { w, h } = sizeAt(e)
+    const node = view.state.doc.nodeAt(pos)
+    if (!node || node.type.name !== 'docInlineImage') return
+    const next: Record<string, unknown> = {
+      widthPx: Math.max(1, Math.round(w)),
+      heightPx: Math.max(1, Math.round(h)),
+    }
+    if (next.widthPx === Math.round(startW) && next.heightPx === Math.round(startH)) return
+    if (node.attrs.wrap && west && node.attrs.offsetXEmu != null) {
+      next.offsetXEmu = Number(node.attrs.offsetXEmu) + Math.round((startW - w) * EMU_PER_PX)
+    }
+    if (node.attrs.wrap && north && node.attrs.offsetYEmu != null) {
+      next.offsetYEmu = Number(node.attrs.offsetYEmu) + Math.round((startH - h) * EMU_PER_PX)
+    }
+    // the picture stays selected (handles and the Picture tab) after the resize
+    const tr = view.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...next })
+    view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  return true
+}
+
+/** the floating (wp:anchor) run picture under a node selection, with its img */
+function selectedFloatingRunPicture(
+  view: EditorView,
+): { pos: number; node: PmNode; img: HTMLImageElement } | null {
+  const sel = view.state.selection
+  if (!(sel instanceof NodeSelection)) return null
+  const { node } = sel
+  if (node.type.name !== 'docInlineImage' || !node.attrs.wrap || node.attrs.rule) return null
+  const dom = view.nodeDOM(sel.from)
+  const img =
+    dom instanceof HTMLImageElement
+      ? dom
+      : dom instanceof HTMLElement
+        ? dom.querySelector('img')
+        : null
+  return img ? { pos: sel.from, node, img } : null
+}
+
+/** behind-text run pictures sit under the text: a press on no glyph reaches them (Word) */
+function findBehindRunPictureAt(x: number, y: number): HTMLImageElement | null {
+  const hit = document
+    .elementsFromPoint(x, y)
+    .find(
+      (el): el is HTMLImageElement =>
+        el instanceof HTMLImageElement && el.classList.contains('doc-inline-img--behind'),
+    )
+  return hit && !pointOnTextGlyph(x, y) ? hit : null
+}
+
+/** nearest scrolling ancestor: the window region the document shows through */
+function scrollPortOf(el: HTMLElement): HTMLElement | null {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const overflow = getComputedStyle(n).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') return n
+  }
+  return null
+}
+
+/**
+ * Press on a floating run picture: select it and drag it to a new position.
+ * The run stays in its paragraph; the drop becomes its anchor offsets, like a
+ * dragged block picture, settled so it rests exactly where it was let go.
+ */
+function startRunPictureDrag(view: EditorView, event: MouseEvent): boolean {
+  if (event.button !== 0 || !view.editable) return false
+  const target = event.target as HTMLElement | null
+  const img =
+    (target?.closest?.('img.doc-inline-img') as HTMLImageElement | null) ??
+    findBehindRunPictureAt(event.clientX, event.clientY)
+  if (!img || !view.dom.contains(img)) return false
+  // front/behind pictures render inside an anchor span: that span is the node's DOM
+  const host = img.parentElement?.classList.contains('doc-inline-img-anchor')
+    ? img.parentElement
+    : img
+  let pos = -1
+  view.state.doc.descendants((node, p) => {
+    if (pos !== -1) return false
+    if (node.type.name === 'docInlineImage' && view.nodeDOM(p) === host) pos = p
+    return pos === -1
+  })
+  const node = pos === -1 ? null : view.state.doc.nodeAt(pos)
+  if (!node?.attrs.wrap || node.attrs.rule) return false
+  event.preventDefault()
+  view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+  // preventDefault suppressed the native focus: keyboard follow-ups need it
+  view.focus()
+
+  const zoom = canvasZoomOf(img)
+  const startX = event.clientX
+  const startY = event.clientY
+  const startRect = img.getBoundingClientRect()
+  // rot/flip (and a front/behind picture's own offset) live on the transform:
+  // the drag translate composes in front of it and it comes back on drop
+  const baseTransform = img.style.transform
+  let dragging = false
+  const onMove = (e: MouseEvent) => {
+    const dx = (e.clientX - startX) / zoom
+    const dy = (e.clientY - startY) / zoom
+    if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+    dragging = true
+    document.body.classList.add('docs-run-pic-dragging')
+    img.style.transform = `translate(${dx}px, ${dy}px)${baseTransform ? ` ${baseTransform}` : ''}`
+  }
+  const onUp = (e: MouseEvent) => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    img.style.transform = baseTransform
+    document.body.classList.remove('docs-run-pic-dragging')
+    if (!dragging) return
+    const current = view.state.doc.nodeAt(pos)
+    if (current?.type.name !== 'docInlineImage' || !current.attrs.wrap) return
+    const attrs = current.attrs
+    const dx = (e.clientX - startX) / zoom
+    const dy = (e.clientY - startY) / zoom
+    const dropLeft = startRect.left + (e.clientX - startX)
+    const dropTop = startRect.top + (e.clientY - startY)
+    const wrap = String(attrs.wrap)
+    const overlay = wrap === 'front' || wrap === 'behind'
+    // a float cannot rise to a page position: once moved it measures from its anchor line
+    const pageRelV = attrs.relV === 'page' || attrs.relV === 'margin'
+    const relV = pageRelV && !overlay ? null : attrs.relV
+    // the offsets measure from the hosting paragraph's box; a picture still
+    // placed by alignment starts from where it shows
+    const origin = img.offsetParent instanceof HTMLElement ? img.offsetParent : null
+    const originRect = origin?.getBoundingClientRect()
+    const shownX = originRect ? (dropLeft - originRect.left) / zoom - origin!.clientLeft : dx
+    const x = attrs.offsetXEmu != null ? Number(attrs.offsetXEmu) / EMU_PER_PX + dx : shownX
+    let y =
+      (relV === attrs.relV && attrs.offsetYEmu != null
+        ? Number(attrs.offsetYEmu) / EMU_PER_PX
+        : 0) + dy
+    if (wrap === 'topBottom') y = Math.max(0, y)
+    // square/tight/through re-pick their side from the drop: Word wraps the
+    // text on the open side of the picture
+    let nextWrap = wrap
+    const kind = /^(square|tight|through)-(?:left|right)$/.exec(wrap)?.[1]
+    const colW = origin?.clientWidth ?? 0
+    if (kind && colW > 0) {
+      nextWrap = `${kind}-${shownX + img.offsetWidth / 2 > colW / 2 ? 'right' : 'left'}`
+    }
+    const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+      ...attrs,
+      wrap: nextWrap,
+      offsetXEmu: Math.round(x * EMU_PER_PX),
+      offsetYEmu: Math.round(y * EMU_PER_PX),
+      relV,
+      lineCenterV: false,
+    })
+    view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
+    settleDroppedImage(view, pos, dropLeft, dropTop, zoom)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  return true
+}
+
+/**
+ * Floating run pictures (wp:anchor drawings sharing their paragraph with
+ * text): select, move and resize them like Word. Their img is the CSS float
+ * or overlay that pagination and wrap measuring read, so the selection
+ * handles cannot hang off it: they live in a fixed overlay laid over it.
+ */
+function floatingRunPicturePlugin(): Plugin {
+  return new Plugin({
+    view(view) {
+      // built on the first selected floating picture: textbox sub-editors
+      // carry this plugin too and mostly never need it
+      let frame: HTMLDivElement | null = null
+      const frameEl = (): HTMLDivElement => {
+        if (frame) return frame
+        frame = document.createElement('div')
+        frame.className = 'doc-run-pic-frame'
+        for (const spec of imageSelectionControlsSpec())
+          frame.appendChild(DOMSerializer.renderSpec(document, spec as never).dom)
+        frame.addEventListener('mousedown', onHandleDown)
+        document.body.appendChild(frame)
+        return frame
+      }
+      let raf = 0
+      let settleTimer = 0
+      const place = () => {
+        raf = 0
+        const hit = view.editable && view.hasFocus() ? selectedFloatingRunPicture(view) : null
+        const rect = hit?.img.getBoundingClientRect()
+        if (!rect || !(rect.width > 0) || !(rect.height > 0)) {
+          if (frame) frame.hidden = true
+          return
+        }
+        const box = frameEl()
+        box.hidden = false
+        box.style.left = `${rect.left}px`
+        box.style.top = `${rect.top}px`
+        box.style.width = `${rect.width}px`
+        box.style.height = `${rect.height}px`
+        // the overlay is fixed over the window: handles of a picture scrolled
+        // under the ribbon or the status bar must not cover that chrome
+        const port = scrollPortOf(view.dom)?.getBoundingClientRect()
+        for (const handle of Array.from(box.children) as HTMLElement[]) {
+          const r = handle.getBoundingClientRect()
+          const cx = r.left + r.width / 2
+          const cy = r.top + r.height / 2
+          const shown =
+            !port || (cx >= port.left && cx <= port.right && cy >= port.top && cy <= port.bottom)
+          handle.style.visibility = shown ? '' : 'hidden'
+        }
+      }
+      const schedule = () => {
+        if (!raf) raf = requestAnimationFrame(place)
+      }
+      function onHandleDown(event: MouseEvent) {
+        if (event.button !== 0) return
+        const handle = (event.target as HTMLElement).closest(
+          '.img-resize-handle',
+        ) as HTMLElement | null
+        const direction = handle?.dataset.resizeHandle as ImageResizeHandle | undefined
+        const hit = selectedFloatingRunPicture(view)
+        if (!direction || !IMAGE_RESIZE_HANDLES.includes(direction) || !hit) return
+        // keeps the focus (and so the selection) in the editor
+        event.preventDefault()
+        event.stopPropagation()
+        startRunPictureResize(view, hit.pos, hit.img, direction, event, place)
+      }
+      window.addEventListener('scroll', schedule, true)
+      window.addEventListener('resize', schedule)
+      return {
+        update: () => {
+          schedule()
+          // pagination settles the layout after the transaction: follow it
+          window.clearTimeout(settleTimer)
+          settleTimer = window.setTimeout(schedule, 150)
+        },
+        destroy: () => {
+          cancelAnimationFrame(raf)
+          window.clearTimeout(settleTimer)
+          window.removeEventListener('scroll', schedule, true)
+          window.removeEventListener('resize', schedule)
+          frame?.remove()
+        },
+      }
+    },
+    props: {
+      handleDOMEvents: {
+        mousedown: (view, event) => startRunPictureDrag(view, event),
       },
     },
   })
@@ -6990,6 +7255,93 @@ function imageResizePlugin(): Plugin {
   })
 }
 
+/**
+ * Round rotation grip of a selected shape: drag around the box centre to turn
+ * it (PowerPoint parity). Shift snaps the angle to 15° steps. The live preview
+ * rewrites the visual box transform; the commit stores the angle as the box's
+ * model rotDeg (a:xfrm@rot), so saving and the node view's own textbox style
+ * keep the shape turned.
+ */
+function shapeRotatePlugin(): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          if (event.button !== 0) return false
+          const target = event.target as HTMLElement
+          if (!target.classList?.contains('box-rotate-handle')) return false
+          // read-only docs offer no rotation: swallow the press on the grip so
+          // it cannot fall through to the move/resize handlers
+          if (!view.editable) return true
+          const wrapper = target.closest('.doc-protected') as HTMLElement | null
+          const boxEl = wrapper?.querySelector('.doc-textbox') as HTMLElement | null
+          if (!wrapper || !boxEl) return false
+          // the node view's document position (same walk as the resize handle)
+          let pos = -1
+          view.state.doc.descendants((node, p) => {
+            if (pos !== -1) return false
+            if (node.type.name === 'docProtected' && view.nodeDOM(p) === wrapper) pos = p
+            return pos === -1
+          })
+          if (pos === -1) return false
+          const node = view.state.doc.nodeAt(pos)
+          const boxes = node?.attrs.textboxes as TextboxDisplay[] | null
+          if (!Array.isArray(boxes) || boxes.length !== 1) return false
+          event.preventDefault()
+          view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+
+          // client coordinates make the gesture zoom-independent (CSS zoom scales
+          // the rect and the pointer alike); the box centre stays the pivot even
+          // when the box is already turned (a centred-origin rotation keeps it)
+          const rect = boxEl.getBoundingClientRect()
+          const centreX = rect.left + rect.width / 2
+          const centreY = rect.top + rect.height / 2
+          const startRot = Number(boxes[0].rotDeg ?? 0)
+          const pointerAngle = (e: MouseEvent): number =>
+            (Math.atan2(e.clientY - centreY, e.clientX - centreX) * 180) / Math.PI
+          const startAngle = pointerAngle(event)
+          const angleAt = (e: MouseEvent): number => {
+            const raw = Math.round(startRot + pointerAngle(e) - startAngle)
+            const deg = ((raw % 360) + 360) % 360
+            // Shift snaps to the 15° grid, like Word/PowerPoint
+            return e.shiftKey ? (Math.round(deg / 15) * 15) % 360 : deg
+          }
+          const baseTransform = boxEl.style.transform
+          let deg = startRot
+          const onMove = (e: MouseEvent) => {
+            deg = angleAt(e)
+            boxEl.style.transform = `rotate(${deg}deg)`
+          }
+          const onUp = (e: MouseEvent) => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+            deg = angleAt(e)
+            // drop the drag preview; a real turn is re-rendered from the model
+            // attrs by the node view, a click without a turn restores the box
+            boxEl.style.transform = baseTransform
+            if (deg === startRot) return
+            const currentNode = view.state.doc.nodeAt(pos)
+            const currentBoxes = currentNode?.attrs.textboxes as TextboxDisplay[] | null
+            if (!currentNode || !Array.isArray(currentBoxes) || currentBoxes.length !== 1) return
+            const [box, ...rest] = currentBoxes
+            // 0 is the cleared state: drop rotDeg so save strips a:xfrm@rot
+            const turned = deg === 0 ? { ...box, rotDeg: undefined } : { ...box, rotDeg: deg }
+            const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+              ...currentNode.attrs,
+              textboxes: [turned, ...rest],
+            })
+            // keep the shape selected so the handles stay reachable
+            view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
+          }
+          window.addEventListener('mousemove', onMove)
+          window.addEventListener('mouseup', onUp)
+          return true
+        },
+      },
+    },
+  })
+}
+
 const EMU_PER_PX = 9525
 
 /**
@@ -7035,32 +7387,56 @@ interface ImageParagraphAnchor {
   pos: number
   node: PmNode
   dom: HTMLElement
+  /** client rect in the layout the drop produces (picture taken out of its slot) */
   rect: DOMRect
 }
 
 const IMAGE_ANCHOR_NODE_TYPES = new Set(['docParagraph', 'docHeading', 'docListItem'])
 
-function imageParagraphAnchors(view: EditorView, imagePos: number): ImageParagraphAnchor[] {
+/**
+ * Text blocks a dragged picture can re-anchor to, measured with the picture
+ * taken out of the layout: on drop it leaves its own slot (an in-line
+ * picture's line, a float's wrapped lines), so every block after it moves up.
+ * Rects measured with the picture still in place put the drop that much too
+ * high once the layout settled.
+ */
+function imageParagraphAnchors(
+  view: EditorView,
+  imagePos: number,
+  imageDom: HTMLElement,
+): ImageParagraphAnchor[] {
   const anchors: ImageParagraphAnchor[] = []
-  view.state.doc.forEach((node, pos) => {
-    if (pos === imagePos || !IMAGE_ANCHOR_NODE_TYPES.has(node.type.name)) return
-    const dom = view.nodeDOM(pos)
-    if (!(dom instanceof HTMLElement)) return
-    anchors.push({ pos, node, dom, rect: dom.getBoundingClientRect() })
-  })
+  const priorDisplay = imageDom.style.display
+  imageDom.style.display = 'none'
+  try {
+    view.state.doc.forEach((node, pos) => {
+      if (pos === imagePos || !IMAGE_ANCHOR_NODE_TYPES.has(node.type.name)) return
+      const dom = view.nodeDOM(pos)
+      if (!(dom instanceof HTMLElement)) return
+      anchors.push({ pos, node, dom, rect: dom.getBoundingClientRect() })
+    })
+  } finally {
+    imageDom.style.display = priorDisplay
+  }
   return anchors
 }
 
+/**
+ * The paragraph the picture's top lands in, else the nearest one above it
+ * (Word): the offset below the anchor's top is then positive, a margin both
+ * the float and its text exclusion honor. A paragraph below would need a
+ * negative offset, which only lifts the picture over the text above it.
+ */
 function pickImageParagraphAnchor(
   anchors: ImageParagraphAnchor[],
   x: number,
   y: number,
 ): ImageParagraphAnchor | null {
+  const above = anchors.filter((anchor) => anchor.rect.top <= y)
   let best: ImageParagraphAnchor | null = null
   let bestScore = Infinity
-  for (const anchor of anchors) {
-    const rect = anchor.dom.getBoundingClientRect()
-    anchor.rect = rect
+  for (const anchor of above.length > 0 ? above : anchors) {
+    const rect = anchor.rect
     const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0
     const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0
     // Vertical proximity determines the paragraph; horizontal proximity only
@@ -7074,6 +7450,48 @@ function pickImageParagraphAnchor(
     }
   }
   return best
+}
+
+/**
+ * Fold what the anchor rects cannot predict (margins collapsing around the
+ * new anchor, lines reflowing beside the float) into the offsets, so the
+ * picture rests exactly where it was let go. The correction edits the node
+ * the move just touched, so undo takes both as one step. Serves block
+ * pictures (docProtected) and floating run pictures (docInlineImage).
+ */
+function settleDroppedImage(
+  view: EditorView,
+  pos: number,
+  dropLeft: number,
+  dropTop: number,
+  zoom: number,
+): void {
+  const node = view.state.doc.nodeAt(pos)
+  const dom = view.nodeDOM(pos)
+  if (!node || !(dom instanceof HTMLElement)) return
+  const run = node.type.name === 'docInlineImage'
+  if (!run && node.attrs.blockType !== 'image') return
+  const box = run
+    ? dom instanceof HTMLImageElement
+      ? dom
+      : dom.querySelector('img')
+    : dom.querySelector('.doc-img-wrap')
+  const rect = box?.getBoundingClientRect()
+  // not laid out (hidden view, test DOM): nothing to measure against
+  if (!rect || !(rect.width > 0) || !(rect.height > 0)) return
+  const dx = (dropLeft - rect.left) / zoom
+  const dy = (dropTop - rect.top) / zoom
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+  const [xKey, yKey] = run ? ['offsetXEmu', 'offsetYEmu'] : ['imageOffsetXEmu', 'imageOffsetYEmu']
+  let y = Number(node.attrs[yKey] ?? 0) + Math.round(dy * EMU_PER_PX)
+  // a topBottom band cannot rise above its anchor line
+  if (run && node.attrs.wrap === 'topBottom') y = Math.max(0, y)
+  const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+    ...node.attrs,
+    [xKey]: Number(node.attrs[xKey] ?? 0) + Math.round(dx * EMU_PER_PX),
+    [yKey]: y,
+  })
+  view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
 }
 
 function floatingObjectDragPlugin(): Plugin {
@@ -7145,7 +7563,11 @@ function floatingObjectDragPlugin(): Plugin {
           const startVisualRect = (innerWrap ?? wrapper).getBoundingClientRect()
           const wrapperStartRect = wrapper.getBoundingClientRect()
           const anchorLocked = !!node.attrs.imageAnchorLocked
-          const paragraphAnchors = isImage && !anchorLocked ? imageParagraphAnchors(view, pos) : []
+          // measured once a real drag starts, so a plain click forces no layout
+          let paragraphAnchors: ImageParagraphAnchor[] | null = null
+          const dropAnchors = (): ImageParagraphAnchor[] =>
+            (paragraphAnchors ??=
+              isImage && !anchorLocked ? imageParagraphAnchors(view, pos, wrapper) : [])
           let paragraphAnchor: ImageParagraphAnchor | null = null
           const wrapMode = (node.attrs.imageWrap as string | null) ?? null
           const isSideFloat = !!wrapMode && /^(?:square|tight|through)-/.test(wrapMode)
@@ -7210,6 +7632,8 @@ function floatingObjectDragPlugin(): Plugin {
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom
             if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+            // measure before the drag transform below touches the layout
+            if (!dragging) dropAnchors()
             dragging = true
             if (visual) {
               visual.style.transform =
@@ -7219,7 +7643,7 @@ function floatingObjectDragPlugin(): Plugin {
               const clientDx = e.clientX - startX
               const clientDy = e.clientY - startY
               paragraphAnchor = pickImageParagraphAnchor(
-                paragraphAnchors,
+                dropAnchors(),
                 startVisualRect.left + clientDx,
                 startVisualRect.top + clientDy,
               )
@@ -7251,17 +7675,14 @@ function floatingObjectDragPlugin(): Plugin {
             // Word allows negative offsets (into the page margin / above the
             // anchor paragraph): no clamping
             const newX = Math.round((startPxX + dx) * EMU_PER_PX)
-            if (isImage) {
-              paragraphAnchor = pickImageParagraphAnchor(
-                paragraphAnchors,
-                startVisualRect.left + (e.clientX - startX),
-                startVisualRect.top + (e.clientY - startY),
-              )
-            }
+            // where the picture was let go (client px)
+            const dropLeft = startVisualRect.left + (e.clientX - startX)
+            const dropTop = startVisualRect.top + (e.clientY - startY)
+            if (isImage)
+              paragraphAnchor = pickImageParagraphAnchor(dropAnchors(), dropLeft, dropTop)
             const newY = Math.round(
-              (paragraphAnchor
-                ? (startVisualRect.top + (e.clientY - startY) - paragraphAnchor.rect.top) / zoom
-                : startPxY + dy) * EMU_PER_PX,
+              (paragraphAnchor ? (dropTop - paragraphAnchor.rect.top) / zoom : startPxY + dy) *
+                EMU_PER_PX,
             )
 
             const currentNode = view.state.doc.nodeAt(pos)
@@ -7319,8 +7740,10 @@ function floatingObjectDragPlugin(): Plugin {
                 tr.insert(insertPos, movedNode)
                 tr.setSelection(NodeSelection.create(tr.doc, insertPos))
                 view.dispatch(tr)
+                settleDroppedImage(view, insertPos, dropLeft, dropTop, zoom)
               } else {
                 view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, attrs))
+                settleDroppedImage(view, pos, dropLeft, dropTop, zoom)
               }
             }
           }

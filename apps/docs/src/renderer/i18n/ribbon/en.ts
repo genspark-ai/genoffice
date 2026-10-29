@@ -25,6 +25,7 @@ export const en = {
   ribbonShapeFillTip: 'Fill the selected shape with a color',
   ribbonShapeOutline: 'Shape Outline',
   ribbonShapeOutlineTip: 'Pick the outline color of the selected shape',
+  ribbonShapeOutlineWeight: 'Outline Weight',
   ribbonNoFill: 'No Fill',
   ribbonNoOutline: 'No Outline',
   ribbonRemoveBg: 'Remove Background',

@@ -25,6 +25,7 @@ export const cs = {
   ribbonShapeFillTip: 'Vyplnit vybraný obrazec barvou',
   ribbonShapeOutline: 'Obrys obrazce',
   ribbonShapeOutlineTip: 'Vybrat barvu obrysu vybraného obrazce',
+  ribbonShapeOutlineWeight: 'Tloušťka obrysu',
   ribbonNoFill: 'Bez výplně',
   ribbonNoOutline: 'Bez obrysu',
   ribbonRemoveBg: 'Odstranit pozadí',

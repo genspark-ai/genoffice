@@ -77,6 +77,29 @@ describe('compareDocuments', () => {
     expect(result.pages[0]!.addedCount).toBe(1)
     expect(result.pages[0]!.removed).toEqual([])
   })
+
+  it('calls identical past-cap pages equal instead of truncating them', () => {
+    const big = Array.from({ length: 4001 }, (_, i) => `line${i}`).join('\n')
+    const result = compareDocuments([page(big)], [page(big)])
+    expect(result.pages[0]!.truncated).toBeUndefined()
+    expect(result.pages[0]!.addedCount).toBe(0)
+    expect(result.pages[0]!.removedCount).toBe(0)
+    expect(result.equal).toBe(true)
+  })
+
+  it('still truncates a past-cap page that differs only past the cap window', () => {
+    // same line count, same opening lines, one changed line deep inside:
+    // the join compare has to see it and keep the wholesale report.
+    const left = Array.from({ length: 4001 }, (_, i) => `line${i}`).join('\n')
+    const right = Array.from({ length: 4001 }, (_, i) => `line${i === 3000 ? 'changed' : i}`).join(
+      '\n',
+    )
+    const result = compareDocuments([page(left)], [page(right)])
+    expect(result.pages[0]!.truncated).toBe(true)
+    expect(result.pages[0]!.addedCount).toBe(4001)
+    expect(result.pages[0]!.removedCount).toBe(4001)
+    expect(result.equal).toBe(false)
+  })
 })
 
 describe('one engine on both sides', () => {

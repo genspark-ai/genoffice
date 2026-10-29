@@ -133,6 +133,13 @@ export const IconBates = () => (
     <path d="M9 5 L7 19 M13 5 L11 19 M6.5 9 L17.5 9 M5.8 14 L16.8 14" />
   </Icon>
 )
+/** Measurement: a ruler with tick marks */
+export const IconMeasure = () => (
+  <Icon>
+    <rect x="3.5" y="9" width="17" height="7" rx="1" />
+    <path d="M7.5 9 V12 M12 9 V13.5 M16.5 9 V12" />
+  </Icon>
+)
 /** Signature panel: a shield with a check mark */
 export const IconSignatures = () => (
   <Icon>

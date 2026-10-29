@@ -25,6 +25,7 @@ export const tr = {
   ribbonShapeFillTip: 'Seçili şekli bir renkle doldur',
   ribbonShapeOutline: 'Şekil Ana Hattı',
   ribbonShapeOutlineTip: 'Seçili şeklin ana hat rengini seçin',
+  ribbonShapeOutlineWeight: 'Ana hat kalınlığı',
   ribbonNoFill: 'Dolgu Yok',
   ribbonNoOutline: 'Ana Hat Yok',
   ribbonRemoveBg: 'Arka Planı Kaldır',

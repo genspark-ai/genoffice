@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useEscOverlay } from '../esc-overlay'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from '../cutout'
 import { useI18n, type StringKey } from '../i18n/locale'
+import { setImageSource } from '../image-loader'
 
 /** Longest side of the preview canvas (px) */
 const PREVIEW_MAX = 520
@@ -102,7 +103,7 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: Props) {
     img.onerror = () => {
       if (!cancelled) setError('paneCutoutLoadFail')
     }
-    img.src = dataUrl
+    setImageSource(img, dataUrl)
     return () => {
       cancelled = true
     }

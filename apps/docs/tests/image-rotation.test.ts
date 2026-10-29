@@ -151,7 +151,8 @@ describe('rotated pictures', () => {
     expect(img.style.transform).toBe('rotate(90deg)')
     expect(img.style.marginTop).toBe('52px')
     expect(img.style.marginBottom).toBe('52px')
-    expect(img.style.marginLeft).toBe('')
+    // the posOffset X places the extent box (no quarter-turn inset on a wrapped picture)
+    expect(img.style.marginLeft).toBe('0px')
     editor.destroy()
   })
 

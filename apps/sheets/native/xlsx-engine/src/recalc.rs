@@ -288,16 +288,12 @@ fn run(
                 if formatted.is_empty() && !is_formula {
                     continue;
                 }
-                // Known engine gaps where the file's cached value beats the
-                // error: CELL("filename") is unimplemented (#175) and RATE's
-                // Newton solver dies near -100% where Excel converges (#185).
-                if formatted.starts_with('#') {
+                // Known engine gap where the file's cached value beats the
+                // error: RATE's Newton solver dies near -100% where Excel
+                // converges (#185).
+                if formatted == "#NUM!" {
                     if let Some(text) = &formula {
-                        let upper = text.to_uppercase();
-                        if upper.contains("CELL(") && upper.contains("\"FILENAME\"") {
-                            continue;
-                        }
-                        if formatted == "#NUM!" && upper.contains("RATE(") {
+                        if text.to_uppercase().contains("RATE(") {
                             continue;
                         }
                     }
@@ -334,8 +330,12 @@ fn run(
 /// rather than guessing at it: a formula is rewritten only when it already
 /// failed to parse and only when the quoted form parses cleanly.
 fn requote_bare_sheet_names(model: &mut Model) {
+    use std::sync::Arc;
+
     use ironcalc::base::expressions::lexer::LexerMode;
-    use ironcalc::base::expressions::parser::{Node, new_parser_english};
+    use ironcalc::base::expressions::parser::{
+        Node, new_parser_english, static_analysis::StaticResult,
+    };
     use ironcalc::base::expressions::types::CellReferenceRC;
 
     let names: Vec<String> = model
@@ -363,7 +363,10 @@ fn requote_bare_sheet_names(model: &mut Model) {
             column: 1,
         };
         for (index, formula) in worksheet.shared_formulas.iter_mut().enumerate() {
-            if !matches!(parsed.get(index), Some(Node::ParseErrorKind { .. })) {
+            if !matches!(
+                parsed.get(index),
+                Some((node, _)) if matches!(node.as_ref(), Node::ParseErrorKind { .. })
+            ) {
                 continue;
             }
             let Some(quoted) = quote_bare_sheet_names(formula, &names) else {
@@ -373,7 +376,11 @@ fn requote_bare_sheet_names(model: &mut Model) {
             if matches!(node, Node::ParseErrorKind { .. }) {
                 continue;
             }
-            parsed[index] = node;
+            // `run_static_analysis_on_node` is crate-private, so the repaired
+            // node carries `Unknown`: evaluation then assumes nothing about
+            // arrays or implicit intersection, which is the right reading for
+            // a formula that failed to parse a moment ago.
+            parsed[index] = (Arc::new(node), StaticResult::Unknown);
             *formula = quoted;
         }
     }
@@ -459,7 +466,7 @@ enum PinnedValue {
 /// which the renderer already declines to display.
 fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
-    use ironcalc::base::types::Cell;
+    use ironcalc::base::types::{Cell, FormulaValue};
     let names: Vec<String> = model
         .workbook
         .worksheets
@@ -471,30 +478,44 @@ fn pin_unparsable_formulas(model: &mut Model) {
         let Some(parsed) = model.parsed_formulas.get(sheet) else {
             continue;
         };
-        for (row, columns) in &worksheet.sheet_data {
-            for (column, cell) in columns {
-                let (formula, value) = match cell {
-                    Cell::CellFormulaNumber { f, v, .. } => (*f, PinnedValue::Number(*v)),
-                    Cell::CellFormulaString { f, v, .. } => (*f, PinnedValue::Text(v.clone())),
-                    Cell::CellFormulaBoolean { f, v, .. } => (*f, PinnedValue::Bool(*v)),
-                    _ => continue,
-                };
-                if !matches!(
-                    parsed.get(formula as usize),
-                    Some(Node::ParseErrorKind { .. })
-                ) {
-                    continue;
-                }
-                let text = worksheet
-                    .shared_formulas
-                    .get(formula as usize)
-                    .map(String::as_str)
-                    .unwrap_or_default();
-                if references_a_sheet_of_this_workbook(text, &names) {
-                    continue;
-                }
-                pins.push((sheet as u32, *row, *column, value));
+        for (row, column, cell) in worksheet.sheet_data.cells() {
+            let (formula, value) = match cell.as_ref() {
+                Cell::CellFormula {
+                    f,
+                    v: FormulaValue::Number(v),
+                    ..
+                } => (*f, PinnedValue::Number(*v)),
+                Cell::CellFormula {
+                    f,
+                    v: FormulaValue::Text(v),
+                    ..
+                } => (*f, PinnedValue::Text(v.clone())),
+                Cell::CellFormula {
+                    f,
+                    v: FormulaValue::Boolean(v),
+                    ..
+                } => (*f, PinnedValue::Bool(*v)),
+                _ => continue,
+            };
+            let unparsable = matches!(
+                parsed.get(formula as usize),
+                Some((node, _)) if matches!(node.as_ref(), Node::ParseErrorKind { .. })
+            );
+            let text = worksheet
+                .shared_formulas
+                .get(formula as usize)
+                .map(String::as_str)
+                .unwrap_or_default();
+            if references_a_sheet_of_this_workbook(text, &names) {
+                continue;
             }
+            // 0.9.x parses an external-workbook reference instead of leaving a
+            // parse error behind, and evaluation of it still lands on #REF!:
+            // the cached value is the only truth for those cells either way.
+            if !(unparsable || references_an_external_workbook(text)) {
+                continue;
+            }
+            pins.push((sheet as u32, row, column, value));
         }
     }
     for (sheet, row, column, value) in pins {
@@ -522,6 +543,64 @@ fn references_a_sheet_of_this_workbook(formula: &str, names: &[String]) -> bool 
                 .match_indices(&format!("{name}!"))
                 .any(|(at, _)| at == 0 || !continues_a_sheet_name(&code[..at]))
     })
+}
+
+/// True when the formula reads from another workbook — `[1]Sheet1!A1` or
+/// `'[1]Sheet1'!A1`. IronCalc resolves no external data whether the
+/// reference parses or not, so the file's cached value is the only truth.
+/// A digits-only `[N]` is not enough on its own — an R1C1 offset brackets a
+/// number too (`C[0]`) — so the bracket must be followed by a sheet name
+/// and `!` to count as a workbook index. A name with spaces or CJK
+/// characters only appears quoted, and Excel forbids `[` inside a sheet
+/// name, so a `'` right before the bracket is always the external form.
+fn references_an_external_workbook(formula: &str) -> bool {
+    let code = blank_text_literals(formula);
+    let bytes = code.as_bytes();
+    for (at, byte) in bytes.iter().enumerate() {
+        if *byte != b'[' {
+            continue;
+        }
+        let mut end = at + 1;
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == at + 1 || end >= bytes.len() || bytes[end] != b']' {
+            continue;
+        }
+        // `'[1]Sheet Name'!A1` — the opening quote precedes the bracket, so
+        // the sheet name runs to the closing quote: spaces, CJK, anything
+        if at > 0 && bytes[at - 1] == b'\'' {
+            let mut close = end + 1;
+            while close < bytes.len() && bytes[close] != b'\'' {
+                close += 1;
+            }
+            if bytes.get(close + 1) == Some(&b'!') {
+                return true;
+            }
+            continue;
+        }
+        let mut after = end + 1;
+        if bytes.get(after) == Some(&b'\'') {
+            after += 1;
+        }
+        let name_start = after;
+        // word characters, or any non-ASCII byte: a CJK sheet name needs no
+        // quotes (`[1]<cjk-name>!A1`), while a space does and lands in the branch above
+        while after < bytes.len()
+            && (bytes[after].is_ascii_alphanumeric()
+                || bytes[after] == b'_'
+                || bytes[after] >= 0x80)
+        {
+            after += 1;
+        }
+        if after > name_start && bytes.get(after) == Some(&b'\'') {
+            after += 1;
+        }
+        if bytes.get(after) == Some(&b'!') {
+            return true;
+        }
+    }
+    false
 }
 
 /// The formula with every `"..."` literal replaced by spaces of the same byte
@@ -1035,6 +1114,19 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn an_external_reference_with_a_spaced_or_cjk_sheet_name_is_recognised() {
+        assert!(references_an_external_workbook("'[1]Sheet Name'!A1"));
+        assert!(references_an_external_workbook("SUM('[1]Sheet Name'!A1:B2)"));
+        // a CJK name needs no quotes
+        assert!(references_an_external_workbook("[1]数据!A1"));
+        // an R1C1 offset is still not an external workbook, quoted or not
+        assert!(!references_an_external_workbook("R[1]C[0]"));
+        assert!(!references_an_external_workbook("'My Sheet'!R[1]C[0]"));
+        // a workbook index in a text literal is not a reference
+        assert!(!references_an_external_workbook(r#""[1]Sheet Name""#));
+    }
+
     fn write_external_link_fixture(path: &Path) {
         use std::io::Write;
         let entries: [(&str, &str); 8] = [
@@ -1068,7 +1160,7 @@ mod tests {
             ),
             (
                 "xl/worksheets/sheet1.xml",
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C2"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row></sheetData></worksheet>"#,
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C3"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row><row r="3"><c r="A3"><f>'[1]Sheet Name'!A1+1</f><v>43</v></c><c r="B3"><f>[1]数据!A1+1</f><v>8</v></c></row></sheetData></worksheet>"#,
             ),
         ];
         let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
@@ -1098,7 +1190,7 @@ mod tests {
                 sheet: "Sheet1".into(),
                 range: CellRange {
                     start_row: 0,
-                    end_row: 1,
+                    end_row: 2,
                     start_column: 0,
                     end_column: 2,
                 },
@@ -1131,5 +1223,91 @@ mod tests {
             (at(1, 1).formatted.as_str(), at(1, 1).is_formula),
             ("94", true)
         );
+        // a spaced sheet name (quoted) and a CJK one (bare) pin just the same
+        assert_eq!(
+            (at(2, 0).formatted.as_str(), at(2, 0).is_formula),
+            ("43", false)
+        );
+        assert_eq!(
+            (at(2, 1).formatted.as_str(), at(2, 1).is_formula),
+            ("8", false)
+        );
+    }
+
+    /// `xfId` is optional on a cellXfs `<xf>` (ECMA-376 CT_Xf; Excel defaults it
+    /// to 0), and producers built on the Open XML SDK leave it out. IronCalc
+    /// 0.7.1 read it with a required-attribute lookup, so the first formula
+    /// edit failed to import and every later read of the saved file died with
+    /// `Missing "xfId" XML attribute` (genoffice#2280).
+    #[test]
+    fn imports_a_workbook_whose_cell_xfs_omit_xfid() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("no-xfid.xlsx");
+        let entries = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>3</v></c></row></sheetData></worksheet>"#,
+            ),
+            // The `<xf>` in `cellXfs` carries no `xfId` — the whole point.
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(
+            &mut cache,
+            &path,
+            &[RecalcEdit {
+                sheet: "Sheet1".into(),
+                row: 0,
+                column: 1,
+                input: "=A1*2".into(),
+            }],
+            &[RecalcRead {
+                sheet: "Sheet1".into(),
+                range: CellRange {
+                    start_row: 0,
+                    end_row: 0,
+                    start_column: 0,
+                    end_column: 1,
+                },
+            }],
+        )
+        .unwrap();
+        let b1 = result
+            .cells
+            .iter()
+            .find(|cell| cell.row == 0 && cell.column == 1)
+            .unwrap();
+        assert_eq!(b1.formatted, "6");
+        assert!(b1.is_formula);
     }
 }

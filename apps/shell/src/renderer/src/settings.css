@@ -1149,3 +1149,15 @@
   color: var(--text-secondary);
   font-size: var(--text-caption);
 }
+
+.set-intg-legacy {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.set-intg-legacy-item {
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}

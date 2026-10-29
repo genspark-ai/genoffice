@@ -163,6 +163,29 @@ const AGENTS: readonly AgentDef[] = [
   },
 ]
 
+/**
+ * The skills directories the layout before the shared `.agents` row wrote to.
+ * Codex, Cursor, Gemini CLI, Copilot and OpenCode now read `~/.agents/skills`,
+ * so a copy this app wrote in one of these folders is a stale duplicate: the
+ * tool still finds it — Cursor loads `~/.codex` for compatibility, Gemini CLI
+ * treats `~/.gemini/skills` as a tier of its own — and nothing ever updates
+ * it again, while the pane reports the shared copy as current. Claude Code,
+ * Windsurf and OpenClaw keep their own folders, so theirs are current.
+ */
+const LEGACY_SKILL_DIRS: readonly {
+  id: AgentId
+  dir: (env: NodeJS.ProcessEnv, home: string) => string
+}[] = [
+  { id: 'codex', dir: (env, home) => join(env.CODEX_HOME || join(home, '.codex'), 'skills') },
+  { id: 'cursor', dir: (_env, home) => join(home, '.cursor', 'skills') },
+  { id: 'gemini', dir: (_env, home) => join(home, '.gemini', 'skills') },
+  { id: 'copilot', dir: (_env, home) => join(home, '.copilot', 'skills') },
+  {
+    id: 'opencode',
+    dir: (env, home) => join(env.XDG_CONFIG_HOME || join(home, '.config'), 'opencode', 'skills'),
+  },
+]
+
 /** The skills install targets, in pane order: the shared row first, per-tool rows after. */
 export function agentIds(): AgentId[] {
   return AGENTS.filter((a) => a.skillsTarget).map((a) => a.id)
@@ -347,6 +370,93 @@ export function uninstallSkill(skillsDir: string, ledger: SkillLedger): boolean 
   } catch {}
   delete ledger[path]
   return true
+}
+
+export interface LegacySkillCopy {
+  /** the tool whose dotfolder held the copy */
+  agent: AgentId
+  /** product name, shown as is */
+  label: string
+  /** the skills directory that holds the copy */
+  skillsDir: string
+  /** `<skillsDir>/genoffice/SKILL.md` */
+  path: string
+  /** the copy still holds the bytes this app wrote */
+  ours: boolean
+}
+
+export interface LegacySweep {
+  /** the copies this app wrote and removed */
+  removed: LegacySkillCopy[]
+  /** the copies edited by hand: left in place, for the user to judge */
+  kept: LegacySkillCopy[]
+}
+
+/**
+ * The legacy per-tool copies this app wrote, read from the ledger. A path the
+ * ledger does not know was not written by this app and is not ours to touch.
+ */
+export function findLegacySkillCopies(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): LegacySkillCopy[] {
+  const out: LegacySkillCopy[] = []
+  for (const legacy of LEGACY_SKILL_DIRS) {
+    const skillsDir = legacy.dir(env, home)
+    const path = skillFilePath(skillsDir)
+    const entry = ledger[path]
+    if (!entry) continue
+    let ours = false
+    try {
+      ours = sha256(readFileSync(path, 'utf-8')) === entry.sha256
+    } catch {}
+    out.push({ agent: legacy.id, label: agentLabel(legacy.id), skillsDir, path, ours })
+  }
+  return out
+}
+
+/**
+ * Remove the legacy per-tool copies this app wrote. Only a copy the ledger
+ * knows and whose bytes still match what was written goes: an edited copy is
+ * the user's work, so it is kept and reported instead.
+ */
+export function sweepLegacySkillCopies(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): LegacySweep {
+  const removed: LegacySkillCopy[] = []
+  const kept: LegacySkillCopy[] = []
+  for (const copy of findLegacySkillCopies(ledger, env, home)) {
+    if (!copy.ours) {
+      kept.push(copy)
+      continue
+    }
+    rmSync(copy.path, { force: true })
+    const dir = join(copy.skillsDir, SKILL_NAME)
+    try {
+      if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true })
+    } catch {}
+    delete ledger[copy.path]
+    removed.push(copy)
+  }
+  return { removed, kept }
+}
+
+/**
+ * Whether the shared `.agents` row holds a copy this app wrote. The legacy
+ * copies are only removed once the current one is in place, so a machine never
+ * goes from "the tool finds a skill" to "the tool finds nothing".
+ */
+export function currentSkillInstalled(
+  ledger: SkillLedger,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): boolean {
+  const shared = AGENTS.find((a) => a.id === 'agents')
+  if (!shared) return false
+  return Boolean(ledger[skillFilePath(shared.skills(shared.probe(env, home), env, home))])
 }
 
 /** `genoffice/SKILL.md` inside a zip: the layout claude.ai and the desktop apps accept for an uploaded skill. */

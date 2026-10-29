@@ -591,16 +591,21 @@ register({
     if (typeof op.replace !== 'string') throw new GuidedError('op "findReplace" needs "replace".')
   },
   apply(op, ctx): OpRecord {
-    const { count } = replaceAllInDeck(ctx.opened.deck, String(op.find), String(op.replace), {
-      matchCase: op.matchCase as boolean | undefined,
-      firstOnly: op.firstOnly as boolean | undefined,
-      slideIndex: op.slideIndex as number | undefined,
-      elementId: op.elementId as string | undefined,
-    })
+    const { count, changedSlides } = replaceAllInDeck(
+      ctx.opened.deck,
+      String(op.find),
+      String(op.replace),
+      {
+        matchCase: op.matchCase as boolean | undefined,
+        firstOnly: op.firstOnly as boolean | undefined,
+        slideIndex: op.slideIndex as number | undefined,
+        elementId: op.elementId as string | undefined,
+      },
+    )
     if (!count) {
       throw new GuidedError(`op "findReplace": "${op.find}" was not found anywhere in the deck.`)
     }
-    return { op, after: { count } }
+    return { op, after: { count, changedSlides } }
   },
 })
 

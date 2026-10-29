@@ -5,7 +5,17 @@ import type { PageGeom } from './annotations'
 import type { DrawingInput } from '../shared/ipc'
 
 export type DrawTool =
-  'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'note' | 'redact' | 'link' | 'caret' | 'polygon'
+  | 'ink'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'measure'
+  | 'note'
+  | 'redact'
+  | 'link'
+  | 'caret'
+  | 'polygon'
 
 /** Displayed-pixel box (scaled) */
 interface Box {
@@ -174,6 +184,23 @@ function drawingShape(
   const [fx, fy] = toView(geom, scale, d.from[0], d.from[1])
   const [tx, ty] = toView(geom, scale, d.to[0], d.to[1])
   const head: ReactElement[] = []
+  if (d.kind === 'measure' && !hit && d.label) {
+    // the label previews beside the midpoint; the file's own appearance stream
+    // draws the same text in PDF space
+    head.push(
+      <text
+        key="label"
+        x={(fx + tx) / 2}
+        y={(fy + ty) / 2 - 6 * scale}
+        fill={cssRgb(d.color)}
+        stroke="none"
+        fontSize={Math.max(9, 9 * scale)}
+        textAnchor="middle"
+      >
+        {d.label}
+      </text>,
+    )
+  }
   if (d.kind === 'arrow') {
     const ang = Math.atan2(ty - fy, tx - fx)
     const len = Math.max(9 * scale, w * 4.5)
@@ -371,7 +398,7 @@ export function DrawLayer({
         pageIndex: 0,
         rect: [Math.min(sx, at[0]), Math.min(sy, at[1]), Math.max(sx, at[0]), Math.max(sy, at[1])],
       })
-    } else if (tool === 'line' || tool === 'arrow') {
+    } else if (tool === 'line' || tool === 'arrow' || tool === 'measure') {
       setLive({
         kind: tool,
         pageIndex: 0,
@@ -379,6 +406,8 @@ export function DrawLayer({
         width: strokeWidth,
         from: startRef.current,
         to: at,
+        // the label is the session's job: it needs the calibration, applied at commit
+        label: '',
       })
     }
   }
@@ -395,7 +424,7 @@ export function DrawLayer({
       const [x1, y1, x2, y2] = pending.rect
       if (x2 - x1 < 3 && y2 - y1 < 3) return
     }
-    if (pending.kind === 'line' || pending.kind === 'arrow') {
+    if (pending.kind === 'line' || pending.kind === 'arrow' || pending.kind === 'measure') {
       if (Math.hypot(pending.to[0] - pending.from[0], pending.to[1] - pending.from[1]) < 4) return
     }
     onCommit(pending)

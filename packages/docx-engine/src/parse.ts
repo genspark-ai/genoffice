@@ -4666,31 +4666,7 @@ function buildRun(
         if (xf.flipV) image.flipV = true
         // anchored (floating) picture kept as a run image: carry the wrap kind
         // and anchor offsets so the editor can float it instead of inlining
-        if (/<wp:anchor[\s>]/.test(drawingXml)) {
-          const meta = imageMeta(drawingXml)
-          if (meta.imageWrap) image.wrap = meta.imageWrap
-          if (meta.imageOffsetXEmu !== undefined) image.offsetXEmu = meta.imageOffsetXEmu
-          if (meta.imageOffsetYEmu !== undefined) image.offsetYEmu = meta.imageOffsetYEmu
-          if (meta.imageRelV) image.relV = meta.imageRelV
-          if (meta.imageRelH) image.relH = meta.imageRelH
-          if (meta.imageWrapDistTopEmu !== undefined)
-            image.wrapDistTopEmu = meta.imageWrapDistTopEmu
-          if (meta.imageWrapDistBottomEmu !== undefined)
-            image.wrapDistBottomEmu = meta.imageWrapDistBottomEmu
-          if (meta.imageWrapDistLeftEmu !== undefined)
-            image.wrapDistLeftEmu = meta.imageWrapDistLeftEmu
-          if (meta.imageWrapDistRightEmu !== undefined)
-            image.wrapDistRightEmu = meta.imageWrapDistRightEmu
-          // Word centers the object on the anchor line (tdf#162551: the picture
-          // juts above the line rather than hanging below it)
-          if (
-            /<wp:positionV[^>]*relativeFrom\s*=\s*["']line["'][^>]*>\s*<wp:align>center<\/wp:align>/.test(
-              drawingXml,
-            )
-          )
-            image.lineCenterV = true
-          if (meta.imageNoOverlap) image.noOverlap = true
-        }
+        Object.assign(image, runPictureAnchorOf(drawingXml))
       }
     }
     // legacy VML picture (w:pict + v:imagedata, Word 2003 era / stamps) or an
@@ -7617,6 +7593,53 @@ function picTransformOf(xml: string): { rotDeg?: number; flipH?: boolean; flipV?
   if (/\bflipH="(?:1|true)"/.test(picXfrm)) out.flipH = true
   if (/\bflipV="(?:1|true)"/.test(picXfrm)) out.flipV = true
   return out
+}
+
+/** the floating geometry an anchored picture carries on Run.image */
+export type RunPictureAnchor = Pick<
+  NonNullable<Run['image']>,
+  | 'wrap'
+  | 'offsetXEmu'
+  | 'offsetYEmu'
+  | 'relV'
+  | 'relH'
+  | 'wrapDistTopEmu'
+  | 'wrapDistBottomEmu'
+  | 'wrapDistLeftEmu'
+  | 'wrapDistRightEmu'
+  | 'lineCenterV'
+  | 'noOverlap'
+>
+
+/**
+ * Wrap kind and anchor offsets of a run-level <w:drawing> (empty for an
+ * in-line picture). The save diffs the editor's geometry against this, so a
+ * picture nobody moved keeps its bytes.
+ */
+export function runPictureAnchorOf(drawingXml: string): RunPictureAnchor {
+  const anchor: RunPictureAnchor = {}
+  if (!/<wp:anchor[\s>]/.test(drawingXml)) return anchor
+  const meta = imageMeta(drawingXml)
+  if (meta.imageWrap) anchor.wrap = meta.imageWrap
+  if (meta.imageOffsetXEmu !== undefined) anchor.offsetXEmu = meta.imageOffsetXEmu
+  if (meta.imageOffsetYEmu !== undefined) anchor.offsetYEmu = meta.imageOffsetYEmu
+  if (meta.imageRelV) anchor.relV = meta.imageRelV
+  if (meta.imageRelH) anchor.relH = meta.imageRelH
+  if (meta.imageWrapDistTopEmu !== undefined) anchor.wrapDistTopEmu = meta.imageWrapDistTopEmu
+  if (meta.imageWrapDistBottomEmu !== undefined)
+    anchor.wrapDistBottomEmu = meta.imageWrapDistBottomEmu
+  if (meta.imageWrapDistLeftEmu !== undefined) anchor.wrapDistLeftEmu = meta.imageWrapDistLeftEmu
+  if (meta.imageWrapDistRightEmu !== undefined) anchor.wrapDistRightEmu = meta.imageWrapDistRightEmu
+  // Word centers the object on the anchor line (tdf#162551: the picture
+  // juts above the line rather than hanging below it)
+  if (
+    /<wp:positionV[^>]*relativeFrom\s*=\s*["']line["'][^>]*>\s*<wp:align>center<\/wp:align>/.test(
+      drawingXml,
+    )
+  )
+    anchor.lineCenterV = true
+  if (meta.imageNoOverlap) anchor.noOverlap = true
+  return anchor
 }
 
 function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
