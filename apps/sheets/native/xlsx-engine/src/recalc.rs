@@ -16,9 +16,9 @@ use std::time::SystemTime;
 
 use ironcalc::base::Model;
 use ironcalc::base::types::CellType;
-use ironcalc::import::load_from_xlsx;
 use serde::{Deserialize, Serialize};
 
+use crate::rels_normalize::load_model;
 use crate::{CellRange, SidecarError};
 
 pub const MAX_RECALC_EDITS: usize = 10_000;
@@ -225,12 +225,7 @@ fn run(
     let mut entry = match resident {
         Some(entry) => entry,
         None => {
-            let path_text = path.to_str().ok_or_else(|| {
-                SidecarError::InvalidRequest("Workbook path is not valid UTF-8.".into())
-            })?;
-            let mut model = load_from_xlsx(path_text, "en", "UTC", "en").map_err(|error| {
-                SidecarError::Workbook(format!("Formula engine import failed: {error}"))
-            })?;
+            let mut model = load_model(path)?;
             requote_bare_sheet_names(&mut model);
             pin_unparsable_formulas(&mut model);
             ResidentModel {
@@ -1309,5 +1304,105 @@ mod tests {
             .unwrap();
         assert_eq!(b1.formatted, "6");
         assert!(b1.is_formula);
+    }
+
+    /// An openpyxl-shaped workbook: the worksheet relationships use absolute
+    /// OPC targets (`/xl/comments/comment1.xml`), and the comment part exists
+    /// unless `include_comments` is false.
+    fn write_absolute_relationship_fixture(path: &Path, include_comments: bool) {
+        use std::io::Write;
+
+        let mut entries: Vec<(&str, &str)> = vec![
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/comments/comment1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A3"/><sheetData><row r="1"><c r="A1"><v>10</v></c></row><row r="2"><c r="A2"><v>20</v></c></row><row r="3"><c r="A3"><f>SUM(A1:A2)</f></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="/xl/comments/comment1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="/xl/drawings/commentsDrawing1.vml"/></Relationships>"#,
+            ),
+            (
+                "xl/drawings/commentsDrawing1.vml",
+                r#"<xml xmlns:v="urn:schemas-microsoft-com:vml"></xml>"#,
+            ),
+        ];
+        if include_comments {
+            entries.push((
+                "xl/comments/comment1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>openpyxl</author></authors><commentList><comment ref="A1" authorId="0"><text><t>note</t></text></comment></commentList></comments>"#,
+            ));
+        }
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    /// openpyxl writes the comments and VML drawing relationships of a
+    /// worksheet as absolute package targets. IronCalc's importer assumes a
+    /// `../` relative target and failed the whole load with an opaque zip
+    /// error (genoffice#2306); the sidecar now rewrites them before the
+    /// import.
+    #[test]
+    fn imports_workbooks_with_absolute_relationship_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("absolute-rels.xlsx");
+        write_absolute_relationship_fixture(&path, true);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        assert_eq!(sum_value(&result), "30");
+        assert!(!result.cached);
+        // The resident model belongs to the source path; the rewrite is
+        // per request and leaves no temp file behind to go stale.
+        let again = recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        assert!(again.cached);
+        assert_eq!(sum_value(&again), "30");
+    }
+
+    #[test]
+    fn names_a_missing_part_of_an_absolute_relationship_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("absolute-rels-missing.xlsx");
+        write_absolute_relationship_fixture(&path, false);
+        let error = recalc_cells(&mut RecalcCache::new(), &path, &[], &[read_a1_a3()]).unwrap_err();
+        let SidecarError::Workbook(message) = error else {
+            panic!("unexpected error: {error:?}");
+        };
+        assert!(
+            message.contains("workbook relationship target not found:"),
+            "{message}"
+        );
+        assert!(
+            message.contains("xl/worksheets/sheet1.xml -> xl/comments/comment1.xml"),
+            "{message}"
+        );
+        assert!(
+            message.contains("(resolved from /xl/comments/comment1.xml)"),
+            "{message}"
+        );
     }
 }
