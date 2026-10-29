@@ -190,9 +190,7 @@ export class XlsxSidecarClient {
    * its indexed spelling, so the caller updates only the cached `<v>`. Cell
    * `row`/`column` are 0-based in the report (IronCalc, which computes the
    * values, addresses the same cells 1-based). */
-  async updateExternalLinks(input: {
-    readonly path: string
-  }): Promise<ExternalLinksUpdateResult> {
+  async updateExternalLinks(input: { readonly path: string }): Promise<ExternalLinksUpdateResult> {
     return this.request<ExternalLinksUpdateResult>(
       { command: 'update_external_links', ...input },
       ARCHIVE_TIMEOUT_MS,
