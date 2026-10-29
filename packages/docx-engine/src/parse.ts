@@ -7356,9 +7356,10 @@ function hfTextBoxOfVml(shape: XNode): HfTextBox {
     box.wrap = wrap
   else if (wrap === 'topAndBottom') box.wrap = 'topBottom'
   // the VML shape's own style carries the same display transform and stroke
-  // as a DrawingML spPr (legacy .doc conversions rotate banners this way)
-  const rotation = parseFloat(/(?:^|;)\s*rotation:([^;]+)/.exec(style)?.[1] ?? '')
-  if (Number.isFinite(rotation) && rotation !== 0) box.rotDeg = rotation
+  // as a DrawingML spPr (legacy .doc conversions rotate banners this way);
+  // the shared helper normalizes the negative / 360+ and 1/65536-degree forms
+  const rot = vmlRotationDeg(style)
+  if (rot != null) box.rotDeg = rot
   const strokeW = vmlLengthPx(/(?:^|;)\s*strokeweight:([^;]+)/.exec(style)?.[1])
   if (strokeW !== undefined && strokeW > 0) box.borderWidthPx = strokeW
   const strokeColor = /(?:^|;)\s*strokecolor:\s*#([0-9a-fA-F]{6})/.exec(style)?.[1]

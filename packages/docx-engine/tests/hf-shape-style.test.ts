@@ -38,6 +38,13 @@ const vmlBox = (styleExtra: string) =>
   '<v:textbox><w:txbxContent><w:p><w:r><w:t>Confidential</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
   '</v:shape></w:pict></w:r>'
 
+/** First floating box of the parsed footer strip (throws a clear failure when absent). */
+function firstBox(parsed: Awaited<ReturnType<typeof parseDocx>>) {
+  const box = parsed.footerParas?.find((p) => p.box)?.box
+  expect(box).toBeDefined()
+  return box!
+}
+
 async function parseWithFooter(paragraphXml: string) {
   const bytes = await buildDocx({
     bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
@@ -60,8 +67,7 @@ describe('header/footer floating shapes keep their transform and outline', () =>
     const parsed = await parseWithFooter(
       drawingmlBox('<a:ln w="38100"><a:solidFill><a:srgbClr val="C00000"/></a:solidFill></a:ln>'),
     )
-    const box = parsed.footerParas!.find((p) => p.box)?.box!
-    expect(box).toBeDefined()
+    const box = firstBox(parsed)
     expect(box.rotDeg).toBe(45)
     expect(box.borderWidthPx).toBe(4)
     expect(box.borderColor).toBe('C00000')
@@ -71,17 +77,28 @@ describe('header/footer floating shapes keep their transform and outline', () =>
     const parsed = await parseWithFooter(
       vmlBox('rotation:30;strokeweight:2.25pt;strokecolor:#4472C4'),
     )
-    const box = parsed.footerParas!.find((p) => p.box)?.box!
-    expect(box).toBeDefined()
+    const box = firstBox(parsed)
     expect(box.rotDeg).toBe(30)
     expect(box.borderWidthPx).toBe(3)
     expect(box.borderColor).toBe('4472C4')
   })
 
+  // legacy VML expresses rotation as plain degrees, as negative/360+ turns, or
+  // with the fd suffix (1/65536-degree units). Header/footer boxes must go
+  // through the same normalizer as body shapes, not a raw parseFloat.
+  it.each([
+    { style: 'rotation:90', deg: 90 },
+    { style: 'rotation:-90', deg: 270 },
+    { style: 'rotation:450', deg: 90 },
+    { style: 'rotation:5898240fd', deg: 90 },
+  ])('normalizes the legacy VML $style to $deg degrees', async ({ style, deg }) => {
+    const parsed = await parseWithFooter(vmlBox(style))
+    expect(firstBox(parsed).rotDeg).toBe(deg)
+  })
+
   it('a straight unstroked box stays exactly that', async () => {
     const parsed = await parseWithFooter(drawingmlBox(''))
-    const box = parsed.footerParas!.find((p) => p.box)?.box!
-    expect(box).toBeDefined()
+    const box = firstBox(parsed)
     expect(box.rotDeg).toBeUndefined()
     expect(box.borderWidthPx).toBeUndefined()
     expect(box.borderColor).toBeUndefined()

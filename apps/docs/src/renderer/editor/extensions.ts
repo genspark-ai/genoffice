@@ -207,6 +207,7 @@ import {
   renderTextboxSpec,
   runSpanSpecs,
   textboxBoxStyle,
+  textboxFloatPlacement,
   textboxIsFilled,
   wireChartEditing,
 } from './protected-render'
@@ -5151,6 +5152,26 @@ function sideWrappedBoxSpec(box: TextboxDisplay, chrome = false): DomSpec {
 }
 
 /**
+ * Inline style of the chrome rotator: the box's float slot plus its paint rank
+ * and turn, so the rotator's own rect mirrors the shape. A floating box goes
+ * static inside it (its float slot moves up to the rotator); without the slot
+ * the rotator would collapse to the zero-size anchor point and the turn would
+ * orbit the column instead of the shape. An inline box sizes the rotator by
+ * flow, so its only style is the turn.
+ */
+function shapeRotatorStyle(box: TextboxDisplay): string {
+  const parts: string[] = []
+  if (box.floating) {
+    parts.push(textboxFloatPlacement(box))
+    // a static box cannot paint its own rank: the rotator carries it
+    if (box.behind) parts.push(`z-index:${Math.min(-1, -1000 + (box.z ?? 0))}`)
+    else if (box.z !== undefined) parts.push(`z-index:${Math.max(1, 2 + box.z)}`)
+  }
+  if (box.rotDeg) parts.push(`transform:rotate(${box.rotDeg}deg)`)
+  return parts.join(';')
+}
+
+/**
  * The chrome layer of a single shape: a div that mirrors the box rect and
  * carries the rotation transform (the box spec itself renders unturned in the
  * editor), with the resize and rotate handles inside it — so selection frame,
@@ -5159,12 +5180,10 @@ function sideWrappedBoxSpec(box: TextboxDisplay, chrome = false): DomSpec {
  * cells, HTML export), which is why the editor spec suppresses it.
  */
 function shapeRotatorSpec(box: TextboxDisplay, boxSpec: DomSpec): DomSpec {
+  const style = shapeRotatorStyle(box)
   return [
     'div',
-    {
-      class: 'box-rotator',
-      ...(box.rotDeg ? { style: `transform:rotate(${box.rotDeg}deg)` } : {}),
-    },
+    { class: 'box-rotator', ...(style ? { style } : {}) },
     boxSpec,
     ['span', { class: 'box-resize-handle', contenteditable: 'false' }],
     ['span', { class: 'box-rotate-handle', contenteditable: 'false' }],
@@ -6674,7 +6693,15 @@ function mountTextboxEditors(
     )
     const single = boxes[0]
     if (rotator && single && boxes.length === 1) {
-      rotator.style.transform = single.rotDeg ? `rotate(${single.rotDeg}deg)` : ''
+      // the float slot and rank move with the turn: a drag commit, wrap change
+      // or undo re-renders the box inside, so the rotator reseats around it.
+      // syncFloatShifts parks the canvas page-gap display shift on this layer
+      // (--page-float-dy): keep it across the reseat.
+      const pageFloatDy = rotator.style.getPropertyValue('--page-float-dy')
+      const style = shapeRotatorStyle(single)
+      if (style) rotator.setAttribute('style', style)
+      else rotator.removeAttribute('style')
+      if (pageFloatDy) rotator.style.setProperty('--page-float-dy', pageFloatDy)
       dom.classList.toggle('has-turned-box', !!single.rotDeg)
     }
     refreshBand()

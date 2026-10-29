@@ -1271,11 +1271,17 @@ export function syncFloatShifts(
     const desired = origin + (pageStart + rel) * factor + above
     const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
     const next = applied + (desired - curTops[i]) / factor
+    // a single shape's float slot (and with it the display shift) sits on the
+    // chrome rotator, so the shift must ride there or the box would slide out
+    // of the layer that turns it
+    const shiftEl = f.el.parentElement?.classList.contains('box-rotator')
+      ? f.el.parentElement
+      : f.el
     if (Math.abs(next) < 0.5) {
-      f.el.style.removeProperty('--page-float-dy')
+      shiftEl.style.removeProperty('--page-float-dy')
       delete f.el.dataset.pageFloatDy
     } else if (Math.abs(next - applied) > 0.5 || !f.el.dataset.pageFloatDy) {
-      f.el.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
+      shiftEl.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       f.el.dataset.pageFloatDy = String(next)
     }
   })
@@ -1386,7 +1392,10 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       (r.bottom - wr.top) / factor,
     ]
     const boxes = Array.from(
-      wrapper.querySelectorAll<HTMLElement>(':scope > .doc-textbox, :scope > .doc-img-wrap'),
+      wrapper.querySelectorAll<HTMLElement>(
+        // a single shape's box rides the chrome rotator (see shapeRotatorSpec)
+        ':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox, :scope > .doc-img-wrap',
+      ),
     )
       .map((b) => rel(b.getBoundingClientRect()))
       .filter((b) => b[3] > b[2])

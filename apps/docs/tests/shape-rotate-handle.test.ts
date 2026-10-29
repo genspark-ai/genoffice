@@ -8,9 +8,12 @@ import { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
 import { buildShapeParagraphXml, parseDocx, type TextboxDisplay } from '@genoffice/docx-engine'
-import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { buildChartDocx, buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { setFloatingWrap } from '../src/renderer/editor/floating-z-order'
+import { textboxBoxStyle } from '../src/renderer/editor/protected-render'
+import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 
 /**
  * A gallery rect with textbox content; the explicit posOffset mirrors a
@@ -174,6 +177,114 @@ describe('shape rotation handle', () => {
     })
     expect(turnEl.style.transform).toBe('')
     expect(wrapper.classList.contains('has-turned-box')).toBe(false)
+    editor.destroy()
+  })
+
+  it('mirrors a floating box slot on the rotator so the turn pivots on its centre', async () => {
+    const editor = await openShapeDoc()
+    const pos = selectShape(editor)
+    // a floating (wrap none/front) box positions itself absolutely; the
+    // rotator must take that slot over, or transform-origin resolves against
+    // the zero-size anchor point and the shape orbits the column
+    setFloatingWrap(editor, 'front')
+    const wrapper = editor.view.nodeDOM(pos) as HTMLElement
+    const boxEl = wrapper.querySelector('.doc-textbox') as HTMLElement
+    const rotator = wrapper.querySelector('.box-rotator') as HTMLElement
+    const box = boxOf(editor, pos)
+    expect(box.floating).toBe(true)
+
+    // same left/top slot as the box's own (chrome-free) rendering
+    const reference = document.createElement('div')
+    reference.setAttribute('style', textboxBoxStyle(box))
+    expect(rotator.style.position).toBe('absolute')
+    expect(rotator.style.left).toBe(reference.style.left)
+    expect(rotator.style.top).toBe(reference.style.top)
+    // auto-sized by the static box inside: the rotator rect is the box rect
+    expect(rotator.style.width).toBe('')
+    expect(rotator.style.height).toBe('')
+    expect(boxEl.style.position).toBe('')
+    expect(boxEl.style.left).toBe('')
+    expect(boxEl.style.top).toBe('')
+    expect(boxEl.style.width).toBe('189px')
+    // the measurement/obstacle passes address the box through the rotator
+    expect(wrapper.querySelectorAll(':scope > .box-rotator > .doc-textbox')).toHaveLength(1)
+    // both grips ride inside the turning layer, so the frame turns with them
+    expect(rotator.querySelector(':scope > .box-resize-handle')).not.toBeNull()
+    expect(rotator.querySelector(':scope > .box-rotate-handle')).not.toBeNull()
+
+    // a turn spins the rotator and keeps its slot; the box itself stays flat
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...box, rotDeg: 30 }],
+    })
+    expect(rotator.style.transform).toBe('rotate(30deg)')
+    expect(rotator.style.position).toBe('absolute')
+    expect(rotator.style.left).toBe(reference.style.left)
+    expect(rotator.style.top).toBe(reference.style.top)
+    expect(boxEl.style.transform).toBe('')
+    editor.destroy()
+  })
+
+  it('keeps an inline rotator in flow and turns it without dropping its slot', async () => {
+    const source = await buildDocx({ bodyXml: '<w:p><w:r><w:t>Body text</w:t></w:r></w:p>' })
+    const parsed = await parseDocx(source)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    insertShapeAt(editor, 'rect')
+    let pos = -1
+    editor.state.doc.descendants((node, at) => {
+      if (pos === -1 && node.type.name === 'docProtected' && node.attrs.textboxes) pos = at
+      return true
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    const wrapper = editor.view.nodeDOM(pos) as HTMLElement
+    const rotator = wrapper.querySelector(':scope > .box-rotator') as HTMLElement
+    const boxEl = rotator.querySelector(':scope > .doc-textbox') as HTMLElement
+    const box = boxOf(editor, pos)
+    // an inline shape keeps no float slot inline: the stylesheet shrink-wraps
+    // the layer to the box, so its rect (and the pivot) is the box rect
+    expect(box.floating).toBeUndefined()
+    expect(rotator.style.position).toBe('')
+    expect(rotator.style.left).toBe('')
+    expect(rotator.style.top).toBe('')
+    expect(rotator.style.width).toBe('')
+    expect(rotator.style.height).toBe('')
+    expect(boxEl.style.width).toBe(`${box.widthPx}px`)
+    expect(wrapper.querySelectorAll(':scope > .box-rotator > .doc-textbox')).toHaveLength(1)
+
+    // a turn spins only the layer and keeps the inline (slot-less) style; the
+    // flow margins of the box still sit inside it
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...box, rotDeg: 45 }],
+    })
+    expect(rotator.style.transform).toBe('rotate(45deg)')
+    expect(rotator.style.position).toBe('')
+    expect(rotator.style.left).toBe('')
+    expect(wrapper.classList.contains('has-turned-box')).toBe(true)
+    expect(boxEl.style.transform).toBe('')
+
+    editor.commands.updateAttributes('docProtected', {
+      textboxes: [{ ...boxOf(editor, pos), rotDeg: undefined }],
+    })
+    expect(rotator.style.transform).toBe('')
+    expect(wrapper.classList.contains('has-turned-box')).toBe(false)
+    editor.destroy()
+  })
+
+  it('keeps the chart resize handle a direct wrapper child (charts have no rotator)', async () => {
+    const parsed = await parseDocx(await buildChartDocx())
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const chart = editor.view.dom.querySelector('.doc-protected-chart') as HTMLElement
+    expect(chart).not.toBeNull()
+    // no rotator layer on charts: the stylesheet must reveal a direct child
+    expect(chart.querySelector('.box-rotator')).toBeNull()
+    expect(chart.querySelector(':scope > .box-resize-handle')).not.toBeNull()
     editor.destroy()
   })
 })
