@@ -7,6 +7,19 @@ import { createRoot, type Root } from 'react-dom/client'
 import { hashProtectionPassword, verifyProtectionPassword } from '@genoffice/docx-engine'
 import { ProtectDialog, type ProtectDialogResult } from '../src/renderer/components/ProtectDialog'
 
+// The dialog roundtrip (form → result → verifiable credentials) is what this
+// file verifies, not KDF strength: 100k awaited digests schedule at multi-ms
+// apiece on loaded CI runners (windows pushed the 60s→180s bump past its
+// budget anyway). Hash with a low spin count; verification still runs the
+// real verifier against the produced record.
+vi.mock('@genoffice/docx-engine', async (importActual) => {
+  const actual = await importActual<typeof import('@genoffice/docx-engine')>()
+  return {
+    ...actual,
+    hashProtectionPassword: (password: string) => actual.hashProtectionPassword(password, 100),
+  }
+})
+
 type Props = Parameters<typeof ProtectDialog>[0]
 
 const DEFAULTS: Omit<Props, 'onApply' | 'onCancel'> = {
