@@ -68,6 +68,8 @@ export function createDocumentSkill(deps: CreateDocumentDeps): CreateDocumentSki
       'Save a new document in the user’s save folder from Markdown content. ' +
       'format "docx" writes a Word document, "md" a Markdown file. ' +
       'Returns the saved path and its cite link; link it in the reply.',
+    // writes a real file to disk: goes through the host's confirmation gate
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {

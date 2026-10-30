@@ -1542,6 +1542,21 @@ export function Home() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => window.aiOffice.onPaletteOpen?.(() => setPaletteOpen(true)), [])
+  // a tab was pinned to the desktop: main asks Home to show the surface the
+  // widget lives on (the pin action lands the shell on this view)
+  useEffect(
+    () =>
+      window.aiOffice.onShowDesktop?.(() => {
+        setDesktopMode(true)
+        writeLaunchView('desktop')
+        setSelectedFolder(null)
+        setCloudMode(false)
+        setAskMode(false)
+        setSelected(new Set())
+        setRowMenu(null)
+      }),
+    [],
+  )
   // a question handed to the ask panel from outside: the palette's Ask AI
   // fallback row or a genoffice:// deep link. The seq bumps per submission so
   // the same question twice is still two handoffs; the origin decides whether

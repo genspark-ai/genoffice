@@ -3,6 +3,15 @@ export { AiComposer } from './AiComposer'
 export { AiQueueStrip } from './AiQueueStrip'
 export { useChatRunQueue, type ChatRunQueue, type QueuedChatMessage } from './chat-run-queue'
 export { AI_QUEUE_LABELS, type AiQueueStripLabels } from './strings-ai-queue'
+export { AiConfirmCard } from './AiConfirmCard'
+export {
+  TOOL_CONFIRM_TIMEOUT_MS,
+  useToolConfirm,
+  type ToolConfirmCard,
+  type ToolConfirmRequest,
+  type UseToolConfirm,
+} from './tool-confirm'
+export { AI_CONFIRM_LABELS, type AiConfirmLabels } from './strings-ai-confirm'
 export { AI_SKILLS_LABELS, type AiSkillsLabels } from './strings-ai-skills'
 export { AiSkillsMenu, AiSkillChips, type AiSkillsMenuEntry } from './AiSkillsMenu'
 export { detectSlashQuery, filterSlashSkills, type AiSlashToken } from './ai-slash'

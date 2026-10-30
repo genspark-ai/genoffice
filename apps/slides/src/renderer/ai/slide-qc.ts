@@ -231,7 +231,12 @@ export function qcSlidePage(opts: QcPageOptions): Promise<QcPageResult> {
     const loop = new AgentLoop({
       transport,
       skill: createSlideFixSkill(access, screenshot !== null),
-      // audit feedback inside execute_slide_script output drives at most a couple of fix rounds
+      // audit feedback inside execute_slide_script output drives at most a
+      // couple of fix rounds
+      // no confirmTool on purpose: this is the automated self-repair pass over
+      // pages the run just generated (execute_slide_script is risk:'high' for
+      // the user-facing panel; a host without a hook allows the call, and a
+      // confirmation queue here would stall the pipeline mid-generation)
       maxTurns: 6,
       ...(systemSuffix ? { systemSuffix } : {}),
       events: {

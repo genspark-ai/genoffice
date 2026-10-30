@@ -97,6 +97,46 @@ export interface ChatMeta {
 }
 
 // ────────────────────────────────────────────────────────────
+// Agent run records (background-task list across restarts)
+// ────────────────────────────────────────────────────────────
+
+/** lifecycle events persisted for one agent run */
+export type RunEventKind = 'start' | 'finish' | 'error'
+
+/**
+ * One JSONL line of a run record. A run with a start event and no terminal
+ * event (finish/error) is "interrupted": it was in flight when the process
+ * went away. Hosts keep appending while a run lives; nothing resumes a run
+ * from these records — they exist so the UI can show and clear what was left.
+ */
+export interface RunEvent {
+  ts: string
+  kind: RunEventKind
+  /** the instruction that started the run (kind 'start') */
+  instruction?: string
+  /** the transcript the run belongs to, so a list row can link into it */
+  chatId?: string
+  /** terminal outcome (kind 'finish'): done | cancelled | discarded */
+  outcome?: 'done' | 'cancelled' | 'discarded'
+  /** failure text (kind 'error') */
+  error?: string
+}
+
+/** folded status of one run's records */
+export type RunStatus = 'done' | 'cancelled' | 'error' | 'interrupted' | 'discarded'
+
+export interface RunSummary {
+  runId: string
+  /** transcript the run wrote into (absent when the host gave none) */
+  chatId?: string
+  instruction: string
+  status: RunStatus
+  startedAt: string
+  endedAt?: string
+  error?: string
+}
+
+// ────────────────────────────────────────────────────────────
 // Extended API types (P1)
 // ────────────────────────────────────────────────────────────
 

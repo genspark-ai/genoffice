@@ -1,4 +1,59 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// app-routing routes through the app registry, which statically imports the
+// six app main modules; the fakes below satisfy that import graph (nothing is
+// called — routing reads the descriptor table only) and keep this suite node-only.
+vi.mock('../../docs/src/main/docs-main', () => ({
+  buildDocsMenu: () => {},
+  createDocsView: () => ({}),
+  docsQueryDirty: () => Promise.resolve(false),
+  markDocsNewBlank: () => {},
+  queueDocsAiContent: () => {},
+  requestDocsClose: () => Promise.resolve(true),
+  setActiveDocsResolver: () => {},
+  teardownDocsRenderer: () => {},
+}))
+vi.mock('../../sheets/src/main/sheets-main', () => ({
+  createSheetsView: () => ({}),
+  installSheetsMenu: () => {},
+  nudgeQueuedWorkbook: () => {},
+  queueWorkbookForView: () => {},
+  requestSheetsClose: () => Promise.resolve(true),
+  setActiveSheetsWebContents: () => {},
+  setSheetsNewBlank: () => {},
+  sheetsPendingEditCount: () => 0,
+}))
+vi.mock('../../slides/src/main/slides-main', () => ({
+  createSlidesView: () => ({}),
+  discardSlidesRecovery: () => {},
+  installSlidesMenu: () => {},
+  requestSlidesClose: () => Promise.resolve(true),
+  setActiveSlidesWebContents: () => {},
+  slidesIsDirty: () => false,
+}))
+vi.mock('../../pdf/src/main/pdf-main', () => ({
+  clearPdfDirty: () => {},
+  createPdfView: () => ({}),
+  pdfIsDirty: () => false,
+  requestPdfClose: () => Promise.resolve(true),
+}))
+vi.mock('../../markdown/src/main/markdown-main', () => ({
+  createMarkdownView: () => ({}),
+  markdownDiscardPendingAssets: () => Promise.resolve(),
+  markdownIsDirty: () => false,
+  markdownReadText: () => Promise.resolve(''),
+  markdownSaveToPath: () => Promise.resolve(),
+  requestMarkdownClose: () => Promise.resolve(true),
+}))
+vi.mock('../../html/src/main/html-main', () => ({
+  createHtmlPresentView: () => ({}),
+  createHtmlView: () => ({}),
+  htmlDiscardPendingAssets: () => Promise.resolve(),
+  htmlIsDirty: () => false,
+  htmlReadText: () => Promise.resolve(''),
+  htmlSaveToPath: () => Promise.resolve(),
+  requestHtmlClose: () => Promise.resolve(true),
+}))
 
 import { TEXT_RE, appForPath, renameStaysInApp } from '../src/main/app-routing'
 

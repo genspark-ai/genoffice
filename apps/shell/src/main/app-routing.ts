@@ -1,27 +1,25 @@
+import { appForPath, documentApps } from './app-registry'
 import type { DocumentTabKind } from '../shared/tabs-api'
+
+/** the routing pattern for one app's extensions, built from the registry's
+ *  extension list so the regexes and the table cannot drift */
+const extensionRe = (id: DocumentTabKind): RegExp =>
+  new RegExp(`\\.(${documentApps.find((app) => app.id === id)!.extensions.join('|')})$`, 'i')
 
 // shared by the open route, the open-dialog filter and the rename gate so they cannot drift
 // .odt/.odp (and the .ott/.ots/.otp templates) open through the docs/slides/sheets
 // import filters (converted copies)
-const DOCX_RE = /\.(docx|odt|ott)$/i
-const XLSX_RE = /\.(xlsx|xlsm|xls|csv|tsv|ods|ots)$/i
-const PPTX_RE = /\.(pptx|odp|otp)$/i
-const PDF_RE = /\.pdf$/i
-const HTML_RE = /\.html?$/i
-
-const TEXT_RE = /\.(md|markdown|txt|json)$/i
+const DOCX_RE = extensionRe('docs')
+const XLSX_RE = extensionRe('sheets')
+const PPTX_RE = extensionRe('slides')
+const PDF_RE = extensionRe('pdf')
+const TEXT_RE = extensionRe('markdown')
+const HTML_RE = extensionRe('html')
 
 export { DOCX_RE, XLSX_RE, PPTX_RE, PDF_RE, HTML_RE, TEXT_RE }
 
-export function appForPath(path: string): DocumentTabKind | undefined {
-  if (DOCX_RE.test(path)) return 'docs'
-  if (XLSX_RE.test(path)) return 'sheets'
-  if (PPTX_RE.test(path)) return 'slides'
-  if (PDF_RE.test(path)) return 'pdf'
-  if (TEXT_RE.test(path)) return 'markdown'
-  if (HTML_RE.test(path)) return 'html'
-  return undefined
-}
+/** the app that owns files with this path's extension; the registry is the source of truth */
+export { appForPath }
 
 /** A legal name in an extension no app routes to would turn an openable file into an unopenable one. */
 export function renameStaysInApp(from: string, newName: string): boolean {

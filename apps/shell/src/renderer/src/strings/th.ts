@@ -48,6 +48,13 @@ export const th: Dict = {
   askCtaRecents: 'ให้ดาวจากเมนูล่าสุด',
   askNoSave: 'บทสนทนาจะไม่ถูกบันทึก และจะล้างเมื่อรีสตาร์ทแอป',
   askUnknownError: 'คำขอ AI ล้มเหลว โปรดลองอีกครั้ง',
+  askTasksTitle: 'งานเบื้องหลัง',
+  askTaskRunning: 'กำลังทำงาน',
+  askTaskInterrupted: 'ถูกขัดจังหวะ',
+  askTaskStop: 'หยุด',
+  askTaskDismiss: 'ลบทิ้ง',
+  askTaskClearAll: 'ล้างทั้งหมด',
+  askTasksNote: 'งานจะหยุดเมื่อปิดหน้าต่าง งานที่ยังไม่เสร็จจะแสดงที่นี่หลังรีสตาร์ท',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'โปรเจกต์ที่สร้างบนเว็บด้วย Genspark AI แก้ไขต่อได้ในเบราว์เซอร์ — คลิกโปรเจกต์เพื่อเปิด',

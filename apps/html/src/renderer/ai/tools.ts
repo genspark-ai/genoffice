@@ -289,6 +289,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       '`set_attr {sid, name, value|null}`; `set_style {sid, styles: {prop: value|null}}` merges inline style. ' +
       'Prefer sid-addressed ops for single elements and str_replace for scattered text or CSS/JS edits. Keep unrelated markup, indentation and attribute order untouched. ' +
       'To place an attached image, write `attachment://<file name>` (the exact name from the attachment list) wherever a src/url value goes — set_attr value, an <img src> inside html, or a CSS url(); the app substitutes the real file itself. Never type base64 or data: URLs into ops, and never ask the user to paste base64.',
+    // the source-editing op batch rewrites what the user's file says: it
+    // routes through the host's confirmation gate
+    risk: 'high',
     inputSchema: {
       type: 'object',
       required: ['ops'],
@@ -386,6 +389,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'write_document',
     description:
       '[Content-first documents only: the user wants text written (article, guide, memo, announcement), not a designed page] Hands a plan to the system document writer, which writes the whole document as a clean single-column page. Give the title, a plan (outline, key points, length, voice) and the reference material in context. Everything else — new designed pages and full redesigns — goes through plan_page; single edits use apply_ops.',
+    // a whole-document write: confirm first
+    risk: 'high',
     inputSchema: {
       type: 'object',
       required: ['plan'],

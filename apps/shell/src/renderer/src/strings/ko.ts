@@ -49,6 +49,14 @@ export const ko: Dict = {
   askCtaRecents: '최근 파일에 별표하기',
   askNoSave: '대화는 저장되지 않으며, 앱을 다시 시작하면 지워집니다.',
   askUnknownError: 'AI 요청에 실패했습니다. 다시 시도해 주세요.',
+  askTasksTitle: '백그라운드 작업',
+  askTaskRunning: '실행 중',
+  askTaskInterrupted: '중단됨',
+  askTaskStop: '중지',
+  askTaskDismiss: '제거',
+  askTaskClearAll: '모두 지우기',
+  askTasksNote:
+    '창을 닫으면 작업이 중단됩니다. 다시 시작하면 완료되지 않은 작업이 여기에 표시됩니다.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Genspark AI로 웹에서 만든 프로젝트입니다. 편집은 브라우저에서 계속됩니다. 프로젝트를 클릭하면 열립니다.',

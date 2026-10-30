@@ -49,6 +49,13 @@ export const ar: Dict = {
   askCtaRecents: 'أضف نجمة من الملفات الأخيرة',
   askNoSave: 'لا يتم حفظ المحادثة؛ تُمسح عند إعادة تشغيل التطبيق.',
   askUnknownError: 'فشل طلب الذكاء الاصطناعي. حاول مجدداً.',
+  askTasksTitle: 'المهام في الخلفية',
+  askTaskRunning: 'قيد التشغيل',
+  askTaskInterrupted: 'متوقفة',
+  askTaskStop: 'إيقاف',
+  askTaskDismiss: 'إزالة',
+  askTaskClearAll: 'مسح الكل',
+  askTasksNote: 'تتوقف المهام عند إغلاق النافذة؛ وتُدرج المهام غير المكتملة هنا بعد إعادة التشغيل.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'مشاريع أُنشئت على الويب باستخدام Genspark AI. يستمر التحرير في المتصفح — انقر على أي مشروع لفتحه.',

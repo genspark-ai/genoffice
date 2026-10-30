@@ -11,6 +11,7 @@ import {
   rememberAiPanelOpen,
   useAiSidebarEnabled,
   type AiTokenUsageView,
+  type ToolConfirmCard,
 } from '@genoffice/ui'
 
 import {
@@ -239,6 +240,10 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  /// pending tool-approval card the chat panel renders inline (null when idle)
+  readonly aiConfirmCard?: ToolConfirmCard | null | undefined
+  readonly onAiConfirmAllow?: (() => void) | undefined
+  readonly onAiConfirmDeny?: (() => void) | undefined
   /** tokens billed across the session, shown beside the composer */
   readonly sessionUsage?: AiTokenUsageView
   readonly chat: readonly AiChatMessage[]
@@ -456,6 +461,9 @@ export function ExcelShell({
   formatPainterActive,
   sheetHasContent,
   aiBusy,
+  aiConfirmCard,
+  onAiConfirmAllow,
+  onAiConfirmDeny,
   sessionUsage,
   chat,
   historicChat,
@@ -977,6 +985,9 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          confirmCard={aiConfirmCard ?? null}
+          onConfirmAllow={onAiConfirmAllow}
+          onConfirmDeny={onAiConfirmDeny}
           sessionUsage={sessionUsage}
           onPromptChange={onPromptChange}
           onSend={onSend}

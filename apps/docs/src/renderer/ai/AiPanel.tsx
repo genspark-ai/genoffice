@@ -4,7 +4,9 @@ import {
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
+  AI_CONFIRM_LABELS,
   type AiModelPickerBridge,
+  AiConfirmCard,
   AiSkillChips,
   AiSkillsMenu,
   AiQueueStrip,
@@ -16,6 +18,7 @@ import {
   useAiPanelPrefs,
   useAiSlash,
   useChatRunQueue,
+  useToolConfirm,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyDown } from 'react'
@@ -413,6 +416,8 @@ export function AiPanel({
   const isRtl = lang === 'ar' || lang === 'he'
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  /** the approval gate for the document-writing tools (risk:'high' in tools.ts) */
+  const confirm = useToolConfirm()
   /** messages queued while a reply runs; the pump re-runs them through runWith on settle */
   const msgQueue = useChatRunQueue<{
     attachments: AttachmentMeta[]
@@ -888,6 +893,9 @@ export function AiPanel({
     loopRef.current = new AgentLoop<PmNode>({
       transport: transportRef.current,
       systemSuffix: aiLangDirective,
+      // the document-writing tools stop at the inline allow/deny card; a denial
+      // feeds the model a do-not-retry result so it can answer without editing
+      confirmTool: (call) => confirm.confirm(call),
       skill: composeSkills('docs+files+skills', '', [
         // the reader's starred files; empty while the user stars nothing —
         // buildContext then returns '' and the skill stays out of the way.
@@ -1199,6 +1207,8 @@ export function AiPanel({
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy || pendingSendRef.current) return
     setInput('')
+    // a new run owns the stream: the previous reply's confirm card is history
+    confirm.clear()
     // The message consumes the composer attachments: they ride along (echoed on the
     // bubble, images multimodal, files via the files skill) and the composer clears.
     const sentAtts = attachmentsOverride ?? attachmentsRef.current
@@ -1360,6 +1370,8 @@ export function AiPanel({
   const cancel = () => {
     msgQueue.hold()
     if (pendingSendRef.current) pendingSendRef.current.aborted = true
+    // a confirmation left open when Stop is pressed counts as denied
+    confirm.settleAll(false)
     loopRef.current?.cancel()
   }
 
@@ -1416,6 +1428,7 @@ export function AiPanel({
       pendingSendRef.current = null
     }
     abandonWriter()
+    confirm.clear()
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
@@ -1724,6 +1737,14 @@ export function AiPanel({
               )}
               {entry.role === 'user' && entry.skills && (
                 <AiSkillChips lang={lang} names={entry.skills} />
+              )}
+              {entry.role === 'assistant' && isLast && confirm.card && (
+                <AiConfirmCard
+                  labels={AI_CONFIRM_LABELS[lang]}
+                  card={confirm.card}
+                  onAllow={confirm.allow}
+                  onDeny={confirm.deny}
+                />
               )}
               {entry.role === 'assistant' && entry.reasoning && chatPrefs.showThinking && (
                 <ThinkingBlock text={entry.reasoning} live={!!entry.streaming} />

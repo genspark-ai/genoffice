@@ -1,14 +1,26 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * The Home desktop's two channels against a real temp dir: the handlers are
- * the only writers of `<userData>/desktop-layout.json`, so this pins what that
+ * The Home desktop's channels against a real temp dir: the handlers are the
+ * only writers of `<userData>/desktop-layout.json`, so this pins what that
  * file is allowed to look like — roundtrip, corrupt-reads-empty, shape
  * refusal, entry/coordinate clamps, and that a save never leaves the file
- * half-written.
+ * half-written. The alias list is the launch whitelist the OS-open gate
+ * checks, so the add/remove channels get the same pinning: only validated
+ * paths join, program packages (files, directories, symlinks to either) are
+ * refused at add time and at open time, and a layout save cannot inject an
+ * alias whatever its payload carries.
  */
 
 const mockedRename = vi.hoisted(() => vi.fn())
@@ -24,8 +36,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const handles = new Map<string, (...args: never[]) => unknown>()
 let userData = ''
 
+const openExternalPath = vi.fn(async () => '')
+
 vi.mock('electron', () => ({
   app: { getPath: () => userData },
+  shell: { openPath: (...args: unknown[]) => openExternalPath(...(args as never[])) },
   ipcMain: {
     handle: (channel: string, handler: (...args: never[]) => unknown) =>
       handles.set(channel, handler),
@@ -37,8 +52,12 @@ import {
   DEFAULT_DESKTOP_PREFS,
   customWallpaperName,
   desktopLayoutPath,
+  desktopPinsPath,
   desktopPrefsPath,
+  normalizePins,
+  readDesktopPins,
   registerDesktopIpc,
+  writeDesktopPins,
 } from '../src/main/desktop-ipc'
 
 const invoke = (channel: string, ...args: unknown[]) =>
@@ -46,6 +65,12 @@ const invoke = (channel: string, ...args: unknown[]) =>
 
 const readLayout = () => invoke(HOME_CHANNELS.desktopLayout) as Promise<unknown>
 const saveLayout = (raw: unknown) => invoke(HOME_CHANNELS.desktopLayoutSave, raw) as Promise<void>
+const addAlias = (raw: unknown) =>
+  invoke(HOME_CHANNELS.desktopAddAlias, raw) as Promise<readonly string[]>
+const removeAlias = (raw: unknown) =>
+  invoke(HOME_CHANNELS.desktopRemoveAlias, raw) as Promise<readonly string[]>
+const openExternal = (raw: unknown) =>
+  invoke(HOME_CHANNELS.desktopOpenExternal, raw) as Promise<boolean>
 const readPrefs = () => invoke(HOME_CHANNELS.desktopPrefs) as Promise<unknown>
 const savePrefs = (raw: unknown) => invoke(HOME_CHANNELS.desktopPrefsSave, raw) as Promise<void>
 const wallpaperImage = (id: unknown) => invoke(HOME_CHANNELS.wallpaperImage, id) as Promise<string>
@@ -86,14 +111,18 @@ afterEach(() => {
 
 describe('home:desktop-layout', () => {
   it('reads back what a save wrote, ids and coordinates intact', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12), 'file:/tmp/a.docx': at(108, 116) } })
+    await saveLayout({
+      positions: { 'app:docs': at(12, 12), 'file:/tmp/a.docx': at(108, 116) },
+      aliases: [],
+    })
     await expect(readLayout()).resolves.toEqual({
       positions: { 'app:docs': at(12, 12), 'file:/tmp/a.docx': at(108, 116) },
+      aliases: [],
     })
   })
 
   it('answers an empty layout when the file does not exist yet', async () => {
-    await expect(readLayout()).resolves.toEqual({ positions: {} })
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
   })
 
   it('answers an empty layout for a corrupt or shapeless file', async () => {
@@ -111,6 +140,7 @@ describe('home:desktop-layout', () => {
       writeFileSync(desktopLayoutPath(userData), garbage, 'utf8')
       await expect(readLayout(), `${garbage} should read empty`).resolves.toEqual({
         positions: {},
+        aliases: [],
       })
     }
   })
@@ -130,6 +160,7 @@ describe('home:desktop-layout', () => {
     )
     await expect(readLayout()).resolves.toEqual({
       positions: { 'app:docs': at(12, 12), 'file:/tmp/a.docx': at(108, 116) },
+      aliases: [],
     })
   })
 
@@ -146,13 +177,13 @@ describe('home:desktop-layout', () => {
 
 describe('home:desktop-layout-save', () => {
   it('writes a pretty-printed { positions } object to <userData>/desktop-layout.json', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
-    expect(readFile()).toEqual({ positions: { 'app:docs': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
+    expect(readFile()).toEqual({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
     expect(readFileSync(desktopLayoutPath(userData), 'utf8')).toContain('\n  ')
   })
 
   it('refuses a payload that is not a positions map, leaving the file untouched', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
     const before = readFileSync(desktopLayoutPath(userData), 'utf8')
 
     for (const bad of [
@@ -177,16 +208,17 @@ describe('home:desktop-layout-save', () => {
   })
 
   it('clamps coordinates into 0..10000 instead of refusing', async () => {
-    await saveLayout({ positions: { far: at(-40, 40000), near: at(12, 12) } })
+    await saveLayout({ positions: { far: at(-40, 40000), near: at(12, 12) }, aliases: [] })
     await expect(readLayout()).resolves.toEqual({
       positions: { far: at(0, 10000), near: at(12, 12) },
+      aliases: [],
     })
   })
 
   it('caps the map at 500 entries instead of refusing', async () => {
     const positions: Record<string, { x: number; y: number }> = {}
     for (let i = 0; i < 502; i += 1) positions[`id${i}`] = at(i, i)
-    await saveLayout({ positions })
+    await saveLayout({ positions, aliases: [] })
     const layout = (await readLayout()) as { positions: Record<string, unknown> }
     expect(Object.keys(layout.positions)).toHaveLength(500)
     expect(Object.keys(layout.positions)).toContain('id499')
@@ -194,38 +226,44 @@ describe('home:desktop-layout-save', () => {
   })
 
   it('stores exactly the contract shape, dropping anything extra an entry carries', async () => {
-    await saveLayout({ positions: { a: { x: 1, y: 2, note: 'foreign field' } } })
-    expect(readFile()).toEqual({ positions: { a: at(1, 2) } })
+    await saveLayout({ positions: { a: { x: 1, y: 2, note: 'foreign field' } }, aliases: [] })
+    expect(readFile()).toEqual({ positions: { a: at(1, 2) }, aliases: [] })
   })
 
   it('lets an empty map empty the file, not delete it', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
-    await saveLayout({ positions: {} })
-    await expect(readLayout()).resolves.toEqual({ positions: {} })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
+    await saveLayout({ positions: {}, aliases: [] })
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
   })
 
   it('keeps the last of two saves when they land in order', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
-    await saveLayout({ positions: { 'app:docs': at(108, 12), 'app:sheets': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
+    await saveLayout({
+      positions: { 'app:docs': at(108, 12), 'app:sheets': at(12, 12) },
+      aliases: [],
+    })
     await expect(readLayout()).resolves.toEqual({
       positions: { 'app:docs': at(108, 12), 'app:sheets': at(12, 12) },
+      aliases: [],
     })
   })
 })
 
 describe('the file is never half-written', () => {
   it('publishes through a scratch file and leaves none behind on success', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
     expect(readdirSync(userData)).toEqual(['desktop-layout.json'])
-    expect(readFile()).toEqual({ positions: { 'app:docs': at(12, 12) } })
+    expect(readFile()).toEqual({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
   })
 
   it('keeps the previous layout intact, and no scratch file behind, when the publish fails', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
     const before = readFileSync(desktopLayoutPath(userData), 'utf8')
     mockedRename.mockRejectedValue(Object.assign(new Error('busy'), { code: 'EPERM' }))
     try {
-      await expect(saveLayout({ positions: { 'app:docs': at(108, 12) } })).rejects.toMatchObject({
+      await expect(
+        saveLayout({ positions: { 'app:docs': at(108, 12) }, aliases: [] }),
+      ).rejects.toMatchObject({
         code: 'EPERM',
       })
       expect(readFileSync(desktopLayoutPath(userData), 'utf8')).toBe(before)
@@ -236,7 +274,7 @@ describe('the file is never half-written', () => {
   })
 
   it('is read the same after a write that retried a locked rename', async () => {
-    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [] })
     // one EPERM (AV / cloud-sync lock), then the real rename
     mockedRename
       .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EPERM' }))
@@ -244,8 +282,11 @@ describe('the file is never half-written', () => {
         realRename.fn!(from as string, to as string),
       )
     try {
-      await saveLayout({ positions: { 'app:docs': at(108, 12) } })
-      await expect(readLayout()).resolves.toEqual({ positions: { 'app:docs': at(108, 12) } })
+      await saveLayout({ positions: { 'app:docs': at(108, 12) }, aliases: [] })
+      await expect(readLayout()).resolves.toEqual({
+        positions: { 'app:docs': at(108, 12) },
+        aliases: [],
+      })
       expect(readdirSync(userData)).toEqual(['desktop-layout.json'])
     } finally {
       mockedRename.mockReset()
@@ -596,5 +637,354 @@ describe('home:wallpaper-pick-custom', () => {
     expect(customWallpaperName('C:\\imgs\\photo.webp', 0)).toBe('1700000000000-photo.webp')
     expect(customWallpaperName('???.png', 1)).toBe('1700000000000-2-___.png')
     expect(customWallpaperName('.png', 0)).toBe('1700000000000-.png.png')
+  })
+})
+
+// ── the dragged-in aliases the layout also carries ──────
+
+describe('the layout aliases', () => {
+  /** a real, existing file inside the test's userData dir */
+  const realFile = (name: string): string => {
+    const path = join(userData, name)
+    writeFileSync(path, 'x', 'utf8')
+    return path
+  }
+
+  it('roundtrips a dragged-in path list with the positions', async () => {
+    await saveLayout({ positions: { 'app:docs': at(12, 12) } })
+    const report = realFile('report.docx')
+    await expect(addAlias(report)).resolves.toEqual([report])
+    await expect(readLayout()).resolves.toEqual({
+      positions: { 'app:docs': at(12, 12) },
+      aliases: [report],
+    })
+    expect(readFile()).toEqual({
+      positions: { 'app:docs': at(12, 12) },
+      aliases: [report],
+    })
+    await expect(removeAlias(report)).resolves.toEqual([])
+    await expect(readLayout()).resolves.toEqual({
+      positions: { 'app:docs': at(12, 12) },
+      aliases: [],
+    })
+  })
+
+  it('normalizes a hand-edited list: non-strings, relative paths and dupes drop out', async () => {
+    writeFileSync(
+      desktopLayoutPath(userData),
+      JSON.stringify({
+        positions: {},
+        aliases: ['/tmp/a.docx', 42, 'relative.md', '', '/tmp/a.docx', '/tmp/b.md'],
+      }),
+      'utf8',
+    )
+    await expect(readLayout()).resolves.toEqual({
+      positions: {},
+      aliases: ['/tmp/a.docx', '/tmp/b.md'],
+    })
+  })
+
+  it('reads a pre-alias layout file as an empty list', async () => {
+    writeFileSync(
+      desktopLayoutPath(userData),
+      JSON.stringify({ positions: { 'app:docs': at(12, 12) } }),
+      'utf8',
+    )
+    await expect(readLayout()).resolves.toEqual({
+      positions: { 'app:docs': at(12, 12) },
+      aliases: [],
+    })
+  })
+
+  it('caps the list at 100 entries instead of refusing', async () => {
+    // a hand-edited file already at the cap, then one more add through the
+    // channel: the list stays at the cap, in first-seen order
+    const aliases = Array.from({ length: 100 }, (_v, i) => `/tmp/f${i}.docx`)
+    writeFileSync(desktopLayoutPath(userData), JSON.stringify({ positions: {}, aliases }), 'utf8')
+    const extra = realFile('extra.docx')
+    await expect(addAlias(extra)).resolves.toHaveLength(100)
+    const layout = (await readLayout()) as { aliases: string[] }
+    expect(layout.aliases).not.toContain(extra)
+    expect(layout.aliases).toContain('/tmp/f99.docx')
+  })
+
+  it('a position save cannot inject aliases, whatever its payload carries', async () => {
+    const report = realFile('report.docx')
+    const evil = realFile('evil.sh')
+    await expect(addAlias(report)).resolves.toEqual([report])
+    // the pre-fix write shape, aliases included: the field is ignored, the
+    // stored list survives every save untouched
+    await saveLayout({ positions: {}, aliases: [evil] })
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [report] })
+    await saveLayout({ positions: { 'app:docs': at(12, 12) }, aliases: [report, evil] })
+    await expect(readLayout()).resolves.toEqual({
+      positions: { 'app:docs': at(12, 12) },
+      aliases: [report],
+    })
+    // the injection never granted launch rights either
+    await expect(openExternal(evil)).resolves.toBe(false)
+  })
+})
+
+// ── home:desktop-add-alias: the only writer of the alias list ──
+
+describe('home:desktop-add-alias', () => {
+  /** a real, existing file inside the test's userData dir */
+  const realFile = (name: string): string => {
+    const path = join(userData, name)
+    writeFileSync(path, 'x', 'utf8')
+    return path
+  }
+
+  it('adds a real document path and persists it into the layout store', async () => {
+    const report = realFile('report.docx')
+    const notes = realFile('notes.md')
+    await expect(addAlias(report)).resolves.toEqual([report])
+    await expect(addAlias(notes)).resolves.toEqual([report, notes])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [report, notes] })
+    expect(readFile()).toEqual({ positions: {}, aliases: [report, notes] })
+  })
+
+  it('dedupes an already-stored path and answers the current list', async () => {
+    const report = realFile('report.docx')
+    await expect(addAlias(report)).resolves.toEqual([report])
+    await expect(addAlias(report)).resolves.toEqual([report])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [report] })
+  })
+
+  it('adds a plain folder (the OS file manager is a legitimate alias target)', async () => {
+    const dir = join(userData, 'Projects')
+    mkdirSync(dir, { recursive: true })
+    await expect(addAlias(dir)).resolves.toEqual([dir])
+  })
+
+  it('refuses a missing file, a relative path and non-string junk', async () => {
+    await expect(addAlias('/tmp/gone.docx')).resolves.toEqual([])
+    await expect(addAlias('relative.docx')).resolves.toEqual([])
+    await expect(addAlias(42)).resolves.toEqual([])
+    await expect(addAlias('')).resolves.toEqual([])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
+  })
+
+  it('refuses program files and program packages, whatever they are on disk', async () => {
+    const setup = realFile('setup.exe')
+    const script = realFile('run.sh')
+    // a macOS app bundle is a directory: the extension alone must refuse it
+    const app = join(userData, 'Tools.app')
+    mkdirSync(app, { recursive: true })
+    const workflow = join(userData, 'Clean.workflow')
+    mkdirSync(workflow, { recursive: true })
+    for (const path of [setup, script, app, workflow]) {
+      await expect(addAlias(path), `${path} should be refused`).resolves.toEqual([])
+    }
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
+  })
+
+  it('refuses a symlink whose resolved target is a program', async () => {
+    const app = join(userData, 'Payload.app')
+    mkdirSync(app, { recursive: true })
+    const exe = realFile('evil.exe')
+    // innocent-looking link names pointing at launchable targets
+    const linkToApp = join(userData, 'notes.txt')
+    const linkToExe = join(userData, 'readme.md')
+    symlinkSync(app, linkToApp)
+    symlinkSync(exe, linkToExe)
+    await expect(addAlias(linkToApp)).resolves.toEqual([])
+    await expect(addAlias(linkToExe)).resolves.toEqual([])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
+  })
+
+  it('accepts a symlink whose target is a plain document', async () => {
+    const report = realFile('report.docx')
+    const link = join(userData, 'shortcut.md')
+    symlinkSync(report, link)
+    await expect(addAlias(link)).resolves.toEqual([link])
+  })
+})
+
+// ── home:desktop-remove-alias ───────────────────────────
+
+describe('home:desktop-remove-alias', () => {
+  it('drops the stored path, leaving the file on disk untouched', async () => {
+    const path = join(userData, 'report.docx')
+    writeFileSync(path, 'x', 'utf8')
+    await expect(addAlias(path)).resolves.toEqual([path])
+    await expect(removeAlias(path)).resolves.toEqual([])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [] })
+    expect(readFileSync(path, 'utf8')).toBe('x')
+  })
+
+  it('an unknown path is a no-op answering the current list', async () => {
+    const path = join(userData, 'report.docx')
+    writeFileSync(path, 'x', 'utf8')
+    await expect(addAlias(path)).resolves.toEqual([path])
+    await expect(removeAlias('/tmp/never-added.docx')).resolves.toEqual([path])
+    await expect(removeAlias('relative.md')).resolves.toEqual([path])
+    await expect(removeAlias(42)).resolves.toEqual([path])
+    await expect(readLayout()).resolves.toEqual({ positions: {}, aliases: [path] })
+  })
+})
+
+// ── the alias OS-open: only what the desktop actually holds ──
+
+describe('home:desktop-open-external', () => {
+  beforeEach(() => openExternalPath.mockClear())
+
+  /** a real, existing file inside the test's userData dir, on the alias list */
+  const aliasedFile = (name: string): string => {
+    const path = join(userData, name)
+    writeFileSync(path, 'x', 'utf8')
+    return addAlias(path).then(() => path)
+  }
+
+  /** a path held on the alias list without the add channel's validation —
+   * what a hand-edited file (or the pre-fix layout save) could put there */
+  const injectedAlias = (path: string): void => {
+    writeFileSync(
+      desktopLayoutPath(userData),
+      JSON.stringify({ positions: {}, aliases: [path] }),
+      'utf8',
+    )
+  }
+
+  it('opens an aliased file that exists, through the OS default app', async () => {
+    const path = await aliasedFile('report.docx')
+    await expect(openExternal(path)).resolves.toBe(true)
+    expect(openExternalPath).toHaveBeenCalledWith(path)
+  })
+
+  it('refuses a path the desktop does not hold, whatever the renderer claims', async () => {
+    const path = join(userData, 'secret.docx')
+    writeFileSync(path, 'x', 'utf8')
+    await expect(openExternal(path)).resolves.toBe(false)
+    expect(openExternalPath).not.toHaveBeenCalled()
+  })
+
+  it('refuses a missing file, a relative path and non-string junk', async () => {
+    injectedAlias('/tmp/gone.docx')
+    await expect(openExternal('/tmp/gone.docx')).resolves.toBe(false)
+    await expect(openExternal('relative.docx')).resolves.toBe(false)
+    await expect(openExternal(42)).resolves.toBe(false)
+    await expect(openExternal('')).resolves.toBe(false)
+    expect(openExternalPath).not.toHaveBeenCalled()
+  })
+
+  it('never launches a program file, even one the layout file holds', async () => {
+    const app = join(userData, 'setup.exe')
+    const script = join(userData, 'run.sh')
+    writeFileSync(app, 'x', 'utf8')
+    writeFileSync(script, 'x', 'utf8')
+    injectedAlias(app)
+    await expect(openExternal(app)).resolves.toBe(false)
+    injectedAlias(script)
+    await expect(openExternal(script)).resolves.toBe(false)
+    expect(openExternalPath).not.toHaveBeenCalled()
+  })
+
+  it('never launches a directory-shaped program package (.app / .workflow)', async () => {
+    // a macOS bundle is a directory, so the old isFile() guard never fired;
+    // these land on the list only through a hand-edited or legacy file
+    const app = join(userData, 'Tools.app')
+    const workflow = join(userData, 'Clean.workflow')
+    mkdirSync(app, { recursive: true })
+    mkdirSync(workflow, { recursive: true })
+    injectedAlias(app)
+    await expect(openExternal(app)).resolves.toBe(false)
+    injectedAlias(workflow)
+    await expect(openExternal(workflow)).resolves.toBe(false)
+    expect(openExternalPath).not.toHaveBeenCalled()
+  })
+
+  it('never launches through a symlink whose target is a program', async () => {
+    const app = join(userData, 'Payload.app')
+    mkdirSync(app, { recursive: true })
+    const exe = join(userData, 'evil.exe')
+    writeFileSync(exe, 'x', 'utf8')
+    const linkToApp = join(userData, 'notes.txt')
+    const linkToExe = join(userData, 'readme.md')
+    symlinkSync(app, linkToApp)
+    symlinkSync(exe, linkToExe)
+    injectedAlias(linkToApp)
+    await expect(openExternal(linkToApp)).resolves.toBe(false)
+    injectedAlias(linkToExe)
+    await expect(openExternal(linkToExe)).resolves.toBe(false)
+    expect(openExternalPath).not.toHaveBeenCalled()
+  })
+
+  it('opens an aliased folder (the OS file manager is its default app)', async () => {
+    const dir = join(userData, 'Projects')
+    mkdirSync(dir, { recursive: true })
+    await expect(addAlias(dir)).resolves.toEqual([dir])
+    await expect(openExternal(dir)).resolves.toBe(true)
+    expect(openExternalPath).toHaveBeenCalledWith(dir)
+  })
+})
+
+// ── desktop-pins.json: the pinned widgets' store ────────
+
+describe('the pinned widgets store', () => {
+  const pin = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    kind: 'sheets',
+    filePath: '/docs/budget.xlsx',
+    bounds: { x: 100, y: 200, width: 480, height: 360 },
+    ...over,
+  })
+
+  it('answers the empty list for a missing or corrupt file', () => {
+    expect(readDesktopPins(userData)).toEqual([])
+    for (const garbage of ['{oops', 'null', '42', '{"pins":{}}']) {
+      writeFileSync(desktopPinsPath(userData), garbage, 'utf8')
+      expect(readDesktopPins(userData), `${garbage} should read empty`).toEqual([])
+    }
+  })
+
+  it('roundtrips what a write wrote, pretty-printed as { pins }', async () => {
+    await writeDesktopPins(userData, [pin()])
+    expect(readDesktopPins(userData)).toEqual([pin()])
+    const raw = JSON.parse(readFileSync(desktopPinsPath(userData), 'utf8'))
+    expect(raw).toEqual({ pins: [pin()] })
+    expect(readFileSync(desktopPinsPath(userData), 'utf8')).toContain('\n  ')
+  })
+
+  it('drops records that lost their shape, keeping the sound ones', () => {
+    const raw = [
+      pin(),
+      pin({ kind: 'home', filePath: '/docs/x.docx' }),
+      pin({ kind: 'notes', filePath: '/docs/x.docx' }),
+      pin({ filePath: 'relative.docx' }),
+      pin({ filePath: '' }),
+      'not a pin',
+      null,
+      pin({ bounds: { x: 1, y: 2, width: 3 } }),
+      pin({ bounds: 'nope' }),
+    ]
+    expect(normalizePins(raw)).toEqual([pin()])
+  })
+
+  it('dedupes by file path: a pin is its document, the first one wins', () => {
+    const raw = [pin(), pin({ bounds: { x: 1, y: 1, width: 400, height: 300 } })]
+    expect(normalizePins(raw)).toEqual([pin()])
+  })
+
+  it('caps at 8 widgets and clamps the rect into widget range', () => {
+    const many = Array.from({ length: 11 }, (_v, i) =>
+      pin({
+        filePath: `/docs/f${i}.xlsx`,
+        bounds: { x: -99999, y: 99999, width: 3, height: 99999 },
+      }),
+    )
+    const pins = normalizePins(many)
+    expect(pins).toHaveLength(8)
+    for (const p of pins) {
+      expect(p.bounds).toEqual({ x: -10000, y: 10000, width: 240, height: 2400 })
+    }
+  })
+
+  it('a write normalizes its payload before it hits the disk', async () => {
+    await writeDesktopPins(userData, [
+      pin(),
+      'garbage' as unknown as Parameters<typeof writeDesktopPins>[1][number],
+    ])
+    expect(readDesktopPins(userData)).toEqual([pin()])
   })
 })

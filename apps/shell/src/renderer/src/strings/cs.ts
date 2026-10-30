@@ -48,6 +48,13 @@ export const cs: Dict = {
   askCtaRecents: 'Označit z Nedávných',
   askNoSave: 'Konverzace se neukládá; po restartu aplikace se vymaže.',
   askUnknownError: 'Požadavek na AI selhal. Zkuste to znovu.',
+  askTasksTitle: 'Úlohy na pozadí',
+  askTaskRunning: 'Běží',
+  askTaskInterrupted: 'Přerušeno',
+  askTaskStop: 'Zastavit',
+  askTaskDismiss: 'Odebrat',
+  askTaskClearAll: 'Vymazat vše',
+  askTasksNote: 'Úlohy se zastaví zavřením okna; přerušené se po restartu zobrazí zde.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Projekty vytvořené na webu pomocí Genspark AI. Úpravy pokračují v prohlížeči — klikněte na projekt a otevřete ho.',

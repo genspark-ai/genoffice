@@ -51,6 +51,14 @@ export const fr: Dict = {
   askCtaRecents: 'Ajouter depuis Récents',
   askNoSave: 'La conversation n’est pas enregistrée ; elle s’efface au redémarrage de l’app.',
   askUnknownError: 'La requête IA a échoué. Réessayez.',
+  askTasksTitle: 'Tâches en arrière-plan',
+  askTaskRunning: 'En cours',
+  askTaskInterrupted: 'Interrompue',
+  askTaskStop: 'Arrêter',
+  askTaskDismiss: 'Ignorer',
+  askTaskClearAll: 'Tout effacer',
+  askTasksNote:
+    "Les tâches s'arrêtent à la fermeture de la fenêtre ; les interrompues sont listées ici après un redémarrage.",
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     "Projets créés sur le web avec Genspark AI. L'édition continue dans votre navigateur — cliquez sur un projet pour l'ouvrir.",

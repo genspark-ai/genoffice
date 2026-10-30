@@ -139,6 +139,13 @@
   user-select: none;
 }
 
+/* an OS file drag is over the surface: the dashed inset marks where the
+ * drop lands (an alias appears under the pointer) */
+.desktop-surface.drag-over {
+  outline: 2px dashed color-mix(in srgb, var(--text) 40%, transparent);
+  outline-offset: -10px;
+}
+
 /* ── the Home-root backdrop (the wallpaper lift) ───────── */
 
 /* Home mounts this node at its root while the desktop view is active; the

@@ -47,6 +47,14 @@ export const en: Dict = {
   askCtaRecents: 'Star files from Recents',
   askNoSave: 'The conversation is not saved; it clears when the app restarts.',
   askUnknownError: 'The AI request failed. Try again.',
+  askTasksTitle: 'Background tasks',
+  askTaskRunning: 'Running',
+  askTaskInterrupted: 'Interrupted',
+  askTaskStop: 'Stop',
+  askTaskDismiss: 'Dismiss',
+  askTaskClearAll: 'Clear all',
+  askTasksNote:
+    'Tasks stop when this window closes; interrupted ones are listed here after a restart.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Projects created on the web with Genspark AI. Editing continues in your browser — click any project to open it.',

@@ -3,9 +3,12 @@ import {
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
+  AI_CONFIRM_LABELS,
+  AiConfirmCard,
   type AiModelPickerBridge,
   useAiPanelPrefs,
   useAiSlash,
+  type ToolConfirmCard,
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState } from 'react'
 import {
@@ -242,6 +245,9 @@ export function AiChatPanel({
   prompt,
   preview,
   aiBusy,
+  confirmCard,
+  onConfirmAllow,
+  onConfirmDeny,
   sessionUsage,
   onPromptChange,
   onSend,
@@ -279,6 +285,11 @@ export function AiChatPanel({
   readonly prompt: string
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
+  /** pending tool-approval card rendered inline in the flow (null when idle);
+   *  the loop's confirmTool hook (App.tsx) parks risk:'high' write tools here */
+  readonly confirmCard?: ToolConfirmCard | null | undefined
+  readonly onConfirmAllow?: (() => void) | undefined
+  readonly onConfirmDeny?: (() => void) | undefined
   /** tokens billed across the session, shown beside the composer */
   readonly sessionUsage?: AiTokenUsageView | undefined
   readonly onPromptChange: (prompt: string) => void
@@ -871,6 +882,16 @@ export function AiChatPanel({
             )}
           </div>
         ))}
+        {confirmCard && (
+          <div className="ai-msg ai-msg-assistant">
+            <AiConfirmCard
+              labels={AI_CONFIRM_LABELS[lang]}
+              card={confirmCard}
+              onAllow={() => onConfirmAllow?.()}
+              onDeny={() => onConfirmDeny?.()}
+            />
+          </div>
+        )}
 
         {preview && (
           <section className="preview ai-preview-card" aria-label={t('aiPreviewAria')}>

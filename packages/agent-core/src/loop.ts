@@ -2,6 +2,7 @@ import type { AgentSkill, ExecutedToolCall } from './skill'
 import type {
   AgentImage,
   AgentMessage,
+  AgentPhase,
   AgentStreamHandle,
   AgentTokenUsage,
   AgentToolCall,
@@ -31,6 +32,58 @@ export interface AgentRunResult {
   truncated?: boolean
   /** tokens billed across all turns of the run; absent when the provider never reported usage */
   usage?: AgentTokenUsage
+}
+
+/** events a run handle can subscribe to (the loop's own callbacks stay the primary channel) */
+export interface AgentHandleEvents {
+  /** cumulative assistant text of the current turn, same cadence as events.onText */
+  text: string
+  /** a tool call started (no execution) or finished (with execution) */
+  tool: { call: AgentToolCall; execution?: ToolExecution }
+  /** phase change inside the model stream (thinking / responding / tool-input / tool-running) */
+  progress: AgentPhase
+  /** a risk:'high' tool is at the host's confirmation gate */
+  'awaiting-confirm': { call: AgentToolCall; tool: AgentToolDef }
+  finished: AgentRunResult
+  error: string
+}
+
+/**
+ * One run() call. `done` settles exactly once: resolved with the run's result
+ * (cancelled runs resolve with cancelled: true), rejected when the run failed.
+ * pause/resume operate between turns — a turn already streaming finishes;
+ * the loop holds the next model request until resume. cancel routes through
+ * the loop's AbortSignal, so the transport request and any running tool stop.
+ * on() subscriptions are live from attach time; a queued run emits nothing
+ * until it starts.
+ */
+export interface AgentRunHandle {
+  readonly id: string
+  readonly done: Promise<AgentRunResult>
+  /** hold the run between turns (a turn already streaming completes) */
+  pause(): void
+  /** release a paused run; starts the held turn, or the run itself when still queued */
+  resume(): void
+  /** stop the run (active) or drop it from the queue (not yet started) */
+  cancel(): void
+  on<K extends keyof AgentHandleEvents>(
+    event: K,
+    listener: (payload: AgentHandleEvents[K]) => void,
+  ): () => void
+}
+
+/** internal bookkeeping behind AgentRunHandle */
+interface RunRecord {
+  readonly id: string
+  readonly instruction: string
+  readonly images?: AgentImage[] | undefined
+  readonly done: Promise<AgentRunResult>
+  listeners: { [K in keyof AgentHandleEvents]: Set<(payload: AgentHandleEvents[K]) => void> }
+  resolveDone: (result: AgentRunResult) => void
+  rejectDone: (error: Error) => void
+  settled: boolean
+  /** pause requested through the handle: an active run holds between turns, a queued one stays in place */
+  paused: boolean
 }
 
 export interface AgentLoopEvents<TSnapshot> {
@@ -76,6 +129,16 @@ export interface AgentLoopOptions<TSnapshot = unknown> {
   formatUserMessage?(instruction: string, context: string): string
   /** appended to the system prompt each turn (e.g. reply-language directive following the UI language) */
   systemSuffix?(): string
+  /**
+   * Host-injected approval gate for tools declared `risk: 'high'`. Called
+   * before the tool executes; resolve false to decline (the model receives
+   * "the user declined" as the tool result and may take another approach),
+   * resolve true to execute. Hosts that provide no hook allow everything —
+   * the pre-confirmation behavior, so no host regresses. The hook must settle
+   * eventually: the approval UI owns its timeout (a pending dialog that never
+   * resolves holds the run); a throw counts as a denial.
+   */
+  confirmTool?(call: AgentToolCall, tool: AgentToolDef): Promise<boolean>
 }
 
 const COMPACT_MAX_BYTES = 256 * 1024
@@ -378,6 +441,16 @@ const TURN_LIMIT_NOTE =
 export const TOOL_ABORTED_OUTPUT =
   '(the user stopped the run while this tool was still executing; its result was discarded)'
 
+/**
+ * Tool result fed back to the model when the host's confirmation hook declines
+ * a risk:'high' call. isError: true plus explicit "do not retry" wording —
+ * without it a model tends to re-emit the identical call next turn. Exported
+ * so hosts can localize or display the exact text the model saw.
+ */
+export const TOOL_DENIED_OUTPUT =
+  '(the user declined to run this tool; it was not executed. Do not call it again in this run. ' +
+  'Continue with an approach that does not need it, or say plainly that the user declined this action.)'
+
 const TOOL_ABORTED = Symbol('tool-aborted')
 
 async function awaitToolOrAbort(
@@ -531,6 +604,23 @@ export class AgentLoop<TSnapshot = unknown> {
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
   private abortController: AbortController | null = null
+  /** the run now driving the loop (null while idle); its handle settles exactly once when the run does */
+  private activeRun: RunRecord | null = null
+  /**
+   * Instructions that arrived while a run was in flight. FIFO by deliberate
+   * choice: instructions are ordered user turns and a later one usually builds
+   * on the answer to the earlier one, so reordering (LIFO, priority insertion)
+   * would answer them out of conversational order, and dropping them (the
+   * pre-queue behavior) silently lost whatever a host submitted during a long
+   * run. Hosts that prefer refusal keep gating before run().
+   */
+  private runQueue: RunRecord[] = []
+  /** run-sequence counter; run ids are unique within one loop instance */
+  private runSeq = 0
+  /** an active run is paused: a turn already streaming finishes, the next model request waits */
+  private holdTurns = false
+  /** retriesUsed of the turn held by a pause, or null when nothing is held */
+  private pendingTurn: number | null = null
 
   constructor(options: AgentLoopOptions<TSnapshot>) {
     this.options = options
@@ -542,6 +632,14 @@ export class AgentLoop<TSnapshot = unknown> {
 
   get messages(): readonly AgentMessage[] {
     return this.history
+  }
+
+  /**
+   * How many instructions are waiting behind the run in flight (the queue the
+   * background-task UIs show; 0 while idle).
+   */
+  get queuedCount(): number {
+    return this.runQueue.length
   }
 
   /**
@@ -608,9 +706,106 @@ export class AgentLoop<TSnapshot = unknown> {
     this.trimHistory()
   }
 
-  /** images: inline attachments for this user turn (vision input; see AgentImage) */
-  run(instruction: string, images?: AgentImage[]): void {
-    if (this.running || !instruction) return
+  /**
+   * images: inline attachments for this user turn (vision input; see AgentImage)
+   *
+   * Returns the run's handle. While a run is in flight the instruction joins
+   * the FIFO queue and the handle stays pending until the loop reaches it —
+   * nothing is dropped. An empty instruction never reaches the model: its
+   * handle settles as cancelled straight away.
+   */
+  run(instruction: string, images?: AgentImage[]): AgentRunHandle {
+    const record = this.createRunRecord(instruction, images)
+    if (!instruction) {
+      this.settleRecordDone(record, { text: '', cancelled: true, turnLimit: false })
+      return this.handleOf(record)
+    }
+    if (this.running) {
+      this.runQueue.push(record)
+      return this.handleOf(record)
+    }
+    this.startRun(record)
+    return this.handleOf(record)
+  }
+
+  private createRunRecord(instruction: string, images?: AgentImage[]): RunRecord {
+    let resolveDone!: (result: AgentRunResult) => void
+    let rejectDone!: (error: Error) => void
+    const done = new Promise<AgentRunResult>((resolve, reject) => {
+      resolveDone = resolve
+      rejectDone = reject
+    })
+    // nobody may await done; a rejected promise with no handler must not become an unhandled rejection
+    done.catch(() => undefined)
+    return {
+      id: `run-${++this.runSeq}`,
+      instruction,
+      ...(images?.length ? { images } : {}),
+      done,
+      listeners: {
+        text: new Set(),
+        tool: new Set(),
+        progress: new Set(),
+        'awaiting-confirm': new Set(),
+        finished: new Set(),
+        error: new Set(),
+      },
+      resolveDone,
+      rejectDone,
+      settled: false,
+      paused: false,
+    }
+  }
+
+  private handleOf(record: RunRecord): AgentRunHandle {
+    const loop = this
+    return {
+      id: record.id,
+      done: record.done,
+      pause: () => loop.pauseRun(record),
+      resume: () => loop.resumeRun(record),
+      cancel: () => loop.cancelRun(record),
+      on: (event, listener) => {
+        record.listeners[event].add(listener)
+        return () => record.listeners[event].delete(listener)
+      },
+    }
+  }
+
+  /** pause one run: an active run holds between turns, a queued one stays at its queue position */
+  private pauseRun(record: RunRecord): void {
+    record.paused = true
+    if (record === this.activeRun) this.holdTurns = true
+  }
+
+  /** release a paused run; also pumps the queue when the record was queued */
+  private resumeRun(record: RunRecord): void {
+    record.paused = false
+    if (record !== this.activeRun) {
+      this.pumpQueue()
+      return
+    }
+    if (!this.holdTurns) return
+    this.holdTurns = false
+    const retriesUsed = this.pendingTurn
+    this.pendingTurn = null
+    if (retriesUsed !== null) this.startTurn(retriesUsed)
+  }
+
+  /** stop the active run (full cancel path) or drop a queued one before it starts */
+  private cancelRun(record: RunRecord): void {
+    if (record === this.activeRun) {
+      this.cancel()
+      return
+    }
+    const at = this.runQueue.indexOf(record)
+    if (at >= 0) this.runQueue.splice(at, 1)
+    this.settleRecordDone(record, { text: '', cancelled: true, turnLimit: false })
+  }
+
+  /** run() with the loop idle: owns the record and starts the first turn. */
+  private startRun(record: RunRecord): void {
+    this.activeRun = record
     this.running = true
     this.cancelled = false
     this.turns = 0
@@ -641,13 +836,102 @@ export class AgentLoop<TSnapshot = unknown> {
         ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
       const userMsg: AgentMessage = {
         role: 'user',
-        text: format(instruction, context),
-        ...(images?.length ? { images } : {}),
+        text: format(record.instruction, context),
+        ...(record.images?.length ? { images: record.images } : {}),
       }
       void this.beginRun(userMsg)
     } catch (err) {
       this.failRun(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  /** start the next queued run when the loop is idle and unheld (strict FIFO: a paused head stays put) */
+  private pumpQueue(): void {
+    if (this.running || this.holdTurns) return
+    const next = this.runQueue[0]
+    if (!next || next.paused) return
+    this.runQueue.shift()
+    this.startRun(next)
+  }
+
+  /** notify one run's subscribers; a throw propagates to the surrounding guard, like events.onText */
+  private emitRunEvent<K extends keyof AgentHandleEvents>(
+    event: K,
+    payload: AgentHandleEvents[K],
+  ): void {
+    const record = this.activeRun
+    if (!record) return
+    for (const listener of record.listeners[event]) listener(payload)
+  }
+
+  private settleRecordDone(record: RunRecord, result: AgentRunResult): void {
+    if (record.settled) return
+    record.settled = true
+    try {
+      for (const listener of record.listeners.finished) listener(result)
+    } catch {
+      // settlement must complete: done resolves even if an observer throws
+    }
+    record.resolveDone(result)
+  }
+
+  private settleRecordError(record: RunRecord, message: string): void {
+    if (record.settled) return
+    record.settled = true
+    try {
+      for (const listener of record.listeners.error) listener(message)
+    } catch {
+      // settlement must complete: done rejects even if an observer throws
+    }
+    record.rejectDone(new Error(message))
+  }
+
+  /** the active run succeeded (or was cancelled); called after the loop's own onDone */
+  private settleActiveDone(result: AgentRunResult): void {
+    const record = this.activeRun
+    this.activeRun = null
+    this.holdTurns = false
+    this.pendingTurn = null
+    if (record) this.settleRecordDone(record, result)
+    this.pumpQueue()
+  }
+
+  /** the active run failed; called after the loop's own onError */
+  private settleActiveError(message: string): void {
+    const record = this.activeRun
+    this.activeRun = null
+    this.holdTurns = false
+    this.pendingTurn = null
+    if (record) this.settleRecordError(record, message)
+    this.pumpQueue()
+  }
+
+  /**
+   * Await the host's confirmation for one high-risk call. Resolves false when
+   * the hook throws (a broken host must not execute a dangerous tool), and
+   * TOOL_ABORTED when the run was cancelled while the dialog was open.
+   */
+  private awaitConfirmOrAbort(
+    call: AgentToolCall,
+    tool: AgentToolDef,
+  ): Promise<boolean | typeof TOOL_ABORTED> {
+    const confirm = this.options.confirmTool
+    if (!confirm) return Promise.resolve(true)
+    const decision = Promise.resolve(confirm(call, tool)).catch(() => false)
+    const signal = this.abortController?.signal
+    if (!signal) return decision
+    if (signal.aborted) return Promise.resolve(TOOL_ABORTED)
+    return new Promise((resolve) => {
+      const onAbort = (): void => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(TOOL_ABORTED)
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      decision.then((allowed) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(allowed)
+      })
+    })
   }
 
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
@@ -661,7 +945,9 @@ export class AgentLoop<TSnapshot = unknown> {
     if (generation !== this.generation) return // reset during compaction
     if (this.cancelled) {
       this.running = false
-      this.options.events?.onDone?.({ text: '', cancelled: true, turnLimit: false })
+      const result: AgentRunResult = { text: '', cancelled: true, turnLimit: false }
+      this.options.events?.onDone?.(result)
+      this.settleActiveDone(result)
       return
     }
     // Leftover unanswered user message (a previous run failed before replying):
@@ -841,13 +1127,17 @@ export class AgentLoop<TSnapshot = unknown> {
     if (!this.running) return
     this.cancelled = true
     this.turnUsage = null
-    // abort lets long tools mid-execution (internal LLM loops etc.) stop promptly
+    // abort lets long tools mid-execution (internal LLM loops etc.) stop promptly;
+    // it also ends a pending confirmation wait (the dialog's decision is moot)
     this.abortController?.abort()
-    // Waiting out a retry backoff: finalize here. A run that already committed
-    // tool turns (or showed text) ends like a mid-stream cancel; one that
-    // produced nothing is rolled back instead of recording a placeholder reply
-    if (this.retryTimer) {
+    // Waiting out a retry backoff, or held between turns by a pause: finalize
+    // here. A run that already committed tool turns (or showed text) ends like
+    // a mid-stream cancel; one that produced nothing is rolled back instead of
+    // recording a placeholder reply
+    if (this.retryTimer || this.pendingTurn !== null) {
       this.clearRetryTimer()
+      this.pendingTurn = null
+      this.holdTurns = false
       this.running = false
       if (this.history.at(-1) !== this.runUserMsg || this.turnText) {
         this.dropTurnLimitNote()
@@ -856,11 +1146,13 @@ export class AgentLoop<TSnapshot = unknown> {
       } else {
         this.rollbackFailedRun()
       }
-      this.options.events?.onDone?.({
+      const result: AgentRunResult = {
         text: this.turnText,
         cancelled: true,
         turnLimit: this.finalizing,
-      })
+      }
+      this.options.events?.onDone?.(result)
+      this.settleActiveDone(result)
       return
     }
     // the transport emits onDone after aborting, which finalizes the run
@@ -876,8 +1168,25 @@ export class AgentLoop<TSnapshot = unknown> {
     this.handle = null
     this.running = false
     this.cancelled = false
+    this.holdTurns = false
+    this.pendingTurn = null
     this.history = []
     this.runUserMsg = null
+    // the runs die with the conversation: the active one settles as cancelled
+    // with whatever text it had shown, queued ones never started
+    const queued = this.runQueue.splice(0)
+    const active = this.activeRun
+    this.activeRun = null
+    if (active) {
+      this.settleRecordDone(active, {
+        text: this.turnText,
+        cancelled: true,
+        turnLimit: this.finalizing,
+      })
+    }
+    for (const record of queued) {
+      this.settleRecordDone(record, { text: '', cancelled: true, turnLimit: false })
+    }
   }
 
   private dropTurnLimitNote(): void {
@@ -912,6 +1221,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.handle?.cancel()
     this.handle = null
     this.running = false
+    this.holdTurns = false
+    this.pendingTurn = null
     this.turnUsage = null
     this.rollbackFailedRun()
     try {
@@ -919,6 +1230,7 @@ export class AgentLoop<TSnapshot = unknown> {
     } catch {
       // nothing left to notify
     }
+    this.settleActiveError(message)
   }
 
   /**
@@ -963,6 +1275,11 @@ export class AgentLoop<TSnapshot = unknown> {
   }
 
   private startTurn(retriesUsed = 0): void {
+    // a paused run holds between turns: keep the retry budget, wait for resume
+    if (this.holdTurns && this.running) {
+      this.pendingTurn = retriesUsed
+      return
+    }
     const generation = this.generation
     // a tool turn is ending here: fold its usage into the run total before the new turn resets it
     this.mergeRunUsage()
@@ -994,6 +1311,7 @@ export class AgentLoop<TSnapshot = unknown> {
             }
             try {
               this.options.events?.onText?.(this.turnText)
+              this.emitRunEvent('text', this.turnText)
             } catch (err) {
               // A transport drives onDelta from its own async event handler
               // (see the Electron IPC transport), so this throw never reaches
@@ -1036,6 +1354,15 @@ export class AgentLoop<TSnapshot = unknown> {
               this.failRun(err instanceof Error ? err.message : String(err))
             }
           },
+          onPhase: (phase) => {
+            if (generation !== this.generation || settled) return
+            try {
+              this.emitRunEvent('progress', phase)
+            } catch {
+              // progress is an auxiliary observer channel: a throwing
+              // listener must not kill the transport's event pump
+            }
+          },
           onDone: () => {
             if (generation !== this.generation || settled) return
             settled = true
@@ -1070,6 +1397,7 @@ export class AgentLoop<TSnapshot = unknown> {
             this.running = false
             this.rollbackFailedRun()
             this.options.events?.onError?.(error)
+            this.settleActiveError(error)
           },
         },
       )
@@ -1078,7 +1406,9 @@ export class AgentLoop<TSnapshot = unknown> {
       // before any callback runs: this keeps the run from staying busy forever.
       this.running = false
       this.rollbackFailedRun()
-      this.options.events?.onError?.(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      this.options.events?.onError?.(message)
+      this.settleActiveError(message)
     }
   }
 
@@ -1132,14 +1462,16 @@ export class AgentLoop<TSnapshot = unknown> {
       this.running = false
       this.runUserMsg = null
       this.mergeRunUsage()
-      events?.onDone?.({
+      const result: AgentRunResult = {
         text: this.turnText,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
         // set only when true so exact-shape consumers/tests stay unaffected
         ...(this.turnStopReason === 'max_tokens' && !this.cancelled ? { truncated: true } : {}),
         ...(this.runUsage ? { usage: this.runUsage } : {}),
-      })
+      }
+      events?.onDone?.(result)
+      this.settleActiveDone(result)
       return
     }
 
@@ -1208,10 +1540,62 @@ export class AgentLoop<TSnapshot = unknown> {
           call,
           execution: { output, isError: true, summary: call.name },
         })
+        this.emitRunEvent('tool', {
+          call,
+          execution: { output, isError: true, summary: call.name },
+        })
         continue
+      }
+      // Approval gate: risk:'high' tools wait for the host's confirm hook
+      // before executing. A denial feeds the model a "do not retry" result so
+      // it can take another approach; a host that provides no hook allows
+      // everything (the pre-confirmation behavior). The call is re-checked
+      // against cancel and reset after the wait, exactly like a running tool.
+      if (tool?.risk === 'high' && this.options.confirmTool) {
+        this.emitRunEvent('awaiting-confirm', { call, tool })
+        const decision = await this.awaitConfirmOrAbort(call, tool)
+        if (generation !== this.generation) return // reset while waiting for approval
+        if (this.cancelled || decision === TOOL_ABORTED) {
+          results.push({
+            id: call.id,
+            name: call.name,
+            output: TOOL_ABORTED_OUTPUT,
+            isError: true,
+          })
+          events?.onToolExecuted?.({
+            call,
+            execution: { output: TOOL_ABORTED_OUTPUT, isError: true, summary: call.name },
+          })
+          this.emitRunEvent('tool', {
+            call,
+            execution: { output: TOOL_ABORTED_OUTPUT, isError: true, summary: call.name },
+          })
+          continue
+        }
+        if (!decision) {
+          // the denial is transcript trail: the tool result the model sees, the
+          // isError flag the run guards count, and the denied marker for UIs
+          this.executedCalls.push({ name: call.name, ok: false })
+          results.push({
+            id: call.id,
+            name: call.name,
+            output: TOOL_DENIED_OUTPUT,
+            isError: true,
+          })
+          const denied: ToolExecution = {
+            output: TOOL_DENIED_OUTPUT,
+            isError: true,
+            summary: call.name,
+            denied: true,
+          }
+          events?.onToolExecuted?.({ call, execution: denied })
+          this.emitRunEvent('tool', { call, execution: denied })
+          continue
+        }
       }
       executedInTurn = true
       events?.onToolStart?.(call)
+      this.emitRunEvent('tool', { call })
       const snapshot = !this.mutationSeen ? captureSnapshot?.() : undefined
       let raced: ToolExecution | typeof TOOL_ABORTED
       try {
@@ -1236,6 +1620,7 @@ export class AgentLoop<TSnapshot = unknown> {
         this.executedCalls.push({ name: call.name, ok: false })
         results.push({ id: call.id, name: call.name, output: aborted.output, isError: true })
         events?.onToolExecuted?.({ call, execution: aborted })
+        this.emitRunEvent('tool', { call, execution: aborted })
         continue
       }
       const execution = raced
@@ -1272,6 +1657,7 @@ export class AgentLoop<TSnapshot = unknown> {
         execution,
         snapshotBefore: firstMutation ? snapshot : undefined,
       })
+      this.emitRunEvent('tool', { call, execution })
     }
     if (turnMutated) {
       this.readOutputs.clear()
@@ -1294,7 +1680,9 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.cancelled) {
       this.running = false
       this.runUserMsg = null
-      events?.onDone?.({ text: this.turnText, cancelled: true, turnLimit: false })
+      const result: AgentRunResult = { text: this.turnText, cancelled: true, turnLimit: false }
+      events?.onDone?.(result)
+      this.settleActiveDone(result)
       return
     }
 
@@ -1302,9 +1690,9 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.inputParseFails >= MAX_INPUT_PARSE_RETRIES) {
       this.running = false
       this.rollbackFailedRun()
-      events?.onError?.(
-        `Tool input was unusable (unparseable, truncated or missing required arguments) ${MAX_INPUT_PARSE_RETRIES} times in a row; retries stopped, please send the request again`,
-      )
+      const message = `Tool input was unusable (unparseable, truncated or missing required arguments) ${MAX_INPUT_PARSE_RETRIES} times in a row; retries stopped, please send the request again`
+      events?.onError?.(message)
+      this.settleActiveError(message)
       return
     }
 
@@ -1315,18 +1703,18 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.allErrorTurns >= MAX_ALL_ERROR_TURNS) {
       this.running = false
       this.rollbackFailedRun()
-      events?.onError?.(
-        `Every tool call failed for ${MAX_ALL_ERROR_TURNS} turns in a row; the run was stopped. Please send the request again`,
-      )
+      const message = `Every tool call failed for ${MAX_ALL_ERROR_TURNS} turns in a row; the run was stopped. Please send the request again`
+      events?.onError?.(message)
+      this.settleActiveError(message)
       return
     }
 
     if (this.redundantReadTurns >= MAX_REDUNDANT_READ_TURNS) {
       this.running = false
       this.rollbackFailedRun()
-      events?.onError?.(
-        `The model kept re-reading the same material or getting the same result for ${MAX_REDUNDANT_READ_TURNS} turns without making progress; the run was stopped. Please send the request again`,
-      )
+      const message = `The model kept re-reading the same material or getting the same result for ${MAX_REDUNDANT_READ_TURNS} turns without making progress; the run was stopped. Please send the request again`
+      events?.onError?.(message)
+      this.settleActiveError(message)
       return
     }
 
@@ -1344,9 +1732,10 @@ export class AgentLoop<TSnapshot = unknown> {
       if (++this.identicalTurns >= MAX_IDENTICAL_TURNS) {
         this.running = false
         this.rollbackFailedRun()
-        events?.onError?.(
-          'The model kept repeating the exact same turn without making progress; the run was stopped. Please send the request again',
-        )
+        const message =
+          'The model kept repeating the exact same turn without making progress; the run was stopped. Please send the request again'
+        events?.onError?.(message)
+        this.settleActiveError(message)
         return
       }
     } else {

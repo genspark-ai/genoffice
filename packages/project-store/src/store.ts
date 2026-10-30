@@ -7,6 +7,8 @@
  *     project.json
  *     chats/
  *       <chat-id>.jsonl
+ *     runs/
+ *       <run-id>.jsonl
  *
  * Design principles:
  * - No Electron dependency; the userData path is injected by the caller
@@ -39,6 +41,9 @@ import type {
   ProjectIndex,
   ProjectInfo,
   ProjectSummary,
+  RunEvent,
+  RunStatus,
+  RunSummary,
   TimelineEntry,
 } from './types.js'
 
@@ -107,6 +112,12 @@ export const MAX_PROJECT_NAME_CHARS = 128
 /** Default timeline entries; upper bound avoids loading every chat fully. */
 const DEFAULT_TIMELINE_LIMIT = 20
 const MAX_TIMELINE_LIMIT = 1_000
+/** Run-record field caps: one line stays small and the list rows stay readable */
+const RUN_INSTRUCTION_MAX_CHARS = 200
+const RUN_CHAT_ID_MAX_CHARS = 100
+const RUN_ERROR_MAX_CHARS = 500
+/** Upper bound on runs returned by listRuns (newest first) */
+const MAX_RUNS_LISTED = 200
 
 function normalizeTimelineLimit(limit: number): number {
   if (!Number.isFinite(limit)) return DEFAULT_TIMELINE_LIMIT
@@ -120,7 +131,7 @@ function normalizeTimelineLimit(limit: number): number {
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/
 
 // Throws a descriptive Error when an id could escape the store directory
-function assertSafeId(value: string, kind: 'projectId' | 'chatId'): void {
+function assertSafeId(value: string, kind: 'projectId' | 'chatId' | 'runId'): void {
   if (typeof value !== 'string' || !SAFE_ID_PATTERN.test(value)) {
     throw new Error(
       `Invalid ${kind} "${value}": must be non-empty and match ${String(SAFE_ID_PATTERN)} (rejects "..", "/" and backslash)`,
@@ -261,6 +272,65 @@ function parseChatRecords(raw: string): ChatMessage[] {
 
 function readAllChatRecords(filePath: string): ChatMessage[] {
   return parseChatRecords(readFileSync(filePath, 'utf8'))
+}
+
+/** JSONL lines of a run record, tolerant of torn or corrupt lines */
+function parseRunEvents(raw: string): RunEvent[] {
+  const events: RunEvent[] = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const ev = JSON.parse(line) as RunEvent
+      if (
+        typeof ev.ts === 'string' &&
+        (ev.kind === 'start' || ev.kind === 'finish' || ev.kind === 'error')
+      ) {
+        events.push(ev)
+      }
+    } catch {
+      continue
+    }
+  }
+  return events
+}
+
+/** Fold one run's events into its current status; null when no start exists */
+function foldRunEvents(runId: string, events: readonly RunEvent[]): RunSummary | null {
+  const start = events.find((e) => e.kind === 'start')
+  if (!start) return null
+  let terminal: RunEvent | undefined
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]!
+    if (ev.kind === 'finish' || ev.kind === 'error') {
+      terminal = ev
+      break
+    }
+  }
+  let status: RunStatus = 'interrupted'
+  let endedAt: string | undefined
+  let error: string | undefined
+  if (terminal?.kind === 'error') {
+    status = 'error'
+    endedAt = terminal.ts
+    error = terminal.error
+  } else if (terminal?.kind === 'finish') {
+    endedAt = terminal.ts
+    status =
+      terminal.outcome === 'cancelled'
+        ? 'cancelled'
+        : terminal.outcome === 'discarded'
+          ? 'discarded'
+          : 'done'
+  }
+  return {
+    runId,
+    ...(start.chatId ? { chatId: start.chatId } : {}),
+    instruction: start.instruction ?? '',
+    status,
+    startedAt: start.ts,
+    ...(endedAt ? { endedAt } : {}),
+    ...(error ? { error } : {}),
+  }
 }
 
 function appendJsonLines(filePath: string, lines: string): void {
@@ -877,6 +947,103 @@ export class ProjectStore {
       unlinkSync(path)
     } catch (err) {
       throw new Error(`Could not delete the conversation: ${String(err)}`, { cause: err })
+    }
+  }
+
+  // ── Agent run records ─────────────────────────────────────
+
+  private runsDir(projectId: string): string {
+    return join(this.projectDir(projectId), 'runs')
+  }
+
+  private runPath(projectId: string, runId: string): string {
+    assertSafeId(runId, 'runId')
+    return join(this.runsDir(projectId), `${runId}.jsonl`)
+  }
+
+  /**
+   * Appends one run event to <project>/runs/<runId>.jsonl (one JSON object per
+   * line, same append-only shape as the chat transcripts). Run records are
+   * telemetry: a write failure warns and returns — the chat transcript is the
+   * durable record, and a lost run line only shortens the background-task list.
+   */
+  appendRunEvent(
+    projectId: string,
+    runId: string,
+    event: Omit<RunEvent, 'ts'> & { ts?: string },
+  ): void {
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(runId, 'runId')
+    try {
+      const record: RunEvent = {
+        kind: event.kind,
+        ts: event.ts ?? nowIso(),
+        ...(event.instruction !== undefined
+          ? { instruction: clampChatField(event.instruction, RUN_INSTRUCTION_MAX_CHARS) }
+          : {}),
+        ...(event.chatId !== undefined
+          ? { chatId: clampChatField(event.chatId, RUN_CHAT_ID_MAX_CHARS) }
+          : {}),
+        ...(event.outcome !== undefined ? { outcome: event.outcome } : {}),
+        ...(event.error !== undefined
+          ? { error: clampChatField(event.error, RUN_ERROR_MAX_CHARS) }
+          : {}),
+      }
+      ensureDir(this.runsDir(projectId))
+      appendJsonLines(this.runPath(projectId, runId), `${JSON.stringify(record)}\n`)
+    } catch (err) {
+      console.warn(`[project-store] appendRunEvent failed for ${projectId}/${runId}:`, err)
+    }
+  }
+
+  /**
+   * Every run in a project, folded from its events, newest first. A run whose
+   * records hold a start but no terminal event is 'interrupted' — it was in
+   * flight when the process went away. Bad JSONL lines are skipped; a runs
+   * directory that cannot be read lists nothing.
+   */
+  listRuns(projectId: string): RunSummary[] {
+    assertSafeId(projectId, 'projectId')
+    const dir = this.runsDir(projectId)
+    let files: string[]
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
+    } catch {
+      return []
+    }
+    const summaries: RunSummary[] = []
+    for (const file of files) {
+      const runId = file.replace(/\.jsonl$/, '')
+      if (!SAFE_ID_PATTERN.test(runId)) continue
+      let events: RunEvent[] = []
+      try {
+        events = parseRunEvents(readFileSync(join(dir, file), 'utf8'))
+      } catch {
+        continue
+      }
+      const summary = foldRunEvents(runId, events)
+      if (summary) summaries.push(summary)
+    }
+    summaries.sort((a, b) =>
+      a.startedAt < b.startedAt
+        ? 1
+        : a.startedAt > b.startedAt
+          ? -1
+          : a.runId.localeCompare(b.runId),
+    )
+    return summaries.slice(0, MAX_RUNS_LISTED)
+  }
+
+  /** Removes one run's records (the background-task list's clear action). */
+  deleteRun(projectId: string, runId: string): void {
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(runId, 'runId')
+    const path = this.runPath(projectId, runId)
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch (err) {
+      throw new Error(`Could not delete the run record: ${String(err)}`, { cause: err })
     }
   }
 

@@ -7,6 +7,10 @@ export type {
   ProjectIndex,
   ProjectInfo,
   ProjectSummary,
+  RunEvent,
+  RunEventKind,
+  RunStatus,
+  RunSummary,
   TimelineEntry,
   ToolActivity,
 } from './types.js'

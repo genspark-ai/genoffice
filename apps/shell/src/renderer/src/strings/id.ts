@@ -50,6 +50,14 @@ export const id: Dict = {
   askCtaRecents: 'Tandai dari Terbaru',
   askNoSave: 'Percakapan tidak disimpan; akan hilang saat aplikasi dimulai ulang.',
   askUnknownError: 'Permintaan AI gagal. Coba lagi.',
+  askTasksTitle: 'Tugas latar belakang',
+  askTaskRunning: 'Berjalan',
+  askTaskInterrupted: 'Terputus',
+  askTaskStop: 'Hentikan',
+  askTaskDismiss: 'Hapus',
+  askTaskClearAll: 'Hapus semua',
+  askTasksNote:
+    'Tugas berhenti saat jendela ditutup; yang terputus tercantum di sini setelah mulai ulang.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Proyek yang dibuat di web dengan Genspark AI. Pengeditan berlanjut di browser — klik proyek untuk membukanya.',

@@ -74,6 +74,7 @@ import {
   addTokenUsage,
   ImageViewer,
   useAiPanelPrefs,
+  useToolConfirm,
   type AiTokenUsageView,
   type AiScopeQuoteData,
 } from '@genoffice/ui'
@@ -1471,6 +1472,9 @@ export function App({
   const runMutatedRef = useRef(false)
 
   const agentLoopRef = useRef<AgentLoop | null>(null)
+  // the approval gate for the workbook-write tools (risk:'high' in ai/tools.ts
+  // and merge-skill.ts); the card renders in the chat panel (AiChatPanel)
+  const aiConfirm = useToolConfirm()
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
       transport: createElectronTransport(() => aiSettingsRef.current!, {
@@ -1482,6 +1486,10 @@ export function App({
         },
       }),
       systemSuffix: aiLangDirective,
+      // the workbook-write tools (propose_operations, create_document,
+      // merge_attached_workbooks) stop at the inline allow/deny card; a denial
+      // feeds the model a do-not-retry result so it can answer without editing
+      confirmTool: (call) => aiConfirm.confirm(call),
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(availableAttachments),
@@ -1806,6 +1814,8 @@ export function App({
   }
 
   function handleStopAgent(): void {
+    // a confirmation left open when Stop is pressed counts as denied
+    aiConfirm.settleAll(false)
     agentLoopRef.current?.cancel()
   }
 
@@ -3820,6 +3830,8 @@ export function App({
   ): void {
     const instruction = (overrideInstruction ?? prompt).trim()
     if (!instruction || aiBusy) return
+    // a new run owns the stream: the previous reply's confirm card is history
+    aiConfirm.clear()
     runToolsRef.current = []
     runUsageRef.current = undefined
     // The message consumes the composer attachments: they ride along (echoed on the
@@ -5590,6 +5602,9 @@ export function App({
         onOpenWorkbook={() => void handleInspectWorkbook()}
         onDismissEmptyCsvNotice={() => setEmptyCsvNotice(false)}
         aiBusy={aiBusy}
+        aiConfirmCard={aiConfirm.card}
+        onAiConfirmAllow={aiConfirm.allow}
+        onAiConfirmDeny={aiConfirm.deny}
         {...(sessionUsage !== undefined ? { sessionUsage } : {})}
         chat={chat}
         historicChat={historicChat}

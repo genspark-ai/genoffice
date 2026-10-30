@@ -133,6 +133,8 @@ export interface RecentEntry {
   /** the path failed to stat (disconnected drive, moved, deleted) — kept
       listed like Word's recents instead of silently dropped (r158) */
   missing?: boolean
+  /** the path is a directory (set by statPaths; drives icon shape and opens) */
+  directory?: boolean
 }
 
 /** paged query for the home file lists */
@@ -271,12 +273,53 @@ export interface TodoItem {
 }
 
 /**
- * The Home desktop's icon positions, keyed by icon id (`app:docs`,
- * `sys:templates`, `file:<path>`, `folder:<path>`). Missing entries lay out in
- * grid order; the renderer owns grid math, this is just the persisted map.
+ * The Home desktop's persisted surface. `positions` maps icon id
+ * (`app:docs`, `file:<path>`, `folder:<path>`, `alias:<path>`) to its saved
+ * spot; `aliases` lists the real paths the person dragged onto the desktop
+ * from the OS — alias semantics: the file is never copied or moved, removing
+ * the icon only drops the stored path. Missing entries lay out in grid order;
+ * the renderer owns grid math, this is just the persisted map.
  */
 export interface DesktopLayout {
   positions: Record<string, { x: number; y: number }>
+  /** real file/folder paths pinned as desktop aliases, first-added first */
+  readonly aliases: readonly string[]
+}
+
+/**
+ * What `desktopLayoutSave` accepts: positions only. The alias list is the
+ * launch whitelist the `desktopOpenExternal` gate checks against, so a
+ * renderer must not be able to grow it by writing the layout file — aliases
+ * move through `desktopAddAlias` / `desktopRemoveAlias`, which validate on
+ * the main-process side. An `aliases` field in the payload is ignored by the
+ * save (kept for a stale preload that still sends it), never written.
+ */
+export type DesktopLayoutSave = Pick<DesktopLayout, 'positions'>
+
+/** the editor kinds a tab can be pinned to the desktop as a live widget */
+export type DesktopPinKind = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
+
+/** a pinned desktop widget as the renderer sees it: the live window's identity and screen rect */
+export interface DesktopPinInfo {
+  /** the `detached:<webContents id>` id the control host / MCP uses */
+  id: string
+  kind: DesktopPinKind
+  title: string
+  /** absolute path of the document; null while it is untitled (not restorable) */
+  filePath: string | null
+  /** screen-space rect of the widget window */
+  bounds: { x: number; y: number; width: number; height: number }
+}
+
+/**
+ * A pinned widget as `desktop-pins.json` stores it: what to reopen and where.
+ * Identity is the file path — one pinned widget per document; the runtime id
+ * (webContents id) is per-session and never persisted.
+ */
+export interface DesktopPinRecord {
+  kind: DesktopPinKind
+  filePath: string
+  bounds: { x: number; y: number; width: number; height: number }
 }
 
 /**
@@ -382,10 +425,34 @@ export interface HomeApi {
   todosList(): Promise<TodoItem[]>
   /** persist the todo list (whole-list write-through) */
   todosSave(items: TodoItem[]): Promise<void>
-  /** the Home desktop's icon positions */
+  /** the Home desktop's icon positions and dragged-in file aliases */
   desktopLayout(): Promise<DesktopLayout>
-  /** persist the desktop layout (whole-map write-through) */
-  desktopLayoutSave(layout: DesktopLayout): Promise<void>
+  /** persist the desktop layout's icon positions (whole-map write-through);
+   *  an `aliases` field in the payload is ignored — the stored alias list is
+   *  only ever changed by the two dedicated, main-process-validated channels
+   *  below, so a compromised renderer cannot self-grant launch whitelist
+   *  entries through a layout save */
+  desktopLayoutSave(layout: DesktopLayoutSave): Promise<void>
+  /** drag-in landing: add one path to the stored alias list after the main
+   *  process validates it (exists, absolute, not a program package); resolves
+   *  to the current list — a refused path just never joins it */
+  desktopAddAlias(path: string): Promise<readonly string[]>
+  /** "Remove from desktop": drop one path from the stored alias list; resolves
+   *  to the current list; the file on disk is never touched */
+  desktopRemoveAlias(path: string): Promise<readonly string[]>
+  /** open a desktop alias with the OS default app; the main process validates
+   *  it against the stored alias list before handing it to the OS */
+  desktopOpenExternal(path: string): Promise<boolean>
+  /** the document widgets currently pinned to the desktop */
+  desktopPins(): Promise<DesktopPinInfo[]>
+  /** raise one pinned widget without stealing keyboard focus */
+  desktopPinsActivate(id: string): Promise<void>
+  /** the desktop view's mount state: pinned widgets show only while it is up */
+  setDesktopPinsVisible(visible: boolean): Promise<void>
+  /** a tab was pinned to the desktop: main asks Home to show the widget's surface */
+  onShowDesktop(handler: () => void): () => void
+  /** the pinned widgets changed in the main process */
+  onDesktopPinsChanged(handler: (pins: DesktopPinInfo[]) => void): () => void
   /** the desktop's look prefs (wallpaper, carousel, icon size, sort) */
   desktopPrefs(): Promise<DesktopPrefs>
   /** persist the desktop prefs (whole-object write-through) */
@@ -802,6 +869,18 @@ export const HOME_CHANNELS = {
   todosSave: 'home:todos-save',
   desktopLayout: 'home:desktop-layout',
   desktopLayoutSave: 'home:desktop-layout-save',
+  /** the alias list's own add/remove channels: the only writers of the
+   *  layout's alias list (the whole-map save ignores the field) */
+  desktopAddAlias: 'home:desktop-add-alias',
+  desktopRemoveAlias: 'home:desktop-remove-alias',
+  desktopOpenExternal: 'home:desktop-open-external',
+  desktopPins: 'home:desktop-pins',
+  desktopPinsActivate: 'home:desktop-pins-activate',
+  desktopPinsSetVisible: 'home:desktop-pins-set-visible',
+  /** main → renderer: the pinned desktop widgets changed */
+  desktopPinsChanged: 'home:desktop-pins-changed',
+  /** main → renderer: a tab was pinned to the desktop, show the surface it lives on */
+  showDesktop: 'home:show-desktop',
   desktopPrefs: 'home:desktop-prefs',
   desktopPrefsSave: 'home:desktop-prefs-save',
   /** main → renderer: the desktop prefs were changed outside the renderer (the CLI's desktop domain) */

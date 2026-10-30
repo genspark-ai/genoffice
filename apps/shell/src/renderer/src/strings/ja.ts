@@ -49,6 +49,14 @@ export const ja: Dict = {
   askCtaRecents: '「最近」からスターを付ける',
   askNoSave: '会話は保存されません。アプリを再起動すると消えます。',
   askUnknownError: 'AI リクエストに失敗しました。もう一度お試しください。',
+  askTasksTitle: 'バックグラウンドタスク',
+  askTaskRunning: '実行中',
+  askTaskInterrupted: '中断',
+  askTaskStop: '停止',
+  askTaskDismiss: '削除',
+  askTaskClearAll: 'すべて消去',
+  askTasksNote:
+    'タスクはウィンドウを閉じると中断されます。再起動後、完了していないタスクがここに表示されます。',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Web で Genspark AI を使って作成したプロジェクト。編集はブラウザで続行します。クリックで開きます。',

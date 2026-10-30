@@ -63,6 +63,8 @@ import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/loca
 import {
   AiQueueStrip,
   AI_QUEUE_LABELS,
+  AI_CONFIRM_LABELS,
+  AiConfirmCard,
   AiScopeQuote,
   AiUsageChip,
   Markdown,
@@ -71,6 +73,7 @@ import {
   useAiPanelPrefs,
   useAiSlash,
   useChatRunQueue,
+  useToolConfirm,
   type AiScopeQuoteData,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -506,6 +509,8 @@ export function AiPanel({
     },
   })
   const [chat, setChat] = useState<ChatEntry[]>([])
+  /** the approval gate for the deck-editing tools (risk:'high' in slides-skill.ts) */
+  const confirm = useToolConfirm()
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
@@ -1475,6 +1480,9 @@ export function AiPanel({
         (text) => onReasoningDeltaRef.current(text),
       ),
       systemSuffix: aiLangDirective,
+      // the deck-editing tools stop at the inline allow/deny card; a denial
+      // feeds the model a do-not-retry result so it can answer without editing
+      confirmTool: (call) => confirm.confirm(call),
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
         createFilesSkill(availableAttachments, (path) => readAttachmentPathsRef.current.add(path)),
@@ -1780,6 +1788,8 @@ export function AiPanel({
     // otherwise two sets of bubbles get pushed and the earlier assistant placeholder stays at "thinking" forever.
     // qcRunningRef: the post-generation QC pass edits the deck outside the main loop — no concurrent runs
     if (!instruction || !loop || loop.busy || runStartingRef.current || qcRunningRef.current) return
+    // a new run owns the stream: the previous reply's confirm card is history
+    confirm.clear()
     runStartingRef.current = true
     setInput('')
     // The message consumes the composer attachments: they ride along (echoed on the
@@ -2170,6 +2180,8 @@ export function AiPanel({
     msgQueue.hold()
     dismissClarify()
     qcAbortRef.current?.abort()
+    // a confirmation left open when Stop is pressed counts as denied
+    confirm.settleAll(false)
     loopRef.current?.cancel()
   }
 
@@ -2451,6 +2463,14 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-${entry.role}${entry.role === 'assistant' && entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {entry.role === 'assistant' && isLast && confirm.card && (
+                <AiConfirmCard
+                  labels={AI_CONFIRM_LABELS[lang]}
+                  card={confirm.card}
+                  onAllow={confirm.allow}
+                  onDeny={confirm.deny}
+                />
+              )}
               {entry.role === 'user' && entry.scope && <AiScopeQuote scope={entry.scope} />}
               {entry.role === 'user' && entry.attachments && entry.attachments.length > 0 && (
                 <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />

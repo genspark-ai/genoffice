@@ -156,6 +156,8 @@ export function createCliSkill(deps: CliSkillDeps): CliSkill {
       'and its arguments (--json is added), e.g. ["create","--type","docx","--from","report.md","--out","<output dir>/Report.docx"]. ' +
       'files stages inputs into the work directory first (relative names), so ops, specs and markdown ' +
       'never have to be quoted on the command line. Finished documents go under the output directory with --out.',
+    // spawning a process that writes real files: the first-class high-risk call
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {

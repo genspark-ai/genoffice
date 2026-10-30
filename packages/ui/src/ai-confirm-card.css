@@ -1,0 +1,109 @@
+/* Inline allow/deny card for agent tool confirmations (see AiConfirmCard.tsx) */
+
+.ai-confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--color-bg-subtle);
+}
+
+.ai-confirm-card .ai-confirm-title {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ai-confirm-card .ai-confirm-tool {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--hover);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.ai-confirm-card .ai-confirm-args summary {
+  cursor: pointer;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.ai-confirm-card .ai-confirm-args pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--canvas);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: var(--text-caption);
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.ai-confirm-card .ai-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-confirm-card .ai-confirm-allow {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-confirm-card .ai-confirm-allow:hover {
+  opacity: 0.88;
+}
+
+.ai-confirm-card .ai-confirm-deny {
+  padding: 4px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ai-confirm-card .ai-confirm-deny:hover {
+  background: var(--hover);
+}
+
+.ai-confirm-card .ai-confirm-outcome {
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.ai-confirm-card .ai-confirm-outcome[data-denied] {
+  color: var(--color-error);
+}
+
+.ai-confirm-card .ai-confirm-hint {
+  font-size: var(--text-caption);
+  color: var(--icon-muted);
+}
+
+/* the settled card is a record, not a live request: quiet it down */
+.ai-confirm-card[data-outcome='allowed'],
+.ai-confirm-card[data-outcome='denied'] {
+  border-left-color: var(--border-strong);
+  opacity: 0.85;
+}

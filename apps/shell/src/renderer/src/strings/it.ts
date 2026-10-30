@@ -49,6 +49,14 @@ export const it: Dict = {
   askCtaRecents: 'Stella da Recenti',
   askNoSave: 'La conversazione non viene salvata; si cancella al riavvio dell’app.',
   askUnknownError: 'La richiesta IA non è riuscita. Riprova.',
+  askTasksTitle: 'Attività in background',
+  askTaskRunning: 'In esecuzione',
+  askTaskInterrupted: 'Interrotta',
+  askTaskStop: 'Ferma',
+  askTaskDismiss: 'Rimuovi',
+  askTaskClearAll: 'Cancella tutto',
+  askTasksNote:
+    'Le attività si fermano alla chiusura della finestra; quelle interrotte compaiono qui dopo un riavvio.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Progetti creati sul web con Genspark AI. La modifica continua nel browser: fai clic su un progetto per aprirlo.',

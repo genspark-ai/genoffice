@@ -3,6 +3,8 @@ import {
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
+  AI_CONFIRM_LABELS,
+  AiConfirmCard,
   type AiModelPickerBridge,
   AiSkillChips,
   AiSkillsMenu,
@@ -34,6 +36,7 @@ import {
   Markdown,
   useChatRunQueue,
   useAiSlash,
+  useToolConfirm,
   type AiScopeQuoteData,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -344,6 +347,8 @@ export function AiPanel({
   const prefsRef = useRef(prefs)
   prefsRef.current = prefs
   const [chat, setChat] = useState<ChatEntry[]>([])
+  /** the approval gate for the source-editing tools (risk:'high' in tools.ts) */
+  const confirm = useToolConfirm()
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   /** messages queued while a reply runs; the pump re-runs them through send on settle */
@@ -813,6 +818,9 @@ export function AiPanel({
   if (!loopRef.current) {
     loopRef.current = new AgentLoop<DocSnapshot>({
       transport: transportRef.current,
+      // the source-editing tools stop at the inline allow/deny card; a denial
+      // feeds the model a do-not-retry result so it can answer without editing
+      confirmTool: (call) => confirm.confirm(call),
       skill: composeSkills('html+search', '', [
         createDocumentSkill({
           getText: () => depsRef.current.access.getText(),
@@ -1065,6 +1073,8 @@ export function AiPanel({
     const instruction = text.trim()
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return false
+    // a new run owns the stream: the previous reply's confirm card is history
+    confirm.clear()
     // the message consumes the composer attachments: echoed on the bubble, images multimodal, files via the skill
     const sentAtts = attachmentsOverride ?? attachmentsRef.current
     if (sentAtts.length > 0) {
@@ -1201,6 +1211,8 @@ export function AiPanel({
 
   const stop = (): void => {
     msgQueue.hold()
+    // a confirmation left open when Stop is pressed counts as denied
+    confirm.settleAll(false)
     dismissCards()
     const loop = loopRef.current
     if (loop?.busy) loop.cancel()
@@ -1488,6 +1500,14 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-assistant${entry.isError ? ' ai-msg-error' : ''}${entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {isLast && confirm.card && (
+                <AiConfirmCard
+                  labels={AI_CONFIRM_LABELS[lang]}
+                  card={confirm.card}
+                  onAllow={confirm.allow}
+                  onDeny={confirm.deny}
+                />
+              )}
               {entry.reasoning && prefs.showThinking && (
                 <ReasoningBlock text={entry.reasoning} streaming={!!entry.streaming} />
               )}

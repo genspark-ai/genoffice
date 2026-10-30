@@ -1,20 +1,31 @@
 import { app, type BrowserWindow } from 'electron'
 
-import { docsQueryDirty, requestDocsClose } from '../../../docs/src/main/docs-main'
-import { requestSheetsClose, resetSheetsShuttingDown } from '../../../sheets/src/main/sheets-main'
-import { requestSlidesClose } from '../../../slides/src/main/slides-main'
-import { requestPdfClose } from '../../../pdf/src/main/pdf-main'
-import { requestMarkdownClose } from '../../../markdown/src/main/markdown-main'
-import { requestHtmlClose } from '../../../html/src/main/html-main'
+import { appForKind, resetSheetsShuttingDown } from './app-registry'
+import type { DocumentTabKind } from '../shared/tabs-api'
 import type { TabManager } from './tab-manager'
 
 /**
+ * The sweep walks the apps in this fixed order — the same order the guard has
+ * always prompted in — and asks each one's registered close guard. Kinds whose
+ * dirty answer needs a renderer round-trip (docs) are swept with every live
+ * tab instead of a pre-filtered dirty list.
+ */
+const CLOSE_PROMPT_ORDER: readonly DocumentTabKind[] = [
+  'sheets',
+  'pdf',
+  'markdown',
+  'html',
+  'slides',
+  'docs',
+]
+
+/**
  * Unsaved-changes guard for the shell window: closing the whole window walks
- * every dirty sheets/pdf/slides/docs tab through the same
- * save/don't-save/cancel prompt the tab close path uses, and any cancel
- * aborts the close. docs dirtiness lives renderer-side, so any live docs tab
- * forces the async path and gets queried there (clean tabs pass through
- * without activation).
+ * every dirty document tab through the same save/don't-save/cancel prompt the
+ * tab close path uses (the prompts themselves come from the app registry), and
+ * any cancel aborts the close. docs dirtiness lives renderer-side, so any live
+ * docs tab forces the async path and gets queried there (clean tabs pass
+ * through without activation).
  *
  * Cancelling the close event also cancels an in-flight app.quit(), and on
  * macOS window-all-closed does not quit, so once the prompts have all been
@@ -89,27 +100,20 @@ export function installShellCloseGuard(
 
   win.on('close', (event) => {
     if (closeConfirmed) return
-    const dirtySheets = manager.dirtySheetsTabs()
-    const dirtyPdf = manager.dirtyPdfTabs()
-    const dirtyMarkdown = manager.dirtyMarkdownTabs()
-    const dirtyHtml = manager.dirtyHtmlTabs()
-    const dirtySlides = manager.dirtySlidesTabs()
-    const docsTabs = manager.docsTabs()
+    // One sweep list per app, computed now so the walk below uses exactly the
+    // tabs that were dirty (or, for the async family, live) at close time: the
+    // sync-dirty families get their dirty tabs, docs gets every live tab
+    // because its dirtiness is only known after a renderer round-trip.
+    const sweep = CLOSE_PROMPT_ORDER.map((kind) => ({
+      kind,
+      tabs: appForKind(kind)?.queryDirty ? manager.tabsOfKind(kind) : manager.dirtyTabsOfKind(kind),
+    }))
     // Nothing to protect, so let this close event through untouched. Cancelling
     // it and re-issuing win.close() would also cancel an in-flight app.quit();
     // on macOS, where window-all-closed does not quit, ⌘Q with a clean
     // document would then close the only window and leave the app running
     // with none.
-    if (
-      dirtySheets.length === 0 &&
-      dirtyPdf.length === 0 &&
-      dirtyMarkdown.length === 0 &&
-      dirtyHtml.length === 0 &&
-      dirtySlides.length === 0 &&
-      docsTabs.length === 0
-    ) {
-      return
-    }
+    if (sweep.every((entry) => entry.tabs.length === 0)) return
     // Only the branch that is about to prompt cancels the close. The debounce
     // below still needs that cancel before it returns, or a second close
     // would land on top of the prompt that is already open.
@@ -125,30 +129,14 @@ export function installShellCloseGuard(
     void (async () => {
       try {
         const denied = await (async () => {
-          for (const tab of dirtySheets) {
-            manager.activateTab(tab.id)
-            if (!(await requestSheetsClose(tab.webContents, win))) return true
-          }
-          for (const tab of dirtyPdf) {
-            manager.activateTab(tab.id)
-            if (!(await requestPdfClose(tab.webContents, win))) return true
-          }
-          for (const tab of dirtyMarkdown) {
-            manager.activateTab(tab.id)
-            if (!(await requestMarkdownClose(tab.webContents, win))) return true
-          }
-          for (const tab of dirtyHtml) {
-            manager.activateTab(tab.id)
-            if (!(await requestHtmlClose(tab.webContents, win))) return true
-          }
-          for (const tab of dirtySlides) {
-            manager.activateTab(tab.id)
-            if (!(await requestSlidesClose(tab.webContents, win))) return true
-          }
-          for (const tab of docsTabs) {
-            if (!(await docsQueryDirty(tab.webContents))) continue
-            manager.activateTab(tab.id)
-            if (!(await requestDocsClose(tab.webContents, win))) return true
+          for (const entry of sweep) {
+            const descriptor = appForKind(entry.kind)
+            if (!descriptor) continue
+            for (const tab of entry.tabs) {
+              if (descriptor.queryDirty && !(await descriptor.queryDirty(tab.webContents))) continue
+              manager.activateTab(tab.id)
+              if (!(await descriptor.requestClose(tab.webContents, win))) return true
+            }
           }
           return false
         })()

@@ -157,6 +157,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'apply_ops',
     description: `Edit the document with a batch of ops — the same operations the editor's own toolbar performs. Ops run in order and stop at the first failure; the result lists what each op did.\n\n${buildOpsGuide()}`,
+    // the document-editing op batch rewrites what the user's file says: it
+    // routes through the host's confirmation gate
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -173,6 +176,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'write_document',
     description:
       '[For long new content: a whole document, a chapter, a full report, article or translation] Hands the writing to the system writer, which streams markdown straight into the document while the user watches; you never write the text yourself. Give a concrete plan (title, section outline with the key points of each, tone, target length) and put every fact, figure, name and quote the text must use into context — the writer sees only the plan and context, not the conversation. Omit afterIndex on a blank document; on a document with content, pass afterIndex to insert after that block, or replaceDocument=true when the user asked to rewrite everything. Short additions (a paragraph or two) use apply_ops insertContent instead.',
+    // a whole-document write (possibly replacing everything): confirm first
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -217,6 +222,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'insert_image',
     description:
       'Download a direct image link (an imageUrl from image_search) and insert it into the document after a top-level block. The image file is saved next to the document, so the document must have been saved to disk at least once.',
+    // writes an image file next to the document and changes its content
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -235,6 +242,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'generate_image',
     description:
       'Generate an illustration with AI from a text prompt and insert it into the document after a top-level block. For illustration/diagram-style art that image_search cannot find, or when the user asks to generate/draw a picture. The document must have been saved to disk at least once.',
+    // inserts generated pixels into the document (a file write + content change)
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {

@@ -8,6 +8,7 @@ import {
   IMAGE_EXTENSIONS,
   normalizePrefs,
   readDesktopLayout,
+  readDesktopPins,
   readDesktopPrefs,
   readWallpaperManifest,
   writeDesktopPrefs,
@@ -82,7 +83,12 @@ export async function runDesktopAction(
         layout: {
           positioned: Object.keys(layout.positions).length,
           positions: layout.positions,
+          // the alias paths the person dragged onto the desktop (agent-visible
+          // so the agent can reason about the surface it is asked to work on)
+          aliases: layout.aliases,
         },
+        // the pinned document widgets, as desktop-pins.json stores them
+        pins: readDesktopPins(deps.userDataDir()),
         todos: readTodos(deps.userDataDir()),
         windows: await deps.listWindows(),
       }

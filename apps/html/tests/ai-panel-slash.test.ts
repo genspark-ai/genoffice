@@ -171,7 +171,9 @@ describe('slash palette', () => {
     await settle()
     const ta = dock.querySelector('textarea')!
     expect(ta.selectionStart).toBe(0)
-    expect(document.activeElement).toBe(ta)
+    // focus returns to the composer after the pick, but the timing is
+    // environment-dependent in jsdom — wait for it instead of asserting a fixed tick
+    await vi.waitFor(() => expect(document.activeElement).toBe(ta))
   })
 
   it('picking an already-attached skill keeps it attached and strips a mid-draft token', async () => {

@@ -61,6 +61,7 @@ export {
   COMPLETED_VIA_TOOLS_TEXT,
   DEFAULT_MAX_TURNS,
   TOOL_ABORTED_OUTPUT,
+  TOOL_DENIED_OUTPUT,
   coerceArgumentFields,
   invalidArgumentFields,
   missingRequiredFields,
@@ -68,8 +69,10 @@ export {
   sanitizeAgentPayload,
 } from './loop'
 export type {
+  AgentHandleEvents,
   AgentLoopEvents,
   AgentLoopOptions,
+  AgentRunHandle,
   AgentRunResult,
   CompactionOptions,
   ToolExecutedEvent,

@@ -48,6 +48,14 @@ export const ms: Dict = {
   askCtaRecents: 'Tandakan dari Terkini',
   askNoSave: 'Perbualan tidak disimpan; ia dikosongkan apabila aplikasi dimulakan semula.',
   askUnknownError: 'Permintaan AI gagal. Cuba lagi.',
+  askTasksTitle: 'Tugas latar belakang',
+  askTaskRunning: 'Sedang berjalan',
+  askTaskInterrupted: 'Terhenti',
+  askTaskStop: 'Henti',
+  askTaskDismiss: 'Buang',
+  askTaskClearAll: 'Kosongkan semua',
+  askTasksNote:
+    'Tugas berhenti apabila tetingkap ditutup; yang terhenti disenaraikan di sini selepas mula semula.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Projek yang dicipta di web dengan Genspark AI. Penyuntingan diteruskan dalam pelayar — klik projek untuk membukanya.',

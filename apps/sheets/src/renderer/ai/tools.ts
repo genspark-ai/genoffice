@@ -517,6 +517,10 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       '(use fill_range to fill a formula or pattern down a whole column instead of huge set_range batches, ' +
       'copy_range to duplicate a large block once, move_range to move/cut a block — also to another sheet — instead of re-typing it cell by cell, convert_to_values to freeze formulas into their computed values); ' +
       'sheetId must be an id returned by get_workbook_context.',
+    // the workbook-write batch (cell writes, structure, formatting — every
+    // change to the workbook routes through here): it routes through the
+    // host's confirmation gate
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -538,6 +542,8 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       'To split a workbook into separate files, call once per sheet. To export data that is not in a sheet yet, write it into a new sheet first (add_sheet + set_range), then export that sheet. ' +
       "Types 'docx' and 'pdf' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor) — use these when the user wants a report/summary as its own document. " +
       'title becomes the file name; xlsx/csv default it to the worksheet name.',
+    // writes a new file to disk (same class as the create-document skill tool)
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {

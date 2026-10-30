@@ -47,6 +47,14 @@ export const nl: Dict = {
   askCtaRecents: 'Sterren vanuit Onlangs',
   askNoSave: 'Het gesprek wordt niet opgeslagen; het wordt gewist bij herstart van de app.',
   askUnknownError: 'De AI-aanvraag is mislukt. Probeer het opnieuw.',
+  askTasksTitle: 'Achtergrondtaken',
+  askTaskRunning: 'Actief',
+  askTaskInterrupted: 'Onderbroken',
+  askTaskStop: 'Stoppen',
+  askTaskDismiss: 'Verwijderen',
+  askTaskClearAll: 'Alles wissen',
+  askTasksNote:
+    'Taken stoppen als het venster sluit; onderbroken taken verschijnen hier na een herstart.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Projecten gemaakt op het web met Genspark AI. Bewerken gaat verder in je browser — klik op een project om het te openen.',

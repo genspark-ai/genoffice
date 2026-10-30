@@ -2,9 +2,10 @@
  * Format capability registry — the MCP layer's single source of truth for
  * "which document formats each editor can open, save and export".
  *
- * The authority is the shell's own routing and each editor's Save-As dialog:
- *   - open routing:      apps/shell/src/main/index.ts  (routeDocumentPath,
- *                        OPEN_DIALOG_EXTENSIONS, UNSUPPORTED_DOC_RE)
+ * The authority is the shell's app registry and each editor's Save-As dialog:
+ *   - open routing:      apps/shell/src/main/app-registry.ts (AppDescriptor
+ *                        extension lists; index.ts's routeDocumentPath and
+ *                        OPEN_DIALOG_EXTENSIONS are driven from them)
  *   - save/export filters: apps/docs|sheets|slides|markdown|html/src/main/*
  *
  * `editor` mirrors that matrix exactly; `mcp` is the subset this server exposes

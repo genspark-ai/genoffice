@@ -49,6 +49,14 @@ export const hi: Dict = {
   askCtaRecents: 'हाल की फ़ाइलों को तारांकित करें',
   askNoSave: 'बातचीत सहेजी नहीं जाती; ऐप पुनः आरंभ होने पर साफ़ हो जाती है।',
   askUnknownError: 'AI अनुरोध विफल रहा। फिर से प्रयास करें।',
+  askTasksTitle: 'बैकग्राउंड कार्य',
+  askTaskRunning: 'चल रहा है',
+  askTaskInterrupted: 'बाधित',
+  askTaskStop: 'रोकें',
+  askTaskDismiss: 'हटाएँ',
+  askTaskClearAll: 'सभी साफ़ करें',
+  askTasksNote:
+    'विंडो बंद होने पर कार्य रुक जाते हैं; पुनरारंभ के बाद अधूरे कार्य यहाँ सूचीबद्ध होते हैं।',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Genspark AI के साथ वेब पर बनाए गए प्रोजेक्ट। संपादन ब्राउज़र में जारी रहता है — खोलने के लिए किसी प्रोजेक्ट पर क्लिक करें।',

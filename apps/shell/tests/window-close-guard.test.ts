@@ -18,28 +18,62 @@ const requestMarkdownClose = vi.fn(() => Promise.resolve(true))
 const requestHtmlClose = vi.fn(() => Promise.resolve(true))
 
 vi.mock('../../docs/src/main/docs-main', () => ({
+  // buildDocsMenu/createDocsView/markDocsNewBlank/queueDocsAiContent are
+  // referenced by the app registry at module scope; these tests never call them
+  buildDocsMenu: vi.fn(),
+  createDocsView: vi.fn(),
+  markDocsNewBlank: vi.fn(),
+  queueDocsAiContent: vi.fn(),
+  teardownDocsRenderer: vi.fn(),
+  setActiveDocsResolver: vi.fn(),
   docsQueryDirty: (...args: unknown[]) => docsQueryDirty(...(args as [])),
   requestDocsClose: (...args: unknown[]) => requestDocsClose(...(args as [])),
 }))
 
 vi.mock('../../sheets/src/main/sheets-main', () => ({
+  createSheetsView: vi.fn(),
+  installSheetsMenu: vi.fn(),
+  nudgeQueuedWorkbook: vi.fn(),
+  queueWorkbookForView: vi.fn(),
+  setSheetsNewBlank: vi.fn(),
+  sheetsPendingEditCount: vi.fn(() => 0),
+  setActiveSheetsWebContents: vi.fn(),
   requestSheetsClose: (...args: unknown[]) => requestSheetsClose(...(args as [])),
   resetSheetsShuttingDown: (...args: unknown[]) => resetSheetsShuttingDown(...(args as [])),
 }))
 
 vi.mock('../../slides/src/main/slides-main', () => ({
+  createSlidesView: vi.fn(),
+  installSlidesMenu: vi.fn(),
+  discardSlidesRecovery: vi.fn(),
+  slidesIsDirty: vi.fn(() => false),
+  setActiveSlidesWebContents: vi.fn(),
   requestSlidesClose: (...args: unknown[]) => requestSlidesClose(...(args as [])),
 }))
 
 vi.mock('../../pdf/src/main/pdf-main', () => ({
+  createPdfView: vi.fn(),
+  clearPdfDirty: vi.fn(),
+  pdfIsDirty: vi.fn(() => false),
   requestPdfClose: (...args: unknown[]) => requestPdfClose(...(args as [])),
 }))
 
 vi.mock('../../markdown/src/main/markdown-main', () => ({
+  createMarkdownView: vi.fn(),
+  markdownDiscardPendingAssets: vi.fn(async () => undefined),
+  markdownReadText: vi.fn(async () => ''),
+  markdownSaveToPath: vi.fn(async () => undefined),
+  markdownIsDirty: vi.fn(() => false),
   requestMarkdownClose: (...args: unknown[]) => requestMarkdownClose(...(args as [])),
 }))
 
 vi.mock('../../html/src/main/html-main', () => ({
+  createHtmlView: vi.fn(),
+  createHtmlPresentView: vi.fn(),
+  htmlDiscardPendingAssets: vi.fn(async () => undefined),
+  htmlReadText: vi.fn(async () => ''),
+  htmlSaveToPath: vi.fn(async () => undefined),
+  htmlIsDirty: vi.fn(() => false),
   requestHtmlClose: (...args: unknown[]) => requestHtmlClose(...(args as [])),
 }))
 
@@ -92,12 +126,11 @@ type DirtyKinds = 'sheets' | 'pdf' | 'markdown' | 'html' | 'slides' | 'docs'
 function fakeManager(dirty: Partial<Record<DirtyKinds, TabStub[]>> = {}) {
   return {
     activateTab: vi.fn(),
-    dirtySheetsTabs: () => dirty.sheets ?? [],
-    dirtyPdfTabs: () => dirty.pdf ?? [],
-    dirtyMarkdownTabs: () => dirty.markdown ?? [],
-    dirtyHtmlTabs: () => dirty.html ?? [],
-    dirtySlidesTabs: () => dirty.slides ?? [],
-    docsTabs: () => dirty.docs ?? [],
+    // the guard's per-kind sweep, over the descriptor table: the sync families
+    // get their dirty tabs, docs (the async family) every live tab
+    dirtyTabsOfKind: (kind: DirtyKinds) =>
+      kind === 'docs' ? [] : ((dirty[kind] ?? []) as TabStub[]),
+    tabsOfKind: (kind: DirtyKinds) => (dirty[kind] ?? []) as TabStub[],
   }
 }
 

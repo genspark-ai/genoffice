@@ -48,6 +48,14 @@ export const vi: Dict = {
   askCtaRecents: 'Gắn sao từ Gần đây',
   askNoSave: 'Cuộc trò chuyện không được lưu; sẽ bị xóa khi khởi động lại ứng dụng.',
   askUnknownError: 'Yêu cầu AI thất bại. Thử lại.',
+  askTasksTitle: 'Tác vụ nền',
+  askTaskRunning: 'Đang chạy',
+  askTaskInterrupted: 'Bị gián đoạn',
+  askTaskStop: 'Dừng',
+  askTaskDismiss: 'Gỡ bỏ',
+  askTaskClearAll: 'Xóa tất cả',
+  askTasksNote:
+    'Tác vụ dừng khi đóng cửa sổ; những tác vụ bị gián đoạn được liệt kê ở đây sau khi khởi động lại.',
   navCloud: 'Dự án Genspark',
   cloudSubtitle:
     'Các dự án được tạo trên web với Genspark AI. Tiếp tục chỉnh sửa trên trình duyệt của bạn — nhấp vào bất kỳ dự án nào để mở.',

@@ -11,6 +11,63 @@ import {
 import type { OpenDocumentsBridgeDeps } from '../../src/main/mcp/open-documents-bridge'
 import { createOpenDocumentTools } from '../../src/main/mcp/tools/open-documents-tools'
 
+// The default agent surfaces come from the real registry (the pdf refusal data
+// and the markdown/html wrappers are what the shell injects); the six app main
+// modules behind it are faked so this suite stays node-only.
+vi.mock('../../../docs/src/main/docs-main', () => ({
+  buildDocsMenu: vi.fn(),
+  createDocsView: vi.fn(),
+  markDocsNewBlank: vi.fn(),
+  queueDocsAiContent: vi.fn(),
+  docsQueryDirty: vi.fn(async () => false),
+  requestDocsClose: vi.fn(async () => true),
+  setActiveDocsResolver: vi.fn(),
+  teardownDocsRenderer: vi.fn(),
+}))
+vi.mock('../../../sheets/src/main/sheets-main', () => ({
+  createSheetsView: vi.fn(),
+  installSheetsMenu: vi.fn(),
+  nudgeQueuedWorkbook: vi.fn(),
+  queueWorkbookForView: vi.fn(),
+  requestSheetsClose: vi.fn(async () => true),
+  setActiveSheetsWebContents: vi.fn(),
+  setSheetsNewBlank: vi.fn(),
+  sheetsPendingEditCount: vi.fn(() => 0),
+}))
+vi.mock('../../../slides/src/main/slides-main', () => ({
+  createSlidesView: vi.fn(),
+  discardSlidesRecovery: vi.fn(),
+  installSlidesMenu: vi.fn(),
+  requestSlidesClose: vi.fn(async () => true),
+  setActiveSlidesWebContents: vi.fn(),
+  slidesIsDirty: vi.fn(() => false),
+}))
+vi.mock('../../../pdf/src/main/pdf-main', () => ({
+  clearPdfDirty: vi.fn(),
+  createPdfView: vi.fn(),
+  pdfIsDirty: vi.fn(() => false),
+  requestPdfClose: vi.fn(async () => true),
+}))
+vi.mock('../../../markdown/src/main/markdown-main', () => ({
+  createMarkdownView: vi.fn(),
+  markdownDiscardPendingAssets: vi.fn(async () => undefined),
+  markdownIsDirty: vi.fn(() => false),
+  markdownReadText: vi.fn(async () => ''),
+  markdownSaveToPath: vi.fn(async () => undefined),
+  requestMarkdownClose: vi.fn(async () => true),
+}))
+vi.mock('../../../html/src/main/html-main', () => ({
+  createHtmlPresentView: vi.fn(),
+  createHtmlView: vi.fn(),
+  htmlDiscardPendingAssets: vi.fn(async () => undefined),
+  htmlIsDirty: vi.fn(() => false),
+  htmlReadText: vi.fn(async () => ''),
+  htmlSaveToPath: vi.fn(async () => undefined),
+  requestHtmlClose: vi.fn(async () => true),
+}))
+
+import { registryAgentIo } from '../../src/main/app-registry'
+
 /**
  * `open_documents` close/read through the shell-side control.
  *
@@ -42,6 +99,9 @@ async function controlWith(
     webContentsFor: () => contentsFor(),
     closeTab: () => true,
     defaultSaveDir: () => dir,
+    // the registry defaults (pdf refusals, markdown/html surfaces) with the
+    // test's per-family fakes layered on top
+    agents: { ...registryAgentIo(), ...(overrides.agents ?? {}) },
     ...overrides,
   }
   const control = createOpenDocumentsControl(deps)
@@ -68,20 +128,17 @@ describe('open_documents close: untitled documents', () => {
   ] as const)('saves an untitled dirty %s tab before closing it', async (kind, ext) => {
     const doc = tab({ id: 't1', kind, title: `untitled ${kind}` })
     const { call } = await controlWith([doc], {
-      docs: { openBlankTab: async () => 1, runCommand: async () => ({ ok: true }) },
-      sheets: { openBlankTab: async () => 1, runCommand: async () => ({ ok: true }) },
-      slides: {
-        openBlankTab: async () => 1,
-        runTxn: async () => ({}),
-        readDeck: async () => ({}),
-        saveDeck: async (_wcId, path) => ({ path }),
+      agents: {
+        docs: { save: async () => ({ ok: true }) },
+        sheets: { save: async () => ({ ok: true }) },
+        slides: { save: async (_wc, path) => ({ path }) },
+        markdown: {
+          read: async () => '',
+          save: async () => undefined,
+          discard: async () => undefined,
+        },
+        html: { read: async () => '', save: async () => undefined, discard: async () => undefined },
       },
-      markdown: {
-        read: async () => '',
-        save: async () => undefined,
-        discard: async () => undefined,
-      },
-      html: { read: async () => '', save: async () => undefined, discard: async () => undefined },
     })
 
     const result = await call({ action: 'close', target: 't1' })
@@ -98,7 +155,12 @@ describe('open_documents close: discard cleanup', () => {
     const discards: number[] = []
     const doc = tab({ id: 't3', kind: 'slides', title: 'deck.pptx', filePath: 'C:/docs/deck.pptx' })
     const { call } = await controlWith([doc], {
-      slidesDiscard: () => discards.push(1),
+      agents: {
+        slides: {
+          save: async () => ({ path: 'x' }),
+          discard: () => discards.push(1),
+        },
+      },
     })
 
     const result = await call({ action: 'close', target: 't3', unsaved: 'discard' })
@@ -112,14 +174,13 @@ describe('open_documents close: discard cleanup', () => {
     const saved: string[] = []
     const doc = tab({ id: 't4', kind: 'slides', title: 'deck.pptx', filePath: 'C:/docs/deck.pptx' })
     const { call } = await controlWith([doc], {
-      slidesDiscard: () => discards.push(1),
-      slides: {
-        openBlankTab: async () => 1,
-        runTxn: async () => ({}),
-        readDeck: async () => ({}),
-        saveDeck: async (_wcId, path) => {
-          saved.push(path)
-          return { path }
+      agents: {
+        slides: {
+          save: async (_wc, path) => {
+            saved.push(path)
+            return { path }
+          },
+          discard: () => discards.push(1),
         },
       },
     })
@@ -134,7 +195,7 @@ describe('open_documents close: discard cleanup', () => {
     const discard = vi.fn(async () => undefined)
     const doc = tab({ id: 't5', kind: 'markdown', title: 'notes.md', filePath: 'C:/docs/notes.md' })
     const { call } = await controlWith([doc], {
-      markdown: { read: async () => '', save: async () => undefined, discard },
+      agents: { markdown: { read: async () => '', save: async () => undefined, discard } },
     })
 
     await call({ action: 'close', target: 't5', unsaved: 'discard' })
@@ -192,13 +253,13 @@ describe('open_documents save: writes without closing', () => {
     const saved: string[] = []
     const doc = tab({ id: 't1', kind: 'slides', title: 'deck.pptx', filePath: 'C:/docs/deck.pptx' })
     const { call } = await controlWith([doc], {
-      slides: {
-        openBlankTab: async () => 1,
-        runTxn: async () => ({}),
-        readDeck: async () => ({}),
-        saveDeck: async (_wcId, path) => {
-          saved.push(path)
-          return { path }
+      agents: {
+        slides: {
+          save: async (_wc, path) => {
+            saved.push(path)
+            return { path }
+          },
+          read: async () => ({}),
         },
       },
     })

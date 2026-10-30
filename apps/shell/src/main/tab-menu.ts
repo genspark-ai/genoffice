@@ -22,6 +22,7 @@ export type TabMenuStringKey =
   | 'menuTabPin'
   | 'menuTabUnpin'
   | 'menuOpenInNewWindow'
+  | 'menuTabPinToDesktop'
   | 'menuClose'
 
 /** What each menu entry does; the shell supplies these, the menu only decides what is offered. */
@@ -30,6 +31,8 @@ export interface TabMenuActions {
   saveAs(id: string): void
   print(id: string): void
   openInNewWindow(id: string): void
+  /** pin the tab to the Home desktop as a live, borderless widget window */
+  pinToDesktop(id: string): void
   splitBeside(id: string): void
   rename(id: string): void
   duplicate(path: string): void
@@ -184,6 +187,12 @@ export function tabMenuTemplate(input: TabMenuInput): MenuItemConstructorOptions
       label: tm('menuOpenInNewWindow'),
       enabled: input.canDetach,
       click: () => actions.openInNewWindow(tab.id),
+    },
+    {
+      id: 'pinToDesktop',
+      label: tm('menuTabPinToDesktop'),
+      enabled: input.canDetach,
+      click: () => actions.pinToDesktop(tab.id),
     },
     { type: 'separator' },
     {

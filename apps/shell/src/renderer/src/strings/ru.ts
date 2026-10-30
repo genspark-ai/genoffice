@@ -50,6 +50,14 @@ export const ru: Dict = {
   askCtaRecents: 'Добавить из «Недавних»',
   askNoSave: 'Диалог не сохраняется и очищается при перезапуске приложения.',
   askUnknownError: 'Запрос к ИИ не удался. Попробуйте снова.',
+  askTasksTitle: 'Фоновые задачи',
+  askTaskRunning: 'Выполняется',
+  askTaskInterrupted: 'Прервана',
+  askTaskStop: 'Остановить',
+  askTaskDismiss: 'Убрать',
+  askTaskClearAll: 'Очистить всё',
+  askTasksNote:
+    'Задачи останавливаются при закрытии окна; прерванные перечисляются здесь после перезапуска.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Проекты, созданные в вебе с Genspark AI. Редактирование продолжается в браузере — нажмите на проект, чтобы открыть его.',

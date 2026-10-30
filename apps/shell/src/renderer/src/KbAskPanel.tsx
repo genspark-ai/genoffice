@@ -12,13 +12,16 @@ import {
   skillContextVars,
   withAttachedSkills,
   type AgentImage,
+  type AgentRunHandle,
   type AttachmentInfo,
   type CliContext,
   type CreateDocumentFormat,
   type KbFileInfo,
 } from '@genoffice/agent-core'
 import {
+  AI_CONFIRM_LABELS,
   AiComposer,
+  AiConfirmCard,
   AiModelPicker,
   type AiModelPickerBridge,
   AiSkillChips,
@@ -30,11 +33,12 @@ import {
   Markdown,
   useAiPanelPrefs,
   useAiSlash,
+  useToolConfirm,
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { activeProvider } from '@genoffice/ai-provider/browser'
-import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store'
+import type { ChatMessage, ChatMeta, ProjectApi, RunSummary } from '@genoffice/project-store'
 import { useI18n } from './locale'
 import { aiSetupNeeded } from './ai-setup-state'
 import type { AttachmentAddResult } from '../../shared/home-api'
@@ -42,6 +46,16 @@ import { AskAttachments } from './AskAttachments'
 import { planPendingAskQuery, type PendingAskQuery } from './ask-intent'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
+import {
+  interruptedOf,
+  parseRunRecords,
+  RUNS_CHAT_ID,
+  RUNS_LOAD_LIMIT,
+  runDiscardRecord,
+  runErrorRecord,
+  runFinishRecord,
+  runStartRecord,
+} from './ask-runs'
 import sendEnterOn from './assets/send-enter-on.png'
 import sendEnterOff from './assets/send-enter-off.png'
 import sendStop from './assets/send-stop.png'
@@ -115,6 +129,13 @@ interface AskMessage {
   attachments?: AttachmentInfo[]
   /** the "save as" buttons' outcome for this answer */
   saved?: { path: string; name: string } | { error: string } | 'saving'
+}
+
+/** one run of this session, as the background-task list shows it */
+interface LiveTask {
+  readonly id: string
+  readonly instruction: string
+  readonly startedAt: string
 }
 
 /**
@@ -232,6 +253,14 @@ export function KbAskPanel({
   const [corpusCount, setCorpusCount] = useState<number | null>(null)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
   const [provider, setProvider] = useState<string | null>(null)
+  /** the approval gate for risk:'high' tools (run_genoffice, create_document) */
+  const confirm = useToolConfirm()
+  /** runs this session started: the live half of the background-task list */
+  const [liveTasks, setLiveTasks] = useState<LiveTask[]>([])
+  /** runs a previous session left unfinished: the stored half, read once on mount */
+  const [interruptedRuns, setInterruptedRuns] = useState<RunSummary[]>([])
+  /** run handles by id, for the task rows' Stop buttons */
+  const liveHandlesRef = useRef(new Map<string, AgentRunHandle>())
   const corpusRef = useRef<KbFileInfo[]>([])
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
@@ -267,6 +296,74 @@ export function KbAskPanel({
   }
   /** turns asked before the ids came back, written once they do */
   const pendingRef = useRef<Array<{ role: 'user' | 'assistant'; text: string }>>([])
+
+  /** where the run records live (the reserved runs chat), once resolved */
+  const runsIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** run-record lines written before the runs ids landed, flushed once they do */
+  const pendingRunRecordsRef = useRef<string[]>([])
+
+  /** one run-record line into the reserved runs chat; queued until its ids resolve */
+  const persistRunRecord = (line: string): void => {
+    const ids = runsIdsRef.current
+    if (!ids) {
+      pendingRunRecordsRef.current.push(line)
+      return
+    }
+    void window.projectApi?.appendChat({ ...ids, role: 'assistant', text: line }).catch(() => {})
+  }
+
+  /**
+   * A run started: keep it in the task list, persist its start line, and settle
+   * both when it ends. The loop lives in this renderer, so "background" means
+   * it survives the composer's next send — not the window; closing the window
+   * leaves the start line without a terminal, which is what reads back as
+   * interrupted after a restart.
+   */
+  const trackRun = (handle: AgentRunHandle, instruction: string): void => {
+    liveHandlesRef.current.set(handle.id, handle)
+    setLiveTasks((prev) => [
+      ...prev,
+      { id: handle.id, instruction, startedAt: new Date().toISOString() },
+    ])
+    persistRunRecord(runStartRecord(handle.id, instruction, activeChatRef.current))
+    const retire = (): void => {
+      liveHandlesRef.current.delete(handle.id)
+      setLiveTasks((prev) => prev.filter((task) => task.id !== handle.id))
+    }
+    handle.on('finished', (result) => {
+      retire()
+      persistRunRecord(runFinishRecord(handle.id, result.cancelled ? 'cancelled' : 'done'))
+    })
+    handle.on('error', (message) => {
+      retire()
+      persistRunRecord(runErrorRecord(handle.id, message))
+    })
+  }
+
+  // Claim the runs chat (a reserved file-less id) and read back what earlier
+  // sessions left: runs whose records have no terminal event were interrupted
+  // by a closed window or a crash, and belong in the task list until cleared.
+  useEffect(() => {
+    const api = window.projectApi
+    if (!api) return
+    let current = true
+    void api
+      .resolveChat({ filePath: null, tempChatId: RUNS_CHAT_ID })
+      .then((ids) => {
+        if (!current) return
+        runsIdsRef.current = ids
+        for (const line of pendingRunRecordsRef.current.splice(0)) persistRunRecord(line)
+        return api.loadChat({ ...ids, limit: RUNS_LOAD_LIMIT })
+      })
+      .then((stored) => {
+        if (!current || !stored) return
+        setInterruptedRuns(interruptedOf(parseRunRecords(stored)))
+      })
+      .catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [])
 
   const persist = (entry: { role: 'user' | 'assistant'; text: string }): void => {
     const ids = chatIdsRef.current
@@ -333,6 +430,7 @@ export function KbAskPanel({
   // a question typed before the next claim resolves queues in pendingRef.
   const leaveThread = (): void => {
     loopRef.current?.reset()
+    confirm.clear()
     chatIdsRef.current = null
     pendingRef.current = []
     messagesRef.current = []
@@ -371,6 +469,30 @@ export function KbAskPanel({
     } catch {
       // A delete that did not happen leaves the list as it was, which is the
       // honest outcome; the reader sees the thread still listed.
+    }
+  }
+
+  /** the Stop button on a live task row: the loop's abort path settles it */
+  const stopTask = (id: string): void => {
+    liveHandlesRef.current.get(id)?.cancel()
+  }
+
+  /** the × on an interrupted row: settle the record as discarded, keep the rest */
+  const dismissInterrupted = (runId: string): void => {
+    persistRunRecord(runDiscardRecord(runId))
+    setInterruptedRuns((prev) => prev.filter((run) => run.runId !== runId))
+  }
+
+  /** clear the whole stored list: the runs chat is this panel's own record file */
+  const clearInterrupted = async (): Promise<void> => {
+    const ids = runsIdsRef.current
+    const api = window.projectApi
+    if (!ids || !api) return
+    try {
+      await api.deleteChat({ projectId: ids.projectId, chatId: RUNS_CHAT_ID })
+      setInterruptedRuns([])
+    } catch {
+      // a failed clear leaves the rows; they are dismissed one at a time then
     }
   }
 
@@ -473,6 +595,9 @@ export function KbAskPanel({
         getSettings: () => settingsRef.current as AiSettings,
         unknownErrorText: () => t('askUnknownError'),
       }),
+      // risk:'high' tools (run_genoffice, create_document) stop at the inline
+      // allow/deny card; a denial feeds the model a do-not-retry result
+      confirmTool: (call) => confirm.confirm(call),
       skill: composeSkills('home-ask', '', [
         createKnowledgeBaseSkill({
           listFiles: () => corpusRef.current,
@@ -686,7 +811,10 @@ export function KbAskPanel({
     skills: readonly string[] = [],
     files: readonly AttachmentInfo[] = [],
   ): Promise<void> => {
-    if (!instruction || busy) return
+    // loop.busy closes the same-tick race the React state leaves open: a second
+    // Enter before busy re-renders would otherwise queue a second run whose
+    // streaming bubble the first run's patches would land on
+    if (!instruction || busy || loopRef.current?.busy) return
     setBusy(true)
     refreshSettings()
     if (files.length > 0) {
@@ -699,6 +827,8 @@ export function KbAskPanel({
     const seq = ++askSeqRef.current
     runUsageRef.current = undefined
     runReasoningRef.current = ''
+    // a new run owns the stream: the previous answer's confirm card is history
+    confirm.clear()
     // freshly starred files are answerable this very turn
     try {
       const files = await window.aiOffice.kbList()
@@ -739,7 +869,8 @@ export function KbAskPanel({
         collectImages(files),
       ])
       if (askSeqRef.current !== seq) return
-      await loopRef.current!.run(text, images)
+      const handle = loopRef.current!.run(text, images)
+      trackRun(handle, instruction)
     } catch {
       finishLast()
     }
@@ -878,6 +1009,49 @@ export function KbAskPanel({
           </button>
         </div>
       )}
+      {(liveTasks.length > 0 || interruptedRuns.length > 0) && (
+        <div className="kb-ask-tasks" role="region" aria-label={t('askTasksTitle')}>
+          <div className="kb-ask-tasks-head">
+            <b>{t('askTasksTitle')}</b>
+            {interruptedRuns.length > 0 && (
+              <button
+                type="button"
+                className="kb-ask-task-clear"
+                onClick={() => void clearInterrupted()}
+              >
+                {t('askTaskClearAll')}
+              </button>
+            )}
+          </div>
+          {liveTasks.map((task) => (
+            <div key={task.id} className="kb-ask-task" data-status="running">
+              <span className="kb-ask-task-status">{t('askTaskRunning')}</span>
+              <span className="kb-ask-task-text" title={task.instruction}>
+                {task.instruction}
+              </span>
+              <button type="button" className="kb-ask-task-stop" onClick={() => stopTask(task.id)}>
+                {t('askTaskStop')}
+              </button>
+            </div>
+          ))}
+          {interruptedRuns.map((run) => (
+            <div key={run.runId} className="kb-ask-task" data-status="interrupted">
+              <span className="kb-ask-task-status">{t('askTaskInterrupted')}</span>
+              <span className="kb-ask-task-text" title={run.instruction}>
+                {run.instruction}
+              </span>
+              <button
+                type="button"
+                className="kb-ask-task-stop"
+                onClick={() => dismissInterrupted(run.runId)}
+              >
+                {t('askTaskDismiss')}
+              </button>
+            </div>
+          ))}
+          <p className="kb-ask-tasks-note">{t('askTasksNote')}</p>
+        </div>
+      )}
       <div className="kb-ask-thread" ref={scrollRef}>
         {messages.length === 0 && corpusCount === 0 && (
           <div className="kb-ask-hero">
@@ -929,6 +1103,14 @@ export function KbAskPanel({
             >
               {m.role === 'user' && m.attachments && <AskAttachments items={m.attachments} />}
               {m.role === 'user' && m.skills && <AiSkillChips lang={lang} names={m.skills} />}
+              {m.role === 'assistant' && i === messages.length - 1 && confirm.card && (
+                <AiConfirmCard
+                  labels={AI_CONFIRM_LABELS[lang]}
+                  card={confirm.card}
+                  onAllow={confirm.allow}
+                  onDeny={confirm.deny}
+                />
+              )}
               {m.role === 'assistant' && aiPrefs.showToolCalls && m.toolNotes.length > 0 && (
                 <div className="kb-ask-tools">
                   {m.toolNotes.map((note, j) => (
@@ -1125,6 +1307,8 @@ export function KbAskPanel({
         onSend={() => void ask()}
         onStop={() => {
           askSeqRef.current++
+          // a confirmation left open when Stop is pressed counts as denied
+          confirm.settleAll(false)
           loopRef.current?.cancel()
           finishLast()
         }}

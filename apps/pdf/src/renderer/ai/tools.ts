@@ -237,6 +237,18 @@ export type SplitPdfOutcome =
 /** App-side capability surface: everything but the confirmation card, which the panel renders */
 export type PdfAppDeps = Omit<PdfAiDeps, 'confirmFileOp'>
 
+/**
+ * Risk annotation policy (the loop's confirmTool gate): every tool that
+ * changes what the document says or writes a file to disk is risk:'high' and
+ * parks at the panel's inline allow/deny card. Two groups stay 'low' on
+ * purpose: the seven file-level operations (set_page_size, crop_pages,
+ * extract_pages, split_pdf, split_pages, merge_pages, replace_pages) already
+ * stop at their own richer inline confirmation card (fileOpGate — summary,
+ * picker-specific detail, cancellation semantics), so gating them a second
+ * time would ask the user to confirm one action twice; and the
+ * comment/annotation tools (markup_text, notes) follow the docs panel's
+ * precedent of gating document content, not review annotations.
+ */
 export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'read_pages',
@@ -405,6 +417,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'edit_text',
+    // the page-content replacement tools rewrite what the file says: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Replace a short text run on a page (rewrites the PDF content; takes effect on save). old_text must be a verbatim fragment that actually exists on that page (confirm with read_pages or search_text first); only the first occurrence on the page is edited unless occurrence is given. The replacement is drawn from the original position without reflowing the page, so keep it close to the original length. An empty new_text deletes the run outright (the space it occupied stays blank; nothing moves up) — never substitute a placeholder such as "." for deletion. Alignment cannot be changed here (a run keeps its position); use edit_block with align for that.',
     inputSchema: {
@@ -442,6 +457,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'edit_block',
+    // the page-content replacement tools rewrite what the file says: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       "Rewrite a whole paragraph on a page (rewrites the PDF content; takes effect on save). The paragraph is located by paragraph_text — a distinctive verbatim fragment of it. The ENTIRE paragraph is replaced by new_text, which is re-wrapped automatically within the paragraph's original width (the block grows downward when the text is longer). An empty new_text deletes the whole paragraph (its area stays blank; content below does not move up). Use edit_text instead to change a few words without reflowing.",
     inputSchema: {
@@ -486,6 +504,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'move_text_block',
+    // moves page content (an edit of what the file says): it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Move a whole paragraph to another position on its page without changing its text (takes effect on save; fonts and spacing are kept as-is). The paragraph is located like in edit_block: paragraph_text must match exactly one paragraph. dx/dy are the offset in PDF points as displayed: positive dx moves right, positive dy moves DOWN on screen (negative dy moves up). Nothing else on the page moves, so check the target area is free (read the page layout first). Typical use: after deleting a paragraph, move the following paragraph up by the deleted height to close the gap.',
     inputSchema: {
@@ -508,6 +529,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'insert_text',
+    // adds new page content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Add NEW text to a page (drawn as new content on top of the page; takes effect on save). Use this for blank pages, empty areas, and filling in non-interactive form blanks — to change text that already exists, use edit_text or edit_block instead. Position with anchor_text (a verbatim fragment on the page, e.g. a form label) plus placement, or with x/y as the TOP-LEFT corner of the text block in points measured from the page top-left as displayed; with neither, the block is centered horizontally near the top. "\\n" starts a new line; pass max_width to auto-wrap long paragraphs within that width.',
     inputSchema: {
@@ -559,6 +583,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'add_form_mark',
+    // draws new page content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with apply_ops setFormValue instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed. The mark fits itself to a printed box under its center; when that spot is an interactive check box the field is ticked instead.',
     inputSchema: {
@@ -605,6 +632,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'edit_inserted_text',
+    // changes pending inserted content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Change an unsaved inserted text block (same as the user double-clicking it): new text, font size, color, or alignment; omitted fields keep their value. The block stays anchored where it is. Get ids from list_inserted_text or the insert_text output. For text that is already saved use edit_text instead.',
     inputSchema: {
@@ -625,6 +655,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'move_inserted_text',
+    // moves pending inserted content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Move an unsaved inserted text block (same as the user dragging it). Give x/y as the new TOP-LEFT corner in points from the page top-left as displayed, or dx/dy as an offset in points (positive dy moves down). Only pending inserts can be moved; saved text is page content.',
     inputSchema: {
@@ -641,6 +674,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'delete_inserted_text',
+    // removes pending inserted content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Remove an unsaved inserted text block (same as the user pressing Delete on it). Only pending inserts can be removed this way; to delete saved text use edit_text with an empty new_text.',
     inputSchema: {
@@ -700,6 +736,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'insert_image',
+    // places an image onto a page: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Download an image URL (from image_search or generate_image) and place it on a page (takes effect on save). Position it either with anchor_text (a verbatim text fragment on the page) plus placement, or with explicit x/y in points measured from the page top-left as displayed; with neither, the image is centered on the page.',
     inputSchema: {
@@ -743,6 +782,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'transform_image',
+    // changes a page image: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Move/resize an existing page image, or change its z-order relative to the text (takes effect on save). Call list_page_images first; image_number refers to that listing. Omitted parameters keep their current value; giving only width (or only height) scales the other side by the aspect ratio.',
     inputSchema: {
@@ -774,6 +816,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'rotate_image',
+    // changes a page image: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Rotate an existing page image about its center (takes effect on save). Call list_page_images first; image_number refers to that listing. Quarter turns only; the footprint width/height swap for 90°/270°.',
     inputSchema: {
@@ -795,6 +840,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'replace_image',
+    // swaps a page image's pixels: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Swap an existing page image\'s pixels for a downloaded URL (from image_search or generate_image) in place — footprint and z-order survive; the new image stretches to the old footprint (takes effect on save). Call list_page_images first; image_number refers to that listing. This is the tool for "change/AI-edit this image": generate_image with the desired edit, then replace_image with the returned URL.',
     inputSchema: {
@@ -812,6 +860,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'flip_image',
+    // mirrors a page image's pixels: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Mirror an existing page image horizontally (left-right as displayed) or vertically (top-bottom as displayed) in place; footprint and z-order kept (takes effect on save). Call list_page_images first; image_number refers to that listing.',
     inputSchema: {
@@ -834,6 +885,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'set_image_opacity',
+    // bakes opacity into a page image: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Make an existing page image semi-transparent (fade/watermark look) by baking the opacity into its pixels; footprint and z-order kept (takes effect on save). Absolute, not cumulative. Call list_page_images first; image_number refers to that listing.',
     inputSchema: {
@@ -855,6 +909,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'crop_image',
+    // trims a page image: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       "Crop an existing page image: trims the given margins off the picture and shrinks its footprint on the page to the kept region (the kept pixels stay at their current size and place; z-order kept; takes effect on save). Each inset is a fraction 0-1 of the image's current displayed width (left/right) or height (top/bottom) as listed by list_page_images, measured inward from that edge; omitted insets are 0. Example: left 0.25 removes the left quarter. Call list_page_images first; image_number refers to that listing.",
     inputSchema: {
@@ -887,6 +944,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'remove_image_background',
+    // edits a page image's pixels: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Remove the background of an existing page image (makes the edge-connected background color transparent, like "Remove Background" in Office); footprint and z-order kept (takes effect on save). Works best on photos/logos on a plain background. Call list_page_images first; image_number refers to that listing.',
     inputSchema: {
@@ -907,6 +967,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'delete_image',
+    // removes page content: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Delete an existing page image (takes effect on save; the user can undo before saving). Call list_page_images first; image_number refers to that listing.',
     inputSchema: {
@@ -929,6 +992,10 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'apply_ops',
+    // the canonical edit batch (page ops, form fills, properties): every
+    // change to the document routes through here or a dedicated tool: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       "Apply a list of canonical pending edits as ONE transaction and ONE undo step — atomic: any invalid op rejects the whole batch and nothing is applied. This is THE tool for rotating, deleting and reordering pages, filling form fields (call list_form_fields first), authoring new fillable fields (addFormField) and setting document properties, and for removing a pending highlight or inserted text block or rewriting a pending note; a single op is a perfectly fine batch. Everything stays unsaved until the user saves. Page numbers are the document's 1-based numbers like every other tool (to rotate every page, list them all); ids are the P… / T… ids the read tools report.\n" +
       'Set dry_run:true to validate the batch without changing anything. A failing op returns its exact signature; an unknown op name returns the full vocabulary.\n' +
@@ -953,6 +1020,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'insert_blank_page',
+    // a structural page change: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. A pending edit like rotatePages/deletePage: it shows up immediately, the user can drag or undo it, and it is written to the file when they save. Existing pages keep their original numbers; the result tells you the original page number to use when addressing the new page in later tools.',
     inputSchema: {
@@ -1090,6 +1160,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'set_watermark',
+    // stamps every page of the document: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Add or replace a text watermark drawn diagonally across every page (takes effect on save); pass text "" to remove the watermark added this session. It is stamped above the page content and cannot remove a watermark that is part of the original document.',
     inputSchema: {
@@ -1118,6 +1191,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'set_header_footer',
+    // stamps every page of the document: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Set the header and footer stamped on every page (takes effect on save): six text slots (header/footer × left/center/right) plus an automatic page number in the footer center. Text may contain {page} and {total} placeholders. The call replaces the header/footer set earlier this session — omitted slots become empty — and a call with every slot empty and page_number false removes it.',
     inputSchema: {
@@ -1151,6 +1227,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'create_document',
+    // writes a new file to disk (same class as the create-document skill tool): it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Create a NEW standalone file in the default save folder and open it in a new tab; the current PDF is not modified. Use when the user asks to put content (a summary, an extraction, an analysis result) into a new/separate document. ' +
       "type 'pdf' (default) and 'docx' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor). Images are not supported in the new file's content.",

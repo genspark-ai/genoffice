@@ -96,6 +96,10 @@ const setActiveDocsResolver = vi.fn()
 const teardownDocsRenderer = vi.fn()
 
 vi.mock('../../docs/src/main/docs-main', () => ({
+  // buildDocsMenu/queueDocsAiContent are referenced by the app registry at
+  // module scope; TabManager's own tests never call them
+  buildDocsMenu: vi.fn(),
+  queueDocsAiContent: vi.fn(),
   createDocsView: (...args: unknown[]) => createDocsView(...(args as [])),
   docsQueryDirty: (...args: unknown[]) => docsQueryDirty(...(args as [])),
   markDocsNewBlank: (...args: unknown[]) => markDocsNewBlank(...args),
@@ -125,6 +129,8 @@ const setSheetsNewBlank = vi.fn()
 const sheetsPendingEditCount = vi.fn(() => 0)
 
 vi.mock('../../sheets/src/main/sheets-main', () => ({
+  // installSheetsMenu is referenced by the app registry at module scope
+  installSheetsMenu: vi.fn(),
   createSheetsView: (...args: unknown[]) => createSheetsView(...(args as [])),
   nudgeQueuedWorkbook: (...args: unknown[]) => nudgeQueuedWorkbook(...args),
   queueWorkbookForView: (...args: unknown[]) => queueWorkbookForView(...args),
@@ -140,6 +146,9 @@ const setActiveSlidesWebContents = vi.fn()
 const slidesIsDirty = vi.fn(() => false)
 
 vi.mock('../../slides/src/main/slides-main', () => ({
+  // installSlidesMenu/discardSlidesRecovery are referenced by the app registry
+  installSlidesMenu: vi.fn(),
+  discardSlidesRecovery: vi.fn(),
   createSlidesView: (...args: unknown[]) => createSlidesView(...(args as [])),
   requestSlidesClose: (...args: unknown[]) => requestSlidesClose(...(args as [])),
   setActiveSlidesWebContents: (...args: unknown[]) => setActiveSlidesWebContents(...args),
@@ -151,6 +160,10 @@ const markdownIsDirty = vi.fn(() => false)
 const requestMarkdownClose = vi.fn(() => Promise.resolve(true))
 
 vi.mock('../../markdown/src/main/markdown-main', () => ({
+  // the agent-surface trio is referenced by the app registry at module scope
+  markdownDiscardPendingAssets: vi.fn(async () => undefined),
+  markdownReadText: vi.fn(async () => ''),
+  markdownSaveToPath: vi.fn(async () => undefined),
   createMarkdownView: (...args: unknown[]) => createMarkdownView(...(args as [])),
   markdownIsDirty: (...args: unknown[]) => markdownIsDirty(...(args as [])),
   requestMarkdownClose: (...args: unknown[]) => requestMarkdownClose(...(args as [])),
@@ -162,6 +175,10 @@ const htmlIsDirty = vi.fn(() => false)
 const requestHtmlClose = vi.fn(() => Promise.resolve(true))
 
 vi.mock('../../html/src/main/html-main', () => ({
+  // the agent-surface trio is referenced by the app registry at module scope
+  htmlDiscardPendingAssets: vi.fn(async () => undefined),
+  htmlReadText: vi.fn(async () => ''),
+  htmlSaveToPath: vi.fn(async () => undefined),
   createHtmlView: (...args: unknown[]) => createHtmlView(...(args as [])),
   createHtmlPresentView: (...args: unknown[]) => createHtmlPresentView(...(args as [])),
   htmlIsDirty: (...args: unknown[]) => htmlIsDirty(...(args as [])),
@@ -803,9 +820,11 @@ describe('file path bookkeeping', () => {
     // than a hand-written list, so a new open*Tab method cannot ship without a
     // rename case. A Record<TabKind, true> would read better, but apps/shell
     // tsconfig includes src/** only, so nothing under tests/ ever reaches the
-    // typecheck CI runs.
-    const openers = Object.getOwnPropertyNames(TabManager.prototype).filter((name) =>
-      /^open[A-Z]\w*Tab$/.test(name),
+    // typecheck CI runs. openDocumentTab is the registry-driven dispatcher the
+    // per-kind openers below delegate to, not a kind of its own, so it is
+    // enumerated through the wrappers instead.
+    const openers = Object.getOwnPropertyNames(TabManager.prototype).filter(
+      (name) => /^open[A-Z]\w*Tab$/.test(name) && name !== 'openDocumentTab',
     )
     expect(openers.length).toBeGreaterThanOrEqual(7)
     const opened: string[] = []

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   CSSProperties,
+  DragEvent as ReactDragEvent,
   PointerEvent as ReactPointerEvent,
   ReactElement,
   ReactNode,
@@ -8,13 +9,26 @@ import type {
 import { createPortal } from 'react-dom'
 import type { Lang } from '@genoffice/i18n'
 import { useDismissablePopover } from '@genoffice/ui'
-import type { DesktopPrefs, FolderRoot, HomeApi, RecentEntry } from '../../shared/home-api'
+import type {
+  DesktopPinInfo,
+  DesktopPrefs,
+  FolderRoot,
+  HomeApi,
+  RecentEntry,
+} from '../../shared/home-api'
 import { DesktopPropsDialog, IconPropsDialog } from './DesktopProperties'
 import type { DesktopPropsTarget } from './DesktopProperties'
 import { ANIMATED_WALLPAPERS, DesktopWallpaperCenter } from './DesktopWallpaperCenter'
 import { FileBadge } from './file-badge'
 import { placeFolderMenu } from './folder-menu-position'
 import type { SettingsTarget } from './SettingsModal'
+import {
+  defaultDesktopProviders,
+  droppedFilePaths,
+  mergeDesktopItems,
+  widgetReservedCellKeys,
+  type DesktopItem,
+} from './desktop-items'
 import { desktopStrings } from './desktop-strings'
 import type { DesktopStrings } from './desktop-strings'
 import './desktop.css'
@@ -120,33 +134,6 @@ const DEFAULT_PREFS: DesktopPrefs = {
   labelColor: '',
 }
 
-type AppTile =
-  | 'docs'
-  | 'sheets'
-  | 'slides'
-  | 'pdf'
-  | 'markdown'
-  | 'html'
-  | 'ask'
-  | 'templates'
-  | 'plugins'
-  | 'settings'
-
-interface DesktopIcon {
-  readonly id: string
-  readonly kind: 'app' | 'file' | 'folder'
-  readonly label: string
-  /** the brand tile an app icon draws; files use FileBadge, folders a glass tile */
-  readonly tile: AppTile | null
-  /** extension driving the FileBadge of a file icon */
-  readonly ext: string
-  /** real path of a file / folder icon (context-menu reveal, the folder tooltip) */
-  readonly path: string | null
-  /** last-modified time of a file icon, for the 修改时间 sort and the 属性 dialog */
-  readonly mtimeMs?: number
-  readonly run: () => void
-}
-
 interface IconPos {
   x: number
   y: number
@@ -184,7 +171,7 @@ const compareText = (a: string, b: string): number => {
 }
 
 /** app icons first (system furniture, never "modified"), then folders, then files */
-const kindRank = (icon: DesktopIcon): number =>
+const kindRank = (icon: DesktopItem): number =>
   icon.kind === 'app' ? 0 : icon.kind === 'folder' ? 1 : 2
 
 /**
@@ -194,25 +181,25 @@ const kindRank = (icon: DesktopIcon): number =>
  * back to the icon id, so two sorts of one set are one order.
  */
 function sortDesktopIcons(
-  icons: readonly DesktopIcon[],
+  icons: readonly DesktopItem[],
   mode: DesktopPrefs['sortMode'],
-): DesktopIcon[] {
+): DesktopItem[] {
   if (mode === 'custom') return [...icons]
   const ranked = [...icons]
   if (mode === 'name') {
-    ranked.sort((a, b) => compareText(a.label, b.label) || compareText(a.id, b.id))
+    ranked.sort((a, b) => compareText(a.title, b.title) || compareText(a.id, b.id))
   } else if (mode === 'kind') {
     ranked.sort(
       (a, b) =>
         kindRank(a) - kindRank(b) ||
         compareText(a.ext, b.ext) ||
-        compareText(a.label, b.label) ||
+        compareText(a.title, b.title) ||
         compareText(a.id, b.id),
     )
   } else {
     // 修改时间: system icons have no mtime and rank as never-modified (first,
     // in their built order), files newest first
-    const mtimeOf = (icon: DesktopIcon): number => icon.mtimeMs ?? Number.POSITIVE_INFINITY
+    const mtimeOf = (icon: DesktopItem): number => icon.mtimeMs ?? Number.POSITIVE_INFINITY
     ranked.sort((a, b) => mtimeOf(b) - mtimeOf(a) || compareText(a.id, b.id))
   }
   return ranked
@@ -308,14 +295,24 @@ const EMPTY_POSITIONS: Readonly<Record<string, IconPos>> = {}
  * through `desktopLayoutSave`) and restored on the next launch, while icons
  * without a saved spot flow into free cells without overlapping saved ones.
  *
+ * The icon set comes from a provider registry (desktop-items.ts): apps,
+ * folder roots, recents, the aliases dragged in from the OS and the pinned
+ * document widgets each register as a source of one DesktopItem model. A file
+ * or folder dragged from Finder becomes an alias — the path is stored in the
+ * same layout file, nothing is copied — and opens in a tab when the suite
+ * knows the type, else through the main process's whitelisted OS default.
+ * Pinned widgets are live windows floating over the surface's bottom-right;
+ * the grid reserves that band so no icon renders underneath.
+ *
  * The desktop's look-and-feel — wallpaper (and how it fills the surface),
  * timed carousel, icon size, sort mode, the label color — lives in
  * `<userData>/desktop-prefs.json` through `desktopPrefsSave`, applied the
  * moment its menu item is chosen. The right-click menu on empty surface
  * follows the OS conventions (新建 / 排序方式 / 查看 / 刷新 / 更换壁纸 /
  * 属性) with one level of flyout submenus; file and folder icons get a
- * properties dialog off their own menu. The wallpaper center and the two
- * properties dialogs render from their own files
+ * properties dialog off their own menu, aliases additionally a reveal and a
+ * remove (the file on disk is never touched). The wallpaper center and the
+ * two properties dialogs render from their own files
  * (DesktopWallpaperCenter.tsx, DesktopProperties.tsx); this view owns the
  * state they share — the prefs, the wallpaper bytes, the open flags.
  *
@@ -343,6 +340,12 @@ export function DesktopView({
 
   // ── data ──
   const [recents, setRecents] = useState<readonly RecentEntry[]>([])
+  /** the dragged-in aliases, stat-resolved (name / ext / folder flag / mtime) */
+  const [aliases, setAliases] = useState<readonly RecentEntry[]>([])
+  /** the alias paths as stored: the layout file's list, what a save writes */
+  const [aliasList, setAliasList] = useState<readonly string[]>([])
+  /** the document widgets pinned to the desktop (main-process windows) */
+  const [pins, setPins] = useState<readonly DesktopPinInfo[]>([])
 
   // ── look-and-feel prefs (wallpaper, carousel, icon size, sort) ──
   const [prefs, setPrefs] = useState<DesktopPrefs>(DEFAULT_PREFS)
@@ -354,6 +357,8 @@ export function DesktopView({
   const [selected, setSelected] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  /** an OS file drag is over the surface: the drop-zone affordance shows */
+  const [dragOver, setDragOver] = useState(false)
 
   // ── the empty-surface context menu and its one open submenu ──
   const [surfaceMenu, setSurfaceMenu] = useState<{ x: number; y: number } | null>(null)
@@ -383,121 +388,44 @@ export function DesktopView({
   const [surfaceSize, setSurfaceSize] = useState({ w: 0, h: 0 })
 
   // ── the icon set ──
+  // The registry of sources (apps / folder roots / recents / the dragged-in
+  // aliases / the pinned widgets) produces one DesktopItem list; the widgets
+  // are model entries but not grid icons — their live windows float over the
+  // surface, and the grid reserves the cells underneath instead.
 
-  const icons = useMemo<DesktopIcon[]>(() => {
-    const apps: DesktopIcon[] = [
-      {
-        id: 'app:docs',
-        kind: 'app',
-        tile: 'docs',
-        label: s.appDocs,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newDoc?.(),
-      },
-      {
-        id: 'app:sheets',
-        kind: 'app',
-        tile: 'sheets',
-        label: s.appSheets,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newSheet?.(),
-      },
-      {
-        id: 'app:slides',
-        kind: 'app',
-        tile: 'slides',
-        label: s.appSlides,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newSlide?.(),
-      },
-      {
-        id: 'app:pdf',
-        kind: 'app',
-        tile: 'pdf',
-        label: s.appPdf,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newPdf?.(),
-      },
-      {
-        id: 'app:markdown',
-        kind: 'app',
-        tile: 'markdown',
-        label: s.appMarkdown,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newMarkdown?.(),
-      },
-      {
-        id: 'app:html',
-        kind: 'app',
-        tile: 'html',
-        label: s.appHtml,
-        ext: '',
-        path: null,
-        run: () => void (window.aiOffice as Partial<HomeApi>).newHtml?.(),
-      },
-      {
-        id: 'app:ask',
-        kind: 'app',
-        tile: 'ask',
-        label: s.appAsk,
-        ext: '',
-        path: null,
-        run: onOpenAsk,
-      },
-      {
-        id: 'app:templates',
-        kind: 'app',
-        tile: 'templates',
-        label: s.appTemplates,
-        ext: '',
-        path: null,
-        run: onOpenTemplates,
-      },
-      {
-        id: 'app:plugins',
-        kind: 'app',
-        tile: 'plugins',
-        label: s.appPlugins,
-        ext: '',
-        path: null,
-        run: () => onOpenSettings({ section: 'plugins' }),
-      },
-      {
-        id: 'app:settings',
-        kind: 'app',
-        tile: 'settings',
-        label: s.appSettings,
-        ext: '',
-        path: null,
-        run: () => onOpenSettings({ section: 'general' }),
-      },
-    ]
-    const folders: DesktopIcon[] = roots.map((root) => ({
-      id: `folder:${root.path}`,
-      kind: 'folder',
-      tile: null,
-      label: root.name,
-      ext: '',
-      path: root.path,
-      run: () => onOpenFolder(root),
-    }))
-    const files: DesktopIcon[] = recents.map((entry) => ({
-      id: `file:${entry.path}`,
-      kind: 'file',
-      tile: null,
-      label: entry.name,
-      ext: entry.ext,
-      path: entry.path,
-      mtimeMs: entry.mtimeMs,
-      run: () => void (window.aiOffice as Partial<HomeApi>).openPath?.(entry.path),
-    }))
-    return [...apps, ...folders, ...files]
-  }, [s, roots, recents, onOpenAsk, onOpenTemplates, onOpenSettings, onOpenFolder])
+  const providers = useMemo(() => defaultDesktopProviders(), [])
+  const aliasPaths = useMemo(() => new Set(aliasList), [aliasList])
+  const items = useMemo<DesktopItem[]>(
+    () =>
+      mergeDesktopItems(providers, {
+        strings: s,
+        roots,
+        recents,
+        aliases,
+        aliasPaths,
+        pins,
+        api: window.aiOffice as Partial<HomeApi>,
+        onOpenAsk,
+        onOpenTemplates,
+        onOpenSettings,
+        onOpenFolder,
+      }),
+    [
+      providers,
+      s,
+      roots,
+      recents,
+      aliases,
+      aliasPaths,
+      pins,
+      onOpenAsk,
+      onOpenTemplates,
+      onOpenSettings,
+      onOpenFolder,
+    ],
+  )
+  const icons = useMemo(() => items.filter((item) => item.kind !== 'widget'), [items])
+  const widgetCount = items.length - icons.length
 
   // mirrors of render-time values, read by the window-level event handlers
   const iconsRef = useRef(icons)
@@ -518,6 +446,39 @@ export function DesktopView({
     )
   }, [])
 
+  /**
+   * Resolve the alias paths to names / extensions / folder flags through the
+   * main process's stat. A bridge without statPaths (a preload that predates
+   * the feature) falls back to path-derived names; missing files stay listed
+   * like the recents list keeps them — an alias is the person's placement,
+   * not something a transient stat failure may delete.
+   */
+  const statAliases = useCallback((paths: readonly string[]) => {
+    if (paths.length === 0) {
+      setAliases([])
+      return
+    }
+    const api = window.aiOffice as Partial<HomeApi>
+    const request = api.statPaths?.([...paths])
+    if (!request) {
+      setAliases(
+        paths.map((path) => ({
+          path,
+          name: path.split(/[\\/]/).pop() ?? path,
+          ext: (path.slice(path.lastIndexOf('.') + 1) || '').toLowerCase(),
+          mtimeMs: 0,
+          sizeBytes: 0,
+          starred: false,
+        })),
+      )
+      return
+    }
+    request.then(
+      (entries) => setAliases(entries),
+      () => undefined,
+    )
+  }, [])
+
   useEffect(() => {
     let alive = true
     const api = window.aiOffice as Partial<HomeApi>
@@ -530,9 +491,12 @@ export function DesktopView({
         (layout) => {
           if (!alive) return
           const loaded = quantizePositions(layout?.positions, cellRef.current.w, cellRef.current.h)
+          const aliases = layout?.aliases ?? []
           // the loaded map is what is on disk: reloading it must not rewrite it
           savedRef.current = serializePositions(loaded)
           setPositions(loaded)
+          setAliasList(aliases)
+          statAliases(aliases)
           setLoaded(true)
         },
         () => {
@@ -569,12 +533,35 @@ export function DesktopView({
       off?.()
       offPrefs?.()
     }
-  }, [reloadRecents])
+  }, [reloadRecents, statAliases])
+
+  // ── the pinned widgets: fetch the live list, follow it, show with the view ──
+
+  useEffect(() => {
+    const api = window.aiOffice as Partial<HomeApi>
+    // the widgets layer over this surface: they show while it is mounted and
+    // hide when it leaves (another view, another tab)
+    void api.setDesktopPinsVisible?.(true)
+    const pull = () => {
+      api.desktopPins?.().then(
+        (pins) => setPins(pins),
+        () => undefined,
+      )
+    }
+    pull()
+    const off = api.onDesktopPinsChanged?.(pull)
+    return () => {
+      off?.()
+      void api.setDesktopPinsVisible?.(false)
+    }
+  }, [])
 
   // ── write-through: every layout change arms one save, 300ms out ──
 
   const positionsRef = useRef(positions)
   positionsRef.current = positions
+  const aliasListRef = useRef(aliasList)
+  aliasListRef.current = aliasList
   /** the serialized map that is on disk or in flight; a flush of it is a no-op */
   const savedRef = useRef<string | null>(null)
   const savingRef = useRef(false)
@@ -594,6 +581,9 @@ export function DesktopView({
       if (snapshot === savedRef.current) return
       savingRef.current = true
       try {
+        // positions only: the alias list is written by the dedicated
+        // add/remove channels, which validate on the main-process side —
+        // a layout save can no longer carry alias paths
         await (window.aiOffice as Partial<HomeApi>).desktopLayoutSave?.({
           positions: positionsRef.current,
         })
@@ -850,6 +840,10 @@ export function DesktopView({
   colsRef.current = cols
 
   // ── the resolved grid: saved positions pin, the rest flow into free cells ──
+  // Pinned widgets reserve the bottom-right band (widgetReservedCellKeys) —
+  // simple avoidance: their windows live over that corner, so both a saved
+  // position and a free-flow icon skip the reserved cells and nothing renders
+  // under a widget.
 
   /** the read-only sort flows reorder the icon set and ignore the saved map;
    * choosing 自定义 restores it untouched */
@@ -859,10 +853,15 @@ export function DesktopView({
   )
   const freeLayout = prefs.sortMode === 'custom'
   const layoutPositions = freeLayout ? positions : EMPTY_POSITIONS
+  const reservedCells = useMemo(
+    () => widgetReservedCellKeys(widgetCount, rows, cols),
+    [widgetCount, rows, cols],
+  )
 
   const resolved = useMemo(() => {
     const cellOf = new Map<string, { col: number; row: number }>()
-    const taken = new Set<string>()
+    // the reserved band counts as occupied from the start
+    const taken = new Set<string>(reservedCells)
     // pinned: quantized saved cells that are still inside the visible grid.
     // Two icons pinned to one cell (a hand-edited file, a shrunken window)
     // keep the first; the later one falls back to the free-cell flow.
@@ -878,10 +877,12 @@ export function DesktopView({
       taken.add(key)
       cellOf.set(icon.id, { col, row })
     }
-    // free icons flow in column-major order: top-left, down, then the next column
+    // free icons flow in column-major order: top-left, down, then the next
+    // column; a grid fully claimed by the reserve band falls back to (0,0)
+    // rather than spinning — only a pathologically small surface gets there
     for (const icon of orderedIcons) {
       if (cellOf.has(icon.id)) continue
-      for (let col = 0; ; col += 1) {
+      for (let col = 0; col < cols; col += 1) {
         let placed = false
         for (let row = 0; row < rows; row += 1) {
           const key = `${col}:${row}`
@@ -906,7 +907,7 @@ export function DesktopView({
     })
     effectiveRef.current = new Map(out.map(({ icon, pos }) => [icon.id, pos]))
     return out
-  }, [orderedIcons, layoutPositions, rows, cols, cellW, cellH])
+  }, [orderedIcons, layoutPositions, rows, cols, cellW, cellH, reservedCells])
 
   // ── dragging (pointer events): the icon follows the pointer, drops snap ──
   // A press on an icon arms one effect-scoped set of window listeners for the
@@ -999,7 +1000,7 @@ export function DesktopView({
   }, [press, commitDrop])
 
   const onIconPointerDown = useCallback(
-    (event: ReactPointerEvent, icon: DesktopIcon, pos: IconPos) => {
+    (event: ReactPointerEvent, icon: DesktopItem, pos: IconPos) => {
       if (event.button !== 0 || press !== null) return
       const surface = surfaceRef.current
       if (!surface) return
@@ -1023,7 +1024,7 @@ export function DesktopView({
   )
 
   const openIcon = useCallback((id: string) => {
-    iconsRef.current.find((icon) => icon.id === id)?.run()
+    iconsRef.current.find((icon) => icon.id === id)?.open()
   }, [])
 
   // ── context menus (Home's .folder-menu conventions) ──
@@ -1078,7 +1079,9 @@ export function DesktopView({
   }, [surfaceMenu])
 
   const menuIcon = menu ? icons.find((icon) => icon.id === menu.id) : undefined
-  const menuPath = menuIcon?.kind === 'file' ? menuIcon.path : null
+  // reveal applies to file icons and to aliases of either kind — a real file
+  // or folder is on disk behind them (app icons and folder roots offer none)
+  const menuPath = menuIcon && (menuIcon.kind === 'file' || menuIcon.alias) ? menuIcon.path : null
   /** file and folder icons get a 属性 dialog; app icons do not */
   const menuPropsIcon = menuIcon && menuIcon.kind !== 'app' ? menuIcon : null
 
@@ -1091,6 +1094,131 @@ export function DesktopView({
       return next
     })
   }, [])
+
+  // ── aliases: drag in from the OS, remove from the surface ──
+
+  /**
+   * Add the dropped paths as aliases: each one goes through the main
+   * process's validated add channel — the store (and the launch whitelist it
+   * feeds) is only ever grown there, never through a layout save — the stats
+   * re-pull for their names, and the first icon lands under the pointer (the
+   * rest flow into free cells). Nothing is copied — the path is the whole
+   * item. A refused path (a program package, a file that vanished) never
+   * joins the list, so no icon appears for it.
+   */
+  const addAliases = useCallback(
+    (paths: readonly string[], at?: { clientX: number; clientY: number }) => {
+      const known = aliasListRef.current
+      const fresh = paths.filter((path) => !known.includes(path))
+      if (fresh.length === 0) return
+      const add = (window.aiOffice as Partial<HomeApi>).desktopAddAlias
+      // a preload without the add channel cannot grow the store, and the view
+      // no longer writes aliases itself — the drop is a no-op
+      if (!add) return
+      void (async () => {
+        let latest: readonly string[] | null = null
+        for (const path of fresh) {
+          try {
+            latest = await add(path)
+          } catch {
+            // one refused add must not cost the rest of the drop
+          }
+        }
+        if (latest === null) return
+        const added = fresh.filter((path) => latest.includes(path))
+        if (added.length === 0) return
+        setAliasList(latest)
+        statAliases(latest)
+        const surface = surfaceRef.current
+        if (at && surface) {
+          const rect = surface.getBoundingClientRect()
+          const { w, h } = cellRef.current
+          const col = clampInt(
+            Math.round((at.clientX - rect.left - DESKTOP_PAD_X) / w),
+            0,
+            colsRef.current - 1,
+          )
+          const row = clampInt(
+            Math.round((at.clientY - rect.top - DESKTOP_PAD_Y) / h),
+            0,
+            rowsRef.current - 1,
+          )
+          setPositions((prev) =>
+            `alias:${added[0]}` in prev
+              ? prev
+              : {
+                  ...prev,
+                  [`alias:${added[0]}`]: {
+                    x: DESKTOP_PAD_X + col * w,
+                    y: DESKTOP_PAD_Y + row * h,
+                  },
+                },
+          )
+        }
+      })()
+    },
+    [statAliases],
+  )
+
+  /** drop the alias and its saved position: the main process's remove channel
+   * drops the stored path; the file on disk is untouched */
+  const removeAlias = useCallback((icon: DesktopItem) => {
+    setMenu(null)
+    const path = icon.path
+    if (path === null) return
+    const remove = (window.aiOffice as Partial<HomeApi>).desktopRemoveAlias
+    if (remove) {
+      void remove(path).then(
+        (latest) => {
+          setAliasList(latest)
+          setAliases((prev) => prev.filter((entry) => entry.path !== path))
+        },
+        () => undefined,
+      )
+    }
+    setPositions((prev) => {
+      if (!(icon.id in prev)) return prev
+      const next: Record<string, IconPos> = { ...prev }
+      delete next[icon.id]
+      return next
+    })
+  }, [])
+
+  // an OS file drag over the surface: allow the drop and show the affordance.
+  // dragover fires continuously and only cancels the event; the enter/leave
+  // pair carries a depth counter because they fire per crossed element
+  const dragDepthRef = useRef(0)
+  const onSurfaceDragEnter = (event: ReactDragEvent<HTMLDivElement>) => {
+    const transfer = event.dataTransfer
+    if (!transfer || !Array.from(transfer.types).includes('Files')) return
+    event.preventDefault()
+    dragDepthRef.current += 1
+    if (dragDepthRef.current === 1) setDragOver(true)
+  }
+  const onSurfaceDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    const transfer = event.dataTransfer
+    if (!transfer || !Array.from(transfer.types).includes('Files')) return
+    // claim the drag: without a canceled dragover Chromium never fires drop
+    event.preventDefault()
+    transfer.dropEffect = 'copy'
+  }
+  const onSurfaceDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDragOver(false)
+  }
+  const onSurfaceDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    dragDepthRef.current = 0
+    setDragOver(false)
+    const transfer = event.dataTransfer
+    if (!transfer || !Array.from(transfer.types).includes('Files')) return
+    // claim the drop from the preload's open-in-tab bridge (drop-open.ts's
+    // ownership contract: a zone that cancels the event owns it)
+    event.preventDefault()
+    const api = window.aiOffice as Partial<HomeApi>
+    const paths = droppedFilePaths(Array.from(transfer.files), (file) => api.pathForFile?.(file))
+    if (paths.length === 0) return
+    addAliases(paths, { clientX: event.clientX, clientY: event.clientY })
+  }
 
   // ── surface-menu actions ──
 
@@ -1120,12 +1248,12 @@ export function DesktopView({
   }, [])
 
   /** open the icon properties dialog off the icon's own menu */
-  const openIconProps = useCallback((icon: DesktopIcon) => {
+  const openIconProps = useCallback((icon: DesktopItem) => {
     setMenu(null)
     if (icon.path === null) return
     setPropsTarget({
       kind: icon.kind === 'folder' ? 'folder' : 'file',
-      label: icon.label,
+      label: icon.title,
       ext: icon.ext,
       path: icon.path,
     })
@@ -1213,7 +1341,7 @@ export function DesktopView({
         const buf = now - typeAheadRef.current.at > 800 ? '' : typeAheadRef.current.text
         const next = (buf + event.key).toLowerCase()
         typeAheadRef.current = { text: next, at: now }
-        const hit = orderedIcons.find((i) => i.label.toLowerCase().startsWith(next))
+        const hit = orderedIcons.find((i) => i.title.toLowerCase().startsWith(next))
         if (hit) {
           event.preventDefault()
           setSelected(hit.id)
@@ -1251,7 +1379,7 @@ export function DesktopView({
     } as CSSProperties
   }, [prefs.labelColor, darkWallpaper])
 
-  const renderTile = (icon: DesktopIcon): ReactNode => {
+  const renderTile = (icon: DesktopItem): ReactNode => {
     if (icon.kind === 'file') return <FileBadge ext={icon.ext} size={64} />
     if (icon.kind === 'folder') {
       return (
@@ -1319,7 +1447,7 @@ export function DesktopView({
           ? backdrop
           : null}
       <div
-        className="desktop-surface"
+        className={`desktop-surface${dragOver ? ' drag-over' : ''}`}
         ref={surfaceRef}
         onPointerDown={(event) => {
           if (event.target !== event.currentTarget) return
@@ -1337,6 +1465,10 @@ export function DesktopView({
           setSurfaceMenu({ x: event.clientX + 2, y: event.clientY + 2 })
           setSurfaceSub(null)
         }}
+        onDragEnter={onSurfaceDragEnter}
+        onDragOver={onSurfaceDragOver}
+        onDragLeave={onSurfaceDragLeave}
+        onDrop={onSurfaceDrop}
       >
         <ul className="desktop-icons" role="listbox" aria-label={s.desktopAria}>
           {resolved.map(({ icon, pos }, index) => {
@@ -1356,12 +1488,12 @@ export function DesktopView({
                   role="option"
                   aria-selected={selected === icon.id}
                   tabIndex={0}
-                  aria-label={icon.label}
-                  title={icon.kind === 'folder' ? (icon.path ?? icon.label) : icon.label}
+                  aria-label={icon.title}
+                  title={icon.kind === 'folder' ? (icon.path ?? icon.title) : icon.title}
                   onPointerDown={(event) => onIconPointerDown(event, icon, pos)}
                   onDoubleClick={() => {
                     if (Date.now() < dropGuardRef.current) return
-                    icon.run()
+                    icon.open()
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault()
@@ -1371,7 +1503,7 @@ export function DesktopView({
                   }}
                 >
                   {renderTile(icon)}
-                  <span className="desktop-icon-label">{icon.label}</span>
+                  <span className="desktop-icon-label">{icon.title}</span>
                 </div>
               </li>
             )
@@ -1410,6 +1542,11 @@ export function DesktopView({
             {menuPropsIcon !== null && (
               <button role="menuitem" onClick={() => openIconProps(menuPropsIcon)}>
                 {s.menuProps}
+              </button>
+            )}
+            {menuIcon !== undefined && menuIcon.alias && (
+              <button role="menuitem" onClick={() => removeAlias(menuIcon)}>
+                {s.menuRemove}
               </button>
             )}
             <div className="row-menu-divider" />

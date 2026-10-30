@@ -50,6 +50,14 @@ export const de: Dict = {
   askCtaRecents: 'Aus Zuletzt verwendet markieren',
   askNoSave: 'Die Unterhaltung wird nicht gespeichert; sie wird beim Neustart der App gelöscht.',
   askUnknownError: 'Die KI-Anfrage ist fehlgeschlagen. Bitte erneut versuchen.',
+  askTasksTitle: 'Hintergrund-Aufgaben',
+  askTaskRunning: 'Läuft',
+  askTaskInterrupted: 'Unterbrochen',
+  askTaskStop: 'Stoppen',
+  askTaskDismiss: 'Verwerfen',
+  askTaskClearAll: 'Alle löschen',
+  askTasksNote:
+    'Aufgaben enden beim Schließen des Fensters; unterbrochene werden nach einem Neustart hier aufgelistet.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Mit Genspark AI im Web erstellte Projekte. Die Bearbeitung läuft im Browser weiter – klicken Sie auf ein Projekt, um es zu öffnen.',

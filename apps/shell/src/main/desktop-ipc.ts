@@ -1,13 +1,24 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { basename, extname, isAbsolute, join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { IpcMainInvokeEvent, OpenDialogOptions } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
-import { HOME_CHANNELS, type DesktopLayout, type DesktopPrefs } from '../shared/home-api'
+import { isProgramFile } from './tab-menu'
+import {
+  HOME_CHANNELS,
+  type DesktopLayout,
+  type DesktopPinRecord,
+  type DesktopPrefs,
+} from '../shared/home-api'
 
 /** where the desktop layout lives: one file the whole view reads and writes through */
 export function desktopLayoutPath(userDataDir: string): string {
   return join(userDataDir, 'desktop-layout.json')
+}
+
+/** where the desktop's pinned widgets live, next to the layout */
+export function desktopPinsPath(userDataDir: string): string {
+  return join(userDataDir, 'desktop-pins.json')
 }
 
 /** where the desktop's look-and-feel prefs live, next to the layout */
@@ -19,6 +30,16 @@ export function desktopPrefsPath(userDataDir: string): string {
 const MAX_ENTRIES = 500
 /** both coordinates are clamped into this range before anything is stored */
 const MAX_COORD = 10000
+/** how many aliases the desktop may hold, whatever the renderer sends */
+const MAX_ALIASES = 100
+/** one alias path is capped like every other path the bridge accepts */
+const MAX_ALIAS_CHARS = 4096
+/** the pin store's own bounds: a widget per document, a screen-sized rect at most */
+const MAX_PINS = 8
+const PIN_COORD_MAX = 10000
+const PIN_SIZE_MIN = 240
+const PIN_SIZE_MAX = 2400
+const PIN_PATH_MAX = 4096
 
 /** the prefs' own clamps: a wallpaper id can be longish (a custom file name),
  * the carousel cannot ask for more than one rotation a minute */
@@ -64,15 +85,16 @@ const clampCoord = (value: number): number => Math.min(MAX_COORD, Math.max(0, va
 /**
  * The store's invariant, applied to anything read or written: a plain object
  * keyed by icon id, each value exactly `{ x, y }` with both coordinates
- * clamped into range, at most `MAX_ENTRIES` of them. A payload that is not an
- * object is the empty layout; entries that lost their shape are dropped
- * individually so one bad line never costs the rest of the map.
+ * clamped into range, at most `MAX_ENTRIES` of them, plus the alias path list
+ * (non-empty absolute paths, deduped, at most `MAX_ALIASES`). A payload that
+ * is not an object is the empty layout; entries that lost their shape are
+ * dropped individually so one bad line never costs the rest of the map.
  */
 function normalizeLayout(raw: unknown): DesktopLayout {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return { positions: {} }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return emptyLayout()
   const source = (raw as { positions?: unknown }).positions
   if (source === null || typeof source !== 'object' || Array.isArray(source)) {
-    return { positions: {} }
+    return emptyLayout()
   }
   const positions: DesktopLayout['positions'] = {}
   for (const [id, value] of Object.entries(source as Record<string, unknown>)) {
@@ -80,7 +102,31 @@ function normalizeLayout(raw: unknown): DesktopLayout {
     positions[id] = { x: clampCoord(value.x), y: clampCoord(value.y) }
     if (Object.keys(positions).length >= MAX_ENTRIES) break
   }
-  return { positions }
+  return { positions, aliases: normalizeAliases((raw as { aliases?: unknown }).aliases) }
+}
+
+/** the layout an absent, corrupt or foreign file reads as */
+function emptyLayout(): DesktopLayout {
+  return { positions: {}, aliases: [] }
+}
+
+/**
+ * The alias list's own invariant: non-empty absolute paths, deduped in
+ * first-seen order, capped. Anything else a hand-edited file carries is
+ * dropped entry by entry, like a position that lost its shape.
+ */
+function normalizeAliases(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue
+    const path = entry.trim()
+    if (!path || path.length > MAX_ALIAS_CHARS || !isAbsolute(path)) continue
+    if (out.includes(path)) continue
+    out.push(path)
+    if (out.length >= MAX_ALIASES) break
+  }
+  return out
 }
 
 /**
@@ -93,15 +139,110 @@ export function readDesktopLayout(userDataDir: string): DesktopLayout {
   try {
     text = readFileSync(desktopLayoutPath(userDataDir), 'utf8')
   } catch {
-    return { positions: {} }
+    return emptyLayout()
   }
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
   } catch {
-    return { positions: {} }
+    return emptyLayout()
   }
   return normalizeLayout(parsed)
+}
+
+// ── pinned widgets: the store detached-windows writes, restore reads ─────
+
+/** the pin kinds the store accepts; anything else is dropped on read */
+const PIN_KINDS: ReadonlySet<string> = new Set([
+  'docs',
+  'sheets',
+  'slides',
+  'pdf',
+  'markdown',
+  'html',
+])
+
+function isPinBounds(value: unknown): value is DesktopPinRecord['bounds'] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const b = value as Record<string, unknown>
+  return (
+    typeof b.x === 'number' &&
+    Number.isFinite(b.x) &&
+    typeof b.y === 'number' &&
+    Number.isFinite(b.y) &&
+    typeof b.width === 'number' &&
+    Number.isFinite(b.width) &&
+    typeof b.height === 'number' &&
+    Number.isFinite(b.height)
+  )
+}
+
+/**
+ * The pin store's invariant, applied to anything read: an array of at most
+ * `MAX_PINS` records, each a known editor kind, a real-ish path and a finite
+ * rect (coordinates clamped, sizes clamped into widget range). Duplicates by
+ * file path keep the first — a pin's identity is its document.
+ */
+export function normalizePins(raw: unknown): DesktopPinRecord[] {
+  if (!Array.isArray(raw)) return []
+  const out: DesktopPinRecord[] = []
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const pin = entry as Record<string, unknown>
+    if (typeof pin.kind !== 'string' || !PIN_KINDS.has(pin.kind)) continue
+    if (typeof pin.filePath !== 'string' || !pin.filePath || !isAbsolute(pin.filePath)) continue
+    if (pin.filePath.length > PIN_PATH_MAX) continue
+    if (!isPinBounds(pin.bounds)) continue
+    if (out.some((other) => other.filePath === pin.filePath)) continue
+    out.push({
+      kind: pin.kind as DesktopPinRecord['kind'],
+      filePath: pin.filePath,
+      bounds: {
+        x: clampPinCoord(pin.bounds.x),
+        y: clampPinCoord(pin.bounds.y),
+        width: clampInt(pin.bounds.width, PIN_SIZE_MIN, PIN_SIZE_MAX),
+        height: clampInt(pin.bounds.height, PIN_SIZE_MIN, PIN_SIZE_MAX),
+      },
+    })
+    if (out.length >= MAX_PINS) break
+  }
+  return out
+}
+
+/** pin origins may sit on any display, so only magnitude is bounded */
+const clampPinCoord = (value: number): number =>
+  Math.min(PIN_COORD_MAX, Math.max(-PIN_COORD_MAX, value))
+
+/**
+ * A missing, corrupt or shapeless pins file is the empty list — a widget is a
+ * convenience, never a reason the launch path fails.
+ */
+export function readDesktopPins(userDataDir: string): DesktopPinRecord[] {
+  let text: string
+  try {
+    text = readFileSync(desktopPinsPath(userDataDir), 'utf8')
+  } catch {
+    return []
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return []
+  }
+  const pins = (parsed as { pins?: unknown } | null)?.pins
+  return normalizePins(Array.isArray(pins) ? pins : undefined)
+}
+
+/** the scratch-then-rename write every pin mutation funnels through */
+export async function writeDesktopPins(
+  userDataDir: string,
+  pins: readonly DesktopPinRecord[],
+): Promise<void> {
+  await atomicWriteFile(
+    desktopPinsPath(userDataDir),
+    Buffer.from(JSON.stringify({ pins: normalizePins(pins) }, null, 2)),
+  )
 }
 
 /**
@@ -135,6 +276,34 @@ async function writeLayout(userDataDir: string, layout: DesktopLayout): Promise<
     desktopLayoutPath(userDataDir),
     Buffer.from(JSON.stringify(layout, null, 2)),
   )
+}
+
+// ── the alias gate the open and add channels share ──────
+
+/**
+ * Whether the OS must never be handed this path: the tab menu's
+ * program-extension list (the same blacklist `isProgramFile` applies),
+ * extended over the two shapes a plain extension check misses. A program
+ * package does not have to be a file — `.app` and `.workflow` bundles are
+ * directories on macOS — so the check cannot be gated on `stat.isFile()`;
+ * a directory with a program extension is exactly the dangerous shape and
+ * is refused by its path alone. Symlinks are resolved with `realpathSync`
+ * and the target's own extension re-checked, so a link named `notes.txt`
+ * pointing at `Payload.app` is caught through what it actually launches;
+ * `statSync` follows links, so the link's own name and its target are both
+ * covered. A path whose real target cannot be resolved fails closed.
+ */
+export function isProgramLaunchPath(path: string): boolean {
+  if (isProgramFile(path)) return true
+  try {
+    const real = realpathSync(path)
+    // a non-symlink path resolves to itself (parent symlinks included), and
+    // its basename survives the resolution — the re-check only ever adds
+    // information for a link whose target has a different name
+    return real !== path && isProgramFile(real)
+  } catch {
+    return true
+  }
 }
 
 // ── wallpaper plumbing ─────────────────────────────────
@@ -266,16 +435,30 @@ async function nativePickImage(event: IpcMainInvokeEvent): Promise<string | null
 }
 
 /**
- * The Home desktop's IPC: the icon positions (read and whole-map save) and the
- * desktop's look-and-feel (prefs, wallpaper bytes, the custom-image pick).
+ * The Home desktop's IPC: the icon positions (read and whole-map save), the
+ * dragged-in aliases (add and remove through their own validated channels;
+ * the layout save cannot touch them), the alias OS-open (validated against
+ * the stored alias list before the OS sees a path), and the desktop's
+ * look-and-feel (prefs, wallpaper bytes, the custom-image pick).
  *
  * The renderer sends only ids and whole shapes, never paths: a wallpaper is
  * looked up in the shipped manifest or the custom dir by name, so a traversal
- * has no syntax to ride in on. The layout and prefs files are the user's data:
- * a save that does not carry the promised shape is refused outright (the file
- * stays as it was), while size and coordinate range are only ever clamped —
- * never a user-facing refusal. Registered from index.ts like the other feature
- * IPC modules.
+ * has no syntax to ride in on. The two path-shaped arguments are
+ * `desktopOpenExternal` and `desktopAddAlias`, and both are gated before the
+ * OS or the disk sees anything: an open is refused unless the path is already
+ * in the stored alias list — the renderer cannot ask the OS to open anything
+ * the person did not place on the desktop themselves — and an add is refused
+ * unless the path exists, is absolute and is not a program package (the
+ * launch gate both channels share). A compromised renderer therefore cannot
+ * first write a path and then open it: the alias list is only ever grown by
+ * the validated add channel, and a layout save that carries an `aliases`
+ * field writes positions only, keeping the stored list (the field is ignored
+ * rather than refused so a stale preload that still sends it keeps saving
+ * positions fine). The layout and prefs files are the user's data: a save
+ * that does not carry the promised shape is refused outright (the file stays
+ * as it was), while size and coordinate range are only ever clamped — never
+ * a user-facing refusal. Registered from index.ts like the other feature IPC
+ * modules.
  */
 export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
   const userDataDir = deps.userDataDir ?? (() => app.getPath('userData'))
@@ -283,6 +466,16 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
   const customWallpapersDir =
     deps.customWallpapersDir ?? (() => join(app.getPath('userData'), 'wallpapers'))
   const pickImage = deps.pickImage ?? nativePickImage
+
+  // position saves and alias mutations are read-modify-write cycles over one
+  // file; this chain keeps them from interleaving (a drop racing a debounced
+  // position save must not cost either write)
+  let layoutWrites: Promise<unknown> = Promise.resolve()
+  const queueLayoutWrite = (write: () => Promise<void>): Promise<void> => {
+    const next = layoutWrites.then(write, write)
+    layoutWrites = next.catch(() => undefined)
+    return next
+  }
 
   ipcMain.handle(HOME_CHANNELS.desktopLayout, async (): Promise<DesktopLayout> =>
     readDesktopLayout(userDataDir()),
@@ -301,8 +494,101 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
         throw new Error('every desktop position must be { x: number, y: number }')
       }
     }
-    await writeLayout(userDataDir(), normalizeLayout(raw))
+    await queueLayoutWrite(async () => {
+      // the alias list is owned by the add/remove channels: whatever an
+      // `aliases` field carries, the stored list survives this save untouched
+      // (ignored, not refused, for the stale-preload reason above)
+      const stored = readDesktopLayout(userDataDir())
+      await writeLayout(userDataDir(), { ...normalizeLayout(raw), aliases: stored.aliases })
+    })
   })
+
+  // ── alias add/remove: the only channels that grow or shrink the list ──
+
+  /**
+   * The drop-in path's landing: the stored alias list grows by one validated
+   * path. The whole check battery runs before the disk is touched — a string,
+   * absolute, within the path cap, existing right now, and not a program
+   * package (the launch gate the open channel shares, so nothing launchable
+   * ever enters the whitelist). A refused path leaves the list as it was; the
+   * answer is always the current list, so the renderer's next paint is the
+   * truth (a refused drop simply never gains its icon).
+   */
+  ipcMain.handle(
+    HOME_CHANNELS.desktopAddAlias,
+    async (_event, rawPath: unknown): Promise<readonly string[]> => {
+      const current = (): readonly string[] => readDesktopLayout(userDataDir()).aliases
+      if (typeof rawPath !== 'string' || !rawPath || rawPath.length > MAX_ALIAS_CHARS) {
+        return current()
+      }
+      if (!isAbsolute(rawPath)) return current()
+      try {
+        statSync(rawPath)
+      } catch {
+        return current()
+      }
+      if (isProgramLaunchPath(rawPath)) return current()
+      await queueLayoutWrite(async () => {
+        const stored = readDesktopLayout(userDataDir())
+        if (stored.aliases.includes(rawPath)) return
+        const aliases = [...stored.aliases, rawPath].slice(0, MAX_ALIASES)
+        await writeLayout(userDataDir(), { ...stored, aliases })
+      })
+      return current()
+    },
+  )
+
+  /**
+   * The "Remove from desktop" action: the stored alias list drops one path. The file on
+   * disk is never touched — the path is the whole item. An unknown path is a
+   * no-op; the answer is the current list.
+   */
+  ipcMain.handle(
+    HOME_CHANNELS.desktopRemoveAlias,
+    async (_event, rawPath: unknown): Promise<readonly string[]> => {
+      const current = (): readonly string[] => readDesktopLayout(userDataDir()).aliases
+      if (typeof rawPath !== 'string' || !rawPath || rawPath.length > MAX_ALIAS_CHARS) {
+        return current()
+      }
+      if (!isAbsolute(rawPath)) return current()
+      if (!current().includes(rawPath)) return current()
+      await queueLayoutWrite(async () => {
+        const stored = readDesktopLayout(userDataDir())
+        const aliases = stored.aliases.filter((candidate) => candidate !== rawPath)
+        await writeLayout(userDataDir(), { ...stored, aliases })
+      })
+      return current()
+    },
+  )
+
+  // ── alias opens: the OS default app, only for what the person placed ──
+
+  /**
+   * The alias double-click's unknown-type path: the file the OS should open.
+   * Everything is validated before the OS sees it — the path must be one the
+   * desktop actually holds (a renderer cannot ask for arbitrary launches),
+   * it must exist right now, and a program package never launches through
+   * here (the launch gate: the same extension list the tab menu's "Open with
+   * the default app" uses, plus directories and resolved symlinks).
+   */
+  ipcMain.handle(
+    HOME_CHANNELS.desktopOpenExternal,
+    async (_event, rawPath: unknown): Promise<boolean> => {
+      if (typeof rawPath !== 'string' || !rawPath || rawPath.length > MAX_ALIAS_CHARS) return false
+      if (!isAbsolute(rawPath)) return false
+      if (!readDesktopLayout(userDataDir()).aliases.includes(rawPath)) return false
+      try {
+        statSync(rawPath)
+      } catch {
+        return false
+      }
+      if (isProgramLaunchPath(rawPath)) return false
+      // openPath answers '' on success; a failure string is logged nowhere else,
+      // so it is dropped here the way the reveal path drops it
+      await shell.openPath(rawPath)
+      return true
+    },
+  )
 
   // ── prefs ──
 

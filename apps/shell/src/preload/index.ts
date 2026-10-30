@@ -26,6 +26,8 @@ import type {
   TemplateInfo,
   TodoItem,
   DesktopLayout,
+  DesktopLayoutSave,
+  DesktopPinInfo,
   DesktopPrefs,
   DeepLinkPayload,
   SystemPresenceSettings,
@@ -490,8 +492,44 @@ const homeApi: HomeApi = {
   async desktopLayout() {
     return (await ipcRenderer.invoke(HOME_CHANNELS.desktopLayout)) as DesktopLayout
   },
-  async desktopLayoutSave(layout) {
+  async desktopLayoutSave(layout: DesktopLayoutSave) {
     await ipcRenderer.invoke(HOME_CHANNELS.desktopLayoutSave, layout)
+  },
+  async desktopAddAlias(path) {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.desktopAddAlias, path)
+    return Array.isArray(result) ? (result as readonly string[]) : []
+  },
+  async desktopRemoveAlias(path) {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.desktopRemoveAlias, path)
+    return Array.isArray(result) ? (result as readonly string[]) : []
+  },
+  async desktopOpenExternal(path) {
+    if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
+    return (await ipcRenderer.invoke(HOME_CHANNELS.desktopOpenExternal, path)) === true
+  },
+  async desktopPins() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.desktopPins)
+    return Array.isArray(result) ? (result as DesktopPinInfo[]) : []
+  },
+  async desktopPinsActivate(id) {
+    if (typeof id !== 'string' || !id) throw new Error('Invalid id.')
+    await ipcRenderer.invoke(HOME_CHANNELS.desktopPinsActivate, id)
+  },
+  async setDesktopPinsVisible(visible) {
+    if (typeof visible !== 'boolean') throw new Error('Invalid visibility.')
+    await ipcRenderer.invoke(HOME_CHANNELS.desktopPinsSetVisible, visible)
+  },
+  onShowDesktop(handler) {
+    const listener = () => handler()
+    ipcRenderer.on(HOME_CHANNELS.showDesktop, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.showDesktop, listener)
+  },
+  onDesktopPinsChanged(handler) {
+    const listener = (_event: IpcRendererEvent, pins: unknown) => {
+      if (Array.isArray(pins)) handler(pins as DesktopPinInfo[])
+    }
+    ipcRenderer.on(HOME_CHANNELS.desktopPinsChanged, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.desktopPinsChanged, listener)
   },
   async desktopPrefs() {
     return (await ipcRenderer.invoke(HOME_CHANNELS.desktopPrefs)) as DesktopPrefs

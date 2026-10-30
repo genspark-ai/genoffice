@@ -272,6 +272,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'execute_slide_script',
+    // the slide-editing script rewrites the page's elements: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       "[Preferred tool for editing a slide's existing elements] Runs your JS edit script against one page; a single script covers: position/size/alignment/distribution/relative nudges/text/style/fill/stroke." +
       ' At run time the script automatically receives the real geometry and text of every element on the page (els) — **no read_slide needed first**; read-write combined, compute from els inside the script.' +
@@ -397,6 +400,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'insert_web_image',
+    // places an image onto a page: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Download an image URL obtained from image_search or generate_image and insert it into a page (pixel coordinates). w×h is a layout frame, not a stretch target: the image keeps its aspect ratio, fills the frame, and the overflow is center-cropped (object-fit: cover) — pick the frame for the layout freely. ' +
       'To place an image the USER ATTACHED (logo, photo, screenshot), pass url=attachment://<file name> (the exact name from the attachment list) — the app embeds the original file bytes as-is. Never recreate an attached image with generate_image and never ask for base64.',
@@ -419,6 +425,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'replace_image',
+    // swaps a page image's pixels: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. A new image with a different aspect ratio is never stretched: it fills the frame and is center-cropped (object-fit: cover). keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
     inputSchema: {
@@ -514,6 +523,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'regenerate_slide',
+    // rebuilds a whole page in place: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       '[Redo/redesign an existing page] Regenerates the page from your brief and replaces it in place (other pages untouched, undoable).' +
       ' Use when the user says "redo this page / redesign it / try another layout / make it prettier"; don\'t dismantle the page element by element with native tools.' +
@@ -549,6 +561,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'generate_deck',
+    // creates or replaces whole pages of the deck: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       '[First choice for creating a whole new deck — self-driven pipeline: auto image search, page-by-page generation with live display, no missing pages]' +
       ' Recommended usage (especially with many pages): pass only topic + approx_pages (+ optional style/context); the system plans the outline internally (auto-batched beyond 12 pages), **auto-searches images** (no advance image_search — the system searches from the planned image_queries keywords internally and fills real URLs back before designing pages), designs pages one by one, and lands them onto the canvas as they finish.' +
@@ -651,6 +666,9 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'edit_chart',
+    // rewrites a chart's data and type: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       'Modify a chart (including charts from imported files; first edit converts it to editable automatically): change type/data/colors/chart elements. kind options: bar/barStacked/line/area/pie/doughnut. colorScheme: default/colorful/colorful2/mono-accent1..6 (theme-derived); legacy keys blue/warm/cool/mono still work.',
     inputSchema: {
@@ -708,6 +726,10 @@ const TOOLS: AgentToolDef[] = [
   },
   {
     name: 'apply_ops',
+    // the canonical edit batch (fills, structure, styling): every
+    // change to the deck routes through here or a dedicated tool: it routes through
+    // the host's confirmation gate
+    risk: 'high',
     description:
       '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells, structure and styling, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
       'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +

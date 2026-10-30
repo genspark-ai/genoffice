@@ -31,6 +31,8 @@ import {
   AiComposer,
   AiQueueStrip,
   AI_QUEUE_LABELS,
+  AI_CONFIRM_LABELS,
+  AiConfirmCard,
   AiScopeQuote,
   AiSkillChips,
   AiSkillsMenu,
@@ -40,6 +42,7 @@ import {
   copyMarkdownRich,
   useAiSlash,
   useChatRunQueue,
+  useToolConfirm,
   type AiScopeQuoteData,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -412,6 +415,8 @@ export function AiPanel({
   /** Confirmation card for irreversible file operations; one at a time, a second request is refused */
   const [fileOpConfirm, setFileOpConfirm] = useState<FileOpConfirm | null>(null)
   const confirmRef = useRef<PendingConfirm | null>(null)
+  /** the approval gate for the document-editing tools (risk:'high' in tools.ts) */
+  const confirmTool = useToolConfirm()
   const requestFileOpConfirm = (req: FileOpConfirm, signal?: AbortSignal): Promise<boolean> =>
     new Promise((resolve) => {
       if (confirmRef.current || signal?.aborted) {
@@ -522,6 +527,11 @@ export function AiPanel({
         },
       ),
       skill: createPdfSkill(deps),
+      // the document-editing tools (risk:'high', see the policy note in
+      // tools.ts) stop at the inline allow/deny card; a denial feeds the model
+      // a do-not-retry result so it can answer without editing. The
+      // file-level operations keep their own richer card (confirmFileOp).
+      confirmTool: (call) => confirmTool.confirm(call),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {
@@ -652,6 +662,8 @@ export function AiPanel({
     const instruction = text.trim()
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
+    // a new run owns the stream: the previous reply's confirm card is history
+    confirmTool.clear()
     stickToBottomRef.current = true
     const scope = retryScope !== undefined ? (retryScope ?? undefined) : selectionScopeQuote()
     persistMessage('user', instruction, undefined, scope)
@@ -704,6 +716,8 @@ export function AiPanel({
 
   const stop = (): void => {
     msgQueue.hold()
+    // a confirmation left open when Stop is pressed counts as denied
+    confirmTool.settleAll(false)
     loopRef.current?.cancel()
   }
 
@@ -1051,6 +1065,16 @@ export function AiPanel({
             </div>
           )
         })}
+        {confirmTool.card && (
+          <div className="ai-msg ai-msg-assistant">
+            <AiConfirmCard
+              labels={AI_CONFIRM_LABELS[lang]}
+              card={confirmTool.card}
+              onAllow={confirmTool.allow}
+              onDeny={confirmTool.deny}
+            />
+          </div>
+        )}
         {fileOpConfirm && (
           <div className="ai-confirm-card" role="group" aria-label={t('aiFileOpConfirmTitle')}>
             <div className="ai-confirm-title">{t('aiFileOpConfirmTitle')}</div>

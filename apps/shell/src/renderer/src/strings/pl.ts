@@ -48,6 +48,14 @@ export const pl: Dict = {
   askCtaRecents: 'Oznacz z Ostatnich',
   askNoSave: 'Rozmowa nie jest zapisywana; znika po ponownym uruchomieniu aplikacji.',
   askUnknownError: 'Żądanie AI nie powiodło się. Spróbuj ponownie.',
+  askTasksTitle: 'Zadania w tle',
+  askTaskRunning: 'Działa',
+  askTaskInterrupted: 'Przerwane',
+  askTaskStop: 'Zatrzymaj',
+  askTaskDismiss: 'Usuń',
+  askTaskClearAll: 'Wyczyść wszystko',
+  askTasksNote:
+    'Zadania kończą się po zamknięciu okna; przerwane są wymienione tutaj po ponownym uruchomieniu.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'Projekty utworzone w sieci za pomocą Genspark AI. Edycja jest kontynuowana w przeglądarce — kliknij projekt, aby go otworzyć.',

@@ -3090,3 +3090,134 @@ button.kb-ask-card-name:hover {
   background: var(--hover);
   color: var(--text);
 }
+
+/* ── background task panel (between the thread chips and the message flow) ──
+   The live agent runs and the interrupted-run notices: one compact card per
+   task, the same visual density as the AI panels' inline confirm card
+   (packages/ui ai-confirm-card.css) — caption-sized rows, a status dot the
+   running state animates, a stop/dismiss button per row, and a quiet note
+   where an empty list would sit. */
+.kb-ask-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-8, 8px);
+  background: var(--surface-subtle);
+}
+
+.kb-ask-tasks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kb-ask-tasks-head b {
+  font-size: var(--text-caption, 12px);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.kb-ask-task-clear {
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-caption, 12px);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.kb-ask-task-clear:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.kb-ask-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kb-ask-task-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: var(--text-caption, 12px);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.kb-ask-task-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+/* an interrupted run is a parked problem, not live activity: a hollow
+   danger-toned dot and a danger-toned row action */
+.kb-ask-task[data-status='interrupted'] .kb-ask-task-status::before {
+  background: transparent;
+  border: 1.5px solid var(--danger);
+}
+
+.kb-ask-task[data-status='running'] .kb-ask-task-status::before {
+  animation: kb-ask-task-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes kb-ask-task-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.kb-ask-task-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-caption, 12px);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-ask-task-stop {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-caption, 12px);
+  font-weight: 500;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+.kb-ask-task-stop:hover {
+  background: var(--hover);
+}
+
+.kb-ask-task[data-status='interrupted'] .kb-ask-task-stop:hover {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.kb-ask-tasks-note {
+  margin: 0;
+  font-size: var(--text-caption, 12px);
+  color: var(--text-tertiary);
+}

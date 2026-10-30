@@ -31,9 +31,12 @@ actEnvironment.IS_REACT_ACT_ENVIRONMENT = true
 let host: HTMLDivElement
 let root: Root
 /** the layout the bridge hands back on load */
-let stored: { positions: Record<string, { x: number; y: number }> }
+let stored: { positions: Record<string, { x: number; y: number }>; aliases?: readonly string[] }
 /** every save, in order, with the exact map it carried */
 let saves: Array<{ positions: Record<string, { x: number; y: number }> }>
+/** every alias add/remove the bridge saw, in order */
+let aliasAdds: string[]
+let aliasRemoves: string[]
 let openPath: ReturnType<typeof vi.fn>
 let revealPath: ReturnType<typeof vi.fn>
 let newDoc: ReturnType<typeof vi.fn>
@@ -57,6 +60,16 @@ let wallpaperPickCustom: ReturnType<typeof vi.fn>
 let wallpaperImage: ReturnType<typeof vi.fn>
 /** the desktop-prefs-changed handler the component subscribed */
 let prefsChanged: ((prefs: DesktopPrefs) => void) | undefined
+/** the OS-path resolver of dropped files */
+let pathForFile: ReturnType<typeof vi.fn>
+/** the OS-default open the alias route defers to */
+let desktopOpenExternal: ReturnType<typeof vi.fn>
+/** the pinned widgets the bridge reports */
+let pinList: import('../src/shared/home-api').DesktopPinInfo[]
+let desktopPinsActivate: ReturnType<typeof vi.fn>
+let setDesktopPinsVisible: ReturnType<typeof vi.fn>
+/** the desktop-pins-changed handler the component subscribed */
+let pinsChanged: ((pins: import('../src/shared/home-api').DesktopPinInfo[]) => void) | undefined
 const wallpaperUrl = (id: string): string => `data:image/png;base64,${btoa(id)}`
 
 const entry = (path: string, name: string, ext: string): RecentEntry => ({
@@ -100,6 +113,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   stored = { positions: {} }
   saves = []
+  aliasAdds = []
+  aliasRemoves = []
   recentFiles = [fileA, fileB, fileC]
   recentsChanged = undefined
   prefsChanged = undefined
@@ -123,8 +138,8 @@ beforeEach(() => {
   statPaths = vi.fn(async (paths: string[]) =>
     paths.map((path) => ({
       path,
-      name: 'alpha.docx',
-      ext: 'docx',
+      name: path.split('/').pop() ?? path,
+      ext: (path.slice(path.lastIndexOf('.') + 1) || '').toLowerCase(),
       mtimeMs: 1,
       sizeBytes: 1536,
       starred: false,
@@ -133,6 +148,12 @@ beforeEach(() => {
   getDefaultSaveDir = vi.fn(async () => '/docs/GenOffice')
   wallpaperImage = vi.fn(async (id: string) => wallpaperUrl(id))
   wallpaperPickCustom = vi.fn(async () => 'custom:1700000000-photo.png')
+  pathForFile = vi.fn((file: File) => `/docs/${(file as File).name}`)
+  desktopOpenExternal = vi.fn(async () => true)
+  pinList = []
+  desktopPinsActivate = vi.fn(async () => undefined)
+  setDesktopPinsVisible = vi.fn(async () => undefined)
+  pinsChanged = undefined
   props.onOpenAsk.mockClear()
   props.onOpenTemplates.mockClear()
   props.onOpenSettings.mockClear()
@@ -161,6 +182,18 @@ beforeEach(() => {
         return undefined
       },
     ),
+    desktopAddAlias: vi.fn(async (path: string) => {
+      aliasAdds.push(path)
+      const aliases = [...(stored.aliases ?? []), ...(stored.aliases?.includes(path) ? [] : [path])]
+      stored = { ...stored, aliases }
+      return aliases
+    }),
+    desktopRemoveAlias: vi.fn(async (path: string) => {
+      aliasRemoves.push(path)
+      const aliases = (stored.aliases ?? []).filter((candidate) => candidate !== path)
+      stored = { ...stored, aliases }
+      return aliases
+    }),
     desktopPrefs: vi.fn(async () => storedPrefs),
     desktopPrefsSave: vi.fn(async (prefs: DesktopPrefs) => {
       prefSaves.push(prefs)
@@ -183,6 +216,17 @@ beforeEach(() => {
     getDefaultSaveDir,
     wallpaperImage,
     wallpaperPickCustom,
+    pathForFile,
+    desktopOpenExternal,
+    desktopPins: vi.fn(async () => pinList),
+    desktopPinsActivate,
+    setDesktopPinsVisible,
+    onDesktopPinsChanged: (
+      handler: (pins: import('../src/shared/home-api').DesktopPinInfo[]) => void,
+    ) => {
+      pinsChanged = handler
+      return () => {}
+    },
     onRecentsChanged: (handler: () => void) => {
       recentsChanged = handler
       return () => {}
@@ -300,9 +344,7 @@ const menuButtons = () =>
 /** run the pending microtasks so bridge answers land and re-render */
 async function flushAsync(): Promise<void> {
   await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    for (let i = 0; i < 6; i++) await Promise.resolve()
   })
 }
 
@@ -1320,5 +1362,281 @@ describe('DesktopView — the label color', () => {
     expect(labelVar('--desktop-label-ink')).toBe('#ffffff')
     expect(labelVar('--desktop-label-scrim')).toBe('var(--desktop-label-scrim-light-ink)')
     expect(prefSaves).toEqual([])
+  })
+})
+
+// ── the dragged-in aliases (real files from the OS) ──────
+
+/** a drag-over + drop gesture carrying OS files, landing at (x, y) */
+async function dropFilesAt(files: File[], x: number, y: number): Promise<void> {
+  const surface = host.querySelector<HTMLElement>('.desktop-surface')!
+  const transfer = {
+    types: ['Files'],
+    files,
+    dropEffect: '',
+  }
+  await act(async () => {
+    const enter = new MouseEvent('dragenter', { bubbles: true, cancelable: true })
+    Object.defineProperty(enter, 'dataTransfer', { value: transfer })
+    surface.dispatchEvent(enter)
+    const over = new MouseEvent('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(over, 'dataTransfer', { value: transfer })
+    surface.dispatchEvent(over)
+    await Promise.resolve()
+  })
+  await act(async () => {
+    const drop = new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: x, clientY: y })
+    Object.defineProperty(drop, 'dataTransfer', { value: transfer })
+    surface.dispatchEvent(drop)
+    await Promise.resolve()
+  })
+  await flushAsync()
+}
+
+describe('DesktopView — dropping files from the OS', () => {
+  it('a dropped document becomes an alias icon: path stored, nothing opened, spot saved', async () => {
+    await render()
+    const before = icons().length
+    await dropFilesAt([new File(['x'], 'report.docx')], 300, 300)
+    expect(icons()).toHaveLength(before + 1)
+    expect(labels()).toContain('report.docx')
+    // the icon lands under the pointer: cell (3,3) for a drop at (300,300)
+    expect(posOf('report.docx')).toEqual({
+      x: `${cellPos(3, 3).x}px`,
+      y: `${cellPos(3, 3).y}px`,
+    })
+    // the path is the whole item — the file was never opened by the drop;
+    // it joined the store through the validated add channel, not the save
+    expect(openPath).not.toHaveBeenCalled()
+    expect(aliasAdds).toEqual(['/docs/report.docx'])
+    await tick()
+    expect(saves.at(-1)).toEqual({ positions: { 'alias:/docs/report.docx': cellPos(3, 3) } })
+  })
+
+  it('a path the add channel refuses never gains an icon or a spot', async () => {
+    await render()
+    const before = icons().length
+    const addMock = window.aiOffice.desktopAddAlias as unknown as ReturnType<typeof vi.fn>
+    // the main process's refusal shape: the answer is the list without the path
+    addMock.mockImplementationOnce(async () => stored.aliases ?? [])
+    await dropFilesAt([new File(['x'], 'Trojan.app')], 300, 300)
+    expect(icons()).toHaveLength(before)
+    await tick()
+    expect(addMock).toHaveBeenCalledWith('/docs/Trojan.app')
+    expect(saves).toEqual([])
+  })
+
+  it('a drag over the surface claims the drop: the event is canceled for the open bridge', async () => {
+    await render()
+    const surface = host.querySelector<HTMLElement>('.desktop-surface')!
+    const enter = new MouseEvent('dragenter', { bubbles: true, cancelable: true })
+    Object.defineProperty(enter, 'dataTransfer', { value: { types: ['Files'], files: [] } })
+    const over = new MouseEvent('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(over, 'dataTransfer', { value: { types: ['Files'], files: [] } })
+    await act(async () => {
+      surface.dispatchEvent(enter)
+      surface.dispatchEvent(over)
+      await Promise.resolve()
+    })
+    expect(over.defaultPrevented).toBe(true)
+    expect(host.querySelector('.desktop-surface.drag-over')).toBeTruthy()
+    await act(async () => {
+      surface.dispatchEvent(new MouseEvent('dragleave', { bubbles: true }))
+      await Promise.resolve()
+    })
+    // dragenter/dragleave counting: leaving the surface clears the affordance
+    await act(async () => {
+      const enter = new MouseEvent('dragenter', { bubbles: true, cancelable: true })
+      Object.defineProperty(enter, 'dataTransfer', { value: { types: ['Files'], files: [] } })
+      surface.dispatchEvent(enter)
+      surface.dispatchEvent(new MouseEvent('dragleave', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(host.querySelector('.desktop-surface.drag-over')).toBeNull()
+  })
+
+  it('drops without OS files (a text drag) are ignored', async () => {
+    await render()
+    const before = icons().length
+    await dropFilesAt([], 300, 300)
+    expect(icons()).toHaveLength(before)
+    expect(saves).toEqual([])
+  })
+
+  it('re-dropping the same path is a no-op; several files drop in once', async () => {
+    await render()
+    await dropFilesAt([new File(['x'], 'report.docx')], 300, 300)
+    await dropFilesAt([new File(['x'], 'report.docx')], 500, 500)
+    expect(labels().filter((l) => l === 'report.docx')).toHaveLength(1)
+    await dropFilesAt([new File(['x'], 'one.md'), new File(['x'], 'two.md')], 600, 200)
+    expect(labels()).toContain('one.md')
+    expect(labels()).toContain('two.md')
+    // each fresh path went through its own add; the re-drop was a no-op
+    expect(aliasAdds).toEqual(['/docs/report.docx', '/docs/one.md', '/docs/two.md'])
+  })
+
+  it('an alias that shadows a recent replaces its icon (the explicit placement wins)', async () => {
+    await render()
+    expect(labels()).toContain('alpha.docx')
+    await dropFilesAt([new File(['x'], 'alpha.docx')], 300, 300)
+    // one alpha.docx icon, and it is the alias now
+    expect(labels().filter((l) => l === 'alpha.docx')).toHaveLength(1)
+    expect(aliasAdds).toEqual(['/docs/alpha.docx'])
+  })
+
+  it('the alias list is restored on load and statted for its names', async () => {
+    stored = { positions: {}, aliases: ['/docs/report.docx', '/docs/notes.md'] }
+    await render()
+    await flushAsync()
+    expect(labels()).toContain('report.docx')
+    expect(labels()).toContain('notes.md')
+    expect(statPaths).toHaveBeenCalledWith(['/docs/report.docx', '/docs/notes.md'])
+    // loading what is on disk writes nothing back
+    await tick()
+    expect(saves).toEqual([])
+  })
+})
+
+describe('DesktopView — opening and removing aliases', () => {
+  it('double-click opens a known alias through openPath, an unknown one through the OS', async () => {
+    stored = { positions: {}, aliases: ['/docs/report.docx', '/docs/photo.png'] }
+    await render()
+    await flushAsync()
+    await doubleClick('report.docx')
+    expect(openPath).toHaveBeenCalledWith('/docs/report.docx')
+    await doubleClick('photo.png')
+    expect(desktopOpenExternal).toHaveBeenCalledWith('/docs/photo.png')
+  })
+
+  it('the alias menu offers reveal and 从桌面移除; removing drops the path and the spot', async () => {
+    stored = {
+      positions: { 'alias:/docs/report.docx': cellPos(2, 2) },
+      aliases: ['/docs/report.docx'],
+    }
+    await render()
+    await flushAsync()
+    expect(posOf('report.docx')).toEqual({ x: `${cellPos(2, 2).x}px`, y: `${cellPos(2, 2).y}px` })
+    await contextMenu('report.docx')
+    expect(menuButtons()).toEqual([
+      'Open',
+      'Reveal in folder',
+      'Properties',
+      'Remove from desktop',
+      'Reset position',
+    ])
+    // reveal on the alias (a real file on disk)
+    await clickIconMenuButton('Reveal in folder')
+    expect(revealPath).toHaveBeenCalledWith('/docs/report.docx')
+    // removal: the icon goes, the file is untouched, the stored path is
+    // dropped through the remove channel (never a layout save's aliases)
+    await contextMenu('report.docx')
+    await clickIconMenuButton('Remove from desktop')
+    expect(labels()).not.toContain('report.docx')
+    expect(openPath).not.toHaveBeenCalled()
+    expect(aliasRemoves).toEqual(['/docs/report.docx'])
+    await tick()
+    expect(saves.at(-1)).toEqual({ positions: {} })
+  })
+
+  it('recents and folder roots get no 从桌面移除 — only the person-placed aliases do', async () => {
+    await render()
+    await contextMenu('alpha.docx')
+    expect(menuButtons()).not.toContain('Remove from desktop')
+    await contextMenu('Work')
+    expect(menuButtons()).not.toContain('Remove from desktop')
+  })
+
+  it('a folder alias offers reveal and opens through the OS default', async () => {
+    ;(window.aiOffice.statPaths as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (paths: string[]) =>
+        paths.map((path) => ({
+          path,
+          name: path.split('/').pop() ?? path,
+          ext: '',
+          mtimeMs: 1,
+          sizeBytes: 0,
+          starred: false,
+          directory: true,
+        })),
+    )
+    stored = { positions: {}, aliases: ['/docs/Projects'] }
+    await render()
+    await flushAsync()
+    expect(labels()).toContain('Projects')
+    expect(iconOf('Projects').querySelector('.desktop-tile-folder')).toBeTruthy()
+    await doubleClick('Projects')
+    expect(openPath).not.toHaveBeenCalled()
+    expect(desktopOpenExternal).toHaveBeenCalledWith('/docs/Projects')
+    await contextMenu('Projects')
+    expect(menuButtons()).toEqual([
+      'Open',
+      'Reveal in folder',
+      'Properties',
+      'Remove from desktop',
+      'Reset position',
+    ])
+  })
+})
+
+// ── the pinned widgets ──────────────────────────────────
+
+describe('DesktopView — pinned widgets', () => {
+  const pin = (over: Partial<import('../src/shared/home-api').DesktopPinInfo> = {}) => ({
+    id: 'detached:5',
+    kind: 'sheets' as const,
+    title: 'budget.xlsx',
+    filePath: '/docs/budget.xlsx',
+    bounds: { x: 600, y: 400, width: 480, height: 360 },
+    ...over,
+  })
+
+  it('fetches the pins on mount, follows changes, and shows with the view', async () => {
+    await render()
+    expect(setDesktopPinsVisible).toHaveBeenCalledWith(true)
+    pinList = [pin()]
+    await act(async () => {
+      pinsChanged!(pinList)
+      await Promise.resolve()
+    })
+    await flushAsync()
+    // the widget is model state, not a grid icon
+    expect(icons()).toHaveLength(15)
+    expect(labels()).not.toContain('budget.xlsx')
+    // leaving the desktop hides the widgets with the view (the cleanup run)
+    await act(async () => {
+      root.render(null)
+      await Promise.resolve()
+    })
+    expect(setDesktopPinsVisible).toHaveBeenLastCalledWith(false)
+  })
+
+  it('the reserve band keeps icons out of the bottom-right corner a widget occupies', async () => {
+    // a saved position in the corner — with a widget over it, the corner is
+    // reserved and the icon falls back into the reading-order flow
+    stored = { positions: { 'app:docs': cellPos(11, 6) }, aliases: [] }
+    pinList = [pin()]
+    await render()
+    expect(posOf('Docs')).toEqual({ x: '12px', y: '12px' })
+    const spots = icons().map((li) => `${li.style.left}:${li.style.top}`)
+    expect(new Set(spots).size).toBe(spots.length)
+  })
+
+  it('a pin change re-pulls the live list rather than trusting the event', async () => {
+    await render()
+    const pulls = (window.aiOffice.desktopPins as ReturnType<typeof vi.fn>).mock.calls.length
+    pinList = [
+      pin(),
+      pin({ id: 'detached:6', kind: 'docs', title: 'brief.docx', filePath: '/docs/brief.docx' }),
+    ]
+    await act(async () => {
+      pinsChanged!(pinList)
+      await Promise.resolve()
+    })
+    await flushAsync()
+    expect((window.aiOffice.desktopPins as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(
+      pulls + 1,
+    )
+    // two widgets double the reserve: nothing renders as an icon either way
+    expect(icons()).toHaveLength(15)
   })
 })

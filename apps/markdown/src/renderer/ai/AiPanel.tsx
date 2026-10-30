@@ -3,11 +3,14 @@ import {
   aiPanelWidthAtPointer,
   AiPanelSideButton,
   AiModelPicker,
+  AI_CONFIRM_LABELS,
+  AiConfirmCard,
   type AiModelPickerBridge,
   AiSkillChips,
   AiSkillsMenu,
   useAiPanelPrefs,
   useAiSlash,
+  useToolConfirm,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type {
@@ -206,6 +209,8 @@ export function AiPanel({
   const attachedSkillsRef = useRef(attachedSkills)
   attachedSkillsRef.current = attachedSkills
   const [chat, setChat] = useState<ChatEntry[]>([])
+  /** the approval gate for the document-writing tools (risk:'high' in tools.ts) */
+  const confirm = useToolConfirm()
   /** a streamed write stopped early: the draft stays in the document until the user keeps or discards it */
   const [activePartial, setActivePartial] = useState<{ blocks: number } | null>(null)
   const partialResolverRef = useRef<((keep: boolean) => void) | null>(null)
@@ -480,6 +485,9 @@ export function AiPanel({
   if (!loopRef.current) {
     loopRef.current = new AgentLoop<DocSnapshot>({
       transport: transportRef.current,
+      // the document-writing tools stop at the inline allow/deny card; a denial
+      // feeds the model a do-not-retry result so it can answer without editing
+      confirmTool: (call) => confirm.confirm(call),
       skill: composeSkills('markdown+search', '', [
         createMarkdownSkill(
           () => depsRef.current.getEditor(),
@@ -737,6 +745,8 @@ export function AiPanel({
     const instruction = text.trim()
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
+    // a new run owns the stream: the previous reply's confirm card is history
+    confirm.clear()
     // skills ride with this one message only; a queue batch or retry carries none
     const sentSkills = attachSkills ? attachedSkillsRef.current : []
     if (sentSkills.length > 0) setAttachedSkills([])
@@ -801,6 +811,8 @@ export function AiPanel({
 
   const stop = (): void => {
     msgQueue.hold()
+    // a confirmation left open when Stop is pressed counts as denied
+    confirm.settleAll(false)
     loopRef.current?.cancel()
   }
 
@@ -1113,6 +1125,14 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-assistant${entry.isError ? ' ai-msg-error' : ''}${entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {isLast && confirm.card && (
+                <AiConfirmCard
+                  labels={AI_CONFIRM_LABELS[lang]}
+                  card={confirm.card}
+                  onAllow={confirm.allow}
+                  onDeny={confirm.deny}
+                />
+              )}
               {showThinking && entry.reasoning && (
                 <ReasoningBlock
                   text={entry.reasoning}

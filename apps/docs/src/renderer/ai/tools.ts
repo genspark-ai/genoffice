@@ -120,6 +120,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'insert_content',
     description:
       'Insert new content at a given position (restricted HTML, may contain multiple blocks). For writing/continuing/generating new content; to rewrite existing content use replace_blocks.',
+    // the document-writing tools (insert/write/replace/apply_ops) rewrite what
+    // the user's file says: they route through the host's confirmation gate
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -141,6 +144,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'write_document',
     description:
       '[For long new content: a whole document, a chapter, a full report, article or translation] Hands the writing to the system writer, which streams restricted HTML straight into the document while the user watches; you never write the text yourself. Give a concrete plan (title, section outline with the key points of each, tone, target length) and put every fact, figure, name and quote the text must use into context — the writer sees only the plan and context, not the conversation. Omit afterBlockIndex on a blank document; on a document with content, pass afterBlockIndex to insert after that block, or replaceDocument=true when the user asked to rewrite everything. Short additions (a paragraph or two) use insert_content instead.',
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -172,6 +176,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'replace_blocks',
     description:
       "Replace a block range with new content (restricted HTML). For rewriting/translating/condensing/expanding existing content; the new block count may differ from the old. New blocks inherit the replaced blocks' paragraph and text formatting (font, size, color, indent, spacing, alignment) automatically, and a rewritten <table> keeps the old table's column widths, borders, shading and cell formatting (unchanged cells keep their content); never try to restore formatting afterwards.",
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,6 +195,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'replace_selection',
     description:
       "Replace exactly the user's selected text (the <sel>…</sel> span in the context) with new inline content, leaving the rest of the block untouched. For rewording/translating/correcting a selected phrase or sentence inside a paragraph. The new text inherits the selection's formatting unless the fragment styles it. Requires a range selection inside one paragraph/heading/list item; for whole blocks or several blocks use replace_blocks.",
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -207,6 +213,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     description:
       `Run a list of formatting/structure ops as one atomic transaction (see the apply_ops guide in the system prompt): ${opNames().join(', ')}. ` +
       'Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line.',
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {
@@ -634,6 +641,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     description:
       'Create a NEW standalone file in the default save folder and open it in a new tab; the current document is not modified. Use when the user asks to put content into a new/separate document instead of this one. ' +
       "type 'docx' (default) and 'pdf' take the same restricted HTML as insert_content in content; type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor). Images and charts are not supported in the new file's initial content.",
+    // writes a new file to disk (same class as the create-document skill tool)
+    risk: 'high',
     inputSchema: {
       type: 'object',
       properties: {

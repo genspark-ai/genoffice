@@ -28,7 +28,7 @@ import {
   shell,
   webContents,
 } from 'electron'
-import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
+import type { MenuItemConstructorOptions, NativeImage, Rectangle, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
 import { tabStripOverlay } from './title-bar-overlay'
 import { shellWindowBackground } from './window-background'
@@ -104,7 +104,12 @@ import { registerIntegrationsIpc } from './integrations-ipc'
 import { registerPluginsIpc } from './plugins-ipc'
 import { registerTemplatesIpc } from './templates-ipc'
 import { registerTodosIpc } from './todos-ipc'
-import { registerDesktopIpc, defaultWallpapersDir } from './desktop-ipc'
+import {
+  registerDesktopIpc,
+  defaultWallpapersDir,
+  readDesktopPins,
+  writeDesktopPins,
+} from './desktop-ipc'
 import {
   desktopControlHandler,
   type DesktopControlDeps,
@@ -158,41 +163,112 @@ import {
   watchGskApiKey,
 } from '@genoffice/ai-search'
 
+import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import {
-  buildDocsMenu,
+  // the AppDescriptor registry: the shell's single import site for the six
+  // document apps' main modules plus the table routing, menus and MCP agent
+  // surfaces are driven from
+  appForKind,
+  appForPath,
+  documentApps,
+  installAppMenu,
+  registryAgentIo,
+  setShellMenuBuilders,
+  // the apps' own surface (re-exported by the registry)
+  authorizeMcpDocWrite,
+  authorizeMcpSheetWrite,
+  blankPdfBuffer,
   configureDocsRuntime,
+  configureHtmlRuntime,
+  configureMarkdownRuntime,
+  configurePdfRuntime,
+  configureSheetsRuntime,
+  configureSlidesRuntime,
+  createAiDocument,
+  defaultSaveDir,
   docsFileRenamed,
+  exportDocsHeadless,
+  exportHtmlHeadless,
+  exportMarkdownPdfHeadless,
+  exportSheetsPdfHeadless,
+  exportSlidesPdfHeadless,
+  flushPdfSave,
+  hasActiveQueuedWorkbook,
+  htmlFileRenamed,
+  markdownFileRenamed,
+  markPdfUntitledPath,
+  markSheetsShuttingDown,
+  markSheetsUntitledPath,
+  markSheetsUnsavedNew,
+  PDF_CHANNELS,
+  pdfFileRenamed,
+  pdfIsDirty,
+  pendingUnsavedNewRecoveries,
+  projectFileRenamed,
+  projectFilePaths,
   readRecentFiles,
+  readSlidesRecentFiles,
   readStarredFiles,
   readStarredGroupMap,
   readStarredGroups,
   recordRecentFile,
+  registerAiIpc,
+  registerDocsIpc,
+  registerPrivilegedSchemes,
+  registerProjectIpc,
   removeRecentFiles,
   removeStarredFiles,
   replaceRecentFile,
-  registerAiIpc,
-  registerProjectIpc,
-  setStarredGroup,
-  toggleStarredFile,
-  registerDocsIpc,
-  exportDocsHeadless,
+  replaceSlidesRecentFile,
+  requestHtmlSave,
+  requestMarkdownSave,
+  requestPdfSaveAs,
+  resolveSheetsSessionPath,
+  sendHtmlExportRequest,
+  sendHtmlPrintRequest,
+  sendMarkdownExportRequest,
+  sendMarkdownPrintRequest,
+  sendPdfPrintRequest,
+  sendSheetsMenuAction,
   setDocsExtraFileMenuItems,
+  setDocsFileOpenedHook,
+  setDocsFileSavedHook,
+  setDocsHostWindowHook,
   setDocsMenuGate,
   setDocsShellHooks,
-  createAiDocument,
-  projectFilePaths,
-  projectFileRenamed,
-  setDocsHostWindowHook,
   setDocsShellWindow,
-  setDocsFileSavedHook,
-  setDocsFileOpenedHook,
+  setHtmlDocxExportPrepareHook,
+  setHtmlDocxExportedHook,
+  setHtmlFileSavedHook,
+  setHtmlPresentHooks,
+  setHtmlProvisionalTitleHook,
+  setMarkdownDocxExportedHook,
+  setMarkdownFileSavedHook,
+  setPdfRedactionSavedHook,
+  setPdfRenamedHook,
+  setPdfSaveAsInFlight,
   setSessionPathResolver,
-  defaultSaveDir,
+  setSheetsCloseTabHook,
+  setSheetsExtraFileMenuItems,
+  setSheetsHostWindowHook,
+  setSheetsShellWindow,
+  setSheetsWorkbookOpenedHook,
+  setSlidesCloseTabHook,
+  setSlidesExtraFileMenuItems,
+  setSlidesHostWindowHook,
+  setSlidesOpenedHook,
+  setSlidesShellWindow,
+  setSlidesShowBleed,
+  setStarredGroup,
+  sheetsFileRenamed,
+  sheetsSuggestedPathTaken,
+  slidesFileRenamed,
+  startSheetsCaptureServer,
+  stopSheetsSidecar,
+  toggleStarredFile,
   uniquePathIn,
-  authorizeMcpDocWrite,
-} from '../../../docs/src/main/docs-main'
-import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
-import { blankPdfBuffer } from '../../../pdf/src/main/blank-pdf'
+  unmarkSheetsUnsavedNew,
+} from './app-registry'
 import {
   applyMcpSettings,
   clearMcpLogs,
@@ -211,91 +287,10 @@ import { createDocsControl, installDocsBridge } from './mcp/docs-bridge'
 import { createSlidesControl } from './mcp/slides-bridge'
 import { createSheetsControl, installSheetsBridge } from './mcp/sheets-bridge'
 import { createOpenDocumentsControl, createOpenTargetResolver } from './mcp/open-documents-bridge'
-import {
-  configureSheetsRuntime,
-  exportSheetsPdfHeadless,
-  hasActiveQueuedWorkbook,
-  installSheetsMenu,
-  markSheetsShuttingDown,
-  resolveSheetsSessionPath,
-  markSheetsUnsavedNew,
-  markSheetsUntitledPath,
-  pendingUnsavedNewRecoveries,
-  unmarkSheetsUnsavedNew,
-  sheetsSuggestedPathTaken,
-  authorizeMcpSheetWrite,
-  sendSheetsMenuAction,
-  sheetsFileRenamed,
-  setSheetsCloseTabHook,
-  setSheetsExtraFileMenuItems,
-  setSheetsHostWindowHook,
-  setSheetsShellWindow,
-  setSheetsWorkbookOpenedHook,
-  startSheetsCaptureServer,
-  stopSheetsSidecar,
-} from '../../../sheets/src/main/sheets-main'
-import {
-  configureSlidesRuntime,
-  discardSlidesRecovery,
-  exportSlidesPdfHeadless,
-  installSlidesMenu,
-  readSlidesRecentFiles,
-  replaceSlidesRecentFile,
-  setSlidesCloseTabHook,
-  setSlidesExtraFileMenuItems,
-  setSlidesOpenedHook,
-  setSlidesHostWindowHook,
-  setSlidesShellWindow,
-  setSlidesShowBleed,
-  slidesFileRenamed,
-} from '../../../slides/src/main/slides-main'
-import {
-  configurePdfRuntime,
-  flushPdfSave,
-  markPdfUntitledPath,
-  pdfFileRenamed,
-  pdfIsDirty,
-  requestPdfSaveAs,
-  sendPdfPrintRequest,
-  setPdfRenamedHook,
-  setPdfRedactionSavedHook,
-  setPdfSaveAsInFlight,
-} from '../../../pdf/src/main/pdf-main'
-import { PDF_CHANNELS } from '../../../pdf/src/shared/ipc'
 import { convertPdfFileToDocxLocalWithPrompt, PdfLoadError } from './pdf2docx-local'
 import { convertPdfFileToPptxLocalWithPrompt } from './pdf2pptx-local'
 import { convertPdfFileToXlsxLocalWithPrompt } from './pdf2xlsx-local'
 import { closePdfPasswordDialog, promptPdfPassword } from './pdf-password-dialog'
-import {
-  configureMarkdownRuntime,
-  exportMarkdownPdfHeadless,
-  markdownDiscardPendingAssets,
-  markdownFileRenamed,
-  markdownReadText,
-  markdownSaveToPath,
-  requestMarkdownSave,
-  sendMarkdownExportRequest,
-  sendMarkdownPrintRequest,
-  setMarkdownDocxExportedHook,
-  setMarkdownFileSavedHook,
-} from '../../../markdown/src/main/markdown-main'
-import {
-  configureHtmlRuntime,
-  exportHtmlHeadless,
-  htmlDiscardPendingAssets,
-  htmlFileRenamed,
-  htmlReadText,
-  htmlSaveToPath,
-  registerPrivilegedSchemes,
-  requestHtmlSave,
-  sendHtmlExportRequest,
-  sendHtmlPrintRequest,
-  setHtmlDocxExportPrepareHook,
-  setHtmlDocxExportedHook,
-  setHtmlFileSavedHook,
-  setHtmlPresentHooks,
-  setHtmlProvisionalTitleHook,
-} from '../../../html/src/main/html-main'
 import type {
   AccountLoginEvent,
   AutoSaveDefault,
@@ -335,15 +330,7 @@ import {
   statPathEntries,
 } from './recent-files'
 import { isMoveSource, isUserVisibleFile, type FileTargetSources } from './file-targets'
-import {
-  DOCX_RE,
-  HTML_RE,
-  PDF_RE,
-  PPTX_RE,
-  TEXT_RE,
-  XLSX_RE,
-  renameStaysInApp,
-} from './app-routing'
+import { renameStaysInApp } from './app-routing'
 import { isSameFile, pdfSaveAsTarget, isValidRawRenameName } from './rename-validation'
 import {
   FolderWatcher,
@@ -399,8 +386,10 @@ import {
 import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
+  attachPinnedWidgetsToShell,
   closeDetachedWithoutPrompt,
   createDetachedEditorWindow,
+  detachPinnedWidgetsFromShell,
   detachedFileForWebContents,
   detachedFilePaths,
   detachedOpenDocuments,
@@ -414,13 +403,18 @@ import {
   endTornDrag,
   findDetachedTabByPath,
   focusDetachedByPath,
+  focusPinnedWidget,
   focusedDetachedKind,
   focusedDetachedTab,
   isDetachedEditorWindow,
   isDetachedTabId,
   isTearingOff,
+  registerDetachedPinsIpc,
+  setDesktopPinStore,
   setDetachedChangedListener,
   setDockHost,
+  setPinsChangedListener,
+  setPinsHostSurfaceActive,
   takeTornTab,
 } from './detached-windows'
 import { applyUpdateChannel, checkForUpdatesNow, initAutoUpdater } from './updater'
@@ -864,6 +858,7 @@ const tMain = createI18n({
     menuFile: '文件',
     menuSectionNew: '新建',
     menuOpenInNewWindow: '在新窗口中打开',
+    menuTabPinToDesktop: '钉到桌面',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: '未命名表格',
@@ -989,6 +984,7 @@ const tMain = createI18n({
     menuUiZoomOut: 'Interface Zoom Out',
     menuUiZoomReset: 'Reset Interface Zoom',
     menuOpenInNewWindow: 'Open in New Window',
+    menuTabPinToDesktop: 'Pin to Desktop',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Untitled Spreadsheet',
@@ -1116,6 +1112,7 @@ const tMain = createI18n({
     menuFile: 'Tệp',
     menuSectionNew: 'Mới',
     menuOpenInNewWindow: 'Mở trong cửa sổ mới',
+    menuTabPinToDesktop: 'Ghim vào màn hình chính',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Bảng tính chưa có tiêu đề',
@@ -1247,6 +1244,7 @@ const tMain = createI18n({
     menuFile: 'ファイル',
     menuSectionNew: '新規作成',
     menuOpenInNewWindow: '新しいウィンドウで開く',
+    menuTabPinToDesktop: 'デスクトップにピン留め',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: '無題のスプレッドシート',
@@ -1378,6 +1376,7 @@ const tMain = createI18n({
     menuFile: '파일',
     menuSectionNew: '새로 만들기',
     menuOpenInNewWindow: '새 창에서 열기',
+    menuTabPinToDesktop: '데스크톱에 고정',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: '제목 없는 스프레드시트',
@@ -1508,6 +1507,7 @@ const tMain = createI18n({
     menuFile: 'Fichier',
     menuSectionNew: 'Nouveau',
     menuOpenInNewWindow: 'Ouvrir dans une nouvelle fenêtre',
+    menuTabPinToDesktop: 'Épingler sur le bureau',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Feuille de calcul sans titre',
@@ -1640,6 +1640,7 @@ const tMain = createI18n({
     menuFile: 'Datei',
     menuSectionNew: 'Neu',
     menuOpenInNewWindow: 'In neuem Fenster öffnen',
+    menuTabPinToDesktop: 'An den Desktop anheften',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Unbenannte Tabelle',
@@ -1773,6 +1774,7 @@ const tMain = createI18n({
     menuFile: 'Archivo',
     menuSectionNew: 'Nuevo',
     menuOpenInNewWindow: 'Abrir en una ventana nueva',
+    menuTabPinToDesktop: 'Anclar al escritorio',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Hoja de cálculo sin título',
@@ -1905,6 +1907,7 @@ const tMain = createI18n({
     menuFile: 'ไฟล์',
     menuSectionNew: 'สร้างใหม่',
     menuOpenInNewWindow: 'เปิดในหน้าต่างใหม่',
+    menuTabPinToDesktop: 'ปักหมุดบนเดสก์ท็อป',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'สเปรดชีตไม่มีชื่อ',
@@ -2033,6 +2036,7 @@ const tMain = createI18n({
     menuFile: 'File',
     menuSectionNew: 'Baru',
     menuOpenInNewWindow: 'Buka di Jendela Baru',
+    menuTabPinToDesktop: 'Sematkan ke desktop',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Spreadsheet tanpa judul',
@@ -2165,6 +2169,7 @@ const tMain = createI18n({
     menuFile: 'Файл',
     menuSectionNew: 'Создать',
     menuOpenInNewWindow: 'Открыть в новом окне',
+    menuTabPinToDesktop: 'Закрепить на рабочем столе',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Таблица без названия',
@@ -2297,6 +2302,7 @@ const tMain = createI18n({
     menuFile: 'ملف',
     menuSectionNew: 'جديد',
     menuOpenInNewWindow: 'فتح في نافذة جديدة',
+    menuTabPinToDesktop: 'تثبيت على سطح المكتب',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'جدول بيانات بلا عنوان',
@@ -2425,6 +2431,7 @@ const tMain = createI18n({
     menuFile: 'Arquivo',
     menuSectionNew: 'Novo',
     menuOpenInNewWindow: 'Abrir em nova janela',
+    menuTabPinToDesktop: 'Fixar na área de trabalho',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Planilha sem título',
@@ -2557,6 +2564,7 @@ const tMain = createI18n({
     menuFile: 'File',
     menuSectionNew: 'Nuovo',
     menuOpenInNewWindow: 'Apri in una nuova finestra',
+    menuTabPinToDesktop: 'Aggiungi al desktop',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Foglio di calcolo senza titolo',
@@ -2689,6 +2697,7 @@ const tMain = createI18n({
     menuFile: 'Plik',
     menuSectionNew: 'Nowy',
     menuOpenInNewWindow: 'Otwórz w nowym oknie',
+    menuTabPinToDesktop: 'Przypnij do pulpitu',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Arkusz bez tytułu',
@@ -2821,6 +2830,7 @@ const tMain = createI18n({
     menuFile: 'Soubor',
     menuSectionNew: 'Nový',
     menuOpenInNewWindow: 'Otevřít v novém okně',
+    menuTabPinToDesktop: 'Připnout na plochu',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Sešit bez názvu',
@@ -2951,6 +2961,7 @@ const tMain = createI18n({
     menuFile: 'Bestand',
     menuSectionNew: 'Nieuw',
     menuOpenInNewWindow: 'Openen in nieuw venster',
+    menuTabPinToDesktop: 'Vastmaken aan bureaublad',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Naamloze spreadsheet',
@@ -3083,6 +3094,7 @@ const tMain = createI18n({
     menuFile: 'Fail',
     menuSectionNew: 'Baharu',
     menuOpenInNewWindow: 'Buka dalam Tetingkap Baharu',
+    menuTabPinToDesktop: 'Pin ke desktop',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'Hamparan tanpa tajuk',
@@ -3214,6 +3226,7 @@ const tMain = createI18n({
     menuFile: 'קובץ',
     menuSectionNew: 'חדש',
     menuOpenInNewWindow: 'פתח בחלון חדש',
+    menuTabPinToDesktop: 'נעץ לשולחן העבודה',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'גיליון אלקטרוני ללא שם',
@@ -3342,6 +3355,7 @@ const tMain = createI18n({
     menuFile: 'फ़ाइल',
     menuSectionNew: 'नया',
     menuOpenInNewWindow: 'नई विंडो में खोलें',
+    menuTabPinToDesktop: 'डेस्कटॉप पर पिन करें',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: 'शीर्षकहीन स्प्रेडशीट',
@@ -3474,6 +3488,7 @@ const tMain = createI18n({
     menuFile: '檔案',
     menuSectionNew: '新增',
     menuOpenInNewWindow: '在新視窗中開啟',
+    menuTabPinToDesktop: '釘選到桌面',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
     untitledSheet: '未命名試算表',
@@ -3884,31 +3899,24 @@ function withUserGuide(): void {
 }
 
 function applyMenuFor(kind: TabKind): void {
-  switch (kind) {
-    case 'docs':
-      buildDocsMenu()
-      break
-    case 'sheets':
-      installSheetsMenu()
-      break
-    case 'slides':
-      installSlidesMenu()
-      break
-    case 'pdf':
-      buildPdfMenu()
-      break
-    case 'markdown':
-      buildMarkdownMenu()
-      break
-    case 'html':
-      buildHtmlMenu()
-      break
-    default:
-      buildHomeMenu()
-  }
+  // the app registry installs the editor menu for the app that owns the kind;
+  // home/help tabs (and any kind no app claims) get the home menu
+  if (!installAppMenu(kind)) buildHomeMenu()
   withUserGuide()
   withViewMenu()
 }
+
+// The pdf/markdown/html editor menus are chrome the shell builds around those
+// apps' views (their apps have no menu of their own; docs/sheets/slides menus
+// live in the apps and are referenced by the registry directly). The builders
+// close over this module's state, so they are handed to the registry here
+// instead of the registry importing index.ts back. Function declarations are
+// hoisted, so registering at module scope is safe.
+setShellMenuBuilders({
+  pdf: buildPdfMenu,
+  markdown: buildMarkdownMenu,
+  html: buildHtmlMenu,
+})
 
 /**
  * The View › interface-scale items, shared by the home menu and every editor
@@ -4073,22 +4081,20 @@ function createShellWindow(): void {
     () => {
       win.webContents.send(TABS_CHANNELS.changed, manager.list())
       publishOpenDocumentsIfOwner([...manager.openFilePaths(), ...detachedFilePaths()])
+      // the pinned widgets layer over the Home desktop: another tab covering
+      // it hides them until Home is active again
+      setPinsHostSurfaceActive(manager.list().some((t) => t.active && t.kind === 'home'))
     },
     applyMenuFor,
     // no extension: these tabs have no file on disk yet; the title becomes the
     // real filename (the localized untitled default + .docx etc.) once the first save lands
+    // — keyed off each app's registry entry
     (kind) =>
       kind === 'help'
         ? tm('menuUserGuide')
-        : kind === 'docs'
-          ? tm('untitledDoc')
-          : kind === 'slides'
-            ? tm('untitledDeck')
-            : kind === 'markdown'
-              ? tm('untitledMarkdown')
-              : kind === 'html'
-                ? tm('untitledHtml')
-                : tm('untitledSheet'),
+        : appForKind(kind)
+          ? tm(appForKind(kind)!.untitledTitleKey)
+          : tm('untitledSheet'),
     // the tab strip is interface chrome, so its height follows the scale
     () => currentUiScale,
   )
@@ -4116,6 +4122,12 @@ function createShellWindow(): void {
       win.focus()
     },
   })
+  // the pinned widgets re-parent to this window so they keep stacking above
+  // the desktop they decorate (the shell can be recreated around them)
+  attachPinnedWidgetsToShell(win)
+  // and they must not be destroyed with it when it closes — their documents
+  // outlive the shell like any detached editor's
+  win.on('close', () => detachPinnedWidgetsFromShell(win))
 
   // pushRecent-triggered docs menu rebuilds must not clobber the active tab's
   // menu; a focused detached docs window owns the menu just like an active tab
@@ -4278,32 +4290,13 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 /**
- * Single source of truth for the open-dialog filter. Includes the
- * legacy .doc/.ppt binaries so they are selectable and surface the explicit
- * "not supported" dialog via openDocumentPath instead of being grayed out.
+ * Single source of truth for the open-dialog filter: every extension the
+ * registry routes to an app, plus the legacy .doc/.ppt binaries so they are
+ * selectable and surface the explicit "not supported" dialog via
+ * openDocumentPath instead of being grayed out.
  */
 const OPEN_DIALOG_EXTENSIONS = [
-  'docx',
-  'doc',
-  'xlsx',
-  'xlsm',
-  'xls',
-  'csv',
-  'tsv',
-  'ods',
-  'ots',
-  'pptx',
-  'ppt',
-  'odt',
-  'odp',
-  'otp',
-  'pdf',
-  'md',
-  'markdown',
-  'txt',
-  'json',
-  'html',
-  'htm',
+  ...new Set([...documentApps.flatMap((app) => app.extensions), 'doc', 'ppt']),
 ]
 
 function notifyUnsupportedFile(filePath: string): void {
@@ -4341,7 +4334,7 @@ function registerDroppedFilesIpc(): void {
   )
 }
 
-/** the single router: extension decides which module owns the file; false = nothing opened */
+/** the single router: the extension decides which registered app owns the file; false = nothing opened */
 function openDocumentPath(filePath: string): boolean {
   const opened = routeDocumentPath(filePath)
   if (opened) {
@@ -4360,7 +4353,7 @@ function openDocumentPath(filePath: string): boolean {
  * overwrite the file we just exported.
  */
 function openGeneratedDocument(filePath: string): boolean {
-  if (tabManager && PDF_RE.test(filePath)) {
+  if (tabManager && appForPath(filePath) === 'pdf') {
     const existing = tabManager.findPdfTabByPath(filePath)
     if (existing) {
       tabManager.reloadTab(existing)
@@ -4376,58 +4369,23 @@ function routeDocumentPath(filePath: string): boolean {
   // a detached editor window already shows this file — focus it, never a second copy
   if (focusDetachedByPath(filePath)) return true
   if (!tabManager) return false
-  if (DOCX_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findDocsTabByPath(filePath)
-    if (existing) tabManager.activateTab(existing)
-    else tabManager.openDocsTab(filePath)
-    return true
+  const kind = appForPath(filePath)
+  if (!kind) {
+    notifyUnsupportedFile(filePath)
+    return false
   }
-  if (XLSX_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findSheetsTabByPath(filePath)
-    if (existing) {
-      tabManager.activateTab(existing)
-    } else {
-      tabManager.openSheetsTab(filePath)
-      startQueuedWorkbookNudge()
-    }
-    return true
+  recordRecentFile(filePath)
+  const existing = tabManager.findTabOfKindByPath(kind, filePath)
+  if (existing) {
+    tabManager.activateTab(existing)
+  } else {
+    tabManager.openDocumentTab(kind, filePath)
+    // the sheets renderer subscribes to menu actions only after Univer mounts,
+    // so a fresh workbook tab needs the queued-path nudge (its handshake with
+    // the renderer is the one app-specific step of an otherwise table-driven route)
+    if (kind === 'sheets') startQueuedWorkbookNudge()
   }
-  if (PPTX_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findSlidesTabByPath(filePath)
-    if (existing) {
-      tabManager.activateTab(existing)
-    } else {
-      // For a new tab the path goes through the pending queue; the renderer consumes it after mounting
-      tabManager.openSlidesTab(filePath)
-    }
-    return true
-  }
-  if (PDF_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findPdfTabByPath(filePath)
-    if (existing) tabManager.activateTab(existing)
-    else tabManager.openPdfTab(filePath)
-    return true
-  }
-  if (TEXT_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findMarkdownTabByPath(filePath)
-    if (existing) tabManager.activateTab(existing)
-    else tabManager.openMarkdownTab(filePath)
-    return true
-  }
-  if (HTML_RE.test(filePath)) {
-    recordRecentFile(filePath)
-    const existing = tabManager.findHtmlTabByPath(filePath)
-    if (existing) tabManager.activateTab(existing)
-    else tabManager.openHtmlTab(filePath)
-    return true
-  }
-  notifyUnsupportedFile(filePath)
-  return false
+  return true
 }
 
 /**
@@ -5642,6 +5600,49 @@ function detachTabToWindow(id: string): void {
   win.focus()
 }
 
+/**
+ * "Pin to Desktop": the tab's live view moves into a borderless widget window
+ * floating over the Home desktop (unsaved edits included — nothing reloads).
+ * The shell then lands on the desktop so the widget is visible where it was
+ * placed; a document already pinned shows its widget instead of a second one.
+ */
+function pinTabToDesktop(id: string, bounds?: Rectangle): void {
+  if (!tabManager) return
+  const tab = tabManager.list().find((t) => t.id === id)
+  if (tab?.filePath && focusPinnedWidget(tab.filePath)) return
+  const record = tabManager.detachTab(id)
+  if (!record) return
+  if (!shellWindow) {
+    // no shell to pin over (it closed): fall back to an ordinary window
+    createDetachedEditorWindow({ ...record, applyMenuFor }).focus()
+    return
+  }
+  createDetachedEditorWindow({
+    ...record,
+    applyMenuFor,
+    pin: { parent: shellWindow, ...(bounds ? { bounds } : {}) },
+  })
+  tabManager.openHomeTab()
+  sendToShellRenderer(HOME_CHANNELS.showDesktop)
+}
+
+/**
+ * Restore last session's pinned widgets: reopen each document (its saved file
+ * — anything unsaved was prompted for at quit, like any detached window) and
+ * pin it back at its saved rect. Missing files are skipped; the pin store's
+ * own normalization caps and validates what is read.
+ */
+function restoreDesktopPins(): void {
+  if (!tabManager) return
+  for (const pin of readDesktopPins(app.getPath('userData'))) {
+    if (!existsSync(pin.filePath)) continue
+    openDocumentPath(pin.filePath)
+    const tab = tabManager.findTabByPath(pin.filePath)
+    if (!tab || !tabManager.canDetachTab(tab.id)) continue
+    pinTabToDesktop(tab.id, pin.bounds)
+  }
+}
+
 /** Tear-off: the tab leaves the strip for a window created under the held
  *  pointer at (x, y); the strip keeps steering it until release. */
 function tearOffTabToWindow(id: string, x: number, y: number): boolean {
@@ -5735,6 +5736,7 @@ function tabMenuActions(): TabMenuActions {
     saveAs: (id) => documentAction(id, 'saveAs'),
     print: (id) => documentAction(id, 'print'),
     openInNewWindow: (id) => detachTabToWindow(id),
+    pinToDesktop: (id) => pinTabToDesktop(id),
     pin: (id, pinned) => tabManager?.setPinned(id, pinned),
     // two windows side by side, each on its own half of the screen the tab is on
     splitBeside: (id) => {
@@ -6941,7 +6943,25 @@ registerPluginsIpc({ window: () => shellWindow })
 registerTemplatesIpc()
 registerTodosIpc()
 registerDesktopIpc()
+registerDetachedPinsIpc()
 registerSystemPresenceIpc(() => systemPresence)
+
+/**
+ * The pinned widgets' persistence: desktop-pins.json through the same
+ * scratch-then-rename write the layout and prefs use, written by
+ * detached-windows on every pin mutation (debounced for moves) and read once
+ * at launch by restoreDesktopPins.
+ */
+setDesktopPinStore({
+  read: () => readDesktopPins(app.getPath('userData')),
+  write: (pins) => {
+    void writeDesktopPins(app.getPath('userData'), pins).catch((err: unknown) => {
+      console.warn('[shell] desktop pins save failed:', err)
+    })
+  },
+})
+// the shell renderer re-pulls the widget list when a pin lands or leaves
+setPinsChangedListener((pins) => sendToShellRenderer(HOME_CHANNELS.desktopPinsChanged, pins))
 
 /**
  * The CLI/MCP `desktop` domain's live stores: the same files registerDesktopIpc
@@ -7178,20 +7198,13 @@ app.whenReady().then(async () => {
       closeTab: (tabId) =>
         closeDetachedWithoutPrompt(tabId) || (tabManager?.closeTabWithoutPrompt(tabId) ?? false),
       defaultSaveDir: () => defaultSaveDir(),
-      docs: mcpDocsControl,
-      sheets: mcpSheetsControl,
-      slides: mcpSlidesControl,
-      slidesDiscard: discardSlidesRecovery,
-      markdown: {
-        read: markdownReadText,
-        save: markdownSaveToPath,
-        discard: markdownDiscardPendingAssets,
-      },
-      html: {
-        read: htmlReadText,
-        save: htmlSaveToPath,
-        discard: htmlDiscardPendingAssets,
-      },
+      // each app's read/save/discard from the registry: markdown/html/pdf are
+      // the apps' own functions, the three session families wrap the controls above
+      agents: registryAgentIo({
+        docs: mcpDocsControl,
+        sheets: mcpSheetsControl,
+        slides: mcpSlidesControl,
+      }),
     }),
     // the headless create_*/read_* tools delegate to the bundled genoffice CLI
     // (the same engines, no second implementation); it runs on the app's own
@@ -7251,6 +7264,9 @@ app.whenReady().then(async () => {
   openLaunchPaths(pendingLaunchPaths)
   pendingLaunchPaths = []
   for (const recoverAs of pendingUnsavedNewRecoveries()) void newSheetTab(recoverAs)
+  // last session's pinned widgets reopen onto the desktop (after the launch
+  // paths, so a pinned file the CLI also asked for is one tab, pinned once)
+  restoreDesktopPins()
 
   const tabControl = controlHandler({
     reveal: revealShellWindow,

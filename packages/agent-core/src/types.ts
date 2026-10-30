@@ -4,6 +4,13 @@ export interface AgentToolDef {
   description: string
   /** JSON Schema (object) describing the tool input */
   inputSchema: Record<string, unknown>
+  /**
+   * Declarative risk class. 'high' tools (process spawning, file writes,
+   * document rewrites) route through the host's confirmTool hook before they
+   * execute; everything else runs as before. Absent = 'low', so existing
+   * tool definitions need no change.
+   */
+  risk?: 'low' | 'high'
 }
 
 export interface AgentToolCall {
@@ -89,6 +96,12 @@ export interface ToolExecution {
   mutated?: boolean
   /** short human-readable label for activity UI */
   summary: string
+  /**
+   * true when the host's confirmation hook declined the call: the tool never
+   * ran and the output is the denial notice (distinct from a tool that ran
+   * and failed, for UIs that render the two differently).
+   */
+  denied?: boolean
   /**
    * Side-channel display: for UI only, never enters the LLM context.
    * Ignored when tool results are assembled into an AgentMessage.

@@ -15,6 +15,7 @@ function toRecentEntry(path: string, starredPaths: ReadonlySet<string>): RecentE
       mtimeMs: stat.mtimeMs,
       sizeBytes: stat.size,
       starred: starredPaths.has(path),
+      ...(stat.isDirectory() ? { directory: true } : {}),
     }
   } catch {
     // A failed stat is often transient (disconnected drive, pending mount,

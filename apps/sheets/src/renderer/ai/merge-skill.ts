@@ -40,6 +40,9 @@ export function createMergeSkill(deps: MergeSkillDeps): AgentSkill {
     tools: [
       {
         name: 'merge_attached_workbooks',
+        // imports every sheet of the attachments into the current workbook
+        // (a bulk workbook mutation): it routes through the host's confirmation gate
+        risk: 'high',
         description:
           'Import every sheet of the attached spreadsheet files (xlsx/xlsm/xls/csv) into the current workbook, engine-side. ' +
           'Returns the created sheet names. Use this before analyzing or restructuring attached spreadsheet data; ' +

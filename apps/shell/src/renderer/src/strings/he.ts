@@ -48,6 +48,13 @@ export const he: Dict = {
   askCtaRecents: 'סימון מ״אחרונים״',
   askNoSave: 'השיחה אינה נשמרת; היא מתנקה כשהאפליקציה מופעלת מחדש.',
   askUnknownError: 'בקשת ה-AI נכשלה. נסה שוב.',
+  askTasksTitle: 'משימות רקע',
+  askTaskRunning: 'פועלת',
+  askTaskInterrupted: 'נקטעה',
+  askTaskStop: 'עצור',
+  askTaskDismiss: 'הסר',
+  askTaskClearAll: 'נקה הכול',
+  askTasksNote: 'משימות נעצרות בסגירת החלון; הקטועות מופיעות כאן לאחר הפעלה מחדש.',
   navCloud: 'Genspark Projects',
   cloudSubtitle:
     'פרויקטים שנוצרו באינטרנט עם Genspark AI. העריכה נמשכת בדפדפן — לחצו על פרויקט כדי לפתוח אותו.',
