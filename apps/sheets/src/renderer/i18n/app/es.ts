@@ -507,6 +507,7 @@ export const es = {
   appGridlinesHidden: 'Líneas de cuadrícula ocultas.',
   appGridlinesShown: 'Líneas de cuadrícula mostradas.',
   appShowingFormulas: 'Mostrando fórmulas — vuelva a alternar para ver los valores.',
+  appShowingFormulasActive: 'Mostrando fórmulas',
   appShowingValues: 'Mostrando los valores calculados.',
   appTraceNoFormula: 'Rastrear precedentes: la celda activa no tiene fórmula.',
   appTraceNoRefs: 'Rastrear precedentes: esta fórmula no tiene referencias de celda.',

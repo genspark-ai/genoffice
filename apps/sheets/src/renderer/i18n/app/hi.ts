@@ -474,6 +474,7 @@ export const hi = {
   appGridlinesHidden: 'ग्रिडलाइन छिपाई गईं।',
   appGridlinesShown: 'ग्रिडलाइन दिखाई गईं।',
   appShowingFormulas: 'सूत्र दिखाए जा रहे हैं — मानों के लिए फिर टॉगल करें।',
+  appShowingFormulasActive: 'सूत्र दिखाए जा रहे हैं',
   appShowingValues: 'परिकलित मान दिखाए जा रहे हैं।',
   appTraceNoFormula: 'पूर्ववर्ती ट्रेस करें: सक्रिय सेल में कोई सूत्र नहीं है।',
   appTraceNoRefs: 'पूर्ववर्ती ट्रेस करें: इस सूत्र में कोई सेल संदर्भ नहीं है।',

@@ -476,6 +476,7 @@ export const tr = {
   appGridlinesHidden: 'Kılavuz çizgileri gizlendi.',
   appGridlinesShown: 'Kılavuz çizgileri gösteriliyor.',
   appShowingFormulas: 'Formüller gösteriliyor — değerler için yeniden değiştirin.',
+  appShowingFormulasActive: 'Formüller gösteriliyor',
   appShowingValues: 'Hesaplanan değerler gösteriliyor.',
   appTraceNoFormula: 'Etkileyenleri İzle: etkin hücrede formül yok.',
   appTraceNoRefs: 'Etkileyenleri İzle: bu formülde hücre başvurusu yok.',

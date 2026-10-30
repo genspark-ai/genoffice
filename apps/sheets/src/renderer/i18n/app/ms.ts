@@ -474,6 +474,7 @@ export const ms = {
   appGridlinesHidden: 'Garis grid disembunyikan.',
   appGridlinesShown: 'Garis grid ditunjukkan.',
   appShowingFormulas: 'Memaparkan formula — togol sekali lagi untuk nilai.',
+  appShowingFormulasActive: 'Memaparkan formula',
   appShowingValues: 'Memaparkan nilai terkira.',
   appTraceNoFormula: 'Surih Presedens: sel aktif tiada formula.',
   appTraceNoRefs: 'Surih Presedens: formula ini tiada rujukan sel.',

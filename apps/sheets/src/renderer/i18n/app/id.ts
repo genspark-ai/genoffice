@@ -473,6 +473,7 @@ export const id = {
   appGridlinesHidden: 'Garis kisi disembunyikan.',
   appGridlinesShown: 'Garis kisi ditampilkan.',
   appShowingFormulas: 'Menampilkan rumus — alihkan lagi untuk melihat nilai.',
+  appShowingFormulasActive: 'Menampilkan rumus',
   appShowingValues: 'Menampilkan nilai hasil hitungan.',
   appTraceNoFormula: 'Lacak Presedan: sel aktif tidak memiliki rumus.',
   appTraceNoRefs: 'Lacak Presedan: rumus ini tidak memiliki referensi sel.',

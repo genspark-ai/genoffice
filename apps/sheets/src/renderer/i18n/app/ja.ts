@@ -504,6 +504,7 @@ export const ja = {
   appGridlinesHidden: '目盛線を非表示にしました。',
   appGridlinesShown: '目盛線を表示しました。',
   appShowingFormulas: '数式を表示しています — もう一度切り替えると値を表示します。',
+  appShowingFormulasActive: '数式を表示中',
   appShowingValues: '計算結果を表示しています。',
   appTraceNoFormula: '参照元のトレース：アクティブセルに数式がありません。',
   appTraceNoRefs: '参照元のトレース：この数式にはセル参照がありません。',

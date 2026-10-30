@@ -424,6 +424,7 @@ export const zh = {
   appGridlinesHidden: '网格线已隐藏。',
   appGridlinesShown: '网格线已显示。',
   appShowingFormulas: '正在显示公式——再次切换显示数值。',
+  appShowingFormulasActive: '正在显示公式',
   appShowingValues: '正在显示计算结果。',
   appTraceNoFormula: '追踪引用单元格：活动单元格没有公式。',
   appTraceNoRefs: '追踪引用单元格：该公式没有单元格引用。',
