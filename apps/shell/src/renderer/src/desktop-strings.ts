@@ -10,7 +10,7 @@ import type { Lang } from '@genoffice/i18n'
 export interface DesktopStrings {
   /** the sidebar nav item that switches to the desktop */
   navDesktop: string
-  /** the six document apps' tiles (also the 新建 / New submenu's items) */
+  /** the six document apps' tiles (also the New submenu's items) */
   appDocs: string
   appSheets: string
   appSlides: string
@@ -28,7 +28,7 @@ export interface DesktopStrings {
   menuOpen: string
   menuReveal: string
   menuReset: string
-  /** 从桌面移除: drop a dragged-in alias (the file on disk is untouched) */
+  /** remove a dragged-in alias from the desktop (the file on disk is untouched) */
   menuRemove: string
   /** empty-surface context menu: the three submenus and the direct actions */
   menuNew: string
@@ -37,12 +37,12 @@ export interface DesktopStrings {
   menuRefresh: string
   menuWallpaper: string
   menuProps: string
-  /** 排序方式 / Sort-by submenu */
+  /** the Sort-by submenu */
   sortCustom: string
   sortName: string
   sortKind: string
   sortMtime: string
-  /** 查看 / View submenu */
+  /** the View submenu (icon sizes) */
   iconSizeLabel: string
   sizeSm: string
   sizeMd: string
@@ -72,14 +72,14 @@ export interface DesktopStrings {
   carousel10m: string
   carousel30m: string
   carousel1h: string
-  /** 填充方式 / wallpaper fit row (image wallpapers only) */
+  /** the wallpaper fit row (image wallpapers only) */
   wpFit: string
   fitCover: string
   fitContain: string
   fitStretch: string
   fitTile: string
   fitCenter: string
-  /** 文字颜色 / desktop label color row */
+  /** the desktop label color row */
   wpLabelColor: string
   /** the '' preset: follow the theme */
   labelAuto: string

@@ -8,7 +8,7 @@ import { LocaleProvider } from '../src/renderer/src/locale'
 import type { RecentEntry } from '../src/shared/home-api'
 
 /**
- * The Home shell around the desktop view: the 桌面 nav item sits on top of
+ * The Home shell around the desktop view: the Desktop nav item sits on top of
  * the sidebar, the desktop is the view Home opens by default, and the last
  * top-level nav the person chose is what the next launch opens.
  */
@@ -100,7 +100,7 @@ function selected(): string[] {
 }
 
 describe('Home opens on the desktop', () => {
-  it('the 桌面 nav item sits first in the sidebar and is active on launch', () => {
+  it('the Desktop nav item sits first in the sidebar and is active on launch', () => {
     const labels = [...container.querySelectorAll('.sidebar-nav .nav-label')].map(
       (label) => label.textContent,
     )

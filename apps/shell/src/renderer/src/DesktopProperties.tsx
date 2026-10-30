@@ -5,7 +5,7 @@ import type { HomeApi, RecentEntry } from '../../shared/home-api'
 import type { DesktopStrings } from './desktop-strings'
 
 /**
- * The desktop's two 属性 / properties dialogs, both opened off the desktop:
+ * The desktop's two properties dialogs, both opened off the desktop:
  * the per-icon one a file or folder icon's own menu carries (name, type,
  * size and modified time for files, the path row and the reveal button), and
  * the desktop's own off the empty-surface menu (the file and folder counts,

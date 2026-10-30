@@ -36,7 +36,7 @@ export interface DesktopItem {
   readonly ext: string
   /** real path behind file / folder / alias items; null for apps and untitled widgets */
   readonly path: string | null
-  /** last-modified time, for the 修改时间 sort and the properties dialog */
+  /** last-modified time, for the modified-time sort and the properties dialog */
   readonly mtimeMs?: number
   /** a user-placed alias: removable from the desktop, opened by the OS when unknown */
   readonly alias: boolean
@@ -351,8 +351,8 @@ export function droppedFilePaths(
 export const WIDGET_RESERVE_CELLS = 12
 
 /**
- * The grid's avoidance of pinned widgets, deliberately simple (the charter's
- * "简单避让" bar): widgets are placed over the desktop's bottom-right corner,
+ * The grid's avoidance of pinned widgets, deliberately simple: widgets are
+ * placed over the desktop's bottom-right corner,
  * so the icon grid reserves that corner — `WIDGET_RESERVE_CELLS` per widget,
  * filled from the bottom-right corner upward, one column at a time from the
  * right edge. The band's cells count as occupied for saved positions and the

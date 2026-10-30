@@ -72,7 +72,7 @@ const DROP_DBLCLICK_GUARD_MS = 400
  * its contents and saved positions re-quantize onto the same rows and columns */
 const ICON_SCALES: Record<DesktopPrefs['iconSize'], number> = { sm: 0.75, md: 1, lg: 1.25 }
 
-/** the 新建 submenu: the six document types and their new* bridge calls */
+/** the New submenu: the six document types and their new* bridge calls */
 const NEW_DOCUMENT_ACTIONS = [
   { action: 'newDoc', labelKey: 'appDocs' },
   { action: 'newSheet', labelKey: 'appSheets' },
@@ -85,7 +85,7 @@ const NEW_DOCUMENT_ACTIONS = [
   labelKey: keyof DesktopStrings
 }>
 
-/** the 排序方式 submenu: the read-only flows plus the free-drag default */
+/** the Sort-by submenu: the read-only flows plus the free-drag default */
 const SORT_MODE_ITEMS = [
   { mode: 'custom', labelKey: 'sortCustom' },
   { mode: 'name', labelKey: 'sortName' },
@@ -96,7 +96,7 @@ const SORT_MODE_ITEMS = [
   labelKey: keyof DesktopStrings
 }>
 
-/** the 查看 ▸ 图标大小 submenu */
+/** the View ▸ Icon size submenu */
 const ICON_SIZE_ITEMS = [
   { size: 'sm', labelKey: 'sizeSm' },
   { size: 'md', labelKey: 'sizeMd' },
@@ -184,7 +184,7 @@ const kindRank = (icon: DesktopItem): number =>
   icon.kind === 'app' ? 0 : icon.kind === 'folder' ? 1 : 2
 
 /**
- * The read-only sort flows (名称 / 类型 / 修改时间): one stable ordering of the
+ * The read-only sort flows (name / kind / modified-time): one stable ordering of the
  * icon set, laid out by the same free-cell flow as the default view. 'custom'
  * is the free-drag layout and returns the icon set untouched. Ties always fall
  * back to the icon id, so two sorts of one set are one order.
@@ -206,7 +206,7 @@ function sortDesktopIcons(
         compareText(a.id, b.id),
     )
   } else {
-    // 修改时间: system icons have no mtime and rank as never-modified (first,
+    // modified-time: system icons have no mtime and rank as never-modified (first,
     // in their built order), files newest first
     const mtimeOf = (icon: DesktopItem): number => icon.mtimeMs ?? Number.POSITIVE_INFINITY
     ranked.sort((a, b) => mtimeOf(b) - mtimeOf(a) || compareText(a.id, b.id))
@@ -317,9 +317,9 @@ const EMPTY_POSITIONS: Readonly<Record<string, IconPos>> = {}
  * timed carousel, icon size, sort mode, the label color — lives in
  * `<userData>/desktop-prefs.json` through `desktopPrefsSave`, applied the
  * moment its menu item is chosen. The right-click menu on empty surface
- * follows the OS conventions (新建 / 排序方式 / 查看 / 刷新 / 更换壁纸 /
- * 属性) with one level of flyout submenus; file and folder icons get a
- * properties dialog off their own menu, aliases additionally a reveal and a
+ * follows the OS conventions (New / Sort by / View / Refresh / Change
+ * wallpaper / Properties) with one level of flyout submenus; file and folder
+ * icons get a properties dialog off their own menu, aliases additionally a reveal and a
  * remove (the file on disk is never touched). The wallpaper center and the
  * two properties dialogs render from their own files
  * (DesktopWallpaperCenter.tsx, DesktopProperties.tsx); this view owns the
@@ -461,7 +461,7 @@ export function DesktopView({
 
   // ── load: the saved layout, the prefs and the recents ──
 
-  /** re-pull the newest recents (launch, a recents-changed push, the 刷新 item) */
+  /** re-pull the newest recents (launch, a recents-changed push, the Refresh item) */
   const reloadRecents = useCallback(() => {
     const request = (window.aiOffice as Partial<HomeApi>).recents?.({ limit: RECENT_LIMIT })
     if (!request) return
@@ -845,7 +845,7 @@ export function DesktopView({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // ── the cell pitch, scaled by the icon size (查看 ▸ 图标大小) ──
+  // ── the cell pitch, scaled by the icon size (View ▸ Icon size) ──
   // The same multiplier desktop.css applies to the tiles, so a cell always
   // fits its contents; saved positions re-quantize onto the same row/column.
 
@@ -871,7 +871,7 @@ export function DesktopView({
   // under a widget.
 
   /** the read-only sort flows reorder the icon set and ignore the saved map;
-   * choosing 自定义 restores it untouched */
+   * choosing Custom restores it untouched */
   const orderedIcons = useMemo(
     () => sortDesktopIcons(icons, prefs.sortMode),
     [icons, prefs.sortMode],
@@ -1033,7 +1033,7 @@ export function DesktopView({
       setMenu(null)
       setSurfaceMenu(null)
       // the read-only sort flows are look-don't-touch: a press selects, but
-      // never arms the drag machinery (自定义 is the only draggable mode)
+      // never arms the drag machinery (Custom is the only draggable mode)
       if (!freeLayout) return
       const rect = surface.getBoundingClientRect()
       setPress({
@@ -1107,7 +1107,7 @@ export function DesktopView({
   // reveal applies to file icons and to aliases of either kind — a real file
   // or folder is on disk behind them (app icons and folder roots offer none)
   const menuPath = menuIcon && (menuIcon.kind === 'file' || menuIcon.alias) ? menuIcon.path : null
-  /** file and folder icons get a 属性 dialog; app icons do not */
+  /** file and folder icons get a Properties dialog; app icons do not */
   const menuPropsIcon = menuIcon && menuIcon.kind !== 'app' ? menuIcon : null
 
   const resetPosition = useCallback((id: string) => {
@@ -1258,7 +1258,7 @@ export function DesktopView({
 
   // ── surface-menu actions ──
 
-  /** run one of the 新建 create calls and close the menu */
+  /** run one of the New submenu's create calls and close the menu */
   const createDocument = useCallback((action: (typeof NEW_DOCUMENT_ACTIONS)[number]['action']) => {
     setSurfaceMenu(null)
     setSurfaceSub(null)

@@ -218,7 +218,7 @@ Gates:
 | 2 months  | workstream C + D confirmation hook                    | gates above |
 | 3 months  | workstream E + release pipeline; legacy stack retired | gates above |
 
-## 后续候选 (follow-up candidates)
+## Follow-up candidates
 
 P2 review findings deliberately not fixed in the 2026-10-30 cleanup batch, kept
 here so they stay visible without masquerading as done:

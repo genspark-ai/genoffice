@@ -4,7 +4,7 @@ import type { DesktopPrefs, HomeApi } from '../../shared/home-api'
 import type { DesktopStrings } from './desktop-strings'
 
 /**
- * The 更换壁纸 / wallpaper center dialog, opened off the desktop's
+ * The wallpaper center dialog, opened off the desktop's
  * empty-surface menu: the whole look-and-feel in one place — the animated and
  * static wallpaper tiles plus the custom-image picker, the fit row an image
  * wallpaper fills by, the label-color row with its presets, native picker and
@@ -28,7 +28,7 @@ const CAROUSEL_ITEMS = [
   { minutes: 60, labelKey: 'carousel1h' },
 ] as const satisfies ReadonlyArray<{ minutes: number; labelKey: keyof DesktopStrings }>
 
-/** the 填充方式 row: how a wallpaper image fills the surface, Windows-style */
+/** the wallpaper fit row: how a wallpaper image fills the surface, Windows-style */
 const WALLPAPER_FIT_ITEMS = [
   { fit: 'cover', labelKey: 'fitCover' },
   { fit: 'contain', labelKey: 'fitContain' },
@@ -55,7 +55,7 @@ const FIT_OBJECT_POSITION: Partial<
   tile: 'left top',
 }
 
-/** the 文字颜色 row's presets: automatic, white, dark gray and the four brand
+/** the label-color row's presets: automatic, white, dark gray and the four brand
  * hues (logo.svg, the same values the aurora tokens paint). The swatch's own
  * fill is the color data itself, like a file badge — not UI chrome. */
 const LABEL_PRESETS = [
@@ -148,7 +148,7 @@ export function DesktopWallpaperCenter({
         }
       : undefined
 
-  /** the 自定义图片 tile: pick, copy, and apply whatever came back */
+  /** the custom-image tile: pick, copy, and apply whatever came back */
   const pickCustomWallpaper = useCallback(() => {
     const request = (window.aiOffice as Partial<HomeApi>).wallpaperPickCustom?.()
     if (!request) return
