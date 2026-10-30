@@ -1,0 +1,271 @@
+name: Release
+
+# Fork release pipeline: tag push (v*) or manual dispatch (version input) →
+# guard → quality gates + per-platform packaging → one GitHub Release with
+# every installer. Without secrets this degrades to unsigned packages and no
+# in-app update feed (see docs/release.md): the mac leg self-skips signing /
+# notarization when no Apple credentials exist, the win leg never gets a
+# signing mode, and GENOFFICE_UPDATE_URL left unset bakes no app-update.yml.
+# macOS is arm64-only (GENOFFICE_MAC_X64 unset) and Windows x64-only
+# (GENOFFICE_WIN_ARM64 unset) on purpose — matching apps/shell/electron-builder.cjs.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.13.0 (creates the v<version> tag)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    # Fail fast on a bad or non-forward version before any runner is burned:
+    # the tag (or dispatch input) must parse as x.y.z and must be newer than
+    # the latest published release (same version allowed for re-runs, older
+    # rejected) — the forward-only rule from scripts/update-feed-utils.cjs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Resolve and guard the release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=()
+          if [ -n "${{ inputs.version }}" ]; then
+            args+=(--version "${{ inputs.version }}")
+          fi
+          node scripts/release-version.cjs "${args[@]}"
+
+  build:
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # mac leg: macos-14 is arm64; the universal xlsx-sidecar build needs
+          # both rustup Apple targets (aarch64 native, x86_64 cross).
+          - os: macos-14
+            platform: mac
+            electron-cache: ~/Library/Caches/electron
+            builder-cache: ~/Library/Caches/electron-builder
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          # win leg: windows-latest x64 builds the sidecar host-native
+          # (target/release, MSVC + crt-static) — accepted by electron-builder.cjs.
+          - os: windows-latest
+            platform: win
+            electron-cache: ~\AppData\Local\electron\Cache
+            builder-cache: ~\AppData\Local\electron-builder\Cache
+            rust-targets: ''
+          # linux leg: 22.04 (not -latest) so the host-arch sidecar and the
+          # runner match the x64 packaging targets.
+          - os: ubuntu-22.04
+            platform: linux
+            electron-cache: ~/.cache/electron
+            builder-cache: ~/.cache/electron-builder
+            rust-targets: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      # absent secret -> empty string -> electron-builder.cjs omits the publish
+      # config, no app-update.yml, no latest*.yml (fork default: no in-app
+      # updates). Present -> feed URL baked in, feed files asserted+uploaded.
+      GENOFFICE_UPDATE_URL: ${{ secrets.GENOFFICE_UPDATE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        # SHA-pinned (third-party action); the ref no longer selects the
+        # toolchain, so it is passed explicitly.
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      # electron's postinstall downloads its binary from GitHub Releases; one
+      # cache entry holds both the electron zips and electron-builder's
+      # downloaded packaging tools for this OS.
+      - name: Cache electron + electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ matrix.electron-cache }}
+            ${{ matrix.builder-cache }}
+          key: electron-build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-build-${{ runner.os }}-
+
+      - name: Install linux packaging + test prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # rpm: rpmbuild for the rpm target (electron-builder.cjs comment);
+          # libxml2-utils: xmllint for the pptx-engine schema tests.
+          sudo apt-get install -y --no-install-recommends rpm libxml2-utils
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ---- quality gates: a red gate must never produce a package ----
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # ---- build ----
+      - name: Build all modules
+        run: npm run build:all
+
+      - name: Build universal xlsx sidecar
+        if: matrix.platform == 'mac'
+        run: npm run native:build:universal -w @genoffice/sheets
+
+      - name: Package (${{ matrix.platform }})
+        run: node scripts/release-package.cjs --platform ${{ matrix.platform }} --version ${{ needs.guard.outputs.version }}
+
+      # electron-builder can exit 0 with artifacts missing; assert the
+      # expected set by name and capture the file list for upload.
+      - name: Assert release artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--platform "${{ matrix.platform }}" --version "${{ needs.guard.outputs.version }}")
+          if [ -n "$GENOFFICE_UPDATE_URL" ]; then
+            args+=(--feed)
+          fi
+          {
+            echo 'files<<EOF'
+            node scripts/release-artifacts.cjs "${args[@]}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ steps.artifacts.outputs.files }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    # One GitHub Release carrying every platform's files; runs only when all
+    # build legs (and their typecheck/test gates) are green. Idempotent for
+    # re-runs: a release that already exists is uploaded into with --clobber,
+    # and the guard's same-version rule lets that re-run through.
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GENOFFICE_UPDATE_URL: ${{ secrets.GENOFFICE_UPDATE_URL }}
+      GENOFFICE_WIN_SIGN_MODE: ${{ secrets.GENOFFICE_WIN_SIGN_MODE }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Fetch tags
+        run: git fetch --tags --force origin
+
+      - name: Assert all platform artifacts
+        run: |
+          set -euo pipefail
+          args=(--platform all --version "${{ needs.guard.outputs.version }}" --dist dist)
+          if [ -n "$GENOFFICE_UPDATE_URL" ]; then
+            args+=(--feed)
+          fi
+          node scripts/release-artifacts.cjs "${args[@]}" > dist-files.txt
+          echo "publishing $(wc -l < dist-files.txt) file(s)"
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          version="${{ needs.guard.outputs.version }}"
+          flags=(--version "$version")
+          if { [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; } \
+             || [ -n "$APPLE_KEYCHAIN_PROFILE" ]; then
+            flags+=(--mac-signed)
+          fi
+          if [ -n "$GENOFFICE_WIN_SIGN_MODE" ]; then
+            flags+=(--win-signed)
+          fi
+          if [ -n "$GENOFFICE_UPDATE_URL" ]; then
+            flags+=(--feed-url "$GENOFFICE_UPDATE_URL")
+          fi
+          node scripts/release-notes.cjs "${flags[@]}" > release-notes.md
+
+      - name: Create or update the GitHub Release
+        run: |
+          set -euo pipefail
+          version="${{ needs.guard.outputs.version }}"
+          tag="v${version}"
+          extra_args=()
+          if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "tag ${tag} does not exist — creating it at ${GITHUB_SHA}"
+            extra_args=(--target "${GITHUB_SHA}")
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release ${tag} exists — updating its assets"
+          else
+            gh release create "$tag" "${extra_args[@]}" \
+              --title "GenOffice ${tag}" \
+              --notes-file release-notes.md
+          fi
+          mapfile -t files < dist-files.txt
+          gh release upload "$tag" "${files[@]}" --clobber
+          echo "release ${tag} published:"
+          gh release view "$tag" --json name,assets --jq '{name: .name, assets: [.assets[].name]}'
