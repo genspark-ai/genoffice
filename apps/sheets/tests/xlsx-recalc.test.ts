@@ -19,6 +19,7 @@ const recalcResultSchema = z
           column: z.number().int().nonnegative(),
           formatted: z.string(),
           number: z.number().optional(),
+          boolean: z.boolean().optional(),
           isError: z.boolean(),
           isFormula: z.boolean(),
         })

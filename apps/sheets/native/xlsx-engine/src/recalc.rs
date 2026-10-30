@@ -10,12 +10,13 @@
 //! normal sidecar error and the renderer keeps showing cached values.
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use ironcalc::base::Model;
-use ironcalc::base::types::CellType;
+use ironcalc::base::types::{Cell, CellType, FormulaValue, SpillValue};
 use serde::{Deserialize, Serialize};
 
 use crate::rels_normalize::load_model;
@@ -60,10 +61,25 @@ pub struct RecalcCell {
     /// Raw numeric value when the cell evaluates to a number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<f64>,
+    /// Raw boolean when the cell evaluates to a boolean (`=A1>3`): the cache
+    /// for one is `t="b"` with the numeric 0/1, not the text `TRUE`/`FALSE`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boolean: Option<bool>,
     /// The engine typed the result as an error (`#DIV/0!`), as opposed to a
     /// formula whose text result merely spells one (`="#N/A"`).
     pub is_error: bool,
     pub is_formula: bool,
+}
+
+/// Why a requested stale-cache audit came back without an answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum AuditSkipReason {
+    /// The workbook uses the 1904 date system (`<workbookPr date1904="1"/>`).
+    /// IronCalc 0.9.1 has no date1904 handling — nothing in the engine reads
+    /// the flag — so every date result it computes is 1462 days away from the
+    /// value Excel cached. Comparing the two would overwrite correct caches.
+    #[serde(rename = "date1904")]
+    Date1904,
 }
 
 #[derive(Debug, Serialize)]
@@ -72,6 +88,28 @@ pub struct RecalcResult {
     pub cells: Vec<RecalcCell>,
     /// True when a resident model served this request (no file re-import).
     pub cached: bool,
+    /// Formula cells whose computed value differs from the cached `<v>` the
+    /// file carried on import. Only present when the request asked for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<Vec<RecalcCell>>,
+    /// Spill cells of a dynamic or CSE array formula whose cached `<v>` no
+    /// longer matches what the anchor computes. They carry no formula of
+    /// their own, so a caller cannot refresh them in place: this list is for
+    /// reporting, not for patching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_spill_cells: Option<Vec<RecalcCell>>,
+    /// Formula and spill cells whose cache was kept although the engine now
+    /// computes an error: the audit never downgrades a usable cache to an
+    /// engine error (RATE/TEXT-style engine gaps), but a changed input can
+    /// legitimately turn a dependent into `#DIV/0!`/`#N/A`, so these caches
+    /// may be wrong. They were not refreshed — a caller may not claim the
+    /// cached values are current while this list is non-empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_unrefreshed: Option<Vec<RecalcCell>>,
+    /// Set when the audit was requested but deliberately skipped; `stale` and
+    /// `stale_spill_cells` are then absent and the caches were not checked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audit_skipped: Option<AuditSkipReason>,
 }
 
 type EditKey = (String, u32, u32);
@@ -152,6 +190,23 @@ pub fn recalc_cells(
     edits: &[RecalcEdit],
     reads: &[RecalcRead],
 ) -> Result<RecalcResult, SidecarError> {
+    recalc_cells_reporting(cache, path, edits, reads, false)
+}
+
+/// [`recalc_cells`] with an optional stale-cache audit: with `report_stale`
+/// the result lists every formula cell whose computed value differs from the
+/// cached `<v>` the file carried on import, plus the array spill cells it
+/// cannot refresh. The audit compares against values only an import stages, so
+/// it always works on a fresh model (`cached: false`) — unless it is skipped,
+/// which for now means a `date1904` workbook (`audit_skipped`), where the
+/// engine's date results cannot be trusted against the file's caches.
+pub fn recalc_cells_reporting(
+    cache: &mut RecalcCache,
+    path: &Path,
+    edits: &[RecalcEdit],
+    reads: &[RecalcRead],
+    report_stale: bool,
+) -> Result<RecalcResult, SidecarError> {
     if edits.len() > MAX_RECALC_EDITS {
         return Err(SidecarError::InvalidRequest(format!(
             "Too many recalc edits (limit {MAX_RECALC_EDITS})."
@@ -174,6 +229,30 @@ pub fn recalc_cells(
             "Recalc read exceeds {MAX_RECALC_READ_CELLS} cells."
         )));
     }
+    // An edit can only leave a cached formula value stale when the workbook
+    // holds formulas at all. Finding that out by importing costs seconds on a
+    // formula-free data workbook, so scan the worksheet parts first.
+    if report_stale && reads.is_empty() && !workbook_has_formulas(path)? {
+        return Ok(RecalcResult {
+            cells: Vec::new(),
+            cached: false,
+            stale: Some(Vec::new()),
+            stale_spill_cells: Some(Vec::new()),
+            stale_unrefreshed: Some(Vec::new()),
+            audit_skipped: None,
+        });
+    }
+    // IronCalc 0.9.1 ignores workbookPr@date1904, so on a 1904-system workbook
+    // every date it computes is 1462 days from the file's cache. The audit
+    // would compare those caches against a wrong answer and overwrite values
+    // Excel wrote correctly; skip it and tell the caller the caches were not
+    // checked. Reads still run: the caller asked for values, not for the audit.
+    let audit_skipped = if report_stale && workbook_uses_1904_dates(path)? {
+        Some(AuditSkipReason::Date1904)
+    } else {
+        None
+    };
+    let report_stale = report_stale && audit_skipped.is_none();
 
     let metadata = std::fs::metadata(path).map_err(|error| SidecarError::Io(error.to_string()))?;
     let mtime = metadata
@@ -194,12 +273,15 @@ pub fn recalc_cells(
                     .any(|edit| edit.sheet == key.0 && edit.row == key.1 && edit.column == key.2)
             })
     });
+    // The audit compares against the caches the import staged; a resident
+    // model has already evaluated them away.
+    let resident = if report_stale { None } else { resident };
     let cached = resident.is_some();
 
     // IronCalc's importer is strict and can panic on non-Excel producers
     // (missing cellStyles, whitespace nodes); contain that to this request.
-    let (entry, cells) = catch_unwind(AssertUnwindSafe(|| {
-        run(resident, path, mtime, size, edits, reads)
+    let (entry, cells, stale_audit) = catch_unwind(AssertUnwindSafe(|| {
+        run(resident, path, mtime, size, edits, reads, report_stale)
     }))
     .map_err(|_| {
         SidecarError::Workbook("The formula engine could not process this workbook.".into())
@@ -211,7 +293,32 @@ pub fn recalc_cells(
     cache.entries.insert(key, entry);
     cache.evict_beyond_cap();
 
-    Ok(RecalcResult { cells, cached })
+    let (stale, stale_spill_cells, stale_unrefreshed) = match stale_audit {
+        Some(audit) => (
+            Some(audit.cells),
+            Some(audit.spill_cells),
+            Some(audit.unrefreshed),
+        ),
+        None => (None, None, None),
+    };
+    Ok(RecalcResult {
+        cells,
+        cached,
+        stale,
+        stale_spill_cells,
+        stale_unrefreshed,
+        audit_skipped,
+    })
+}
+
+/// What the fresh import's staged caches no longer agree with: formula cells
+/// (patchable on save), array spill cells (report only, see `RecalcResult`)
+/// and the cells whose cache was kept against an engine error
+/// (`unrefreshed`, also report only).
+struct StaleAudit {
+    cells: Vec<RecalcCell>,
+    spill_cells: Vec<RecalcCell>,
+    unrefreshed: Vec<RecalcCell>,
 }
 
 fn run(
@@ -221,7 +328,8 @@ fn run(
     size: u64,
     edits: &[RecalcEdit],
     reads: &[RecalcRead],
-) -> Result<(ResidentModel, Vec<RecalcCell>), SidecarError> {
+    report_stale: bool,
+) -> Result<(ResidentModel, Vec<RecalcCell>, Option<StaleAudit>), SidecarError> {
     let mut entry = match resident {
         Some(entry) => entry,
         None => {
@@ -237,6 +345,10 @@ fn run(
             }
         }
     };
+
+    // The staged `<v>` values are the file's own caches: they only exist
+    // before the first evaluation replaces them with the engine's results.
+    let cached_values = report_stale.then(|| snapshot_cached_values(&entry.model));
 
     let mut dirty = false;
     for edit in edits {
@@ -294,6 +406,7 @@ fn run(
                     }
                 }
                 let number = raw_number(&entry.model, sheet, row_1, column_1);
+                let boolean = raw_boolean(&entry.model, sheet, row_1, column_1);
                 let is_error = matches!(
                     entry.model.get_cell_type(sheet, row_1, column_1),
                     Ok(CellType::ErrorValue)
@@ -304,13 +417,15 @@ fn run(
                     column: column as u32,
                     formatted,
                     number,
+                    boolean,
                     is_error,
                     is_formula,
                 });
             }
         }
     }
-    Ok((entry, cells))
+    let stale = cached_values.map(|cached| stale_cached_values(&entry.model, cached));
+    Ok((entry, cells, stale))
 }
 
 /// IronCalc writes a sheet name that needs quoting without its quotes when it
@@ -461,7 +576,6 @@ enum PinnedValue {
 /// which the renderer already declines to display.
 fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
-    use ironcalc::base::types::{Cell, FormulaValue};
     let names: Vec<String> = model
         .workbook
         .worksheets
@@ -643,6 +757,308 @@ fn raw_number(model: &Model, sheet: u32, row: i32, column: i32) -> Option<f64> {
         Ok(CellValue::Number(value)) => Some(value),
         _ => None,
     }
+}
+
+fn raw_boolean(model: &Model, sheet: u32, row: i32, column: i32) -> Option<bool> {
+    use ironcalc::base::cell::CellValue;
+    match model.get_cell_value_by_index(sheet, row, column) {
+        Ok(CellValue::Boolean(value)) => Some(value),
+        _ => None,
+    }
+}
+
+/// A formula cell's identity and the cached `<v>` the file carried,
+/// captured before the model evaluates it away. Array-formula anchors carry
+/// their cached value the same way regular formulas do.
+struct CachedFormula {
+    sheet: usize,
+    row: i32,
+    column: i32,
+    value: FormulaValue,
+}
+
+/// A spill cell — a member of a dynamic or CSE array formula that has no
+/// formula of its own — and the value the file cached for it.
+struct CachedSpill {
+    sheet: usize,
+    row: i32,
+    column: i32,
+    value: SpillValue,
+}
+
+struct CachedValues {
+    formulas: Vec<CachedFormula>,
+    spills: Vec<CachedSpill>,
+}
+
+fn snapshot_cached_values(model: &Model) -> CachedValues {
+    let mut formulas = Vec::new();
+    let mut spills = Vec::new();
+    for (sheet, worksheet) in model.workbook.worksheets.iter().enumerate() {
+        for (row, column, cell) in worksheet.sheet_data.cells() {
+            match cell.as_ref() {
+                Cell::CellFormula { v, .. } | Cell::ArrayFormula { v, .. } => {
+                    formulas.push(CachedFormula {
+                        sheet,
+                        row,
+                        column,
+                        value: v.clone(),
+                    });
+                }
+                Cell::SpillCell { v, .. } => spills.push(CachedSpill {
+                    sheet,
+                    row,
+                    column,
+                    value: v.clone(),
+                }),
+                _ => {}
+            }
+        }
+    }
+    CachedValues { formulas, spills }
+}
+
+fn worksheet_cell<'a>(
+    model: &'a Model<'a>,
+    sheet: usize,
+    row: i32,
+    column: i32,
+) -> Option<std::borrow::Cow<'a, Cell>> {
+    model
+        .workbook
+        .worksheets
+        .get(sheet)
+        .and_then(|worksheet| worksheet.cell(row, column))
+}
+
+/// One reported stale cell in wire coordinates (0-based row/column, like
+/// `reads`), with the engine's current display value.
+fn stale_cell(model: &Model, sheet: usize, row: i32, column: i32, is_formula: bool) -> RecalcCell {
+    let sheet_index = sheet as u32;
+    RecalcCell {
+        sheet: model.workbook.worksheets[sheet].name.clone(),
+        // IronCalc coordinates are 1-based; the wire is 0-based like `reads`.
+        row: (row - 1) as u32,
+        column: (column - 1) as u32,
+        formatted: model
+            .get_formatted_cell_value(sheet_index, row, column)
+            .unwrap_or_default(),
+        number: raw_number(model, sheet_index, row, column),
+        boolean: raw_boolean(model, sheet_index, row, column),
+        is_error: matches!(
+            model.get_cell_type(sheet_index, row, column),
+            Ok(CellType::ErrorValue)
+        ),
+        is_formula,
+    }
+}
+
+/// The cells whose evaluated value disagrees with the cached `<v>` the file
+/// carried. Cells pinned to their cache (external-workbook references) are
+/// value cells by the time this runs, so they are left alone.
+fn stale_cached_values(model: &Model, cached: CachedValues) -> StaleAudit {
+    let mut cells = Vec::new();
+    let mut unrefreshed = Vec::new();
+    for entry in cached.formulas {
+        let Some(cell) = worksheet_cell(model, entry.sheet, entry.row, entry.column) else {
+            continue;
+        };
+        let computed = match cell.as_ref() {
+            Cell::CellFormula { v, .. } | Cell::ArrayFormula { v, .. } => v,
+            // The cell changed kind while evaluating (pinned to a constant,
+            // dropped from an array): there is no computed value to compare.
+            _ => continue,
+        };
+        if formula_values_agree(&entry.value, computed) {
+            continue;
+        }
+        // Never downgrade a usable cache to an engine error. IronCalc errors
+        // where Excel does not — RATE()'s Newton solver near -100% (#185) is
+        // one case, TEXT() with a format code the engine cannot parse
+        // another — and replacing the file's value with #NUM!/#VALUE! would
+        // destroy a cache Excel computed correctly. The reverse (a cached
+        // error that now computes) stays reportable. The cache is kept, but
+        // the cell is listed as unrefreshed: a changed input legitimately
+        // turns dependents into #DIV/0!/#N/A, so the kept cache may be wrong
+        // and the caller may not claim the cached values are current.
+        if is_error_value(computed) && !is_error_value(&entry.value) {
+            unrefreshed.push(stale_cell(
+                model,
+                entry.sheet,
+                entry.row,
+                entry.column,
+                true,
+            ));
+            continue;
+        }
+        // An unevaluated cell has no answer to write; the file's cache stays.
+        if matches!(computed, FormulaValue::Unevaluated) {
+            continue;
+        }
+        cells.push(stale_cell(
+            model,
+            entry.sheet,
+            entry.row,
+            entry.column,
+            true,
+        ));
+    }
+    let mut spill_cells = Vec::new();
+    for entry in cached.spills {
+        let Some(cell) = worksheet_cell(model, entry.sheet, entry.row, entry.column) else {
+            continue;
+        };
+        let Cell::SpillCell { v, .. } = cell.as_ref() else {
+            continue;
+        };
+        if spill_values_agree(&entry.value, v) {
+            continue;
+        }
+        // Same rule as formula cells: a spill the engine turns into an error
+        // keeps the value Excel spilled there, and is listed as unrefreshed
+        // for the same reason.
+        if matches!(v, SpillValue::Error(_)) && !matches!(entry.value, SpillValue::Error(_)) {
+            unrefreshed.push(stale_cell(
+                model,
+                entry.sheet,
+                entry.row,
+                entry.column,
+                false,
+            ));
+            continue;
+        }
+        // A spill cell carries no `<f>` of its own, so the caller's
+        // cached-value patch cannot rewrite it; the caller reports it instead.
+        spill_cells.push(stale_cell(
+            model,
+            entry.sheet,
+            entry.row,
+            entry.column,
+            false,
+        ));
+    }
+    StaleAudit {
+        cells,
+        spill_cells,
+        unrefreshed,
+    }
+}
+
+fn is_error_value(value: &FormulaValue) -> bool {
+    matches!(value, FormulaValue::Error { .. })
+}
+
+fn spill_values_agree(cached: &SpillValue, computed: &SpillValue) -> bool {
+    match (cached, computed) {
+        (SpillValue::Number(a), SpillValue::Number(b)) => numbers_agree(*a, *b),
+        (SpillValue::Text(a), SpillValue::Text(b)) => a == b,
+        (SpillValue::Boolean(a), SpillValue::Boolean(b)) => a == b,
+        (SpillValue::Error(a), SpillValue::Error(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn formula_values_agree(cached: &FormulaValue, computed: &FormulaValue) -> bool {
+    match (cached, computed) {
+        (FormulaValue::Number(a), FormulaValue::Number(b)) => numbers_agree(*a, *b),
+        (FormulaValue::Text(a), FormulaValue::Text(b)) => a == b,
+        (FormulaValue::Boolean(a), FormulaValue::Boolean(b)) => a == b,
+        (FormulaValue::Error { ei: a, .. }, FormulaValue::Error { ei: b, .. }) => a == b,
+        _ => false,
+    }
+}
+
+/// Excel keeps at most 15 significant digits in a cached `<v>`; two doubles
+/// that agree there are the same cached number. Without this tolerance an
+/// unrelated formula whose result Excel rounded would be rewritten on every
+/// edit over the last bits of an f64.
+fn numbers_agree(a: f64, b: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    if a.is_nan() && b.is_nan() {
+        return true;
+    }
+    if !a.is_finite() || !b.is_finite() {
+        return false;
+    }
+    (a - b).abs() <= a.abs().max(b.abs()) * 1e-13
+}
+
+/// True when any worksheet part carries a `<f>` element. A stale-cache audit
+/// needs the workbook imported; scanning the deflated worksheet parts first
+/// lets a formula-free workbook skip that import entirely.
+fn workbook_has_formulas(path: &Path) -> Result<bool, SidecarError> {
+    let file = std::fs::File::open(path).map_err(|error| SidecarError::Io(error.to_string()))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| {
+        SidecarError::Workbook(format!(
+            "The formula engine could not read the workbook archive: {error}"
+        ))
+    })?;
+    let mut names = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            SidecarError::Workbook(format!(
+                "The formula engine could not read the workbook archive: {error}"
+            ))
+        })?;
+        let name = entry.name().to_owned();
+        if name.starts_with("xl/worksheets/") && name.ends_with(".xml") {
+            names.push(name);
+        }
+    }
+    for name in names {
+        let mut entry = archive.by_name(&name).map_err(|error| {
+            SidecarError::Workbook(format!("The formula engine could not read {name}: {error}"))
+        })?;
+        if part_has_formula(&mut entry)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Streaming `<f` scan: a worksheet XML can be hundreds of MB, and only the
+/// presence of a formula matters. The two-byte match can straddle a chunk.
+fn part_has_formula(part: &mut impl Read) -> Result<bool, SidecarError> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut previous_was_lt = false;
+    loop {
+        let read = part
+            .read(&mut buffer)
+            .map_err(|error| SidecarError::Io(error.to_string()))?;
+        if read == 0 {
+            return Ok(false);
+        }
+        let chunk = &buffer[..read];
+        if previous_was_lt && chunk[0] == b'f' {
+            return Ok(true);
+        }
+        if chunk.windows(2).any(|pair| pair == b"<f") {
+            return Ok(true);
+        }
+        previous_was_lt = chunk.last() == Some(&b'<');
+    }
+}
+
+/// True when `xl/workbook.xml` declares the 1904 date system
+/// (`<workbookPr date1904="1"/>`). IronCalc 0.9.1 has no date1904 support —
+/// nothing in the engine reads the flag — so every date result it computes is
+/// 1462 days away from the value Excel cached.
+///
+/// The workbook part is a small metadata part, and parsing it with the read
+/// path's own `read_sheet_declarations` keeps this flag's interpretation
+/// (`1`/`true`, namespaced documents) byte-for-byte consistent with the
+/// renderer's.
+fn workbook_uses_1904_dates(path: &Path) -> Result<bool, SidecarError> {
+    let file = std::fs::File::open(path).map_err(|error| SidecarError::Io(error.to_string()))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| {
+        SidecarError::Workbook(format!(
+            "The formula engine could not read the workbook archive: {error}"
+        ))
+    })?;
+    let (_, _, _, date_1904) = crate::workbook::read_sheet_declarations(&mut archive)?;
+    Ok(date_1904)
 }
 
 #[cfg(test)]
@@ -1306,6 +1722,137 @@ mod tests {
         assert!(b1.is_formula);
     }
 
+    /// Rewrites one package part in place, the way an outside writer leaves a
+    /// file whose inputs and cached formula values disagree.
+    fn patch_entry(path: &Path, name: &str, from: &str, to: &str) {
+        use std::io::{Read, Write};
+
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+        let mut entries = Vec::new();
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).unwrap();
+            let entry_name = entry.name().to_owned();
+            let mut content = Vec::new();
+            entry.read_to_end(&mut content).unwrap();
+            entries.push((entry_name, content));
+        }
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (entry_name, content) in entries {
+            let content = if entry_name == name {
+                let text = String::from_utf8(content).unwrap();
+                let patched = text.replace(from, to);
+                assert_ne!(patched, text, "fixture part never carried {from:?}");
+                patched.into_bytes()
+            } else {
+                content
+            };
+            writer.start_file(entry_name, options).unwrap();
+            writer.write_all(&content).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    /// A value edit through an outside writer: A1 changed, B1's cached <v> not.
+    #[test]
+    fn reports_the_dependents_a_value_edit_left_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stale.xlsx");
+        write_fixture(&path, &[("A1", "3"), ("B1", "=A1*2"), ("C1", "=B1+1")]);
+        // A1 = 5, its cache rewritten, B1/C1 still carry the old results
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>3</v></c>",
+            "<c r=\"A1\"><v>5</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        assert!(!result.cached);
+        assert!(result.cells.is_empty());
+        let stale = result.stale.unwrap();
+        let at = |column: u32| {
+            stale
+                .iter()
+                .find(|cell| cell.row == 0 && cell.column == column)
+                .unwrap_or_else(|| panic!("column {column} was not reported stale"))
+        };
+        // the direct dependent and the one behind it, across the chain
+        assert_eq!((at(1).formatted.as_str(), at(1).number), ("10", Some(10.0)));
+        assert_eq!((at(2).formatted.as_str(), at(2).number), ("11", Some(11.0)));
+        assert!(at(1).is_formula);
+        assert!(at(2).is_formula);
+    }
+
+    #[test]
+    fn reports_no_stale_cells_when_the_caches_agree() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        assert_eq!(result.stale.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn only_reports_stale_cells_when_the_request_asks_for_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("quiet.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        assert!(result.stale.is_none());
+        assert!(result.stale_spill_cells.is_none());
+        assert!(result.stale_unrefreshed.is_none());
+        assert!(result.audit_skipped.is_none());
+    }
+
+    #[test]
+    fn finds_formula_cells_without_importing_the_workbook() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("formulas.xlsx");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        // Padding pushes the final "<f>" across the scan's 64 KiB chunk edge.
+        let padding = " ".repeat(64 * 1024 - 1);
+        let sheet = format!(
+            "<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData>{padding}<f>1+1</f></worksheet>"
+        );
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
+        writer.write_all(sheet.as_bytes()).unwrap();
+        // A workbook IronCalc could not import (no workbook part) still answers
+        // the scan, proving the audit never reaches the importer.
+        writer.start_file("[Content_Types].xml", options).unwrap();
+        writer.write_all(b"<Types/>").unwrap();
+        writer.finish().unwrap();
+        assert!(workbook_has_formulas(&path).unwrap());
+
+        let plain = dir.path().join("plain.xlsx");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&plain).unwrap());
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
+        writer.write_all(
+            b"<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData></worksheet>",
+        )
+        .unwrap();
+        writer.finish().unwrap();
+        assert!(!workbook_has_formulas(&plain).unwrap());
+
+        // no formulas: the audit answers empty without importing anything
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &plain, &[], &[], true).unwrap();
+        assert_eq!(result.stale.unwrap().len(), 0);
+        assert!(result.cells.is_empty());
+        assert_eq!(cache.entries.len(), 0);
+    }
     /// An openpyxl-shaped workbook: the worksheet relationships use absolute
     /// OPC targets (`/xl/comments/comment1.xml`), and the comment part exists
     /// unless `include_comments` is false.
@@ -1404,5 +1951,317 @@ mod tests {
             message.contains("(resolved from /xl/comments/comment1.xml)"),
             "{message}"
         );
+    }
+
+    // ── stale-cache audit: date1904, engine errors, array formulas ──────
+
+    /// Boilerplate parts of a one-sheet package around `sheet_xml`.
+    fn write_sheet_package(path: &Path, date_1904: bool, sheet_xml: &str) {
+        use std::io::Write;
+
+        let workbook_xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">{}<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            if date_1904 {
+                r#"<workbookPr date1904="1"/>"#
+            } else {
+                ""
+            }
+        );
+        let entries: [(&str, &str); 6] = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            ("xl/workbook.xml", &workbook_xml),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", sheet_xml),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn worksheet(dimension: &str, rows: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="{dimension}"/><sheetData>{rows}</sheetData></worksheet>"#
+        )
+    }
+
+    fn find_stale(result: &RecalcResult, row: u32, column: u32) -> Option<&RecalcCell> {
+        result
+            .stale
+            .as_ref()?
+            .iter()
+            .find(|cell| cell.row == row && cell.column == column)
+    }
+
+    fn find_stale_spill(result: &RecalcResult, row: u32, column: u32) -> Option<&RecalcCell> {
+        result
+            .stale_spill_cells
+            .as_ref()?
+            .iter()
+            .find(|cell| cell.row == row && cell.column == column)
+    }
+
+    #[test]
+    fn detects_the_1904_date_system() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = r#"<row r="1"><c r="A1"><v>1</v></c></row>"#;
+        let plain = dir.path().join("plain.xlsx");
+        write_sheet_package(&plain, false, &worksheet("A1", rows));
+        assert!(!workbook_uses_1904_dates(&plain).unwrap());
+        let dated = dir.path().join("dated.xlsx");
+        write_sheet_package(&dated, true, &worksheet("A1", rows));
+        assert!(workbook_uses_1904_dates(&dated).unwrap());
+    }
+
+    /// IronCalc 0.9.1 evaluates dates on the 1900 system whatever the file
+    /// says, so on a `date1904="1"` workbook its answer for a date formula is
+    /// 1462 days away from Excel's cached value. The audit must not treat
+    /// that difference as staleness and overwrite the file's caches; it skips
+    /// and says why. The same sheet bytes without the flag are audited
+    /// normally, which proves the gate is what changed.
+    #[test]
+    fn skips_the_audit_on_a_date_1904_workbook() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = r#"<row r="1"><c r="A1"><f>DATE(2024,1,1)</f><v>43830</v></c><c r="B1"><f>A1+1</f><v>43831</v></c></row>"#;
+        let sheet = worksheet("A1:B1", rows);
+
+        let dated = dir.path().join("dated.xlsx");
+        write_sheet_package(&dated, true, &sheet);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &dated, &[], &[], true).unwrap();
+        assert_eq!(result.audit_skipped, Some(AuditSkipReason::Date1904));
+        assert!(result.stale.is_none());
+        assert!(result.stale_spill_cells.is_none());
+        assert!(result.stale_unrefreshed.is_none());
+        assert!(result.cells.is_empty());
+
+        let plain = dir.path().join("plain.xlsx");
+        write_sheet_package(&plain, false, &sheet);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &plain, &[], &[], true).unwrap();
+        assert!(result.audit_skipped.is_none());
+        // both caches were written for the 1900 system, so both look stale
+        let stale = result.stale.unwrap();
+        assert_eq!(stale.len(), 2);
+    }
+
+    /// A formula-free 1904 workbook cannot carry a stale cache: the audit
+    /// answers empty without importing, so it need not be skipped.
+    #[test]
+    fn audits_a_formula_free_date_1904_workbook_normally() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data-1904.xlsx");
+        write_sheet_package(
+            &path,
+            true,
+            &worksheet("A1", r#"<row r="1"><c r="A1"><v>1</v></c></row>"#),
+        );
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        assert!(result.audit_skipped.is_none());
+        assert_eq!(result.stale.unwrap().len(), 0);
+        assert_eq!(result.stale_spill_cells.unwrap().len(), 0);
+        assert_eq!(result.stale_unrefreshed.unwrap().len(), 0);
+    }
+
+    /// The audit never downgrades a usable cache to an engine error. Here
+    /// `TEXT` uses a format code IronCalc's formatter rejects (`mmss.0`,
+    /// ECMA-376 built-in 47): Excel's cached text is right, the engine's
+    /// #VALUE! is not, so the cache is left in place — but the cell is
+    /// reported as unrefreshed, because the caller may not claim the cached
+    /// values are current while a cache went unverified. A cached error that
+    /// now computes is still reported (and patchable).
+    #[test]
+    fn never_downgrades_a_usable_cache_to_an_engine_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("text-error.xlsx");
+        let rows = concat!(
+            r#"<row r="1"><c r="A1"><v>5</v></c>"#,
+            r#"<c r="B1" t="str"><f>TEXT(A1,"mmss.0")</f><v>20:34.5</v></c>"#,
+            r#"<c r="C1"><f>A1*2</f><v>8</v></c>"#,
+            r#"<c r="D1"><f>A1*2</f><v>10</v></c>"#,
+            r#"<c r="E1" t="e"><f>A1*2</f><v>#VALUE!</v></c></row>"#
+        );
+        write_sheet_package(&path, false, &worksheet("A1:E1", rows));
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        // the engine's #VALUE! must not replace the valid text cache …
+        assert!(find_stale(&result, 0, 1).is_none());
+        // … but the cell is listed: its cache was not refreshed
+        let unrefreshed = result.stale_unrefreshed.as_ref().unwrap();
+        let text = unrefreshed
+            .iter()
+            .find(|cell| cell.row == 0 && cell.column == 1)
+            .expect("the TEXT cell must be reported unrefreshed");
+        assert!(text.is_error);
+        // the reverse direction stays reportable: a cached error that computes
+        assert_eq!(
+            find_stale(&result, 0, 4).map(|cell| (cell.number, cell.is_error)),
+            Some((Some(10.0), false))
+        );
+        // and a genuinely stale number is still refreshed
+        assert_eq!(
+            find_stale(&result, 0, 2).map(|cell| cell.number),
+            Some(Some(10.0))
+        );
+        assert!(find_stale(&result, 0, 3).is_none());
+        assert!(unrefreshed.iter().all(|cell| cell.column == 1));
+    }
+
+    /// The maintainer's probe: A1 edited to 0 turns `D1 =10/A1` (cached 10)
+    /// into #DIV/0!. The stale number is never downgraded to the engine's
+    /// error, but the cell must be reported — silently keeping the old `<v>`
+    /// while claiming `cached_values` would leave a wrong answer in the file.
+    #[test]
+    fn reports_a_dependent_that_turned_into_an_engine_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("div0.xlsx");
+        let rows = r#"<row r="1"><c r="A1"><v>1</v></c><c r="D1"><f>10/A1</f><v>10</v></c></row>"#;
+        write_sheet_package(&path, false, &worksheet("A1:D1", rows));
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>1</v></c>",
+            "<c r=\"A1\"><v>0</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        // not patchable: the engine error must not replace the cached number
+        assert!(find_stale(&result, 0, 3).is_none());
+        let unrefreshed = result.stale_unrefreshed.expect("audit reported");
+        let cell = unrefreshed
+            .iter()
+            .find(|cell| cell.row == 0 && cell.column == 3)
+            .expect("D1 must be reported unrefreshed");
+        assert_eq!(cell.formatted, "#DIV/0!");
+        assert!(cell.is_error);
+    }
+
+    /// Excel caches a boolean formula result as `t="b"` with the numeric 0/1;
+    /// the reported cell carries the raw boolean so the gateway can write the
+    /// same shape instead of a `t="str"` `TRUE` text cache.
+    #[test]
+    fn reports_a_stale_boolean_dependent_as_a_boolean() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bool-stale.xlsx");
+        let rows = concat!(
+            r#"<row r="1"><c r="A1"><v>3</v></c>"#,
+            r#"<c r="C1" t="b"><f>A1&gt;3</f><v>0</v></c>"#,
+            r#"</row>"#
+        );
+        write_sheet_package(&path, false, &worksheet("A1:C1", rows));
+        patch_entry(
+            &path,
+            "xl/worksheets/sheet1.xml",
+            "<c r=\"A1\"><v>3</v></c>",
+            "<c r=\"A1\"><v>10</v></c>",
+        );
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        let cell = find_stale(&result, 0, 2).expect("C1 should be stale");
+        assert_eq!(cell.boolean, Some(true));
+        assert_eq!(cell.number, None);
+        assert!(!cell.is_error);
+    }
+
+    /// The read path types boolean results too, so a freshly written `=A1>3`
+    /// gets a `t="b"` cache on the refresh pass as well.
+    #[test]
+    fn reads_a_boolean_result_as_a_boolean() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bool-read.xlsx");
+        write_fixture(&path, &[("A1", "3"), ("C1", "=A1>3")]);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(
+            &mut cache,
+            &path,
+            &[edit("A1", "10")],
+            &[RecalcRead {
+                sheet: "Sheet1".into(),
+                range: CellRange {
+                    start_row: 0,
+                    end_row: 0,
+                    start_column: 2,
+                    end_column: 2,
+                },
+            }],
+        )
+        .unwrap();
+        let cell = result.cells.into_iter().next().unwrap();
+        assert_eq!(cell.boolean, Some(true));
+        assert_eq!(cell.number, None);
+        assert!(!cell.is_error);
+        assert!(cell.is_formula);
+    }
+
+    /// A CSE array formula anchor is a formula cell whose cached first value
+    /// can be compared (and patched) like any other; its spill cells cannot be
+    /// patched, so they are reported separately.
+    #[test]
+    fn reports_a_dependent_cse_array_formula() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cse.xlsx");
+        let rows = concat!(
+            r#"<row r="1"><c r="A1"><v>5</v></c><c r="B1"><f>A1*2</f><v>8</v></c></row>"#,
+            r#"<row r="2"><c r="A2"><f t="array" ref="A2:A3">A1*2</f><v>6</v></c></row>"#,
+            r#"<row r="3"><c r="A3"><v>6</v></c></row>"#
+        );
+        write_sheet_package(&path, false, &worksheet("A1:B3", rows));
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        // the regular dependent and the array anchor are both patchable
+        assert_eq!(
+            find_stale(&result, 0, 1).map(|cell| (cell.number, cell.is_formula)),
+            Some((Some(10.0), true))
+        );
+        assert_eq!(
+            find_stale(&result, 1, 0).map(|cell| (cell.number, cell.is_formula)),
+            Some((Some(10.0), true))
+        );
+        // the spill cell has no formula of its own: reported, never patched
+        let spill = find_stale_spill(&result, 2, 0).expect("A3 should be a stale spill cell");
+        assert_eq!((spill.number, spill.is_formula), (Some(10.0), false));
+    }
+
+    /// A dynamic (spilling) array formula is imported the same way: its anchor
+    /// carries a cached value the audit can compare, its spilled cells do not.
+    #[test]
+    fn reports_a_stale_dynamic_array_spill_cell() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dynamic.xlsx");
+        let rows = concat!(
+            r#"<row r="2"><c r="A2" cm="1"><f t="array" ref="A2:A3">_xlfn.SEQUENCE(2)</f><v>1</v></c></row>"#,
+            r#"<row r="3"><c r="A3" cm="1"><v>99</v></c></row>"#
+        );
+        write_sheet_package(&path, false, &worksheet("A2:A3", rows));
+
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells_reporting(&mut cache, &path, &[], &[], true).unwrap();
+        // the anchor's first value agrees with the file
+        assert!(find_stale(&result, 1, 0).is_none());
+        let spill = find_stale_spill(&result, 2, 0).expect("A3 should be a stale spill cell");
+        assert_eq!((spill.number, spill.is_formula), (Some(2.0), false));
     }
 }

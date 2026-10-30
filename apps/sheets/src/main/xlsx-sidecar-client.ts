@@ -160,7 +160,11 @@ export class XlsxSidecarClient {
 
   /** IronCalc-backed recalculation: load the file, apply the pending edits,
    * evaluate, and return the requested cells' computed values. Fail-soft —
-   * callers keep cached values when this errors. */
+   * callers keep cached values when this errors. `reportStale` also returns
+   * the formula cells whose cached `<v>` disagrees with the engine (and the
+   * array spill cells it cannot refresh); the answer then carries
+   * `auditSkipped` instead when the engine had to decline the audit, e.g. on
+   * a `date1904` workbook. */
   async recalcCells(input: {
     readonly path: string
     readonly edits: readonly {
@@ -178,6 +182,7 @@ export class XlsxSidecarClient {
         readonly endColumn: number
       }
     }[]
+    readonly reportStale?: boolean
   }): Promise<unknown> {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }

@@ -152,6 +152,19 @@ jobs:
       - name: Install xmllint
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
 
+      # `sheet apply`'s dependent-cache audit lives in the Rust xlsx-sidecar, and
+      # the CLI suite skips its sidecar-backed tests (`it.skipIf(!sidecar)`) when
+      # the binary is missing. Only the sheets package's test script builds it,
+      # and the root `test` script runs @genoffice/cli before @genoffice/sheets —
+      # so build the sidecar up front or CI's pass proves nothing about the
+      # audit. The cargo cache above holds the target dir, so this is cheap.
+      - name: Build xlsx-sidecar (the CLI audit tests run against it)
+        run: |
+          npm run native:build -w @genoffice/sheets
+          # the sidecar-gated CLI tests read the generated compatibility fixture
+          # (gitignored, normally produced by the sheets gate below)
+          npm run fixtures -w @genoffice/sheets
+
       - name: Test
         run: npm test
 
