@@ -4327,6 +4327,7 @@ function registerHomeIpc(): void {
     ensureFileIndexer,
     indexStore: () => fileIndexStore,
     refreshIndexer: () => fileIndexer?.refresh(),
+    indexNow: (paths) => fileIndexer?.indexNow(paths) ?? Promise.resolve(),
     readFileSearchSettings,
     ensureSearchReranker,
     openDocumentPath,
