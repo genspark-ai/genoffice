@@ -3,7 +3,7 @@
  * are the whole behaviour, so the fixture is a real tree on disk rather than a
  * stubbed fs.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -163,7 +163,10 @@ describe('listing cache', () => {
       // inside the trust window the listing is served from memory
       expect(await fs.list(dir)).toBe(first)
       ;(first as { checkedAt: number }).checkedAt = 0
-      // past it, the directory's mtime tells the cache the listing moved on
+      // past it, the directory's mtime tells the cache the listing moved on —
+      // bump it explicitly: fast successive writes can leave a directory's
+      // mtime unchanged at the filesystem's granularity (windows CI flake)
+      utimesSync(dir, new Date(), new Date(Date.now() + 10_000))
       const second = await fs.list(dir)
       expect(second.files.sort()).toEqual(['One.md', 'Two.md'])
     } finally {
