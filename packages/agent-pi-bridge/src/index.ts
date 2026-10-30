@@ -22,14 +22,8 @@ import type {
   ToolResultMessage,
 } from '@earendil-works/pi-ai'
 import type { AiTokenUsage } from '@genoffice/ai-provider'
-import type {
-  AgentMessage,
-  AgentToolDef,
-} from '@genoffice/agent-core'
-import type {
-  AiSettings,
-  StreamCallbacks,
-} from '@genoffice/ai-provider'
+import type { AgentMessage, AgentToolDef } from '@genoffice/agent-core'
+import type { AiSettings, StreamCallbacks } from '@genoffice/ai-provider'
 import {
   AI_CHAT_RESPONSE_TIMEOUT_MS,
   activeProvider,
@@ -111,10 +105,7 @@ export function piModelFor(settings: AiSettings): Model<Api> {
         auth: {
           apiKey: {
             name: `${providerId} API key`,
-            resolve: async () =>
-              config.apiKey
-                ? { auth: { apiKey: config.apiKey } }
-                : undefined,
+            resolve: async () => (config.apiKey ? { auth: { apiKey: config.apiKey } } : undefined),
           },
         },
       }),

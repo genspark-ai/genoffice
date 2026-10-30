@@ -111,7 +111,12 @@ describe('onActivity mapping', () => {
       {
         type: 'toolcall_end',
         contentIndex: 1,
-        toolCall: { type: 'toolCall', id: 'call_1', name: 'read_file', arguments: { path: 'a.txt' } },
+        toolCall: {
+          type: 'toolCall',
+          id: 'call_1',
+          name: 'read_file',
+          arguments: { path: 'a.txt' },
+        },
         partial: {},
       },
       { type: 'done', reason: 'toolUse', message: { usage: { input: 3, output: 5 } } },
@@ -157,7 +162,10 @@ describe('watchdog alignment', () => {
     pi.events = [{ type: 'hang' }]
     const controller = new AbortController()
     const cb = makeCallbacks()
-    const promise = streamViaPi(settings, 'sys', userTurn, [], 1024, { ...cb, signal: controller.signal })
+    const promise = streamViaPi(settings, 'sys', userTurn, [], 1024, {
+      ...cb,
+      signal: controller.signal,
+    })
     await new Promise((resolve) => setTimeout(resolve, 0))
     controller.abort()
     // the IPC layer recognizes cancellations via the request signal before
@@ -172,7 +180,9 @@ describe('pi error event mapping', () => {
       {
         type: 'error',
         reason: 'error',
-        error: { errorMessage: '402: {"error":{"message":"Your Genspark credits have been exhausted"}}' },
+        error: {
+          errorMessage: '402: {"error":{"message":"Your Genspark credits have been exhausted"}}',
+        },
       },
     ]
     const promise = streamViaPi(settings, 'sys', userTurn, [], 1024, makeCallbacks())
@@ -213,7 +223,9 @@ describe('pi error event mapping', () => {
       {
         type: 'error',
         reason: 'error',
-        error: { errorMessage: '403: {"error":{"message":"Country, region, or territory not supported"}}' },
+        error: {
+          errorMessage: '403: {"error":{"message":"Country, region, or territory not supported"}}',
+        },
       },
     ]
     const promise = streamViaPi(settings, 'sys', userTurn, [], 1024, makeCallbacks())
@@ -246,10 +258,17 @@ describe('chatViaPi', () => {
       { type: 'text_delta', contentIndex: 0, delta: 'there', partial: {} },
       { type: 'done', reason: 'stop', message: {} },
     ]
-    await expect(chatViaPi(settings, 'sys', 'hello')).resolves.toEqual({ ok: true, content: 'Hi there' })
+    await expect(chatViaPi(settings, 'sys', 'hello')).resolves.toEqual({
+      ok: true,
+      content: 'Hi there',
+    })
 
     pi.events = [
-      { type: 'error', reason: 'error', error: { errorMessage: '503: {"error":{"message":"overloaded"}}' } },
+      {
+        type: 'error',
+        reason: 'error',
+        error: { errorMessage: '503: {"error":{"message":"overloaded"}}' },
+      },
     ]
     const result = await chatViaPi(settings, 'sys', 'hello')
     expect(result.ok).toBe(false)
