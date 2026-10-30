@@ -1,11 +1,14 @@
 import { basename } from 'node:path'
 import { BrowserWindow, ipcMain, screen, WebContentsView } from 'electron'
 import type { Rectangle, WebContents } from 'electron'
+import { createI18n, getUiLang } from '@genoffice/i18n'
 
 import { appForKind, appIsDirty, resetSheetsShuttingDown } from './app-registry'
 import { canonicalPath } from './tab-manager'
 import type { DetachedTab } from './tab-manager'
 import { shellQuitTracker } from './window-close-guard'
+import { showErrorDialog } from './error-dialog'
+import { MAX_PINS } from './desktop-ipc'
 import {
   HOME_CHANNELS,
   type DesktopPinInfo,
@@ -135,6 +138,95 @@ const PINNABLE_KINDS: ReadonlySet<string> = new Set([
   'markdown',
   'html',
 ])
+
+// ---- the pin-cap refusal's words: zh defines the key set, every sibling must match ----
+
+const tPin = createI18n({
+  zh: {
+    pinLimitTitle: '无法固定更多小组件',
+    pinLimitDetail: `桌面最多保留 ${MAX_PINS} 个固定小组件；请先停靠或关闭一个，再固定新文档。这份文档已改为在普通窗口中打开。`,
+  },
+  en: {
+    pinLimitTitle: 'Cannot pin another widget',
+    pinLimitDetail: `The desktop keeps at most ${MAX_PINS} pinned widgets. Dock or close one before pinning another document; this one opened in a regular window instead.`,
+  },
+  ja: {
+    pinLimitTitle: 'これ以上ウィジェットを固定できません',
+    pinLimitDetail: `デスクトップに固定できるウィジェットは最大 ${MAX_PINS} 個です。まず 1 つをドッキングまたは閉じてから、新しいドキュメントを固定してください。このドキュメントは通常のウィンドウで開きました。`,
+  },
+  ko: {
+    pinLimitTitle: '위젯을 더 고정할 수 없습니다',
+    pinLimitDetail: `데스크톱에는 최대 ${MAX_PINS}개의 고정 위젯만 유지할 수 있습니다. 다른 문서를 고정하기 전에 하나를 독하거나 닫아 주세요. 이 문서는 일반 창으로 열렸습니다.`,
+  },
+  fr: {
+    pinLimitTitle: 'Impossible d’épingler un autre widget',
+    pinLimitDetail: `Le bureau conserve au plus ${MAX_PINS} widgets épinglés. Ancrez ou fermez-en un avant d’en épingler un autre ; celui-ci s’est ouvert dans une fenêtre ordinaire.`,
+  },
+  de: {
+    pinLimitTitle: 'Weiteres Widget kann nicht angeheftet werden',
+    pinLimitDetail: `Der Desktop behält höchstens ${MAX_PINS} angeheftete Widgets. Docken oder schließen Sie eines, bevor Sie ein weiteres Dokument anheften; dieses wurde stattdessen in einem normalen Fenster geöffnet.`,
+  },
+  es: {
+    pinLimitTitle: 'No se puede fijar otro widget',
+    pinLimitDetail: `El escritorio mantiene como máximo ${MAX_PINS} widgets fijados. Acopla o cierra uno antes de fijar otro documento; este se abrió en una ventana normal.`,
+  },
+  th: {
+    pinLimitTitle: 'ปักหมุดวิดเจ็ตเพิ่มไม่ได้',
+    pinLimitDetail: `เดสก์ท็อปเก็บวิดเจ็ตที่ปักหมุดได้สูงสุด ${MAX_PINS} รายการ โปรดนำเข้าแถบหรือปิดรายการหนึ่งก่อนปักหมุดเอกสารใหม่ เอกสารนี้เปิดในหน้าต่างปกติแทน`,
+  },
+  id: {
+    pinLimitTitle: 'Tidak bisa menyematkan widget lain',
+    pinLimitDetail: `Desktop menyimpan paling banyak ${MAX_PINS} widget tersemat. Dock atau tutup satu sebelum menyematkan dokumen lain; dokumen ini terbuka di jendela biasa.`,
+  },
+  ru: {
+    pinLimitTitle: 'Нельзя закрепить ещё один виджет',
+    pinLimitDetail: `На рабочем столе может быть не более ${MAX_PINS} закреплённых виджетов. Пристыкуйте или закройте один из них, прежде чем закреплять новый документ; этот документ открыт в обычном окне.`,
+  },
+  ar: {
+    pinLimitTitle: 'لا يمكن تثبيت عنصر واجهة آخر',
+    pinLimitDetail: `يحتفظ سطح المكتب بحد أقصى ${MAX_PINS} من عناصر الواجهة المثبتة. أرسِ عنصرًا إلى الشريط أو أغلق واحدًا قبل تثبيت مستند آخر؛ فُتح هذا المستند في نافذة عادية بدلاً من ذلك.`,
+  },
+  pt: {
+    pinLimitTitle: 'Não é possível fixar outro widget',
+    pinLimitDetail: `A área de trabalho mantém no máximo ${MAX_PINS} widgets fixados. Encaixe ou feche um antes de fixar outro documento; este foi aberto numa janela comum.`,
+  },
+  it: {
+    pinLimitTitle: 'Impossibile fissare un altro widget',
+    pinLimitDetail: `Il desktop mantiene al massimo ${MAX_PINS} widget fissati. Ancora o chiudine uno prima di fissare un altro documento; questo è stato aperto in una finestra normale.`,
+  },
+  pl: {
+    pinLimitTitle: 'Nie można przypiąć kolejnego widżetu',
+    pinLimitDetail: `Pulpit utrzymuje co najwyżej ${MAX_PINS} przypiętych widżetów. Zadokuj lub zamknij jeden przed przypięciem kolejnego dokumentu; ten dokument otwarto w zwykłym oknie.`,
+  },
+  cs: {
+    pinLimitTitle: 'Další widget nelze připnout',
+    pinLimitDetail: `Plocha udržuje nejvýše ${MAX_PINS} připnutých widgetů. Před připnutím dalšího dokumentu jeden zadokujte nebo zavřete; tento dokument se otevřel v běžném okně.`,
+  },
+  nl: {
+    pinLimitTitle: 'Kan geen extra widget vastzetten',
+    pinLimitDetail: `Het bureaublad houdt maximaal ${MAX_PINS} vastgezette widgets aan. Koppel er een terug of sluit er een voordat je een nieuw document vastzet; dit document opende in een gewoon venster.`,
+  },
+  ms: {
+    pinLimitTitle: 'Tidak boleh semat widget lain',
+    pinLimitDetail: `Desktop menyimpan paling banyak ${MAX_PINS} widget tersemat. Labuhkan atau tutup satu sebelum menyemat dokumen lain; dokumen ini dibuka dalam tetingkap biasa.`,
+  },
+  he: {
+    pinLimitTitle: 'אי אפשר לנעוץ ווידג׳ט נוסף',
+    pinLimitDetail: `שולחן העבודה שומר לכל היותר ${MAX_PINS} ווידג׳טים נעוצים. עגן או סגור אחד לפני נעיצת מסמך נוסף; המסמך הזה נפתח בחלון רגיל.`,
+  },
+  hi: {
+    pinLimitTitle: 'और विजेट पिन नहीं किए जा सकते',
+    pinLimitDetail: `डेस्कटॉप अधिकतम ${MAX_PINS} पिन किए गए विजेट रखता है। कोई और दस्तावेज़ पिन करने से पहले किसी एक को डॉक या बंद करें; यह दस्तावेज़ सामान्य विंडो में खुला है।`,
+  },
+  'zh-TW': {
+    pinLimitTitle: '無法固定更多小工具',
+    pinLimitDetail: `桌面最多保留 ${MAX_PINS} 個固定小工具；請先停駐或關閉一個，再固定新文件。這份文件已改為在一般視窗中開啟。`,
+  },
+  vi: {
+    pinLimitTitle: 'Không thể ghim thêm tiện ích',
+    pinLimitDetail: `Màn hình nền giữ tối đa ${MAX_PINS} tiện ích đã ghim. Ghim lại hoặc đóng một tiện ích trước khi ghim tài liệu khác; tài liệu này đã mở trong cửa sổ thường.`,
+  },
+})
 
 /** wire the persistence backend; null detaches (tests, early shutdown) */
 export function setDesktopPinStore(store: DesktopPinStore | null): void {
@@ -291,11 +383,23 @@ const PIN_MIN_W = 320
 const PIN_MIN_H = 240
 
 /**
+ * The strip's four colors in one named table: the tab-strip band values
+ * title-bar-overlay.ts pairs over tabbar.css's --tabstrip-bg / text tokens
+ * (light #ebebeb on #454746 ink, dark #2a2a2a on #e4e4e4). A data-URL page
+ * cannot load tokens.css, so the values are duplicated here on purpose and
+ * must stay in sync with title-bar-overlay.ts — the table keeps them from
+ * scattering as raw literals through the HTML below, which is as close to
+ * token-ization as this page can get.
+ */
+const PIN_STRIP_COLORS = {
+  light: { background: '#ebebeb', text: '#454746' },
+  dark: { background: '#2a2a2a', text: '#e4e4e4' },
+} as const
+
+/**
  * The strip's page: one line of HTML/CSS whose whole bar is a native drag
- * region and whose single control docks the document back. Colors follow the
- * tab-strip band values in title-bar-overlay.ts (--tabstrip-bg / text
- * equivalents) — this page cannot load tokens.css, so the two pairs are
- * duplicated here and must stay in sync with that file.
+ * region and whose single control docks the document back. Colors come from
+ * the PIN_STRIP_COLORS table (see its sync note).
  */
 const PIN_STRIP_HTML = `<!doctype html>
 <meta charset="utf-8">
@@ -304,7 +408,8 @@ const PIN_STRIP_HTML = `<!doctype html>
   html, body { margin: 0; height: 100%; font: 500 12px system-ui, sans-serif;
     -webkit-user-select: none; user-select: none; overflow: hidden; }
   .bar { display: flex; align-items: center; gap: 8px; height: 100%;
-    padding: 0 10px 0 12px; background: #ebebeb; color: #454746;
+    padding: 0 10px 0 12px; background: ${PIN_STRIP_COLORS.light.background};
+    color: ${PIN_STRIP_COLORS.light.text};
     -webkit-app-region: drag; cursor: default; }
   .bar .title { flex: 1; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
@@ -312,7 +417,7 @@ const PIN_STRIP_HTML = `<!doctype html>
     font-size: 14px; line-height: 1; padding: 3px 7px; border-radius: 5px; }
   .bar .dock:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
   @media (prefers-color-scheme: dark) {
-    .bar { background: #2a2a2a; color: #e4e4e4; }
+    .bar { background: ${PIN_STRIP_COLORS.dark.background}; color: ${PIN_STRIP_COLORS.dark.text}; }
   }
 </style>
 <div class="bar"><span class="title">{title}</span>
@@ -711,7 +816,22 @@ export function createDetachedEditorWindow(options: {
     bounds?: Rectangle
   }
 }): BrowserWindow {
-  const { view, kind, title, filePath, applyMenuFor, tearOffAt, pin } = options
+  const { view, kind, title, filePath, applyMenuFor, tearOffAt } = options
+  let pin = options.pin
+  if (pin && pinnedCount() >= MAX_PINS) {
+    // The pin store persists at most MAX_PINS widgets, so a pin beyond the
+    // cap would show live but silently never restore. Refuse it here — the
+    // one place every pin creation funnels through, and after the tab has
+    // already left the strip, so the document must not be dropped: it falls
+    // back to an ordinary detached window, and the person is told why.
+    const lang = getUiLang()
+    showErrorDialog(
+      pin.parent,
+      tPin(lang, 'pinLimitTitle'),
+      new Error(tPin(lang, 'pinLimitDetail')),
+    )
+    pin = undefined
+  }
   const size = pin ? PIN_DEFAULT_SIZE : (DEFAULT_SIZE[kind] ?? { width: 1360, height: 900 })
   const origin = tearOffAt ? tearOffOrigin(tearOffAt, size) : {}
   const win = pin

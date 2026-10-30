@@ -244,6 +244,11 @@ export const ja: Dict = {
   setGlobalHotkeyAccelerator: 'ショートカットキー',
   setGlobalHotkeyAcceleratorDesc:
     'Alt+Space、Ctrl+Shift+K などの accelerator 記法。Enter で適用し、認識できない値は無視されます。',
+  setKbScope: 'Ask AI のコーパス範囲',
+  setKbScopeDesc:
+    'Ask AI が検索・引用できるファイルの範囲です。ローカル索引のすべて、またはスター付きファイルのみ。',
+  setKbScopeIndexed: '索引付きファイルすべて',
+  setKbScopeStarred: 'スター付きのみ',
   setSearchRerank: 'Jev 検索リランク',
   setSearchRerankDesc:
     'ローカル検索の上位 20 件の抜粋を TypeSafe の Jev モデルに送り、関連度で並べ替えます。既定ではオフ。オンにすると抜粋が端末外に送信されます。',

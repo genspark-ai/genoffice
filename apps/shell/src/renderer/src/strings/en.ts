@@ -234,6 +234,11 @@ export const en: Dict = {
   setGlobalHotkeyAccelerator: 'Shortcut keys',
   setGlobalHotkeyAcceleratorDesc:
     'Accelerator syntax such as Alt+Space or Ctrl+Shift+K; Enter applies, unrecognized values are ignored.',
+  setKbScope: 'Ask AI corpus scope',
+  setKbScopeDesc:
+    'Which files Ask AI may search and cite: everything the local index covers, or the starred files only.',
+  setKbScopeIndexed: 'All indexed files',
+  setKbScopeStarred: 'Starred only',
   setSearchRerank: 'Jev search reranking',
   setSearchRerankDesc:
     "Sends the top 20 local hits' excerpts to TypeSafe's Jev model and reorders them by relevance. Off by default; when on, excerpts leave this device.",

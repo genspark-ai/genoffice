@@ -1,19 +1,19 @@
 // @vitest-environment jsdom
 /**
  * The Ask panel's safety layer end to end: the inline allow/deny card around
- * risk:'high' tools, and the background-task list backed by run records in
- * the project store's chat channel. These drive the real send path (AgentLoop
- * + IPC transport) with a stubbed main process, asserting on what the model
- * receives and on the records that land in the reserved runs chat.
+ * risk:'high' tools, and the background-task list backed by the project
+ * store's first-class runs API (appendRunEvent / listRuns / deleteRun over the
+ * renderer bridges). These drive the real send path (AgentLoop + IPC
+ * transport) with a stubbed main process, asserting on what the model receives
+ * and on the run events that cross the runs bridge.
  */
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KbAskPanel } from '../src/renderer/src/KbAskPanel'
 import { LocaleProvider } from '../src/renderer/src/locale'
-import { runStartRecord, RUNS_CHAT_ID } from '../src/renderer/src/ask-runs'
 import { TOOL_DENIED_OUTPUT } from '@genoffice/agent-core'
-import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
+import type { ChatMessage, ProjectApi, RunSummary } from '@genoffice/project-store'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -83,6 +83,64 @@ let started: StartedRequest[]
 let chunkListener: ChunkListener | null
 let runCli: ReturnType<typeof vi.fn>
 let project: ReturnType<typeof projectApiStub>
+let runs: ReturnType<typeof runsApiStub>
+
+/**
+ * The runs half of the aiOffice bridge, over an in-memory event log: the
+ * panel sees the same contract the shell preload forwards
+ * (project:appendRunEvent / listRuns / deleteRun), with the store's fold
+ * reduced to what these tests need (a start fixes the row, the last terminal
+ * settles it).
+ */
+function runsApiStub(storedRuns: RunSummary[]) {
+  const calls: Array<{ method: string; args: Record<string, unknown> }> = []
+  const eventsByRun = new Map<string, Array<Record<string, unknown>>>()
+  const summaries = [...storedRuns]
+  const fold = (): RunSummary[] => {
+    const folded: RunSummary[] = []
+    for (const [runId, events] of eventsByRun) {
+      const start = events.find((e) => e.kind === 'start')
+      if (!start) continue
+      const terminal = [...events].reverse().find((e) => e.kind === 'finish' || e.kind === 'error')
+      folded.push({
+        runId,
+        instruction: String(start.instruction ?? ''),
+        ...(start.chatId ? { chatId: String(start.chatId) } : {}),
+        status: terminal
+          ? terminal.kind === 'error'
+            ? 'error'
+            : terminal.outcome === 'cancelled'
+              ? 'cancelled'
+              : terminal.outcome === 'discarded'
+                ? 'discarded'
+                : 'done'
+          : 'interrupted',
+        startedAt: '2026-10-30T09:00:00.000Z',
+      })
+    }
+    return folded
+  }
+  const api = {
+    appendRunEvent: async (args: Record<string, unknown>) => {
+      calls.push({ method: 'appendRunEvent', args })
+      const runId = String(args.runId)
+      const list = eventsByRun.get(runId) ?? []
+      list.push({ ...args })
+      eventsByRun.set(runId, list)
+    },
+    listRuns: async (args: Record<string, unknown>) => {
+      calls.push({ method: 'listRuns', args })
+      return [...summaries, ...fold()]
+    },
+    deleteRun: async (args: Record<string, unknown>) => {
+      calls.push({ method: 'deleteRun', args })
+      eventsByRun.delete(String(args.runId))
+      const at = summaries.findIndex((run) => run.runId === args.runId)
+      if (at >= 0) summaries.splice(at, 1)
+    },
+  }
+  return { api, calls, summaries }
+}
 
 beforeAll(() => {
   if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => {}
@@ -93,7 +151,12 @@ beforeEach(() => {
   chunkListener = null
   runCli = vi.fn(async () => ({ ok: true, code: 0, stdout: '{"status":"ok"}', stderr: '' }))
   project = projectApiStub([])
+  runs = runsApiStub([])
   ;(window as unknown as { projectApi?: unknown }).projectApi = project.api
+  // the tab-strip bridge the desktop loop subscribes to for manifest refreshes
+  ;(window as unknown as { aiOfficeTabs?: unknown }).aiOfficeTabs = {
+    onChanged: () => () => {},
+  }
   ;(window as unknown as { aiOffice: unknown }).aiOffice = {
     skillsList: vi.fn(async () => []),
     skillText: vi.fn(async () => ''),
@@ -102,6 +165,14 @@ beforeEach(() => {
     onAiSettingsChanged: () => () => {},
     kbList: async () => CORPUS,
     kbRunCli: runCli,
+    // the desktop loop's app-skill proxy: nothing open, so no cross-app tools
+    appSkillManifest: async () => ({ windows: [], tools: [] }),
+    appSkillExecute: vi.fn(async () => {
+      throw new Error('nothing is open')
+    }),
+    appendRunEvent: runs.api.appendRunEvent,
+    listRuns: runs.api.listRuns,
+    deleteRun: runs.api.deleteRun,
     onAiStream: (listener: ChunkListener) => {
       chunkListener = listener
       return () => {
@@ -124,6 +195,7 @@ afterEach(() => {
   host.remove()
   delete (window as unknown as { aiOffice?: unknown }).aiOffice
   delete (window as unknown as { projectApi?: unknown }).projectApi
+  delete (window as unknown as { aiOfficeTabs?: unknown }).aiOfficeTabs
 })
 
 function render(): void {
@@ -180,13 +252,9 @@ const click = (selector: string) => {
   act(() => (el as HTMLElement).click())
 }
 
-/** the run-record lines that landed in the reserved runs chat */
-const runRecordTexts = (): string[] =>
-  project.calls
-    .filter(
-      (c) => c.method === 'appendChat' && (c.args as { chatId?: string }).chatId === RUNS_CHAT_ID,
-    )
-    .map((c) => (c.args as { text: string }).text)
+/** the run events that crossed the runs bridge, as (method, args) pairs */
+const runEventCalls = (): Array<Record<string, unknown>> =>
+  runs.calls.filter((c) => c.method === 'appendRunEvent').map((c) => c.args)
 
 describe('KbAskPanel tool confirmation', () => {
   it('offers risk-marked tools to the model', () => {
@@ -314,7 +382,7 @@ describe('KbAskPanel tool confirmation', () => {
 })
 
 describe('KbAskPanel background tasks', () => {
-  it('lists a run while it streams and settles its record when it finishes', async () => {
+  it('lists a run while it streams and settles its events when it finishes', async () => {
     render()
     await settle()
     expect(host.querySelector('.kb-ask-tasks')).toBeNull() // nothing to show yet
@@ -322,18 +390,33 @@ describe('KbAskPanel background tasks', () => {
     await ask('summarize the notes')
     // the run completed within the same settle: the row came and went
     expect(host.querySelector('.kb-ask-task')).toBeNull()
-    const records = runRecordTexts()
-    expect(records).toHaveLength(2)
-    expect(JSON.parse(records[0]!)).toMatchObject({
+    const events = runEventCalls()
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      projectId: 'default',
       kind: 'start',
       instruction: 'summarize the notes',
+      chatId: 'kb-ask',
     })
-    expect(JSON.parse(records[1]!)).toMatchObject({ kind: 'finish', outcome: 'done' })
+    expect(events[1]).toMatchObject({ runId: events[0]!.runId, kind: 'finish', outcome: 'done' })
   })
 
   it('shows the run left unfinished by a closed window as interrupted, and dismissable', async () => {
-    project = projectApiStub([runStartRecord('run-9', 'build the deck', 'kb-ask')])
-    ;(window as unknown as { projectApi?: unknown }).projectApi = project.api
+    runs = runsApiStub([
+      {
+        runId: 'run-9',
+        chatId: 'kb-ask',
+        instruction: 'build the deck',
+        status: 'interrupted',
+        startedAt: '2026-10-29T18:00:00.000Z',
+      },
+    ])
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.appendRunEvent =
+      runs.api.appendRunEvent
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.listRuns =
+      runs.api.listRuns
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.deleteRun =
+      runs.api.deleteRun
     render()
     await settle()
 
@@ -345,8 +428,8 @@ describe('KbAskPanel background tasks', () => {
     await settle()
     // the dismissal settled the record as discarded and dropped the row
     expect(host.querySelector('.kb-ask-task[data-status="interrupted"]')).toBeNull()
-    const discard = runRecordTexts().at(-1)
-    expect(JSON.parse(discard!)).toMatchObject({
+    const discard = runEventCalls().at(-1)
+    expect(discard).toMatchObject({
       runId: 'run-9',
       kind: 'finish',
       outcome: 'discarded',
@@ -354,11 +437,26 @@ describe('KbAskPanel background tasks', () => {
   })
 
   it('clear all empties the interrupted list through the store', async () => {
-    project = projectApiStub([
-      runStartRecord('run-9', 'first interrupted', 'kb-ask'),
-      runStartRecord('run-8', 'second interrupted', 'kb-ask'),
+    runs = runsApiStub([
+      {
+        runId: 'run-9',
+        instruction: 'first interrupted',
+        status: 'interrupted',
+        startedAt: '2026-10-29T18:00:00.000Z',
+      },
+      {
+        runId: 'run-8',
+        instruction: 'second interrupted',
+        status: 'interrupted',
+        startedAt: '2026-10-29T17:00:00.000Z',
+      },
     ])
-    ;(window as unknown as { projectApi?: unknown }).projectApi = project.api
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.appendRunEvent =
+      runs.api.appendRunEvent
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.listRuns =
+      runs.api.listRuns
+    ;(window as unknown as { aiOffice: Record<string, unknown> }).aiOffice.deleteRun =
+      runs.api.deleteRun
     render()
     await settle()
     expect(host.querySelectorAll('.kb-ask-task[data-status="interrupted"]')).toHaveLength(2)
@@ -366,10 +464,10 @@ describe('KbAskPanel background tasks', () => {
     click('.kb-ask-task-clear')
     await settle()
     expect(host.querySelector('.kb-ask-tasks')).toBeNull()
-    expect(
-      project.calls.some(
-        (c) => c.method === 'deleteChat' && (c.args as { chatId?: string }).chatId === RUNS_CHAT_ID,
-      ),
-    ).toBe(true)
+    // the wipe went through the runs API: every stored run deleted by id
+    const deleted = runs.calls
+      .filter((c) => c.method === 'deleteRun')
+      .map((c) => (c.args as { runId: string }).runId)
+    expect(deleted.sort()).toEqual(['run-8', 'run-9'])
   })
 })

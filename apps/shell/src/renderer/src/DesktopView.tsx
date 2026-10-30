@@ -49,6 +49,15 @@ export const DESKTOP_PAD_Y = 12
 const SAVE_DEBOUNCE_MS = 300
 /** recents shown as icons, newest first */
 const RECENT_LIMIT = 8
+/** how long a transient surface notice (a refused drop or open) stays up */
+const NOTICE_MS = 4000
+/**
+ * How many aliases the desktop may hold — the store's own cap
+ * (desktop-ipc.ts's MAX_ALIASES, mirrored here the way MAX_DROP_ALIASES in
+ * desktop-items.ts mirrors the drop bridge's cap): the add channel refuses
+ * beyond it, and the view says so instead of letting the drop vanish.
+ */
+const MAX_ALIASES = 100
 /** pointer travel before a press becomes a drag */
 const DRAG_THRESHOLD = 4
 /** rows assumed before the surface is measured (one paint, then the real count) */
@@ -364,6 +373,18 @@ export function DesktopView({
   const [surfaceMenu, setSurfaceMenu] = useState<{ x: number; y: number } | null>(null)
   const [surfaceSub, setSurfaceSub] = useState<'new' | 'sort' | 'view' | null>(null)
 
+  // ── the transient surface notice: a refused drop or open, said out loud ──
+  /** the notice text now showing, null while none is */
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimerRef = useRef(0)
+  /** show a notice for a few seconds; a newer notice replaces an older one */
+  const showNotice = useCallback((text: string) => {
+    setNotice(text)
+    window.clearTimeout(noticeTimerRef.current)
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), NOTICE_MS)
+  }, [])
+  useEffect(() => () => window.clearTimeout(noticeTimerRef.current), [])
+
   // ── the properties dialogs ──
   /** the icon whose properties dialog is open (file or folder icons only) */
   const [propsTarget, setPropsTarget] = useState<DesktopPropsTarget | null>(null)
@@ -395,6 +416,8 @@ export function DesktopView({
 
   const providers = useMemo(() => defaultDesktopProviders(), [])
   const aliasPaths = useMemo(() => new Set(aliasList), [aliasList])
+  /** the OS gate refusing an alias open surfaces as the notice, not a silent no-op */
+  const onOpenExternalFailed = useCallback(() => showNotice(s.noticeOpenFailed), [showNotice, s])
   const items = useMemo<DesktopItem[]>(
     () =>
       mergeDesktopItems(providers, {
@@ -409,6 +432,7 @@ export function DesktopView({
         onOpenTemplates,
         onOpenSettings,
         onOpenFolder,
+        onOpenExternalFailed,
       }),
     [
       providers,
@@ -422,6 +446,7 @@ export function DesktopView({
       onOpenTemplates,
       onOpenSettings,
       onOpenFolder,
+      onOpenExternalFailed,
     ],
   )
   const icons = useMemo(() => items.filter((item) => item.kind !== 'widget'), [items])
@@ -1104,7 +1129,9 @@ export function DesktopView({
    * re-pull for their names, and the first icon lands under the pointer (the
    * rest flow into free cells). Nothing is copied — the path is the whole
    * item. A refused path (a program package, a file that vanished) never
-   * joins the list, so no icon appears for it.
+   * joins the list, so no icon appears for it; a list already at the store's
+   * cap is the one refusal the person did not cause, so it is said as the
+   * surface notice while the paths that still fit land normally.
    */
   const addAliases = useCallback(
     (paths: readonly string[], at?: { clientX: number; clientY: number }) => {
@@ -1115,17 +1142,26 @@ export function DesktopView({
       // a preload without the add channel cannot grow the store, and the view
       // no longer writes aliases itself — the drop is a no-op
       if (!add) return
+      let toAdd = fresh
+      if (known.length + fresh.length > MAX_ALIASES) {
+        // mirror the main process's cap refusal: add what fits, say the rest
+        const fitting = Math.max(0, MAX_ALIASES - known.length)
+        toAdd = fresh.slice(0, fitting)
+        showNotice(s.noticeAliasLimit)
+        if (toAdd.length === 0) return
+      }
       void (async () => {
         let latest: readonly string[] | null = null
-        for (const path of fresh) {
+        for (const path of toAdd) {
           try {
             latest = await add(path)
           } catch {
-            // one refused add must not cost the rest of the drop
+            // one refused add (the cap raced a concurrent drop, a vanished
+            // file) must not cost the rest of the drop
           }
         }
         if (latest === null) return
-        const added = fresh.filter((path) => latest.includes(path))
+        const added = toAdd.filter((path) => latest.includes(path))
         if (added.length === 0) return
         setAliasList(latest)
         statAliases(latest)
@@ -1157,7 +1193,7 @@ export function DesktopView({
         }
       })()
     },
-    [statAliases],
+    [showNotice, statAliases, s],
   )
 
   /** drop the alias and its saved position: the main process's remove channel
@@ -1509,6 +1545,11 @@ export function DesktopView({
             )
           })}
         </ul>
+        {notice !== null && (
+          <div className="desktop-notice" role="status">
+            {notice}
+          </div>
+        )}
         {menu && (
           <div
             className="folder-menu"

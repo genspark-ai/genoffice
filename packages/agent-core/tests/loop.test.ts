@@ -50,11 +50,21 @@ function scriptedTransport(script: Array<(cb: AgentStreamCallbacks) => void>): A
   return transport
 }
 
-function makeSkill(execute?: (call: AgentToolCall) => ToolExecution): AgentSkill {
+function makeSkill(
+  execute?: (call: AgentToolCall) => ToolExecution,
+  risk?: AgentToolDef['risk'],
+): AgentSkill {
   return {
     id: 'test',
     systemPrompt: 'system',
-    tools: [{ name: 'do_thing', description: 'd', inputSchema: { type: 'object' } }],
+    tools: [
+      {
+        name: 'do_thing',
+        description: 'd',
+        inputSchema: { type: 'object' },
+        ...(risk ? { risk } : {}),
+      },
+    ],
     buildContext: () => 'CTX',
     executeTool: execute ?? (() => ({ output: 'ok', summary: 'done', mutated: true })),
   }
@@ -556,6 +566,74 @@ describe('AgentLoop', () => {
     for (let i = 0; i < 40; i++) await flush()
     expect(onError).not.toHaveBeenCalled()
     expect(onDone).toHaveBeenCalledWith({ text: 'finished', cancelled: false, turnLimit: false })
+  })
+
+  it('turns the user denied at the confirmation gate never count as failed turns', async () => {
+    // deny every call for far more turns than the all-error cap, then let the
+    // model finish in prose: the run must end normally, not with the
+    // "Every tool call failed" guardrail error
+    const deniedTurn = (n: number) => (cb: AgentStreamCallbacks) => {
+      // vary the input so the identical-turn guard does not trip first
+      cb.onToolCall({ id: `d${n}`, name: 'do_thing', input: { n } })
+      cb.onDone()
+    }
+    const done = (cb: AgentStreamCallbacks) => {
+      cb.onDelta('finished without the tool')
+      cb.onDone()
+    }
+    const transport = scriptedTransport([
+      ...Array.from({ length: 12 }, (_, i) => deniedTurn(i)),
+      done,
+    ])
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(() => ({ output: 'never called', summary: 'x', mutated: true }), 'high'),
+      confirmTool: async () => false,
+      events: { onError, onDone },
+    })
+    loop.run('go')
+    for (let i = 0; i < 40; i++) await flush()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalledWith({
+      text: 'finished without the tool',
+      cancelled: false,
+      turnLimit: false,
+    })
+  })
+
+  it('a turn mixing a denial with a real failure still counts toward the failed-turn streak', async () => {
+    // each turn has one denied call and one genuinely failing call; only the
+    // denial is excluded from the streak, so 8 such turns still abort
+    const mixedTurn = (n: number) => (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: `d${n}`, name: 'do_thing', input: { n } })
+      cb.onToolCall({ id: `f${n}`, name: 'other', input: { n } })
+      cb.onDone()
+    }
+    const transport = scriptedTransport(Array.from({ length: 8 }, (_, i) => mixedTurn(i)))
+    const onError = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: {
+        id: 'test',
+        systemPrompt: 'system',
+        tools: [
+          { name: 'do_thing', description: 'd', inputSchema: { type: 'object' }, risk: 'high' },
+          { name: 'other', description: 'd', inputSchema: { type: 'object' } },
+        ],
+        buildContext: () => 'CTX',
+        executeTool: (call) =>
+          call.name === 'do_thing'
+            ? { output: 'never called', summary: 'x', mutated: true }
+            : { output: 'boom', isError: true, summary: 'x' },
+      },
+      confirmTool: async (call) => call.name !== 'do_thing',
+      events: { onError },
+    })
+    loop.run('go')
+    for (let i = 0; i < 40; i++) await flush()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Every tool call failed'))
   })
 
   it('cancel drops pending tool calls and finalizes the run', async () => {

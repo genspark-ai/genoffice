@@ -287,6 +287,7 @@ import { createDocsControl, installDocsBridge } from './mcp/docs-bridge'
 import { createSlidesControl } from './mcp/slides-bridge'
 import { createSheetsControl, installSheetsBridge } from './mcp/sheets-bridge'
 import { createOpenDocumentsControl, createOpenTargetResolver } from './mcp/open-documents-bridge'
+import { registerAppSkillIpc } from './mcp/app-skill-proxy'
 import { convertPdfFileToDocxLocalWithPrompt, PdfLoadError } from './pdf2docx-local'
 import { convertPdfFileToPptxLocalWithPrompt } from './pdf2pptx-local'
 import { convertPdfFileToXlsxLocalWithPrompt } from './pdf2xlsx-local'
@@ -7179,6 +7180,30 @@ app.whenReady().then(async () => {
     authorizeSave: authorizeMcpSheetWrite,
     abandonBlankTab: (wcId) => abandonBlankSheetsTabForMcp(wcId),
   })
+  // The shell-level desktop loop (charter D3): the home Ask panel's read tools
+  // over the other apps' open windows. The manifest pulls the same
+  // desktop-control enumeration the CLI/MCP `desktop windows list` serves, and
+  // the readers are the registry's per-family read surfaces — sheets goes
+  // through its control directly so a read can carry the workbook payload.
+  // Read-only by design: no write executor is wired here (writes stay in each
+  // app's own panel, behind its confirmation flow).
+  const mcpAgentIo = registryAgentIo({
+    docs: mcpDocsControl,
+    sheets: mcpSheetsControl,
+    slides: mcpSlidesControl,
+  })
+  registerAppSkillIpc({
+    listWindows: listDesktopWindows,
+    webContentsFor: (tabId) =>
+      tabManager?.webContentsForTab(tabId) ?? detachedWebContentsFor(tabId),
+    readers: {
+      docs: mcpAgentIo.docs?.read,
+      sheets: (wc, payload) => mcpSheetsControl.runCommand(wc.id, 'read_sheet', payload),
+      slides: mcpAgentIo.slides?.read,
+      markdown: mcpAgentIo.markdown?.read,
+      html: mcpAgentIo.html?.read,
+    },
+  })
   configureMcpRuntime({
     version: app.getVersion(),
     defaultSaveDir: () => defaultSaveDir(),
@@ -7200,11 +7225,7 @@ app.whenReady().then(async () => {
       defaultSaveDir: () => defaultSaveDir(),
       // each app's read/save/discard from the registry: markdown/html/pdf are
       // the apps' own functions, the three session families wrap the controls above
-      agents: registryAgentIo({
-        docs: mcpDocsControl,
-        sheets: mcpSheetsControl,
-        slides: mcpSlidesControl,
-      }),
+      agents: mcpAgentIo,
     }),
     // the headless create_*/read_* tools delegate to the bundled genoffice CLI
     // (the same engines, no second implementation); it runs on the app's own

@@ -229,6 +229,10 @@ export const zhTW: Dict = {
   setGlobalHotkeyAccelerator: '快捷鍵組合',
   setGlobalHotkeyAcceleratorDesc:
     '如 Alt+Space、Ctrl+Shift+K；Enter 生效，無法識別的寫法會被忽略。',
+  setKbScope: 'Ask AI 語料範圍',
+  setKbScopeDesc: '決定 Ask AI 可以搜尋與引用哪些檔案：全部本機索引，或僅收藏的檔案。',
+  setKbScopeIndexed: '全部索引檔案',
+  setKbScopeStarred: '僅收藏檔案',
   setSearchRerank: 'Jev 搜尋重排',
   setSearchRerankDesc:
     '將本機搜尋前 20 筆命中片段傳給 TypeSafe 的 Jev 模型，依相關性重新排序。預設關閉；開啟後命中片段會離開本機。',

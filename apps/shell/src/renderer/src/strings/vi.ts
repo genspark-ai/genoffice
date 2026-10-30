@@ -234,6 +234,11 @@ export const vi: Dict = {
   setGlobalHotkeyAccelerator: 'Tổ hợp phím tắt',
   setGlobalHotkeyAcceleratorDesc:
     'Cú pháp accelerator như Alt+Space hoặc Ctrl+Shift+K; Enter áp dụng, giá trị không nhận dạng được sẽ bị bỏ qua.',
+  setKbScope: 'Phạm vi kho ngữ liệu Ask AI',
+  setKbScopeDesc:
+    'Những tệp Ask AI có thể tìm kiếm và trích dẫn: tất cả những gì chỉ mục cục bộ bao phủ, hoặc chỉ các tệp đã gắn sao.',
+  setKbScopeIndexed: 'Mọi tệp đã lập chỉ mục',
+  setKbScopeStarred: 'Chỉ tệp gắn sao',
   setSearchRerank: 'Sắp xếp lại kết quả tìm kiếm Jev',
   setSearchRerankDesc:
     'Gửi đoạn trích của 20 kết quả hàng đầu cục bộ tới mô hình Jev của TypeSafe và sắp xếp lại theo mức độ liên quan. Tắt theo mặc định; khi bật, các đoạn trích sẽ được gửi ra ngoài thiết bị này.',

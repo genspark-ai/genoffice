@@ -239,6 +239,11 @@ export const it: Dict = {
   setGlobalHotkeyAccelerator: 'Tasti della scorciatoia',
   setGlobalHotkeyAcceleratorDesc:
     'Sintassi accelerator come Alt+Space o Ctrl+Shift+K; Invio applica, i valori non riconosciuti vengono ignorati.',
+  setKbScope: 'Ambito del corpus Ask AI',
+  setKbScopeDesc:
+    'Quali file Ask AI può cercare e citare: tutto ciò che copre l’indice locale, o solo i preferiti.',
+  setKbScopeIndexed: 'Tutti i file indicizzati',
+  setKbScopeStarred: 'Solo i preferiti',
   setSearchRerank: 'Riordino con Jev',
   setSearchRerankDesc:
     'Invia gli estratti dei 20 migliori risultati locali al modello Jev di TypeSafe e li riordina per pertinenza. Disattivato per impostazione predefinita; se attivo, gli estratti lasciano questo dispositivo.',

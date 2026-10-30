@@ -75,7 +75,7 @@ import {
 } from '@genoffice/electron-utils'
 import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
-import { ProjectStore } from '@genoffice/project-store'
+import { ProjectStore, registerProjectRunIpc } from '@genoffice/project-store'
 import type {
   IpcMainInvokeEvent,
   MenuItemConstructorOptions,
@@ -4475,7 +4475,11 @@ export function registerAiIpc(): void {
     try {
       const result =
         process.env.GENOFFICE_AI_BACKEND !== 'legacy'
-          ? await chatViaPi({ provider, providers: { [provider]: config } } as AiSettings, system, user)
+          ? await chatViaPi(
+              { provider, providers: { [provider]: config } } as AiSettings,
+              system,
+              user,
+            )
           : await chatForProvider(provider, config, system, user)
       // the one-shot path reports HTTP failures as ok:false with the raw body —
       // replace capacity/rate-limit dumps with the localized "busy" message
@@ -4698,6 +4702,11 @@ export function registerProjectIpc(): void {
       return { projectId: args.projectId, chatId: args.newChatId ?? args.tempChatId }
     },
   )
+
+  // the runs half (<project>/runs/*.jsonl): appendRunEvent / listRuns /
+  // deleteRun, registered from the package that owns the contract so the
+  // handler bodies are unit-testable without this module's electron surface
+  registerProjectRunIpc(ipcMain, () => getProjectStore())
 }
 
 /** A4 at 96dpi, as the HTML app exports */

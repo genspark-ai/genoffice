@@ -240,6 +240,11 @@ export const ar: Dict = {
   setGlobalHotkeyAccelerator: 'مفاتيح الاختصار',
   setGlobalHotkeyAcceleratorDesc:
     'صيغة المسرّع مثل Alt+Space أو Ctrl+Shift+K؛ يطبَّق بمفتاح Enter وتُتجاهل القيم غير المعروفة.',
+  setKbScope: 'نطاق مدونة Ask AI',
+  setKbScopeDesc:
+    'الملفات التي يمكن لـ Ask AI البحث فيها والاستشهاد بها: كل ما يغطيه الفهرس المحلي، أو الملفات المميزة بنجمة فقط.',
+  setKbScopeIndexed: 'كل الملفات المفهرسة',
+  setKbScopeStarred: 'المميزة بنجمة فقط',
   setSearchRerank: 'إعادة ترتيب Jev',
   setSearchRerankDesc:
     'يرسل مقتطفات أفضل 20 نتيجة محلية إلى نموذج Jev من TypeSafe ويعيد ترتيبها حسب الصلة. معطّل افتراضيًا؛ عند التفعيل تخرج المقتطفات من هذا الجهاز.',

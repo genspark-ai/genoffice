@@ -146,6 +146,28 @@
   outline-offset: -10px;
 }
 
+/* the transient notice (a refused drop, an alias the OS gate refused to
+ * open): a small pill bottom-center over the icons, non-interactive, gone
+ * in a few seconds */
+.desktop-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: min(80%, 520px);
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--text) 18%, transparent);
+  pointer-events: none;
+  z-index: 60;
+}
+
 /* ── the Home-root backdrop (the wallpaper lift) ───────── */
 
 /* Home mounts this node at its root while the desktop view is active; the

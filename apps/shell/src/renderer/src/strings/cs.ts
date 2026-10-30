@@ -461,6 +461,11 @@ export const cs: Dict = {
   setGlobalHotkeyAccelerator: 'Klávesy zkratky',
   setGlobalHotkeyAcceleratorDesc:
     'Syntaxe akcelerátoru, např. Alt+Space nebo Ctrl+Shift+K; Enter použije, nerozpoznané hodnoty se ignorují.',
+  setKbScope: 'Rozsah korpusu Ask AI',
+  setKbScopeDesc:
+    'Které soubory může Ask AI prohledávat a citovat: vše, co pokrývá místní index, nebo jen oblíbené.',
+  setKbScopeIndexed: 'Všechny indexované soubory',
+  setKbScopeStarred: 'Jen oblíbené',
   setSearchRerank: 'Přeřazení Jev',
   setSearchRerankDesc:
     'Odešle výňatky 20 nejlepších místních výsledků modelu Jev od TypeSafe a seřadí je podle relevance. Ve výchozím stavu vypnuto; po zapnutí výňatky opouštějí toto zařízení.',

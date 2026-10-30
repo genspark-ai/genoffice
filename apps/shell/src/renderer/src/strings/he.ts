@@ -232,6 +232,11 @@ export const he: Dict = {
   setGlobalHotkeyAccelerator: 'מקשי הקיצור',
   setGlobalHotkeyAcceleratorDesc:
     'תחביר accelerator כמו Alt+Space או Ctrl+Shift+K; Enter מחיל, ערכים לא מזוהים מתעלמים.',
+  setKbScope: 'היקף הגוף של Ask AI',
+  setKbScopeDesc:
+    'אילו קבצים Ask AI רשאי לחפש ולצטט: כל מה שהאינדקס המקומי מכסה, או רק קבצים מסומנים בכוכב.',
+  setKbScopeIndexed: 'כל הקבצים באינדקס',
+  setKbScopeStarred: 'רק מסומנים בכוכב',
   setSearchRerank: 'סידור מחדש עם Jev',
   setSearchRerankDesc:
     'שולח את הקטעים של 20 התוצאות המקומיות המובילות למודל Jev של TypeSafe ומסדר אותן מחדש לפי רלוונטיות. כבוי כברירת מחדל; כשמופעל, הקטעים יוצאים מהמכשיר הזה.',

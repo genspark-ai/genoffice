@@ -696,16 +696,39 @@ describe('the layout aliases', () => {
     })
   })
 
-  it('caps the list at 100 entries instead of refusing', async () => {
+  it('refuses the 101st alias with an explicit error, keeping the list at the cap', async () => {
     // a hand-edited file already at the cap, then one more add through the
-    // channel: the list stays at the cap, in first-seen order
+    // channel: the add rejects with a reachable reason and the store keeps
+    // its 100 entries, in first-seen order
     const aliases = Array.from({ length: 100 }, (_v, i) => `/tmp/f${i}.docx`)
     writeFileSync(desktopLayoutPath(userData), JSON.stringify({ positions: {}, aliases }), 'utf8')
     const extra = realFile('extra.docx')
-    await expect(addAlias(extra)).resolves.toHaveLength(100)
+    await expect(addAlias(extra)).rejects.toThrow(/at most 100 aliases/)
     const layout = (await readLayout()) as { aliases: string[] }
+    expect(layout.aliases).toHaveLength(100)
     expect(layout.aliases).not.toContain(extra)
     expect(layout.aliases).toContain('/tmp/f99.docx')
+    // a read still normalizes an over-cap hand-edited file down to the cap
+    const fat = Array.from({ length: 150 }, (_v, i) => `/tmp/g${i}.docx`)
+    writeFileSync(
+      desktopLayoutPath(userData),
+      JSON.stringify({ positions: {}, aliases: fat }),
+      'utf8',
+    )
+    await expect(readLayout()).resolves.toMatchObject({ aliases: fat.slice(0, 100) })
+  })
+
+  it('a refused over-cap add leaves room for one that fits after a removal', async () => {
+    const report = realFile('report.docx')
+    const aliases = Array.from({ length: 100 }, (_v, i) => `/tmp/f${i}.docx`)
+    writeFileSync(desktopLayoutPath(userData), JSON.stringify({ positions: {}, aliases }), 'utf8')
+    await expect(addAlias(report)).rejects.toThrow(/at most 100 aliases/)
+    await expect(removeAlias('/tmp/f99.docx')).resolves.toHaveLength(99)
+    await expect(addAlias(report)).resolves.toContain(report)
+    expect(((await readLayout()) as { aliases: string[] }).aliases).not.toContain('/tmp/f99.docx')
+    expect(((await readLayout()) as { aliases: string[] }).aliases).toContain(report)
+    // and a duplicate at the cap stays a no-op, not a refusal
+    await expect(addAlias(report)).resolves.toHaveLength(100)
   })
 
   it('a position save cannot inject aliases, whatever its payload carries', async () => {
@@ -986,5 +1009,56 @@ describe('the pinned widgets store', () => {
       'garbage' as unknown as Parameters<typeof writeDesktopPins>[1][number],
     ])
     expect(readDesktopPins(userData)).toEqual([pin()])
+  })
+})
+
+// ── kb:get-scope / kb:set-scope: the Ask AI corpus scope ──
+
+describe('the corpus scope pair', () => {
+  const getScope = () => invoke('kb:get-scope') as Promise<'indexed' | 'starred'>
+  const setScope = (raw: unknown) => invoke('kb:set-scope', raw) as Promise<'indexed' | 'starred'>
+  /** the settings file the pair reads and writes */
+  const settings = (): Record<string, unknown> => {
+    try {
+      return JSON.parse(readFileSync(join(userData, 'app-settings.json'), 'utf8'))
+    } catch {
+      return {}
+    }
+  }
+
+  it('answers indexed when no setting exists, and roundtrips both scopes', async () => {
+    await expect(getScope()).resolves.toBe('indexed')
+    await expect(setScope('starred')).resolves.toBe('starred')
+    await expect(getScope()).resolves.toBe('starred')
+    expect(settings().kbScope).toBe('starred')
+    await expect(setScope('indexed')).resolves.toBe('indexed')
+    expect(settings().kbScope).toBe('indexed')
+    // an unrelated key already in the file survives the scope write
+    writeFileSync(
+      join(userData, 'app-settings.json'),
+      JSON.stringify({ language: 'ja', kbScope: 'starred' }),
+      'utf8',
+    )
+    await setScope('indexed')
+    expect(settings()).toEqual({ language: 'ja', kbScope: 'indexed' })
+  })
+
+  it('a hand-set scope is normalized on read like the kb: readers normalize it', async () => {
+    writeFileSync(join(userData, 'app-settings.json'), JSON.stringify({ kbScope: 'junk' }), 'utf8')
+    await expect(getScope()).resolves.toBe('indexed')
+    writeFileSync(
+      join(userData, 'app-settings.json'),
+      JSON.stringify({ kbScope: 'starred' }),
+      'utf8',
+    )
+    await expect(getScope()).resolves.toBe('starred')
+  })
+
+  it('refuses a junk scope instead of writing it', async () => {
+    for (const junk of ['everything', '', 42, null, true]) {
+      await expect(setScope(junk)).rejects.toThrow(/must be 'indexed' or 'starred'/)
+    }
+    await expect(getScope()).resolves.toBe('indexed')
+    expect(settings()).toEqual({})
   })
 })

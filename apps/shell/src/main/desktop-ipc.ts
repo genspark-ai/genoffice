@@ -3,7 +3,9 @@ import { basename, extname, isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { IpcMainInvokeEvent, OpenDialogOptions } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
+import { readAppSettings, writeAppSetting } from './app-settings'
 import { isProgramFile } from './tab-menu'
+import { normalizeKbScope, type KbScope } from './knowledge-base'
 import {
   HOME_CHANNELS,
   type DesktopLayout,
@@ -34,8 +36,10 @@ const MAX_COORD = 10000
 const MAX_ALIASES = 100
 /** one alias path is capped like every other path the bridge accepts */
 const MAX_ALIAS_CHARS = 4096
-/** the pin store's own bounds: a widget per document, a screen-sized rect at most */
-const MAX_PINS = 8
+/** the pin store's own bounds: a widget per document, a screen-sized rect at
+ * most. Exported because the pin-creation gate in detached-windows.ts refuses
+ * the (MAX_PINS + 1)-th widget here, before it can exist live but unrestorable. */
+export const MAX_PINS = 8
 const PIN_COORD_MAX = 10000
 const PIN_SIZE_MIN = 240
 const PIN_SIZE_MAX = 2400
@@ -459,6 +463,13 @@ async function nativePickImage(event: IpcMainInvokeEvent): Promise<string | null
  * as it was), while size and coordinate range are only ever clamped — never
  * a user-facing refusal. Registered from index.ts like the other feature IPC
  * modules.
+ *
+ * One non-desktop pair rides along here because this module's register call
+ * is already wired from index.ts: the Ask AI corpus scope (app-settings.json
+ * `kbScope`) get/set channels, same raw-string kb: family the kb:list /
+ * kb:search handlers use. They persist through the shared app-settings
+ * helpers, so the scope the kb: readers pick up per call and the scope the
+ * settings UI writes are one value on disk.
  */
 export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
   const userDataDir = deps.userDataDir ?? (() => app.getPath('userData'))
@@ -512,7 +523,10 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
    * package (the launch gate the open channel shares, so nothing launchable
    * ever enters the whitelist). A refused path leaves the list as it was; the
    * answer is always the current list, so the renderer's next paint is the
-   * truth (a refused drop simply never gains its icon).
+   * truth (a refused drop simply never gains its icon). The one exception is
+   * a list already at MAX_ALIASES: the drop is a person acting, not a corrupt
+   * payload, so it is refused with an explicit error the UI can surface
+   * instead of being silently dropped.
    */
   ipcMain.handle(
     HOME_CHANNELS.desktopAddAlias,
@@ -531,7 +545,15 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
       await queueLayoutWrite(async () => {
         const stored = readDesktopLayout(userDataDir())
         if (stored.aliases.includes(rawPath)) return
-        const aliases = [...stored.aliases, rawPath].slice(0, MAX_ALIASES)
+        if (stored.aliases.length >= MAX_ALIASES) {
+          // the explicit refusal the renderer surfaces; a stale preload that
+          // swallows rejections still answers the unchanged list, so the next
+          // paint stays the truth either way
+          throw new Error(
+            `the desktop holds at most ${MAX_ALIASES} aliases; remove one before adding another`,
+          )
+        }
+        const aliases = [...stored.aliases, rawPath]
         await writeLayout(userDataDir(), { ...stored, aliases })
       })
       return current()
@@ -653,6 +675,26 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
     }
     await atomicCopyFile(source, join(dir, name))
     return `custom:${name}`
+  })
+
+  // ── the Ask AI corpus scope: app-settings.json `kbScope` ──
+
+  /** the settings file this module's scope pair reads and writes */
+  const appSettingsPath = (): string => join(userDataDir(), 'app-settings.json')
+
+  /** the persisted corpus scope, normalized exactly like the kb: readers do */
+  ipcMain.handle('kb:get-scope', async (): Promise<KbScope> =>
+    normalizeKbScope(readAppSettings(appSettingsPath()).kbScope),
+  )
+
+  /** set the corpus scope; anything but the two known values is refused so a
+   * junk write can never land in the file the kb: readers trust */
+  ipcMain.handle('kb:set-scope', async (_event, raw: unknown): Promise<KbScope> => {
+    if (raw !== 'indexed' && raw !== 'starred') {
+      throw new Error("the corpus scope must be 'indexed' or 'starred'")
+    }
+    writeAppSetting(appSettingsPath(), 'kbScope', raw)
+    return raw
   })
 }
 

@@ -236,6 +236,11 @@ export const hi: Dict = {
   setGlobalHotkeyAccelerator: 'शॉर्टकट कुंजियाँ',
   setGlobalHotkeyAcceleratorDesc:
     'Alt+Space या Ctrl+Shift+K जैसा accelerator सिंटैक्स; Enter लागू करता है, अपरिचित मान अनदेखे जाते हैं।',
+  setKbScope: 'Ask AI कोष का दायरा',
+  setKbScopeDesc:
+    'Ask AI कौन सी फ़ाइलें खोज और उद्धृत कर सकता है: स्थानीय अनुक्रमणिका की सभी फ़ाइलें, या केवल तारांकित फ़ाइलें।',
+  setKbScopeIndexed: 'सभी अनुक्रमित फ़ाइलें',
+  setKbScopeStarred: 'केवल तारांकित',
   setSearchRerank: 'Jev खोज पुनर्क्रमण',
   setSearchRerankDesc:
     'स्थानीय खोज के शीर्ष 20 परिणामों के अंश TypeSafe के Jev मॉडल को भेजता है और उन्हें प्रासंगिकता के अनुसार पुनः क्रमित करता है। डिफ़ॉल्ट रूप से बंद; चालू होने पर अंश इस डिवाइस से बाहर जाते हैं।',

@@ -33,7 +33,8 @@ by delegating to the agent?
 
 ## Verified current state
 
-All rows confirmed by reading the code on 2026-10-29.
+All rows confirmed by reading the code on 2026-10-29; the state below the table
+tracks what has landed since (✅ marks dated 2026-10-30).
 
 | fact                                                                                                                                    | evidence                                                                                                                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -81,115 +82,123 @@ ingredients; the work below is wiring them together.
 
 ## Survival preconditions (before any feature work)
 
-**P-1. Packaging regression.** Move `build/templates` and `build/wallpapers`
-from the `win` block to top-level `extraResources` in
-`apps/shell/electron-builder.cjs:635`; today mac/linux installers ship the
-desktop features empty.
-Gate: `npm run dist:mac && find apps/shell/dist -name wallpapers -type d`
-prints a path.
+**✅ (2026-10-30) P-1. Packaging regression.** Landed: `build/templates` and
+`build/wallpapers` ship through top-level `extraResources`, so mac/linux
+installers carry the desktop features (commit `0429e2f0`).
 
-**P-2. Upstream tracking.** `git remote add upstream
-https://github.com/genspark-ai/genoffice.git`, plus a daily CI job that
-trial-merges `upstream/main` and fails on conflict.
-Gate: `git fetch upstream` succeeds; CI job is green or files a conflict
-issue automatically.
+**✅ (2026-10-30) P-2. Upstream tracking.** Landed: the `upstream` remote plus a
+daily CI trial-merge of `upstream/main` that files a conflict issue
+automatically (commit `f4d15ef1`).
 
 ## Workstreams
 
 ### A. Wire the desktop to the agent (P0 — the vision divider)
 
-- New CLI command domain `desktop.*`: `get-state`, `set-wallpaper`, `arrange`,
-  `todo add|list`, `windows list`. Registered once in the CLI registry, they
-  automatically surface as MCP tools and agent-callable verbs. Reuse the tool
-  registration mechanism at `apps/shell/src/main/mcp/mcp-server.ts:21`.
-- Ctrl+K becomes the intent bus: `buildRows`
+- ✅ (2026-10-30) New CLI command domain `desktop.*`: `get-state`,
+  `set-wallpaper`, `todo add|list`, `windows list`. Registered once in the CLI
+  registry, they automatically surface as MCP tools and agent-callable verbs.
+  Reuse the tool registration mechanism at `apps/shell/src/main/mcp/mcp-server.ts:21`.
+- ✅ (2026-10-30) Ctrl+K becomes the intent bus: `buildRows`
   (`apps/shell/src/renderer/src/CommandPalette.tsx:245`) becomes a provider
   registry — file-index hits, open tabs, settings entries, skills, MCP tools
   all register as sources; on no match, the query falls through to Ask AI as
   natural language.
-- Ask AI corpus generalizes from "starred" to "configurable scope" (default:
-  all indexed folder roots; starred becomes one scope). Swap the starred `Set`
-  for a scope predicate in `knowledge-base.ts` and relax the `kb:read` check
-  accordingly.
+- ✅ (2026-10-30) Ask AI corpus generalizes from "starred" to "configurable
+  scope" (default: all indexed folder roots; starred becomes one scope). Swap
+  the starred `Set` for a scope predicate in `knowledge-base.ts` and relax the
+  `kb:read` check accordingly. The `kbScope` app-settings key (indexed /
+  starred) drives every `kb:` reader per call; the settings-center toggle group
+  and the `kb:get-scope` / `kb:set-scope` channels landed 2026-10-30 — the
+  renderer bridge pair (`preload/index.ts` + the `HomeApi` surface) is the one
+  wiring still owed (see follow-up candidates).
 
 Gates:
 
-- `genoffice desktop get-state --json` prints wallpaper, icon layout and todos.
-- Type a string with no command match in Ctrl+K → an AI answer streams.
-- Ask AI answers a question about an indexed but unstarred file and cites it.
+- ✅ `genoffice desktop get-state --json` prints wallpaper, icon layout and todos.
+- ✅ Type a string with no command match in Ctrl+K → an AI answer streams.
+- ✅ Ask AI answers a question about an indexed but unstarred file and cites it.
 
 ### B. System presence (P0)
 
-Tray icon with Ask AI / palette quick actions; a global hotkey
-(`globalShortcut`) that summons the palette without focusing the window;
-`app.setLoginItemSettings` behind a settings toggle; register the `genoffice://`
-protocol so browsers, CLI and automations can invoke workbench actions.
+✅ (2026-10-30) Landed: tray icon with Ask AI / palette quick actions; a global
+hotkey (`globalShortcut`) that summons the palette without focusing the window;
+`app.setLoginItemSettings` behind a settings toggle; the `genoffice://` protocol
+registered so browsers, CLI and automations can invoke workbench actions
+(`apps/shell/src/main/system-presence.ts`, the settings-center General rows).
 
 Gates:
 
-- With the window closed to tray, pressing the hotkey opens the palette.
-- `open "genoffice://ask?q=hello"` launches/focuses the app into Ask AI.
+- ✅ With the window closed to tray, pressing the hotkey opens the palette.
+- ✅ `open "genoffice://ask?q=hello"` launches/focuses the app into Ask AI.
 
 ### C. Desktop: launcher → work surface (P1)
 
-- Icon sources become providers (apps / recents / folders / widgets /
-  plugins); arbitrary files and folders can be dragged onto the desktop
-  (alias or a dedicated Desktop directory); `~/Desktop` mapping.
-- Widgets via the existing tear-off mechanism: a "pin to desktop" mode for
-  detached tabs (borderless, low level, reattach without state loss —
-  `apps/shell/src/main/detached-windows.ts:37`) replaces the hand-written
-  TodoWidget.
-- Ask AI can reference the items currently visible on the desktop.
+- ✅ (2026-10-30) Icon sources become providers (apps / recents / folders /
+  widgets / plugins) and arbitrary files and folders can be dragged onto the
+  desktop as aliases (`desktop-items.ts`, the validated `desktopAddAlias`
+  channel). `~/Desktop` mapping stays deliberately unmapped: the in-app desktop
+  is the agent's work surface, not a Finder mirror (charter principle 3).
+- ✅ (2026-10-30) Widgets via the existing tear-off mechanism: a "pin to
+  desktop" mode for detached tabs (borderless, low level, reattach without
+  state loss — `apps/shell/src/main/detached-windows.ts:37`) replaces the
+  hand-written TodoWidget. The pin store caps at 8 widgets; a 9th pin is
+  refused with a reachable error instead of silently not restoring.
+- Ask AI can reference the items currently visible on the desktop (agent-side
+  visibility shipped with the `desktop.*` get-state domain; the panel-side
+  surface is follow-up candidate work).
 
 Gates:
 
-- Drag a `.docx` from Finder onto the desktop → icon appears, double-click
+- ✅ Drag a `.docx` from Finder onto the desktop → icon appears, double-click
   opens it in a tab.
-- Pin a sheets tab to the desktop, quit, relaunch → widget restores with its
+- ✅ Pin a sheets tab to the desktop, quit, relaunch → widget restores with its
   document state.
 
 ### D. Agent safety base and long tasks (P1 — prerequisite for cross-app action)
 
-- Confirmation hook: `AgentToolDef` gains a risk annotation and
+- ✅ (2026-10-30) Confirmation hook: `AgentToolDef` gains a risk annotation and
   `AgentLoopOptions` a host-injected `confirmTool(call): Promise<boolean>`,
   enforced before execution in `packages/agent-core/src/loop.ts`. Tool
   execution stays in agent-core (pi only streams single turns), so this is a
-  single-point change.
-- `run()` returns a task handle (pause/resume/cancel/subscribe); busy loop
-  queues instead of dropping (`loop.ts:613`); transcripts and run state
+  single-point change. Denials feed the model a "do not retry" result and no
+  longer count toward the all-error-turn guardrail (a run the user keeps
+  steering away from risk now survives its own confirmations).
+- ✅ (2026-10-30) `run()` returns a task handle (pause/resume/cancel/subscribe);
+  busy loop queues instead of dropping (`loop.ts`); transcripts and run state
   persist in project-store for restart recovery and a background-task list UI.
-- Shell-level desktop loop: `composeSkills` aggregates per-app skills proxied
-  over IPC (tool names prefixed per app); read-only skills first, write
-  skills behind the confirmation hook.
-- pi parity and legacy retirement: close the `onActivity` gap in
-  `packages/agent-pi-bridge/src/index.ts:226` (fine-grained UI activity during
-  long tool-argument streams), then work the unmet retirement criteria in
-  `docs/pi-migration-charter.md:122` — real-key tests for anthropic/gemini,
-  Genspark credential injection on the pi branch, a decision on the frozen
-  codex provider — and delete the legacy protocol streams.
+- ⏳ Shell-level desktop loop: `composeSkills` aggregates per-app skills proxied
+  over IPC (tool names prefixed per app); read-only skills first, write skills
+  behind the confirmation hook — in flight (proxied-apps-skill), not yet
+  merged as of this writing.
+- ✅ (2026-10-30) pi parity: the `onActivity` gap in
+  `packages/agent-pi-bridge/src/index.ts` is closed (activity heartbeats during
+  long tool calls, watchdog-aligned timeouts). The legacy retirement criteria
+  in `docs/pi-migration-charter.md` remain open; the legacy protocol streams
+  are not yet deleted.
 
 Gates:
 
-- A high-risk tool call (delete, overwrite) opens a confirmation UI; denying
+- ✅ A high-risk tool call (delete, overwrite) opens a confirmation UI; denying
   it aborts the call; unit tests cover both paths in agent-core.
-- Ask the shell agent to summarize two open documents from different apps →
-  one answer citing both.
-- `GENOFFICE_AI_BACKEND=legacy` no longer appears in the tree.
+- ⏳ Ask the shell agent to summarize two open documents from different apps →
+  one answer citing both (the proxied per-app skills are the missing half).
+- `GENOFFICE_AI_BACKEND=legacy` no longer appears in the tree — not yet.
 
 ### E. Engineering foundations (P1–P2)
 
 - Split `Home.tsx` (3,906 lines, ~60 `useState`) into a reducer state machine
   - per-surface files; split shell `main/index.ts` (7,164 lines) into
-    lifecycle/window/menu/home-ipc modules.
+    lifecycle/window/menu/home-ipc modules. Not started.
 - Unify the four preference stores (desktop-layout, desktop-prefs, todos,
   localStorage `home.view`) into one versioned settings store with schema
-  migration.
+  migration. Not started.
 - Wallpaper bytes move from in-memory data URLs to a `wallpaper://` protocol.
-- Fork release pipeline: public release workflow (build → sign →
-  `latest*.yml` → static hosting), reusing the forward-only guards in
-  `scripts/update-feed-utils.cjs`; without it fork users never receive
-  updates.
-- AppDescriptor registry: converge `createView/isDirty/requestClose/
+  Not started.
+- ✅ (2026-10-30) Fork release pipeline: public release workflow (build →
+  sign → `latest*.yml` → static hosting), reusing the forward-only guards in
+  `scripts/update-feed-utils.cjs` — landed with the fork CI matrix
+  (`.github/workflows/`, mac/win/linux, unsigned-friendly degradation).
+- ✅ (2026-10-30) AppDescriptor registry: converge `createView/isDirty/requestClose/
 agentControl` into a registered descriptor so app-routing, TabManager and
   the MCP bridge all look up one table (removes the static imports at
   `apps/shell/src/main/index.ts:177`).
@@ -197,7 +206,7 @@ agentControl` into a registered descriptor so app-routing, TabManager and
 Gates:
 
 - `npm run typecheck` and `npm test` stay green after each split.
-- A fork GitHub Release produces installable artifacts and an update feed.
+- ✅ A fork GitHub Release produces installable artifacts and an update feed.
 
 ## Roadmap
 
@@ -208,6 +217,30 @@ Gates:
 | 1 month   | workstream A (desktop ⇆ agent wiring)                 | gates above |
 | 2 months  | workstream C + D confirmation hook                    | gates above |
 | 3 months  | workstream E + release pipeline; legacy stack retired | gates above |
+
+## 后续候选 (follow-up candidates)
+
+P2 review findings deliberately not fixed in the 2026-10-30 cleanup batch, kept
+here so they stay visible without masquerading as done:
+
+- **FIFO run-queue production-surface reachability.** agent-core's FIFO
+  instruction queue (`packages/agent-core/src/loop.ts`, `queuedCount` /
+  the run handle's queue semantics) is real and tested, but no shipped
+  surface reaches it: the Ask AI panel busy-blocks instead of queueing
+  (`askWith` returns while `busy || loop.busy`, so a second Enter during a
+  long run is dropped, not queued), and the background task list tracks runs
+  from the moment they start, with no row for one still waiting in the queue.
+  Wiring a production surface to submit into the queue — and to show or drop
+  what is queued — is the missing half.
+- **The kbScope renderer bridge.** The settings-center toggle group, the
+  `kb:get-scope` / `kb:set-scope` main handlers and their tests landed
+  2026-10-30, but the group stays hidden until `HomeApi` and the preload
+  grow the `getKbScope` / `setKbScope` pair — a ~10-line change in two files
+  that were owned by a concurrent batch that day, so it was left for the next
+  one rather than risking a mid-flight conflict.
+- **kbScope as an agent-visible tool.** The corpus scope is user-configurable
+  now, but no `desktop.*` / MCP verb reads or writes it; principle 1 ("every
+  desktop capability is also an agent tool") says the scope should be.
 
 ## Non-goals
 

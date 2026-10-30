@@ -13,6 +13,7 @@ import { normalizeAiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 import type {
   AccountLoginEvent,
   AccountStatus,
+  AppendRunEventRequest,
   CloudProjectsSnapshot,
   DefaultAppStatus,
   FolderListing,
@@ -20,9 +21,12 @@ import type {
   MoveResult,
   AuthorNameSetting,
   HomeApi,
+  ProxiedAppExecuteResult,
+  ProxiedAppManifest,
   RecentEntry,
   RecentPage,
   RenameResult,
+  RunSummary,
   TemplateInfo,
   TodoItem,
   DesktopLayout,
@@ -31,6 +35,7 @@ import type {
   DesktopPrefs,
   DeepLinkPayload,
   SystemPresenceSettings,
+  KbScope,
   UiLanguage,
   FileSearchPage,
   FileSearchRerank,
@@ -269,6 +274,28 @@ const homeApi: HomeApi = {
   async kbRunCli(sessionId, request) {
     return ipcRenderer.invoke('kb:run-cli', { sessionId, ...request })
   },
+  // the desktop loop's app-skill proxy: read tools over the other apps' open
+  // windows (handlers in the shell main, mcp/app-skill-proxy.ts)
+  async appSkillManifest() {
+    return (await ipcRenderer.invoke('appskill:manifest')) as ProxiedAppManifest
+  },
+  async appSkillExecute(tool, input) {
+    return (await ipcRenderer.invoke('appskill:execute', {
+      tool,
+      ...(input !== undefined ? { input } : {}),
+    })) as ProxiedAppExecuteResult
+  },
+  // agent run records: the project-store runs API's three handlers, registered
+  // by registerProjectIpc (the same registration the chat channels use)
+  async appendRunEvent(args) {
+    await ipcRenderer.invoke('project:appendRunEvent', args)
+  },
+  async listRuns(args) {
+    return (await ipcRenderer.invoke('project:listRuns', args)) as RunSummary[]
+  },
+  async deleteRun(args) {
+    await ipcRenderer.invoke('project:deleteRun', args)
+  },
   async pickAttachments() {
     return ipcRenderer.invoke('files:pick')
   },
@@ -464,6 +491,13 @@ const homeApi: HomeApi = {
   },
   async getSystemPresence() {
     return (await ipcRenderer.invoke(HOME_CHANNELS.systemPresenceGet)) as SystemPresenceSettings
+  },
+  async getKbScope() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.kbGetScope)) as KbScope
+  },
+  async setKbScope(scope) {
+    if (scope !== 'indexed' && scope !== 'starred') throw new Error(`invalid kb scope: ${scope}`)
+    return (await ipcRenderer.invoke(HOME_CHANNELS.kbSetScope, scope)) as KbScope
   },
   async setLoginItemEnabled(enabled) {
     return (await ipcRenderer.invoke(

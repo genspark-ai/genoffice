@@ -237,6 +237,11 @@ export const ms: Dict = {
   setGlobalHotkeyAccelerator: 'Kekunci pintasan',
   setGlobalHotkeyAcceleratorDesc:
     'Sintaks pemecut seperti Alt+Space atau Ctrl+Shift+K; Enter melaksanakan, nilai yang tidak dikenali diabaikan.',
+  setKbScope: 'Skop korpus Ask AI',
+  setKbScopeDesc:
+    'Fail yang boleh dicari dan dipetik oleh Ask AI: semua yang diliputi indeks tempatan, atau hanya fail berbintang.',
+  setKbScopeIndexed: 'Semua fail terindeks',
+  setKbScopeStarred: 'Hanya berbintang',
   setSearchRerank: 'Susunan semula Jev',
   setSearchRerankDesc:
     'Menghantar petikan 20 hasil tempatan teratas ke model Jev TypeSafe dan menyusunnya semula mengikut kaitan. Dimatikan secara lalai; apabila dihidupkan, petikan keluar dari peranti ini.',

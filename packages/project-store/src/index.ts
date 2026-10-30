@@ -16,9 +16,12 @@ export type {
 } from './types.js'
 export type {
   AppendChatArgs,
+  AppendRunEventArgs,
   LoadChatArgs,
   ProjectApi,
+  ProjectRunIpcMain,
   RebindChatArgs,
   ResolveChatArgs,
   ResolveChatResult,
 } from './ipc.js'
+export { PROJECT_RUN_CHANNELS, registerProjectRunIpc } from './ipc.js'

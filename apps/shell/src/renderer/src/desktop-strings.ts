@@ -102,6 +102,10 @@ export interface DesktopStrings {
   wpNameDots: string
   wpNameMinimal: string
   wpNameTeal: string
+  /** transient surface notice: a drop refused by the alias-list cap */
+  noticeAliasLimit: string
+  /** transient surface notice: an alias the OS-open gate refused */
+  noticeOpenFailed: string
 }
 
 export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
@@ -180,6 +184,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: '暗色点阵',
     wpNameMinimal: '极简浅色',
     wpNameTeal: '深青海浪',
+    noticeAliasLimit: '桌面最多放置 100 个文件；请先移除一些，再拖入新的。',
+    noticeOpenFailed: '无法打开这个文件：它可能已被移动或删除。',
   },
   en: {
     navDesktop: 'Desktop',
@@ -256,6 +262,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Dot grid dark',
     wpNameMinimal: 'Minimal light',
     wpNameTeal: 'Deep teal',
+    noticeAliasLimit: 'The desktop holds at most 100 files; remove a few before dropping more.',
+    noticeOpenFailed: 'Could not open this file — it may have been moved or deleted.',
   },
   ja: {
     navDesktop: 'デスクトップ',
@@ -332,6 +340,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'ドットグリッド',
     wpNameMinimal: 'ミニマルライト',
     wpNameTeal: '深いティール',
+    noticeAliasLimit:
+      'デスクトップに置けるファイルは最大 100 個です。いくつか削除してから改めてドロップしてください。',
+    noticeOpenFailed: 'このファイルは開けませんでした。移動または削除された可能性があります。',
   },
   ko: {
     navDesktop: '데스크톱',
@@ -408,6 +419,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: '다크 도트 그리드',
     wpNameMinimal: '미니멀 라이트',
     wpNameTeal: '딥 틸',
+    noticeAliasLimit:
+      '데스크톱에는 최대 100개의 파일만 놓을 수 있습니다. 몇 개를 제거한 후 다시 놓아 주세요.',
+    noticeOpenFailed: '이 파일을 열 수 없습니다. 파일이 이동되었거나 삭제되었을 수 있습니다.',
   },
   fr: {
     navDesktop: 'Bureau',
@@ -484,6 +498,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Grille de points sombre',
     wpNameMinimal: 'Minimal clair',
     wpNameTeal: 'Sarcelle profond',
+    noticeAliasLimit:
+      'Le bureau contient au plus 100 fichiers ; retirez-en quelques-uns avant d’en déposer d’autres.',
+    noticeOpenFailed: 'Impossible d’ouvrir ce fichier — il a peut-être été déplacé ou supprimé.',
   },
   de: {
     navDesktop: 'Desktop',
@@ -560,6 +577,10 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Dunkles Punktraster',
     wpNameMinimal: 'Minimal hell',
     wpNameTeal: 'Tiefes Petrol',
+    noticeAliasLimit:
+      'Der Desktop fasst höchstens 100 Dateien; entferne einige, bevor du weitere ablegst.',
+    noticeOpenFailed:
+      'Diese Datei ließ sich nicht öffnen — sie wurde vielleicht verschoben oder gelöscht.',
   },
   es: {
     navDesktop: 'Escritorio',
@@ -636,6 +657,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Cuadrícula oscura',
     wpNameMinimal: 'Minimal claro',
     wpNameTeal: 'Verde azulado profundo',
+    noticeAliasLimit:
+      'El escritorio admite como máximo 100 archivos; quita algunos antes de soltar más.',
+    noticeOpenFailed: 'No se pudo abrir este archivo: puede que se haya movido o borrado.',
   },
   th: {
     navDesktop: 'เดสก์ท็อป',
@@ -712,6 +736,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'จุดมืด',
     wpNameMinimal: 'มินิมอลสว่าง',
     wpNameTeal: 'เขียวน้ำเงินเข้ม',
+    noticeAliasLimit: 'เดสก์ท็อปใส่ไฟล์ได้สูงสุด 100 รายการ โปรดลบบางรายการออกก่อนวางเพิ่ม',
+    noticeOpenFailed: 'เปิดไฟล์นี้ไม่ได้ อาจถูกย้ายหรือลบไปแล้ว',
   },
   id: {
     navDesktop: 'Desktop',
@@ -788,6 +814,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Kisi titik gelap',
     wpNameMinimal: 'Minimal terang',
     wpNameTeal: 'Teal pekat',
+    noticeAliasLimit:
+      'Desktop menampung paling banyak 100 berkas; hapus beberapa sebelum menambah lagi.',
+    noticeOpenFailed: 'Berkas ini tidak bisa dibuka — mungkin sudah dipindahkan atau dihapus.',
   },
   ru: {
     navDesktop: 'Рабочий стол',
@@ -864,6 +893,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Тёмная сетка точек',
     wpNameMinimal: 'Светлый минимализм',
     wpNameTeal: 'Глубокая бирюза',
+    noticeAliasLimit:
+      'На рабочем столе может быть не более 100 файлов; удалите часть, прежде чем добавлять новые.',
+    noticeOpenFailed: 'Не удалось открыть этот файл — возможно, он был перемещён или удалён.',
   },
   ar: {
     navDesktop: 'سطح المكتب',
@@ -940,6 +972,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'شبكة نقاط داكنة',
     wpNameMinimal: 'بسيط فاتح',
     wpNameTeal: 'أزرق مخضر عميق',
+    noticeAliasLimit: 'يستوعب سطح المكتب 100 ملفًا كحد أقصى؛ أزل بعضها قبل إضافة المزيد.',
+    noticeOpenFailed: 'تعذّر فتح هذا الملف — ربما نُقل أو حُذف.',
   },
   pt: {
     navDesktop: 'Área de trabalho',
@@ -1016,6 +1050,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Grade escura',
     wpNameMinimal: 'Minimal claro',
     wpNameTeal: 'Verde-azulado profundo',
+    noticeAliasLimit:
+      'A área de trabalho comporta no máximo 100 ficheiros; remova alguns antes de largar mais.',
+    noticeOpenFailed: 'Não foi possível abrir este ficheiro — pode ter sido movido ou apagado.',
   },
   it: {
     navDesktop: 'Desktop',
@@ -1092,6 +1129,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Griglia scura',
     wpNameMinimal: 'Minimal chiaro',
     wpNameTeal: 'Verde acqua profondo',
+    noticeAliasLimit:
+      'Il desktop contiene al massimo 100 file; rimuovine qualcuno prima di aggiungerne altri.',
+    noticeOpenFailed: 'Impossibile aprire questo file: potrebbe essere stato spostato o eliminato.',
   },
   pl: {
     navDesktop: 'Pulpit',
@@ -1168,6 +1208,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Ciemna siatka kropek',
     wpNameMinimal: 'Minimal jasny',
     wpNameTeal: 'Głęboki morski',
+    noticeAliasLimit:
+      'Pulpit pomieści co najwyżej 100 plików; usuń kilka przed dodaniem kolejnych.',
+    noticeOpenFailed: 'Nie udało się otworzyć tego pliku — mógł zostać przeniesiony lub usunięty.',
   },
   cs: {
     navDesktop: 'Plocha',
@@ -1244,6 +1287,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Tmavá mřížka teček',
     wpNameMinimal: 'Minimal světlé',
     wpNameTeal: 'Hluboká tyrkysová',
+    noticeAliasLimit: 'Plocha pojme nejvýše 100 souborů; před přidáním dalších některé odeberte.',
+    noticeOpenFailed: 'Tento soubor se nepodařilo otevřít — možná byl přesunut nebo odstraněn.',
   },
   nl: {
     navDesktop: 'Bureaublad',
@@ -1320,6 +1365,10 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Donker dotraster',
     wpNameMinimal: 'Minimal licht',
     wpNameTeal: 'Diep turquoise',
+    noticeAliasLimit:
+      'Het bureaublad biedt plaats aan maximaal 100 bestanden; verwijder er enkele voor je meer neerzet.',
+    noticeOpenFailed:
+      'Dit bestand kon niet geopend worden — het is misschien verplaatst of verwijderd.',
   },
   ms: {
     navDesktop: 'Desktop',
@@ -1396,6 +1445,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Grid titik gelap',
     wpNameMinimal: 'Minimal cerah',
     wpNameTeal: 'Teal dalam',
+    noticeAliasLimit:
+      'Desktop menampung paling banyak 100 fail; buang beberapa sebelum meletakkan lagi.',
+    noticeOpenFailed: 'Fail ini tidak dapat dibuka — mungkin telah dipindahkan atau dipadam.',
   },
   he: {
     navDesktop: 'שולחן עבודה',
@@ -1472,6 +1524,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'רשת נקודות כהה',
     wpNameMinimal: 'מינימלי בהיר',
     wpNameTeal: 'טורקיז עמוק',
+    noticeAliasLimit: 'שולחן העבודה מכיל לכל היותר 100 קבצים; הסר כמה לפני שתוסיף חדשים.',
+    noticeOpenFailed: 'לא ניתן לפתוח את הקובץ — ייתכן שהועבר או נמחק.',
   },
   hi: {
     navDesktop: 'डेस्कटॉप',
@@ -1548,6 +1602,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'गहरा डॉट ग्रिड',
     wpNameMinimal: 'मिनिमल लाइट',
     wpNameTeal: 'गहरा टील',
+    noticeAliasLimit:
+      'डेस्कटॉप पर अधिकतम 100 फ़ाइलें रखी जा सकती हैं; और छोड़ने से पहले कुछ हटा दें।',
+    noticeOpenFailed: 'यह फ़ाइल नहीं खुल सकी — हो सकता है इसे हटा दिया गया हो या मिटा दिया गया हो।',
   },
   'zh-TW': {
     navDesktop: '桌面',
@@ -1624,6 +1681,9 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: '暗色點陣',
     wpNameMinimal: '極簡淺色',
     wpNameTeal: '深青海浪',
+    noticeAliasLimit:
+      'डेस्कटॉप पर अधिकतम 100 फ़ाइलें रखी जा सकती हैं; और छोड़ने से पहले कुछ हटा दें।',
+    noticeOpenFailed: 'यह फ़ाइल नहीं खुल सकी — हो सकता है इसे हटा दिया गया हो या मिटा दिया गया हो।',
   },
   vi: {
     navDesktop: 'Màn hình chính',
@@ -1700,6 +1760,8 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: 'Lưới điểm tối',
     wpNameMinimal: 'Tối giản sáng',
     wpNameTeal: 'Xanh mòng két sâu',
+    noticeAliasLimit: 'Màn hình nền chứa tối đa 100 tệp; hãy xóa bớt trước khi thêm mới.',
+    noticeOpenFailed: 'Không thể mở tệp này — tệp có thể đã bị di chuyển hoặc xóa.',
   },
 }
 

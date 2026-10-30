@@ -8,6 +8,7 @@ import {
   createDocumentSkill,
   createIpcTransport,
   createKnowledgeBaseSkill,
+  createProxiedAppsSkill,
   RUN_GENOFFICE_TOOL,
   skillContextVars,
   withAttachedSkills,
@@ -17,6 +18,7 @@ import {
   type CliContext,
   type CreateDocumentFormat,
   type KbFileInfo,
+  type ProxiedAppManifest,
 } from '@genoffice/agent-core'
 import {
   AI_CONFIRM_LABELS,
@@ -46,16 +48,7 @@ import { AskAttachments } from './AskAttachments'
 import { planPendingAskQuery, type PendingAskQuery } from './ask-intent'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
-import {
-  interruptedOf,
-  parseRunRecords,
-  RUNS_CHAT_ID,
-  RUNS_LOAD_LIMIT,
-  runDiscardRecord,
-  runErrorRecord,
-  runFinishRecord,
-  runStartRecord,
-} from './ask-runs'
+import { RunRecorder, runsBridgeOf } from './ask-runs'
 import sendEnterOn from './assets/send-enter-on.png'
 import sendEnterOff from './assets/send-enter-off.png'
 import sendStop from './assets/send-stop.png'
@@ -262,6 +255,29 @@ export function KbAskPanel({
   /** run handles by id, for the task rows' Stop buttons */
   const liveHandlesRef = useRef(new Map<string, AgentRunHandle>())
   const corpusRef = useRef<KbFileInfo[]>([])
+  /**
+   * The desktop loop's view of the other apps: which of their windows are open
+   * and which read tools they expose. Refreshed once on mount, on every tab
+   * change, and before each send — the loop reads the skill's tools before
+   * every model request, so a snapshot in a ref is live exactly when it
+   * matters. Read-only surface: writes to open documents stay in their own
+   * app's AI panel (see createProxiedAppsSkill).
+   */
+  const appManifestRef = useRef<ProxiedAppManifest | null>(null)
+  const refreshAppManifest = (): void => {
+    // a bridge without the manifest channel (defensive: the shell always
+    // exposes it, a stale preload may not) leaves the desktop loop with no
+    // cross-app read tools
+    if (typeof window.aiOffice?.appSkillManifest !== 'function') return
+    void window.aiOffice
+      .appSkillManifest()
+      .then((manifest) => {
+        appManifestRef.current = manifest
+      })
+      .catch(() => {
+        // without the manifest the panel just has no cross-app read tools
+      })
+  }
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -297,27 +313,18 @@ export function KbAskPanel({
   /** turns asked before the ids came back, written once they do */
   const pendingRef = useRef<Array<{ role: 'user' | 'assistant'; text: string }>>([])
 
-  /** where the run records live (the reserved runs chat), once resolved */
-  const runsIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
-  /** run-record lines written before the runs ids landed, flushed once they do */
-  const pendingRunRecordsRef = useRef<string[]>([])
-
-  /** one run-record line into the reserved runs chat; queued until its ids resolve */
-  const persistRunRecord = (line: string): void => {
-    const ids = runsIdsRef.current
-    if (!ids) {
-      pendingRunRecordsRef.current.push(line)
-      return
-    }
-    void window.projectApi?.appendChat({ ...ids, role: 'assistant', text: line }).catch(() => {})
-  }
+  /**
+   * The panel's run-record writer over the first-class runs IPC
+   * (project:appendRunEvent / listRuns / deleteRun). The loop lives in this
+   * renderer, so "background" means it survives the composer's next send —
+   * not the window; closing the window leaves the start event without a
+   * terminal, which is what reads back as interrupted after a restart.
+   */
+  const runsRef = useRef<RunRecorder | null>(null)
 
   /**
-   * A run started: keep it in the task list, persist its start line, and settle
-   * both when it ends. The loop lives in this renderer, so "background" means
-   * it survives the composer's next send — not the window; closing the window
-   * leaves the start line without a terminal, which is what reads back as
-   * interrupted after a restart.
+   * A run started: keep it in the task list, persist its start event, and settle
+   * both when it ends.
    */
   const trackRun = (handle: AgentRunHandle, instruction: string): void => {
     liveHandlesRef.current.set(handle.id, handle)
@@ -325,39 +332,35 @@ export function KbAskPanel({
       ...prev,
       { id: handle.id, instruction, startedAt: new Date().toISOString() },
     ])
-    persistRunRecord(runStartRecord(handle.id, instruction, activeChatRef.current))
+    runsRef.current?.start(handle.id, instruction, activeChatRef.current)
     const retire = (): void => {
       liveHandlesRef.current.delete(handle.id)
       setLiveTasks((prev) => prev.filter((task) => task.id !== handle.id))
     }
     handle.on('finished', (result) => {
       retire()
-      persistRunRecord(runFinishRecord(handle.id, result.cancelled ? 'cancelled' : 'done'))
+      runsRef.current?.finish(handle.id, result.cancelled ? 'cancelled' : 'done')
     })
     handle.on('error', (message) => {
       retire()
-      persistRunRecord(runErrorRecord(handle.id, message))
+      runsRef.current?.error(handle.id, message)
     })
   }
 
-  // Claim the runs chat (a reserved file-less id) and read back what earlier
-  // sessions left: runs whose records have no terminal event were interrupted
-  // by a closed window or a crash, and belong in the task list until cleared.
+  // Claim the runs bridge and read back what earlier sessions left: runs whose
+  // records have no terminal event were interrupted by a closed window or a
+  // crash, and belong in the task list until cleared. A build without the runs
+  // bridge (stale preload) keeps the list purely live.
   useEffect(() => {
-    const api = window.projectApi
-    if (!api) return
+    const bridge = runsBridgeOf(window.aiOffice, window.projectApi)
+    if (!bridge) return
+    const recorder = new RunRecorder(bridge)
+    runsRef.current = recorder
     let current = true
-    void api
-      .resolveChat({ filePath: null, tempChatId: RUNS_CHAT_ID })
-      .then((ids) => {
-        if (!current) return
-        runsIdsRef.current = ids
-        for (const line of pendingRunRecordsRef.current.splice(0)) persistRunRecord(line)
-        return api.loadChat({ ...ids, limit: RUNS_LOAD_LIMIT })
-      })
-      .then((stored) => {
-        if (!current || !stored) return
-        setInterruptedRuns(interruptedOf(parseRunRecords(stored)))
+    void recorder
+      .init()
+      .then((runs) => {
+        if (current) setInterruptedRuns(runs)
       })
       .catch(() => undefined)
     return () => {
@@ -479,17 +482,14 @@ export function KbAskPanel({
 
   /** the × on an interrupted row: settle the record as discarded, keep the rest */
   const dismissInterrupted = (runId: string): void => {
-    persistRunRecord(runDiscardRecord(runId))
+    runsRef.current?.discard(runId)
     setInterruptedRuns((prev) => prev.filter((run) => run.runId !== runId))
   }
 
-  /** clear the whole stored list: the runs chat is this panel's own record file */
+  /** clear the whole stored list: every run record of this panel's project, the same wipe the reserved chat got */
   const clearInterrupted = async (): Promise<void> => {
-    const ids = runsIdsRef.current
-    const api = window.projectApi
-    if (!ids || !api) return
     try {
-      await api.deleteChat({ projectId: ids.projectId, chatId: RUNS_CHAT_ID })
+      await runsRef.current?.clear()
       setInterruptedRuns([])
     } catch {
       // a failed clear leaves the rows; they are dismissed one at a time then
@@ -557,6 +557,10 @@ export function KbAskPanel({
         setCorpusCount(files.length)
       })
       .catch(() => setCorpusCount(0))
+    // the desktop loop's first manifest snapshot; tab changes re-pull so the
+    // read tools follow what is actually open (sends refresh it again too)
+    refreshAppManifest()
+    const offTabsChanged = window.aiOfficeTabs?.onChanged(refreshAppManifest)
     refreshSettings()
     void window.aiOffice
       .aiGskStatus()
@@ -587,6 +591,12 @@ export function KbAskPanel({
       create: (request) => window.aiOffice.kbCreateDocument(request),
       alsoSaves: [RUN_GENOFFICE_TOOL],
     })
+    // the desktop loop: read-only tools over the other apps' open windows,
+    // forwarded to the shell main's app-skill proxy over IPC
+    const appSkill = createProxiedAppsSkill({
+      manifest: () => appManifestRef.current,
+      execute: (tool, input) => window.aiOffice.appSkillExecute(tool, input),
+    })
     loopRef.current = new AgentLoop({
       transport: createIpcTransport<AiSettings>({
         onStream: (listener) => window.aiOffice.onAiStream(listener),
@@ -612,6 +622,7 @@ export function KbAskPanel({
         filesSkill,
         docSkill,
         cliSkill,
+        appSkill,
       ]),
       events: {
         onText: (text) => patchLast({ text }),
@@ -652,7 +663,10 @@ export function KbAskPanel({
           })),
       },
     })
-    return () => loopRef.current?.cancel()
+    return () => {
+      offTabsChanged?.()
+      loopRef.current?.cancel()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; the loop reads live refs
   }, [])
 
@@ -829,7 +843,9 @@ export function KbAskPanel({
     runReasoningRef.current = ''
     // a new run owns the stream: the previous answer's confirm card is history
     confirm.clear()
-    // freshly starred files are answerable this very turn
+    // freshly starred files are answerable this very turn; so are documents
+    // opened while the panel sat idle (the desktop loop's read tools)
+    refreshAppManifest()
     try {
       const files = await window.aiOffice.kbList()
       corpusRef.current = files

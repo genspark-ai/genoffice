@@ -1495,6 +1495,42 @@ describe('DesktopView — dropping files from the OS', () => {
     await tick()
     expect(saves).toEqual([])
   })
+
+  it('a drop onto a full desktop says so: the notice shows, nothing is added', async () => {
+    stored = {
+      positions: {},
+      aliases: Array.from({ length: 100 }, (_v, i) => `/docs/f${i}.docx`),
+    }
+    await render()
+    await flushAsync()
+    const before = icons().length
+    await dropFilesAt([new File(['x'], 'over.docx')], 300, 300)
+    const addMock = window.aiOffice.desktopAddAlias as unknown as ReturnType<typeof vi.fn>
+    expect(addMock).not.toHaveBeenCalled()
+    expect(icons()).toHaveLength(before)
+    expect(host.querySelector('.desktop-notice')?.textContent).toBe(
+      DESKTOP_STRINGS.en.noticeAliasLimit,
+    )
+  })
+
+  it('a drop straddling the cap adds what fits and says the rest', async () => {
+    stored = {
+      positions: {},
+      aliases: Array.from({ length: 99 }, (_v, i) => `/docs/f${i}.docx`),
+    }
+    await render()
+    await flushAsync()
+    await dropFilesAt([new File(['x'], 'one.md'), new File(['x'], 'two.md')], 300, 300)
+    expect(aliasAdds).toEqual(['/docs/one.md'])
+    expect(labels()).toContain('one.md')
+    expect(labels()).not.toContain('two.md')
+    expect(host.querySelector('.desktop-notice')?.textContent).toBe(
+      DESKTOP_STRINGS.en.noticeAliasLimit,
+    )
+    // the refusal of the overflow does not cost the save of the one that fit
+    await tick()
+    expect(saves.at(-1)).toEqual({ positions: { 'alias:/docs/one.md': cellPos(3, 3) } })
+  })
 })
 
 describe('DesktopView — opening and removing aliases', () => {
@@ -1506,6 +1542,30 @@ describe('DesktopView — opening and removing aliases', () => {
     expect(openPath).toHaveBeenCalledWith('/docs/report.docx')
     await doubleClick('photo.png')
     expect(desktopOpenExternal).toHaveBeenCalledWith('/docs/photo.png')
+  })
+
+  it('a double-click the OS gate refuses shows the transient notice, then clears', async () => {
+    stored = { positions: {}, aliases: ['/docs/photo.png'] }
+    // the main process's refusal shape: the gate answers false, nothing opens
+    desktopOpenExternal.mockResolvedValueOnce(false)
+    await render()
+    await flushAsync()
+    expect(host.querySelector('.desktop-notice')).toBeNull()
+    await doubleClick('photo.png')
+    await flushAsync()
+    const notice = host.querySelector<HTMLElement>('.desktop-notice')
+    expect(notice).toBeTruthy()
+    expect(notice!.getAttribute('role')).toBe('status')
+    expect(notice!.textContent).toBe(DESKTOP_STRINGS.en.noticeOpenFailed)
+    // the notice is transient: gone once its window passes
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000)
+    })
+    expect(host.querySelector('.desktop-notice')).toBeNull()
+    // a later successful open shows nothing
+    await doubleClick('photo.png')
+    await flushAsync()
+    expect(host.querySelector('.desktop-notice')).toBeNull()
   })
 
   it('the alias menu offers reveal and 从桌面移除; removing drops the path and the spot', async () => {

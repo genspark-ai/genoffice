@@ -236,6 +236,11 @@ export const pl: Dict = {
   setGlobalHotkeyAccelerator: 'Klawisze skrótu',
   setGlobalHotkeyAcceleratorDesc:
     'Składnia akceleratora, np. Alt+Space lub Ctrl+Shift+K; Enter zastosowuje, nierozpoznane wartości są ignorowane.',
+  setKbScope: 'Zakres korpusu Ask AI',
+  setKbScopeDesc:
+    'Które pliki Ask AI może przeszukiwać i cytować: wszystko objęte indeksem lokalnym lub tylko oznaczone gwiazdką.',
+  setKbScopeIndexed: 'Wszystkie zindeksowane pliki',
+  setKbScopeStarred: 'Tylko oznaczone',
   setSearchRerank: 'Ponowne sortowanie Jev',
   setSearchRerankDesc:
     'Wysyła fragmenty 20 najlepszych lokalnych wyników do modelu Jev firmy TypeSafe i sortuje je według trafności. Domyślnie wyłączone; po włączeniu fragmenty opuszczają to urządzenie.',

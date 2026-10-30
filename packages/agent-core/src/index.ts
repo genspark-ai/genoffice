@@ -26,6 +26,18 @@ export {
 export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
 export type { KnowledgeBaseDeps, KbFileInfo, KbSearchHit, KbReadPage } from './knowledge-base-skill'
 export {
+  createProxiedAppsSkill,
+  formatProxiedAppResult,
+  PROXIED_APP_DOCUMENT_FIELD,
+} from './proxied-apps-skill'
+export type {
+  ProxiedAppExecuteResult,
+  ProxiedAppManifest,
+  ProxiedAppTool,
+  ProxiedAppWindow,
+  ProxiedAppsDeps,
+} from './proxied-apps-skill'
+export {
   createAttachmentsSkill,
   ATTACHMENT_IMAGE_EXTS,
   ATTACHMENT_READ_CHUNK_CHARS,

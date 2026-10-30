@@ -101,6 +101,9 @@ class FakeStripView {
 
 const ipcHandles = new Map<string, (...args: never[]) => unknown>()
 
+/** the pin-cap refusal's dialog, mocked with the electron module */
+const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn(async () => ({})) }))
+
 vi.mock('electron', () => ({
   app: { on: vi.fn(), quit: vi.fn() },
   BrowserWindow: FakeWindow,
@@ -113,6 +116,14 @@ vi.mock('electron', () => ({
     getCursorScreenPoint: () => ({ ...cursor }),
     getDisplayNearestPoint: () => ({ workArea }),
   },
+  dialog: {
+    showMessageBox,
+  },
+}))
+
+vi.mock('../src/main/desktop-ipc', () => ({
+  // only the pin cap the gate reads; the store plumbing stays index.ts's job
+  MAX_PINS: 8,
 }))
 
 vi.mock('../../docs/src/main/docs-main', () => ({
@@ -786,5 +797,44 @@ describe('pinned widgets', () => {
     // no second window was created for the pinned document
     expect(instances).toHaveLength(2)
     expect(detached.focusPinnedWidget('/docs/other.xlsx')).toBe(false)
+  })
+
+  it('refuses the 9th widget: an error dialog, the document in a regular window', () => {
+    showMessageBox.mockClear()
+    const writes: unknown[][] = []
+    detached.setDesktopPinStore({ read: () => [], write: (pins) => writes.push(pins) })
+    detached.setDockHost({ band: vi.fn(() => null), preview: vi.fn(), dock: vi.fn() })
+    for (let i = 0; i < 8; i++) pinWidget(50 + i)
+    expect(detached.pinnedDesktopPins()).toHaveLength(8)
+    expect(showMessageBox).not.toHaveBeenCalled()
+    // the capped pin: no widget is created, the refusal is said out loud
+    const view = fakeView(90)
+    detached.createDetachedEditorWindow({
+      view: view as never,
+      kind: 'sheets',
+      title: 'ninth.xlsx',
+      filePath: '/docs/ninth.xlsx',
+      applyMenuFor: () => {},
+      pin: { parent: shellWindow() as never },
+    })
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    const [parent, options] = showMessageBox.mock.calls[0] as unknown as [
+      FakeWindow,
+      { message: string; detail: string },
+    ]
+    expect(parent).toBeInstanceOf(FakeWindow)
+    expect(options.message).toBeTruthy()
+    expect(options.detail).toContain('8')
+    // the fallback window is an ordinary editor window: framed, unparented, no strip
+    const win = instances.at(-1)!
+    expect(win.opts).not.toHaveProperty('frame')
+    expect(win.parent).toBeNull()
+    expect(win.contentView.addChildView).toHaveBeenCalledTimes(1)
+    // and it is not a widget: not in the listing, not persisted
+    expect(detached.pinnedDesktopPins()).toHaveLength(8)
+    expect(detached.pinnedDesktopPins().map((p) => p.id)).not.toContain('detached:90')
+    expect(writes).toHaveLength(8)
+    expect(writes.at(-1)).toHaveLength(8)
+    detached.setDesktopPinStore(null)
   })
 })

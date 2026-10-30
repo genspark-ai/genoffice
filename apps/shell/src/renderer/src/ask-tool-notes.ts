@@ -70,6 +70,13 @@ export function toolNoteDetail(
     const name = Number.isInteger(index) ? lookup?.(index) : undefined
     return name ? baseName(name) : undefined
   }
+  // a proxied app read (docs:read_document, …): the app prefix plus the
+  // document it targeted, when the call named one
+  if (call.name.includes(':')) {
+    const app = call.name.split(':')[0]
+    const target = typeof call.input.document === 'string' ? baseName(call.input.document) : ''
+    return [app, target].filter(Boolean).join(' · ') || app || undefined
+  }
   return undefined
 }
 

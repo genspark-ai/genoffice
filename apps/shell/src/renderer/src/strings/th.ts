@@ -238,6 +238,11 @@ export const th: Dict = {
   setGlobalHotkeyAccelerator: 'ปุ่มลัด',
   setGlobalHotkeyAcceleratorDesc:
     'รูปแบบ accelerator เช่น Alt+Space หรือ Ctrl+Shift+K; กด Enter เพื่อใช้ ค่าที่ไม่รู้จักจะถูกละเว้น',
+  setKbScope: 'ขอบเขตคลัง Ask AI',
+  setKbScopeDesc:
+    'กำหนดไฟล์ที่ Ask AI ค้นหาและอ้างอิงได้ ทั้งหมดที่อยู่ในดัชนี หรือเฉพาะไฟล์ที่ดาวน์เครื่อง',
+  setKbScopeIndexed: 'ไฟล์ที่อยู่ในดัชนีทั้งหมด',
+  setKbScopeStarred: 'เฉพาะที่ดาวน์เครื่อง',
   setSearchRerank: 'จัดอันดับใหม่ด้วย Jev',
   setSearchRerankDesc:
     'ส่งข้อความตัดตอนของผลลัพธ์ 20 อันดับแรกไปยังโมเดล Jev ของ TypeSafe เพื่อจัดอันดับใหม่ตามความเกี่ยวข้อง ปิดเป็นค่าเริ่มต้น เมื่อเปิด ข้อความตัดตอนจะถูกส่งออกจากอุปกรณ์นี้',

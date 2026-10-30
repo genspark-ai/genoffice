@@ -70,6 +70,13 @@ export interface DesktopItemContext {
   readonly onOpenTemplates: () => void
   readonly onOpenSettings: (target: SettingsTarget) => void
   readonly onOpenFolder: (root: FolderRoot) => void
+  /**
+   * An alias the OS-open gate refused (the file vanished, the launch gate
+   * said no): the view surfaces it as its transient surface notice so a
+   * double-click that does nothing is at least said out loud. Optional so
+   * other hosts (tests) need not supply it.
+   */
+  readonly onOpenExternalFailed?: () => void
 }
 
 /** one source of desktop items; the registry order is the display order */
@@ -245,8 +252,18 @@ function createDesktopFilesProvider(): DesktopItemProvider {
         open: () => {
           if (entry.directory || !isOpenableDocument(entry.path)) {
             // unknown to the suite (or a folder): the OS default app, on a
-            // main-process path that only opens what the desktop holds
-            void ctx.api.desktopOpenExternal?.(entry.path)
+            // main-process path that only opens what the desktop holds; a
+            // false answer is the gate refusing, which the view reports
+            // rather than leaving the double-click a silent no-op
+            const opened = ctx.api.desktopOpenExternal?.(entry.path)
+            if (opened) {
+              void opened.then(
+                (ok) => {
+                  if (!ok) ctx.onOpenExternalFailed?.()
+                },
+                () => undefined,
+              )
+            }
             return
           }
           void ctx.api.openPath?.(entry.path)

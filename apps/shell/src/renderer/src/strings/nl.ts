@@ -236,6 +236,11 @@ export const nl: Dict = {
   setGlobalHotkeyAccelerator: 'Sneltoetscombinatie',
   setGlobalHotkeyAcceleratorDesc:
     'Accelerator-syntax zoals Alt+Space of Ctrl+Shift+K; Enter past toe, onherkende waarden worden genegeerd.',
+  setKbScope: 'Bereik van Ask AI-corpus',
+  setKbScopeDesc:
+    'Welke bestanden Ask AI mag doorzoeken en citeren: alles in de lokale index, of alleen favoriete bestanden.',
+  setKbScopeIndexed: 'Alle geïndexeerde bestanden',
+  setKbScopeStarred: 'Alleen favorieten',
   setSearchRerank: 'Jev-herordening',
   setSearchRerankDesc:
     'Stuurt de fragmenten van de 20 beste lokale resultaten naar het Jev-model van TypeSafe en sorteert ze op relevantie. Standaard uit; indien aan verlaten fragmenten dit apparaat.',

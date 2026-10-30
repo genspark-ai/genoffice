@@ -246,6 +246,11 @@ export const id: Dict = {
   setGlobalHotkeyAccelerator: 'Tombol pintasan',
   setGlobalHotkeyAcceleratorDesc:
     'Sintaks akselerator seperti Alt+Space atau Ctrl+Shift+K; Enter menerapkan, nilai yang tidak dikenali diabaikan.',
+  setKbScope: 'Cakupan korpus Ask AI',
+  setKbScopeDesc:
+    'Berkas mana yang dapat dicari dan dikutip Ask AI: semua yang tercakup indeks lokal, atau hanya berkas berbintang.',
+  setKbScopeIndexed: 'Semua berkas terindeks',
+  setKbScopeStarred: 'Hanya berbintang',
   setSearchRerank: 'Peringkat ulang Jev',
   setSearchRerankDesc:
     'Mengirim kutipan 20 hasil lokal teratas ke model Jev dari TypeSafe dan mengurutkannya ulang berdasarkan relevansi. Nonaktif secara bawaan; saat aktif, kutipan keluar dari perangkat ini.',

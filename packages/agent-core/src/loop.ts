@@ -1501,6 +1501,10 @@ export class AgentLoop<TSnapshot = unknown> {
     // turn is one failed attempt, and any executed call in the turn resets it
     let unusableInTurn = false
     let executedInTurn = false
+    // count of calls the user declined at the confirmation gate this turn; a
+    // denial is intentional steering, not a tool fault, so the all-error
+    // guard below excludes them from the failure streak
+    let deniedInTurn = 0
     for (const rawCall of toolCalls) {
       const tool = skill.tools.find((t) => t.name === rawCall.name)
       const call =
@@ -1574,7 +1578,9 @@ export class AgentLoop<TSnapshot = unknown> {
         }
         if (!decision) {
           // the denial is transcript trail: the tool result the model sees, the
-          // isError flag the run guards count, and the denied marker for UIs
+          // isError flag (so the model treats the call as not-done and does not
+          // blindly retry), and the denied marker for UIs
+          deniedInTurn++
           this.executedCalls.push({ name: call.name, ok: false })
           results.push({
             id: call.id,
@@ -1698,8 +1704,13 @@ export class AgentLoop<TSnapshot = unknown> {
 
     // A turn where every tool call failed makes no progress; a long streak
     // (unknown-tool loops from malformed BYOK streams, hallucinated tools)
-    // would otherwise burn the whole turn budget re-erroring.
-    this.allErrorTurns = results.every((r) => r.isError) ? this.allErrorTurns + 1 : 0
+    // would otherwise burn the whole turn budget re-erroring. Denied calls are
+    // excluded first: the user saying no at the confirmation gate is steering,
+    // not a fault, so a run the user keeps declining cannot die here with
+    // "Every tool call failed" (denied results are always isError, so the
+    // every() check over the remaining calls is unaffected by the exclusion).
+    this.allErrorTurns =
+      results.length > deniedInTurn && results.every((r) => r.isError) ? this.allErrorTurns + 1 : 0
     if (this.allErrorTurns >= MAX_ALL_ERROR_TURNS) {
       this.running = false
       this.rollbackFailedRun()

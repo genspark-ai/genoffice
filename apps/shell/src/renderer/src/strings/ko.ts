@@ -240,6 +240,11 @@ export const ko: Dict = {
   setGlobalHotkeyAccelerator: '단축키 조합',
   setGlobalHotkeyAcceleratorDesc:
     'Alt+Space, Ctrl+Shift+K 같은 accelerator 표기. Enter로 적용하며 인식할 수 없는 값은 무시됩니다.',
+  setKbScope: 'Ask AI 말뭉치 범위',
+  setKbScopeDesc:
+    'Ask AI가 검색하고 인용할 수 있는 파일의 범위입니다. 로컬 색인 전체 또는 별표 파일만.',
+  setKbScopeIndexed: '색인된 파일 전체',
+  setKbScopeStarred: '별표 파일만',
   setSearchRerank: 'Jev 검색 재정렬',
   setSearchRerankDesc:
     '로컬 검색 상위 20개 결과의 발췌문을 TypeSafe의 Jev 모델로 보내 관련도 순으로 재정렬합니다. 기본은 꺼짐이며, 켜면 발췌문이 기기 밖으로 전송됩니다.',

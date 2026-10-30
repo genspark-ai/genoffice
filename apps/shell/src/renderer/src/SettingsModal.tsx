@@ -57,6 +57,20 @@ import './settings.css'
 // Genspark-style two-pane dialog: section nav on the left, fields on the right.
 // All values go through the existing home IPC; nothing is stored locally.
 
+/**
+ * The Ask AI corpus-scope bridge (the kb:get-scope / kb:set-scope channels the
+ * shell main registers in desktop-ipc.ts). Optional here the way every other
+ * bridge method is — a preload that predates the pair simply leaves the scope
+ * group hidden instead of showing a toggle that cannot work.
+ */
+interface KbScopeBridge {
+  getKbScope?: () => Promise<KbScopeValue>
+  setKbScope?: (scope: KbScopeValue) => Promise<KbScopeValue>
+}
+
+/** the two corpus scopes app-settings.json `kbScope` may hold */
+type KbScopeValue = 'indexed' | 'starred'
+
 // sorted by ISO 639 language code — native-script labels have no natural
 // shared alphabet, so the code is the ordering key
 const LANG_OPTIONS = [
@@ -1920,6 +1934,8 @@ export function SettingsModal({
   const [presence, setPresence] = useState<SystemPresenceSettings | null>(null)
   /** the hotkey accelerator being typed; null = showing the persisted one */
   const [hotkeyDraft, setHotkeyDraft] = useState<string | null>(null)
+  /** the Ask AI corpus scope; null until the bridge served the stored value */
+  const [kbScope, setKbScope] = useState<KbScopeValue | null>(null)
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
@@ -1951,6 +1967,17 @@ export function SettingsModal({
     void window.aiOffice.getSystemPresence?.().then((sp) => {
       if (alive && sp) setPresence(sp)
     })
+    // the corpus scope: read only when the bridge carries the channel, so the
+    // group stays hidden (not dead) on a preload that predates it
+    const kbBridge = window.aiOffice as unknown as KbScopeBridge
+    if (kbBridge.getKbScope && kbBridge.setKbScope) {
+      void kbBridge.getKbScope().then(
+        (scope) => {
+          if (alive) setKbScope(scope)
+        },
+        () => undefined,
+      )
+    }
     void window.aiOffice.getAiPanelPrefs?.().then((prefs) => {
       if (alive) setAiPrefs(prefs)
     })
@@ -2497,6 +2524,50 @@ export function SettingsModal({
                       </div>
                     )}
                   </>
+                )}
+                {kbScope !== null && (
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <div className="set-field-stack">
+                        <div className="set-field-label">{t('setKbScope')}</div>
+                        <div className="set-field-desc">{t('setKbScopeDesc')}</div>
+                      </div>
+                    </div>
+                    {/* one radio group: two buttons without the group role read as
+                        two unrelated toggles to a screen reader */}
+                    <div
+                      className="set-ai-profile-tri"
+                      role="radiogroup"
+                      aria-label={t('setKbScope')}
+                    >
+                      {(
+                        [
+                          { option: 'indexed' as const, key: 'setKbScopeIndexed' as const },
+                          { option: 'starred' as const, key: 'setKbScopeStarred' as const },
+                        ] as const
+                      ).map(({ option, key }) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={
+                            'set-ai-profile-tri-btn' + (kbScope === option ? ' is-active' : '')
+                          }
+                          role="radio"
+                          aria-checked={kbScope === option}
+                          onClick={() => {
+                            const next = option
+                            // a refused write leaves the persisted scope in place;
+                            // the answer is the truth, not the optimistic pick
+                            ;(window.aiOffice as unknown as KbScopeBridge)
+                              .setKbScope?.(next)
+                              .then(setKbScope, () => undefined)
+                          }}
+                        >
+                          {t(key)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </>
             )}

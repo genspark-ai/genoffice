@@ -242,6 +242,11 @@ export const ru: Dict = {
   setGlobalHotkeyAccelerator: 'Сочетание клавиш',
   setGlobalHotkeyAcceleratorDesc:
     'Синтаксис акселератора, например Alt+Space или Ctrl+Shift+K; Enter применяет, нераспознанные значения игнорируются.',
+  setKbScope: 'Область корпуса Ask AI',
+  setKbScopeDesc:
+    'Какие файлы Ask AI может искать и цитировать: всё, что покрывает локальный индекс, или только избранные.',
+  setKbScopeIndexed: 'Все индексированные файлы',
+  setKbScopeStarred: 'Только избранные',
   setSearchRerank: 'Переранжирование Jev',
   setSearchRerankDesc:
     'Отправляет фрагменты 20 лучших локальных результатов модели Jev от TypeSafe и переупорядочивает их по релевантности. По умолчанию выключено; при включении фрагменты покидают это устройство.',

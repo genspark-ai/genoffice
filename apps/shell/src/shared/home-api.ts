@@ -13,6 +13,7 @@ import type {
   CodexModelCatalog,
 } from '@genoffice/ai-provider'
 import type { UpdateChannel, UpdateUiState } from './update-api'
+import type { RunEvent, RunSummary } from '@genoffice/project-store'
 import type {
   AttachmentInfo,
   CliContext,
@@ -21,7 +22,13 @@ import type {
   KbFileInfo,
   KbReadPage,
   KbSearchHit,
+  ProxiedAppExecuteResult,
+  ProxiedAppManifest,
 } from '@genoffice/agent-core'
+
+// re-exported for the preload, which types its bridge against this module
+export type { ProxiedAppExecuteResult, ProxiedAppManifest } from '@genoffice/agent-core'
+export type { RunEvent, RunSummary } from '@genoffice/project-store'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 import type { FoundSkill, ForeignSkillCandidate, InstalledPlugin } from './found-skill'
 
@@ -44,6 +51,24 @@ export interface AttachmentImageResult {
   /** raw base64 (no data: URL prefix) */
   base64?: string
   mime?: string
+  error?: string
+}
+
+/**
+ * One agent-run lifecycle event crossing the runs IPC. The main process stamps
+ * the timestamp; the caps (instruction 200 / chatId 100 / error 500 chars) are
+ * the store's own.
+ */
+export type RunEventInput = Omit<RunEvent, 'ts'>
+
+/** args of the runs IPC's append (project-store's first-class runs API) */
+export interface AppendRunEventRequest {
+  projectId: string
+  runId: string
+  kind: RunEvent['kind']
+  instruction?: string
+  chatId?: string
+  outcome?: 'done' | 'cancelled' | 'discarded'
   error?: string
 }
 
@@ -286,6 +311,9 @@ export interface DesktopLayout {
   readonly aliases: readonly string[]
 }
 
+/** the Ask AI corpus scope (app-settings.json `kbScope`); default: the whole index */
+export type KbScope = 'indexed' | 'starred'
+
 /**
  * What `desktopLayoutSave` accepts: positions only. The alias list is the
  * launch whitelist the `desktopOpenExternal` gate checks against, so a
@@ -471,6 +499,10 @@ export interface HomeApi {
   getSystemPresence(): Promise<SystemPresenceSettings>
   /** toggle launch-at-login; resolves to the effective settings */
   setLoginItemEnabled(enabled: boolean): Promise<SystemPresenceSettings>
+  /** the Ask AI corpus scope (app-settings.json `kbScope`) */
+  getKbScope(): Promise<KbScope>
+  /** switch the Ask AI corpus scope; resolves to the effective scope */
+  setKbScope(scope: KbScope): Promise<KbScope>
   /** toggle the global hotkey and/or change its accelerator; resolves to the effective settings */
   setGlobalHotkey(patch: {
     enabled?: boolean
@@ -496,6 +528,18 @@ export interface HomeApi {
     sessionId: string,
     request: CliRunRequest & { sources?: string[] },
   ): Promise<CliRunResult>
+  // ---- the shell-level desktop loop: read tools over the other apps' open windows ----
+  /** which app windows are open and which read tools each app exposes right now (read-only surface) */
+  appSkillManifest(): Promise<ProxiedAppManifest>
+  /** forward one prefixed read call (e.g. 'docs:read_document') to the open window it targets */
+  appSkillExecute(tool: string, input: Record<string, unknown>): Promise<ProxiedAppExecuteResult>
+  // ---- agent run records (project-store's runs API over IPC) ----
+  /** append one run-lifecycle event to <project>/runs/<runId>.jsonl */
+  appendRunEvent(args: AppendRunEventRequest): Promise<void>
+  /** every run in a project, folded from its events, newest first */
+  listRuns(args: { projectId: string }): Promise<RunSummary[]>
+  /** remove one run's records (the background-task list's clear action) */
+  deleteRun(args: { projectId: string; runId: string }): Promise<void>
   /** chat attachments: the files:* handlers Docs registers in the shell main process */
   pickAttachments(): Promise<AttachmentAddResult | null>
   addAttachmentPaths(paths: string[]): Promise<AttachmentAddResult>
@@ -893,6 +937,8 @@ export const HOME_CHANNELS = {
   systemPresenceGet: 'home:system-presence-get',
   systemPresenceSetLoginItem: 'home:system-presence-set-login-item',
   systemPresenceSetHotkey: 'home:system-presence-set-hotkey',
+  kbGetScope: 'kb:get-scope',
+  kbSetScope: 'kb:set-scope',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

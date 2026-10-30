@@ -232,6 +232,10 @@ export const zh = {
   setGlobalHotkeyDesc: '按下后回到首页并打开命令面板。',
   setGlobalHotkeyAccelerator: '快捷键组合',
   setGlobalHotkeyAcceleratorDesc: '如 Alt+Space、Ctrl+Shift+K；回车生效，无法识别的写法会被忽略。',
+  setKbScope: 'Ask AI 语料范围',
+  setKbScopeDesc: '决定 Ask AI 可以搜索与引用哪些文件：全部本地索引，或仅收藏的文件。',
+  setKbScopeIndexed: '全部索引文件',
+  setKbScopeStarred: '仅收藏文件',
   setSearchRerank: 'Jev 搜索重排',
   setSearchRerankDesc:
     '把本机搜索的前 20 条命中片段发给 TypeSafe 的 Jev 模型，按相关性重新排序。默认关闭；开启后命中片段会离开本机。',
