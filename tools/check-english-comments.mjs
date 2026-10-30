@@ -25,7 +25,12 @@ for (const file of git.stdout.trim().split('\n')) {
   const isCode = /\.(ts|tsx|mjs|cjs|js|rs)$/.test(file)
   const isHashCode = /\.(py|sh)$/.test(file)
   const isDoc =
-    /\.(md|html?)$/.test(file) && !file.includes('/ai/prompts/') && !file.includes('/i18n/')
+    /\.(md|html?)$/.test(file) &&
+    !file.includes('/ai/prompts/') &&
+    !file.includes('/i18n/') &&
+    // shipped product content, not documentation: the document templates the
+    // template center generates from (they are Chinese on purpose)
+    !file.startsWith('apps/shell/build/templates/')
   if (!isCode && !isHashCode && !isDoc) continue
   const lines = readFileSync(join(root, file), 'utf8').split('\n')
   lines.forEach((line, index) => {

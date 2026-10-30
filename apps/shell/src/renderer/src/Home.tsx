@@ -29,6 +29,8 @@ import type { SettingsTarget } from './SettingsModal'
 import { TemplateGallery } from './TemplateGallery'
 import { TEMPLATE_GALLERY_STRINGS } from './template-gallery-strings'
 import { CommandPalette } from './CommandPalette'
+import { DesktopView } from './DesktopView'
+import { DESKTOP_STRINGS } from './desktop-strings'
 import { TodoWidget } from './TodoWidget'
 import { skillUpdateDue } from './IntegrationsPane'
 import { bindRecentsChanged, onFilesChanged } from './file-events'
@@ -70,6 +72,33 @@ const DRAG_PATHS_MIME = 'application/x-genoffice-paths'
 const DRAG_EXPAND_DELAY_MS = 600
 /** expanded folders survive a home reload; the selection is per session */
 const TREE_STATE_KEY = 'home.folderTree'
+
+// ── Launch view preference ──────────────────────────────
+// The desktop is the default view; the last top-level nav the person chose
+// takes over on the next launch. Stored through the same localStorage
+// mechanism the folder tree's expansion state uses (Home has no other
+// renderer-writable settings door, and no view pref existed before).
+
+type LaunchView = 'desktop' | 'recent' | 'starred' | 'ask' | 'cloud'
+const VIEW_PREF_KEY = 'home.view'
+
+function readLaunchView(): LaunchView {
+  try {
+    const raw = localStorage.getItem(VIEW_PREF_KEY)
+    if (raw === 'recent' || raw === 'starred' || raw === 'ask' || raw === 'cloud') return raw
+  } catch {
+    // corrupt or absent: the desktop is the default
+  }
+  return 'desktop'
+}
+
+function writeLaunchView(view: LaunchView): void {
+  try {
+    localStorage.setItem(VIEW_PREF_KEY, view)
+  } catch {
+    // quota / private mode: the choice lasts this session only
+  }
+}
 
 /**
  * Width of the viewport that `position: fixed` elements anchor to. The layout
@@ -1478,12 +1507,23 @@ export function Home() {
   /** sidebar Recent / Starred counts under the active type filter */
   const [navCounts, setNavCounts] = useState({ recent: 0, starred: 0 })
   const [loadingMore, setLoadingMore] = useState(false)
-  const [view, setView] = useState<'recent' | 'starred'>('recent')
+  // the view Home opens on: the last top-level nav, the desktop by default
+  const [launchView] = useState(readLaunchView)
+  const [view, setView] = useState<'recent' | 'starred'>(
+    launchView === 'starred' ? 'starred' : 'recent',
+  )
+  const [desktopMode, setDesktopMode] = useState(launchView === 'desktop')
   // Genspark web projects take over the content area (like a selected folder)
-  const [cloudMode, setCloudMode] = useState(false)
+  const [cloudMode, setCloudMode] = useState(launchView === 'cloud')
   // the knowledge-base ask panel takes over the content area the same way
-  const [askMode, setAskMode] = useState(false)
+  const [askMode, setAskMode] = useState(launchView === 'ask')
   const [filter, setFilter] = useState('all')
+  // ── the desktop's lifted wallpaper ──
+  // Home mounts the backdrop host at its root while the desktop view is
+  // active; DesktopView portals its wallpaper layers in, so the whole window
+  // (sidebar included) sits on the wallpaper and the sidebar wears its glass
+  // pane. Leaving the desktop unmounts both — the list views see none of it.
+  const [backdropHost, setBackdropHost] = useState<HTMLDivElement | null>(null)
   // ── Starred groups (named buckets the Starred view can filter on) ──
   // groups that currently have at least one starred file (drives the pills)
   const [starredGroups, setStarredGroups] = useState<string[]>([])
@@ -1973,12 +2013,25 @@ export function Home() {
 
   const changeView = (next: 'recent' | 'starred') => {
     setView(next)
+    setDesktopMode(false)
+    writeLaunchView(next)
     setSelectedFolder(null)
     setCloudMode(false)
     setAskMode(false)
     setSelected(new Set())
     setRowMenu(null)
     setGroupFilter(null)
+  }
+
+  /** the desktop nav item: the icon desktop takes over the content area */
+  const showDesktop = () => {
+    setDesktopMode(true)
+    writeLaunchView('desktop')
+    setSelectedFolder(null)
+    setCloudMode(false)
+    setAskMode(false)
+    setSelected(new Set())
+    setRowMenu(null)
   }
 
   const changeFilter = (key: string) => {
@@ -1993,14 +2046,29 @@ export function Home() {
     setRowMenu(null)
   }
 
-  const selectFolder = (dir: string) => {
+  const selectFolder = useCallback((dir: string) => {
     setSelectedFolder(dir)
+    setDesktopMode(false)
     setCloudMode(false)
     setAskMode(false)
     setSelected(new Set())
     setRowMenu(null)
     setFolderMenu(null)
-  }
+  }, [])
+
+  /** the desktop's AI-ask tile: same switch the sidebar's Ask AI nav performs */
+  const openAskView = useCallback(() => {
+    setAskMode(true)
+    setDesktopMode(false)
+    writeLaunchView('ask')
+    setSelectedFolder(null)
+    setCloudMode(false)
+    setSelected(new Set())
+    setRowMenu(null)
+  }, [])
+  const openTemplates = useCallback(() => setTemplatesOpen(true), [])
+  const openSettings = useCallback((target: SettingsTarget) => setSettingsRequest(target), [])
+  const openFolderView = useCallback((root: FolderRoot) => selectFolder(root.path), [selectFolder])
 
   const toggleExpanded = (dir: string) => {
     setExpanded((prev) => {
@@ -3497,15 +3565,70 @@ export function Home() {
       return parent?.folders.some((f) => f.path === p) ?? false
     })
 
-  const activeNav = !selectedFolder && !cloudMode ? (askMode ? 'ask' : view) : null
+  const activeNav = desktopMode
+    ? 'desktop'
+    : !selectedFolder && !cloudMode
+      ? askMode
+        ? 'ask'
+        : view
+      : null
 
   return (
-    <div className="home">
+    <div className={`home${desktopMode ? ' desktop-mode' : ''}`}>
+      {desktopMode && (
+        <div className="home-desktop-backdrop" aria-hidden="true" ref={setBackdropHost} />
+      )}
+      {desktopMode && <div className="sidebar-glass" aria-hidden="true" />}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
         </div>
         <nav className="sidebar-nav">
+          <button
+            className={`nav-item${desktopMode ? ' active' : ''}`}
+            aria-current={desktopMode ? 'page' : undefined}
+            onClick={showDesktop}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect
+                x="1.8"
+                y="1.8"
+                width="5.4"
+                height="5.4"
+                rx="1.4"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <rect
+                x="8.8"
+                y="1.8"
+                width="5.4"
+                height="5.4"
+                rx="1.4"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <rect
+                x="1.8"
+                y="8.8"
+                width="5.4"
+                height="5.4"
+                rx="1.4"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <rect
+                x="8.8"
+                y="8.8"
+                width="5.4"
+                height="5.4"
+                rx="1.4"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+            </svg>
+            <span className="nav-label">{DESKTOP_STRINGS[lang].navDesktop}</span>
+          </button>
           <button
             className={`nav-item${activeNav === 'recent' ? ' active' : ''}`}
             aria-current={activeNav === 'recent' ? 'page' : undefined}
@@ -3544,6 +3667,8 @@ export function Home() {
             aria-current={activeNav === 'ask' ? 'page' : undefined}
             onClick={() => {
               setAskMode(true)
+              setDesktopMode(false)
+              writeLaunchView('ask')
               setSelectedFolder(null)
               setCloudMode(false)
               setSelected(new Set())
@@ -3571,6 +3696,8 @@ export function Home() {
               className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
               onClick={() => {
                 setCloudMode(true)
+                setDesktopMode(false)
+                writeLaunchView('cloud')
                 setAskMode(false)
                 setSelectedFolder(null)
                 setSelected(new Set())
@@ -3614,7 +3741,17 @@ export function Home() {
           openRequest={settingsRequest}
         />
       </aside>
-      {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
+      {desktopMode ? (
+        <DesktopView
+          lang={lang}
+          roots={roots}
+          onOpenAsk={openAskView}
+          onOpenTemplates={openTemplates}
+          onOpenSettings={openSettings}
+          onOpenFolder={openFolderView}
+          backdropHost={backdropHost}
+        />
+      ) : selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
         renderFolderContent()
       ) : askMode ? (
         <KbAskPanel

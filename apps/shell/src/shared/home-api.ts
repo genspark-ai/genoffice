@@ -270,6 +270,35 @@ export interface TodoItem {
   done: boolean
 }
 
+/**
+ * The Home desktop's icon positions, keyed by icon id (`app:docs`,
+ * `sys:templates`, `file:<path>`, `folder:<path>`). Missing entries lay out in
+ * grid order; the renderer owns grid math, this is just the persisted map.
+ */
+export interface DesktopLayout {
+  positions: Record<string, { x: number; y: number }>
+}
+
+/**
+ * The desktop's look-and-feel prefs. `wallpaper`: 'default' (the animated
+ * aurora), 'builtin:<id>' (a shipped generated wallpaper), or
+ * 'custom:<name>' (a picked image copied under userData/wallpapers).
+ * `carouselMinutes` 0 = no rotation; it cycles the built-in statics.
+ * `wallpaperFit` follows the Windows desktop fill modes; `labelColor` is a
+ * hex color for desktop text ('' = automatic per theme/wallpaper).
+ */
+export interface DesktopPrefs {
+  wallpaper: string
+  carouselMinutes: number
+  iconSize: 'sm' | 'md' | 'lg'
+  /** custom = free drag placement; the others are read-only sorted flows */
+  sortMode: 'custom' | 'name' | 'kind' | 'mtime'
+  /** how a wallpaper image fills the surface */
+  wallpaperFit: 'cover' | 'contain' | 'stretch' | 'tile' | 'center'
+  /** desktop label color, hex (#rgb/#rrggbb); '' = automatic */
+  labelColor: string
+}
+
 export interface HomeApi {
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
@@ -329,6 +358,18 @@ export interface HomeApi {
   todosList(): Promise<TodoItem[]>
   /** persist the todo list (whole-list write-through) */
   todosSave(items: TodoItem[]): Promise<void>
+  /** the Home desktop's icon positions */
+  desktopLayout(): Promise<DesktopLayout>
+  /** persist the desktop layout (whole-map write-through) */
+  desktopLayoutSave(layout: DesktopLayout): Promise<void>
+  /** the desktop's look prefs (wallpaper, carousel, icon size, sort) */
+  desktopPrefs(): Promise<DesktopPrefs>
+  /** persist the desktop prefs (whole-object write-through) */
+  desktopPrefsSave(prefs: DesktopPrefs): Promise<void>
+  /** a wallpaper as a data URL by id ('builtin:<id>' or 'custom:<name>'); '' when unknown */
+  wallpaperImage(id: string): Promise<string>
+  /** pick an image file as a custom wallpaper; resolves to its id, '' when cancelled */
+  wallpaperPickCustom(): Promise<string>
   /** the command palette was summoned globally (Ctrl/Cmd+K in the shell window) */
   onPaletteOpen(handler: () => void): () => void
   /** open Settings › Integrations (the skills list) */
@@ -722,6 +763,12 @@ export const HOME_CHANNELS = {
   newFromTemplate: 'home:new-from-template',
   todosList: 'home:todos-list',
   todosSave: 'home:todos-save',
+  desktopLayout: 'home:desktop-layout',
+  desktopLayoutSave: 'home:desktop-layout-save',
+  desktopPrefs: 'home:desktop-prefs',
+  desktopPrefsSave: 'home:desktop-prefs-save',
+  wallpaperImage: 'home:wallpaper-image',
+  wallpaperPickCustom: 'home:wallpaper-pick-custom',
   paletteOpen: 'home:palette-open',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',

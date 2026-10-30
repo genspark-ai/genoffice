@@ -646,6 +646,10 @@ const config = {
         from: 'build/templates',
         to: 'templates',
       },
+      {
+        from: 'build/wallpapers',
+        to: 'wallpapers',
+      },
     ],
   },
   // Unlike win (which cross-compiles the sidecar to an explicit target

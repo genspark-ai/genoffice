@@ -7,8 +7,8 @@ import type { Lang } from '@genoffice/i18n'
  * (`packages/ui/src/strings-ai-skills.ts`).
  *
  * Command hints double as search keywords: they carry the app name and file
- * extension in every language, so typing "sheet" or "表格" both find the
- * spreadsheet action.
+ * extension in every language, so typing "sheet" or the localized word for it
+ * both find the spreadsheet action.
  */
 export interface CommandPaletteStrings {
   /** the overlay's accessible name */

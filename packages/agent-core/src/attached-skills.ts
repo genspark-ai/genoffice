@@ -85,7 +85,7 @@ const LANG_NATIVE_NAME: Record<string, string> = {
 export interface SkillContextInput {
   /** UI language tag (`zh`, `zh-TW`, ...) — drives LANGUAGE and TODAY's format */
   lang: string
-  /** the product the panel lives in, in the user's language (e.g. 文档 / 表格) */
+  /** the product the panel lives in, in the user's language (e.g. Docs / Sheets) */
   app: string
   /** current document's file name, when the app has one */
   fileName?: string

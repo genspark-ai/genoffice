@@ -1,0 +1,32 @@
+[
+  {
+    "id": "brand-aurora",
+    "nameKey": "wpNameAurora",
+    "filename": "brand-aurora.png"
+  },
+  {
+    "id": "starfield-night",
+    "nameKey": "wpNameStarfield",
+    "filename": "starfield-night.png"
+  },
+  {
+    "id": "warm-dusk",
+    "nameKey": "wpNameDusk",
+    "filename": "warm-dusk.png"
+  },
+  {
+    "id": "dot-grid-dark",
+    "nameKey": "wpNameDots",
+    "filename": "dot-grid-dark.png"
+  },
+  {
+    "id": "minimal-light",
+    "nameKey": "wpNameMinimal",
+    "filename": "minimal-light.png"
+  },
+  {
+    "id": "teal-deep",
+    "nameKey": "wpNameTeal",
+    "filename": "teal-deep.png"
+  }
+]

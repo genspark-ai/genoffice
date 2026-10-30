@@ -42,6 +42,8 @@ const page = (starred: boolean) =>
 
 beforeEach(async () => {
   HTMLElement.prototype.scrollTo = vi.fn()
+  // this suite exercises the list views: land on Recent instead of the desktop
+  localStorage.setItem('home.view', 'recent')
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal(
     'fetch',

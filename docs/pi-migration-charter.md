@@ -1,108 +1,129 @@
-# pi harness 逐 app 切换章程
+# Pi harness per-app cutover charter
 
-Spike（docs，`GENOFFICE_AI_BACKEND=pi`）已验证：图片注入、工具调用、usage 上报全通。
-本章程约束剩余 app 的切换顺序、验收门与回退路径。
+The spike (docs, `GENOFFICE_AI_BACKEND=pi`) verified: image injection, tool
+calls, and usage reporting all work. This charter pins the cutover order,
+acceptance gates, and rollback path for the remaining apps.
 
-**2026-10-26 更新：pi 已成为默认后端。** `GENOFFICE_AI_BACKEND=legacy` 显式回退旧栈。
-六个 app + shell Ask 全部验收通过；dist:win 产物（GenOffice Setup 0.12.0.exe）已验证。
+**2026-10-26 update: pi is the default backend.** `GENOFFICE_AI_BACKEND=legacy`
+explicitly falls back to the old stack. All six apps + shell Ask passed their
+gates; the dist:win artifact (GenOffice Setup 0.12.0.exe) is verified.
 
-## 原则
+## Principles
 
-1. **单开关**：每 app 的切换点只在主进程 `ai:stream` handler 里的
-   `GENOFFICE_AI_BACKEND` 分支（docs-main.ts:4274 已打样）。renderer 零改动。
-2. **默认可回退**：不设环境变量 = pi 栈；`GENOFFICE_AI_BACKEND=legacy` = 旧栈
-   （`streamForProvider`）。任何 app 出问题，回退 = 设环境变量重启，不回滚代码。
-3. **一门一令**：每道验收门是一条可复制运行的命令，不用形容词。
-4. **协议缺口冻结**：`codex` provider（codex-app-server 子进程协议）在 pi 后端下
-   不支持——pi 的 `openai-codex-responses` 是 HTTP Responses API，与本地 CLI 子进程
-   不同构。pi 模式下 codex 端点走旧栈旁路（bridge 抛明确错误，不静默失败）。
+1. **One switch**: each app's cutover point is only the `GENOFFICE_AI_BACKEND`
+   branch in the main process's `ai:stream` handler (prototyped at
+   docs-main.ts:4274). Zero renderer changes.
+2. **Rollback by default**: no env var = pi stack; `GENOFFICE_AI_BACKEND=legacy`
+   = old stack (`streamForProvider`). Any app misbehaving rolls back by setting
+   the env var and restarting — never by reverting code.
+3. **One gate, one command**: every acceptance gate is a copy-pasteable
+   command, no adjectives.
+4. **Protocol gap frozen**: the `codex` provider (codex-app-server subprocess
+   protocol) is unsupported under pi — pi's `openai-codex-responses` is the
+   HTTP Responses API, not isomorphic to a local CLI subprocess. In pi mode the
+   codex endpoint bypasses through the old stack (the bridge throws an explicit
+   error, no silent failure).
 
-## 架构事实（切换面）
+## Architecture facts (cutover surface)
 
-| app | ai:stream handler | 工具数 | 特有机制 |
+| app | ai:stream handler | tool count | app-specific mechanisms |
 |---|---|---|---|
-| docs | docs-main.ts:4274 ✅已切换 | ~35 | 图片注入 doc-images.ts |
-| markdown | 复用 docs-main.registerAiIpc | ~10 | 与 docs 同构（tiptap） |
-| html | 复用 docs-main.registerAiIpc | ~8 | streamText 旁路（brief/page-writer） |
-| slides | ai-ipc.ts:239（自有变体） | 17 | slide-qc 双循环、deck-images |
-| pdf | 复用 docs-main.registerAiIpc | ~45 | 页面图 page-images |
-| sheets | sheets-main.ts:3975（自有变体）✅已切换 | 13 | Rust sidecar、verifyResponse |
-| shell Ask | 复用 docs-main.registerAiIpc | ~6 | kb/attachments/cli/create-document |
+| docs | docs-main.ts:4274 ✅ switched | ~35 | image injection doc-images.ts |
+| markdown | reuses docs-main.registerAiIpc | ~10 | same shape as docs (tiptap) |
+| html | reuses docs-main.registerAiIpc | ~8 | streamText bypass (brief/page-writer) |
+| slides | ai-ipc.ts:239 (own variant) | 17 | slide-qc double loop, deck-images |
+| pdf | reuses docs-main.registerAiIpc | ~45 | page images page-images |
+| sheets | sheets-main.ts:3975 (own variant) ✅ switched | 13 | Rust sidecar, verifyResponse |
+| shell Ask | reuses docs-main.registerAiIpc | ~6 | kb/attachments/cli/create-document |
 
-shell 聚合模式下 `registerAiIpc` 只注册一次（docs-main.ts:4119，shell/index.ts:6796）。
-slides 与 sheets 的自有变体在独立窗口模式使用，切换时两处都要改。
+In shell aggregate mode `registerAiIpc` registers only once
+(docs-main.ts:4119, shell/index.ts:6796). The slides and sheets own variants
+are used in detached-window mode; both spots change together at cutover.
 
-## 协议映射（26 provider → pi Api）
+## Protocol mapping (26 providers → pi Api)
 
-| GenOffice protocol | pi Api | 状态 |
+| GenOffice protocol | pi Api | status |
 |---|---|---|
-| anthropic | anthropic-messages | spike 未实测（无 key） |
-| gemini | google-generative-ai | spike 未实测（经 openai-compat 网关代跑） |
-| openai-compatible | openai-completions | ✅ spike 实测通过 |
-| codex-app-server | —（不支持，抛错旁路） | 冻结，见原则 4 |
+| anthropic | anthropic-messages | not spike-tested (no key) |
+| gemini | google-generative-ai | not spike-tested (ran via openai-compat gateway) |
+| openai-compatible | openai-completions | ✅ spike-verified |
+| codex-app-server | — (unsupported, throws and bypasses) | frozen, see principle 4 |
 
-已知需在逐 app 验收中盯住的点：
-- gemini `thoughtSignature` 回传（GenOffice `AgentToolCall.signature`）——pi 用
-  `thinkingSignature` 承载，桥接层已透传 `reasoning` delta，signature 字段映射待验收
-- MiniMax/DeepSeek interleaved-thinking 的 reasoning echo
-- output-cap fallback（`max_tokens` vs `max_completion_tokens`）——pi 有自己的
-  兼容层，需实测一次 400 拒绝场景
-- Genspark 凭证注入（`resolveProfileCredential`）在 pi 分支也要生效
-- 双看门狗（主进程 180s / renderer 240s）时序不依赖协议栈，不受影响
+Known points to watch during per-app acceptance:
+- gemini `thoughtSignature` echo (GenOffice `AgentToolCall.signature`) — pi
+  carries it as `thinkingSignature`; the bridge already passes the `reasoning`
+  delta through, the signature field mapping awaits acceptance
+- MiniMax/DeepSeek interleaved-thinking reasoning echo
+- output-cap fallback (`max_tokens` vs `max_completion_tokens`) — pi has its
+  own compatibility layer; verify once against a real 400 rejection
+- Genspark credential injection (`resolveProfileCredential`) must also work on
+  the pi branch
+- the double watchdogs (main 180s / renderer 240s) are protocol-agnostic and
+  unaffected
 
-## 切换顺序与验收门
+## Cutover order and gates
 
-顺序按风险升序。每步：接 handler → typecheck → 单测 → CDP 实机问答 → 提交。
+Order is by ascending risk. Each step: wire the handler → typecheck → unit
+tests → CDP live Q&A → commit.
 
-### 1. markdown（最简，验证"复用 docs handler"路径自动生效）✅ 已验证 2026-10-26
-- 改动：无代码改动预期（复用 docs-main handler）。验收为主。——实测确认零改动。
-- 门：`npm run typecheck -w @genoffice/markdown` 通过；
-  CDP 实机：markdown tab 里问一句生成类问题，断言有流式回答。——实测通过：
-  提问"用一句话介绍 markdown"，pi 后端流式回答，usage ↑4.6k ↓237 正常上报。
+### 1. markdown (simplest; proves the "reuse the docs handler" path) ✅ verified 2026-10-26
+- Change: none expected (reuses the docs-main handler). Acceptance only. —
+  confirmed zero changes in practice.
+- Gate: `npm run typecheck -w @genoffice/markdown` passes; CDP live: ask a
+  generative question in a markdown tab, assert a streamed reply. — verified:
+  asked "introduce markdown in one sentence", pi backend streamed an answer,
+  usage ↑4.6k ↓237 reported correctly.
 
-### 2. html（streamText 旁路是差异点）✅ 已验证 2026-10-26
-- 改动：bridge 补 `chatViaPi`（streamSimple 收集式非流式包装）+ docs-main ai:chat
-  加 pi 分支。ai:stream 复用 docs-main handler 零改动。
-- 门：`npm run typecheck -w @genoffice/html` 通过；
-  `npx vitest run tests/brief-writer.test.ts tests/page-writer.test.ts`（cwd=apps/html）
-  19/19 过；CDP 实机：生成个人名片页，`ask_clarification` 工具经 pi 触发，
-  ↑3.8k ↓743 token 正常。
+### 2. html (the streamText bypass is the difference) ✅ verified 2026-10-26
+- Change: bridge gained `chatViaPi` (a streamSimple collect-style non-streaming
+  wrapper) + a pi branch on docs-main ai:chat. ai:stream reuses the docs-main
+  handler with zero changes.
+- Gate: `npm run typecheck -w @genoffice/html` passes;
+  `npx vitest run tests/brief-writer.test.ts tests/page-writer.test.ts`
+  (cwd=apps/html) 19/19; CDP live: generate a personal business-card page, the
+  `ask_clarification` tool fires through pi, ↑3.8k ↓743 tokens normal.
 
-### 3. slides（自有 ai-ipc.ts handler）✅ 已验证 2026-10-26
-- 改动：ai-ipc.ts:264 加 pi 分支（与 docs 同构）。
-- 门：`npm run typecheck -w @genoffice/slides` 通过；
-  CDP 实机：「把第 1 页标题改成季度总结」→ 6 步工具链
-  （read_slide/execute_slide_script/regenerate_slide 等）全部经 pi 触发，
-  最终标题正确更新，↑78.7k ↓3k token 正常。
+### 3. slides (own ai-ipc.ts handler) ✅ verified 2026-10-26
+- Change: ai-ipc.ts:264 gained the pi branch (same shape as docs).
+- Gate: `npm run typecheck -w @genoffice/slides` passes; CDP live: "change the
+  title of slide 1 to quarterly summary" → the 6-tool chain
+  (read_slide/execute_slide_script/regenerate_slide etc.) all fired through pi,
+  the title updated correctly, ↑78.7k ↓3k tokens normal.
 
-### 4. pdf（工具最多，页面图注入）✅ 已验证 2026-10-26
-- 改动：无 handler 改动（复用 docs-main）。
-- 门：`npm run typecheck -w @genoffice/pdf` 通过；
-  CDP 实机：打开含「HELLO-123+红圆」特征图的 pdf，问图内容 →
-  回答命中「HELLO-123」+「红色的圆圈」，read_pages 工具经 pi 触发，
-  ↑26.3k ↓269 token 正常。
+### 4. pdf (most tools, page-image injection) ✅ verified 2026-10-26
+- Change: no handler change (reuses docs-main).
+- Gate: `npm run typecheck -w @genoffice/pdf` passes; CDP live: open the pdf
+  with the "HELLO-123 + red circle" feature image, ask about it → the answer
+  hits "HELLO-123" and "red circle", read_pages fired through pi,
+  ↑26.3k ↓269 tokens normal.
 
-### 5. sheets（Rust sidecar + verifyResponse，最复杂）✅ 已验证 2026-10-26
-- 改动：sheets-main.ts:3972 加 pi 分支。
-- 门：`npm run typecheck -w @genoffice/sheets` 通过；
-  CDP 实机：「读取 A1:B5」→ `read_range` + `get_workbook_context` 经 pi 触发，
-  正确回答区域为空，↑21.1k ↓308 token 正常。
+### 5. sheets (Rust sidecar + verifyResponse, the most complex) ✅ verified 2026-10-26
+- Change: sheets-main.ts:3972 gained the pi branch.
+- Gate: `npm run typecheck -w @genoffice/sheets` passes; CDP live: "read
+  A1:B5" → `read_range` + `get_workbook_context` fired through pi, correctly
+  reported the range empty, ↑21.1k ↓308 tokens normal.
 
-### 6. shell Ask 面板（最后，确认聚合模式无遗漏）✅ 已验证 2026-10-26
-- 门：CDP 实机：shell `testAiSettings`（内部走 ai:chat）在 pi 后端下返回 ok。
-  知识库 Ask 面板因知识库为空拒答（预存在行为，与后端无关）。
+### 6. shell Ask panel (last; confirms aggregate mode misses nothing) ✅ verified 2026-10-26
+- Gate: CDP live: shell `testAiSettings` (which goes through ai:chat
+  internally) returns ok under the pi backend. The knowledge-base Ask panel
+  refuses to answer because the KB is empty (pre-existing behavior, unrelated
+  to the backend).
 
-## 全局收尾门 ✅ 已验证 2026-10-26
+## Global closing gates ✅ verified 2026-10-26
 
-- `npm run typecheck`（全仓）0 错误 ✅
-- 每 app ai 相关测试套件全过（Windows 预存失败：electron-utils 3 个路径用例、
-  project-store 1 个 store 用例，均基线失败）✅
-- `npm run dist:win` 产物生成（`GenOffice Setup 0.12.0.exe`，164 MB）✅
-- pi 模式连续使用 30 分钟无看门狗误杀 ✅（多 app CDP 走查累计超 30 分钟）
+- `npm run typecheck` (repo-wide) 0 errors ✅
+- every app's ai-related test suites pass (Windows pre-existing failures: 3
+  electron-utils path cases, 1 project-store store case, all failing at
+  baseline) ✅
+- `npm run dist:win` artifact produced (`GenOffice Setup 0.12.0.exe`, 164 MB) ✅
+- pi mode used continuously for 30 minutes with no watchdog false-kills ✅
+  (multi-app CDP walkthroughs accumulated >30 minutes)
 
-## 旧栈下线条件（全部满足才可删 streamForProvider）
+## Old-stack retirement criteria (all must hold before streamForProvider is deleted)
 
-1. 六个 app + shell Ask 全部按上门验收通过
-2. codex provider 有明确替代方案（pi HTTP codex 或保留旧栈仅 codex）
-3. Genspark 凭证注入在 pi 分支实测通过
-4. 至少一次真实用户（本机）连续一天 pi 模式使用无回退
+1. All six apps + shell Ask pass the gates above
+2. The codex provider has a decided replacement (pi HTTP codex, or keep the old
+   stack for codex only)
+3. Genspark credential injection verified on the pi branch
+4. At least one real user (this machine) uses pi mode for a full day without
+   falling back

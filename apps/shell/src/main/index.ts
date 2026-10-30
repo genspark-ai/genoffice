@@ -102,6 +102,7 @@ import { registerIntegrationsIpc } from './integrations-ipc'
 import { registerPluginsIpc } from './plugins-ipc'
 import { registerTemplatesIpc } from './templates-ipc'
 import { registerTodosIpc } from './todos-ipc'
+import { registerDesktopIpc } from './desktop-ipc'
 import { makeUserCliRunner, registerUserSkillsIpc } from './user-cli'
 import {
   ANALYTICS_ENABLED_KEY,
@@ -6845,6 +6846,7 @@ registerUserSkillsIpc({
 registerPluginsIpc({ window: () => shellWindow })
 registerTemplatesIpc()
 registerTodosIpc()
+registerDesktopIpc()
 
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here
 setSessionPathResolver(resolveSheetsSessionPath)

@@ -25,6 +25,8 @@ import type {
   RenameResult,
   TemplateInfo,
   TodoItem,
+  DesktopLayout,
+  DesktopPrefs,
   UiLanguage,
   FileSearchPage,
   FileSearchRerank,
@@ -411,6 +413,24 @@ const homeApi: HomeApi = {
   },
   async todosSave(items) {
     await ipcRenderer.invoke(HOME_CHANNELS.todosSave, items)
+  },
+  async desktopLayout() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.desktopLayout)) as DesktopLayout
+  },
+  async desktopLayoutSave(layout) {
+    await ipcRenderer.invoke(HOME_CHANNELS.desktopLayoutSave, layout)
+  },
+  async desktopPrefs() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.desktopPrefs)) as DesktopPrefs
+  },
+  async desktopPrefsSave(prefs) {
+    await ipcRenderer.invoke(HOME_CHANNELS.desktopPrefsSave, prefs)
+  },
+  async wallpaperImage(id) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.wallpaperImage, id)) as string
+  },
+  async wallpaperPickCustom() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.wallpaperPickCustom)) as string
   },
   onAccountLogin(handler) {
     const listener = (_event: IpcRendererEvent, ev: AccountLoginEvent) => handler(ev)
