@@ -1949,6 +1949,7 @@ function registerPdfIpc(): void {
         return { ok: false, error: 'pdf: no images' }
       if (!hasValidExportPageNumbers(pageNumbers, images.length))
         return { ok: false, error: 'pdf: invalid page numbers' }
+      const ext = request?.format === 'jpg' ? 'jpg' : 'png'
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
       const picked = await showOpenDialogWithMemory(dialog, win, {
@@ -1958,7 +1959,7 @@ function registerPdfIpc(): void {
       const dir = picked.filePaths[0]
       if (picked.canceled || !dir) return { ok: true, canceled: true }
       try {
-        const outputPaths = buildExportImagePaths(dir, baseName, pageNumbers)
+        const outputPaths = buildExportImagePaths(dir, baseName, pageNumbers, ext)
         for (const [i, b64] of images.entries()) {
           await writeFile(outputPaths[i]!, Buffer.from(b64, 'base64'))
         }

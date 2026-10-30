@@ -931,13 +931,15 @@ export interface CropPagesRequest {
 
 export type CropPagesResult = { ok: true } | { ok: false; error: string }
 
-/** Export pages as PNG: renderer rasterizes the bitmaps, main process shows a dialog and writes to disk */
+/** Export pages as PNG or JPEG: renderer rasterizes the bitmaps, main process shows a dialog and writes to disk */
 export interface ExportImagesRequest {
-  /** base64 PNGs (without the data: prefix), in page order */
+  /** base64 PNGs or JPEGs (without the data: prefix), in page order, matching format */
   images: string[]
   /** 1-based page numbers, same length as images, used for file names */
   pageNumbers: number[]
   baseName: string
+  /** Image encoding; anything other than 'jpg' falls back to png */
+  format: 'png' | 'jpg'
 }
 
 export type ExportImagesResult =
