@@ -10,6 +10,12 @@ Việc này làm ở **Cài đặt ▸ Tích hợp**. Bảng đó có hai nửa,
 
 **MCP.** Có hai đường: **Được khởi động bởi trợ lý (khuyến nghị)**, ở đó bạn thêm cấu hình được hiển thị vào phía khách của mình và trợ lý tự khởi chạy máy chủ, và **Máy chủ HTTP cục bộ**, do ứng dụng chạy thay bạn. Dù chọn đường nào, trợ lý vẫn kết nối với GenOffice và bạn không phải gõ lệnh nào.
 
+**Dùng thử** Mở một cuộc trò chuyện mới trong trợ lý của bạn và hỏi bằng ngôn ngữ tự nhiên, ví dụ:
+
+- “Chuyển đổi ~/Downloads/report.md thành tài liệu Word”
+- “Tạo bài thuyết trình 6 trang trình bày về kết quả quý 3 của chúng tôi”
+- “Chuyển đổi budget.xlsx sang PDF và mở trong GenOffice”
+
 ## Đăng ký từ dòng lệnh
 
 Cũng làm được từ terminal — đây là đường nâng cao, dùng khi tác nhân nằm ở nơi bảng kia không tìm thấy:

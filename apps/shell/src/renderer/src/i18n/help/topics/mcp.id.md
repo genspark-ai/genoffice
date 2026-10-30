@@ -10,6 +10,12 @@ Inilah tempatnya: **Pengaturan ▸ Integrasi**. Panel ini punya dua bagian, dan 
 
 **MCP.** Ada dua jalur yang ditawarkan: **Dijalankan oleh asisten (disarankan)**, tempat Anda menambahkan konfigurasi yang ditampilkan ke klien dan asisten menjalankan servernya sendiri, serta **Server HTTP lokal**, yang dijalankan aplikasi untuk Anda. Cara mana pun, asisten akhirnya berbicara dengan GenOffice dan Anda tidak pernah mengetik satu perintah pun.
 
+**Coba sekarang** Buka obrolan baru di asisten Anda dan minta dengan bahasa biasa, misalnya:
+
+- “Ubah ~/Downloads/report.md menjadi dokumen Word”
+- “Buat presentasi 6 slide tentang hasil Q3 kami”
+- “Konversi budget.xlsx ke PDF dan buka di GenOffice”
+
 ## Mendaftarkannya dari baris perintah
 
 Hal yang sama dari sebuah terminal — inilah jalur mahir, dan yang sebaiknya dipakai ketika agen ada di tempat yang tidak bisa ditemukan panel:

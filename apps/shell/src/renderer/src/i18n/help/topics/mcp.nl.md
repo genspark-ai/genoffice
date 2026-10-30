@@ -10,6 +10,12 @@ GenOffice spreekt het Model Context Protocol, zodat een coding agent je document
 
 **MCP.** Er worden twee routes aangeboden: **Gestart door de assistent (aanbevolen)**, waarbij je de getoonde configuratie aan je client toevoegt en de assistent de server zelf start, en de **Lokale HTTP-server**, die de app voor je draait. Hoe dan ook eindigt de assistent tegen GenOffice te praten en typ je nooit een commando.
 
+**Probeer het** Open een nieuwe chat in uw assistent en vraag het in gewone woorden, bijvoorbeeld:
+
+- “Maak van ~/Downloads/report.md een Word-document”
+- “Maak een presentatie van 6 dia’s over onze Q3-resultaten”
+- “Zet budget.xlsx om naar PDF en open het in GenOffice”
+
 ## Registreren vanaf de opdrachtregel
 
 Hetzelfde vanaf een terminal — dit is de geavanceerde route, en degene om naar te grijpen wanneer de agent ergens staat waar het paneel hem niet kan vinden:

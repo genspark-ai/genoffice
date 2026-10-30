@@ -34,8 +34,6 @@ export const NPX_INSTALL_COMMAND = 'npx skills add genspark-ai/genoffice'
 export const skillUpdateDue = (s: IntegrationsStatus): boolean =>
   s.agents.some((a) => a.state.older === true)
 
-const EXAMPLE_KEYS = ['intgExample1', 'intgExample2', 'intgExample3'] as const
-
 export { mcpLaunch, type McpLaunch }
 
 const shellWord = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
@@ -195,24 +193,10 @@ export function IntegrationsPane({
     status.skillNeedsCli &&
     status.cli.version &&
     compare(status.cli.version, status.skillNeedsCli) < 0
-  const anyInstalled = status.agents.some((a) => a.state.status !== 'missing')
   const launch = mcpLaunch(status.cli)
   // a link in ~/.local/bin that the shell does not search is not "ready": show the PATH line instead of the sudo command
   const cliOnPath = status.cli.status === 'present' && !status.cli.pathHint
   const cliFix = status.cli.pathHint ?? status.cli.manual
-
-  const examples = (
-    <div className="set-intg-examples">
-      {EXAMPLE_KEYS.map((key) => (
-        <div key={key} className="set-intg-example">
-          <span className="set-intg-example-text">“{t(key)}”</span>
-          <button className="set-btn" onClick={() => copy(t(key), key)}>
-            {copied === key ? t('intgCopied') : t('intgCopy')}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
 
   return (
     <>
@@ -384,13 +368,6 @@ export function IntegrationsPane({
           )}
         </details>
 
-        <h5 className="set-intg-sub">{t('intgStep2Title')}</h5>
-        <div className="set-field-desc set-intg-lead">
-          {anyInstalled ? t('intgStep2Desc') : t('intgStep2DescBefore')}
-        </div>
-        {examples}
-        <div className="set-field-desc set-intg-lead">{t('intgStep2Note')}</div>
-
         <details className="set-intg-details set-intg-cli">
           <summary>{t('intgCliTitle')}</summary>
           <div className="set-field-desc set-intg-lead">
@@ -486,11 +463,6 @@ export function IntegrationsPane({
           <div className="set-field-desc set-intg-lead">{t('intgMcpHttpDesc')}</div>
           <McpServerSection t={t} />
         </div>
-
-        <h5 className="set-intg-sub">{t('intgStep2Title')}</h5>
-        <div className="set-field-desc set-intg-lead">{t('intgStep2Desc')}</div>
-        {examples}
-        <div className="set-field-desc set-intg-lead">{t('intgMcpTryNote')}</div>
       </section>
     </>
   )
