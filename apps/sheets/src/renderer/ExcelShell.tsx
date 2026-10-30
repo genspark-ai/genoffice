@@ -73,6 +73,7 @@ import {
 } from './excel-format-shortcuts'
 import { isModalOpen, resolveGlobalShortcut } from './global-shortcuts'
 import { stepFontSize } from './font-size-ladder'
+import { scrollRibbonOnWheel } from './ribbon-wheel'
 
 import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
@@ -587,6 +588,12 @@ export function ExcelShell({
   )
   // the sidebar switch is a soft hide; it closes the panel when it turns off
   const aiSidebarEnabled = useAiSidebarEnabled(setIsCopilotOpen)
+  // Native listener, delegated because each ribbon tab mounts its own `.ribbon`,
+  // and because React registers wheel as passive, which forbids preventDefault.
+  useEffect(() => {
+    window.addEventListener('wheel', scrollRibbonOnWheel, { passive: false })
+    return () => window.removeEventListener('wheel', scrollRibbonOnWheel)
+  }, [])
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])
