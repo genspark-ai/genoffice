@@ -217,10 +217,11 @@ import { createMergeSkill } from './ai/merge-skill'
 import { mergeAttachedWorkbooks } from './merge-workbooks'
 import { createSearchSkill } from './ai/search-skill'
 import { createImageSkill } from './ai/image-skill'
-import { ATTACHMENT_IMAGE_EXTS, ExternalLinkStatus } from '../shared/desktop-api'
+import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
 import type {
   AttachmentAddResult,
   AttachmentMeta,
+  ExternalLinkRow,
   MenuAction,
   RecoveryPromptPayload,
   WorkbookFile,
@@ -544,6 +545,7 @@ import {
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
 import { WatchWindowPanel, watchKey, type WatchCell, type WatchRowValue } from './WatchWindowPanel'
 import { ExternalLinksPanel } from './ExternalLinksPanel'
+import { updateExternalLinksFlow } from './external-links-flow'
 import { applyExternalLinkValues } from './univer-sync'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
@@ -914,8 +916,33 @@ export function App({
   const [slicers, setSlicers] = useState<readonly SlicerUiState[]>([])
   const [watchOpen, setWatchOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
-  const [linkStatuses, setLinkStatuses] = useState<ExternalLinkStatus[]>([])
+  const [linkStatuses, setLinkStatuses] = useState<ExternalLinkRow[]>([])
   const [linksBusy, setLinksBusy] = useState(false)
+  // Load the workbook's links when the panel opens: the listing carries
+  // identity fields only and never probes the sources on disk, so it is cheap
+  // and reachability stays unknown (the panel's "—") until Update answers it.
+  useEffect(() => {
+    if (!linksOpen) return
+    const file = lazyWorkbookRef.current?.file
+    const path = file !== undefined && !file.needsSaveAs ? (file.path ?? null) : null
+    if (path === null) {
+      setLinkStatuses([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await window.desktopApi.listExternalLinks({ path })
+        if (!cancelled) setLinkStatuses(result.links)
+      } catch {
+        // an unreadable workbook keeps the panel empty instead of throwing
+        if (!cancelled) setLinkStatuses([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [linksOpen])
   const [watchCells, setWatchCells] = useState<readonly WatchCell[]>([])
   const [calcManual, setCalcManual] = useState(false)
   /// Non-null while the "Insert Slicer" field picker is open.
@@ -5997,15 +6024,21 @@ export function App({
               if (!path || linksBusy) return
               setLinksBusy(true)
               try {
-                const report = await window.desktopApi.updateExternalLinks({ path })
-                const linkRuntime = univerRef.current
-                if (!linkRuntime) return
-                applyExternalLinkValues(lazyWorkbookRef.current!, linkRuntime, report)
-                await handleSave('save')
+                await updateExternalLinksFlow({
+                  path,
+                  save: () => handleSave('save'),
+                  update: (target) => window.desktopApi.updateExternalLinks({ path: target }),
+                  apply: (report) => {
+                    const linkRuntime = univerRef.current
+                    const linkState = lazyWorkbookRef.current
+                    if (linkRuntime && linkState) {
+                      applyExternalLinkValues(linkState, linkRuntime, report)
+                    }
+                  },
+                  onStatuses: (report) => setLinkStatuses(report.links),
+                })
               } finally {
                 setLinksBusy(false)
-                const fresh = await window.desktopApi.readExternalLinks({ path })
-                setLinkStatuses(fresh.links)
               }
             })()
           }}

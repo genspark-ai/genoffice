@@ -48,11 +48,12 @@ import type {
   ImageSearchResponse,
   GenerateImageResult,
   UserSkillEntry,
-} from '../shared/desktop-api'
-import {
-  externalLinksRequestSchema,
-  externalLinksResultSchema,
-  externalLinksUpdateResultSchema,
+  ExternalLinkCell,
+  ExternalLinkCellKind,
+  ExternalLinkListStatus,
+  ExternalLinksResult,
+  ExternalLinksUpdateResult,
+  ExternalLinkStatus,
 } from '../shared/desktop-api'
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -234,21 +235,21 @@ const desktopApi: DesktopApi = {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.recalcWorkbook, validatedRequest)
     return parseRecalcResult(result)
   },
-  async readExternalLinks(request) {
-    const validatedRequest = externalLinksRequestSchema.parse(request)
+  async listExternalLinks(request) {
+    const validatedRequest = parseExternalLinksRequest(request)
     const result: unknown = await ipcRenderer.invoke(
-      IPC_CHANNELS.readExternalLinks,
+      IPC_CHANNELS.listExternalLinks,
       validatedRequest,
     )
-    return externalLinksResultSchema.parse(result)
+    return parseExternalLinksResult(result)
   },
   async updateExternalLinks(request) {
-    const validatedRequest = externalLinksRequestSchema.parse(request)
+    const validatedRequest = parseExternalLinksRequest(request)
     const result: unknown = await ipcRenderer.invoke(
       IPC_CHANNELS.updateExternalLinks,
       validatedRequest,
     )
-    return externalLinksUpdateResultSchema.parse(result)
+    return parseExternalLinksUpdateResult(result)
   },
   revealPath(path) {
     ipcRenderer.send(IPC_CHANNELS.revealPath, path)
@@ -1591,6 +1592,100 @@ function parseRecalcResult(input: unknown): WorkbookRecalcResult {
     }
   })
   return { cells }
+}
+
+/// The links panel's request: the path is the only field.
+function parseExternalLinksRequest(input: unknown): { path: string } {
+  if (!isRecord(input) || !isBoundedString(input.path, 32_768)) {
+    throw new Error('Invalid external links request.')
+  }
+  return { path: input.path }
+}
+
+const EXTERNAL_LINK_LIMIT = 10_000
+const EXTERNAL_LINK_CELL_LIMIT = 100_000
+const EXTERNAL_LINK_KINDS: readonly ExternalLinkCellKind[] = ['number', 'text', 'boolean', 'error']
+
+/// One link of the read-only listing: identity fields only — the listing
+/// carries no reachability, because probing the targets on open is what the
+/// read path must avoid (a dead network share can block for seconds).
+function parseExternalLinkListStatus(input: unknown): ExternalLinkListStatus {
+  if (
+    !isRecord(input) ||
+    !isPositiveInteger(input.index) ||
+    typeof input.rawTarget !== 'string' ||
+    (input.source !== null && typeof input.source !== 'string') ||
+    !Array.isArray(input.sheetNames) ||
+    !input.sheetNames.every((name): name is string => typeof name === 'string')
+  ) {
+    throw new Error('Invalid external links response.')
+  }
+  return {
+    index: input.index,
+    rawTarget: input.rawTarget,
+    source: input.source,
+    sheetNames: input.sheetNames,
+  }
+}
+
+/// One link of the update report: the listing's fields plus the reachability
+/// verdict the explicit update paid for.
+function parseExternalLinkStatus(input: unknown): ExternalLinkStatus {
+  if (!isRecord(input) || typeof input.reachable !== 'boolean') {
+    throw new Error('Invalid external links response.')
+  }
+  return { ...parseExternalLinkListStatus(input), reachable: input.reachable }
+}
+
+/// One external-formula cell of the update report. `kind` is absent when the
+/// cell has no usable value; the host then keeps the file's own cache.
+function parseExternalLinkCell(input: unknown): ExternalLinkCell {
+  if (
+    !isRecord(input) ||
+    !isBoundedString(input.sheet, 1_024) ||
+    !isNonnegativeInteger(input.row) ||
+    !isNonnegativeInteger(input.column) ||
+    typeof input.formatted !== 'string' ||
+    typeof input.formula !== 'string' ||
+    (input.number !== undefined &&
+      input.number !== null &&
+      (typeof input.number !== 'number' || !Number.isFinite(input.number))) ||
+    (input.kind !== undefined && !EXTERNAL_LINK_KINDS.includes(input.kind as ExternalLinkCellKind))
+  ) {
+    throw new Error('Invalid external links update response.')
+  }
+  return {
+    sheet: input.sheet,
+    row: input.row,
+    column: input.column,
+    formatted: input.formatted,
+    ...(input.number === undefined ? {} : { number: input.number as number | null }),
+    ...(input.kind === undefined ? {} : { kind: input.kind as ExternalLinkCellKind }),
+    formula: input.formula,
+  }
+}
+
+function parseExternalLinksResult(input: unknown): ExternalLinksResult {
+  if (!isRecord(input) || !Array.isArray(input.links) || input.links.length > EXTERNAL_LINK_LIMIT) {
+    throw new Error('Invalid external links response.')
+  }
+  return { links: input.links.map(parseExternalLinkListStatus) }
+}
+
+function parseExternalLinksUpdateResult(input: unknown): ExternalLinksUpdateResult {
+  if (
+    !isRecord(input) ||
+    !Array.isArray(input.links) ||
+    input.links.length > EXTERNAL_LINK_LIMIT ||
+    !Array.isArray(input.cells) ||
+    input.cells.length > EXTERNAL_LINK_CELL_LIMIT
+  ) {
+    throw new Error('Invalid external links update response.')
+  }
+  return {
+    links: input.links.map(parseExternalLinkStatus),
+    cells: input.cells.map(parseExternalLinkCell),
+  }
 }
 
 function parseRangeResult(input: unknown): WorkbookRangeResult {

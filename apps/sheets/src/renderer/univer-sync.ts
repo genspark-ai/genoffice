@@ -187,6 +187,8 @@ import {
   type WrapMeasureCoverage,
 } from './univer-state'
 import type { SheetOutlineState } from './outline-model'
+import { externalLinkOverlayCell } from './external-link-values'
+import type { ExternalLinkCell } from '../shared/desktop-api'
 import { isManualCalculation } from './calc-options'
 import {
   registerCellFontAliases,
@@ -8214,21 +8216,15 @@ export function lazyCellEditable(
  * Applies an external-links update (genoffice#2109): installs the freshly
  * computed values into the recalc overlay so the grid shows them and the
  * next save writes them as the formulas' cached `<v>` — the stored `[n]`
- * formula text is untouched. Cells the sidecar left on the file's cache
- * (unreachable source) are not in the report and keep their values.
+ * formula text is untouched. Each cell's `kind` keeps its type: a boolean
+ * stays a boolean and an error stays an error, instead of both becoming the
+ * text of their display spelling. A cell whose report entry has no kind (the
+ * file never cached a value for it) keeps whatever the file has.
  */
 export function applyExternalLinkValues(
   state: LazyWorkbookState,
   runtime: UniverRuntime,
-  report: {
-    cells: readonly {
-      sheet: string
-      row: number
-      column: number
-      formatted: string
-      number?: number | null | undefined
-    }[]
-  },
+  report: { cells: readonly ExternalLinkCell[] },
 ): { applied: number; sheets: number } {
   const workbook = runtime.univerAPI.getActiveWorkbook()
   if (!workbook) return { applied: 0, sheets: 0 }
@@ -8238,18 +8234,22 @@ export function applyExternalLinkValues(
   const bySheet = new Map<string, Map<string, PinnedClosureCell>>()
   let applied = 0
   for (const cell of report.cells) {
-    // empty formatted = the sidecar kept the file's cache (unreachable, an
-    // error inside the span, past the inline cap): nothing to apply
-    if (cell.formatted === '') continue
+    const overlayValue = externalLinkOverlayCell(cell)
+    if (overlayValue === null) continue
     const sheetId = idByName.get(cell.sheet.toLowerCase())
     if (sheetId === undefined) continue
     const overlay = bySheet.get(sheetId) ?? new Map<string, PinnedClosureCell>()
-    overlay.set(`${cell.row}:${cell.column}`, { v: cell.number ?? cell.formatted })
+    overlay.set(`${cell.row}:${cell.column}`, overlayValue)
     bySheet.set(sheetId, overlay)
     applied += 1
   }
   for (const [sheetId, overlay] of bySheet) {
-    state.recalc.overlay.set(sheetId, overlay)
+    // merge into the sheet's existing overlay: a recalculation may already
+    // have pinned other formula cells there, and dropping them would lose the
+    // values the next save refreshes from
+    const merged = new Map(state.recalc.overlay.get(sheetId) ?? [])
+    for (const [key, value] of overlay) merged.set(key, value)
+    state.recalc.overlay.set(sheetId, merged)
     state.recalc.incompleteRuns.delete(sheetId)
     const loaded = state.loadedRanges.get(sheetId)
     const worksheet = workbook.getSheets().find((sheet) => sheet.getSheetId() === sheetId)

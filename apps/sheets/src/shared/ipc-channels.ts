@@ -67,7 +67,7 @@ export const IPC_CHANNELS = {
   reopenWorkbook: 'workbook:reopen',
   readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
-  readExternalLinks: 'workbook:read-external-links',
+  listExternalLinks: 'workbook:list-external-links',
   updateExternalLinks: 'workbook:update-external-links',
   revealPath: 'shell:reveal-path',
   readWorkbookMedia: 'workbook:read-media',

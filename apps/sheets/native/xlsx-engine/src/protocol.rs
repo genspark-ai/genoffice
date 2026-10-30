@@ -107,6 +107,10 @@ pub enum Command {
     UpdateExternalLinks {
         path: PathBuf,
     },
+    #[serde(rename_all = "camelCase")]
+    ListExternalLinks {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -521,7 +525,12 @@ pub fn handle_request(
             // longer can.
             let in_flight_cancelled = in_flight.flag();
             sessions
-                .open_with_locale(&path, &locale, short_date_format.as_deref(), &in_flight_cancelled)
+                .open_with_locale(
+                    &path,
+                    &locale,
+                    short_date_format.as_deref(),
+                    &in_flight_cancelled,
+                )
                 .and_then(to_json_value)
         }
         Command::ReadRange {
@@ -619,6 +628,9 @@ pub fn handle_request(
         }
         Command::UpdateExternalLinks { path } => {
             crate::external_links::update_external_link_values(&path).and_then(to_json_value)
+        }
+        Command::ListExternalLinks { path } => {
+            crate::external_links::list_external_link_statuses(&path).and_then(to_json_value)
         }
     };
     Some(match result {

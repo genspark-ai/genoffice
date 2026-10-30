@@ -51,6 +51,33 @@ pub struct ExternalLinkStatus {
     pub sheet_names: Vec<String>,
 }
 
+/// One `[n]` link as the read-only listing carries it. Deliberately no
+/// `reachable`: opening a workbook (and its links panel) must not probe the
+/// targets on disk — a network share can block for seconds if it is gone —
+/// so reachability is answered only by the explicit update.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalLinkListStatus {
+    pub index: usize,
+    pub raw_target: String,
+    /// The resolved local path when the target names one; `None` for schemes
+    /// the sidecar cannot read.
+    pub source: Option<String>,
+    pub sheet_names: Vec<String>,
+}
+
+/// The kind of an external-formula cell's value, so a host can write the
+/// cache with the right XML type: a boolean result belongs in `t="b"`, an
+/// error in `t="e"`, not in a text cache that spells TRUE or #DIV/0!.
+#[derive(serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ExternalLinkCellKind {
+    Number,
+    Text,
+    Boolean,
+    Error,
+}
+
 /// One external-formula cell of the report, exactly one entry per
 /// external-formula cell of the workbook: its freshly computed value when
 /// every link it references was reachable and inlinable, its cached value
@@ -67,6 +94,9 @@ pub struct ExternalLinkCell {
     pub column: u32,
     pub formatted: String,
     pub number: Option<f64>,
+    /// The value's kind; `None` when there is no usable value (a formula cell
+    /// the file never cached cannot be written as one).
+    pub kind: Option<ExternalLinkCellKind>,
     pub formula: String,
 }
 
@@ -91,13 +121,27 @@ impl LinkEntry {
         ExternalLinkStatus {
             index: self.index,
             raw_target: self.raw_target.clone(),
-            source: self
-                .source
-                .as_ref()
-                .map(|path| path.to_string_lossy().into_owned()),
+            source: self.source_text(),
             reachable: self.reachable(),
             sheet_names: self.sheet_names.clone(),
         }
+    }
+
+    /// The listing's shape: everything but reachability, which needs a disk
+    /// probe the open path must not pay for.
+    fn read_status(&self) -> ExternalLinkListStatus {
+        ExternalLinkListStatus {
+            index: self.index,
+            raw_target: self.raw_target.clone(),
+            source: self.source_text(),
+            sheet_names: self.sheet_names.clone(),
+        }
+    }
+
+    fn source_text(&self) -> Option<String> {
+        self.source
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
     }
 
     fn reachable(&self) -> bool {
@@ -320,6 +364,18 @@ fn join_package_path(base: &str, target: &str) -> String {
     format!("{base}/{target}")
 }
 
+/// The link list without touching any source: no `is_file()` on the targets,
+/// nothing is opened, nothing is evaluated. This is what the editor's links
+/// panel reads when it opens; the explicit update answers reachability.
+pub(crate) fn list_external_link_statuses(
+    workbook: &Path,
+) -> Result<Vec<ExternalLinkListStatus>, SidecarError> {
+    Ok(parse_external_links(workbook)?
+        .iter()
+        .map(LinkEntry::read_status)
+        .collect())
+}
+
 /// Computes fresh values for every external-formula cell against the reachable
 /// sources. The workbook is never written here — the caller carries the
 /// returned values into the save pipeline as cached `<v>`s, formulas intact.
@@ -392,15 +448,16 @@ pub(crate) fn update_external_link_values(
     let mut cells: Vec<ExternalLinkCell> = Vec::new();
     for (sheet, row, column, text, cached) in &pending {
         let rewritten_now = rewritten.contains(&(*sheet, *row, *column));
-        let (formatted, number) = if rewritten_now {
+        let (formatted, number, kind) = if rewritten_now {
             (
                 model
                     .get_formatted_cell_value(*sheet, *row, *column)
                     .unwrap_or_default(),
                 raw_number(&model, *sheet, *row, *column),
+                Some(cell_kind(&model, *sheet, *row, *column)),
             )
         } else {
-            (cached.formatted(), cached.number())
+            (cached.formatted(), cached.number(), cached.kind())
         };
         cells.push(ExternalLinkCell {
             sheet: model.workbook.worksheets[*sheet as usize].name.clone(),
@@ -408,6 +465,7 @@ pub(crate) fn update_external_link_values(
             column: (*column - 1) as u32,
             formatted,
             number,
+            kind,
             formula: text.clone(),
         });
     }
@@ -434,6 +492,7 @@ enum CachedValue {
     Number(f64),
     Text(String),
     Bool(bool),
+    Error(String),
     Missing,
 }
 
@@ -443,6 +502,8 @@ impl CachedValue {
             FormulaValue::Number(number) => CachedValue::Number(*number),
             FormulaValue::Text(text) => CachedValue::Text(text.clone()),
             FormulaValue::Boolean(flag) => CachedValue::Bool(*flag),
+            // the cached error's own spelling: #DIV/0!, #N/A, …
+            FormulaValue::Error { ei, .. } => CachedValue::Error(ei.to_string()),
             _ => CachedValue::Missing,
         }
     }
@@ -454,6 +515,18 @@ impl CachedValue {
         }
     }
 
+    /// The kind a host needs to write this cache with the right XML type;
+    /// `None` for a cell with no usable cache.
+    fn kind(&self) -> Option<ExternalLinkCellKind> {
+        match self {
+            CachedValue::Number(_) => Some(ExternalLinkCellKind::Number),
+            CachedValue::Text(_) => Some(ExternalLinkCellKind::Text),
+            CachedValue::Bool(_) => Some(ExternalLinkCellKind::Boolean),
+            CachedValue::Error(_) => Some(ExternalLinkCellKind::Error),
+            CachedValue::Missing => None,
+        }
+    }
+
     /// A skipped cell's report value: the file's own cache, spelled the way
     /// the model carries it — numbers bare, text as the string itself.
     fn formatted(&self) -> String {
@@ -462,8 +535,22 @@ impl CachedValue {
             CachedValue::Text(text) => text.clone(),
             CachedValue::Bool(true) => "TRUE".into(),
             CachedValue::Bool(false) => "FALSE".into(),
+            CachedValue::Error(text) => text.clone(),
             CachedValue::Missing => String::new(),
         }
+    }
+}
+
+/// The kind of a rewritten (live) cell's value, from the model's own cell type.
+fn cell_kind(model: &Model, sheet: u32, row: i32, column: i32) -> ExternalLinkCellKind {
+    match model.get_cell_type(sheet, row, column) {
+        Ok(CellType::Number) => ExternalLinkCellKind::Number,
+        Ok(CellType::LogicalValue) => ExternalLinkCellKind::Boolean,
+        Ok(CellType::ErrorValue) => ExternalLinkCellKind::Error,
+        Ok(CellType::Text) => ExternalLinkCellKind::Text,
+        // arrays/compound data have no per-cell cache of their own; their
+        // formatted text is the value a host can write
+        _ => ExternalLinkCellKind::Text,
     }
 }
 
@@ -1103,6 +1190,130 @@ mod tests {
         // the live `[1]Sheet1!A1` inlines
         let literal = cell_of(&report, "[1]Sheet1!A1&\"[1]Sheet1!A2\"");
         assert_eq!(literal.formatted, "10[1]Sheet1!A2");
+    }
+
+    /// The dependent workbook with one link and four formula cells covering
+    /// the report's value kinds: a number, a text, a boolean and an error.
+    fn write_kind_dependent_fixture(path: &Path, target: &str) {
+        let entries: [(&str, &str); 7] = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><externalReferences><externalReference r:id="rId3"/></externalReferences></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+            (
+                "xl/externalLinks/externalLink1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames></externalBook></externalLink>"#,
+            ),
+            (
+                "xl/externalLinks/_rels/externalLink1.xml.rels",
+                &format!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="{target}" TargetMode="External"/></Relationships>"#
+                ),
+            ),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        // the four kind cells are package-internal, so they are written here
+        // instead of in the array above
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
+        writer
+            .write_all(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:D1"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>20</v></c><c r="B1" t="str"><f>[1]Sheet1!A1&amp;"!"</f><v>10!</v></c><c r="C1" t="b"><f>[1]Sheet1!A1&gt;5</f><v>1</v></c><c r="D1" t="e"><f>[1]Sheet1!A1/0</f><v>#DIV/0!</v></c></row></sheetData></worksheet>"#
+                    .as_bytes(),
+            )
+            .unwrap();
+        writer.finish().unwrap();
+    }
+
+    /// The read path lists link identity only: the listing never asks the
+    /// disk about the target and its JSON carries no reachability flag, so
+    /// opening the links panel cannot block on a dead network share.
+    #[test]
+    fn read_lists_links_without_probing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        write_dependent_fixture(&path, "gone.xlsx");
+        let links = list_external_link_statuses(&path).unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].index, 1);
+        assert_eq!(links[0].raw_target, "gone.xlsx");
+        assert!(links[0].source.as_deref().unwrap().ends_with("gone.xlsx"));
+        assert_eq!(links[0].sheet_names, vec!["Sheet1", "Missing Sheet"]);
+        let json = serde_json::to_value(&links).unwrap();
+        assert!(
+            json[0].get("reachable").is_none(),
+            "the listing must not answer reachability: {json}"
+        );
+        // a file:/// target resolves without being opened
+        write_dependent_fixture(&path, "file:///Users/me/source.xlsx");
+        let links = list_external_link_statuses(&path).unwrap();
+        assert_eq!(links[0].source.as_deref(), Some("/Users/me/source.xlsx"));
+    }
+
+    /// Live values report their kind so the host caches booleans and errors
+    /// with t="b" / t="e" instead of spelling them as text.
+    #[test]
+    fn update_reports_live_value_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        write_source_fixture(&dir.path().join("source.xlsx"));
+        let path = dir.path().join("book.xlsx");
+        write_kind_dependent_fixture(&path, "source.xlsx");
+        let report = update_external_link_values(&path).unwrap();
+        let number = cell_of(&report, "[1]Sheet1!A1*2");
+        assert_eq!(number.kind, Some(ExternalLinkCellKind::Number));
+        assert_eq!(number.formatted, "20");
+        let text = cell_of(&report, "[1]Sheet1!A1&\"!\"");
+        assert_eq!(text.kind, Some(ExternalLinkCellKind::Text));
+        assert_eq!(text.formatted, "10!");
+        let boolean = cell_of(&report, "[1]Sheet1!A1>5");
+        assert_eq!(boolean.kind, Some(ExternalLinkCellKind::Boolean));
+        let error = cell_of(&report, "[1]Sheet1!A1/0");
+        assert_eq!(error.kind, Some(ExternalLinkCellKind::Error));
+        assert_eq!(error.formatted, "#DIV/0!");
+    }
+
+    /// A skipped cell (unreachable source) keeps its kind from the file's
+    /// own cache, so the panel applies the cached boolean/error unchanged.
+    #[test]
+    fn update_reports_cached_value_kinds_when_the_source_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        write_kind_dependent_fixture(&path, "gone.xlsx");
+        let report = update_external_link_values(&path).unwrap();
+        assert!(!report.links[0].reachable);
+        let number = cell_of(&report, "[1]Sheet1!A1*2");
+        assert_eq!(number.kind, Some(ExternalLinkCellKind::Number));
+        let text = cell_of(&report, "[1]Sheet1!A1&\"!\"");
+        assert_eq!(text.kind, Some(ExternalLinkCellKind::Text));
+        let boolean = cell_of(&report, "[1]Sheet1!A1>5");
+        assert_eq!(boolean.kind, Some(ExternalLinkCellKind::Boolean));
+        assert_eq!(boolean.formatted, "TRUE");
+        let error = cell_of(&report, "[1]Sheet1!A1/0");
+        assert_eq!(error.kind, Some(ExternalLinkCellKind::Error));
+        assert_eq!(error.formatted, "#DIV/0!");
     }
 
     /// Path resolution, Excel-style: file URIs, UNC spellings, drive paths
