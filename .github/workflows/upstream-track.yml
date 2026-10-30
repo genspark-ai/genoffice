@@ -1,0 +1,84 @@
+name: Upstream track
+
+# Drift alarm for this fork: once a day, trial-merge genspark-ai/genoffice's
+# main into HEAD with `git merge-tree --write-tree` (in-core — the working
+# tree is never touched). A clean merge stays green; a conflict turns the job
+# red and opens (or comments on, when one is already open) a single tracking
+# issue with the conflicted file list, so upstream drift is never silent.
+
+on:
+  schedule:
+    # 03:43 UTC daily — GitHub cron is UTC, off the top-of-the-hour stampede
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-track
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  merge-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/genspark-ai/genoffice.git
+          git fetch upstream main
+
+      # merge-tree --write-tree exits 0 on a clean merge, non-zero on conflicts.
+      # Stdout on conflict: the result tree OID, then one
+      # `<mode> <oid> <stage>\t<path>` line per conflicted stage entry, then the
+      # human-readable conflict messages — the middle section is the file list.
+      - name: Trial-merge upstream/main
+        id: merge
+        run: |
+          status=0
+          output=$(git merge-tree --write-tree HEAD upstream/main 2>&1) || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "upstream/main merges cleanly into HEAD"
+            exit 0
+          fi
+          conflicts=$(printf '%s\n' "$output" | grep -E '^[0-9]{6} [0-9a-f]{40} [0-9]\s' | cut -f2- | sort -u || true)
+          echo "upstream/main does NOT merge cleanly into HEAD (exit $status)"
+          echo "conflicted files:"
+          printf '%s\n' "$conflicts"
+          {
+            echo 'conflicts<<EOF'
+            printf '%s\n' "$conflicts"
+            echo 'EOF'
+            echo 'raw<<EOF'
+            printf '%s\n' "$output" | tail -50
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          exit 1
+
+      # Only the trial merge's failure opens an issue — a checkout/fetch flake
+      # stays a plain red run instead of filing a misleading conflict report.
+      - name: Open or update the conflict tracking issue
+        if: failure() && steps.merge.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
+          RAW: ${{ steps.merge.outputs.raw }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="upstream merge conflict with genspark-ai/genoffice"
+          body=$(printf 'upstream/main no longer merges cleanly into HEAD of this fork.\n\nConflicted files:\n```\n%s\n```\n\ngit merge-tree output (tail):\n```\n%s\n```\n\nRun: %s\n' "$CONFLICTS" "$RAW" "$RUN_URL")
+          existing=$(gh issue list --state open --search '"upstream merge conflict" in:title' --json number --limit 1 --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "commenting on existing issue #$existing"
+            gh issue comment "$existing" --body "$body"
+          else
+            echo "creating a new issue"
+            gh issue create --title "$title" --body "$body"
+          fi
