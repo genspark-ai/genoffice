@@ -10,6 +10,12 @@ Bunu yapacağınız yer **Ayarlar ▸ Tümleştirmeler**'dir. Bölmenin iki yar�
 
 **MCP.** İki yol sunulur: **Yardımcı tarafından başlatılan (önerilen)**, burada gösterilen yapılandırmayı istemcinize eklersiniz ve sunucuyu yardımcı kendisi başlatır; ve uygulamanın sizin için çalıştırdığı **Yerel HTTP sunucusu**. Her iki durumda da yardımcı sonunda GenOffice ile konuşur ve siz hiçbir zaman komut yazmazsınız.
 
+**Deneyin** Asistanınızda yeni bir sohbet açın ve düz sözcüklerle isteyin, örneğin:
+
+- “~/Downloads/report.md dosyasını Word belgesine dönüştür”
+- “3. çeyrek sonuçlarımız hakkında 6 slaytlık bir sunu hazırla”
+- “budget.xlsx dosyasını PDF’e dönüştür ve GenOffice’te aç”
+
 ## Komut satırından kaydetme
 
 Aynı şey bir terminalden — bu gelişmiş yoldur ve aracı, bölmenin bulamayacağı bir yerde yaşıyorsa başvurulacak yoldur:

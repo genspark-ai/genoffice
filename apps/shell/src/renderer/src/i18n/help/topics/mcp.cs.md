@@ -10,6 +10,12 @@ Uděláte to v **Nastavení ▸ Integrace**. Panel má dvě poloviny a můžete 
 
 **MCP.** Nabízí se dvě cesta: **Spouští asistent (doporučeno)** — tam přidáte zobrazenou konfiguraci do svého klienta a asistent server spustí sám — a **Místní HTTP server**, který spustí aplikace za vás. Tak či onak nakonec asistent mluví s GenOffice a vy nikdy nenapíšete příkaz.
 
+**Vyzkoušejte** Otevřete v asistentovi nový chat a požádejte běžnými slovy, například:
+
+- “Převeď ~/Downloads/report.md na dokument Word”
+- “Udělej prezentaci o 6 snímcích o našich výsledcích za 3. čtvrtletí”
+- “Převeď budget.xlsx do PDF a otevři ho v GenOffice”
+
 ## Registrace z příkazového řádku
 
 Totéž z terminálu — to je pokročilá cesta, po které sáhnete, když je agent tam, kde panel nemůže najít:

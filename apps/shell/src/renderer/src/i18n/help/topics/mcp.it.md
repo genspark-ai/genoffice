@@ -10,6 +10,12 @@ GenOffice parla il Model Context Protocol, così un agente di programmazione pu�
 
 **MCP.** Sono offerti due percorsi: **Avviato dall'assistente (consigliato)**, dove aggiungi la configurazione mostrata al tuo client e l'assistente avvia da solo il server, e il **Server HTTP locale**, che l'app esegue al posto tuo. In entrambi i casi l'assistente finisce per parlare con GenOffice e tu non digiti mai un comando.
 
+**Provalo** Apri una nuova chat nel tuo assistente e chiedi con parole semplici, ad esempio:
+
+- “Trasforma ~/Downloads/report.md in un documento Word”
+- “Prepara una presentazione di 6 slide sui nostri risultati del terzo trimestre”
+- “Converti budget.xlsx in PDF e aprilo in GenOffice”
+
 ## Registrarlo dalla riga di comando
 
 La stessa cosa da un terminale: questo è il percorso avanzato, quello da usare quando l'agente si trova dove il pannello non può cercarlo:

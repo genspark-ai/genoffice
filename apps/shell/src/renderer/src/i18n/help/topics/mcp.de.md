@@ -10,6 +10,12 @@ GenOffice spricht das Model Context Protocol: Ein Coding-Agent kann Ihre Dokumen
 
 **MCP.** Zwei Wege stehen bereit: **Vom Assistenten gestartet (empfohlen)** — dort tragen Sie die angezeigte Konfiguration in Ihren Client ein, und der Assistent startet den Server selbst —, und **Lokaler HTTP-Server**, den die App für Sie betreibt. So oder so redet der Assistent am Ende mit GenOffice, und Sie tippen nie einen Befehl.
 
+**Ausprobieren** Öffnen Sie einen neuen Chat in Ihrem Assistenten und fragen Sie in normalen Worten, zum Beispiel:
+
+- “Mach aus ~/Downloads/report.md ein Word-Dokument”
+- “Erstelle eine Präsentation mit 6 Folien zu unseren Q3-Ergebnissen”
+- “Wandle budget.xlsx in PDF um und öffne es in GenOffice”
+
 ## Über die Kommandozeile einrichten
 
 Dasselbe aus einem Terminal — das ist der fortgeschrittene Weg, und der richtige, wenn der Agent dort liegt, wo der Bereich ihn nicht findet:
