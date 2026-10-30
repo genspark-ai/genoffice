@@ -251,6 +251,9 @@ export const fr: Dict = {
   setLoginItem: 'Lancer à la connexion',
   setLoginItemDesc:
     'Lance GenOffice à la connexion, avec l’icône de barre d’état et le raccourci global disponibles. Non pris en charge sous Linux : l’interrupteur reste désactivé.',
+  setCloseToTray: 'Rester en tâche de fond',
+  setCloseToTrayDesc:
+    'Après la fermeture de la dernière fenêtre, l’application continue de tourner ; le menu de la barre des tâches ou le raccourci global la rappelle. Quittez depuis le menu de la barre pour tout arrêter.',
   setGlobalHotkey: 'Raccourci global',
   setGlobalHotkeyDesc: 'Affiche la palette de commandes de l’accueil depuis n’importe où.',
   setGlobalHotkeyAccelerator: 'Touches du raccourci',

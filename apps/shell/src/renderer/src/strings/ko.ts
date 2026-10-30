@@ -242,6 +242,9 @@ export const ko: Dict = {
   setLoginItem: '로그인 시 자동 실행',
   setLoginItemDesc:
     '로그인할 때 GenOffice를 실행하여 트레이 아이콘과 전역 단축키를 사용할 수 있게 합니다. Linux에서는 지원하지 않아 스위치가 꺼져 있습니다.',
+  setCloseToTray: '닫은 후에도 계속 실행',
+  setCloseToTrayDesc:
+    '마지막 창을 닫아도 앱이 계속 실행되며 트레이나 전역 단축키로 언제든 다시 불러올 수 있습니다. 완전히 종료하려면 트레이 메뉴의 종료를 사용하세요.',
   setGlobalHotkey: '전역 단축키',
   setGlobalHotkeyDesc: '어디서든 홈 명령 팔레트를 불러냅니다.',
   setGlobalHotkeyAccelerator: '단축키 조합',

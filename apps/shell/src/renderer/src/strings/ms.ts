@@ -239,6 +239,9 @@ export const ms: Dict = {
   setLoginItem: 'Lancar semasa log masuk',
   setLoginItemDesc:
     'Menjalankan GenOffice apabila anda log masuk, dengan ikon dulang dan pintasan global tersedia. Tidak disokong pada Linux; suis kekal mati.',
+  setCloseToTray: 'Kekal berjalan selepas tutup',
+  setCloseToTrayDesc:
+    'Selepas tetingkap terakhir ditutup, aplikasi terus berjalan; menu tray atau pintasan global memanggilnya semula. Untuk keluar sepenuhnya gunakan «Keluar» pada menu tray.',
   setGlobalHotkey: 'Pintasan global',
   setGlobalHotkeyDesc: 'Memanggil palet perintah Laman Utama dari mana-mana sahaja.',
   setGlobalHotkeyAccelerator: 'Kekunci pintasan',

@@ -248,6 +248,9 @@ export const id: Dict = {
   setLoginItem: 'Buka saat masuk',
   setLoginItemDesc:
     'Menjalankan GenOffice saat Anda masuk, dengan ikon baki dan pintasan global tetap tersedia. Tidak didukung di Linux; sakelar tetap nonaktif.',
+  setCloseToTray: 'Tetap berjalan setelah ditutup',
+  setCloseToTrayDesc:
+    'Setelah jendela terakhir ditutup aplikasi tetap berjalan; menu baki atau pintasan global memanggilnya kembali. Untuk keluar sepenuhnya gunakan «Keluar» di menu baki.',
   setGlobalHotkey: 'Pintasan global',
   setGlobalHotkeyDesc: 'Memanggil palet perintah Beranda dari mana saja.',
   setGlobalHotkeyAccelerator: 'Tombol pintasan',

@@ -239,6 +239,9 @@ export const nl: Dict = {
   setLoginItem: 'Starten bij aanmelden',
   setLoginItemDesc:
     'Start GenOffice wanneer je je aanmeldt, met het systeemvakpictogram en de globale sneltoets beschikbaar. Niet ondersteund op Linux; de schakelaar blijft uit.',
+  setCloseToTray: 'Actief blijven na sluiten',
+  setCloseToTrayDesc:
+    'Na het sluiten van het laatste venster draait de app door; het systeemvakmenu of de globale sneltoets haalt hem terug. Gebruik «Afsluiten» in het systeemvakmenu om helemaal te stoppen.',
   setGlobalHotkey: 'Globale sneltoets',
   setGlobalHotkeyDesc: 'Roept het opdrachtenpalet van Home overal op.',
   setGlobalHotkeyAccelerator: 'Sneltoetscombinatie',

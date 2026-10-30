@@ -234,6 +234,9 @@ export const zh = {
   setLoginItem: '开机自动启动',
   setLoginItemDesc:
     '登录系统后自动运行 GenOffice，托盘图标与全局快捷键保持可用。Linux 暂不支持，开关不可用。',
+  setCloseToTray: '关闭后驻留托盘',
+  setCloseToTrayDesc:
+    '最后一个窗口关闭后应用继续在后台运行，托盘或全局快捷键随时唤回；要彻底退出请使用托盘菜单的“退出”。',
   setGlobalHotkey: '全局快捷键',
   setGlobalHotkeyDesc: '按下后回到首页并打开命令面板。',
   setGlobalHotkeyAccelerator: '快捷键组合',

@@ -504,6 +504,12 @@ const homeApi: HomeApi = {
       enabled,
     )) as SystemPresenceSettings
   },
+  async setCloseToTray(enabled) {
+    return (await ipcRenderer.invoke(
+      HOME_CHANNELS.systemPresenceSetCloseToTray,
+      enabled,
+    )) as SystemPresenceSettings
+  },
   async setGlobalHotkey(patch) {
     return (await ipcRenderer.invoke(
       HOME_CHANNELS.systemPresenceSetHotkey,

@@ -463,6 +463,9 @@ export const cs: Dict = {
   setLoginItem: 'Spustit při přihlášení',
   setLoginItemDesc:
     'Spustí GenOffice při přihlášení, aby byly k dispozici ikona v oznamovací oblasti a globální zkratka. Na Linuxu není podporováno, přepínač zůstává vypnutý.',
+  setCloseToTray: 'Po zavření zůstat spuštěné',
+  setCloseToTrayDesc:
+    'Po zavření posledního okna aplikace běží dál; z nabídky v systémové liště nebo globální zkratkou ji kdykoli vyvoláte. K úplnému ukončení použijte „Ukončit“ v nabídce lišty.',
   setGlobalHotkey: 'Globální zkratka',
   setGlobalHotkeyDesc: 'Vyvolá paletu příkazů domovské stránky odkudkoli.',
   setGlobalHotkeyAccelerator: 'Klávesy zkratky',

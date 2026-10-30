@@ -301,6 +301,7 @@ describe('installSystemPresence', () => {
     const { presence } = makePresence()
     const next = presence.applyPrefs({
       loginItem: true,
+      closeToTray: false,
       hotkeyEnabled: true,
       hotkeyAccelerator: 'Control+Shift+K',
     })
@@ -310,9 +311,50 @@ describe('installSystemPresence', () => {
     const onDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
     expect(onDisk[SYSTEM_PRESENCE_KEY]).toEqual({
       loginItem: true,
+      closeToTray: false,
       hotkeyEnabled: true,
       hotkeyAccelerator: 'Control+Shift+K',
     })
+    presence.dispose()
+  })
+
+  it('close-to-tray defaults per platform and normalizes like every other pref', () => {
+    expect(DEFAULT_SYSTEM_PRESENCE_PREFS.closeToTray).toBe(process.platform !== 'darwin')
+    writeFileSync(settingsPath, JSON.stringify({ [SYSTEM_PRESENCE_KEY]: { closeToTray: false } }))
+    const { presence } = makePresence()
+    // a stored false survives; the other prefs fall back to their defaults
+    expect(presence.settings().closeToTray).toBe(false)
+    // unknown shapes fall back to the default rather than guessing
+    expect(normalizeSystemPresencePrefs({ closeToTray: 'yes' }).closeToTray).toBe(
+      DEFAULT_SYSTEM_PRESENCE_PREFS.closeToTray,
+    )
+    presence.dispose()
+  })
+
+  it('the close-to-tray IPC validates, persists and answers the effective snapshot', async () => {
+    const { presence } = makePresence()
+    registerSystemPresenceIpc(() => presence)
+    await expect(invoke(HOME_CHANNELS.systemPresenceSetCloseToTray, 'yes')).rejects.toThrow(
+      /must be a boolean/,
+    )
+    const after = (await invoke(HOME_CHANNELS.systemPresenceSetCloseToTray, false)) as ReturnType<
+      typeof presence.settings
+    >
+    expect(after.closeToTray).toBe(false)
+    expect(after.closeToTraySupported).toBe(process.platform !== 'darwin')
+    const onDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
+    expect((onDisk[SYSTEM_PRESENCE_KEY] as { closeToTray: boolean }).closeToTray).toBe(false)
+    presence.dispose()
+  })
+
+  it('toggling the login item or the hotkey carries close-to-tray through untouched', () => {
+    const { presence } = makePresence()
+    registerSystemPresenceIpc(() => presence)
+    const before = presence.settings()
+    invoke(HOME_CHANNELS.systemPresenceSetLoginItem, !before.loginItem)
+    invoke(HOME_CHANNELS.systemPresenceSetHotkey, { accelerator: 'Alt+P' })
+    // neither handler rebuilds the prefs from partials and drops the field
+    expect(presence.settings().closeToTray).toBe(before.closeToTray)
     presence.dispose()
   })
 

@@ -246,6 +246,9 @@ export const ja: Dict = {
   setLoginItem: 'ログイン時に起動',
   setLoginItemDesc:
     'サインイン時に GenOffice を起動し、トレイアイコンとグローバルショートカットを有効にします。Linux では未対応のためオフのままです。',
+  setCloseToTray: '閉じた後も常駐',
+  setCloseToTrayDesc:
+    '最後のウィンドウを閉じてもアプリは動作を続け、トレイやグローバルショートカットでいつでも呼び戻せます。完全に終了するにはトレイメニューの「終了」を使います。',
   setGlobalHotkey: 'グローバルショートカット',
   setGlobalHotkeyDesc: 'どこからでもホームのコマンドパレットを呼び出します。',
   setGlobalHotkeyAccelerator: 'ショートカットキー',

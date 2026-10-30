@@ -6259,7 +6259,14 @@ app.on('window-all-closed', () => {
   // A headless export destroys its hidden window between documents; only
   // runHeadlessExportEntry decides when that run is over.
   if (headlessArgv.kind !== 'none') return
-  if (process.platform !== 'darwin') app.quit()
+  // close-to-tray: the tray and the global hotkey keep the app alive and either
+  // reopens the window (charter Gate B — reachable on every platform now);
+  // a missing presence means no tray and no hotkey, so there is no way back
+  // and quitting stays the only sane default. macOS outlives its windows by
+  // convention (see 'activate'), so the pref is a no-op there.
+  if (process.platform !== 'darwin' && !(systemPresence?.settings().closeToTray ?? false)) {
+    app.quit()
+  }
 })
 
 app.on('before-quit', () => {

@@ -236,6 +236,9 @@ export const en: Dict = {
   setLoginItem: 'Launch at login',
   setLoginItemDesc:
     'Run GenOffice when you sign in, keeping the tray icon and global shortcut available. Not supported on Linux, where the switch stays off.',
+  setCloseToTray: 'Keep running after close',
+  setCloseToTrayDesc:
+    'With the last window closed the app keeps running; the tray menu or the global shortcut brings it back. Use the tray menu to quit for good.',
   setGlobalHotkey: 'Global shortcut',
   setGlobalHotkeyDesc: 'Summons the Home command palette from anywhere.',
   setGlobalHotkeyAccelerator: 'Shortcut keys',

@@ -32,6 +32,13 @@ export interface SystemPresencePrefs {
   hotkeyEnabled: boolean
   /** Electron accelerator, e.g. 'CommandOrControl+Shift+Space' */
   hotkeyAccelerator: string
+  /**
+   * Keep running after the last window closes (Windows/Linux): the tray and
+   * the global hotkey stay live and either one reopens the app. macOS keeps
+   * running by convention, so the pref does nothing there — see
+   * closeToTraySupported in the settings snapshot.
+   */
+  closeToTray: boolean
 }
 
 export const DEFAULT_SYSTEM_PRESENCE_PREFS: SystemPresencePrefs = {
@@ -41,6 +48,9 @@ export const DEFAULT_SYSTEM_PRESENCE_PREFS: SystemPresencePrefs = {
   // in macOS text fields (also Raycast's default) — a modifier-heavy combo
   // nobody else claims is the safer default
   hotkeyAccelerator: 'CommandOrControl+Shift+Space',
+  // off on macOS only: window-all-closed never quits there, so the pref would
+  // be a toggle that changes nothing
+  closeToTray: process.platform !== 'darwin',
 }
 
 /** a stored accelerator can be longish, never arbitrary text */
@@ -91,6 +101,7 @@ export function normalizeSystemPresencePrefs(raw: unknown): SystemPresencePrefs 
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return prefs
   const source = raw as Record<string, unknown>
   if (typeof source.loginItem === 'boolean') prefs.loginItem = source.loginItem
+  if (typeof source.closeToTray === 'boolean') prefs.closeToTray = source.closeToTray
   if (typeof source.hotkeyEnabled === 'boolean') prefs.hotkeyEnabled = source.hotkeyEnabled
   if (isAcceleratorLike(source.hotkeyAccelerator)) {
     prefs.hotkeyAccelerator = source.hotkeyAccelerator.trim()
@@ -404,6 +415,10 @@ export function installSystemPresence(deps: SystemPresenceDeps): SystemPresence 
     hotkey: { enabled: prefs.hotkeyEnabled, accelerator: prefs.hotkeyAccelerator },
     hotkeyActive,
     loginItemSupported,
+    closeToTray: prefs.closeToTray,
+    // false on macOS: the app already outlives its windows there, so there is
+    // no behavior for the setting to drive and the toggle stays hidden
+    closeToTraySupported: process.platform !== 'darwin',
   })
 
   return {
@@ -460,6 +475,25 @@ export function registerSystemPresenceIpc(presence: () => SystemPresence | null)
       const current = p.settings()
       return p.applyPrefs({
         loginItem: raw,
+        closeToTray: current.closeToTray,
+        hotkeyEnabled: current.hotkey.enabled,
+        hotkeyAccelerator: current.hotkey.accelerator,
+      })
+    },
+  )
+
+  ipcMain.handle(
+    HOME_CHANNELS.systemPresenceSetCloseToTray,
+    async (_event, raw: unknown): Promise<SystemPresenceSettings> => {
+      if (typeof raw !== 'boolean') {
+        throw new Error('the close-to-tray setting must be a boolean')
+      }
+      const p = presence()
+      if (!p) throw new Error('system presence is not available')
+      const current = p.settings()
+      return p.applyPrefs({
+        loginItem: current.loginItem,
+        closeToTray: raw,
         hotkeyEnabled: current.hotkey.enabled,
         hotkeyAccelerator: current.hotkey.accelerator,
       })
@@ -486,6 +520,7 @@ export function registerSystemPresenceIpc(presence: () => SystemPresence | null)
       const current = p.settings()
       return p.applyPrefs({
         loginItem: current.loginItem,
+        closeToTray: current.closeToTray,
         hotkeyEnabled: (patch.enabled as boolean | undefined) ?? current.hotkey.enabled,
         hotkeyAccelerator:
           typeof patch.accelerator === 'string'

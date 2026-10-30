@@ -236,6 +236,9 @@ export const vi: Dict = {
   setLoginItem: 'Khởi chạy khi đăng nhập',
   setLoginItemDesc:
     'Chạy GenOffice khi bạn đăng nhập, giữ biểu tượng khay và phím tắt toàn cục luôn sẵn sàng. Không hỗ trợ trên Linux; công tắc giữ nguyên tắt.',
+  setCloseToTray: 'Tiếp tục chạy sau khi đóng',
+  setCloseToTrayDesc:
+    'Sau khi đóng cửa sổ cuối cùng, ứng dụng vẫn chạy; menu khay hoặc phím tắt toàn cục gọi lại bất cứ lúc nào. Muốn thoát hẳn hãy dùng «Thoát» trong menu khay.',
   setGlobalHotkey: 'Phím tắt toàn cục',
   setGlobalHotkeyDesc: 'Gọi bảng lệnh của Trang chủ từ bất kỳ đâu.',
   setGlobalHotkeyAccelerator: 'Tổ hợp phím tắt',
