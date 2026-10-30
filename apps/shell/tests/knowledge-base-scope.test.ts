@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FileIndexStore } from '../src/main/file-index/store'
 import {
@@ -92,7 +92,7 @@ describe('listIndexedKnowledgeFiles', () => {
     // the starred file exists on disk and leads; the vanished one drops out;
     // the indexed copy of the starred path is not duplicated
     expect(list.map((f) => f.path)).toEqual([starred, '/idx/a.docx', '/idx/b.docx'])
-    expect(list[0]!.folder).toBe(dir.split('/').pop())
+    expect(list[0]!.folder).toBe(basename(dir))
   })
 
   it('honors the cap', () => {
