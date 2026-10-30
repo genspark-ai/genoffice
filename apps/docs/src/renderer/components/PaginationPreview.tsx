@@ -614,7 +614,10 @@ export function hoistPlan(wfs: FloatBox[]): { boxes: FloatBox[]; mixed: boolean 
 
 /** horizontal slot of a floating box's inline position (hoist CSS corrects each slot from column to page) */
 export function hoistSlotOf(f: { el: HTMLElement }): 'left' | 'center' | 'right' | null {
-  const st = f.el.getAttribute('style') ?? ''
+  // the float slot style (left/clamp/right) lives on the .box-rotator that
+  // owns the box, not on the box itself (same carrier lookup as absBoxes)
+  const carrier = f.el.parentElement?.classList.contains('box-rotator') ? f.el.parentElement : f.el
+  const st = carrier.getAttribute('style') ?? ''
   // a paper-edge X renders as calc(<px> - var(--doc-margin-left)), a column X
   // clamped onto the paper as clamp(<floor>, <px>, <cap>): both are left slots
   if (/(?:^|;)\s*left:\s*(?:calc\(|clamp\([^,]*,\s*)?-?[\d.]+px/.test(st)) return 'left'
@@ -858,7 +861,7 @@ export function hoistWindowCss(wins: ReadonlyMap<number, ReadonlySet<string>>): 
   for (const [pg, keys] of wins) {
     for (const key of keys) {
       const w = `.pv-page[data-pv-page="${pg}"] .pv-content[data-pv-win]:not([data-pv-win="${key}"]) [data-pv-hoist='1'][data-pin-win="${key}"]`
-      rules.push(`${w} > .doc-textbox,${w} > .doc-img-wrap{visibility:hidden;}`)
+      rules.push(`${w} > .doc-textbox,${w} > .box-rotator,${w} > .doc-img-wrap{visibility:hidden;}`)
     }
   }
   return rules.join('\n')
@@ -875,6 +878,7 @@ export function pinnedCloneCss(pageCount: number): string {
       // hoisted spill floats (data-pv-hoist wrappers): boxes escape the
       // pv-clip, so their ride-along copies need the same per-page hiding
       `.pv-page[data-pv-page="${i}"] [data-pv-hoist='1']:not([data-pin-page="${i}"]) > .doc-textbox,` +
+        `.pv-page[data-pv-page="${i}"] [data-pv-hoist='1']:not([data-pin-page="${i}"]) > .box-rotator,` +
         `.pv-page[data-pv-page="${i}"] [data-pv-hoist='1']:not([data-pin-page="${i}"]) > .doc-img-wrap{visibility:hidden;}`,
     )
   }
@@ -1277,7 +1281,10 @@ export function PaginationPreview({
         const wrapTop = el.getBoundingClientRect().top
         let top = Infinity
         let bottom = -Infinity
-        for (const box of el.querySelectorAll<HTMLElement>(':scope > .doc-textbox')) {
+        for (const box of el.querySelectorAll<HTMLElement>(
+          // a single shape's box is mirrored by the chrome rotator layer
+          ':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox',
+        )) {
           const r = box.getBoundingClientRect()
           const boxTop = paintTop + (r.top - wrapTop) / factor
           top = Math.min(top, boxTop)
@@ -1314,18 +1321,22 @@ export function PaginationPreview({
         if (!wrap) continue
         const boxes = Array.from(
           wrap.querySelectorAll<HTMLElement>(
-            ':scope > .doc-textbox, :scope > .doc-img-wrap, :scope .doc-inline-img-anchor > img',
+            ':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox, ' +
+              ':scope > .doc-img-wrap, :scope .doc-inline-img-anchor > img',
           ),
         )
         // static siblings (an inline drawing sharing the paragraph) neither
         // need the shared containing block nor ride the page-margin translate:
         // only absolutely positioned siblings gate the un-positioning; zero-height
-        // ones (degenerate guide lines) are invisible and not measured as floats
-        const absBoxes = boxes.filter(
-          (b) =>
-            /position:\s*absolute/.test(b.getAttribute('style') ?? '') &&
-            b.getBoundingClientRect().height > 0,
-        )
+        // ones (degenerate guide lines) are invisible and not measured as floats.
+        // A single shape's float slot sits on the chrome rotator above the box.
+        const absBoxes = boxes.filter((b) => {
+          const carrier = b.parentElement?.classList.contains('box-rotator') ? b.parentElement : b
+          return (
+            /position:\s*absolute/.test(carrier.getAttribute('style') ?? '') &&
+            b.getBoundingClientRect().height > 0
+          )
+        })
         if (absBoxes.length > 0 && absBoxes.every((b) => b.dataset.pageRelV === '1')) {
           wrap.dataset.pvPagerel = '1'
         } else {

@@ -202,6 +202,8 @@ export const de = {
   aiMindMapAskPrompt: 'Erzähl mir über „{label}“ in diesem Dokument',
   aiMindMapJump: 'Zur zitierten Stelle springen',
   aiMindMapExport: 'PNG exportieren',
+  aiMindMapExportSvg: 'SVG exportieren',
+  aiMindMapInsert: 'In Dokument einfügen',
   aiMindMapReset: 'Ansicht zurücksetzen',
   aiMindMapExpand: 'Zweig ausklappen',
   aiMindMapCollapse: 'Zweig einklappen',

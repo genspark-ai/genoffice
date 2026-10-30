@@ -131,7 +131,9 @@ export function measureBlocks(
       const anchorTop = (rect.top - origin - gapAccum) / zoomFactor + nudge
       const pinned = el.classList.contains('doc-protected-pagepinned')
       for (const box of Array.from(
-        el.querySelectorAll(':scope > .doc-textbox, :scope > .doc-img-wrap'),
+        el.querySelectorAll(
+          ':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox, :scope > .doc-img-wrap',
+        ),
       )) {
         const b = (box as HTMLElement).getBoundingClientRect()
         if (b.height <= 0) continue

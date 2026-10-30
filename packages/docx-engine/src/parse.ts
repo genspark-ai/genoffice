@@ -7284,6 +7284,25 @@ function hfTextBoxOfAnchor(anchor: XNode): HfTextBox {
   const cy = parseInt(ext['cy'] ?? '', 10)
   if (cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
   if (cy > 0) box.heightPx = Math.round(cy / EMU_PER_PX)
+  // the shape's own spPr carries the display transform and outline: the
+  // rotation and stroke the strip renderer draws (Word turns header shapes
+  // like body ones — a rotated banner must not read as a straight one)
+  const wsp = findChild(
+    findChild(findChild(anchor, 'a:graphic') ?? {}, 'a:graphicData') ?? {},
+    'wps:wsp',
+  )
+  const spPr = findChild(wsp ?? {}, 'wps:spPr')
+  if (spPr) {
+    const rot = parseInt(attrsOf(findChild(spPr, 'a:xfrm') ?? {})['rot'] ?? '', 10)
+    if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+    const ln = findChild(spPr, 'a:ln')
+    const lnW = parseInt(ln ? (attrsOf(ln)['w'] ?? '') : '', 10)
+    if (Number.isFinite(lnW) && lnW > 0) box.borderWidthPx = emuToPx(lnW)
+    const stroke = attrsOf(findChild(findChild(ln ?? {}, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})[
+      'val'
+    ]
+    if (stroke) box.borderColor = stroke
+  }
   for (const child of childrenOf(anchor)) {
     const wrap = /^wp:wrap(None|Square|Tight|Through|TopAndBottom)$/.exec(nameOf(child) ?? '')?.[1]
     if (wrap)
@@ -7336,6 +7355,20 @@ function hfTextBoxOfVml(shape: XNode): HfTextBox {
   if (wrap === 'none' || wrap === 'square' || wrap === 'tight' || wrap === 'through')
     box.wrap = wrap
   else if (wrap === 'topAndBottom') box.wrap = 'topBottom'
+  // the VML shape's own style carries the same display transform and stroke
+  // as a DrawingML spPr (legacy .doc conversions rotate banners this way);
+  // the shared helper normalizes the negative / 360+ and 1/65536-degree forms
+  const rot = vmlRotationDeg(style)
+  if (rot != null) box.rotDeg = rot
+  // stroke lives on the shape's attributes (style-attribute stroke props are a
+  // form Word does not write), gated like the body path: VML strokes default
+  // to on/black unless stroked="f" or a v:stroke child switches them off
+  const shapeAttrs = attrsOf(shape)
+  if (!vmlFlagOff(shapeAttrs['stroked']) && !vmlStrokeChildOff(shape)) {
+    box.borderColor = vmlColorHex(shapeAttrs['strokecolor']) ?? '000000'
+    const weight = vmlStrokeWeightPx(shapeAttrs['strokeweight'])
+    if (weight !== undefined) box.borderWidthPx = weight
+  }
   return box
 }
 

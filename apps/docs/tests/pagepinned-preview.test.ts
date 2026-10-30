@@ -116,6 +116,22 @@ describe('hoistSlotOf', () => {
     expect(hoistSlotOf(box('position:absolute;right:0px;top:2px'))).toBe('right')
     expect(hoistSlotOf(box('position:absolute;right:20px;top:2px'))).toBeNull()
   })
+
+  it('reads the slot off the owning .box-rotator when the box is wrapped', () => {
+    // the chrome rotator owns the float slot style; the box itself carries no
+    // left/clamp/right any more, so the carrier lookup decides the slot
+    const rotator = document.createElement('div')
+    rotator.className = 'box-rotator'
+    rotator.setAttribute('style', 'position:absolute;left:clamp(0px, 12.5px, 200px);top:3px')
+    const inner = document.createElement('span')
+    inner.className = 'doc-textbox'
+    inner.setAttribute('style', 'background-color:#fff;width:189px;height:40px')
+    rotator.appendChild(inner)
+    expect(hoistSlotOf({ el: inner })).toBe('left')
+
+    // a box without a rotator parent still classifies from its own style
+    expect(hoistSlotOf(box('position:absolute;left:12.5px;top:3px'))).toBe('left')
+  })
 })
 
 describe('hoistPaperClamp', () => {

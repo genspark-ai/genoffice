@@ -147,6 +147,14 @@ export const IconSignatures = () => (
     <path d="M9.2 11.8 L11.2 13.8 L15 9.9" />
   </Icon>
 )
+/** Document protection: a padlock */
+export const IconProtect = () => (
+  <Icon>
+    <rect x="5.5" y="10.5" width="13" height="8.5" rx="1.5" />
+    <path d="M8.5 10.5 V7.75 A3.5 3.5 0 0 1 15.5 7.75 V10.5" />
+    <path d="M12 13.75 V16.25" />
+  </Icon>
+)
 export const IconPreviousField = () => (
   <Icon>
     <rect x="6" y="4.5" width="12" height="15" rx="1.5" />

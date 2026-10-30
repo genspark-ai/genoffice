@@ -20,8 +20,17 @@ import {
   pageBorderStyleOf,
   rowFillAttrs,
   syncPageBorders,
+  syncFloatShifts,
 } from '../src/renderer/editor/pagination-gaps'
+import { measureBlocks } from '../src/renderer/pagination-measure'
 import { createLineRectsCache, singleCutCell } from '../src/renderer/pagination'
+import { Editor } from '@tiptap/core'
+import { NodeSelection } from '@tiptap/pm/state'
+import { buildShapeParagraphXml, parseDocx } from '@genoffice/docx-engine'
+import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { blocksToPmDoc } from '../src/renderer/editor/convert'
+import { editorExtensions } from '../src/renderer/editor/extensions'
+import { setFloatingWrap } from '../src/renderer/editor/floating-z-order'
 
 const rowOf = (cells: number): HTMLTableRowElement => {
   const tr = document.createElement('tr')
@@ -1008,5 +1017,68 @@ describe('canvasZoomOf', () => {
   })
   it('without a host the fallback stands', () => {
     expect(canvasZoomOf(null, 0.84)).toBe(0.84)
+  })
+})
+
+describe('a single shape rides the chrome rotator layer', () => {
+  const rect = (top: number, height: number): DOMRect =>
+    ({ top, height, bottom: top + height, left: 0, right: 100, width: 100 }) as DOMRect
+
+  it('syncFloatShifts parks the canvas display shift on the rotator', () => {
+    const pm = document.createElement('div')
+    const wrapper = document.createElement('div')
+    wrapper.className = 'doc-protected-floating'
+    const rotator = document.createElement('div')
+    rotator.className = 'box-rotator'
+    const box = document.createElement('div')
+    box.className = 'doc-textbox'
+    rotator.append(box)
+    wrapper.append(rotator)
+    pm.append(wrapper)
+    box.getBoundingClientRect = () => rect(50, 113)
+
+    // virtual top 100 under origin 0: the box paints 50 px too high
+    syncFloatShifts(pm, [{ el: box, top: 100 }], 0, 1)
+    expect(rotator.style.getPropertyValue('--page-float-dy')).toBe('50.0px')
+    // the box itself must stay unshifted inside the turning layer
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('')
+    expect(box.dataset.pageFloatDy).toBe('50')
+
+    // idempotent: with the shift applied the rect already includes it
+    box.getBoundingClientRect = () => rect(100, 113)
+    syncFloatShifts(pm, [{ el: box, top: 100 }], 0, 1)
+    expect(rotator.style.getPropertyValue('--page-float-dy')).toBe('50.0px')
+  })
+
+  it('measureBlocks finds the floating box nested under the rotator', async () => {
+    const shapeXml = buildShapeParagraphXml({ prst: 'rect', withTextbox: true, id: 42 }).replace(
+      '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>',
+      '<wp:positionH relativeFrom="column"><wp:posOffset>500000</wp:posOffset></wp:positionH>',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml: shapeXml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    let pos = -1
+    editor.state.doc.descendants((node, at) => {
+      if (pos === -1 && node.type.name === 'docProtected' && node.attrs.textboxes) pos = at
+      return true
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    setFloatingWrap(editor, 'front')
+    const wrapper = editor.view.nodeDOM(pos) as HTMLElement
+    const boxEl = wrapper.querySelector('.doc-textbox') as HTMLElement
+    expect(wrapper.classList.contains('doc-protected-floating')).toBe(true)
+    wrapper.getBoundingClientRect = () => rect(0, 0)
+    boxEl.getBoundingClientRect = () => rect(120, 113)
+
+    const measured = measureBlocks(editor.view.dom as HTMLElement, 0, 1)
+    const found = measured.floats.filter((f) => f.el === boxEl)
+    expect(found).toHaveLength(1)
+    expect(found[0].top).toBe(120)
+    expect(found[0].height).toBe(113)
+    editor.destroy()
   })
 })

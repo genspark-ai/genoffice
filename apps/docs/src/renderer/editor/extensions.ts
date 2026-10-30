@@ -207,6 +207,7 @@ import {
   renderTextboxSpec,
   runSpanSpecs,
   textboxBoxStyle,
+  textboxFloatPlacement,
   textboxIsFilled,
   wireChartEditing,
 } from './protected-render'
@@ -5133,7 +5134,7 @@ function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
  *  anchor's clearance; a paragraph-relative offset below the anchor top starts
  *  the float (and its exclusion) there — above it Word would clamp the box
  *  onto the page, which the flow cannot express */
-function sideWrappedBoxSpec(box: TextboxDisplay): DomSpec {
+function sideWrappedBoxSpec(box: TextboxDisplay, chrome = false): DomSpec {
   const px = (v: number) => `${v.toFixed(1)}px`
   const top = px(Math.max(0, (box.offsetYEmu ?? 0) / EMU_PER_PX))
   const edge = px(box.wrapEdgePx ?? 0)
@@ -5144,7 +5145,48 @@ function sideWrappedBoxSpec(box: TextboxDisplay): DomSpec {
   return [
     'div',
     { class: 'doc-textbox-side', style: `float:${box.wrapSide};margin:${margin}${shape}` },
-    renderTextboxSpec(box),
+    chrome
+      ? shapeRotatorSpec(box, renderTextboxSpec(box, { editorChrome: true }))
+      : renderTextboxSpec(box),
+  ]
+}
+
+/**
+ * Inline style of the chrome rotator: the box's float slot plus its paint rank
+ * and turn, so the rotator's own rect mirrors the shape. A floating box goes
+ * static inside it (its float slot moves up to the rotator); without the slot
+ * the rotator would collapse to the zero-size anchor point and the turn would
+ * orbit the column instead of the shape. An inline box sizes the rotator by
+ * flow, so its only style is the turn.
+ */
+function shapeRotatorStyle(box: TextboxDisplay): string {
+  const parts: string[] = []
+  if (box.floating) {
+    parts.push(textboxFloatPlacement(box))
+    // a static box cannot paint its own rank: the rotator carries it
+    if (box.behind) parts.push(`z-index:${Math.min(-1, -1000 + (box.z ?? 0))}`)
+    else if (box.z !== undefined) parts.push(`z-index:${Math.max(1, 2 + box.z)}`)
+  }
+  if (box.rotDeg) parts.push(`transform:rotate(${box.rotDeg}deg)`)
+  return parts.join(';')
+}
+
+/**
+ * The chrome layer of a single shape: a div that mirrors the box rect and
+ * carries the rotation transform (the box spec itself renders unturned in the
+ * editor), with the resize and rotate handles inside it — so selection frame,
+ * handles and shape all turn together, like Word's. The box's own transform
+ * still carries the rotation everywhere chrome-free (pagination preview,
+ * cells, HTML export), which is why the editor spec suppresses it.
+ */
+function shapeRotatorSpec(box: TextboxDisplay, boxSpec: DomSpec): DomSpec {
+  const style = shapeRotatorStyle(box)
+  return [
+    'div',
+    { class: 'box-rotator', ...(style ? { style } : {}) },
+    boxSpec,
+    ['span', { class: 'box-resize-handle', contenteditable: 'false' }],
+    ['span', { class: 'box-rotate-handle', contenteditable: 'false' }],
   ]
 }
 
@@ -5349,9 +5391,15 @@ function protectedDomSpec(node: PmNode): DomSpec {
         strayStyle = `transform:translate(${-dx}px,${-dy}px)`
       }
     }
+    // a single shape's chrome (selection handles) rides a rotator layer that
+    // carries the box's rotation, so the handles turn with the shape like
+    // Word's; multi-box nodes keep per-box autogrowth with no chrome
+    const singleBox = boxes.length === 1 && !diagram
     const children: DomSpec[] = sideBox
-      ? [sideWrappedBoxSpec(sideBox)]
-      : boxes.map((b) => renderTextboxSpec(b))
+      ? [sideWrappedBoxSpec(sideBox, singleBox)]
+      : singleBox
+        ? [shapeRotatorSpec(boxes[0], renderTextboxSpec(boxes[0], { editorChrome: true }))]
+        : boxes.map((b) => renderTextboxSpec(b))
     // the anchor paragraph's own text (e.g. a heading sharing its paragraph
     // with a sidebar box) renders as a display-only line before the boxes
     if (strayRuns?.length) {
@@ -5416,12 +5464,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
       } else children.unshift(['div', { class: 'doc-anchor-strut' }, ['br']])
     }
     if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
-    // corner resize + round rotation handles; multi-box nodes keep per-box
-    // autogrow semantics only
-    if (boxes.length === 1 && !diagram) {
-      children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
-      children.push(['span', { class: 'box-rotate-handle', contenteditable: 'false' }])
-    }
+    // a turned single box draws its selection frame itself: the wrapper border
+    // is axis-aligned around a box the rotator has turned (Word turns both)
+    if (singleBox && boxes[0].rotDeg) attrs.class += ' has-turned-box'
     // page-type w:br the anchor paragraph carries next to the boxes: Word keeps
     // the anchor's flow line, so render the break chip as a stray line (nonzero
     // height — a zero-height carrier cannot advance the pagination Y coordinate)
@@ -6577,7 +6622,7 @@ function mountTextboxEditors(
     })
     // TipTap initializes the host element and may clear attributes emitted by
     // the static DOM spec, so reapply the shape geometry after mounting.
-    el.setAttribute('style', textboxBoxStyle(box))
+    el.setAttribute('style', textboxBoxStyle(box, { editorChrome: true }))
     el.classList.toggle('doc-textbox-filled', textboxIsFilled(box))
     editors[i] = sub
   })
@@ -6631,7 +6676,7 @@ function mountTextboxEditors(
       if (sub && !sub.isDestroyed) sub.commands.setContent(textboxDocJson(box))
       const el = boxEls[i]
       if (el) {
-        el.setAttribute('style', textboxBoxStyle(box))
+        el.setAttribute('style', textboxBoxStyle(box, { editorChrome: true }))
         el.classList.toggle('doc-textbox-filled', textboxIsFilled(box))
       }
       // corner resize only rewrites the attrs; without refreshing the minimum
@@ -6639,6 +6684,26 @@ function mountTextboxEditors(
       minHeights[i] = box.minHeightPx ?? box.heightPx
       measuredHeights[i] = box.heightPx
     })
+    // rotation lives on the chrome rotator in the editor: a commit (grip drag,
+    // ribbon 90° command, undo) retargets it and the frame-with-rotation flag.
+    // The rotator is a direct wrapper child — unless a side-wrap carrier sits
+    // between (float:left exclusion box), so match both shapes.
+    const rotator = dom.querySelector<HTMLElement>(
+      ':scope > .box-rotator, :scope > .doc-textbox-side > .box-rotator',
+    )
+    const single = boxes[0]
+    if (rotator && single && boxes.length === 1) {
+      // the float slot and rank move with the turn: a drag commit, wrap change
+      // or undo re-renders the box inside, so the rotator reseats around it.
+      // syncFloatShifts parks the canvas page-gap display shift on this layer
+      // (--page-float-dy): keep it across the reseat.
+      const pageFloatDy = rotator.style.getPropertyValue('--page-float-dy')
+      const style = shapeRotatorStyle(single)
+      if (style) rotator.setAttribute('style', style)
+      else rotator.removeAttribute('style')
+      if (pageFloatDy) rotator.style.setProperty('--page-float-dy', pageFloatDy)
+      dom.classList.toggle('has-turned-box', !!single.rotDeg)
+    }
     refreshBand()
   }
 
@@ -7274,8 +7339,12 @@ function shapeRotatePlugin(): Plugin {
           // it cannot fall through to the move/resize handlers
           if (!view.editable) return true
           const wrapper = target.closest('.doc-protected') as HTMLElement | null
+          // the chrome rotator carries the rotation in the editor; the box
+          // under it only anchors the centre when no rotator wraps it
+          const turnEl = (wrapper?.querySelector('.box-rotator') ??
+            wrapper?.querySelector('.doc-textbox')) as HTMLElement | null
           const boxEl = wrapper?.querySelector('.doc-textbox') as HTMLElement | null
-          if (!wrapper || !boxEl) return false
+          if (!wrapper || !boxEl || !turnEl) return false
           // the node view's document position (same walk as the resize handle)
           let pos = -1
           view.state.doc.descendants((node, p) => {
@@ -7306,11 +7375,11 @@ function shapeRotatePlugin(): Plugin {
             // Shift snaps to the 15° grid, like Word/PowerPoint
             return e.shiftKey ? (Math.round(deg / 15) * 15) % 360 : deg
           }
-          const baseTransform = boxEl.style.transform
+          const baseTransform = turnEl.style.transform
           let deg = startRot
           const onMove = (e: MouseEvent) => {
             deg = angleAt(e)
-            boxEl.style.transform = `rotate(${deg}deg)`
+            turnEl.style.transform = `rotate(${deg}deg)`
           }
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
@@ -7318,7 +7387,7 @@ function shapeRotatePlugin(): Plugin {
             deg = angleAt(e)
             // drop the drag preview; a real turn is re-rendered from the model
             // attrs by the node view, a click without a turn restores the box
-            boxEl.style.transform = baseTransform
+            turnEl.style.transform = baseTransform
             if (deg === startRot) return
             const currentNode = view.state.doc.nodeAt(pos)
             const currentBoxes = currentNode?.attrs.textboxes as TextboxDisplay[] | null
@@ -7611,9 +7680,14 @@ function floatingObjectDragPlugin(): Plugin {
 
           // Visual feedback: apply CSS translate during drag. Cropped pictures put
           // rot/flip (and the front/behind offset) on the overflow-hidden crop
-          // wrapper — translate that, or the image slides inside the fixed window
-          const visual = wrapper.querySelector(
-            isTextbox ? '.doc-textbox' : '.doc-img-crop, .doc-protected-img',
+          // wrapper — translate that, or the image slides inside the fixed window.
+          // A turned textbox sits static inside the rotated .box-rotator that owns
+          // the float slot: translate the rotator (same target as the rotate
+          // plugin's turnEl), or the box slides along the rotated axes
+          const visual = (
+            isTextbox
+              ? (wrapper.querySelector('.box-rotator') ?? wrapper.querySelector('.doc-textbox'))
+              : wrapper.querySelector('.doc-img-crop, .doc-protected-img')
           ) as HTMLElement | null
           // Images may already carry a rotation/flip transform: the drag translate
           // must compose with it (prepended = applied in screen space) and the

@@ -12,7 +12,7 @@ import { useI18n } from '../i18n/locale'
  * Interactive mind map card rendered inside an assistant message (the
  * NotebookLM-style diagram): a self-drawn SVG tidy tree with collapsible
  * branches, wheel zoom + drag pan, node-click-to-ask, block-citation jumps
- * and PNG export. No diagram library — plain SVG keeps the bundle flat and
+ * and PNG/SVG export. No diagram library — plain SVG keeps the bundle flat and
  * gives full control over node-level interaction.
  */
 
@@ -28,9 +28,12 @@ interface MindMapCardProps {
   onAsk: (label: string) => void
   /** click a node's block badge: jump to the cited document block */
   onJumpBlock: (index: number) => void
+  /** insert button: hands over the palette-baked export SVG and its layout
+   *  size; the receiver writes it into the document */
+  onInsert?: (svg: string, size: { width: number; height: number }) => void
 }
 
-export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
+export function MindMapCard({ tree, onAsk, onJumpBlock, onInsert }: MindMapCardProps) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [zoom, setZoom] = useState(1)
@@ -107,19 +110,18 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
     if (dragRef.current?.id === e.pointerId) dragRef.current = null
   }
 
-  /** Serialize the SVG, bake in the fixed export palette, rasterize 2x, download. */
-  const exportPng = () => {
-    const svg = svgRef.current
-    if (!svg) return
-    const { width, height } = layout
+  /** Serialize the live SVG into the standalone export file: the fixed palette
+   *  baked in over the data-export attributes, white background, font stack
+   *  inline. Both exports are built from this one file. */
+  const serializeExportSvg = (svg: SVGSVGElement): string => {
     const clone = svg.cloneNode(true) as SVGSVGElement
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     clone.setAttribute('font-family', EXPORT_FONT)
     const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
     bg.setAttribute('x', '0')
     bg.setAttribute('y', '0')
-    bg.setAttribute('width', String(width))
-    bg.setAttribute('height', String(height))
+    bg.setAttribute('width', String(layout.width))
+    bg.setAttribute('height', String(layout.height))
     bg.setAttribute('fill', MIND_MAP_EXPORT_COLORS.background)
     clone.insertBefore(bg, clone.firstChild)
     const c = MIND_MAP_EXPORT_COLORS
@@ -149,27 +151,48 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
         set({ fill: c.toggleText, 'font-size': '10' })
       }
     }
-    const raw = new XMLSerializer().serializeToString(clone)
-    const svgUrl = URL.createObjectURL(new Blob([raw], { type: 'image/svg+xml;charset=utf-8' }))
+    return new XMLSerializer().serializeToString(clone)
+  }
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /** Vector export: the same baked file the PNG rasterizes, kept editable. */
+  const exportSvg = () => {
+    const svg = svgRef.current
+    if (!svg) return
+    downloadBlob(
+      new Blob([serializeExportSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }),
+      'mindmap.svg',
+    )
+  }
+
+  /** Raster export: render the baked SVG at 2x and download the PNG. */
+  const exportPng = () => {
+    const svg = svgRef.current
+    if (!svg) return
+    const svgUrl = URL.createObjectURL(
+      new Blob([serializeExportSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }),
+    )
     const img = new Image()
     img.onload = () => {
       URL.revokeObjectURL(svgUrl)
       const scale = 2
       const canvas = document.createElement('canvas')
-      canvas.width = Math.round(width * scale)
-      canvas.height = Math.round(height * scale)
+      canvas.width = Math.round(layout.width * scale)
+      canvas.height = Math.round(layout.height * scale)
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.scale(scale, scale)
       ctx.drawImage(img, 0, 0)
       canvas.toBlob((blob) => {
-        if (!blob) return
-        const pngUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = pngUrl
-        a.download = 'mindmap.png'
-        a.click()
-        URL.revokeObjectURL(pngUrl)
+        if (blob) downloadBlob(blob, 'mindmap.png')
       }, 'image/png')
     }
     img.onerror = () => URL.revokeObjectURL(svgUrl)
@@ -228,6 +251,58 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
               <path d="M4 13v2a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 15v-2" />
             </svg>
           </button>
+          <button
+            type="button"
+            className="ai-mindmap-btn"
+            onClick={exportSvg}
+            data-tip={t('aiMindMapExportSvg')}
+            aria-label={t('aiMindMapExportSvg')}
+          >
+            <svg
+              viewBox="0 0 20 20"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <rect x="13" y="3" width="4" height="4" rx="1" />
+              <rect x="3" y="13" width="4" height="4" rx="1" />
+              <path d="M13 5H9a4 4 0 0 0-4 4v4" />
+            </svg>
+          </button>
+          {onInsert && (
+            <button
+              type="button"
+              className="ai-mindmap-btn"
+              onClick={() => {
+                const svg = svgRef.current
+                if (svg)
+                  onInsert(serializeExportSvg(svg), { width: layout.width, height: layout.height })
+              }}
+              data-tip={t('aiMindMapInsert')}
+              aria-label={t('aiMindMapInsert')}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M11 3H6.5A1.5 1.5 0 0 0 5 4.5v11A1.5 1.5 0 0 0 6.5 17h7a1.5 1.5 0 0 0 1.5-1.5V7L11 3z" />
+                <path d="M11 3v4h4" />
+                <path d="M10 10v4M8 12h4" />
+              </svg>
+            </button>
+          )}
         </span>
       </div>
       <div

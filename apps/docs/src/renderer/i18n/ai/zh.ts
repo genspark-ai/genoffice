@@ -185,6 +185,8 @@ export const zh = {
   aiMindMapAskPrompt: '介绍一下文档中关于「{label}」的内容',
   aiMindMapJump: '跳转到对应段落',
   aiMindMapExport: '导出 PNG',
+  aiMindMapExportSvg: '导出 SVG',
+  aiMindMapInsert: '插入文档',
   aiMindMapReset: '重置视图',
   aiMindMapExpand: '展开分支',
   aiMindMapCollapse: '折叠分支',

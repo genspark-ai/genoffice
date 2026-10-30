@@ -200,6 +200,8 @@ export const nl = {
   aiMindMapAskPrompt: 'Vertel me over "{label}" in dit document',
   aiMindMapJump: 'Ga naar het geciteerde fragment',
   aiMindMapExport: 'PNG exporteren',
+  aiMindMapExportSvg: 'SVG exporteren',
+  aiMindMapInsert: 'In document invoegen',
   aiMindMapReset: 'Weergave opnieuw instellen',
   aiMindMapExpand: 'Tak uitklappen',
   aiMindMapCollapse: 'Tak inklappen',

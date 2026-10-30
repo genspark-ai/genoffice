@@ -2300,11 +2300,22 @@ export async function withDocument<T>(
   m: Pdfium,
   bytes: Uint8Array,
   fn: (doc: number) => Promise<T>,
+  /** the password of an encrypted document; omit for plain bytes */
+  password?: string,
 ): Promise<T> {
   const docPtr = m._malloc(bytes.length)
   m.HEAPU8.set(bytes, docPtr)
-  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, 0)
+  let passPtr = 0
+  if (password !== undefined && password !== '') {
+    // FPDF_LoadMemDocument takes a UTF-8 C string and converts it per revision
+    const encoded = new TextEncoder().encode(password)
+    passPtr = m._malloc(encoded.length + 1)
+    m.HEAPU8.set(encoded, passPtr)
+    m.HEAPU8[passPtr + encoded.length] = 0
+  }
+  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, passPtr)
   if (!doc) {
+    if (passPtr !== 0) m._free(passPtr)
     m._free(docPtr)
     throw new Error('PDFium could not load the document')
   }
@@ -2312,6 +2323,7 @@ export async function withDocument<T>(
     return await fn(doc)
   } finally {
     m._FPDF_CloseDocument(doc)
+    if (passPtr !== 0) m._free(passPtr)
     m._free(docPtr)
   }
 }
@@ -2640,10 +2652,15 @@ async function validateTextEditsInner(
 export function verifyTextEdits(
   bytes: Uint8Array,
   edits: { pageIndex: number; newText: string }[],
+  /** the password when the saved output is encrypted again */
+  password?: string,
 ): Promise<{ pageIndex: number; reason: string }[]> {
   return chainPdfium(async () => {
     const m = await loadPdfium()
-    return withDocument(m, bytes, async (doc) => {
+    // the saved output carries its protection again: verification opens it with
+    // the same password the save just wrote, or every edit reads as missing
+    const open = <T>(fn: (doc: number) => Promise<T>) => withDocument(m, bytes, fn, password)
+    return open(async (doc) => {
       const failures: { pageIndex: number; reason: string }[] = []
       const pageCount = m._FPDF_GetPageCount(doc)
       const byPage = new Map<number, string[]>()

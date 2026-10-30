@@ -286,6 +286,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every lab; the namespaced model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.runcrate.ai/v1'),
   },
+  cloudgpu: {
+    meta: metaOf('cloudgpu'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the bare model id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://cloudgpu.app/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

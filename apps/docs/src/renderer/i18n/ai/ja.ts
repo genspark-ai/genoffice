@@ -198,6 +198,8 @@ export const ja = {
   aiMindMapAskPrompt: 'このドキュメントの「{label}」について教えて',
   aiMindMapJump: '該当段落へジャンプ',
   aiMindMapExport: 'PNG で書き出す',
+  aiMindMapExportSvg: 'SVG で書き出す',
+  aiMindMapInsert: 'ドキュメントに挿入',
   aiMindMapReset: '表示をリセット',
   aiMindMapExpand: 'ブランチを展開',
   aiMindMapCollapse: 'ブランチを折りたたむ',

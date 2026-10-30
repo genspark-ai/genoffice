@@ -134,4 +134,42 @@ describe('anchored footer boxes hosted by their paragraph', () => {
     expect(el.querySelectorAll(':scope > .page-hf-textbox')).toHaveLength(1)
     expect(el.querySelectorAll('.page-hf-anchor')).toHaveLength(0)
   })
+
+  it('a turned, stroked box renders its rotation and outline', () => {
+    const style = hfTextBoxStyle(
+      {
+        id: 6,
+        widthPx: 248,
+        heightPx: 40,
+        posH: 'left',
+        posHRel: 'page',
+        posV: 'bottom',
+        posVRel: 'page',
+        rotDeg: 45,
+        borderWidthPx: 4,
+        borderColor: 'C00000',
+      },
+      'footer',
+      geom,
+    )!
+    // rotation rides the same transform as the anchor-point translate (which
+    // composes first, so bottom-pinned placement stays axis-aligned)
+    expect(style.transform).toMatch(/rotate\(45deg\)$/)
+    expect(style.border).toBe('4px solid #C00000')
+    expect(style.boxSizing).toBe('border-box')
+    // a straight, unstroked box stays bare (the pre-existing rendering)
+    const plain = hfTextBoxStyle(
+      {
+        id: 7,
+        posH: 'left',
+        posHRel: 'page',
+        posV: 'bottom',
+        posVRel: 'page',
+      },
+      'footer',
+      geom,
+    )!
+    expect(plain.transform).toBeUndefined()
+    expect(plain.border).toBeUndefined()
+  })
 })

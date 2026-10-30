@@ -10,6 +10,7 @@ import {
   MIND_MAP_LIMITS,
   MIND_MAP_METRICS,
   MIND_MAP_TOOL,
+  mindMapToMermaid,
   parseMindMapTree,
   wrapLabel,
 } from '../src/renderer/ai/mind-map'
@@ -429,5 +430,25 @@ describe('MIND_MAP_TOOL schema', () => {
       for (const value of Object.values(record)) walk(value)
     }
     walk(MIND_MAP_TOOL.inputSchema)
+  })
+})
+
+describe('mindMapToMermaid', () => {
+  it('emits the tree as an indented mindmap diagram, root first', () => {
+    const tree: MindMapTreeNode = {
+      label: 'Doc',
+      children: [{ label: 'A', children: [{ label: 'A1' }] }, { label: 'B' }],
+    }
+    expect(mindMapToMermaid(tree)).toBe(
+      ['mindmap', '  Doc', '    A', '      A1', '    B'].join('\n'),
+    )
+  })
+
+  it('strips node-shape delimiters so mermaid reads labels as plain text', () => {
+    expect(mindMapToMermaid({ label: 'Q1 (sales) [draft]' })).toBe('mindmap\n  Q1 sales draft')
+  })
+
+  it('falls back to Topic when a label is only delimiters', () => {
+    expect(mindMapToMermaid({ label: '()' })).toBe('mindmap\n  Topic')
   })
 })

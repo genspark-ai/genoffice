@@ -200,6 +200,8 @@ export const fr = {
   aiMindMapAskPrompt: 'Parle-moi de « {label} » dans ce document',
   aiMindMapJump: 'Aller au passage cité',
   aiMindMapExport: 'Exporter en PNG',
+  aiMindMapExportSvg: 'Exporter en SVG',
+  aiMindMapInsert: 'Insérer dans le document',
   aiMindMapReset: 'Réinitialiser la vue',
   aiMindMapExpand: 'Déplier la branche',
   aiMindMapCollapse: 'Replier la branche',

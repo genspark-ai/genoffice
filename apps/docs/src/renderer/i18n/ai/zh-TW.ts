@@ -187,6 +187,8 @@ export const zhTW = {
   aiMindMapAskPrompt: '介紹一下文件中關於「{label}」的內容',
   aiMindMapJump: '跳至對應段落',
   aiMindMapExport: '匯出 PNG',
+  aiMindMapExportSvg: '匯出 SVG',
+  aiMindMapInsert: '插入文件',
   aiMindMapReset: '重設檢視',
   aiMindMapExpand: '展開分支',
   aiMindMapCollapse: '收合分支',
