@@ -20,6 +20,8 @@ import {
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   nextFreeRelationshipId,
+  parseRelationships,
+  parseSheetElements,
   type SheetEditPlan,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { EMPTY_PAYLOADS, type GatewayPayloads } from './xlsx-gateway-ops'
@@ -37,7 +39,7 @@ import {
   parseStylesheetFormats,
   type StylesheetFormats,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-style-read'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { atomicWriteFile } from '../../../../apps/sheets/src/main/atomic-write'
 import { XlsxSidecarClient } from '../../../../apps/sheets/src/main/xlsx-sidecar-client'
@@ -1257,24 +1259,136 @@ export interface ExternalLinkInfo {
   sheetNames: string[]
 }
 
-/** The workbook's external links, as the file stores them: index (the `[n]`
+/** A worksheet relationship target resolved to a package part path. */
+function worksheetPartPath(target: string): string {
+  return target.startsWith('/') ? target.slice(1) : 'xl/' + target
+}
+
+/** The cached <v> of one formula cell: its type attribute and raw (still escaped) text. */
+interface CachedFormulaValue {
+  type: string | undefined
+  text: string | undefined
+}
+
+/** Decodes the entity spelling of an XML text node so cached text compares like display text. */
+function decodeXmlText(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(
+      /&#(?:x([0-9a-fA-F]+)|(\d+));/g,
+      (match, hex: string | undefined, dec: string | undefined) => {
+        const code = hex === undefined ? Number(dec) : parseInt(hex, 16)
+        return code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+          ? String.fromCodePoint(code)
+          : match
+      },
+    )
+}
+
+/**
+ * The cached <v> type and text of the formula cells an update report names,
+ * keyed sheet|row|column. The report carries display text only, so the file's
+ * own cached type is what tells a boolean result from the text "TRUE".
+ */
+async function cachedFormulaValues(
+  source: Buffer,
+  cells: readonly { sheet: string; row: number; column: number }[],
+): Promise<Map<string, CachedFormulaValue>> {
+  const out = new Map<string, CachedFormulaValue>()
+  if (cells.length === 0) return out
+  const wantedBySheet = new Map<string, Map<string, string>>()
+  for (const cell of cells) {
+    const wanted = wantedBySheet.get(cell.sheet) ?? new Map<string, string>()
+    wanted.set(toA1Address(cell.row, cell.column), cell.sheet + '|' + cell.row + '|' + cell.column)
+    wantedBySheet.set(cell.sheet, wanted)
+  }
+  const zip = await JSZip.loadAsync(source)
+  const workbook = (await zip.file('xl/workbook.xml')?.async('string')) ?? ''
+  const relationships = (await zip.file('xl/_rels/workbook.xml.rels')?.async('string')) ?? ''
+  const targets = new Map(
+    parseRelationships(relationships)
+      .filter((rel) => rel.id !== undefined && !rel.external)
+      .map((rel) => [rel.id!, worksheetPartPath(rel.target)]),
+  )
+  const partBySheet = new Map<string, string>()
+  for (const element of parseSheetElements(workbook)) {
+    const target = element.relationshipId ? targets.get(element.relationshipId) : undefined
+    if (target !== undefined) partBySheet.set(element.name, target)
+  }
+  const cellPattern = /<c\b[^>]*?(?:\/>|>(?:(?!<\/c>)[\s\S])*<\/c>)/g
+  for (const [sheet, wanted] of wantedBySheet) {
+    const part = partBySheet.get(sheet)
+    if (part === undefined) continue
+    const xml = (await zip.file(part)?.async('string')) ?? ''
+    for (const match of xml.matchAll(cellPattern)) {
+      const opening = /^<c\b([^>]*)>/.exec(match[0])?.[1] ?? ''
+      const address = /\br="([^"]+)"/.exec(opening)?.[1]
+      const key = address === undefined ? undefined : wanted.get(address)
+      if (key === undefined) continue
+      out.set(key, {
+        type: /\bt="(\w+)"/.exec(opening)?.[1],
+        text: /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(match[0])?.[1],
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * The value the update report wants cached: its number when it has one, else
+ * text, except where the file's cached type says the formula produced a
+ * boolean or an error (display text alone cannot tell those from string
+ * results that happen to spell TRUE or #N/A).
+ */
+function reportCacheValue(
+  cell: { formatted: string; number?: number | null },
+  existing: CachedFormulaValue | undefined,
+): FormulaCachedValue {
+  if (cell.number !== undefined && cell.number !== null) return cell.number
+  if (existing?.type === 'b' && /^(true|false)$/i.test(cell.formatted)) {
+    return /^true$/i.test(cell.formatted)
+  }
+  if (existing?.type === 'e') return { error: cell.formatted }
+  // an empty string is a real result: writing it clears a stale non-empty cache
+  return cell.formatted
+}
+
+/** True when the file already caches exactly what the report computed. */
+function cacheMatches(
+  value: FormulaCachedValue,
+  existing: CachedFormulaValue | undefined,
+): boolean {
+  if (existing === undefined || existing.text === undefined) return false
+  if (typeof value === 'number') {
+    if (existing.type !== undefined && existing.type !== 'n') return false
+    const previous = Number(existing.text)
+    // the engine and Excel agree to the precision a cached <v> carries; do not
+    // rewrite a cell over the last bits of a double
+    return (
+      Number.isFinite(previous) &&
+      Math.abs(previous - value) <= Math.max(Math.abs(previous), Math.abs(value), 1) * 1e-13
+    )
+  }
+  if (typeof value === 'boolean') return existing.type === 'b' && (existing.text === '1') === value
+  if (value !== null && typeof value === 'object') {
+    return existing.type === 'e' && decodeXmlText(existing.text) === value.error
+  }
+  return existing.type === 'str' && decodeXmlText(existing.text) === value
+}
+
+/** The workbook's external links, as the file stores them: index (the [n]
  * formulas use), the stored source path, the resolved local path, whether
  * that file exists, and the source's sheet names. No source is opened. */
 export async function readExternalLinks(path: string): Promise<ExternalLinkInfo[]> {
-  await readFile(path)
+  // only the existence gate is local: the sidecar reads the package
+  await access(path)
   return withSidecar(async (client) => {
-    // the sidecar returns the link array itself (the update command wraps
-    // one in a report object, this light list does not)
-    const result = (await client.readExternalLinks({ path })) as {
-      links?: {
-        index: number
-        rawTarget: string
-        source: string | null
-        reachable: boolean
-        sheetNames: string[]
-      }[]
-    }
-    return Array.isArray(result) ? result : (result.links ?? [])
+    // the sidecar's read command answers the link array itself (the update
+    // command is the one that wraps its cells in a report object)
+    return (await client.readExternalLinks({ path })) as ExternalLinkInfo[]
   })
 }
 
@@ -1298,8 +1412,8 @@ const updateReportSchema = z.object({
 })
 
 /** Re-reads every reachable source and writes the computed values as the
- * formulas' cached `<v>` — formula text untouched, unreachable links keep
- * their cache. Returns what changed and what stayed behind. */
+ * formulas' cached <v> — formula text untouched, unreachable links keep their
+ * cache. Returns what changed and what stayed behind. */
 export async function updateExternalLinkCaches(
   path: string,
   outputPath: string,
@@ -1309,35 +1423,36 @@ export async function updateExternalLinkCaches(
   reachable: number
   broken: number
 }> {
-  await readFile(path)
+  const source = await readFile(path)
   const report = await withSidecar(async (client) =>
     updateReportSchema.parse(await client.updateExternalLinks({ path })),
   )
-  const writeable = report.cells.filter((cell) => cell.formatted !== '')
-  if (writeable.length > 0) {
-    const source = await readFile(path)
-    const bySheet = new Map<string, { row: number; column: number; value: FormulaCachedValue }[]>()
-    for (const cell of writeable) {
-      const isNumber = cell.number !== undefined && cell.number !== null
-      const isBool = !isNumber && /^(true|false)$/i.test(cell.formatted)
-      const list = bySheet.get(cell.sheet) ?? []
-      list.push({
-        // the gateway's group step adds 1 itself: rows and columns are 0-based
-        row: cell.row,
-        column: cell.column,
-        value: isNumber ? cell.number! : isBool ? /^true$/i.test(cell.formatted) : cell.formatted,
-      })
-      bySheet.set(cell.sheet, list)
+  const cached = await cachedFormulaValues(source, report.cells)
+  const bySheet = new Map<string, { row: number; column: number; value: FormulaCachedValue }[]>()
+  let kept = 0
+  for (const cell of report.cells) {
+    const existing = cached.get(cell.sheet + '|' + cell.row + '|' + cell.column)
+    const value = reportCacheValue(cell, existing)
+    // an update only rewrites what actually changed; a live value equal to the
+    // cache, and a value that could not go live, both leave the cell alone
+    if (cacheMatches(value, existing)) {
+      kept += 1
+      continue
     }
-    const formulaValues = [...bySheet].map(([sheetName, cells]) => ({
-      sheetName,
-      cells,
-    }))
+    const list = bySheet.get(cell.sheet) ?? []
+    list.push({ row: cell.row, column: cell.column, value })
+    bySheet.set(cell.sheet, list)
+  }
+  const formulaValues = [...bySheet].map(([sheetName, cells]) => ({ sheetName, cells }))
+  if (formulaValues.length > 0) {
     await writeWorkbook(source, [], outputPath, { formulaValues })
+  } else if (outputPath !== path) {
+    // --out still gets a copy; there is just nothing to recompute in it
+    await atomicWriteFile(outputPath, source)
   }
   return {
-    updated: writeable.length,
-    kept: report.cells.length - writeable.length,
+    updated: report.cells.length - kept,
+    kept,
     reachable: report.links.filter((link) => link.reachable).length,
     broken: report.links.filter((link) => !link.reachable).length,
   }
@@ -1345,12 +1460,14 @@ export async function updateExternalLinkCaches(
 
 /** Breaks the given 1-based link indices: every formula referencing them
  * becomes the literal its cached value holds, the links' parts disappear,
- * and the surviving `[m]` indices renumber. */
+ * and the surviving [m] indices renumber. */
 export async function breakExternalLinks(
   path: string,
   outputPath: string,
-  indices: readonly number[],
+  rawIndices: readonly number[],
 ): Promise<{ removedLinks: number }> {
+  // --break 1,1 is one link, not two
+  const indices = [...new Set(rawIndices)]
   const source = await readFile(path)
   const mutation = await planExternalLinkBreak(await createBufferEntrySource(source), indices)
   const result = await assembleWithJsZip(source, mutation)

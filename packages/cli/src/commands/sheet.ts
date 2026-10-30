@@ -38,7 +38,7 @@ const FORMULA_ERRORS = (message: string): Warning => ({ code: 'formula_errors', 
 export const sheetCommand: CommandDef = {
   name: 'sheet',
   summary: 'Read or edit an .xlsx with the same write path the app uses.',
-  usage: 'sheet <read|apply|check> <file.xlsx> (--cells <file|-> | --ops <file|->) [options]',
+  usage: 'sheet <read|apply|links|check> <file.xlsx> (--cells <file|-> | --ops <file|->) [options]',
   options: [
     { name: 'sheet', value: 'name', description: 'worksheet (default: the active one)' },
     { name: 'range', value: 'A1:D20', description: 'read: cell range (default: up to 500×100)' },
@@ -77,11 +77,11 @@ export const sheetCommand: CommandDef = {
     },
     { name: 'dry-run', description: 'apply --ops: validate and print the plan without writing' },
     ...BATCH_OPTIONS,
-    { name: 'out', value: 'path', description: 'apply: write here instead of in place' },
+    { name: 'out', value: 'path', description: 'apply/links: write here instead of in place' },
     {
       name: 'force',
       description:
-        'apply: overwrite an existing --out file, or write while GenOffice has the file open',
+        'apply/links: overwrite an existing --out file, or write while GenOffice has the file open',
     },
     {
       name: 'update',
@@ -220,30 +220,47 @@ async function links(
       { reason: 'invalid_argument' },
     )
   }
-  if (breakFlag !== undefined) {
-    const indices = breakFlag.split(',').map((part) => {
-      const n = Number(part.trim())
-      if (!Number.isInteger(n) || n < 1)
-        throw new CliError(
-          EXIT.usage,
-          `--break takes 1-based link indices (got ${part.trim()})`,
-          undefined,
-          { reason: 'invalid_argument' },
-        )
-      return n
+  // --break and --update write, so they honour --out/--force, the allowed
+  // write roots and the "open in GenOffice" guard like apply does
+  const writeOutput = () =>
+    resolveOutput(flagString(args, 'out'), ctx, {
+      fallback: path,
+      force: flagBool(args, 'force'),
+      // in-place edits overwrite by design; --out onto another existing file needs --force
+      fresh: flagString(args, 'out') !== undefined,
     })
-    const result = await breakExternalLinks(path, path, indices)
+  if (breakFlag !== undefined) {
+    const indices = [
+      ...new Set(
+        breakFlag.split(',').map((part) => {
+          const n = Number(part.trim())
+          if (!Number.isInteger(n) || n < 1)
+            throw new CliError(
+              EXIT.usage,
+              `--break takes 1-based link indices (got ${part.trim()})`,
+              undefined,
+              { reason: 'invalid_argument' },
+            )
+          return n
+        }),
+      ),
+    ].sort((a, b) => a - b)
+    const output = writeOutput()
+    const result = await breakExternalLinks(path, output, indices)
     return {
       summary: `broke ${result.removedLinks} link(s): formulas are now literals, surviving links renumbered`,
+      outputPath: output,
       detail: { broken: indices, ...result },
     }
   }
   if (update) {
-    const result = await updateExternalLinkCaches(path, path)
+    const output = writeOutput()
+    const result = await updateExternalLinkCaches(path, output)
     return {
       summary:
         `updated ${result.updated} formula cache(s) from ${result.reachable} reachable link(s)` +
         (result.broken > 0 ? `; ${result.broken} broken link(s) kept their cached values` : ''),
+      outputPath: output,
       detail: result,
     }
   }

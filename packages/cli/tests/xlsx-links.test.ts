@@ -116,7 +116,6 @@ describe('genoffice sheet links', () => {
       const book = join(dir, 'book.xlsx')
       await writeDependent(book)
       const r = await run(['sheet', 'links', book, '--update', '--json'])
-      console.log('UPD', r.stdout.slice(0, 400))
       expect(r.code).toBe(0)
       expect(r.json().detail).toMatchObject({ reachable: 1, broken: 1 })
 
@@ -157,4 +156,176 @@ describe('genoffice sheet links', () => {
       expect(xml).toContain('gone!')
     },
   )
+
+  it('writes --break through --out/--force and leaves the source untouched', async () => {
+    const dir = tempDir()
+    const book = join(dir, 'book.xlsx')
+    await writeDependent(book)
+    const before = readFileSync(book)
+    const copy = join(dir, 'copy.xlsx')
+    const r = await run(['sheet', 'links', book, '--break', '1', '--out', copy, '--json'])
+    expect(r.code).toBe(0)
+    expect(r.json().output_path).toBe(copy)
+    // in-place stays the default: --out leaves the input as it was
+    expect(readFileSync(book).equals(before)).toBe(true)
+    const zip = await JSZip.loadAsync(readFileSync(copy))
+    expect(await zip.file('xl/workbook.xml')!.async('string')).not.toContain('rId4')
+    // an existing --out is refused without --force, like sheet apply
+    const refused = await run(['sheet', 'links', book, '--break', '1', '--out', copy, '--json'])
+    expect(refused.code).toBe(2)
+    expect(refused.json().message).toContain('use --force')
+    expect(
+      (await run(['sheet', 'links', book, '--break', '1', '--out', copy, '--force'])).code,
+    ).toBe(0)
+  })
+
+  it('counts a duplicated --break index once', async () => {
+    const dir = tempDir()
+    const book = join(dir, 'book.xlsx')
+    await writeDependent(book)
+    const r = await run(['sheet', 'links', book, '--break', '1,1', '--json'])
+    expect(r.code).toBe(0)
+    expect(r.json().detail).toMatchObject({ broken: [1], removedLinks: 1 })
+  })
+})
+
+describe('breaking links with references outside the cell formulas', () => {
+  it('refuses a defined name that points at the link being broken', async () => {
+    const dir = tempDir()
+    const book = join(dir, 'book.xlsx')
+    await writeDependent(book)
+    // point a defined name at link [1] (the one about to be broken)
+    const zip = await JSZip.loadAsync(readFileSync(book))
+    const workbook = (await zip.file('xl/workbook.xml')!.async('string')).replace(
+      '<sheets>',
+      '<definedNames><definedName name="Total">[1]Sheet1!$A$1</definedName></definedNames><sheets>',
+    )
+    zip.file('xl/workbook.xml', workbook)
+    writeFileSync(book, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
+
+    const r = await run(['sheet', 'links', book, '--break', '1', '--json'])
+    expect(r.code).not.toBe(0)
+    expect(r.json().message).toMatch(/defined name/)
+    // refused before writing: the link is still there
+    const after = await JSZip.loadAsync(readFileSync(book))
+    expect(await after.file('xl/workbook.xml')!.async('string')).toContain('rId4')
+  })
+})
+
+describe('update writes the live value even when it is empty or spells TRUE', () => {
+  /// A one-sheet source workbook whose A1 is the given cell XML.
+  async function writeSourceWithA1(path: string, cell: string): Promise<void> {
+    const zip = new JSZip()
+    zip.file(
+      '[Content_Types].xml',
+      XML_DECL +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+    )
+    zip.file(
+      '_rels/.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    )
+    zip.file(
+      'xl/workbook.xml',
+      XML_DECL +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+    )
+    zip.file('xl/styles.xml', XML_DECL + STYLES)
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      XML_DECL +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">' +
+        cell +
+        '</row></sheetData></worksheet>',
+    )
+    writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
+  }
+
+  /// A dependent whose A1 reads link [1]'s A1 and caches the given cell XML.
+  async function writeDependent(path: string, cachedCell: string): Promise<void> {
+    const zip = new JSZip()
+    zip.file(
+      '[Content_Types].xml',
+      XML_DECL +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/></Types>',
+    )
+    zip.file(
+      '_rels/.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    )
+    zip.file(
+      'xl/workbook.xml',
+      XML_DECL +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><externalReferences><externalReference r:id="rId4"/></externalReferences></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>',
+    )
+    zip.file('xl/styles.xml', XML_DECL + STYLES)
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      XML_DECL +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">' +
+        cachedCell +
+        '</row></sheetData></worksheet>',
+    )
+    zip.file(
+      'xl/externalLinks/externalLink1.xml',
+      XML_DECL +
+        '<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames></externalBook></externalLink>',
+    )
+    zip.file(
+      'xl/externalLinks/_rels/externalLink1.xml.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="source.xlsx" TargetMode="External"/></Relationships>',
+    )
+    writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
+  }
+
+  it.skipIf(!sidecar)('clears a stale cache when the live value is the empty string', async () => {
+    const dir = tempDir()
+    // an empty source cell: the live value is the empty string
+    await writeSourceWithA1(join(dir, 'source.xlsx'), '')
+    const book = join(dir, 'book.xlsx')
+    await writeDependent(book, '<c r="A1"><f>[1]Sheet1!A1</f><v>999</v></c>')
+    const r = await run(['sheet', 'links', book, '--update', '--json'])
+    expect(r.code).toBe(0)
+    const xml = await (
+      await JSZip.loadAsync(readFileSync(book))
+    )
+      .file('xl/worksheets/sheet1.xml')!
+      .async('string')
+    // the formula stays, the stale 999 is gone (the empty result has no cache)
+    expect(xml).toContain('<f>[1]Sheet1!A1</f>')
+    expect(xml).not.toContain('<v>999</v>')
+  })
+
+  it.skipIf(!sidecar)('keeps the text TRUE as text instead of caching a boolean', async () => {
+    const dir = tempDir()
+    await writeSourceWithA1(
+      join(dir, 'source.xlsx'),
+      '<c r="A1" t="inlineStr"><is><t>TRUE</t></is></c>',
+    )
+    const book = join(dir, 'book.xlsx')
+    await writeDependent(book, '<c r="A1" t="str"><f>[1]Sheet1!A1</f><v>TRUE</v></c>')
+    const r = await run(['sheet', 'links', book, '--update', '--json'])
+    expect(r.code).toBe(0)
+    const xml = await (
+      await JSZip.loadAsync(readFileSync(book))
+    )
+      .file('xl/worksheets/sheet1.xml')!
+      .async('string')
+    // the cached type came from the file's own cache, not from the TRUE spelling
+    expect(xml).toMatch(/<c r="A1" t="str"><f>\[1\]Sheet1!A1<\/f><v>TRUE<\/v><\/c>/)
+    expect(xml).not.toMatch(/t="b"/)
+  })
 })
