@@ -56,6 +56,9 @@ import type {
   ExternalLinkStatus,
   ExternalLinkUsageCell,
   ExternalLinkUsageResult,
+  PickIdPayload,
+  WorkbookPickSelection,
+  WorkbookTabsResult,
 } from '../shared/desktop-api'
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -264,6 +267,41 @@ const desktopApi: DesktopApi = {
   async selectExternalLinkSource() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectExternalLinkSource)
     return typeof result === 'string' && result.length > 0 ? result : null
+  },
+  async listWorkbookTabs() {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listWorkbookTabs)
+    return parseWorkbookTabsResult(result)
+  },
+  async armWorkbookPick() {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.armWorkbookPick)
+    return parsePickIdPayload(result)
+  },
+  async sendWorkbookPickSelection(selection) {
+    await ipcRenderer.invoke(
+      IPC_CHANNELS.sendWorkbookPickSelection,
+      parseWorkbookPickSelection(selection),
+    )
+  },
+  async cancelWorkbookPick(pickId) {
+    await ipcRenderer.invoke(IPC_CHANNELS.cancelWorkbookPick, { pickId })
+  },
+  onWorkbookPickArmed(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
+      handler(parsePickIdPayload(payload))
+    ipcRenderer.on(IPC_CHANNELS.workbookPickArmed, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.workbookPickArmed, listener)
+  },
+  onWorkbookPickSelected(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
+      handler(parseWorkbookPickSelection(payload))
+    ipcRenderer.on(IPC_CHANNELS.workbookPickSelected, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.workbookPickSelected, listener)
+  },
+  onWorkbookPickCancelled(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) =>
+      handler(parsePickIdPayload(payload))
+    ipcRenderer.on(IPC_CHANNELS.workbookPickCancelled, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.workbookPickCancelled, listener)
   },
   revealPath(path) {
     ipcRenderer.send(IPC_CHANNELS.revealPath, path)
@@ -1749,6 +1787,58 @@ function parseExternalLinkUsageResult(input: unknown): ExternalLinkUsageResult {
       }
       return { index: link.index, cells: link.cells.map(parseExternalLinkUsageCell) }
     }),
+  }
+}
+
+/// One tab another workbook is open in: what the cross-workbook pick lists.
+function parseWorkbookTabsResult(input: unknown): WorkbookTabsResult {
+  if (!isRecord(input) || !Array.isArray(input.tabs) || input.tabs.length > EXTERNAL_LINK_LIMIT) {
+    throw new Error('Invalid workbook tabs response.')
+  }
+  return {
+    tabs: input.tabs.map((tab) => {
+      if (
+        !isRecord(tab) ||
+        !Number.isInteger(tab.wcId) ||
+        !isBoundedString(tab.name, 1_024) ||
+        !isBoundedString(tab.path, 32_768)
+      ) {
+        throw new Error('Invalid workbook tabs response.')
+      }
+      return { wcId: tab.wcId as number, name: tab.name, path: tab.path }
+    }),
+  }
+}
+
+function parsePickIdPayload(input: unknown): PickIdPayload {
+  if (!isRecord(input) || !isBoundedString(input.pickId, 256)) {
+    throw new Error('Invalid workbook pick payload.')
+  }
+  return { pickId: input.pickId }
+}
+
+function parseWorkbookPickSelection(input: unknown): WorkbookPickSelection {
+  const bound = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
+  if (
+    !isRecord(input) ||
+    !isBoundedString(input.pickId, 256) ||
+    !isBoundedString(input.sheetName, 1_024) ||
+    !bound(input.startRow) ||
+    !bound(input.endRow) ||
+    !bound(input.startColumn) ||
+    !bound(input.endColumn) ||
+    (input.rangeType !== undefined && typeof input.rangeType !== 'number')
+  ) {
+    throw new Error('Invalid workbook pick selection.')
+  }
+  return {
+    pickId: input.pickId,
+    sheetName: input.sheetName,
+    startRow: input.startRow,
+    endRow: input.endRow,
+    startColumn: input.startColumn,
+    endColumn: input.endColumn,
+    ...(input.rangeType === undefined ? {} : { rangeType: input.rangeType as number }),
   }
 }
 

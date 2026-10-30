@@ -2746,6 +2746,40 @@ export const externalLinkUsageResultSchema = z
   .object({ links: z.array(externalLinkUsageSchema) })
   .strict()
 export type ExternalLinkUsageResult = z.infer<typeof externalLinkUsageResultSchema>
+
+// ── cross-workbook range picking (genoffice#2109) ──────────────────────
+
+/// Another open workbook tab, as the picker's book list shows it.
+export const workbookTabSchema = z
+  .object({
+    wcId: z.number().int().positive(),
+    name: z.string().min(1),
+    path: z.string().min(1),
+  })
+  .strict()
+export type WorkbookTab = z.infer<typeof workbookTabSchema>
+
+export const workbookTabsResultSchema = z.object({ tabs: z.array(workbookTabSchema) }).strict()
+export type WorkbookTabsResult = z.infer<typeof workbookTabsResultSchema>
+
+export const pickIdPayloadSchema = z.object({ pickId: z.string().min(1) }).strict()
+export type PickIdPayload = z.infer<typeof pickIdPayloadSchema>
+
+/// One picked range on another workbook's grid, relayed to the tab whose
+/// formula is being edited. 0-based bounds, Univer's RANGE_TYPE for 1=rows,
+/// 2=columns picks.
+export const workbookPickSelectionSchema = z
+  .object({
+    pickId: z.string().min(1),
+    sheetName: z.string().min(1),
+    startRow: z.number().int().nonnegative(),
+    endRow: z.number().int().nonnegative(),
+    startColumn: z.number().int().nonnegative(),
+    endColumn: z.number().int().nonnegative(),
+    rangeType: z.number().int().optional(),
+  })
+  .strict()
+export type WorkbookPickSelection = z.infer<typeof workbookPickSelectionSchema>
 export type WorkbookRecalcResult = z.infer<typeof workbookRecalcResultSchema>
 export type WorkbookMediaRequest = z.infer<typeof workbookMediaRequestSchema>
 export type WorkbookMediaResult = z.infer<typeof workbookMediaResultSchema>
@@ -3263,6 +3297,16 @@ export interface DesktopApi {
   readExternalLinkUsage(request: ExternalLinksRequest): Promise<ExternalLinkUsageResult>
   /// A single-workbook file picker for "Change Source" (a link's new source).
   selectExternalLinkSource(): Promise<string | null>
+  /// Other open workbook tabs (the cross-workbook range picker's book list).
+  listWorkbookTabs(): Promise<{ tabs: WorkbookTab[] }>
+  /// Arms a cross-workbook pick from this tab; other sheets' grids become
+  /// the pick target until a selection or a cancel.
+  armWorkbookPick(): Promise<{ pickId: string }>
+  sendWorkbookPickSelection(selection: WorkbookPickSelection): Promise<void>
+  cancelWorkbookPick(pickId: string): Promise<void>
+  onWorkbookPickArmed(listener: (payload: { pickId: string }) => void): () => void
+  onWorkbookPickSelected(listener: (selection: WorkbookPickSelection) => void): () => void
+  onWorkbookPickCancelled(listener: (payload: { pickId: string }) => void): () => void
   revealPath(path: string): void
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>

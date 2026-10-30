@@ -351,7 +351,11 @@ import { installFilterRangeOutlineSuppression } from './filter-range-outline'
 import { createSheetTabActions } from './sheet-tab-actions'
 import { installVeryHiddenSheetGuard } from './very-hidden-sheets'
 import { installFormulaBarAutosize } from './formula-bar-autosize'
-import { createFunctionArgumentsHost, installFxButtonHook } from './function-arguments-runtime'
+import {
+  createFunctionArgumentsHost,
+  installFxButtonHook,
+  installWorkbookPickRelay,
+} from './function-arguments-runtime'
 import {
   applyShowFormulasView,
   installFormulaTextInterceptor,
@@ -2329,6 +2333,9 @@ export function App({
     // The fx bar grows to fit a wrapped formula instead of clipping it.
     const formulaBarAutosizeDisposable = installFormulaBarAutosize(runtime)
     const fxButtonDisposable = installFxButtonHook(runtime)
+    // The picking side of the cross-workbook range picker (#2109): another
+    // tab's dialog can arm a pick against this workbook's grid.
+    const pickRelayDisposable = installWorkbookPickRelay(runtime)
     // A file formula the engine re-computes into an error shows the file's
     // cached result instead; display-only.
     const cachedValueDisposable = installCachedValueFallbackInterceptor(runtime, lazyWorkbookRef)
@@ -3761,6 +3768,7 @@ export function App({
       formulaTextDisposable.dispose()
       formulaBarAutosizeDisposable.dispose()
       fxButtonDisposable.dispose()
+      pickRelayDisposable.dispose()
       cachedValueDisposable.dispose()
       formulaNewlineDisposable.dispose()
       functionProbeDisposable.dispose()
@@ -4459,6 +4467,10 @@ export function App({
       createFunctionArgumentsHost(
         () => univerRef.current,
         () => t('appWorkbookNotReady'),
+        () => {
+          const file = lazyWorkbookRef.current?.file
+          return file && !file.needsSaveAs ? (file.csvPath ?? file.path ?? null) : null
+        },
       ),
     [],
   )

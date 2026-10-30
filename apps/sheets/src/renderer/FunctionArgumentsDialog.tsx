@@ -6,7 +6,12 @@ import {
   parameterRows,
   type PreviewValue,
 } from './function-arguments'
-import type { FunctionArgumentsHost, FunctionTarget } from './function-arguments-runtime'
+import {
+  formatExternalRef,
+  type ExternalPickTarget,
+  type FunctionArgumentsHost,
+  type FunctionTarget,
+} from './function-arguments-runtime'
 import type { FunctionSpec } from './function-catalog'
 import { useI18n } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
@@ -29,7 +34,10 @@ export function FunctionArgumentsDialog({
   readonly spec: FunctionSpec
   readonly target: FunctionTarget
   readonly initialArgs: readonly string[]
-  readonly host: Pick<FunctionArgumentsHost, 'evaluate' | 'observeRangePick'>
+  readonly host: Pick<
+    FunctionArgumentsHost,
+    'evaluate' | 'observeRangePick' | 'listExternalPickTargets' | 'pickExternalRange'
+  >
   readonly error: string | null
   readonly onOk: (args: readonly string[]) => void
   readonly onCancel: () => void
@@ -39,8 +47,15 @@ export function FunctionArgumentsDialog({
   const [active, setActive] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(new Map())
+  /// Linked workbooks of the edited file: open ones take a grid pick through
+  /// another tab, closed ones a typed range (#2109).
+  const [pickTargets, setPickTargets] = useState<readonly ExternalPickTarget[]>([])
+  const [pickingName, setPickingName] = useState<string | null>(null)
+  const [typedSheets, setTypedSheets] = useState<ReadonlyMap<number, string>>(new Map())
+  const [typedRange, setTypedRange] = useState('')
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
   const activeRef = useRef(0)
+  const disposePickRef = useRef<(() => void) | null>(null)
   activeRef.current = active
 
   const rows = useMemo(() => parameterRows(spec.params, args.length), [spec, args.length])
@@ -65,20 +80,65 @@ export function FunctionArgumentsDialog({
     return () => clearTimeout(timer)
   }, [expressionsKey, host, target])
 
+  const insertAtActive = (ref: string): void => {
+    const index = activeRef.current
+    setArgs((previous) => {
+      const next = [...previous]
+      while (next.length <= index) next.push('')
+      next[index] = ref
+      return next
+    })
+    inputRefs.current[index]?.focus()
+  }
+
   useEffect(
     () =>
       host.observeRangePick(target, (ref) => {
-        const index = activeRef.current
-        setArgs((previous) => {
-          const next = [...previous]
-          while (next.length <= index) next.push('')
-          next[index] = ref
-          return next
-        })
-        inputRefs.current[index]?.focus()
+        insertAtActive(ref)
       }),
     [host, target],
   )
+
+  // the links list is read once per dialog open; a stale list only means a
+  // book opened mid-edit shows up on the next open
+  useEffect(() => {
+    let disposed = false
+    void host.listExternalPickTargets().then(
+      (targets) => {
+        if (!disposed) setPickTargets(targets)
+      },
+      () => undefined,
+    )
+    return () => {
+      disposed = true
+    }
+  }, [host])
+
+  useEffect(
+    () => () => {
+      disposePickRef.current?.()
+      disposePickRef.current = null
+    },
+    [],
+  )
+
+  const armExternalPick = (target: ExternalPickTarget): void => {
+    disposePickRef.current?.()
+    setPickingName(target.name)
+    disposePickRef.current = host.pickExternalRange(target, (ref) => {
+      disposePickRef.current?.()
+      disposePickRef.current = null
+      setPickingName(null)
+      insertAtActive(ref)
+    })
+  }
+
+  const insertTypedRange = (target: ExternalPickTarget): void => {
+    const sheet = typedSheets.get(target.index) ?? target.sheetNames[0]
+    const range = typedRange.trim()
+    if (!sheet || range === '') return
+    insertAtActive(formatExternalRef(target.index, sheet, range))
+  }
 
   const setArg = (index: number, value: string): void => {
     setArgs((previous) => {
@@ -159,6 +219,67 @@ export function FunctionArgumentsDialog({
             ),
           )}
         </div>
+        {!collapsed && pickTargets.length > 0 && (
+          <div className="fn-args-external">
+            <p className="dialog-note">{t('dlgFnArgsLinked')}</p>
+            {pickTargets.map((pickTarget) => (
+              <div className="fn-args-external-row" key={pickTarget.index}>
+                <span className="watch-formula">{pickTarget.name}</span>
+                {pickTarget.open ? (
+                  pickingName === pickTarget.name ? (
+                    <span className="dialog-note">{t('dlgFnArgsPicking')}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => armExternalPick(pickTarget)}
+                    >
+                      {t('dlgFnArgsPick')}
+                    </button>
+                  )
+                ) : (
+                  <span className="input-row">
+                    <select
+                      aria-label={t('appLinksSheets')}
+                      value={typedSheets.get(pickTarget.index) ?? pickTarget.sheetNames[0] ?? ''}
+                      onChange={(event) =>
+                        setTypedSheets((previous) => {
+                          const next = new Map(previous)
+                          next.set(pickTarget.index, event.target.value)
+                          return next
+                        })
+                      }
+                    >
+                      {pickTarget.sheetNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      placeholder="A1:B2"
+                      value={typedRange}
+                      onChange={(event) => setTypedRange(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          insertTypedRange(pickTarget)
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => insertTypedRange(pickTarget)}
+                    >
+                      {t('dlgFnArgsInsert')}
+                    </button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {collapsed ? (
           <p className="dialog-note">{t('dlgFnArgsPickHint')}</p>
         ) : (
