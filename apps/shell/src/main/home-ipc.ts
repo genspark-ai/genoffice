@@ -206,8 +206,9 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
       indexer.refreshIfStale(60_000)
       // the query rides out an in-flight incremental scan (a save the watcher
       // just reported) so a just-saved file is findable on the first try; the
-      // short cap keeps a big scan from stalling the search box
-      await indexer.settle(500)
+      // cap must outlive the watcher's rescan debounce (1.5s) or the wait
+      // resolves before the scan even starts
+      await indexer.settle(2_000)
       const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
       const filter = typeof query.ext === 'string' ? query.ext : ''
       const exts = filter && filter !== 'all' ? (SEARCH_EXT_FAMILY[filter] ?? [filter]) : undefined
