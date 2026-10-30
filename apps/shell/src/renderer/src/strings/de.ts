@@ -234,6 +234,14 @@ export const de: Dict = {
   setAnalytics: 'Anonyme Nutzungsstatistiken senden',
   setAnalyticsDesc:
     'Standardmäßig aktiviert und unter Einstellungen → Allgemein deaktivierbar. Verwendet Google Analytics 4; Google erhält Ihre öffentliche IP-Adresse und Transportmetadaten, aber keine Dokumentinhalte oder Dateinamen.',
+  setLoginItem: 'Beim Anmelden starten',
+  setLoginItemDesc:
+    'Startet GenOffice bei der Anmeldung, damit Tray-Symbol und globaler Kurzbefehl bereitstehen. Unter Linux nicht unterstützt; der Schalter bleibt aus.',
+  setGlobalHotkey: 'Globaler Kurzbefehl',
+  setGlobalHotkeyDesc: 'Ruft von überall die Befehlspalette der Startseite auf.',
+  setGlobalHotkeyAccelerator: 'Tastenkombination',
+  setGlobalHotkeyAcceleratorDesc:
+    'Accelerator-Schreibweise wie Alt+Space oder Strg+Shift+K; Eingabe übernimmt, unerkannte Werte werden ignoriert.',
   setSearchRerank: 'Jev-Neusortierung',
   setSearchRerankDesc:
     'Sendet die Auszüge der 20 besten lokalen Treffer an das Jev-Modell von TypeSafe und sortiert sie nach Relevanz. Standardmäßig aus; wenn aktiv, verlassen Auszüge dieses Gerät.',

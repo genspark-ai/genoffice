@@ -33,6 +33,11 @@ const TARGET_KIND_BY_TAB: Partial<Record<TabKind, ControlTarget['kind']>> = {
  */
 export function controlHandler(host: ControlHost): (req: ControlRequest) => Promise<ControlReply> {
   return async (req) => {
+    // the desktop domain is served by desktop-control.ts; this handler owns the
+    // document-spot commands, which always carry a path
+    if (req.cmd === 'desktop') {
+      return fail('unsupported', `the desktop action "${req.action}" is not a document command`)
+    }
     if (!existsSync(req.path)) {
       return fail('file_not_found', `file not found: ${req.path}`)
     }

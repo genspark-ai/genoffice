@@ -49,6 +49,10 @@ genoffice merge invoice-template.docx --data values.json --out invoice.docx [--f
 genoffice pdf read scan.pdf [--page 3 | --range 1-5] [--full] --json     # text layer page by page (pages 1-20 by default, 4000 characters each) with page sizes and metadata; headless pdfium, no app process
 genoffice guide docs                                                   # op signatures + restricted-HTML rules (`guide <domain> --json` = the catalog with each op's schema and a fingerprint)
 genoffice selection report.docx --json   # what the user has selected in the editor showing the file
+genoffice desktop get-state --json       # the running app's Home desktop: wallpaper, icon layout summary, todos, open windows
+genoffice desktop set-wallpaper teal-deep --json   # "default", a builtin name, or an absolute image path (imported)
+genoffice desktop todo add "sign the contract" --json   # prepend to the Home todo widget; `desktop todo list` reads it
+genoffice desktop windows list --json    # the open windows/editor tabs (kind, title, path, active, dirty)
 genoffice skill list   # coding agents found on this machine and the skill version each has
 genoffice skill install --dir ./skills --force   # copy the bundled skill into a skills directory
 genoffice install-cli   # put genoffice on the PATH

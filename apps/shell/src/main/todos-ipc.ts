@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
@@ -44,7 +45,7 @@ function normalizeTodos(raw: unknown): TodoItem[] {
  * convenience, never a reason Home fails to open. Reading is also the one
  * moment a hand-edited or foreign file is normalized into the invariant.
  */
-function readTodos(userDataDir: string): TodoItem[] {
+export function readTodos(userDataDir: string): TodoItem[] {
   let text: string
   try {
     text = readFileSync(todosFilePath(userDataDir), 'utf8')
@@ -61,8 +62,20 @@ function readTodos(userDataDir: string): TodoItem[] {
 }
 
 /** the scratch-then-rename write the imports use, so a crash mid-write costs nothing */
-async function writeTodos(userDataDir: string, items: readonly TodoItem[]): Promise<void> {
+export async function writeTodos(userDataDir: string, items: readonly TodoItem[]): Promise<void> {
   await atomicWriteFile(todosFilePath(userDataDir), Buffer.from(JSON.stringify(items, null, 2)))
+}
+
+/**
+ * One new entry added the way the widget adds one (prepended, id from
+ * randomUUID, text clamped to the store's per-item cap); returns the
+ * normalized list as written, so the caller sees exactly what landed.
+ */
+export async function addTodo(userDataDir: string, text: string): Promise<TodoItem[]> {
+  const items = [{ id: randomUUID(), text, done: false }, ...readTodos(userDataDir)]
+  const normalized = normalizeTodos(items)
+  await writeTodos(userDataDir, normalized)
+  return normalized
 }
 
 /**

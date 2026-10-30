@@ -185,6 +185,45 @@ describe('createKnowledgeBaseSkill', () => {
       ),
     ).toBeNull()
   })
+
+  it('read accepts a search-result path (the indexed corpus reaches past the listing)', async () => {
+    const deps = makeDeps()
+    const skill = createKnowledgeBaseSkill(deps)
+    const result = await skill.executeTool!({
+      id: 't6',
+      name: 'read_knowledge_file',
+      input: { path: '/Users/me/work/notes.docx', offset: 0 },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(deps.reads).toEqual([['/Users/me/work/notes.docx', 0]])
+    expect(result.output).toContain('characters 0..2 of 100')
+  })
+
+  it('verifyResponse whitelists what this session searched out, still rejecting the invented', async () => {
+    const deps = makeDeps({
+      search: async () => [
+        {
+          path: '/Users/me/work/notes.docx',
+          name: 'notes.docx',
+          ext: 'docx',
+          folder: 'work',
+          snippet: 'hit',
+        },
+      ],
+    })
+    const skill = createKnowledgeBaseSkill(deps)
+    await skill.executeTool!({
+      id: 't7',
+      name: 'search_knowledge_base',
+      input: { query: 'notes' },
+    })
+    // an indexed-but-unlisted path found through search cites cleanly
+    const good = 'see [notes.docx](filenav:///Users/me/work/notes.docx)'
+    expect(skill.verifyResponse!(good, [])).toBeNull()
+    // a path nobody showed the model is still refused
+    const bad = 'cited [fake.docx](filenav:///tmp/fake.docx)'
+    expect(skill.verifyResponse!(bad, [])).toContain('not knowledge-base paths')
+  })
 })
 
 describe('createKnowledgeBaseSkill with no starred files', () => {

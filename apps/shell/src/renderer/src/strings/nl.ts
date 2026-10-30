@@ -220,6 +220,14 @@ export const nl: Dict = {
   setAnalytics: 'Anonieme gebruiksstatistieken verzenden',
   setAnalyticsDesc:
     'Standaard ingeschakeld en uit te schakelen via Instellingen → Algemeen. Gebruikt Google Analytics 4; Google ontvangt uw openbare IP en transportmetadata, maar nooit documentinhoud of bestandsnamen.',
+  setLoginItem: 'Starten bij aanmelden',
+  setLoginItemDesc:
+    'Start GenOffice wanneer je je aanmeldt, met het systeemvakpictogram en de globale sneltoets beschikbaar. Niet ondersteund op Linux; de schakelaar blijft uit.',
+  setGlobalHotkey: 'Globale sneltoets',
+  setGlobalHotkeyDesc: 'Roept het opdrachtenpalet van Home overal op.',
+  setGlobalHotkeyAccelerator: 'Sneltoetscombinatie',
+  setGlobalHotkeyAcceleratorDesc:
+    'Accelerator-syntax zoals Alt+Space of Ctrl+Shift+K; Enter past toe, onherkende waarden worden genegeerd.',
   setSearchRerank: 'Jev-herordening',
   setSearchRerankDesc:
     'Stuurt de fragmenten van de 20 beste lokale resultaten naar het Jev-model van TypeSafe en sorteert ze op relevantie. Standaard uit; indien aan verlaten fragmenten dit apparaat.',

@@ -27,6 +27,8 @@ import type {
   TodoItem,
   DesktopLayout,
   DesktopPrefs,
+  DeepLinkPayload,
+  SystemPresenceSettings,
   UiLanguage,
   FileSearchPage,
   FileSearchRerank,
@@ -40,7 +42,12 @@ import type {
   IntegrationsStatus,
   SkillInstallState,
 } from '../shared/integrations-api'
-import type { FoundSkill, RecommendedSkill, ForeignSkillCandidate, InstalledPlugin } from '../shared/found-skill'
+import type {
+  FoundSkill,
+  RecommendedSkill,
+  ForeignSkillCandidate,
+  InstalledPlugin,
+} from '../shared/found-skill'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 
@@ -116,6 +123,35 @@ function normalizeAuthorNameSetting(result: unknown): AuthorNameSetting {
 const pendingOpenSettings: Array<{ section: string }> = []
 ipcRenderer.on(HOME_CHANNELS.openSettings, (_event, target: { section: string }) => {
   if (ipcRenderer.listenerCount(HOME_CHANNELS.openSettings) === 1) pendingOpenSettings.push(target)
+})
+
+/** a deep-link payload, validated; null when the link addresses another view */
+function asAskDeepLink(payload: unknown): DeepLinkPayload | null {
+  if (!payload || typeof payload !== 'object') return null
+  const p = payload as Partial<DeepLinkPayload>
+  if (p.view !== 'ask') return null
+  return { view: 'ask', ...(typeof p.query === 'string' ? { query: p.query } : {}) }
+}
+
+// The renderer defers its first render until the locale and a few bootstrap
+// IPC answers land, so a deep link or palette summon delivered right after
+// did-finish-load can beat the renderer handler's own ipcRenderer.on — the
+// main-process send is then lost. These module-scope subscriptions are
+// attached the moment the preload evaluates and buffer such early events (a
+// queue for deep links, one pending flag for palette opens) for replay when
+// the renderer handler attaches; while a handler is attached (listenerCount
+// above the module-scope one) events reach it directly and nothing buffers.
+const pendingDeepLinks: DeepLinkPayload[] = []
+ipcRenderer.on(HOME_CHANNELS.deepLink, (_event, payload: unknown) => {
+  if (ipcRenderer.listenerCount(HOME_CHANNELS.deepLink) > 1) return
+  const link = asAskDeepLink(payload)
+  if (link) pendingDeepLinks.push(link)
+})
+
+let paletteOpenPending = false
+ipcRenderer.on(HOME_CHANNELS.paletteOpen, () => {
+  if (ipcRenderer.listenerCount(HOME_CHANNELS.paletteOpen) > 1) return
+  paletteOpenPending = true
 })
 
 const homeApi: HomeApi = {
@@ -400,7 +436,44 @@ const homeApi: HomeApi = {
   onPaletteOpen(handler) {
     const listener = () => handler()
     ipcRenderer.on(HOME_CHANNELS.paletteOpen, listener)
+    // replay a summon that arrived before this handler attached, one microtask
+    // out so it never runs inside the attach call stack
+    if (paletteOpenPending) {
+      paletteOpenPending = false
+      queueMicrotask(() => handler())
+    }
     return () => ipcRenderer.removeListener(HOME_CHANNELS.paletteOpen, listener)
+  },
+  onDeepLink(handler) {
+    const listener = (_event: IpcRendererEvent, payload: unknown) => {
+      const link = asAskDeepLink(payload)
+      if (link) handler(link)
+    }
+    ipcRenderer.on(HOME_CHANNELS.deepLink, listener)
+    // replay the links that arrived before this handler attached, one microtask
+    // out each (in order) so they never run inside the attach call stack
+    for (const link of pendingDeepLinks.splice(0)) queueMicrotask(() => handler(link))
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.deepLink, listener)
+  },
+  onDesktopPrefsChanged(handler) {
+    const listener = (_event: IpcRendererEvent, prefs: DesktopPrefs) => handler(prefs)
+    ipcRenderer.on(HOME_CHANNELS.desktopPrefsChanged, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.desktopPrefsChanged, listener)
+  },
+  async getSystemPresence() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.systemPresenceGet)) as SystemPresenceSettings
+  },
+  async setLoginItemEnabled(enabled) {
+    return (await ipcRenderer.invoke(
+      HOME_CHANNELS.systemPresenceSetLoginItem,
+      enabled,
+    )) as SystemPresenceSettings
+  },
+  async setGlobalHotkey(patch) {
+    return (await ipcRenderer.invoke(
+      HOME_CHANNELS.systemPresenceSetHotkey,
+      patch,
+    )) as SystemPresenceSettings
   },
   async templatesList() {
     return (await ipcRenderer.invoke(HOME_CHANNELS.templatesList)) as TemplateInfo[]

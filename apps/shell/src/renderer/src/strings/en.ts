@@ -12,8 +12,8 @@ export const en: Dict = {
   askThreadDeleteConfirm: 'Delete "{label}"? Its turns cannot be recovered.',
   askThreadNew: 'New conversation',
   askTitle: 'Ask your knowledge base',
-  askEmptyCorpusHint: 'No starred files yet — star some files first and the AI can read them.',
-  askCorpusCount: 'Knowledge base: {n} starred files',
+  askEmptyCorpusHint: 'No indexed files yet — add a folder in Settings first.',
+  askCorpusCount: 'Knowledge base: {n} files',
   askIntro: 'Ask about your starred files. Answers cite their sources — click one to open it.',
   askToolSearch: 'Searching the knowledge base',
   askToolRead: 'Reading a file',
@@ -28,7 +28,7 @@ export const en: Dict = {
   askSaveFailed: 'Could not save: {error}',
   askEmptyCorpus: 'The knowledge base is empty: star some files first, then ask.',
   askNeedsLogin: 'Sign in to Genspark to use AI chat.',
-  askPlaceholder: 'Ask about your starred files…',
+  askPlaceholder: 'Ask a question about your files…',
   askHintIdle: 'Enter to send',
   askHintBusy: 'The AI is answering…',
   askRemoveAttachment: 'Remove attachment',
@@ -218,6 +218,14 @@ export const en: Dict = {
   setAnalytics: 'Send anonymous usage statistics',
   setAnalyticsDesc:
     'Enabled by default and can be turned off anytime in Settings → General. Uses Google Analytics 4; Google receives your public IP address and transport metadata, but document contents and file names are never collected.',
+  setLoginItem: 'Launch at login',
+  setLoginItemDesc:
+    'Run GenOffice when you sign in, keeping the tray icon and global shortcut available. Not supported on Linux, where the switch stays off.',
+  setGlobalHotkey: 'Global shortcut',
+  setGlobalHotkeyDesc: 'Summons the Home command palette from anywhere.',
+  setGlobalHotkeyAccelerator: 'Shortcut keys',
+  setGlobalHotkeyAcceleratorDesc:
+    'Accelerator syntax such as Alt+Space or Ctrl+Shift+K; Enter applies, unrecognized values are ignored.',
   setSearchRerank: 'Jev search reranking',
   setSearchRerankDesc:
     "Sends the top 20 local hits' excerpts to TypeSafe's Jev model and reorders them by relevance. Off by default; when on, excerpts leave this device.",

@@ -220,6 +220,14 @@ export const hi: Dict = {
   setAnalytics: 'गुमनाम उपयोग आँकड़े भेजें',
   setAnalyticsDesc:
     'डिफ़ॉल्ट रूप से चालू; सेटिंग्स → सामान्य में बंद किया जा सकता है। Google Analytics 4 का उपयोग होता है; Google को सार्वजनिक IP और ट्रांसपोर्ट मेटाडेटा मिलता है, लेकिन दस्तावेज़ सामग्री या फ़ाइल नाम नहीं।',
+  setLoginItem: 'लॉगिन पर लॉन्च करें',
+  setLoginItemDesc:
+    'साइन इन करने पर GenOffice चलाएँ, जिससे ट्रे आइकन और ग्लोबल शॉर्टकट उपलब्ध रहें। Linux पर समर्थित नहीं; स्विच बंद रहता है।',
+  setGlobalHotkey: 'ग्लोबल शॉर्टकट',
+  setGlobalHotkeyDesc: 'कहीं से भी होम कमांड पैलेट खोलता है।',
+  setGlobalHotkeyAccelerator: 'शॉर्टकट कुंजियाँ',
+  setGlobalHotkeyAcceleratorDesc:
+    'Alt+Space या Ctrl+Shift+K जैसा accelerator सिंटैक्स; Enter लागू करता है, अपरिचित मान अनदेखे जाते हैं।',
   setSearchRerank: 'Jev खोज पुनर्क्रमण',
   setSearchRerankDesc:
     'स्थानीय खोज के शीर्ष 20 परिणामों के अंश TypeSafe के Jev मॉडल को भेजता है और उन्हें प्रासंगिकता के अनुसार पुनः क्रमित करता है। डिफ़ॉल्ट रूप से बंद; चालू होने पर अंश इस डिवाइस से बाहर जाते हैं।',

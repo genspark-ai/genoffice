@@ -151,6 +151,35 @@ export class FileIndexStore {
     return (this.db.prepare('SELECT count(*) AS n FROM files').get() as { n: number }).n
   }
 
+  /** membership probe: the knowledge base's read gate for the indexed scope */
+  has(path: string): boolean {
+    return this.db.prepare('SELECT 1 AS one FROM files WHERE path = ?').get(path) !== undefined
+  }
+
+  /**
+   * The most recently touched indexed files — the knowledge base's listing
+   * window when the corpus is the whole index (a bounded prompt window, not a
+   * browse UI: search is the discovery path).
+   */
+  recentFiles(limit: number): IndexedFile[] {
+    const rows = this.db
+      .prepare(
+        'SELECT path, mtime_ms, size_bytes, status FROM files ORDER BY mtime_ms DESC LIMIT ?',
+      )
+      .all(Math.max(0, Math.floor(limit))) as unknown as Array<{
+      path: string
+      mtime_ms: number
+      size_bytes: number
+      status: IndexStatus
+    }>
+    return rows.map((r) => ({
+      path: r.path,
+      mtimeMs: r.mtime_ms,
+      sizeBytes: r.size_bytes,
+      status: r.status,
+    }))
+  }
+
   /** insert or replace one file; `text` null indexes the name and folder only */
   upsert(
     meta: { path: string; mtimeMs: number; sizeBytes: number },

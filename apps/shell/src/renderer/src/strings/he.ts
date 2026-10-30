@@ -217,6 +217,14 @@ export const he: Dict = {
   setAnalytics: 'שליחת נתוני שימוש אנונימיים',
   setAnalyticsDesc:
     'מופעל כברירת מחדל וניתן לכיבוי בהגדרות ← כללי. משתמש ב-Google Analytics 4; Google מקבלת IP ציבורי ומטא-נתוני תעבורה, אך לא תוכן מסמכים או שמות קבצים.',
+  setLoginItem: 'הפעלה בעת הכניסה',
+  setLoginItemDesc:
+    'מפעיל את GenOffice בעת הכניסה למערכת, כך שסמל מגש המערכת וקיצור המקלדת הגלובלי זמינים. לא נתמך ב-Linux; המתג נשאר כבוי.',
+  setGlobalHotkey: 'קיצור גלובלי',
+  setGlobalHotkeyDesc: 'מזמן את לוח הפקודות של מסך הבית מכל מקום.',
+  setGlobalHotkeyAccelerator: 'מקשי הקיצור',
+  setGlobalHotkeyAcceleratorDesc:
+    'תחביר accelerator כמו Alt+Space או Ctrl+Shift+K; Enter מחיל, ערכים לא מזוהים מתעלמים.',
   setSearchRerank: 'סידור מחדש עם Jev',
   setSearchRerankDesc:
     'שולח את הקטעים של 20 התוצאות המקומיות המובילות למודל Jev של TypeSafe ומסדר אותן מחדש לפי רלוונטיות. כבוי כברירת מחדל; כשמופעל, הקטעים יוצאים מהמכשיר הזה.',

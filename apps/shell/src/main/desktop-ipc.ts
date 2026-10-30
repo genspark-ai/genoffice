@@ -88,7 +88,7 @@ function normalizeLayout(raw: unknown): DesktopLayout {
  * convenience, never a reason Home fails to open. Reading is also the one
  * moment a hand-edited or foreign file is normalized into the invariant.
  */
-function readLayout(userDataDir: string): DesktopLayout {
+export function readDesktopLayout(userDataDir: string): DesktopLayout {
   let text: string
   try {
     text = readFileSync(desktopLayoutPath(userDataDir), 'utf8')
@@ -104,6 +104,31 @@ function readLayout(userDataDir: string): DesktopLayout {
   return normalizeLayout(parsed)
 }
 
+/**
+ * The prefs' read half: a missing, corrupt or shapeless file is the default
+ * set — the desktop opens with its fallback look rather than failing.
+ */
+export function readDesktopPrefs(userDataDir: string): DesktopPrefs {
+  let text: string
+  try {
+    text = readFileSync(desktopPrefsPath(userDataDir), 'utf8')
+  } catch {
+    return { ...DEFAULT_DESKTOP_PREFS }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { ...DEFAULT_DESKTOP_PREFS }
+  }
+  return normalizePrefs(parsed)
+}
+
+/** the scratch-then-rename write both the IPC save and the CLI control path use */
+export async function writeDesktopPrefs(userDataDir: string, prefs: DesktopPrefs): Promise<void> {
+  await atomicWriteFile(desktopPrefsPath(userDataDir), Buffer.from(JSON.stringify(prefs, null, 2)))
+}
+
 /** the scratch-then-rename write the imports use, so a crash mid-write costs nothing */
 async function writeLayout(userDataDir: string, layout: DesktopLayout): Promise<void> {
   await atomicWriteFile(
@@ -115,7 +140,7 @@ async function writeLayout(userDataDir: string, layout: DesktopLayout): Promise<
 // ── wallpaper plumbing ─────────────────────────────────
 
 /** one shipped wallpaper as wallpapers.json describes it */
-interface WallpaperEntry {
+export interface WallpaperEntry {
   id: string
   /** the renderer's string key for the localized display name */
   nameKey: string
@@ -147,7 +172,7 @@ function isWallpaperEntry(value: unknown): value is WallpaperEntry {
  * reason the desktop fails to open — and entries that lost their shape are
  * dropped individually.
  */
-function readWallpaperManifest(dir: string): WallpaperEntry[] {
+export function readWallpaperManifest(dir: string): WallpaperEntry[] {
   let text: string
   try {
     text = readFileSync(join(dir, 'wallpapers.json'), 'utf8')
@@ -183,8 +208,8 @@ function wallpaperDataUrl(path: string): string {
   return `data:${mime};base64,${data.toString('base64')}`
 }
 
-/** the image extensions the picker and the custom dir accept */
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp']
+/** the image extensions the picker, the custom dir and the CLI wallpaper path accept */
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp']
 
 /**
  * The custom wallpaper's file name: `<timestamp>-<sanitized name>` — the
@@ -193,8 +218,12 @@ const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp']
  * suffix until the name is free.
  */
 export function customWallpaperName(source: string, attempt: number): string {
-  const ext = extname(source).toLowerCase()
-  const base = basename(source, ext)
+  // basename() only splits the host platform's separator, so a Windows path
+  // handed over on macOS/Linux (or a Windows build seeing a POSIX path) would
+  // keep its directories baked into the name; normalize the separators first
+  const local = source.replace(/\\/g, '/')
+  const ext = extname(local).toLowerCase()
+  const base = basename(local, ext)
     // eslint-disable-next-line no-control-regex -- control characters are rejected on purpose
     .replace(/[/\\:*?"<>|\u0000-\u001f]/g, '_')
     .trim()
@@ -218,7 +247,7 @@ export interface DesktopIpcDeps {
 
 /** dev ships the wallpapers from the app's own build tree; the packaged app
  * reads them from resources/wallpapers (electron-builder maps build/wallpapers there) */
-function defaultWallpapersDir(): string {
+export function defaultWallpapersDir(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'wallpapers')
     : join(app.getAppPath(), 'build', 'wallpapers')
@@ -256,7 +285,7 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
   const pickImage = deps.pickImage ?? nativePickImage
 
   ipcMain.handle(HOME_CHANNELS.desktopLayout, async (): Promise<DesktopLayout> =>
-    readLayout(userDataDir()),
+    readDesktopLayout(userDataDir()),
   )
 
   ipcMain.handle(HOME_CHANNELS.desktopLayoutSave, async (_event, raw: unknown): Promise<void> => {
@@ -277,21 +306,9 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
 
   // ── prefs ──
 
-  ipcMain.handle(HOME_CHANNELS.desktopPrefs, async (): Promise<DesktopPrefs> => {
-    let text: string
-    try {
-      text = readFileSync(desktopPrefsPath(userDataDir()), 'utf8')
-    } catch {
-      return { ...DEFAULT_DESKTOP_PREFS }
-    }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      return { ...DEFAULT_DESKTOP_PREFS }
-    }
-    return normalizePrefs(parsed)
-  })
+  ipcMain.handle(HOME_CHANNELS.desktopPrefs, async (): Promise<DesktopPrefs> =>
+    readDesktopPrefs(userDataDir()),
+  )
 
   ipcMain.handle(HOME_CHANNELS.desktopPrefsSave, async (_event, raw: unknown): Promise<void> => {
     if (!isDesktopPrefs(raw)) {
@@ -301,11 +318,7 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
           "wallpaperFit: 'cover'|'contain'|'stretch'|'tile'|'center', labelColor: string }",
       )
     }
-    const prefs = normalizePrefs(raw)
-    await atomicWriteFile(
-      desktopPrefsPath(userDataDir()),
-      Buffer.from(JSON.stringify(prefs, null, 2)),
-    )
+    await writeDesktopPrefs(userDataDir(), normalizePrefs(raw))
   })
 
   // ── wallpapers ──
@@ -362,8 +375,10 @@ export function registerDesktopIpc(deps: DesktopIpcDeps = {}): void {
  * contract fields, every one valid — an unknown enum value, a negative carousel
  * or a non-hex label color falls back to its default, like the layout's
  * per-entry clamp. A payload that is not an object at all is the full default set.
+ * Exported for the CLI's desktop domain, which writes through the same
+ * invariant on its set-wallpaper path.
  */
-function normalizePrefs(raw: unknown): DesktopPrefs {
+export function normalizePrefs(raw: unknown): DesktopPrefs {
   const prefs = { ...DEFAULT_DESKTOP_PREFS }
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return prefs
   const source = raw as Record<string, unknown>

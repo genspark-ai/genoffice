@@ -223,6 +223,14 @@ export const th: Dict = {
   setAnalytics: 'ส่งสถิติการใช้งานแบบไม่ระบุตัวตน',
   setAnalyticsDesc:
     'เปิดใช้งานเป็นค่าเริ่มต้นและปิดได้ทุกเมื่อใน การตั้งค่า → ทั่วไป ใช้ Google Analytics 4 โดย Google จะได้รับ IP สาธารณะและข้อมูลเมตาการรับส่งข้อมูล แต่จะไม่เก็บเนื้อหาเอกสารหรือชื่อไฟล์',
+  setLoginItem: 'เปิดเมื่อลงชื่อเข้าใช้',
+  setLoginItemDesc:
+    'เรียกใช้ GenOffice เมื่อลงชื่อเข้าใช้ พร้อมไอคอนถาดและปุ่มลัดส่วนกลาง ไม่รองรับบน Linux สวิตช์จะปิดไว้',
+  setGlobalHotkey: 'ปุ่มลัดส่วนกลาง',
+  setGlobalHotkeyDesc: 'เรียกพาเลตคำสั่งของหน้าโฮมจากที่ใดก็ได้',
+  setGlobalHotkeyAccelerator: 'ปุ่มลัด',
+  setGlobalHotkeyAcceleratorDesc:
+    'รูปแบบ accelerator เช่น Alt+Space หรือ Ctrl+Shift+K; กด Enter เพื่อใช้ ค่าที่ไม่รู้จักจะถูกละเว้น',
   setSearchRerank: 'จัดอันดับใหม่ด้วย Jev',
   setSearchRerankDesc:
     'ส่งข้อความตัดตอนของผลลัพธ์ 20 อันดับแรกไปยังโมเดล Jev ของ TypeSafe เพื่อจัดอันดับใหม่ตามความเกี่ยวข้อง ปิดเป็นค่าเริ่มต้น เมื่อเปิด ข้อความตัดตอนจะถูกส่งออกจากอุปกรณ์นี้',

@@ -26,8 +26,23 @@ export type ControlTarget =
   | { kind: 'range'; sheet?: string; range: string }
   | { kind: 'page'; page: number }
 
+/**
+ * The desktop domain: the Home surface's own state (wallpaper, icon layout,
+ * todos) and the windows/tabs the user has open. Read actions answer a
+ * snapshot; the write actions go through the same validated, atomic stores
+ * the renderer IPC uses, so a CLI edit lands exactly like a UI edit.
+ */
+export type DesktopControlRequest =
+  | { cmd: 'desktop'; action: 'get-state' }
+  | { cmd: 'desktop'; action: 'set-wallpaper'; wallpaper: string }
+  | { cmd: 'desktop'; action: 'todo-add'; text: string }
+  | { cmd: 'desktop'; action: 'todo-list' }
+  | { cmd: 'desktop'; action: 'windows-list' }
+
 export type ControlRequest =
-  { cmd: 'open'; path: string; target?: ControlTarget } | { cmd: 'selection'; path: string }
+  | { cmd: 'open'; path: string; target?: ControlTarget }
+  | { cmd: 'selection'; path: string }
+  | DesktopControlRequest
 
 export interface ControlEnvelope {
   token: string

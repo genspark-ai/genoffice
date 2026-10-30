@@ -228,6 +228,14 @@ export const ja: Dict = {
   setAnalytics: '匿名の使用状況統計を送信',
   setAnalyticsDesc:
     '既定で有効です。設定 → 一般でいつでも無効にできます。Google Analytics 4 を使用し、Google は公開 IP アドレスと通信メタデータを受け取りますが、文書の内容やファイル名は収集されません。',
+  setLoginItem: 'ログイン時に起動',
+  setLoginItemDesc:
+    'サインイン時に GenOffice を起動し、トレイアイコンとグローバルショートカットを有効にします。Linux では未対応のためオフのままです。',
+  setGlobalHotkey: 'グローバルショートカット',
+  setGlobalHotkeyDesc: 'どこからでもホームのコマンドパレットを呼び出します。',
+  setGlobalHotkeyAccelerator: 'ショートカットキー',
+  setGlobalHotkeyAcceleratorDesc:
+    'Alt+Space、Ctrl+Shift+K などの accelerator 記法。Enter で適用し、認識できない値は無視されます。',
   setSearchRerank: 'Jev 検索リランク',
   setSearchRerankDesc:
     'ローカル検索の上位 20 件の抜粋を TypeSafe の Jev モデルに送り、関連度で並べ替えます。既定ではオフ。オンにすると抜粋が端末外に送信されます。',

@@ -214,6 +214,14 @@ export const zhTW: Dict = {
   setAnalytics: '傳送匿名使用統計',
   setAnalyticsDesc:
     '此功能預設開啟，可隨時在「設定 → 一般」中關閉。使用 Google Analytics 4；Google 會接收您的公開 IP 位址和傳輸中繼資料，但絕不收集文件內容或檔案名稱。',
+  setLoginItem: '登入時自動啟動',
+  setLoginItemDesc:
+    '登入系統後自動執行 GenOffice，常駐圖示與全域快捷鍵保持可用。Linux 暫不支援，開關不可用。',
+  setGlobalHotkey: '全域快捷鍵',
+  setGlobalHotkeyDesc: '按下後回到首頁並開啟命令選板。',
+  setGlobalHotkeyAccelerator: '快捷鍵組合',
+  setGlobalHotkeyAcceleratorDesc:
+    '如 Alt+Space、Ctrl+Shift+K；Enter 生效，無法識別的寫法會被忽略。',
   setSearchRerank: 'Jev 搜尋重排',
   setSearchRerankDesc:
     '將本機搜尋前 20 筆命中片段傳給 TypeSafe 的 Jev 模型，依相關性重新排序。預設關閉；開啟後命中片段會離開本機。',

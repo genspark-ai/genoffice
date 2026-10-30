@@ -12,8 +12,8 @@ export const zh = {
   askThreadDeleteConfirm: '删除对话「{label}」？删除后无法恢复。',
   askThreadNew: '新建对话',
   askTitle: '问知识库',
-  askEmptyCorpusHint: '还没有收藏文件——先在最近或文件夹里点星收藏,AI 就能读它们。',
-  askCorpusCount: '知识库:{n} 个收藏文件',
+  askEmptyCorpusHint: '还没有索引到文件——先在设置里添加文件夹。',
+  askCorpusCount: '知识库:{n} 个文件',
   askIntro: '基于你收藏的文件提问,回答会标注来源文件,点击即可打开。',
   askToolSearch: '搜索知识库',
   askToolRead: '读取文件',
@@ -28,7 +28,7 @@ export const zh = {
   askSaveFailed: '保存失败:{error}',
   askEmptyCorpus: '知识库还是空的:先收藏一些文件,再回来提问。',
   askNeedsLogin: '登录 Genspark 后即可使用 AI 问答。',
-  askPlaceholder: '问一个关于收藏文件的问题…',
+  askPlaceholder: '问一个关于文件的问题…',
   askHintIdle: 'Enter 发送',
   askHintBusy: 'AI 正在回答…',
   askRemoveAttachment: '移除附件',
@@ -218,6 +218,13 @@ export const zh = {
   setAnalytics: '发送匿名使用统计',
   setAnalyticsDesc:
     '该功能默认开启，可随时在“设置 → 常规”中关闭。使用 Google Analytics 4；Google 会接收您的公网 IP 地址和传输元数据，但绝不收集文档内容或文件名。',
+  setLoginItem: '开机自动启动',
+  setLoginItemDesc:
+    '登录系统后自动运行 GenOffice，托盘图标与全局快捷键保持可用。Linux 暂不支持，开关不可用。',
+  setGlobalHotkey: '全局快捷键',
+  setGlobalHotkeyDesc: '按下后回到首页并打开命令面板。',
+  setGlobalHotkeyAccelerator: '快捷键组合',
+  setGlobalHotkeyAcceleratorDesc: '如 Alt+Space、Ctrl+Shift+K；回车生效，无法识别的写法会被忽略。',
   setSearchRerank: 'Jev 搜索重排',
   setSearchRerankDesc:
     '把本机搜索的前 20 条命中片段发给 TypeSafe 的 Jev 模型，按相关性重新排序。默认关闭；开启后命中片段会离开本机。',

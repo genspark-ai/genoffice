@@ -232,6 +232,14 @@ export const fr: Dict = {
   setAnalytics: "Envoyer des statistiques d'utilisation anonymes",
   setAnalyticsDesc:
     'Activé par défaut et désactivable dans Paramètres → Général. Utilise Google Analytics 4 ; Google reçoit votre adresse IP publique et les métadonnées de transport, mais jamais le contenu des documents ni les noms de fichiers.',
+  setLoginItem: 'Lancer à la connexion',
+  setLoginItemDesc:
+    'Lance GenOffice à la connexion, avec l’icône de barre d’état et le raccourci global disponibles. Non pris en charge sous Linux : l’interrupteur reste désactivé.',
+  setGlobalHotkey: 'Raccourci global',
+  setGlobalHotkeyDesc: 'Affiche la palette de commandes de l’accueil depuis n’importe où.',
+  setGlobalHotkeyAccelerator: 'Touches du raccourci',
+  setGlobalHotkeyAcceleratorDesc:
+    'Syntaxe d’accélérateur comme Alt+Space ou Ctrl+Shift+K ; Entrée applique, les valeurs non reconnues sont ignorées.',
   setSearchRerank: 'Reclassement Jev',
   setSearchRerankDesc:
     'Envoie les extraits des 20 premiers résultats locaux au modèle Jev de TypeSafe et les réordonne par pertinence. Désactivé par défaut ; une fois activé, les extraits quittent cet appareil.',

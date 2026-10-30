@@ -5,31 +5,22 @@ import type { HomeApi, RecentEntry, UserSkillEntry } from '../../shared/home-api
 import type { InstalledPlugin } from '../../shared/found-skill'
 import { FileBadge } from './file-badge'
 import { COMMAND_PALETTE_STRINGS, type CommandPaletteStrings } from './command-palette-strings'
+import {
+  defaultPaletteProviders,
+  mergePaletteRows,
+  RECENT_LOAD_LIMIT,
+  type GroupId,
+  type PaletteContext,
+  type PaletteProvider,
+  type PaletteRow,
+} from './palette-providers'
 import './command-palette.css'
 
-/** recents pulled once on open; the palette filters this page client-side */
-const RECENT_LOAD_LIMIT = 100
-/** rows shown before the query narrows anything (recent files top 5 + the create actions) */
-const RECENT_EMPTY_LIMIT = 5
-/** overall row cap, applied after the fixed group order */
-const RESULT_CAP = 50
+// the matching/scoring helpers live with the providers now; re-exported so
+// existing imports (and their tests) keep working against this module
+export { folderOf, scoreMatch } from './palette-providers'
 
-type GroupId = 'create' | 'recent' | 'skills' | 'settings' | 'plugins'
-
-/** one selectable palette row; `run` performs the bridge action */
-interface PaletteRow {
-  readonly id: string
-  readonly group: GroupId
-  readonly title: string
-  /** secondary line, also searched (folder, description, app name + extension) */
-  readonly detail: string
-  readonly icon: { kind: 'file'; ext: string } | { kind: 'folder' | 'pen' | 'gear' | 'plug' }
-  /** the file failed to stat; the row dims but still tries to open */
-  readonly missing: boolean
-  /** plugins: the chip naming what Enter does (Disable / Enable) */
-  readonly chip: string
-  readonly run: () => void
-}
+const noopAskAi = (_query: string): void => {}
 
 /**
  * The Ctrl/Cmd+K launcher: a centered top-of-screen overlay in the Spotlight /
@@ -37,10 +28,13 @@ interface PaletteRow {
  * focusing the window and switching to Home); the parent mounts this component
  * in response and unmounts it on close.
  *
- * Sources, all read through `window.aiOffice`: recent files, the create
- * actions, installed skills (with plugin components), the settings sections
- * the bridge can open, and installed plugins. Enter runs the row's action;
- * Esc / backdrop click / Enter all hand control back via `onClose`.
+ * The row sources form a provider registry (`palette-providers.ts`): the
+ * create actions, recent files, the file index (debounced, async), skills,
+ * settings sections and plugins each contribute, and an Ask AI row trails
+ * every non-empty query as the natural-language fallback. Sync providers
+ * publish on the keystroke; async rows fold in when they land. Enter runs the
+ * row's action; Esc / backdrop click / Enter all hand control back via
+ * `onClose`.
  *
  * Degraded picks, because the component contract is `lang` + `onClose` only:
  * attaching a skill to the AI ask view lives in Home's internals (the ask
@@ -52,9 +46,15 @@ interface PaletteRow {
 export function CommandPalette({
   lang,
   onClose,
+  onAskAi = noopAskAi,
+  providers,
 }: {
   readonly lang: Lang
   readonly onClose: () => void
+  /** the Ask AI fallback row's query goes here (Home routes it into the ask view) */
+  readonly onAskAi?: (query: string) => void
+  /** test seam: a custom registry; production uses the default providers */
+  readonly providers?: readonly PaletteProvider[]
 }) {
   const strings = COMMAND_PALETTE_STRINGS[lang]
   const [query, setQuery] = useState('')
@@ -97,10 +97,49 @@ export function CommandPalette({
     }
   }, [])
 
-  const rows = useMemo(
-    () => buildRows(strings, query, recentsList, skills, plugins),
-    [strings, query, recentsList, skills, plugins],
-  )
+  const providerList = useMemo(() => providers ?? defaultPaletteProviders(), [providers])
+  const [rows, setRows] = useState<PaletteRow[]>([])
+  const querySeqRef = useRef(0)
+  useEffect(() => {
+    let alive = true
+    const seq = ++querySeqRef.current
+    const ctx: PaletteContext = {
+      strings,
+      recents: recentsList,
+      skills,
+      plugins,
+      onAskAi,
+    }
+    // sync providers publish on this keystroke; an async provider's slot waits
+    // for its promise, and a stale keystroke's late answer is discarded
+    const parts: { priority: number; rows: PaletteRow[] }[] = []
+    const publish = () => {
+      if (alive && querySeqRef.current === seq) setRows(mergePaletteRows(parts))
+    }
+    for (const provider of providerList) {
+      let out: PaletteRow[] | Promise<PaletteRow[]>
+      try {
+        out = provider.getRows(query, ctx)
+      } catch {
+        continue
+      }
+      const part = { priority: provider.priority, rows: Array.isArray(out) ? out : [] }
+      parts.push(part)
+      if (!Array.isArray(out)) {
+        void Promise.resolve(out).then(
+          (resolved) => {
+            part.rows = resolved
+            publish()
+          },
+          () => undefined,
+        )
+      }
+    }
+    publish()
+    return () => {
+      alive = false
+    }
+  }, [providerList, strings, query, recentsList, skills, plugins, onAskAi])
 
   // a new result set starts from the top, whether it came from the query or a
   // source landing late
@@ -150,7 +189,12 @@ export function CommandPalette({
       const current = out[out.length - 1]
       if (current && current.id === row.group) current.rows.push(row)
       else
-        out.push({ id: row.group, label: groupLabel(strings, row.group), offset: 0, rows: [row] })
+        out.push({
+          id: row.group,
+          label: groupLabel(strings, row.group),
+          offset: 0,
+          rows: [row],
+        })
     }
     let offset = 0
     for (const group of out) {
@@ -240,257 +284,23 @@ export function CommandPalette({
   )
 }
 
-// ── row construction ──
-
-function buildRows(
-  strings: CommandPaletteStrings,
-  query: string,
-  recentsList: readonly RecentEntry[] | null,
-  skills: readonly UserSkillEntry[] | null,
-  plugins: readonly InstalledPlugin[] | null,
-): PaletteRow[] {
-  const createRows: PaletteRow[] = [
-    commandRow(
-      'doc',
-      strings.cmdNewDoc,
-      strings.hintNewDoc,
-      'docx',
-      () => void window.aiOffice.newDoc(),
-    ),
-    commandRow(
-      'sheet',
-      strings.cmdNewSheet,
-      strings.hintNewSheet,
-      'xlsx',
-      () => void window.aiOffice.newSheet(),
-    ),
-    commandRow(
-      'slide',
-      strings.cmdNewSlide,
-      strings.hintNewSlide,
-      'pptx',
-      () => void window.aiOffice.newSlide(),
-    ),
-    commandRow(
-      'markdown',
-      strings.cmdNewMarkdown,
-      strings.hintNewMarkdown,
-      'md',
-      () => void window.aiOffice.newMarkdown(),
-    ),
-    commandRow(
-      'html',
-      strings.cmdNewHtml,
-      strings.hintNewHtml,
-      'html',
-      () => void window.aiOffice.newHtml(),
-    ),
-    commandRow(
-      'pdf',
-      strings.cmdNewPdf,
-      strings.hintNewPdf,
-      'pdf',
-      () => void window.aiOffice.newPdf(),
-    ),
-    commandRow(
-      'browse',
-      strings.cmdBrowse,
-      strings.hintBrowse,
-      'folder',
-      () => void window.aiOffice.browse(),
-    ),
-  ]
-
-  // the ask view keeps its attached skills in its own state with no bridge to
-  // it from a self-contained component; the skills settings page is the one
-  // skill surface the palette can reach
-  const openSkillsSettings = () => void window.aiOffice.openSkillsSettings()
-  const skillRows: PaletteRow[] = []
-  const seenSkillIds = new Set<string>()
-  for (const skill of skills ?? []) {
-    if (seenSkillIds.has(skill.name)) continue
-    seenSkillIds.add(skill.name)
-    skillRows.push(
-      plainRow(
-        'skills',
-        `skill:${skill.name}`,
-        skill.name,
-        skill.description,
-        { kind: 'pen' },
-        () => openSkillsSettings(),
-      ),
-    )
-  }
-  for (const plugin of plugins ?? []) {
-    for (const component of [...plugin.components.skills, ...plugin.components.commands]) {
-      const name = `${plugin.name}:${component}`
-      if (seenSkillIds.has(name)) continue
-      seenSkillIds.add(name)
-      skillRows.push(
-        plainRow('skills', `skill:${name}`, name, plugin.description, { kind: 'pen' }, () =>
-          openSkillsSettings(),
-        ),
-      )
-    }
-  }
-
-  const settingsRows: PaletteRow[] = [
-    plainRow(
-      'settings',
-      'settings:ai-model',
-      strings.setAiModel,
-      strings.hintAiModel,
-      { kind: 'gear' },
-      () => void window.aiOffice.openAiModelSettings(),
-    ),
-    plainRow(
-      'settings',
-      'settings:skills',
-      strings.setSkills,
-      strings.hintSkills,
-      { kind: 'gear' },
-      () => openSkillsSettings(),
-    ),
-  ]
-
-  // the plugins settings section has no renderer-invokable open path; the one
-  // per-plugin action the bridge offers is the (reversible) enable toggle
-  const pluginRows: PaletteRow[] = (plugins ?? []).map((plugin) =>
-    plainRow(
-      'plugins',
-      `plugin:${plugin.name}`,
-      plugin.name,
-      plugin.description,
-      { kind: 'plug' },
-      () => void window.aiOffice.pluginsSetEnabled(plugin.name, !plugin.enabled),
-      plugin.enabled ? strings.pluginDisable : strings.pluginEnable,
-    ),
-  )
-
-  const recentRows: PaletteRow[] = (recentsList ?? []).map((entry) =>
-    plainRow(
-      'recent',
-      `recent:${entry.path}`,
-      entry.name,
-      entry.missing ? strings.missingFile : folderOf(entry.path),
-      { kind: 'file', ext: entry.ext },
-      () => void window.aiOffice.openPath(entry.path),
-      '',
-      entry.missing,
-    ),
-  )
-
-  const q = query.trim()
-  if (!q) {
-    return [...createRows, ...recentRows.slice(0, RECENT_EMPTY_LIMIT)]
-  }
-  return [
-    ...rankRows(q, createRows),
-    ...rankRows(q, recentRows),
-    ...rankRows(q, skillRows),
-    ...rankRows(q, settingsRows),
-    ...rankRows(q, pluginRows),
-  ].slice(0, RESULT_CAP)
-}
-
-function commandRow(
-  key: string,
-  title: string,
-  detail: string,
-  ext: string,
-  run: () => void,
-): PaletteRow {
-  return {
-    id: `create:${key}`,
-    group: 'create',
-    title,
-    detail,
-    icon: ext === 'folder' ? { kind: 'folder' } : { kind: 'file', ext },
-    missing: false,
-    chip: '',
-    run,
-  }
-}
-
-function plainRow(
-  group: GroupId,
-  id: string,
-  title: string,
-  detail: string,
-  icon: PaletteRow['icon'],
-  run: () => void,
-  chip = '',
-  missing = false,
-): PaletteRow {
-  return { id, group, title, detail, icon, missing, chip, run }
-}
-
 function groupLabel(strings: CommandPaletteStrings, group: GroupId): string {
   switch (group) {
     case 'create':
       return strings.groupCreate
     case 'recent':
       return strings.groupRecent
+    case 'files':
+      return strings.groupFiles
     case 'skills':
       return strings.groupSkills
     case 'settings':
       return strings.groupSettings
     case 'plugins':
       return strings.groupPlugins
+    case 'ask':
+      return strings.groupAsk
   }
-}
-
-/** keep the rows whose title or detail matches, best first, source order on ties */
-function rankRows(query: string, rows: readonly PaletteRow[]): PaletteRow[] {
-  return rows
-    .map((row, index) => ({ row, index, score: scoreMatch(query, row.title, row.detail) }))
-    .filter((entry) => entry.score !== null)
-    .sort((a, b) => b.score! - a.score! || a.index - b.index)
-    .map((entry) => entry.row)
-}
-
-/**
- * Case-insensitive substring + subsequence score, higher = better; null means
- * "no match". A substring beats a subsequence, the title beats the detail line,
- * and an earlier hit beats a later one; equal scores keep the source order
- * (`rankRows` sorts stably by construction).
- */
-export function scoreMatch(query: string, title: string, detail = ''): number | null {
-  const q = query.trim().toLowerCase()
-  if (!q) return 0
-  const t = title.toLowerCase()
-  const d = detail.toLowerCase()
-  const inTitle = t.indexOf(q)
-  if (inTitle === 0) return 1000
-  if (inTitle > 0) return 900 - Math.min(inTitle, 100)
-  const inDetail = d.indexOf(q)
-  if (inDetail === 0) return 800
-  if (inDetail > 0) return 700 - Math.min(inDetail, 100)
-  const titleSpread = subsequenceSpread(q, t)
-  if (titleSpread !== null) return 600 - Math.min(titleSpread, 200)
-  const detailSpread = subsequenceSpread(q, d)
-  if (detailSpread !== null) return 500 - Math.min(detailSpread, 200)
-  return null
-}
-
-/** how far apart the query's characters sit in `text` when matched in order
- *  (0 = contiguous), or null when they do not all appear in order */
-function subsequenceSpread(query: string, text: string): number | null {
-  let from = 0
-  let spread = 0
-  for (const ch of query) {
-    const at = text.indexOf(ch, from)
-    if (at === -1) return null
-    spread += at - from
-    from = at + 1
-  }
-  return spread
-}
-
-/** the directory part of a path, both separators honored; '' at the root */
-export function folderOf(path: string): string {
-  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return cut > 0 ? path.slice(0, cut) : ''
 }
 
 // ── icons ──
@@ -500,6 +310,7 @@ function RowIcon({ icon }: { icon: PaletteRow['icon'] }) {
   if (icon.kind === 'folder') return <FolderIcon />
   if (icon.kind === 'pen') return <PenIcon />
   if (icon.kind === 'gear') return <GearIcon />
+  if (icon.kind === 'sparkle') return <SparkleIcon />
   return <PlugIcon />
 }
 
@@ -538,7 +349,7 @@ function GearIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
       <path
-        d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+        d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3-1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5-1z"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
@@ -556,6 +367,19 @@ function PlugIcon() {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function SparkleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
+        stroke="currentColor"
+        strokeWidth="1.3"
         strokeLinejoin="round"
       />
     </svg>

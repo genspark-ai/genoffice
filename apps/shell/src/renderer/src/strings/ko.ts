@@ -224,6 +224,14 @@ export const ko: Dict = {
   setAnalytics: '익명 사용 통계 보내기',
   setAnalyticsDesc:
     '기본적으로 켜져 있으며 설정 → 일반에서 언제든 끌 수 있습니다. Google Analytics 4를 사용하며 Google은 공인 IP 주소와 전송 메타데이터를 수신하지만 문서 내용이나 파일 이름은 수집하지 않습니다.',
+  setLoginItem: '로그인 시 자동 실행',
+  setLoginItemDesc:
+    '로그인할 때 GenOffice를 실행하여 트레이 아이콘과 전역 단축키를 사용할 수 있게 합니다. Linux에서는 지원하지 않아 스위치가 꺼져 있습니다.',
+  setGlobalHotkey: '전역 단축키',
+  setGlobalHotkeyDesc: '어디서든 홈 명령 팔레트를 불러냅니다.',
+  setGlobalHotkeyAccelerator: '단축키 조합',
+  setGlobalHotkeyAcceleratorDesc:
+    'Alt+Space, Ctrl+Shift+K 같은 accelerator 표기. Enter로 적용하며 인식할 수 없는 값은 무시됩니다.',
   setSearchRerank: 'Jev 검색 재정렬',
   setSearchRerankDesc:
     '로컬 검색 상위 20개 결과의 발췌문을 TypeSafe의 Jev 모델로 보내 관련도 순으로 재정렬합니다. 기본은 꺼짐이며, 켜면 발췌문이 기기 밖으로 전송됩니다.',

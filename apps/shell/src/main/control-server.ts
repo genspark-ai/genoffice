@@ -14,11 +14,14 @@ import {
 
 /**
  * Local request/reply channel for the genoffice CLI (`open --slide`,
- * `selection`). Security model: the socket lives in userData (per-user
- * directory, 0600 on POSIX; a per-user named pipe on Windows), every request
- * must carry the random token from userData/control.json (0600), one request
- * per connection, 64 KB cap, and the only commands are "show this spot" and
- * "read the selection" — nothing writes a file or runs code from the request.
+ * `selection`, `desktop …`). Security model: the socket lives in userData
+ * (per-user directory, 0600 on POSIX; a per-user named pipe on Windows),
+ * every request must carry the random token from userData/control.json
+ * (0600), one request per connection, 64 KB cap. The commands are "show this
+ * spot", "read the selection" and the desktop domain — reads of the desktop's
+ * own state plus writes that go through the desktop's own validated, atomic
+ * stores (wallpaper prefs, the todo list). No request writes a document file
+ * or runs code.
  */
 export type ControlHandler = (request: ControlRequest) => Promise<ControlReply>
 
@@ -46,8 +49,27 @@ export function parseEnvelope(line: string): ControlEnvelope | null {
   const env = raw as Partial<ControlEnvelope>
   if (typeof env.token !== 'string' || !env.request || typeof env.request !== 'object') return null
   const req = env.request as Partial<ControlRequest>
-  if ((req.cmd !== 'open' && req.cmd !== 'selection') || typeof req.path !== 'string') return null
-  return env as ControlEnvelope
+  if (req.cmd === 'open' || req.cmd === 'selection') {
+    if (typeof req.path !== 'string') return null
+    return env as ControlEnvelope
+  }
+  if (req.cmd === 'desktop') {
+    const action = (req as { action?: unknown }).action
+    if (action === 'get-state' || action === 'todo-list' || action === 'windows-list') {
+      return env as ControlEnvelope
+    }
+    if (action === 'set-wallpaper') {
+      const wallpaper = (req as { wallpaper?: unknown }).wallpaper
+      if (typeof wallpaper === 'string' && wallpaper !== '') return env as ControlEnvelope
+      return null
+    }
+    if (action === 'todo-add') {
+      const text = (req as { text?: unknown }).text
+      if (typeof text === 'string' && text.trim() !== '') return env as ControlEnvelope
+      return null
+    }
+  }
+  return null
 }
 
 function tokenMatches(given: string, expected: string): boolean {

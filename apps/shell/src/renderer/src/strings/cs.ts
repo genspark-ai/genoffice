@@ -446,6 +446,14 @@ export const cs: Dict = {
   setAutoSave: 'Automaticky ukládat všechny dokumenty',
   setAutoSaveDesc:
     'Zapne automatické ukládání ve všech editorech jako výchozí. Pro jednotlivé okno ho lze stále vypnout.',
+  setLoginItem: 'Spustit při přihlášení',
+  setLoginItemDesc:
+    'Spustí GenOffice při přihlášení, aby byly k dispozici ikona v oznamovací oblasti a globální zkratka. Na Linuxu není podporováno, přepínač zůstává vypnutý.',
+  setGlobalHotkey: 'Globální zkratka',
+  setGlobalHotkeyDesc: 'Vyvolá paletu příkazů domovské stránky odkudkoli.',
+  setGlobalHotkeyAccelerator: 'Klávesy zkratky',
+  setGlobalHotkeyAcceleratorDesc:
+    'Syntaxe akcelerátoru, např. Alt+Space nebo Ctrl+Shift+K; Enter použije, nerozpoznané hodnoty se ignorují.',
   setSearchRerank: 'Přeřazení Jev',
   setSearchRerankDesc:
     'Odešle výňatky 20 nejlepších místních výsledků modelu Jev od TypeSafe a seřadí je podle relevance. Ve výchozím stavu vypnuto; po zapnutí výňatky opouštějí toto zařízení.',

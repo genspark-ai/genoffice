@@ -230,6 +230,14 @@ export const id: Dict = {
   setAnalytics: 'Kirim statistik penggunaan anonim',
   setAnalyticsDesc:
     'Aktif secara default dan dapat dimatikan di Pengaturan → Umum. Menggunakan Google Analytics 4; Google menerima IP publik dan metadata transport Anda, tetapi tidak pernah mengumpulkan isi dokumen atau nama file.',
+  setLoginItem: 'Buka saat masuk',
+  setLoginItemDesc:
+    'Menjalankan GenOffice saat Anda masuk, dengan ikon baki dan pintasan global tetap tersedia. Tidak didukung di Linux; sakelar tetap nonaktif.',
+  setGlobalHotkey: 'Pintasan global',
+  setGlobalHotkeyDesc: 'Memanggil palet perintah Beranda dari mana saja.',
+  setGlobalHotkeyAccelerator: 'Tombol pintasan',
+  setGlobalHotkeyAcceleratorDesc:
+    'Sintaks akselerator seperti Alt+Space atau Ctrl+Shift+K; Enter menerapkan, nilai yang tidak dikenali diabaikan.',
   setSearchRerank: 'Peringkat ulang Jev',
   setSearchRerankDesc:
     'Mengirim kutipan 20 hasil lokal teratas ke model Jev dari TypeSafe dan mengurutkannya ulang berdasarkan relevansi. Nonaktif secara bawaan; saat aktif, kutipan keluar dari perangkat ini.',

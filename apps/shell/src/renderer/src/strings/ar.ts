@@ -225,6 +225,14 @@ export const ar: Dict = {
   setAnalytics: 'إرسال إحصاءات استخدام مجهولة الهوية',
   setAnalyticsDesc:
     'مفعّل افتراضيًا ويمكن إيقافه في الإعدادات ← عام. يستخدم Google Analytics 4؛ تتلقى Google عنوان IP العام وبيانات النقل، ولكن لا يتم جمع محتوى المستندات أو أسماء الملفات.',
+  setLoginItem: 'التشغيل عند تسجيل الدخول',
+  setLoginItemDesc:
+    'يشغّل GenOffice عند تسجيل دخولك مع بقاء أيقونة صينية النظام والاختصار العام متاحين. غير مدعوم على Linux ويبقى المفتاح معطلاً.',
+  setGlobalHotkey: 'الاختصار العام',
+  setGlobalHotkeyDesc: 'يستدعي لوحة أوامر الصفحة الرئيسية من أي مكان.',
+  setGlobalHotkeyAccelerator: 'مفاتيح الاختصار',
+  setGlobalHotkeyAcceleratorDesc:
+    'صيغة المسرّع مثل Alt+Space أو Ctrl+Shift+K؛ يطبَّق بمفتاح Enter وتُتجاهل القيم غير المعروفة.',
   setSearchRerank: 'إعادة ترتيب Jev',
   setSearchRerankDesc:
     'يرسل مقتطفات أفضل 20 نتيجة محلية إلى نموذج Jev من TypeSafe ويعيد ترتيبها حسب الصلة. معطّل افتراضيًا؛ عند التفعيل تخرج المقتطفات من هذا الجهاز.',

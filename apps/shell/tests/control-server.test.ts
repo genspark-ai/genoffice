@@ -73,6 +73,39 @@ describe('control server', () => {
       request: { cmd: 'open', path: '/x' },
     })
   })
+
+  it('accepts the desktop domain with its per-action payload rules', () => {
+    for (const action of ['get-state', 'todo-list', 'windows-list']) {
+      expect(
+        parseEnvelope(`{"token":"t","request":{"cmd":"desktop","action":"${action}"}}`),
+      ).toEqual({ token: 't', request: { cmd: 'desktop', action } })
+    }
+    expect(
+      parseEnvelope(
+        '{"token":"t","request":{"cmd":"desktop","action":"set-wallpaper","wallpaper":"default"}}',
+      ),
+    ).toEqual({
+      token: 't',
+      request: { cmd: 'desktop', action: 'set-wallpaper', wallpaper: 'default' },
+    })
+    expect(
+      parseEnvelope('{"token":"t","request":{"cmd":"desktop","action":"todo-add","text":"milk"}}'),
+    ).toEqual({ token: 't', request: { cmd: 'desktop', action: 'todo-add', text: 'milk' } })
+    // missing or empty payloads never reach the handler
+    expect(parseEnvelope('{"token":"t","request":{"cmd":"desktop","action":"nuke"}}')).toBeNull()
+    expect(
+      parseEnvelope('{"token":"t","request":{"cmd":"desktop","action":"set-wallpaper"}}'),
+    ).toBeNull()
+    expect(
+      parseEnvelope(
+        '{"token":"t","request":{"cmd":"desktop","action":"set-wallpaper","wallpaper":""}}',
+      ),
+    ).toBeNull()
+    expect(
+      parseEnvelope('{"token":"t","request":{"cmd":"desktop","action":"todo-add","text":"  "}}'),
+    ).toBeNull()
+    expect(parseEnvelope('{"token":"t","request":{"cmd":"desktop"}}')).toBeNull()
+  })
 })
 
 describe('control handler', () => {

@@ -1,20 +1,28 @@
-/// Knowledge-base channel: the reader's starred files (the star corpus) as
-/// AI can search and read, so an answer can cite the folder and file it came
-/// from. Lives in the shell main process because that is the one place that
-/// already holds both halves — the starred list (readStarredFiles, docs-main)
-/// and the full-text index (file-index). The handlers are app-agnostic IPC;
-/// docs wires them into its AI panel first, the other apps can follow.
+/// Knowledge-base channel: the user's local files as AI can search and read,
+/// so an answer can cite the folder and file it came from. Lives in the shell
+/// main process because that is the one place that already holds both halves —
+/// the starred list (readStarredFiles, docs-main) and the full-text index
+/// (file-index). The handlers are app-agnostic IPC; docs wires them into its
+/// AI panel first, the other apps can follow.
 ///
-/// Why search filters in JS rather than in SQLite: the FTS index's path column
-/// stores tokenized FOLDER names (see store.ts upsert), not real paths, so a
-/// `path IN (...)` cannot express "within the starred set". Starred corpora
-/// are small (a reader's hand-picked files), and the indexed whole is local,
-/// so fetching a bounded page and filtering by real path is the cheap,
-/// correct filter.
+/// The corpus is a scope: 'indexed' (the default) is every file the local
+/// index covers — the save folder, the added folder roots, recents and the
+/// starred set — while 'starred' is the original hand-picked set. kb:list
+/// stays a bounded prompt window either way (starred first, then the most
+/// recently touched indexed files); search and read are what reach the whole
+/// corpus.
+///
+/// Why the starred search still filters in JS rather than in SQLite: the FTS
+/// index's path column stores tokenized FOLDER names (see store.ts upsert),
+/// not real paths, so a `path IN (...)` cannot express "within the starred
+/// set". Starred corpora are small, so fetching a bounded pool and filtering
+/// by real path is the cheap, correct filter. The indexed scope needs no
+/// post-filter at all, so it takes the store's own ranked page directly.
 
 import { statSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { parseFileToText } from '@genoffice/file-parse'
+import type { IndexedFile } from './file-index/store'
 
 /** characters of parsed text one read_knowledge_file page returns (aligned
  *  with the chat-attachment reader, files-skill.ts, so models meet one paging
@@ -31,6 +39,21 @@ const KB_QUERY_MAX_CHARS = 200
 
 /** how many indexed hits to fetch before filtering to the starred set */
 const KB_SEARCH_POOL = 200
+
+/**
+ * How many files kb:list returns for the indexed scope: the listing is a
+ * prompt window (the model searches first; the system prompt says so), and a
+ * hundred rows is about what the knowledge-base skill's context budget shows
+ * before it degrades to names only.
+ */
+export const KB_LIST_CAP = 100
+
+/** the knowledge-base corpus scope (app-settings.json `kbScope`); default: the whole index */
+export type KbScope = 'indexed' | 'starred'
+
+export function normalizeKbScope(raw: unknown): KbScope {
+  return raw === 'starred' ? 'starred' : 'indexed'
+}
 
 /** one corpus entry as the AI (and the panel) sees it */
 export interface KbFile {
@@ -58,24 +81,29 @@ export interface KbSearchHit {
 const kbTextCache = new Map<string, { stamp: string; text: string }>()
 const KB_TEXT_CACHE_MAX = 8
 
-/** the corpus: every starred file that still exists on disk */
+/** shape one KbFile from a path and its known size (stats taken by the caller) */
+function kbFileOf(path: string, sizeBytes: number): KbFile {
+  const folderPath = dirname(path)
+  return {
+    path,
+    folder: basename(folderPath),
+    folderPath,
+    name: basename(path),
+    ext: basename(path)
+      .replace(/^[^.]*./, '')
+      .toLowerCase(),
+    sizeBytes,
+  }
+}
+
+/** the starred corpus: every starred file that still exists on disk */
 export function listKnowledgeFiles(starredPaths: readonly string[]): KbFile[] {
   const out: KbFile[] = []
   for (const path of starredPaths) {
     try {
       const stat = statSync(path)
       if (!stat.isFile()) continue
-      const folderPath = dirname(path)
-      out.push({
-        path,
-        folder: basename(folderPath),
-        folderPath,
-        name: basename(path),
-        ext: basename(path)
-          .replace(/^[^.]*./, '')
-          .toLowerCase(),
-        sizeBytes: stat.size,
-      })
+      out.push(kbFileOf(path, stat.size))
     } catch {
       // a starred path can outlive its file (r158 keeps the dimmed row in the
       // home UI); for the corpus it simply drops out
@@ -84,24 +112,52 @@ export function listKnowledgeFiles(starredPaths: readonly string[]): KbFile[] {
   return out
 }
 
-/** fetch + filter + trim one search page; pure so it is unit-testable */
+/**
+ * The prompt's listing window for the indexed scope: the starred files first
+ * (the user's deliberate picks), then the most recently touched indexed files
+ * that are not already listed, capped at KB_LIST_CAP. Discovery past the
+ * window goes through search — the skill's prompt says exactly that.
+ */
+export function listIndexedKnowledgeFiles(
+  starredPaths: readonly string[],
+  recentIndexed: readonly IndexedFile[],
+  cap: number = KB_LIST_CAP,
+): KbFile[] {
+  const out = listKnowledgeFiles(starredPaths)
+  const listed = new Set(out.map((f) => f.path))
+  for (const entry of recentIndexed) {
+    if (out.length >= cap) break
+    if (listed.has(entry.path)) continue
+    out.push(kbFileOf(entry.path, entry.sizeBytes))
+    listed.add(entry.path)
+  }
+  return out
+}
+
+/**
+ * Fetch + trim one search page; pure so it is unit-testable. `scopePaths` null
+ * means the indexed scope: no post-filter, so the store's own ranked page is
+ * the answer (the SQL pushdown the starred scope cannot express). A real path
+ * set keeps the starred behavior: a bounded pool, JS-filtered by membership.
+ */
 export function searchKnowledgeBase(
   search: (
     q: string,
     limit: number,
   ) => ReadonlyArray<{ path: string; name: string; ext: string; snippetText?: string }>,
   query: string,
-  starredPaths: readonly string[],
+  scopePaths: readonly string[] | null,
   limit: number,
 ): KbSearchHit[] {
   const q = query.trim().slice(0, KB_QUERY_MAX_CHARS)
   if (!q) return []
-  const starred = new Set(starredPaths)
-  const pool = search(q, KB_SEARCH_POOL)
+  const scoped = scopePaths === null ? null : new Set(scopePaths)
+  const pool = search(q, scoped === null ? limit : KB_SEARCH_POOL)
   const seen = new Set<string>()
   const out: KbSearchHit[] = []
   for (const hit of pool) {
-    if (!starred.has(hit.path) || seen.has(hit.path)) continue
+    if (scoped !== null && !scoped.has(hit.path)) continue
+    if (seen.has(hit.path)) continue
     seen.add(hit.path)
     out.push({
       path: hit.path,

@@ -12,6 +12,8 @@ import {
   type TargetResolver,
 } from './tools/session-tools'
 import { createOpenDocumentTools, type OpenDocumentsControl } from './tools/open-documents-tools'
+import { createDesktopTools } from './tools/desktop-tools'
+import type { DesktopControlDeps } from '../desktop-control'
 
 /**
  * Main-process wiring for the MCP server.
@@ -42,6 +44,11 @@ export interface McpRuntimeDeps {
    * where there is no tab manager to ask
    */
   openDocumentsControl?: OpenDocumentsControl
+  /**
+   * the Home desktop's state and stores (the `desktop` tool); absent in
+   * headless runs, where there is no desktop to read or restyle
+   */
+  desktopControl?: DesktopControlDeps
   /**
    * resolves a `document` argument (tab id or path) to the webContents of that
    * open tab, so the content tools can edit what the user is looking at instead
@@ -182,6 +189,10 @@ function buildTools(): McpToolDefinition[] {
       defaultSaveDir: deps.defaultSaveDir,
       ...(deps.openDocumentsControl ? { control: deps.openDocumentsControl } : {}),
     }),
+    // the Home desktop itself (wallpaper, todos, windows) — same stores the
+    // CLI's `desktop` domain reaches over the control socket; only registered
+    // where a desktop exists (headless runs pass no desktopControl)
+    ...(deps.desktopControl ? createDesktopTools(deps.desktopControl) : []),
   ]
 }
 

@@ -29,6 +29,7 @@ import type { SettingsTarget } from './SettingsModal'
 import { TemplateGallery } from './TemplateGallery'
 import { TEMPLATE_GALLERY_STRINGS } from './template-gallery-strings'
 import { CommandPalette } from './CommandPalette'
+import { normalizeAskDeepLink, type AskQueryOrigin, type PendingAskQuery } from './ask-intent'
 import { DesktopView } from './DesktopView'
 import { DESKTOP_STRINGS } from './desktop-strings'
 import { TodoWidget } from './TodoWidget'
@@ -1541,6 +1542,12 @@ export function Home() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => window.aiOffice.onPaletteOpen?.(() => setPaletteOpen(true)), [])
+  // a question handed to the ask panel from outside: the palette's Ask AI
+  // fallback row or a genoffice:// deep link. The seq bumps per submission so
+  // the same question twice is still two handoffs; the origin decides whether
+  // the panel may submit it (palette: the user's own text) or must park it in
+  // the composer for an explicit Enter (deep link: web-supplied text).
+  const [pendingAskQuery, setPendingAskQuery] = useState<PendingAskQuery | null>(null)
   useEffect(
     () =>
       window.aiOffice.onOpenSettings?.((target) =>
@@ -2066,6 +2073,36 @@ export function Home() {
     setSelected(new Set())
     setRowMenu(null)
   }, [])
+  /** the ask-intent handoff's shared core: bump the seq and switch to the ask view */
+  const handAskQuery = useCallback(
+    (query: string, origin: AskQueryOrigin) => {
+      const text = query.trim()
+      if (!text) return
+      setPendingAskQuery((prev) => ({ text, seq: (prev?.seq ?? 0) + 1, origin }))
+      openAskView()
+    },
+    [openAskView],
+  )
+  /** the intent bus's fallback route: switch to the ask view and hand it the question */
+  const submitAskQuery = useCallback(
+    (query: string) => handAskQuery(query, 'palette'),
+    [handAskQuery],
+  )
+  // genoffice://ask?q=… and friends: the main process forwards deep links over
+  // the home:deep-link channel. Softened because a preload from before the
+  // contract shipped simply has no onDeepLink — the palette path above works
+  // regardless. The query is web-supplied (any page can location.href a link),
+  // so it is handed over with the deep-link origin: it parks in the ask
+  // composer as a draft and only an explicit Enter sends it.
+  useEffect(() => {
+    const api = window.aiOffice as Partial<HomeApi>
+    return api.onDeepLink?.((payload) => {
+      const link = normalizeAskDeepLink(payload)
+      if (!link) return
+      if (link.query.trim()) handAskQuery(link.query, 'deep-link')
+      else openAskView()
+    })
+  }, [handAskQuery, openAskView])
   const openTemplates = useCallback(() => setTemplatesOpen(true), [])
   const openSettings = useCallback((target: SettingsTarget) => setSettingsRequest(target), [])
   const openFolderView = useCallback((root: FolderRoot) => selectFolder(root.path), [selectFolder])
@@ -3758,6 +3795,8 @@ export function Home() {
           onOpenPath={(path) => void window.aiOffice.openPath(path)}
           onGoToRecents={() => changeView('recent')}
           onOpenModelSettings={() => setSettingsRequest({ section: 'aiModel' })}
+          pendingQuery={pendingAskQuery}
+          onPendingQueryConsumed={() => setPendingAskQuery(null)}
         />
       ) : cloudMode ? (
         <CloudProjectsView />
@@ -3900,7 +3939,13 @@ export function Home() {
 
       <DropToOpenOverlay />
       {templatesOpen && <TemplateGallery lang={lang} onClose={() => setTemplatesOpen(false)} />}
-      {paletteOpen && <CommandPalette lang={lang} onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && (
+        <CommandPalette
+          lang={lang}
+          onClose={() => setPaletteOpen(false)}
+          onAskAi={submitAskQuery}
+        />
+      )}
     </div>
   )
 }

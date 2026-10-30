@@ -221,6 +221,14 @@ export const ms: Dict = {
   setAnalytics: 'Hantar statistik penggunaan tanpa nama',
   setAnalyticsDesc:
     'Diaktifkan secara lalai dan boleh dimatikan di Tetapan → Umum. Menggunakan Google Analytics 4; Google menerima IP awam dan metadata pengangkutan, tetapi tidak pernah kandungan dokumen atau nama fail.',
+  setLoginItem: 'Lancar semasa log masuk',
+  setLoginItemDesc:
+    'Menjalankan GenOffice apabila anda log masuk, dengan ikon dulang dan pintasan global tersedia. Tidak disokong pada Linux; suis kekal mati.',
+  setGlobalHotkey: 'Pintasan global',
+  setGlobalHotkeyDesc: 'Memanggil palet perintah Laman Utama dari mana-mana sahaja.',
+  setGlobalHotkeyAccelerator: 'Kekunci pintasan',
+  setGlobalHotkeyAcceleratorDesc:
+    'Sintaks pemecut seperti Alt+Space atau Ctrl+Shift+K; Enter melaksanakan, nilai yang tidak dikenali diabaikan.',
   setSearchRerank: 'Susunan semula Jev',
   setSearchRerankDesc:
     'Menghantar petikan 20 hasil tempatan teratas ke model Jev TypeSafe dan menyusunnya semula mengikut kaitan. Dimatikan secara lalai; apabila dihidupkan, petikan keluar dari peranti ini.',

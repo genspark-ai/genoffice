@@ -44,6 +44,7 @@ import type {
   AiCatalogEntry,
   AuthorNameSetting,
   DocTheme,
+  SystemPresenceSettings,
   UiTheme,
 } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
@@ -1916,6 +1917,9 @@ export function SettingsModal({
   const [defaultAppFailed, setDefaultAppFailed] = useState(false)
   const [aiPrefs, setAiPrefs] = useState<AiPanelPrefs>(DEFAULT_AI_PANEL_PREFS)
   const [authorName, setAuthorName] = useState<AuthorNameSetting>({ value: '', fallback: '' })
+  const [presence, setPresence] = useState<SystemPresenceSettings | null>(null)
+  /** the hotkey accelerator being typed; null = showing the persisted one */
+  const [hotkeyDraft, setHotkeyDraft] = useState<string | null>(null)
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
@@ -1943,6 +1947,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getDefaultAppStatus?.().then((st) => {
       if (alive) setDefaultApp(st)
+    })
+    void window.aiOffice.getSystemPresence?.().then((sp) => {
+      if (alive && sp) setPresence(sp)
     })
     void window.aiOffice.getAiPanelPrefs?.().then((prefs) => {
       if (alive) setAiPrefs(prefs)
@@ -2401,6 +2408,96 @@ export function SettingsModal({
                     }}
                   />
                 </div>
+                {presence !== null && (
+                  <>
+                    <div className="set-field">
+                      <div className="set-field-text">
+                        <div className="set-field-stack">
+                          <div className="set-field-label">{t('setLoginItem')}</div>
+                          <div className="set-field-desc">{t('setLoginItemDesc')}</div>
+                        </div>
+                      </div>
+                      <button
+                        className="set-switch"
+                        role="switch"
+                        aria-checked={presence.loginItem}
+                        aria-label={t('setLoginItem')}
+                        disabled={!presence.loginItemSupported}
+                        onClick={() => {
+                          void window.aiOffice
+                            .setLoginItemEnabled?.(!presence.loginItem)
+                            .then((sp) => {
+                              if (sp) setPresence(sp)
+                            })
+                            .catch(() => {})
+                        }}
+                      />
+                    </div>
+                    <div className="set-field">
+                      <div className="set-field-text">
+                        <div className="set-field-stack">
+                          <div className="set-field-label">{t('setGlobalHotkey')}</div>
+                          <div className="set-field-desc">{t('setGlobalHotkeyDesc')}</div>
+                        </div>
+                      </div>
+                      <button
+                        className="set-switch"
+                        role="switch"
+                        aria-checked={presence.hotkey.enabled}
+                        aria-label={t('setGlobalHotkey')}
+                        onClick={() => {
+                          void window.aiOffice
+                            .setGlobalHotkey?.({ enabled: !presence.hotkey.enabled })
+                            .then((sp) => {
+                              if (sp) setPresence(sp)
+                            })
+                            .catch(() => {})
+                        }}
+                      />
+                    </div>
+                    {presence.hotkey.enabled && (
+                      <div className="set-field">
+                        <div className="set-field-text">
+                          <div className="set-field-stack">
+                            <label className="set-field-label" htmlFor="set-hotkey-accelerator">
+                              {t('setGlobalHotkeyAccelerator')}
+                            </label>
+                            <div className="set-field-desc">
+                              {t('setGlobalHotkeyAcceleratorDesc')}
+                            </div>
+                          </div>
+                        </div>
+                        <input
+                          id="set-hotkey-accelerator"
+                          className="set-input"
+                          type="text"
+                          value={hotkeyDraft ?? presence.hotkey.accelerator}
+                          spellCheck={false}
+                          autoComplete="off"
+                          onChange={(e) => setHotkeyDraft(e.target.value)}
+                          onBlur={() => {
+                            const draft = hotkeyDraft
+                            setHotkeyDraft(null)
+                            if (draft === null) return
+                            const next = draft.trim()
+                            if (!next || next === presence.hotkey.accelerator) return
+                            // an accelerator the main process rejects leaves the
+                            // persisted value in place; the input reverts to it
+                            void window.aiOffice
+                              .setGlobalHotkey?.({ accelerator: next })
+                              .then((sp) => {
+                                if (sp) setPresence(sp)
+                              })
+                              .catch(() => {})
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur()
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
             {section === 'integrations' && (

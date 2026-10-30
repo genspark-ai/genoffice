@@ -552,11 +552,22 @@ export function DesktopView({
         () => undefined,
       )
     }
+    // the CLI/MCP desktop domain broadcasts its writes: re-pull the prefs so a
+    // mounted view swaps the wallpaper without waiting for its next mount
+    const offPrefs = api.onDesktopPrefsChanged?.(() => {
+      api.desktopPrefs?.().then(
+        (loaded) => {
+          if (alive) setPrefs(loaded)
+        },
+        () => undefined,
+      )
+    })
     reloadRecents()
     const off = api.onRecentsChanged?.(reloadRecents)
     return () => {
       alive = false
       off?.()
+      offPrefs?.()
     }
   }, [reloadRecents])
 

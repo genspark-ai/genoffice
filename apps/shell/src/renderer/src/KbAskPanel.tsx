@@ -39,6 +39,7 @@ import { useI18n } from './locale'
 import { aiSetupNeeded } from './ai-setup-state'
 import type { AttachmentAddResult } from '../../shared/home-api'
 import { AskAttachments } from './AskAttachments'
+import { planPendingAskQuery, type PendingAskQuery } from './ask-intent'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
 import sendEnterOn from './assets/send-enter-on.png'
@@ -206,11 +207,17 @@ export function KbAskPanel({
   onOpenPath,
   onGoToRecents,
   onOpenModelSettings,
+  pendingQuery,
+  onPendingQueryConsumed,
 }: {
   onOpenPath: (path: string) => void
   onGoToRecents: () => void
   /** Settings › AI Model, the model chip's last row */
   onOpenModelSettings: () => void
+  /** a question routed in from the palette fallback or a deep link; a palette
+   *  one is submitted as a new message, a deep-link one parks in the composer */
+  pendingQuery?: PendingAskQuery | null
+  onPendingQueryConsumed?: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
   const aiPrefs = useAiPanelPrefs()
@@ -739,6 +746,23 @@ export function KbAskPanel({
   }
 
   const fileNav = createFileNav((path) => onOpenPath(path))
+
+  // A question routed in from the palette's Ask AI fallback or a deep link: a
+  // palette question (the user's own just-typed text) is submitted through the
+  // same path as a typed one, while a deep-link question (web-supplied text)
+  // parks in the composer draft and waits for an explicit Enter — either way
+  // the seq ref consumes each handoff once even though this effect re-runs on
+  // every render, and while an answer streams a palette question parks in the
+  // composer instead of being dropped (see planPendingAskQuery).
+  const consumedQuerySeqRef = useRef(0)
+  useEffect(() => {
+    const plan = planPendingAskQuery(pendingQuery ?? null, consumedQuerySeqRef.current, busy)
+    if (!plan.consume) return
+    consumedQuerySeqRef.current = plan.seq
+    onPendingQueryConsumed?.()
+    if (plan.action === 'submit') void askWith(plan.text)
+    else if (plan.action === 'park') setDraft(plan.text)
+  })
 
   // the deterministic half of "keep this answer": the question becomes the
   // file name, the answer's markdown the body, same write path as the tool

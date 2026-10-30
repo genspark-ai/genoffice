@@ -49,6 +49,14 @@ export interface CommandPaletteStrings {
   pluginEnable: string
   /** recent row detail when the file failed to stat */
   missingFile: string
+  /** group header for file-index hits */
+  groupFiles: string
+  /** group header of the natural-language fallback row */
+  groupAsk: string
+  /** the fallback row's title prefix; the query follows after a colon */
+  askAi: string
+  /** the fallback row's detail line */
+  hintAskAi: string
 }
 
 export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
@@ -84,6 +92,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: '禁用',
     pluginEnable: '启用',
     missingFile: '文件不可用',
+    groupFiles: '文件',
+    groupAsk: '问 AI',
+    askAi: '问 AI',
+    hintAskAi: '把这个问题发给 Ask AI 面板',
   },
   en: {
     inputLabel: 'Command palette',
@@ -117,6 +129,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Disable',
     pluginEnable: 'Enable',
     missingFile: 'File unavailable',
+    groupFiles: 'Files',
+    groupAsk: 'Ask AI',
+    askAi: 'Ask AI',
+    hintAskAi: 'Send this question to the Ask AI panel',
   },
   ja: {
     inputLabel: 'コマンドパレット',
@@ -150,6 +166,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: '無効化',
     pluginEnable: '有効化',
     missingFile: 'ファイルを利用できません',
+    groupFiles: 'ファイル',
+    groupAsk: 'AI に聞く',
+    askAi: 'AI に聞く',
+    hintAskAi: 'この質問を Ask AI パネルに送る',
   },
   ko: {
     inputLabel: '명령 팔레트',
@@ -183,6 +203,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: '비활성화',
     pluginEnable: '활성화',
     missingFile: '파일을 사용할 수 없습니다',
+    groupFiles: '파일',
+    groupAsk: 'AI에게 묻기',
+    askAi: 'AI에게 묻기',
+    hintAskAi: '이 질문을 Ask AI 패널로 보내기',
   },
   fr: {
     inputLabel: 'Palette de commandes',
@@ -216,6 +240,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Désactiver',
     pluginEnable: 'Activer',
     missingFile: 'Fichier indisponible',
+    groupFiles: 'Fichiers',
+    groupAsk: 'Demander à l’IA',
+    askAi: 'Demander à l’IA',
+    hintAskAi: 'Envoyer cette question au panneau Ask AI',
   },
   de: {
     inputLabel: 'Befehlspalette',
@@ -249,6 +277,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Deaktivieren',
     pluginEnable: 'Aktivieren',
     missingFile: 'Datei nicht verfügbar',
+    groupFiles: 'Dateien',
+    groupAsk: 'KI fragen',
+    askAi: 'KI fragen',
+    hintAskAi: 'Diese Frage an das Ask-AI-Panel senden',
   },
   es: {
     inputLabel: 'Paleta de comandos',
@@ -282,6 +314,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Desactivar',
     pluginEnable: 'Activar',
     missingFile: 'Archivo no disponible',
+    groupFiles: 'Archivos',
+    groupAsk: 'Preguntar a la IA',
+    askAi: 'Preguntar a la IA',
+    hintAskAi: 'Enviar esta pregunta al panel Ask AI',
   },
   th: {
     inputLabel: 'พาเลตคำสั่ง',
@@ -315,6 +351,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'ปิดใช้งาน',
     pluginEnable: 'เปิดใช้งาน',
     missingFile: 'ไฟล์ไม่พร้อมใช้งาน',
+    groupFiles: 'ไฟล์',
+    groupAsk: 'ถาม AI',
+    askAi: 'ถาม AI',
+    hintAskAi: 'ส่งคำถามนี้ไปยังแผง Ask AI',
   },
   id: {
     inputLabel: 'Palet perintah',
@@ -348,6 +388,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Nonaktifkan',
     pluginEnable: 'Aktifkan',
     missingFile: 'File tidak tersedia',
+    groupFiles: 'Berkas',
+    groupAsk: 'Tanya AI',
+    askAi: 'Tanya AI',
+    hintAskAi: 'Kirim pertanyaan ini ke panel Ask AI',
   },
   ru: {
     inputLabel: 'Палитра команд',
@@ -381,6 +425,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Отключить',
     pluginEnable: 'Включить',
     missingFile: 'Файл недоступен',
+    groupFiles: 'Файлы',
+    groupAsk: 'Спросить ИИ',
+    askAi: 'Спросить ИИ',
+    hintAskAi: 'Отправить этот вопрос в панель Ask AI',
   },
   ar: {
     inputLabel: 'لوحة الأوامر',
@@ -414,6 +462,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'تعطيل',
     pluginEnable: 'تفعيل',
     missingFile: 'الملف غير متوفر',
+    groupFiles: 'الملفات',
+    groupAsk: 'اسأل الذكاء الاصطناعي',
+    askAi: 'اسأل الذكاء الاصطناعي',
+    hintAskAi: 'أرسل هذا السؤال إلى لوحة Ask AI',
   },
   pt: {
     inputLabel: 'Paleta de comandos',
@@ -447,6 +499,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Desativar',
     pluginEnable: 'Ativar',
     missingFile: 'Arquivo indisponível',
+    groupFiles: 'Ficheiros',
+    groupAsk: 'Perguntar à IA',
+    askAi: 'Perguntar à IA',
+    hintAskAi: 'Enviar esta pergunta para o painel Ask AI',
   },
   it: {
     inputLabel: 'Tavolozza dei comandi',
@@ -480,6 +536,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Disattiva',
     pluginEnable: 'Attiva',
     missingFile: 'File non disponibile',
+    groupFiles: 'File',
+    groupAsk: 'Chiedi all’IA',
+    askAi: 'Chiedi all’IA',
+    hintAskAi: 'Invia questa domanda al pannello Ask AI',
   },
   pl: {
     inputLabel: 'Paleta poleceń',
@@ -513,6 +573,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Wyłącz',
     pluginEnable: 'Włącz',
     missingFile: 'Plik niedostępny',
+    groupFiles: 'Pliki',
+    groupAsk: 'Zapytaj AI',
+    askAi: 'Zapytaj AI',
+    hintAskAi: 'Wyślij to pytanie do panelu Ask AI',
   },
   cs: {
     inputLabel: 'Paleta příkazů',
@@ -546,6 +610,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Zakázat',
     pluginEnable: 'Povolit',
     missingFile: 'Soubor není k dispozici',
+    groupFiles: 'Soubory',
+    groupAsk: 'Zeptat se AI',
+    askAi: 'Zeptat se AI',
+    hintAskAi: 'Odeslat tuto otázku do panelu Ask AI',
   },
   nl: {
     inputLabel: 'Opdrachtenpalet',
@@ -579,6 +647,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Uitschakelen',
     pluginEnable: 'Inschakelen',
     missingFile: 'Bestand niet beschikbaar',
+    groupFiles: 'Bestanden',
+    groupAsk: 'Vraag AI',
+    askAi: 'Vraag AI',
+    hintAskAi: 'Stuur deze vraag naar het Ask AI-paneel',
   },
   ms: {
     inputLabel: 'Palet arahan',
@@ -612,6 +684,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Nyahaktifkan',
     pluginEnable: 'Aktifkan',
     missingFile: 'Fail tidak tersedia',
+    groupFiles: 'Fail',
+    groupAsk: 'Tanya AI',
+    askAi: 'Tanya AI',
+    hintAskAi: 'Hantar soalan ini ke panel Ask AI',
   },
   he: {
     inputLabel: 'לוח הפקודות',
@@ -645,6 +721,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'השבתה',
     pluginEnable: 'הפעלה',
     missingFile: 'הקובץ אינו זמין',
+    groupFiles: 'קבצים',
+    groupAsk: 'שאל את ה-AI',
+    askAi: 'שאל את ה-AI',
+    hintAskAi: 'שלח את השאלה לחלונית Ask AI',
   },
   hi: {
     inputLabel: 'कमांड पैलेट',
@@ -678,6 +758,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'अक्षम करें',
     pluginEnable: 'सक्षम करें',
     missingFile: 'फ़ाइल अनुपलब्ध',
+    groupFiles: 'फ़ाइलें',
+    groupAsk: 'AI से पूछें',
+    askAi: 'AI से पूछें',
+    hintAskAi: 'यह प्रश्न Ask AI पैनल को भेजें',
   },
   'zh-TW': {
     inputLabel: '命令面板',
@@ -711,6 +795,10 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: '停用',
     pluginEnable: '啟用',
     missingFile: '檔案無法使用',
+    groupFiles: '檔案',
+    groupAsk: '問 AI',
+    askAi: '問 AI',
+    hintAskAi: '把這個問題發給 Ask AI 面板',
   },
   vi: {
     inputLabel: 'Bảng lệnh',
@@ -744,5 +832,9 @@ export const COMMAND_PALETTE_STRINGS: Record<Lang, CommandPaletteStrings> = {
     pluginDisable: 'Vô hiệu hóa',
     pluginEnable: 'Kích hoạt',
     missingFile: 'Tệp không khả dụng',
+    groupFiles: 'Tệp',
+    groupAsk: 'Hỏi AI',
+    askAi: 'Hỏi AI',
+    hintAskAi: 'Gửi câu hỏi này tới bảng Ask AI',
   },
 }

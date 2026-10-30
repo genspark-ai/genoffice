@@ -5,6 +5,7 @@ import { flagBool, parseArgs } from './args'
 import { appendAudit } from './audit'
 import { capabilitiesCommand } from './commands/capabilities'
 import { convertCommand } from './commands/convert'
+import { desktopCommand } from './commands/desktop'
 import { docsCommand } from './commands/docs'
 import { createCommand } from './commands/create'
 import { guideCommand } from './commands/guide'
@@ -67,6 +68,7 @@ export function defaultRegistry(): CommandRegistry {
     .register(mediaCommand)
     .register(openCommand)
     .register(selectionCommand)
+    .register(desktopCommand)
     .register(capabilitiesCommand)
     .register(installCommand)
     .register(mcpCommand)

@@ -299,6 +299,30 @@ export interface DesktopPrefs {
   labelColor: string
 }
 
+/**
+ * A genoffice:// deep link routed to the Home surface. `view: 'ask'` opens the
+ * Ask AI view, optionally carrying the query text the link embedded.
+ */
+export interface DeepLinkPayload {
+  view: 'ask'
+  query?: string
+}
+
+/** the system-presence prefs (login item + global hotkey), persisted in app-settings.json */
+export interface SystemPresenceSettings {
+  /** launch GenOffice at login (macOS/Windows; unsupported on Linux) */
+  loginItem: boolean
+  hotkey: {
+    enabled: boolean
+    /** Electron accelerator, e.g. 'Alt+Space' */
+    accelerator: string
+  }
+  /** whether the OS accepted the current accelerator's registration */
+  hotkeyActive: boolean
+  /** false on platforms where the login item cannot be driven (Linux) */
+  loginItemSupported: boolean
+}
+
 export interface HomeApi {
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
@@ -320,8 +344,8 @@ export interface HomeApi {
   statPaths(paths: string[]): Promise<RecentEntry[]>
   /** star / unstar a file */
   toggleStar(path: string): Promise<void>
-  // ---- knowledge-base ask panel: the reader's starred corpus, askable ----
-  /** the starred corpus as the AI's knowledge base */
+  // ---- knowledge-base ask panel: the local corpus (scope: index-wide by default), askable ----
+  /** the knowledge base's prompt window: starred files first, then recent indexed files */
   kbList(): Promise<KbFileInfo[]>
   /** the skills the user installed into GenOffice */
   skillsList(): Promise<UserSkillEntry[]>
@@ -372,11 +396,24 @@ export interface HomeApi {
   wallpaperPickCustom(): Promise<string>
   /** the command palette was summoned globally (Ctrl/Cmd+K in the shell window) */
   onPaletteOpen(handler: () => void): () => void
+  /** a genoffice:// deep link was routed to Home (e.g. genoffice://ask?q=…) */
+  onDeepLink(handler: (payload: DeepLinkPayload) => void): () => void
+  /** the desktop prefs were changed outside this renderer (CLI / MCP desktop domain) */
+  onDesktopPrefsChanged(handler: (prefs: DesktopPrefs) => void): () => void
+  /** the system-presence prefs: login item and global hotkey */
+  getSystemPresence(): Promise<SystemPresenceSettings>
+  /** toggle launch-at-login; resolves to the effective settings */
+  setLoginItemEnabled(enabled: boolean): Promise<SystemPresenceSettings>
+  /** toggle the global hotkey and/or change its accelerator; resolves to the effective settings */
+  setGlobalHotkey(patch: {
+    enabled?: boolean
+    accelerator?: string
+  }): Promise<SystemPresenceSettings>
   /** open Settings › Integrations (the skills list) */
   openSkillsSettings(): Promise<void>
-  /** full-text search over the corpus */
+  /** full-text search over the corpus (scope `kbScope` in app-settings: index-wide by default, or starred-only) */
   kbSearch(query: { q: string; limit?: number }): Promise<KbSearchHit[]>
-  /** one page of a corpus file's parsed text (path must be in kbList) */
+  /** one page of a corpus file's parsed text (path must be in the corpus scope) */
   kbRead(path: string, offset: number): Promise<KbReadPage>
   /** write the AI's markdown as a new .md / .docx in the save folder; resolves to its path */
   kbCreateDocument(request: {
@@ -767,9 +804,16 @@ export const HOME_CHANNELS = {
   desktopLayoutSave: 'home:desktop-layout-save',
   desktopPrefs: 'home:desktop-prefs',
   desktopPrefsSave: 'home:desktop-prefs-save',
+  /** main → renderer: the desktop prefs were changed outside the renderer (the CLI's desktop domain) */
+  desktopPrefsChanged: 'home:desktop-prefs-changed',
   wallpaperImage: 'home:wallpaper-image',
   wallpaperPickCustom: 'home:wallpaper-pick-custom',
   paletteOpen: 'home:palette-open',
+  /** main → renderer: a genoffice:// deep link routed to Home (e.g. genoffice://ask?q=…) */
+  deepLink: 'home:deep-link',
+  systemPresenceGet: 'home:system-presence-get',
+  systemPresenceSetLoginItem: 'home:system-presence-set-login-item',
+  systemPresenceSetHotkey: 'home:system-presence-set-hotkey',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

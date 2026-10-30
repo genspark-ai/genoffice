@@ -117,9 +117,17 @@ describe('mcp tool table', () => {
     expect(stop.argv).toEqual(['slides', 'apply', 'd.pptx', '--stop-on-error'])
   })
 
-  it('marks open and selection as stdio-only', () => {
+  it('marks the GUI-driving tools as stdio-only', () => {
     const local = TOOLS.filter((t) => t.localOnly).map((t) => t.name)
-    expect(local.sort()).toEqual(['open', 'selection'])
+    expect(local.sort()).toEqual([
+      'desktop_get_state',
+      'desktop_set_wallpaper',
+      'desktop_todo_add',
+      'desktop_todo_list',
+      'desktop_windows_list',
+      'open',
+      'selection',
+    ])
   })
 })
 
@@ -273,8 +281,10 @@ describe('mcp server', () => {
       expect(forbiddenConstructs(schema), tool.name).toEqual([])
     }
     const bytes = JSON.stringify(list).length
-    // 92 KB: the docs catalog grew with set_properties (the document properties op)
-    expect(bytes).toBeLessThanOrEqual(92 * 1024)
+    // 96 KB: the desktop_* tools (the app's Home surface over the control
+    // socket) grew the list past the old 92 KB line, which itself came from
+    // the docs catalog's set_properties
+    expect(bytes).toBeLessThanOrEqual(96 * 1024)
     expect(bytes).toBeGreaterThan(60 * 1024)
   })
 

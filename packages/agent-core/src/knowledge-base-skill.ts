@@ -2,7 +2,10 @@ import type { AgentToolDef } from './types'
 import type { AgentSkill } from './skill'
 
 /**
- * The reader's starred files (the star corpus) as a searchable, readable body.
+ * The user's indexed files (the local full-text index: save folder, folder
+ * roots, recents and starred files) as a searchable, readable body. The
+ * per-turn listing is a bounded window onto that corpus (starred files first,
+ * then recent ones); search reaches the whole index.
  *
  * The skill is storage-agnostic on purpose: deps inject the three main-process
  * operations (list / search / read), so it carries no electron or index
@@ -14,7 +17,10 @@ import type { AgentSkill } from './skill'
  * source as [file name](filenav:///abs/path) — the same primitive the editors'
  * in-document citations use (see @genoffice/ui file-nav). verifyResponse
  * rejects answers citing paths outside the corpus, the way fabricated
- * block numbers are rejected elsewhere.
+ * block numbers are rejected elsewhere. Since search reaches beyond the
+ * listed window, paths this skill's own search tool returned this session are
+ * whitelisted too — the prompt already tells the model to cite only links from
+ * the list or a search result.
  */
 
 /** characters of corpus listing injected before it degrades to names only */
@@ -47,10 +53,10 @@ export interface KbReadPage {
 }
 
 export interface KnowledgeBaseDeps {
-  /** the corpus as of this turn (a synchronous snapshot; the panel refreshes it on the starred-list IPC) */
+  /** the prompt's listing window as of this turn (a synchronous snapshot; the panel refreshes it on the corpus IPC) */
   listFiles(): KbFileInfo[]
   search(query: string, limit: number): Promise<KbSearchHit[]>
-  /** one page of parsed text; path must be a corpus file */
+  /** one page of parsed text; path must belong to the corpus (the main process checks index membership) */
   read(path: string, offset: number): Promise<KbReadPage>
   /** paths outside the corpus an answer may still cite (files a sibling skill wrote this session) */
   alsoCitable?(): readonly string[]
@@ -67,8 +73,10 @@ export function formatKbSize(bytes: number): string {
 }
 
 const KB_SYSTEM_PROMPT = `## Knowledge base
-The user's starred files form a knowledge base; each turn's context
-lists them (index | folder | file | type | size, with the absolute path).
+The user's local files form a knowledge base: the full-text index covers the
+save folder, the added folder roots, and recent/starred files. Each turn's
+context lists a window of it (index | folder | file | type | size, with the
+absolute path) — the list is not the whole corpus, search reaches all of it.
 - Use it only when the request refers to those files or their contents; drafting,
   rewriting or formatting the open document from the request alone never needs it.
 - When the request touches the knowledge base, search it first (search_knowledge_base)
@@ -99,13 +107,21 @@ export function kbCiteHref(path: string): string {
 }
 
 const KB_EMPTY =
-  'The knowledge base is empty (the user has starred no files). Do not search it again; work from the request and the open document.'
+  'The knowledge base is empty (nothing indexed yet). Do not search it again; work from the request and the open document.'
+
+/** how many search-result paths the citation whitelist remembers per session */
+const KB_CITABLE_SEARCH_PATHS_MAX = 2000
 
 export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
+  // Paths this skill's search returned, so verifyResponse can whitelist what
+  // the model was actually shown — search reaches the whole index, far beyond
+  // the listed window, so listFiles alone cannot vouch for a valid citation.
+  const citableSearchPaths = new Set<string>()
   const readTool: AgentToolDef = {
     name: 'read_knowledge_file',
     description:
       'Read a page of a knowledge-base file’s parsed text (docx/pdf/xlsx/pptx/text are parsed locally). ' +
+      'Address the file by its index in the knowledge-base list, or by its absolute path from a search result. ' +
       'Read offset=0 first; continue with the returned offset while totalChars says more remains.',
     inputSchema: {
       type: 'object',
@@ -114,15 +130,20 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
           type: 'integer',
           description: 'file index from the knowledge-base list (0-based)',
         },
+        path: {
+          type: 'string',
+          description:
+            'absolute path from a search result — use this when the file is not in the listed window',
+        },
         offset: { type: 'integer', description: 'character offset to read from; default 0' },
       },
-      required: ['index'],
+      required: [],
     },
   }
   const searchTool: AgentToolDef = {
     name: 'search_knowledge_base',
     description:
-      'Full-text search over the knowledge base (the user’s starred files), for requests that refer to those files; not for writing or formatting from the request alone. ' +
+      'Full-text search over the knowledge base (the user’s indexed local files), for requests that refer to those files; not for writing or formatting from the request alone. ' +
       'Returns the matching files with a snippet around the first hit. Literal-word matching: ' +
       'retry with synonyms or the other language when it returns nothing.',
     inputSchema: {
@@ -159,7 +180,7 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         withPaths.length <= KB_CONTEXT_MAX_CHARS
           ? withPaths
           : `${plain.join('\n')}\n\n(The corpus is large; cite links come with search results.)`
-      return `Knowledge base — the user's starred files (index | folder | file | type | size):\n${body}`
+      return `Knowledge base — a window of the user's indexed files (index | folder | file | type | size):\n${body}`
     },
     executeTool: async (call) => {
       if (deps.listFiles().length === 0) {
@@ -177,6 +198,15 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         const hits = await deps.search(query, limit)
         if (hits.length === 0)
           return { output: 'no match. Retry with synonyms or the other language.', summary: query }
+        // whitelist these paths for citations: the model is allowed to cite
+        // exactly what a search result showed it, listed window or not
+        for (const h of hits) {
+          citableSearchPaths.add(h.path)
+          if (citableSearchPaths.size > KB_CITABLE_SEARCH_PATHS_MAX) {
+            const oldest = citableSearchPaths.values().next().value
+            if (oldest !== undefined) citableSearchPaths.delete(oldest)
+          }
+        }
         const lines = hits.map(
           (h) =>
             `${h.folder}/${h.name}\n  path: ${h.path}\n  cite: ${kbCiteHref(h.path)}\n  snippet: ${h.snippet}`,
@@ -184,18 +214,33 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         return { output: lines.join('\n'), summary: `${query} → ${hits.length}` }
       }
       if (call.name === 'read_knowledge_file') {
+        const path = typeof call.input.path === 'string' ? call.input.path.trim() : ''
+        const offsetRaw = Number(call.input.offset)
+        const offset = Number.isFinite(offsetRaw) ? offsetRaw : 0
+        // a search hit outside the listed window reads by path; the main-side
+        // kb:read gate (index membership) is what confines this to the corpus
+        if (path) {
+          const page = await deps.read(path, offset)
+          const more = page.offset + page.text.length < page.totalChars
+          return {
+            output:
+              `${path} — characters ${page.offset}..${page.offset + page.text.length} of ${page.totalChars}` +
+              (more ? ' (continue with offset)' : ' (end)') +
+              `\n\n${page.text}`,
+            summary: `${path}@${page.offset}`,
+          }
+        }
         const files = deps.listFiles()
         const index = Number(call.input.index)
         const file = Number.isInteger(index) ? files[index] : undefined
         if (!file) {
           return {
-            output: `no knowledge-base file at index ${call.input.index}`,
+            output: `no knowledge-base file at index ${call.input.index}; pass a path from a search result instead`,
             isError: true,
             summary: `read #${call.input.index}`,
           }
         }
-        const offsetRaw = Number(call.input.offset)
-        const page = await deps.read(file.path, Number.isFinite(offsetRaw) ? offsetRaw : 0)
+        const page = await deps.read(file.path, offset)
         const more = page.offset + page.text.length < page.totalChars
         return {
           output:
@@ -214,6 +259,7 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       // spaces/CJK); compare decoded forms so a hand-written raw href passes too
       const known = new Set([
         ...deps.listFiles().map((f) => f.path),
+        ...citableSearchPaths,
         ...(deps.alsoCitable?.() ?? []),
       ])
       const unknown = cited.filter((href) => {

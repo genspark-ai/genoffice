@@ -53,6 +53,8 @@ import menuHtmlIcon1x from './assets/menu-html.png?asset'
 import menuHtmlIcon2x from './assets/menu-html@2x.png?asset'
 import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
+import trayIcon1x from './assets/tray-icon.png?asset'
+import trayIcon2x from './assets/tray-icon@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
   DEFAULT_SAVE_DIR_KEY,
@@ -102,7 +104,21 @@ import { registerIntegrationsIpc } from './integrations-ipc'
 import { registerPluginsIpc } from './plugins-ipc'
 import { registerTemplatesIpc } from './templates-ipc'
 import { registerTodosIpc } from './todos-ipc'
-import { registerDesktopIpc } from './desktop-ipc'
+import { registerDesktopIpc, defaultWallpapersDir } from './desktop-ipc'
+import {
+  desktopControlHandler,
+  type DesktopControlDeps,
+  type DesktopWindowInfo,
+} from './desktop-control'
+import {
+  deepLinkFromArgv,
+  installDeepLinkListener,
+  installSystemPresence,
+  parseDeepLink,
+  registerDeepLinkClient,
+  registerSystemPresenceIpc,
+  type SystemPresence,
+} from './system-presence'
 import { makeUserCliRunner, registerUserSkillsIpc } from './user-cli'
 import {
   ANALYTICS_ENABLED_KEY,
@@ -284,6 +300,7 @@ import type {
   AccountLoginEvent,
   AutoSaveDefault,
   AuthorNameSetting,
+  DeepLinkPayload,
   FolderListing,
   FolderRoot,
   MoveConflictPolicy,
@@ -354,7 +371,10 @@ import { FileIndexStore } from './file-index/store'
 import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
 import {
   createKnowledgeDocument,
+  KB_LIST_CAP,
+  listIndexedKnowledgeFiles,
   listKnowledgeFiles,
+  normalizeKbScope,
   parseKbCreateRequest,
   readKnowledgeFilePage,
   searchKnowledgeBase,
@@ -3555,6 +3575,54 @@ const tm = (key: Parameters<typeof tMain>[1], params?: Parameters<typeof tMain>[
 let shellWindow: BrowserWindow | null = null
 let tabManager: TabManager | null = null
 
+// ---- system presence: tray, global hotkey, login item, genoffice:// deep links ----
+
+let systemPresence: SystemPresence | null = null
+
+/**
+ * Push an event to the shell (Home) renderer once it can listen: immediately
+ * when loaded, else right after did-finish-load. Tray clicks, the global
+ * hotkey and deep links can all arrive while the window is still booting
+ * (e.g. reopened from the tray on macOS).
+ */
+function sendToShellRenderer(channel: string, payload?: unknown): void {
+  const win = shellWindow
+  if (!win || win.isDestroyed()) return
+  const wc = win.webContents
+  const send = () => {
+    if (!wc.isDestroyed()) wc.send(channel, payload)
+  }
+  if (wc.isLoading()) wc.once('did-finish-load', send)
+  else send()
+}
+
+/** focus the main window on its Home tab — the tray/hotkey/deep-link common ground */
+function summonHome(): void {
+  revealShellWindow()
+  tabManager?.openHomeTab()
+}
+
+/** the global hotkey and tray action: Home with the command palette open */
+function summonPalette(): void {
+  summonHome()
+  sendToShellRenderer(HOME_CHANNELS.paletteOpen)
+}
+
+/** genoffice://ask?q=… → Home's Ask AI view, carrying the query when present */
+function deliverDeepLink(payload: DeepLinkPayload): void {
+  if (!app.isReady()) {
+    // open-url can beat ready on a cold macOS protocol launch; the window and
+    // renderer do not exist yet — deliver once whenReady has built them
+    pendingDeepLink = payload
+    return
+  }
+  summonHome()
+  sendToShellRenderer(HOME_CHANNELS.deepLink, payload)
+}
+
+/** a deep link that arrived before the shell window existed */
+let pendingDeepLink: DeepLinkPayload | null = null
+
 /**
  * New file from a folder view: the click remembers the folder per kind, the
  * new-tab code consumes it right away. Sheets / PDF write their blank file
@@ -4707,11 +4775,19 @@ function registerHomeIpc(): void {
     }
   })
 
-  // Knowledge-base channel: the AI-side read access to the reader's starred
-  // files (docs wires these into its panel; see knowledge-base.ts). Path
-  // arguments are validated against the starred set — a corpus file is the
-  // only thing a knowledge tool may read.
-  ipcMain.handle('kb:list', (): unknown => listKnowledgeFiles(readStarredFiles()))
+  // Knowledge-base channel: the AI-side read access to the user's local corpus
+  // (docs wires these into its panel; see knowledge-base.ts). The corpus is the
+  // app-settings `kbScope`: 'indexed' (default) is every file the local index
+  // covers, 'starred' the original hand-picked set. Path arguments are
+  // validated against the scope — a corpus file is the only thing a knowledge
+  // tool may read.
+  const kbScope = () => normalizeKbScope(readAppSettings(APP_SETTINGS_PATH()).kbScope)
+
+  ipcMain.handle('kb:list', (): unknown => {
+    const starred = readStarredFiles()
+    if (kbScope() === 'starred' || !fileIndexStore) return listKnowledgeFiles(starred)
+    return listIndexedKnowledgeFiles(starred, fileIndexStore.recentFiles(KB_LIST_CAP))
+  })
 
   ipcMain.handle('kb:search', (_event, raw: unknown): unknown => {
     const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; limit?: unknown }
@@ -4731,7 +4807,7 @@ function registerHomeIpc(): void {
           snippetText: (h.snippet ?? []).map((part) => part.text).join(''),
         })),
       q,
-      starred,
+      kbScope() === 'starred' ? starred : null,
       Math.min(limit, 20),
     )
     return hits
@@ -4745,7 +4821,12 @@ function registerHomeIpc(): void {
     const path = typeof req.path === 'string' ? req.path : ''
     const offsetRaw = Number(req.offset)
     const offset = Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0
-    if (!path || !readStarredFiles().includes(path)) {
+    // a starred file stays readable in every scope (even with the index
+    // momentarily unavailable); the indexed scope adds "in the index"
+    const starred = readStarredFiles().includes(path)
+    const inScope =
+      kbScope() === 'starred' ? starred : starred || (fileIndexStore?.has(path) ?? false)
+    if (!path || !inScope) {
       throw new Error('path is not in the knowledge base')
     }
     return readKnowledgeFilePage(path, offset)
@@ -6796,10 +6877,23 @@ app.on('open-file', (event, filePath) => {
 })
 
 app.on('second-instance', (_event, argv, _cwd, additionalData) => {
+  // a genoffice:// launch on Windows/Linux arrives as a plain argv entry
+  const link = deepLinkFromArgv(argv)
+  if (link) {
+    const payload = parseDeepLink(link)
+    if (payload) {
+      deliverDeepLink(payload)
+      return
+    }
+  }
   const paths = collectLaunchPaths(argv, additionalData)
   revealShellWindow()
   openLaunchPaths(paths)
 })
+
+// macOS deep links arrive via open-url (possibly before ready; the listener
+// queues through sendToShellRenderer); win/linux links ride argv instead.
+installDeepLinkListener(deliverDeepLink)
 
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
@@ -6847,6 +6941,47 @@ registerPluginsIpc({ window: () => shellWindow })
 registerTemplatesIpc()
 registerTodosIpc()
 registerDesktopIpc()
+registerSystemPresenceIpc(() => systemPresence)
+
+/**
+ * The CLI/MCP `desktop` domain's live stores: the same files registerDesktopIpc
+ * and registerTodosIpc serve, plus the running window/tab enumeration. Reads
+ * are always fresh from disk; the prefs write broadcasts so a mounted Home
+ * view can re-pull (the renderer subscribes via onDesktopPrefsChanged).
+ */
+const desktopControlDeps: DesktopControlDeps = {
+  userDataDir: () => app.getPath('userData'),
+  wallpapersDir: defaultWallpapersDir,
+  customWallpapersDir: () => join(app.getPath('userData'), 'wallpapers'),
+  listWindows: listDesktopWindows,
+  notifyDesktopPrefsChanged: (prefs) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(HOME_CHANNELS.desktopPrefsChanged, prefs)
+    }
+  },
+}
+
+async function listDesktopWindows(): Promise<DesktopWindowInfo[]> {
+  const tabs: DesktopWindowInfo[] = (tabManager?.list() ?? []).map((t) => ({
+    id: t.id,
+    kind: t.kind,
+    title: t.title,
+    active: t.active,
+    ...(t.filePath ? { filePath: t.filePath } : {}),
+    ...(t.dormant ? { dormant: true } : {}),
+    ...(t.pinned ? { pinned: true } : {}),
+  }))
+  const detached: DesktopWindowInfo[] = (await detachedOpenDocuments()).map((d) => ({
+    id: d.id,
+    kind: d.kind,
+    title: d.title,
+    active: d.active,
+    dirty: d.dirty,
+    detached: true,
+    ...(d.filePath ? { filePath: d.filePath } : {}),
+  }))
+  return [...tabs, ...detached]
+}
 
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here
 setSessionPathResolver(resolveSheetsSessionPath)
@@ -7062,6 +7197,9 @@ app.whenReady().then(async () => {
     // (the same engines, no second implementation); it runs on the app's own
     // Node runtime via ELECTRON_RUN_AS_NODE
     cliRunner: bundledCliRunner(),
+    // the Home desktop's state for the `desktop` tool; the same deps the
+    // control socket's desktop domain serves
+    desktopControl: desktopControlDeps,
     // lets the content tools take a `document` argument (tab id or path) and edit
     // a tab the *user* has open, with no create_session involved
     resolveTarget: createOpenTargetResolver({
@@ -7114,22 +7252,52 @@ app.whenReady().then(async () => {
   pendingLaunchPaths = []
   for (const recoverAs of pendingUnsavedNewRecoveries()) void newSheetTab(recoverAs)
 
-  startControlServer(
-    app.getPath('userData'),
-    controlHandler({
-      reveal: revealShellWindow,
-      openDocument: openDocumentPath,
-      activateTab: (id) => {
-        if (!activateDetached(id)) tabManager?.activateTab(id)
-      },
-      findTab: (path) => tabManager?.findTabByPath(path) ?? findDetachedTabByPath(path),
-    }),
+  const tabControl = controlHandler({
+    reveal: revealShellWindow,
+    openDocument: openDocumentPath,
+    activateTab: (id) => {
+      if (!activateDetached(id)) tabManager?.activateTab(id)
+    },
+    findTab: (path) => tabManager?.findTabByPath(path) ?? findDetachedTabByPath(path),
+  })
+  const desktopControl = desktopControlHandler(desktopControlDeps)
+  startControlServer(app.getPath('userData'), (req) =>
+    req.cmd === 'desktop' ? desktopControl(req) : tabControl(req),
   ).then(
     (server) => {
       controlServer = server
     },
     (err: unknown) => console.warn('[control] not listening:', err),
   )
+
+  // a cold win/linux protocol launch carries the link in this process's argv
+  const coldLink = deepLinkFromArgv(process.argv)
+  if (coldLink) {
+    const payload = parseDeepLink(coldLink)
+    if (payload) deliverDeepLink(payload)
+  }
+  if (pendingDeepLink) {
+    const payload = pendingDeepLink
+    pendingDeepLink = null
+    deliverDeepLink(payload)
+  }
+
+  systemPresence = installSystemPresence({
+    settingsPath: APP_SETTINGS_PATH,
+    lang: () => currentLang(),
+    // the brand icon through the same ?asset pipeline as the menu icons
+    // (hashed asset names break nativeImage's @2x sibling lookup, so the
+    // retina frame attaches by hand); template-rendered on macOS
+    trayIcon: () => {
+      const icon = loadMenuIcon(trayIcon1x, trayIcon2x)
+      if (process.platform === 'darwin') icon.setTemplateImage(true)
+      return icon
+    },
+    showMainWindow: summonHome,
+    summonPalette,
+    openAsk: (query) => deliverDeepLink(query ? { view: 'ask', query } : { view: 'ask' }),
+  })
+  registerDeepLinkClient()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createShellWindow()
@@ -7159,6 +7327,9 @@ app.on('will-quit', () => {
   stopAuthWatch?.()
   for (const watcher of folderWatchers.values()) watcher.close()
   controlServer?.close()
+  // global shortcuts and the tray icon must not outlive the process
+  systemPresence?.dispose()
+  systemPresence = null
   // a second instance that lost the lock quits too; it must not delete the running editor's list
   if (ownsOpenDocumentsRegistry) clearOpenDocuments(OPEN_DOCUMENTS_PATH())
 })

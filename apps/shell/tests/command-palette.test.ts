@@ -5,9 +5,25 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { HomeApi, InstalledPlugin, RecentEntry, UserSkillEntry } from '../src/shared/home-api'
+import type {
+  FileSearchHit,
+  HomeApi,
+  InstalledPlugin,
+  RecentEntry,
+  UserSkillEntry,
+} from '../src/shared/home-api'
 import type { PluginComponents } from '../src/shared/found-skill'
 import { CommandPalette, folderOf, scoreMatch } from '../src/renderer/src/CommandPalette'
+import {
+  createAskAiProvider,
+  createFilesProvider,
+  defaultPaletteProviders,
+  mergePaletteRows,
+  type PaletteContext,
+  type PaletteProvider,
+  type PaletteRow,
+} from '../src/renderer/src/palette-providers'
+import { COMMAND_PALETTE_STRINGS } from '../src/renderer/src/command-palette-strings'
 
 /**
  * The Ctrl/Cmd+K launcher. Everything it does goes through window.aiOffice:
@@ -26,6 +42,7 @@ let created: string[]
 let skillsSettingsOpened: number
 let modelSettingsOpened: number
 let pluginToggles: Array<[string, boolean]>
+let askedQueries: string[]
 
 const recent = (over: Partial<RecentEntry>): RecentEntry => ({
   path: 'C:\\Docs\\report.docx',
@@ -34,6 +51,28 @@ const recent = (over: Partial<RecentEntry>): RecentEntry => ({
   mtimeMs: 1,
   sizeBytes: 1,
   starred: false,
+  ...over,
+})
+
+const hit = (over: Partial<FileSearchHit>): FileSearchHit => ({
+  path: 'C:\\Docs\\hit.docx',
+  name: 'hit.docx',
+  ext: 'docx',
+  mtimeMs: 1,
+  sizeBytes: 1,
+  starred: false,
+  snippet: null,
+  needles: [],
+  ...over,
+})
+
+/** a provider context for driving the registry without mounting the palette */
+const ctx = (over: Partial<PaletteContext> = {}): PaletteContext => ({
+  strings: COMMAND_PALETTE_STRINGS.en,
+  recents: [],
+  skills: [],
+  plugins: [],
+  onAskAi: () => {},
   ...over,
 })
 
@@ -67,6 +106,7 @@ beforeEach(() => {
   skillsSettingsOpened = 0
   modelSettingsOpened = 0
   pluginToggles = []
+  askedQueries = []
 })
 
 afterEach(() => {
@@ -123,9 +163,16 @@ function mountApi(
   } as unknown as HomeApi
 }
 
-async function render(): Promise<void> {
+async function render(providers?: PaletteProvider[]): Promise<void> {
   await act(async () => {
-    root.render(createElement(CommandPalette, { lang: 'en', onClose: () => (closed += 1) }))
+    root.render(
+      createElement(CommandPalette, {
+        lang: 'en',
+        onClose: () => (closed += 1),
+        onAskAi: (q) => askedQueries.push(q),
+        ...(providers ? { providers } : {}),
+      }),
+    )
   })
   await act(async () => {
     await Promise.resolve()
@@ -262,7 +309,9 @@ describe('CommandPalette', () => {
     ])
     await render()
     await actType('budget')
-    expect(rowTitles()).toEqual(['budget-2026.xlsx'])
+    // the recent match, then the natural-language fallback that never leaves a
+    // non-empty query unanswered
+    expect(rowTitles()).toEqual(['budget-2026.xlsx', 'Ask AI: budget'])
     // the folder rides on the row as its detail line
     expect(rows()[0]!.querySelector('.cmd-row-detail')?.textContent).toBe('C:\\Docs')
   })
@@ -325,13 +374,20 @@ describe('CommandPalette', () => {
     expect(input().getAttribute('aria-activedescendant')).toBe(`cmd-opt-${activeIndex}`)
   })
 
-  it('arrow keys do nothing while there are no results, and Enter stays inert', async () => {
+  it('a query with no matches falls through to the Ask AI row, and Enter submits it', async () => {
     mountApi([recent({})])
     await render()
     await actType('zzz-no-match')
+    // no empty state anymore: the fallback row is the one row that always answers
+    expect(rows()).toHaveLength(1)
+    expect(rowTitles()).toEqual(['Ask AI: zzz-no-match'])
+    expect(host.querySelector('.cmd-empty')).toBeFalsy()
+    // arrow keys cycle the single row and Enter hands the query to the host
     await press('ArrowDown')
+    expect(activeRow()?.textContent).toContain('Ask AI')
     await press('Enter')
-    expect(closed).toBe(0)
+    expect(askedQueries).toEqual(['zzz-no-match'])
+    expect(closed).toBe(1)
     expect(openedPaths).toEqual([])
   })
 
@@ -344,10 +400,10 @@ describe('CommandPalette', () => {
     await render()
     await actType('notes')
     expect(host.textContent).toContain('Skills & commands')
-    expect(rowTitles()).toEqual(['notes-report'])
+    expect(rowTitles()).toEqual(['notes-report', 'Ask AI: notes'])
     // a plugin's components surface as plugin:name entries, searched by name
     await actType('deck-tools:deploy')
-    expect(rowTitles()).toEqual(['deck-tools:deploy'])
+    expect(rowTitles()).toEqual(['deck-tools:deploy', 'Ask AI: deck-tools:deploy'])
     expect(rows()[0]!.querySelector('.cmd-row-detail')?.textContent).toBe('Helpers for decks')
   })
 
@@ -387,7 +443,7 @@ describe('CommandPalette', () => {
     mountApi([], [], [plugin({ enabled: true }), plugin({ name: 'off-one', enabled: false })])
     await render()
     await actType('deck-tools')
-    expect(rowTitles()).toEqual(['deck-tools'])
+    expect(rowTitles()).toEqual(['deck-tools', 'Ask AI: deck-tools'])
     expect(rows()[0]!.querySelector('.cmd-chip')?.textContent).toBe('Disable')
     await press('Enter')
     expect(pluginToggles).toEqual([['deck-tools', false]])
@@ -414,12 +470,21 @@ describe('CommandPalette', () => {
     expect(closed).toBe(1)
   })
 
-  it('says so when nothing matches', async () => {
+  it('the Ask AI fallback never shows on an empty query', async () => {
+    mountApi([recent({})])
+    await render()
+    expect(rowTitles().some((title) => title.startsWith('Ask AI'))).toBe(false)
+    expect(host.querySelector('.cmd-empty')).toBeFalsy()
+  })
+
+  it('the fallback row carries its hint as the detail line', async () => {
     mountApi([recent({})])
     await render()
     await actType('zzz-no-match')
-    expect(host.querySelector('.cmd-empty')?.textContent).toBe('No matching results')
-    expect(rows()).toHaveLength(0)
+    expect(rowTitles()).toEqual(['Ask AI: zzz-no-match'])
+    expect(rows()[0]!.querySelector('.cmd-row-detail')?.textContent).toBe(
+      'Send this question to the Ask AI panel',
+    )
   })
 
   it('dims a missing recent but Enter still tries to open it', async () => {
@@ -465,5 +530,254 @@ describe('folderOf', () => {
     expect(folderOf('/home/notes.md')).toBe('/home')
     expect(folderOf('report.docx')).toBe('')
     expect(folderOf('\\report.docx')).toBe('')
+  })
+})
+
+// ── the provider registry ──
+
+const stubRow = (group: PaletteRow['group'], id: string, path?: string): PaletteRow => ({
+  id,
+  group,
+  title: id,
+  detail: '',
+  icon: { kind: 'pen' },
+  missing: false,
+  chip: '',
+  path,
+  run: () => {},
+})
+
+describe('defaultPaletteProviders', () => {
+  it('registers every source in a stable priority order', () => {
+    const providers = defaultPaletteProviders()
+    expect(providers.map((p) => p.id)).toEqual([
+      'create',
+      'recent',
+      'files',
+      'skills',
+      'settings',
+      'plugins',
+      'ask',
+    ])
+    const priorities = providers.map((p) => p.priority)
+    expect([...priorities].sort((a, b) => a - b)).toEqual(priorities)
+  })
+
+  it('reproduces the legacy empty-query list: the create actions plus the five newest recents', () => {
+    const recents = Array.from({ length: 8 }, (_, i) =>
+      recent({ path: `C:\\Docs\\file-${i}.docx`, name: `file-${i}.docx` }),
+    )
+    const context = ctx({ recents })
+    const parts = defaultPaletteProviders().map((p) => ({
+      priority: p.priority,
+      rows: p.getRows('', context) as PaletteRow[],
+    }))
+    const rows = mergePaletteRows(parts)
+    expect(rows.map((r) => r.group)).toEqual([
+      ...Array(7).fill('create'),
+      ...Array.from({ length: 5 }, () => 'recent'),
+    ])
+    expect(rows[7]!.title).toBe('file-0.docx')
+  })
+})
+
+describe('createAskAiProvider', () => {
+  it('is empty for a blank query and a single trailing row otherwise', () => {
+    const provider = createAskAiProvider()
+    expect(provider.getRows('', ctx())).toEqual([])
+    expect(provider.getRows('   ', ctx())).toEqual([])
+    const rows = provider.getRows('  summarize Q3  ', ctx()) as PaletteRow[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.group).toBe('ask')
+    expect(rows[0]!.title).toBe('Ask AI: summarize Q3')
+  })
+
+  it('runs by handing the trimmed query to the host', () => {
+    const asked: string[] = []
+    const provider = createAskAiProvider()
+    const rows = provider.getRows('hello', ctx({ onAskAi: (q) => asked.push(q) })) as PaletteRow[]
+    rows[0]!.run()
+    expect(asked).toEqual(['hello'])
+  })
+})
+
+describe('createFilesProvider', () => {
+  const page = (hits: FileSearchHit[]) => ({
+    hits,
+    total: hits.length,
+    index: { indexed: 1, pending: 0, scanning: false },
+  })
+
+  it('answers [] synchronously for a blank query and never searches', () => {
+    let calls = 0
+    const provider = createFilesProvider({
+      search: async () => {
+        calls += 1
+        return page([])
+      },
+    })
+    expect(provider.getRows('', ctx())).toEqual([])
+    expect(provider.getRows('   ', ctx())).toEqual([])
+    expect(calls).toBe(0)
+  })
+
+  it('debounces the search, caps the rows and maps hits to openable file rows', async () => {
+    const searched: string[] = []
+    const opened: string[] = []
+    const provider = createFilesProvider({
+      debounceMs: 0,
+      search: async (q) => {
+        searched.push(q)
+        return page(
+          Array.from({ length: 8 }, (_, i) =>
+            hit({ path: `C:\\Docs\\hit-${i}.docx`, name: `hit-${i}.docx` }),
+          ),
+        )
+      },
+      open: (path) => opened.push(path),
+    })
+    const rows = await provider.getRows('hit', ctx())
+    expect(searched).toEqual(['hit'])
+    // at most five file rows ride along
+    expect(rows).toHaveLength(5)
+    expect(rows[0]!.group).toBe('files')
+    expect(rows[0]!.detail).toBe('C:\\Docs')
+    rows[0]!.run()
+    expect(opened).toEqual(['C:\\Docs\\hit-0.docx'])
+    // the same query again reuses the settled answer instead of re-searching
+    const again = await provider.getRows('hit', ctx())
+    expect(searched).toEqual(['hit'])
+    expect(again.map((r) => r.id)).toEqual(rows.map((r) => r.id))
+  })
+
+  it('settles to no rows when the search fails, so other sources still answer', async () => {
+    const provider = createFilesProvider({
+      debounceMs: 0,
+      search: () => Promise.reject(new Error('index busy')),
+    })
+    await expect(provider.getRows('hit', ctx())).resolves.toEqual([])
+  })
+
+  it('a superseded query resolves to no rows and its search never fires', async () => {
+    const searched: string[] = []
+    const provider = createFilesProvider({
+      debounceMs: 5,
+      search: async (q) => {
+        searched.push(q)
+        return page([hit({})])
+      },
+    })
+    const first = provider.getRows('old', ctx()) as Promise<PaletteRow[]>
+    const second = provider.getRows('new', ctx()) as Promise<PaletteRow[]>
+    await expect(first).resolves.toEqual([])
+    await expect(second).resolves.toHaveLength(1)
+    expect(searched).toEqual(['new'])
+  })
+})
+
+describe('mergePaletteRows', () => {
+  it('orders groups by priority regardless of contribution order', () => {
+    const rows = mergePaletteRows([
+      { priority: 100, rows: [stubRow('ask', 'ask:ai')] },
+      { priority: 10, rows: [stubRow('create', 'create:doc')] },
+      { priority: 20, rows: [stubRow('recent', 'recent:x', '/x')] },
+    ])
+    expect(rows.map((r) => r.id)).toEqual(['create:doc', 'recent:x', 'ask:ai'])
+  })
+
+  it('a file-index hit shadows the recent row of the same path', () => {
+    // both rows open the same file; the hit matched the live query, the recent
+    // only repeats an old open, so the recent yields its slot
+    const rows = mergePaletteRows([
+      {
+        priority: 20,
+        rows: [
+          stubRow('recent', 'recent:/a.docx', '/a.docx'),
+          stubRow('recent', 'recent:/b.docx', '/b.docx'),
+        ],
+      },
+      { priority: 30, rows: [stubRow('files', 'file:/a.docx', '/a.docx')] },
+    ])
+    expect(rows.map((r) => r.id)).toEqual(['recent:/b.docx', 'file:/a.docx'])
+  })
+
+  it('caps the list at 50 rows and always keeps the Ask AI fallback last', () => {
+    const many = Array.from({ length: 80 }, (_, i) => stubRow('recent', `recent:${i}`))
+    const rows = mergePaletteRows([
+      { priority: 20, rows: many },
+      { priority: 100, rows: [stubRow('ask', 'ask:ai')] },
+    ])
+    expect(rows).toHaveLength(50)
+    expect(rows[49]!.id).toBe('ask:ai')
+  })
+})
+
+describe('CommandPalette + FilesProvider (mounted)', () => {
+  /** the default registry with the files source swapped for a test double */
+  const providersWithFiles = (
+    search: (q: string) => Promise<{
+      hits: FileSearchHit[]
+      total: number
+      index: { indexed: number; pending: number; scanning: boolean }
+    }>,
+  ): PaletteProvider[] =>
+    defaultPaletteProviders().map((p) =>
+      p.id === 'files' ? createFilesProvider({ debounceMs: 0, search }) : p,
+    )
+
+  /** the debounced search lands a macrotask later even with debounceMs 0 */
+  const flushSearch = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      await Promise.resolve()
+    })
+
+  it('surfaces file-index hits under their own group and opens them', async () => {
+    const searched: string[] = []
+    mountApi([])
+    await render(
+      providersWithFiles(async (q) => {
+        searched.push(q)
+        return {
+          hits: [hit({ path: 'C:\\Docs\\repo-note.docx', name: 'repo-note.docx' })],
+          total: 1,
+          index: { indexed: 1, pending: 0, scanning: false },
+        }
+      }),
+    )
+    await actType('repo')
+    await flushSearch()
+    expect(searched).toEqual(['repo'])
+    const groupLabels = [...host.querySelectorAll('.cmd-group-title')].map((el) => el.textContent)
+    expect(groupLabels).toContain('Files')
+    expect(rowTitles()).toContain('repo-note.docx')
+    await clickRow('repo-note.docx')
+    expect(openedPaths).toEqual(['C:\\Docs\\repo-note.docx'])
+    expect(closed).toBe(1)
+  })
+
+  it('a file hit shadows the recent row of the same path', async () => {
+    mountApi([recent({ path: 'C:\\Docs\\quarterly.docx', name: 'quarterly.docx' })])
+    await render(
+      providersWithFiles(async () => ({
+        hits: [hit({ path: 'C:\\Docs\\quarterly.docx', name: 'quarterly.docx' })],
+        total: 1,
+        index: { indexed: 1, pending: 0, scanning: false },
+      })),
+    )
+    await actType('quarterly')
+    await flushSearch()
+    // one row for the path, under Files; the Ask AI fallback trails
+    expect(rowTitles()).toEqual(['quarterly.docx', 'Ask AI: quarterly'])
+    const groupLabels = [...host.querySelectorAll('.cmd-group-title')].map((el) => el.textContent)
+    expect(groupLabels).toEqual(['Files', 'Ask AI'])
+  })
+
+  it('a failing search degrades to no file rows while the rest still answer', async () => {
+    mountApi([recent({ path: 'C:\\Docs\\quarterly.docx', name: 'quarterly.docx' })])
+    await render(providersWithFiles(() => Promise.reject(new Error('index busy'))))
+    await actType('quarterly')
+    await flushSearch()
+    expect(rowTitles()).toEqual(['quarterly.docx', 'Ask AI: quarterly'])
   })
 })

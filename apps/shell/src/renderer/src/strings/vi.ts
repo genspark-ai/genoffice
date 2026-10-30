@@ -218,6 +218,14 @@ export const vi: Dict = {
   setAnalytics: 'Gửi số liệu thống kê sử dụng ẩn danh',
   setAnalyticsDesc:
     'Được bật theo mặc định và có thể tắt bất cứ lúc nào trong Cài đặt → Chung. Sử dụng Google Analytics 4; Google nhận địa chỉ IP công khai và siêu dữ liệu truyền tải của bạn, nhưng nội dung tài liệu và tên tệp không bao giờ bị thu thập.',
+  setLoginItem: 'Khởi chạy khi đăng nhập',
+  setLoginItemDesc:
+    'Chạy GenOffice khi bạn đăng nhập, giữ biểu tượng khay và phím tắt toàn cục luôn sẵn sàng. Không hỗ trợ trên Linux; công tắc giữ nguyên tắt.',
+  setGlobalHotkey: 'Phím tắt toàn cục',
+  setGlobalHotkeyDesc: 'Gọi bảng lệnh của Trang chủ từ bất kỳ đâu.',
+  setGlobalHotkeyAccelerator: 'Tổ hợp phím tắt',
+  setGlobalHotkeyAcceleratorDesc:
+    'Cú pháp accelerator như Alt+Space hoặc Ctrl+Shift+K; Enter áp dụng, giá trị không nhận dạng được sẽ bị bỏ qua.',
   setSearchRerank: 'Sắp xếp lại kết quả tìm kiếm Jev',
   setSearchRerankDesc:
     'Gửi đoạn trích của 20 kết quả hàng đầu cục bộ tới mô hình Jev của TypeSafe và sắp xếp lại theo mức độ liên quan. Tắt theo mặc định; khi bật, các đoạn trích sẽ được gửi ra ngoài thiết bị này.',

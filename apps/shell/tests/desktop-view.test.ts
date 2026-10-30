@@ -55,6 +55,8 @@ let getDefaultSaveDir: ReturnType<typeof vi.fn>
 let wallpaperPickCustom: ReturnType<typeof vi.fn>
 /** distinct data URL per wallpaper id, the way the main process serves them */
 let wallpaperImage: ReturnType<typeof vi.fn>
+/** the desktop-prefs-changed handler the component subscribed */
+let prefsChanged: ((prefs: DesktopPrefs) => void) | undefined
 const wallpaperUrl = (id: string): string => `data:image/png;base64,${btoa(id)}`
 
 const entry = (path: string, name: string, ext: string): RecentEntry => ({
@@ -100,6 +102,7 @@ beforeEach(() => {
   saves = []
   recentFiles = [fileA, fileB, fileC]
   recentsChanged = undefined
+  prefsChanged = undefined
   storedPrefs = {
     wallpaper: 'default',
     carouselMinutes: 0,
@@ -182,6 +185,10 @@ beforeEach(() => {
     wallpaperPickCustom,
     onRecentsChanged: (handler: () => void) => {
       recentsChanged = handler
+      return () => {}
+    },
+    onDesktopPrefsChanged: (handler: (prefs: DesktopPrefs) => void) => {
+      prefsChanged = handler
       return () => {}
     },
   } as unknown as HomeApi
@@ -935,8 +942,9 @@ describe('DesktopView — the icon properties dialog', () => {
           `${row.querySelector('dt')!.textContent}:${row.querySelector('dd')!.textContent ?? ''}`,
       )
     expect(rows().slice(0, 3)).toEqual(['Name:alpha.docx', 'Type:DOCX', 'Size:1.5 KB'])
-    // localized for the UI language; the clock's offset is the machine's own
-    expect(rows()[3]).toMatch(/^Modified:1\/1\/1970, /)
+    // localized for the UI language; the epoch date renders in the machine's
+    // own timezone (UTC or east of it lands on 1/1/1970, west on 12/31/1969)
+    expect(rows()[3]).toMatch(/^Modified:(12\/31\/1969|1\/1\/1970), /)
     expect(rows()[4]).toBe('Path:')
     const pathInput = host.querySelector<HTMLInputElement>('.desktop-props-path')!
     expect(pathInput.value).toBe('/docs/alpha.docx')
@@ -996,6 +1004,44 @@ describe('DesktopView — the desktop properties dialog', () => {
     await click(host.querySelector('.desktop-props-open-settings'))
     expect(props.onOpenSettings).toHaveBeenCalledWith({ section: 'general' })
     expect(host.querySelector('.desktop-props-dialog')).toBeNull()
+  })
+})
+
+describe('DesktopView — prefs changed outside the renderer', () => {
+  /** the backdrop's active crossfade layer */
+  const activeLayer = (): HTMLElement | null =>
+    host.querySelector<HTMLElement>('.desktop-wallpaper > div.active')
+
+  it('a desktop-prefs-changed push re-pulls the prefs and swaps the wallpaper live', async () => {
+    await render()
+    expect(host.querySelector('.desktop-aurora-a')).toBeTruthy() // the default aurora
+    const prefsCalls = (window.aiOffice.desktopPrefs as ReturnType<typeof vi.fn>).mock.calls.length
+    // the CLI/MCP desktop domain wrote a new wallpaper and broadcast
+    storedPrefs = { ...storedPrefs, wallpaper: 'builtin:teal-deep' }
+    await act(async () => {
+      prefsChanged!(storedPrefs)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flushAsync()
+    // the prefs were re-pulled (not trusted from the event payload) and applied
+    expect((window.aiOffice.desktopPrefs as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(
+      prefsCalls + 1,
+    )
+    expect(activeLayer()?.style.backgroundImage).toContain(wallpaperUrl('builtin:teal-deep'))
+    expect(host.querySelector('.desktop-aurora-a')).toBeNull()
+    expect(wallpaperImage).toHaveBeenCalledWith('builtin:teal-deep')
+    // a remote change is applied, never written back
+    expect(prefSaves).toEqual([])
+  })
+
+  it('survives a preload without onDesktopPrefsChanged', async () => {
+    window.aiOffice = {
+      desktopLayout: vi.fn(async () => stored),
+      desktopPrefs: vi.fn(async () => storedPrefs),
+    } as unknown as HomeApi
+    await render()
+    expect(icons()).toHaveLength(12) // the ten system apps plus the folder roots
   })
 })
 

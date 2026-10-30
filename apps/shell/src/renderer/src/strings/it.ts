@@ -223,6 +223,14 @@ export const it: Dict = {
   setAnalytics: 'Invia statistiche di utilizzo anonime',
   setAnalyticsDesc:
     "Attivo per impostazione predefinita e disattivabile in Impostazioni → Generali. Utilizza Google Analytics 4; Google riceve l'IP pubblico e i metadati di trasporto, ma mai contenuti o nomi dei file.",
+  setLoginItem: 'Avvia all’accesso',
+  setLoginItemDesc:
+    'Esegue GenOffice all’accesso, mantenendo disponibili l’icona nella barra delle applicazioni e la scorciatoia globale. Non supportato su Linux; l’interruttore resta disattivo.',
+  setGlobalHotkey: 'Scorciatoia globale',
+  setGlobalHotkeyDesc: 'Richiama la tavolozza dei comandi della Home da ovunque.',
+  setGlobalHotkeyAccelerator: 'Tasti della scorciatoia',
+  setGlobalHotkeyAcceleratorDesc:
+    'Sintassi accelerator come Alt+Space o Ctrl+Shift+K; Invio applica, i valori non riconosciuti vengono ignorati.',
   setSearchRerank: 'Riordino con Jev',
   setSearchRerankDesc:
     'Invia gli estratti dei 20 migliori risultati locali al modello Jev di TypeSafe e li riordina per pertinenza. Disattivato per impostazione predefinita; se attivo, gli estratti lasciano questo dispositivo.',

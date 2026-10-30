@@ -222,6 +222,14 @@ export const pt: Dict = {
   setAnalytics: 'Enviar estatísticas de uso anônimas',
   setAnalyticsDesc:
     'Ativado por padrão e pode ser desativado em Configurações → Geral. Usa o Google Analytics 4; o Google recebe seu IP público e metadados de transporte, mas nunca o conteúdo dos documentos ou nomes de arquivos.',
+  setLoginItem: 'Iniciar ao iniciar sessão',
+  setLoginItemDesc:
+    'Executa o GenOffice ao iniciar sessão, mantendo o ícone da bandeja e o atalho global disponíveis. Não suportado no Linux; o interruptor permanece desligado.',
+  setGlobalHotkey: 'Atalho global',
+  setGlobalHotkeyDesc: 'Invoca a paleta de comandos da página inicial a partir de qualquer lugar.',
+  setGlobalHotkeyAccelerator: 'Teclas do atalho',
+  setGlobalHotkeyAcceleratorDesc:
+    'Sintaxe de acelerador como Alt+Space ou Ctrl+Shift+K; Enter aplica e valores não reconhecidos são ignorados.',
   setSearchRerank: 'Reordenação com Jev',
   setSearchRerankDesc:
     'Envia os trechos dos 20 melhores resultados locais ao modelo Jev da TypeSafe e os reordena por relevância. Desativado por padrão; quando ativo, os trechos saem deste dispositivo.',
