@@ -63,6 +63,8 @@ function panel(links: readonly ExternalLinkRow[], overrides: Record<string, unkn
     links,
     busy: false,
     onUpdate: () => {},
+    onBreak: () => {},
+    onChangeSource: () => {},
     onReveal: () => {},
     onClose: () => {},
     ...overrides,
@@ -122,5 +124,32 @@ describe('external links panel', () => {
     const locate = host.querySelector('[data-tip="定位源文件"]')!
     click(locate)
     expect(onReveal).toHaveBeenCalledWith('/tmp/data/source.xlsx')
+  })
+
+  it('break asks for confirmation before reaching the handler', async () => {
+    const onBreak = vi.fn()
+    const host = await mount(panel(LISTED, { onBreak }))
+    const scissors = [...host.querySelectorAll('button')].find(
+      (button) => button.getAttribute('data-tip') === '断开链接',
+    )!
+    click(scissors)
+    // first click only arms the confirm step
+    expect(onBreak).not.toHaveBeenCalled()
+    const confirm = [...host.querySelectorAll('button')].find(
+      (button) => button.textContent === '确认断开',
+    )!
+    click(confirm)
+    expect(onBreak).toHaveBeenCalledTimes(1)
+    expect(onBreak).toHaveBeenCalledWith(1)
+  })
+
+  it('a click on change source reaches the handler', async () => {
+    const onChangeSource = vi.fn()
+    const host = await mount(panel(LISTED, { onChangeSource }))
+    const sources = [...host.querySelectorAll('button')].filter(
+      (button) => button.getAttribute('data-tip') === '更改源',
+    )
+    click(sources[1]!)
+    expect(onChangeSource).toHaveBeenCalledWith(2)
   })
 })

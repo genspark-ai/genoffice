@@ -21,6 +21,12 @@ import type {
 import { spillsDynamicArray, withFutureFunctionMarkers } from './future-functions'
 import { decodeXlsxEscapes, encodeXlsxEscapes } from './xlsx-escapes'
 import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
+import {
+  applyWorkbookLinkBreak,
+  orderedExternalLinkParts,
+  retargetExternalLinkRels,
+  transformSheetForLinkBreak,
+} from './xlsx-external-links'
 import { applyChartEdit } from './xlsx-chart'
 import { applyVisualEdits } from './xlsx-drawing-edit'
 import { applyCellImageAdditions } from './xlsx-cell-image-add'
@@ -823,11 +829,12 @@ export async function applyCellEditsToXlsx(
     [],
     formulaValues,
     // The slots between formulaValues and redactionStates (theme, workbook
-    // protection, protected ranges, bulk fills, tab colours, table edits) are
-    // features this wrapper does not expose. They must stay positional:
-    // planCellEditsToXlsx takes one long ordered list, so inserting a
-    // placeholder here shifts nothing — but dropping one would silently
-    // re-target every later argument, a table edit included.
+    // protection, protected ranges, bulk fills, tab colours, table edits,
+    // cell images, external-link ops) are features this wrapper does not
+    // expose. They must stay positional: planCellEditsToXlsx takes one long
+    // ordered list, so inserting a placeholder here shifts nothing — but
+    // dropping one would silently re-target every later argument, a table
+    // edit included.
     null,
     null,
     [],
@@ -835,6 +842,7 @@ export async function applyCellEditsToXlsx(
     [],
     [],
     [],
+    null,
     redactionStates,
   )
   return assembleWithJsZip(source, plan)
@@ -925,6 +933,83 @@ export type { PivotRefreshUpdate } from './xlsx-pivot-expand'
 export { PivotExpandError } from './xlsx-pivot-expand'
 export type { SheetSparklineAddition } from './xlsx-sparkline'
 
+/// Breaks and retargets of the workbook's external links, resolved on the
+/// final entry contents this save produces. `broken` lists the 1-based `[n]`
+/// positions in `<externalReferences>`; their formulas become literals, their
+/// parts disappear, surviving `[m]` indices renumber. A `retargets` entry
+/// repoints one link's source path — formulas, sheet names and cached values
+/// stay, so values keep coming from the cache until the next update. Both
+/// lists are read in original index space (a retarget names the link as it
+/// is before any break of this save).
+export interface ExternalLinkOps {
+  readonly broken: readonly number[]
+  readonly retargets: readonly { readonly index: number; readonly target: string }[]
+}
+
+/// Applies the external-link ops to the patched package: retargets rewrite
+/// one link's own rels, breaks run the sheet transform over every worksheet
+/// part and then delete the links' parts, references and content-type
+/// overrides. Runs last, on the final XML — the renderer journals the broken
+/// cells as literals, so the transform usually only renumbers survivors.
+async function applyExternalLinkOps(
+  pkg: PackageEditor,
+  ops: ExternalLinkOps,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const workbookPath = 'xl/workbook.xml'
+  const relsPath = 'xl/_rels/workbook.xml.rels'
+  let workbookXml = await pkg.readText(workbookPath)
+  let relsXml = await pkg.readText(relsPath)
+  const links = orderedExternalLinkParts(workbookXml, relsXml)
+  for (const retarget of ops.retargets) {
+    const link = links.find((entry) => entry.n === retarget.index)
+    if (link === undefined || link.part === null) {
+      throw new Error(`no external link ${retarget.index} to point at a new source`)
+    }
+    const relsPart = `${link.part.replace(/([^/]+)$/, '_rels/$1')}.rels`
+    pkg.write(relsPart, retargetExternalLinkRels(await pkg.readText(relsPart), retarget.target))
+    touchedEntries.add(relsPart)
+  }
+  const broken = [...new Set(ops.broken)]
+  if (broken.length === 0) return
+  for (const n of broken) {
+    const link = links.find((entry) => entry.n === n)
+    if (link === undefined || link.part === null) {
+      throw new Error(`no external link ${n} to break`)
+    }
+  }
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/worksheets\/sheet\d+\.xml$/.test(path)) continue
+    const xml = await pkg.readText(path)
+    const transformed = transformSheetForLinkBreak(xml, broken)
+    if (transformed !== xml) {
+      pkg.write(path, transformed)
+      touchedEntries.add(path)
+    }
+  }
+  const next = applyWorkbookLinkBreak(workbookXml, relsXml, broken)
+  workbookXml = next.workbookXml
+  relsXml = next.relsXml
+  let contentTypesXml: string | null = null
+  if (await pkg.has('[Content_Types].xml')) {
+    contentTypesXml = await pkg.readText('[Content_Types].xml')
+  }
+  for (const part of next.parts) {
+    pkg.remove(part)
+    const relsPart = `${part.replace(/([^/]+)$/, '_rels/$1')}.rels`
+    if (await pkg.has(relsPart)) pkg.remove(relsPart)
+    if (contentTypesXml !== null) contentTypesXml = removePartOverride(contentTypesXml, part)
+  }
+  if (contentTypesXml !== null) {
+    pkg.write('[Content_Types].xml', contentTypesXml)
+    touchedEntries.add('[Content_Types].xml')
+  }
+  pkg.write(workbookPath, workbookXml)
+  pkg.write(relsPath, relsXml)
+  touchedEntries.add(workbookPath)
+  touchedEntries.add(relsPath)
+}
+
 /// Assembler-independent planning: computes the patched entry contents for a
 /// set of edits without materializing the output archive.
 export async function planCellEditsToXlsx(
@@ -956,6 +1041,7 @@ export async function planCellEditsToXlsx(
   tabColorStates: readonly SheetTabColorState[] = [],
   tableEdits: readonly SheetTableEdit[] = [],
   cellImageAdditions: readonly SheetCellImageAddition[] = [],
+  externalLinkOps: ExternalLinkOps | null = null,
   // Last, deliberately: every caller written against an older order would
   // otherwise see `tabColorStates` or a cell image land here and a parsed
   // table edit parsed as a tab colour. null = the caller does not know the
@@ -1743,6 +1829,10 @@ export async function planCellEditsToXlsx(
   if (workbookXml !== originalWorkbookXml) {
     pkg.write(workbookPath, workbookXml)
     touchedEntries.add(workbookPath)
+  }
+
+  if (externalLinkOps !== null) {
+    await applyExternalLinkOps(pkg, externalLinkOps, touchedEntries)
   }
 
   return pkg.toPlan(touchedEntries)

@@ -69,6 +69,8 @@ export const IPC_CHANNELS = {
   recalcWorkbook: 'workbook:recalc',
   listExternalLinks: 'workbook:list-external-links',
   updateExternalLinks: 'workbook:update-external-links',
+  readExternalLinkUsage: 'workbook:read-external-link-usage',
+  selectExternalLinkSource: 'workbook:select-external-link-source',
   revealPath: 'shell:reveal-path',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',

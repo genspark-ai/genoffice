@@ -3250,6 +3250,22 @@ export function registerSheetsIpc(): void {
       .parse(input)
     return entry.client.updateExternalLinks({ path })
   })
+  ipcMain.handle(IPC_CHANNELS.readExternalLinkUsage, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const { path } = z
+      .object({ path: z.string().min(1) })
+      .strict()
+      .parse(input)
+    return entry.client.readExternalLinkUsage({ path })
+  })
+  ipcMain.handle(IPC_CHANNELS.selectExternalLinkSource, async (event) => {
+    const selection = await openFileDialog(event, {
+      properties: ['openFile'],
+      filters: [{ name: tm('filterSpreadsheets'), extensions: WORKBOOK_FILTER_EXTENSIONS }],
+    })
+    if (selection.canceled || selection.filePaths.length === 0) return null
+    return selection.filePaths[0] ?? null
+  })
   // The preload sends this one (fire-and-forget): handle() would make the
   // renderer's send() a no-op and Locate would never open the file manager.
   ipcMain.on(IPC_CHANNELS.revealPath, (_event, path: unknown) => {
@@ -4705,6 +4721,7 @@ async function writeWorkbookTo(
             }),
       })),
       redactionStates,
+      externalLinkOps: request.externalLinkOps,
     })
     if (session.password) {
       const encryptedBytes = encryptOoxml(await readFile(plainTargetPath), session.password)

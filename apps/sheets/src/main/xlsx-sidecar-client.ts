@@ -202,6 +202,13 @@ export class XlsxSidecarClient {
     return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 
+  /** The formula cells referencing each `[n]` link with the value a break
+   * would freeze them at — a file-level scan, so `t="e"` error caches
+   * survive (a model pass would lose them). */
+  async readExternalLinkUsage(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'read_external_link_usage', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
   /**
    * The link list only: no source is opened, nothing is evaluated, and the
    * targets are not probed (the listing carries no reachability).

@@ -21,6 +21,7 @@ import {
   IUndoRedoService,
   IUniverInstanceService,
   LifecycleStages,
+  type Nullable,
   RANGE_TYPE,
   VerticalAlign,
   WrapStrategy,
@@ -8265,4 +8266,69 @@ export function applyExternalLinkValues(
     }
   }
   return { applied, sheets: bySheet.size }
+}
+
+const SET_RANGE_VALUES_COMMAND = 'sheet.command.set-range-values'
+
+/**
+ * Breaks one link's cells in the model (genoffice#2109): every formula cell
+ * the usage scan reported becomes the literal its cached `<v>` holds, through
+ * the set-range-values command so the edit journal records a literal
+ * overwrite. A cell whose cache is an error or empty stays on the formula —
+ * the save-time break transform freezes those file-side (`t="e"` survives
+ * there, a journal edit would not). Returns how many cells were journaled.
+ */
+export async function journalExternalLinkLiterals(
+  runtime: UniverRuntime,
+  cells: readonly {
+    sheet: string
+    row: number
+    column: number
+    value: { kind: string; value?: number | string | boolean }
+  }[],
+): Promise<number> {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return 0
+  const unitId = workbook.getId()
+  const commandService = runtime.univer.__getInjector().get(ICommandService)
+  const sheetByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet]),
+  )
+  const bySheet = new Map<string, { [row: number]: { [column: number]: ICellData } }>()
+  let journaled = 0
+  for (const cell of cells) {
+    const kind = cell.value.kind
+    if (kind !== 'number' && kind !== 'text' && kind !== 'bool') continue
+    const sheet = sheetByName.get(cell.sheet.toLowerCase())
+    if (!sheet) continue
+    const raw = cell.value.value
+    const patch: ICellData =
+      kind === 'number'
+        ? { v: raw as number, t: CellValueType.NUMBER, f: null, si: null, p: null }
+        : kind === 'bool'
+          ? { v: raw as boolean, t: CellValueType.BOOLEAN, f: null, si: null, p: null }
+          : { v: String(raw), t: CellValueType.STRING, f: null, si: null, p: null }
+    const matrix = bySheet.get(sheet.getSheetId()) ?? {}
+    matrix[cell.row] = { ...matrix[cell.row], [cell.column]: patch }
+    bySheet.set(sheet.getSheetId(), matrix)
+    journaled += 1
+  }
+  for (const [sheetId, matrix] of bySheet) {
+    const rows = Object.keys(matrix).map(Number)
+    const startRow = Math.min(...rows)
+    const endRow = Math.max(...rows)
+    const columns = rows.flatMap((row) => Object.keys(matrix[row]!).map(Number))
+    await commandService.executeCommand(SET_RANGE_VALUES_COMMAND, {
+      unitId,
+      subUnitId: sheetId,
+      range: {
+        startRow,
+        endRow,
+        startColumn: Math.min(...columns),
+        endColumn: Math.max(...columns),
+      },
+      value: matrix as Nullable<Record<number, Record<number, ICellData>>>,
+    })
+  }
+  return journaled
 }

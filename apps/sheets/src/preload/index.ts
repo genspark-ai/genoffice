@@ -54,6 +54,8 @@ import type {
   ExternalLinksResult,
   ExternalLinksUpdateResult,
   ExternalLinkStatus,
+  ExternalLinkUsageCell,
+  ExternalLinkUsageResult,
 } from '../shared/desktop-api'
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -250,6 +252,18 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parseExternalLinksUpdateResult(result)
+  },
+  async readExternalLinkUsage(request) {
+    const validatedRequest = parseExternalLinksRequest(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.readExternalLinkUsage,
+      validatedRequest,
+    )
+    return parseExternalLinkUsageResult(result)
+  },
+  async selectExternalLinkSource() {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectExternalLinkSource)
+    return typeof result === 'string' && result.length > 0 ? result : null
   },
   revealPath(path) {
     ipcRenderer.send(IPC_CHANNELS.revealPath, path)
@@ -1685,6 +1699,56 @@ function parseExternalLinksUpdateResult(input: unknown): ExternalLinksUpdateResu
   return {
     links: input.links.map(parseExternalLinkStatus),
     cells: input.cells.map(parseExternalLinkCell),
+  }
+}
+
+const EXTERNAL_LINK_USAGE_KINDS = ['number', 'text', 'bool', 'error'] as const
+
+/** One formula cell of the usage scan: the frozen value typed by the cached
+ * `<v>` (`missing` when the cell has none to freeze). Rows and columns are
+ * 0-based. */
+function parseExternalLinkUsageCell(input: unknown): ExternalLinkUsageCell {
+  if (
+    !isRecord(input) ||
+    !isBoundedString(input.sheet, 1_024) ||
+    !isNonnegativeInteger(input.row) ||
+    !isNonnegativeInteger(input.column) ||
+    !isRecord(input.value) ||
+    (input.value.kind !== 'missing' &&
+      (!EXTERNAL_LINK_USAGE_KINDS.includes(input.value.kind as (typeof EXTERNAL_LINK_USAGE_KINDS)[number]) ||
+        typeof input.value.value !==
+          (input.value.kind === 'number'
+            ? 'number'
+            : input.value.kind === 'bool'
+              ? 'boolean'
+              : 'string')))
+  ) {
+    throw new Error('Invalid external links usage response.')
+  }
+  return {
+    sheet: input.sheet,
+    row: input.row,
+    column: input.column,
+    value: input.value as ExternalLinkUsageCell['value'],
+  }
+}
+
+function parseExternalLinkUsageResult(input: unknown): ExternalLinkUsageResult {
+  if (!isRecord(input) || !Array.isArray(input.links) || input.links.length > EXTERNAL_LINK_LIMIT) {
+    throw new Error('Invalid external links usage response.')
+  }
+  return {
+    links: input.links.map((link) => {
+      if (
+        !isRecord(link) ||
+        !isPositiveInteger(link.index) ||
+        !Array.isArray(link.cells) ||
+        link.cells.length > EXTERNAL_LINK_CELL_LIMIT
+      ) {
+        throw new Error('Invalid external links usage response.')
+      }
+      return { index: link.index, cells: link.cells.map(parseExternalLinkUsageCell) }
+    }),
   }
 }
 

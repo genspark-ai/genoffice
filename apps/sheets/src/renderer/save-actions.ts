@@ -35,6 +35,7 @@ import {
 } from './csv-export'
 import type { CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+import type { ExternalLinkOps } from '../shared/desktop-api'
 import { verifiedFormulaValues } from './formula-values'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
@@ -73,6 +74,10 @@ export interface SaveContext {
    * claiming nothing is hidden.
    */
   redactionStates?: () => readonly SheetRedactionState[] | null
+  /** External-link breaks and source retargets pending this save (the links
+      panel). Consumed with the save that carries them; the caller clears the
+      pending state once the save settles. */
+  externalLinkOps?: () => ExternalLinkOps | null
   /** Saving swaps the session and reinstalls the workbook, which resets the
       view to the first sheet's A1 — stash where the user was so the
       reinstall lands there instead. `viewRow`/`viewColumn` is the viewport's
@@ -276,6 +281,9 @@ export async function handleSave(
       sheetName: state.sheetName,
       marks: state.marks.map((mark) => ({ ...mark })),
     })) ?? null
+  // External-link breaks/retargets are one-shot: the panel sets them, this
+  // save carries them, and the caller clears them once it settles.
+  const externalLinkOps = ctx.externalLinkOps?.() ?? null
   // The gateway fails closed when these additions ride with structural or
   // sheet changes (their coordinates entangle). Instead of bouncing the
   // user, hold them back and save in two sequential phases: structure
@@ -463,6 +471,7 @@ export async function handleSave(
     workbookProtectionState,
     protectedRangeStates,
     redactionStates,
+    externalLinkOps,
   }
   if (mode === 'recovery') {
     // Best-effort; a failure only means this tick's copy is skipped — but an
@@ -520,6 +529,7 @@ export async function handleSave(
       workbookProtectionState,
       protectedRangeStates,
       redactionStates,
+      externalLinkOps,
     })
     if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
     if (result.canceled) {
@@ -604,6 +614,8 @@ export async function handleSave(
         // performed. Sending them again would rewrite the part under the names
         // this session loaded — the pre-rename ones — and orphan it.
         redactionStates: null,
+        // link ops rode with the first phase; a second phase carries none
+        externalLinkOps: null,
       })
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {

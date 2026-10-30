@@ -2093,6 +2093,27 @@ export const redactionStatesSchema = z
   )
   .max(1_000)
 
+/// Breaks and source retargets of the workbook's external links, applied by
+/// the save planner on the final entry contents. Indexes are the stored `[n]`
+/// positions in `<externalReferences>`; a break also needs the affected cells
+/// journaled as literals, so the model and the file agree after the save.
+export const externalLinkOpsSchema = z
+  .object({
+    broken: z.array(z.number().int().positive()).max(64),
+    retargets: z
+      .array(
+        z
+          .object({
+            index: z.number().int().positive(),
+            target: z.string().min(1).max(2_048),
+          })
+          .strict(),
+      )
+      .max(64),
+  })
+  .strict()
+export type ExternalLinkOps = z.infer<typeof externalLinkOpsSchema>
+
 export const workbookSaveRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -2304,6 +2325,7 @@ export const workbookSaveRequestSchema = z
      * through without a translation step.
      */
     redactionStates: redactionStatesSchema.nullable().default(null),
+    externalLinkOps: externalLinkOpsSchema.nullable().default(null),
   })
   .strict()
   .refine(
@@ -2338,7 +2360,8 @@ export const workbookSaveRequestSchema = z
       (request.tableEdits?.length ?? 0) > 0 ||
       request.pivotAdditions.length > 0 ||
       request.sparklineAdditions.length > 0 ||
-      (request.redactionStates?.length ?? 0) > 0,
+      (request.redactionStates?.length ?? 0) > 0 ||
+      request.externalLinkOps !== null,
     { message: 'A save needs at least one edit.' },
   )
   .refine((request) => request.sheetOps.length === 0 || request.sheetOrder.length > 0, {
@@ -2690,6 +2713,39 @@ export const externalLinksUpdateResultSchema = z
   })
   .strict()
 export type ExternalLinksUpdateResult = z.infer<typeof externalLinksUpdateResultSchema>
+
+/// One formula cell that references a link, as the usage scan carries it: the
+/// value a break would freeze the cell at, typed by the cached `<v>`. `row`
+/// and `column` are 0-based.
+export const externalLinkUsageCellSchema = z
+  .object({
+    sheet: z.string(),
+    row: z.number().int().nonnegative(),
+    column: z.number().int().nonnegative(),
+    value: z.union([
+      z.object({ kind: z.literal('number'), value: z.number() }).strict(),
+      z.object({ kind: z.literal('text'), value: z.string() }).strict(),
+      z.object({ kind: z.literal('bool'), value: z.boolean() }).strict(),
+      z.object({ kind: z.literal('error'), value: z.string() }).strict(),
+      z.object({ kind: z.literal('missing') }).strict(),
+    ]),
+  })
+  .strict()
+export type ExternalLinkUsageCell = z.infer<typeof externalLinkUsageCellSchema>
+
+/// Every formula cell of the workbook that references link `[n]`.
+export const externalLinkUsageSchema = z
+  .object({
+    index: z.number().int().positive(),
+    cells: z.array(externalLinkUsageCellSchema),
+  })
+  .strict()
+export type ExternalLinkUsage = z.infer<typeof externalLinkUsageSchema>
+
+export const externalLinkUsageResultSchema = z
+  .object({ links: z.array(externalLinkUsageSchema) })
+  .strict()
+export type ExternalLinkUsageResult = z.infer<typeof externalLinkUsageResultSchema>
 export type WorkbookRecalcResult = z.infer<typeof workbookRecalcResultSchema>
 export type WorkbookMediaRequest = z.infer<typeof workbookMediaRequestSchema>
 export type WorkbookMediaResult = z.infer<typeof workbookMediaResultSchema>
@@ -3202,6 +3258,11 @@ export interface DesktopApi {
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
   listExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksResult>
   updateExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksUpdateResult>
+  /// The formula cells referencing each `[n]` link, with the value a break
+  /// would freeze them at — the file-level scan, not the model's view.
+  readExternalLinkUsage(request: ExternalLinksRequest): Promise<ExternalLinkUsageResult>
+  /// A single-workbook file picker for "Change Source" (a link's new source).
+  selectExternalLinkSource(): Promise<string | null>
   revealPath(path: string): void
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>

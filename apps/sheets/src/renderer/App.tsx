@@ -221,7 +221,9 @@ import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
 import type {
   AttachmentAddResult,
   AttachmentMeta,
+  ExternalLinkOps,
   ExternalLinkRow,
+  ExternalLinkStatus,
   MenuAction,
   RecoveryPromptPayload,
   WorkbookFile,
@@ -546,7 +548,7 @@ import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPan
 import { WatchWindowPanel, watchKey, type WatchCell, type WatchRowValue } from './WatchWindowPanel'
 import { ExternalLinksPanel } from './ExternalLinksPanel'
 import { updateExternalLinksFlow } from './external-links-flow'
-import { applyExternalLinkValues } from './univer-sync'
+import { applyExternalLinkValues, journalExternalLinkLiterals } from './univer-sync'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
 import { workbookMediaDataUrl } from './workbook-media'
@@ -943,6 +945,9 @@ export function App({
       cancelled = true
     }
   }, [linksOpen])
+  /// External-link breaks/retargets the links panel queued for the next save;
+  /// cleared once the save settles (see saveContext).
+  const pendingExternalLinkOpsRef = useRef<ExternalLinkOps | null>(null)
   const [watchCells, setWatchCells] = useState<readonly WatchCell[]>([])
   const [calcManual, setCalcManual] = useState(false)
   /// Non-null while the "Insert Slicer" field picker is open.
@@ -1148,6 +1153,7 @@ export function App({
       // null until the part was read: a save in that window must not clear it
       redactionStates: () =>
         loadedRedactionStatesRef.current === null ? null : redactionStatesRef.current,
+      externalLinkOps: () => pendingExternalLinkOpsRef.current,
       stashViewRestore: (view) => {
         viewRestoreRef.current = view
       },
@@ -6042,6 +6048,51 @@ export function App({
               }
             })()
           }}
+          onBreak={(index) => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              setLinksBusy(true)
+              try {
+                const usage = await window.desktopApi.readExternalLinkUsage({ path })
+                const entry = usage.links.find((link) => link.index === index)
+                const runtime = univerRef.current
+                if (runtime && entry) {
+                  await journalExternalLinkLiterals(runtime, entry.cells)
+                }
+                pendingExternalLinkOpsRef.current = { broken: [index], retargets: [] }
+                await handleSave('save')
+              } finally {
+                pendingExternalLinkOpsRef.current = null
+                setLinksBusy(false)
+                const fresh = await window.desktopApi.listExternalLinks({ path })
+                setLinkStatuses(fresh.links)
+              }
+            })()
+          }}
+          onChangeSource={(index) => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              const picked = await window.desktopApi.selectExternalLinkSource()
+              if (!picked) return
+              setLinksBusy(true)
+              try {
+                pendingExternalLinkOpsRef.current = {
+                  broken: [],
+                  retargets: [{ index, target: externalFileTarget(picked) }],
+                }
+                await handleSave('save')
+              } finally {
+                pendingExternalLinkOpsRef.current = null
+                setLinksBusy(false)
+                const fresh = await window.desktopApi.listExternalLinks({ path })
+                setLinkStatuses(fresh.links)
+              }
+            })()
+          }}
           onReveal={(source) => void window.desktopApi.revealPath(source)}
           onClose={() => setLinksOpen(false)}
         />
@@ -6232,4 +6283,13 @@ export function App({
     setMessage(t('appRangesRecorded', { count: ranges.length }))
     return null
   }
+}
+
+/// A picked file's `file:///` spelling for an external link's rels Target:
+/// forward slashes, percent-encoded segments — what the sidecar's path
+/// resolver decodes back (Excel stores the same shape).
+function externalFileTarget(path: string): string {
+  const universal = path.replaceAll('\\', '/')
+  const trimmed = universal.startsWith('/') ? universal.slice(1) : universal
+  return `file:///${trimmed.split('/').map(encodeURIComponent).join('/')}`
 }

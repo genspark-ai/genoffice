@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useI18n } from './i18n/locale'
 import type { ExternalLinkRow } from '../shared/desktop-api'
 
@@ -7,21 +7,29 @@ import type { ExternalLinkRow } from '../shared/desktop-api'
 /// Reachability is unknown ("—") until the explicit Update: listing the links
 /// must not probe the sources on disk (a dead network share can block the
 /// open). Update re-reads reachable sources; broken links stay on their
-/// cached values (Excel's own behaviour).
+/// cached values (Excel's own behaviour). Break turns the link's formulas
+/// into their cached literals (Excel asks for confirmation because the file
+/// cannot undo it); Change Source repoints the link at another file without
+/// touching formulas or cached values.
 export function ExternalLinksPanel({
   links,
   busy,
   onUpdate,
   onReveal,
+  onBreak,
+  onChangeSource,
   onClose,
 }: {
   readonly links: readonly ExternalLinkRow[]
   readonly busy: boolean
   readonly onUpdate: () => void
   readonly onReveal: (source: string) => void
+  readonly onBreak: (index: number) => void
+  readonly onChangeSource: (index: number) => void
   readonly onClose: () => void
 }): ReactElement {
   const { t } = useI18n()
+  const [confirming, setConfirming] = useState<number | null>(null)
   return (
     <section className="watch-window" role="dialog" aria-label={t('appLinksPanel')}>
       <header>
@@ -72,6 +80,35 @@ export function ExternalLinksPanel({
                       📂
                     </button>
                   ) : null}
+                  <button
+                    className="watch-remove"
+                    data-tip={t('appLinksChangeSource')}
+                    disabled={busy}
+                    onClick={() => onChangeSource(link.index)}
+                  >
+                    🔗
+                  </button>
+                  {confirming === link.index ? (
+                    <button
+                      className="watch-remove"
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirming(null)
+                        onBreak(link.index)
+                      }}
+                    >
+                      {t('appLinksBreakConfirm')}
+                    </button>
+                  ) : (
+                    <button
+                      className="watch-remove"
+                      data-tip={t('appLinksBreak')}
+                      disabled={busy}
+                      onClick={() => setConfirming(link.index)}
+                    >
+                      ✂
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
