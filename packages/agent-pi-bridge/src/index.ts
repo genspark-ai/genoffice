@@ -21,7 +21,6 @@ import type {
   ImageContent,
   ToolResultMessage,
 } from '@earendil-works/pi-ai'
-import type { AiTokenUsage } from '@genoffice/ai-provider'
 import type { AgentMessage, AgentToolDef } from '@genoffice/agent-core'
 import type { AiSettings, StreamCallbacks } from '@genoffice/ai-provider'
 import {

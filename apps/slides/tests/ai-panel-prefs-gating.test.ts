@@ -211,7 +211,7 @@ afterEach(() => {
 describe('AiPanel pref gating (slides)', () => {
   it('renders reasoning, streamed text and tool entries while every pref is on', async () => {
     const api = installSlidesApi()
-    const { container, root } = mountPanel()
+    const { container } = mountPanel()
     await flushEffects()
 
     expect(agentHarness.events).not.toBeNull()
@@ -252,7 +252,7 @@ describe('AiPanel pref gating (slides)', () => {
   it('holds the reply, hides reasoning and tool entries while every pref is off', async () => {
     const api = installSlidesApi()
     applyAiPanelPrefs({ showStreaming: false, showThinking: false, showToolCalls: false })
-    const { container, root } = mountPanel()
+    const { container } = mountPanel()
     await flushEffects()
 
     pushReasoning(api, 'never shown')
@@ -288,8 +288,8 @@ describe('AiPanel pref gating (slides)', () => {
   })
 
   it('hides tool entries of an already-streamed reply when the pref turns off', async () => {
-    const api = installSlidesApi()
-    const { container, root } = mountPanel()
+    installSlidesApi()
+    const { container } = mountPanel()
     await flushEffects()
 
     act(() => {
