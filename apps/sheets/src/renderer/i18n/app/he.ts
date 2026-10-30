@@ -433,6 +433,7 @@ export const he = {
   appGridlinesHidden: 'קווי הרשת הוסתרו.',
   appGridlinesShown: 'קווי הרשת מוצגים.',
   appShowingFormulas: 'מציג נוסחאות — החלף שוב לערכים.',
+  appShowingFormulasActive: 'מציג נוסחאות',
   appShowingValues: 'מציג ערכים מחושבים.',
   appTraceNoFormula: 'עקוב אחר גורמים מזינים: בתא הפעיל אין נוסחה.',
   appTraceNoRefs: 'עקוב אחר גורמים מזינים: לנוסחה זו אין הפניות לתאים.',

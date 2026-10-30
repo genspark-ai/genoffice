@@ -467,6 +467,7 @@ export const vi = {
   appGridlinesHidden: 'Đã ẩn đường lưới.',
   appGridlinesShown: 'Đã hiển thị đường lưới.',
   appShowingFormulas: 'Đang hiển thị công thức — chuyển đổi lại để hiển thị giá trị.',
+  appShowingFormulasActive: 'Đang hiển thị công thức',
   appShowingValues: 'Đang hiển thị giá trị đã tính toán.',
   appTraceNoFormula: 'Dò ô tiền nhiệm: ô hiện hoạt không có công thức.',
   appTraceNoRefs: 'Dò ô tiền nhiệm: công thức này không có tham chiếu ô nào.',

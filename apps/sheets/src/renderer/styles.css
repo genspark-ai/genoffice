@@ -1798,6 +1798,20 @@ button.check-item:hover {
   white-space: nowrap;
 }
 
+/* Formula view (sheetView/@showFormulas) is a per-sheet state that a save
+ * persists, so a sheet can open showing formulas instead of values. The flag
+ * keeps saying so for as long as the sheet is in that mode: the one-off toast
+ * that announced the switch is gone long before anyone notices. */
+.status-flag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--sheets-chip-bg);
+  white-space: nowrap;
+}
+
 .status-right {
   display: flex;
   align-items: center;

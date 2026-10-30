@@ -415,6 +415,7 @@ export const zhTW = {
   appGridlinesHidden: '格線已隱藏。',
   appGridlinesShown: '格線已顯示。',
   appShowingFormulas: '正在顯示公式——再次切換顯示數值。',
+  appShowingFormulasActive: '正在顯示公式',
   appShowingValues: '正在顯示計算結果。',
   appTraceNoFormula: '追蹤前導參照：作用中儲存格沒有公式。',
   appTraceNoRefs: '追蹤前導參照：該公式沒有儲存格參照。',

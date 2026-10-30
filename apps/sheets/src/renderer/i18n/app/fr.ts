@@ -525,6 +525,7 @@ export const fr = {
   appGridlinesHidden: 'Quadrillage masqué.',
   appGridlinesShown: 'Quadrillage affiché.',
   appShowingFormulas: 'Affichage des formules — basculez à nouveau pour les valeurs.',
+  appShowingFormulasActive: 'Formules affichées',
   appShowingValues: 'Affichage des valeurs calculées.',
   appTraceNoFormula: "Repérer les antécédents : la cellule active n'a pas de formule.",
   appTraceNoRefs: "Repérer les antécédents : cette formule n'a aucune référence de cellule.",

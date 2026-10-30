@@ -457,6 +457,7 @@ export const en = {
   appGridlinesHidden: 'Gridlines hidden.',
   appGridlinesShown: 'Gridlines shown.',
   appShowingFormulas: 'Showing formulas — toggle again for values.',
+  appShowingFormulasActive: 'Showing formulas',
   appShowingValues: 'Showing calculated values.',
   appTraceNoFormula: 'Trace Precedents: the active cell has no formula.',
   appTraceNoRefs: 'Trace Precedents: this formula has no cell references.',

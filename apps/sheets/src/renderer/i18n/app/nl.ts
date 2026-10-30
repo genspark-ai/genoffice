@@ -502,6 +502,7 @@ export const nl = {
   appGridlinesHidden: 'Rasterlijnen verborgen.',
   appGridlinesShown: 'Rasterlijnen weergegeven.',
   appShowingFormulas: 'Formules worden weergegeven — schakel opnieuw voor waarden.',
+  appShowingFormulasActive: 'Formules worden weergegeven',
   appShowingValues: 'Berekende waarden worden weergegeven.',
   appTraceNoFormula: 'Broncellen aanwijzen: de actieve cel bevat geen formule.',
   appTraceNoRefs: 'Broncellen aanwijzen: deze formule bevat geen celverwijzingen.',

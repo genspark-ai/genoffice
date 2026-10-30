@@ -513,6 +513,7 @@ export const de = {
   appGridlinesHidden: 'Gitternetzlinien ausgeblendet.',
   appGridlinesShown: 'Gitternetzlinien eingeblendet.',
   appShowingFormulas: 'Formeln werden angezeigt — erneut umschalten für Werte.',
+  appShowingFormulasActive: 'Formeln angezeigt',
   appShowingValues: 'Berechnete Werte werden angezeigt.',
   appTraceNoFormula: 'Spur zum Vorgänger: Die aktive Zelle hat keine Formel.',
   appTraceNoRefs: 'Spur zum Vorgänger: Diese Formel hat keine Zellbezüge.',

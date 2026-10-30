@@ -451,6 +451,7 @@ export const th = {
   appGridlinesHidden: 'ซ่อนเส้นตารางแล้ว',
   appGridlinesShown: 'แสดงเส้นตารางแล้ว',
   appShowingFormulas: 'กำลังแสดงสูตร — สลับอีกครั้งเพื่อแสดงค่า',
+  appShowingFormulasActive: 'กำลังแสดงสูตร',
   appShowingValues: 'กำลังแสดงค่าที่คำนวณแล้ว',
   appTraceNoFormula: 'แกะรอยเซลล์ที่ถูกอ้าง: เซลล์ที่ใช้งานอยู่ไม่มีสูตร',
   appTraceNoRefs: 'แกะรอยเซลล์ที่ถูกอ้าง: สูตรนี้ไม่มีการอ้างอิงเซลล์',

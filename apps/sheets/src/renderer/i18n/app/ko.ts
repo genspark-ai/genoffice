@@ -480,6 +480,7 @@ export const ko = {
   appGridlinesHidden: '눈금선을 숨겼습니다.',
   appGridlinesShown: '눈금선을 표시했습니다.',
   appShowingFormulas: '수식을 표시하는 중입니다 — 다시 전환하면 값이 표시됩니다.',
+  appShowingFormulasActive: '수식 표시 중',
   appShowingValues: '계산 결과를 표시하는 중입니다.',
   appTraceNoFormula: '참조되는 셀 추적: 활성 셀에 수식이 없습니다.',
   appTraceNoRefs: '참조되는 셀 추적: 이 수식에는 셀 참조가 없습니다.',
