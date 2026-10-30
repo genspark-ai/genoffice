@@ -1,0 +1,40 @@
+{
+  "id": "textbox-spacing-face-value",
+  "title": "Text-box paragraph spacing is laid out at face value (before 6pt / after 4pt merge to 6pt between Calibri 11 lines) and HTML auto spacing is Word's 14pt",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf baselines inside an inline wps box: 99.84 / 119.28 / 138.72 (pitch 19.44 = 13.44 + 6) then 166.32 / 193.44 around the beforeAutospacing + afterAutospacing paragraph (27.44 / 27.12 = 13.44 + 14)",
+  "cases": [
+    {
+      "kind": "boxLineBox",
+      "block": 1,
+      "box": 0,
+      "para": 1,
+      "expect": {
+        "styles": ["margin-top:6.0pt", "margin-bottom:4.0pt"],
+        "notClasses": ["sp-auto-b", "sp-auto-a"]
+      },
+      "note": "same formatter as body and cell paragraphs (cssGridSpacingPt: face value, probe 2026-08-13)"
+    },
+    {
+      "kind": "boxLineBox",
+      "block": 1,
+      "box": 0,
+      "para": 3,
+      "expect": {
+        "classes": ["sp-auto-b", "sp-auto-a"],
+        "styles": ["margin-top:14.0pt", "margin-bottom:14.0pt"]
+      },
+      "note": "Word's HTML auto value (probe 2026-08-23); the classes let the list-item collapse rules apply inside boxes too"
+    },
+    {
+      "kind": "boxLineBox",
+      "block": 1,
+      "box": 0,
+      "para": 4,
+      "expect": { "notStyles": ["margin-top", "margin-bottom", "padding-top"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

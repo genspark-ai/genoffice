@@ -1,0 +1,57 @@
+{
+  "id": "render-inherited-header-width",
+  "title": "A header a section inherits keeps the layout of the declaring section: the portrait pct table still wraps to two lines on the landscape page, while a landscape section's own copy spans its column in one line",
+  "section": "word-truths.md#L771",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: margins 720, header 720, Calibri 11; page 1 (portrait) header right cell at x 306.48 wraps 'DOCUMENT EVALUATION DU PROGRAMME DE / FORMATION' (baselines 46.56/60.00), body glyph top 76.37; page 2 (landscape, inherited header) identical: x 306.48, two lines, body 76.37; page 3 (landscape, own header) right cell at x 396.48, one line, body 62.93",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 3
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 76.37,
+      "tol": 0.6,
+      "note": "36 header distance + two Calibri 11 lines + the body line's leading; gen lays the portrait header title on one line (body top 65.74pt) where Word wraps to two",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 76.37,
+      "tol": 0.6,
+      "note": "inherited header keeps the portrait width: still two lines; gen 78.27pt: the inherited part wraps to two lines here although the same part is one line on the portrait page, and header tables carry ~2.8pt of extra strip height",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.6,
+      "status": "failing",
+      "note": "gen 12.53pt (see above)"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 3,
+      "expect": 62.93,
+      "tol": 0.6,
+      "note": "own header spans the landscape column: one line; gen 65.75pt: one line like Word, but 2.8pt lower (table strip height)",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 3,
+      "control": 1,
+      "expect": -13.44,
+      "tol": 0.6,
+      "status": "failing",
+      "note": "gen 0: page 1 is already one line in gen"
+    }
+  ],
+  "docx": "probe.docx"
+}

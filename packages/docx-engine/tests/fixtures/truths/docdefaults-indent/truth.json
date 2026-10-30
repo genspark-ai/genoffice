@@ -1,0 +1,70 @@
+{
+  "id": "docdefaults-indent",
+  "title": "pPrDefault w:ind is the root of every paragraph's indent chain: Normal, Normal-based and basedOn-less styles take it, a style or direct w:ind overrides per attribute",
+  "section": "word-truths.md#L818",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf line boxes, Letter 1440 margins, Calibri 11, docDefaults ind left 567 right 567 firstLine 720: first lines x 136.35 and continuation lines 100.35 for the unstyled, Body (basedOn Normal) and Root (no basedOn) paragraphs, right edge 512 (= 540 - 28.35); NoFirst (firstLine 0) 100.35 throughout; direct ind left 0 -> 108.00 then 72.00 (firstLine and right kept); Hang (hanging 360) 82.35 then 100.35; direct firstLine 0 -> 100.35",
+  "cases": [
+    {
+      "kind": "docDefaults",
+      "expect": { "indentLeftTwips": 567, "indentRightTwips": 567, "indentFirstLineTwips": 720 }
+    },
+    {
+      "kind": "styleProps",
+      "styleId": "Normal",
+      "expect": { "indentLeftTwips": 567, "indentRightTwips": 567, "indentFirstLineTwips": 720 }
+    },
+    {
+      "kind": "styleProps",
+      "styleId": "Root",
+      "expect": { "indentLeftTwips": 567, "indentRightTwips": 567, "indentFirstLineTwips": 720 },
+      "note": "a style without w:basedOn inherits docDefaults only, the indent included"
+    },
+    {
+      "kind": "styleProps",
+      "styleId": "NoFirst",
+      "expect": { "indentLeftTwips": 567, "indentRightTwips": 567, "indentFirstLineTwips": 0 }
+    },
+    {
+      "kind": "blockProps",
+      "block": 0,
+      "expect": {
+        "format": { "effective": { "indent": { "left": 567, "right": 567, "firstLine": 720 } } }
+      },
+      "note": "unstyled paragraph: Word x 136.35 first line, 100.35 after"
+    },
+    {
+      "kind": "blockProps",
+      "block": 2,
+      "expect": {
+        "format": { "effective": { "indent": { "left": 567, "right": 567, "firstLine": 720 } } }
+      },
+      "note": "Root style paragraph laid out exactly like the unstyled one"
+    },
+    {
+      "kind": "blockProps",
+      "block": 4,
+      "expect": {
+        "format": { "effective": { "indent": { "left": 0, "right": 567, "firstLine": 720 } } }
+      },
+      "note": "direct w:ind left=0 cancels the left indent only: Word x 108.00 then 72.00, right edge still 512"
+    },
+    {
+      "kind": "blockProps",
+      "block": 5,
+      "expect": {
+        "format": { "effective": { "indent": { "left": 567, "right": 567, "firstLine": -360 } } }
+      },
+      "note": "Hang style: first line 82.35 = 100.35 - 18"
+    },
+    {
+      "kind": "blockProps",
+      "block": 6,
+      "expect": {
+        "format": { "effective": { "indent": { "left": 567, "right": 567, "firstLine": 0 } } }
+      }
+    }
+  ],
+  "docx": "probe.docx"
+}

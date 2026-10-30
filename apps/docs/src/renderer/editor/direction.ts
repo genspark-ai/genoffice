@@ -3,6 +3,7 @@ import type { Lang } from '@genoffice/i18n'
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
+import type { ParaFormat, Run } from '@genoffice/docx-engine'
 
 /** paragraph-like blocks that carry the bidi attribute */
 const DIR_BLOCKS = new Set(['docParagraph', 'docHeading', 'docListItem'])
@@ -24,6 +25,14 @@ export function firstStrongDir(text: string): 'ltr' | 'rtl' | null {
     return RTL_CHAR.test(ch) ? 'rtl' : 'ltr'
   }
   return null
+}
+
+/** render-only RTL for a paragraph without w:bidi: first strong character, else any w:rtl run */
+export function inferredBidi(format: ParaFormat | undefined, runs: Run[] | undefined): boolean {
+  if (format?.bidi || !runs?.length) return false
+  const strong = firstStrongDir(runs.map((r) => r.text).join(''))
+  if (strong) return strong === 'rtl'
+  return runs.some((r) => r.rtl)
 }
 
 /** effective direction: explicit w:bidi or the render-only inferred flag */
@@ -80,7 +89,7 @@ function dirFlipAttrs(attrs: Record<string, unknown>, bidi: boolean): Record<str
   if (align === 'left') align = 'right'
   else if (align === 'right') align = 'left'
   // an explicit direction choice supersedes the render-only inference
-  return { ...attrs, bidi, align, bidiInferred: false }
+  return { ...attrs, bidi, align, bidiInherited: false, bidiInferred: false }
 }
 
 /**

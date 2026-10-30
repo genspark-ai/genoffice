@@ -97,6 +97,11 @@ export const zhTW = {
   aiTrackOnTitle:
     '追蹤修訂已開啟:AI 內容變更標記為修訂(插入加底線/刪除加刪除線),可在校閱中接受或拒絕',
   aiTrackOffTitle: '追蹤修訂已關閉:AI 變更直接生效(仍可透過版本快照還原)',
+  aiRevisionBarTitle: '修訂',
+  aiRevisionCount: '共 {count} 處修改',
+  aiRevisionRejectAll: '全部拒絕',
+  aiRevisionAcceptAll: '全部接受',
+  aiRevisionPara: '第 {n} 段',
   aiTurnLimit: '（已達單次要求的工具呼叫輪數上限，以上是基於已完成步驟的回答，可能不完整。）',
   aiStopped: '(已停止)',
   aiNoReply: 'AI 沒有回傳內容。',

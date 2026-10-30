@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import { Editor } from '@tiptap/core'
+import type { Fragment, Node as ProseNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { addRowAfter, deleteRow } from '@tiptap/pm/tables'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -18,10 +19,16 @@ import {
   TABLE_XML,
 } from '../../../packages/docx-engine/tests/helpers/build-docx'
 
+import { deleteTableColumn, insertRowsOrColumns } from '../src/renderer/editor/table-ops'
+import { replaceInlineRange } from '../src/renderer/ai/protocol'
+import { setAuthorName } from '../src/renderer/author-name'
 import {
   acceptAllRevisions,
   acceptCurrentRevision,
+  applyRevisions,
+  applyRevisionsBy,
   collectRevisions,
+  revisionCount,
   gotoRevision,
   rejectAllRevisions,
   rejectCurrentRevision,
@@ -75,11 +82,14 @@ describe('collectRevisions', () => {
     editor.destroy()
   })
 
-  it('treats ins+del on the same text as one "both" revision', () => {
+  it('reports ins+del on the same text as two revisions, deletion first', () => {
     const editor = createEditor([para(text('ins-then-del', [ins(), del()]))])
     const ranges = collectRevisions(editor.state.doc)
-    expect(ranges).toHaveLength(1)
-    expect(ranges[0].kind).toBe('both')
+    expect(ranges).toHaveLength(2)
+    expect(ranges[0]).toMatchObject({ kind: 'del', author: 'Bob', overlapped: true })
+    expect(ranges[1]).toMatchObject({ kind: 'ins', author: 'Alice', overlapped: true })
+    expect(ranges[0].from).toBe(ranges[1].from)
+    expect(ranges[0].to).toBe(ranges[1].to)
     editor.destroy()
   })
 })
@@ -108,6 +118,45 @@ describe('accept / reject all', () => {
       expect(editor.state.doc.textContent).toBe('ab')
       editor.destroy()
     }
+  })
+
+  it('does not merge overlapped text into a neighbouring plain insertion', () => {
+    const editor = createEditor([para(text('kept', [ins()]), text('gone', [ins(), del()]))])
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => [r.kind, !!r.overlapped])).toEqual([
+      ['ins', false],
+      ['del', true],
+      ['ins', true],
+    ])
+    editor.destroy()
+  })
+
+  it("rejecting only the deletion of another author's insertion restores the text", () => {
+    const editor = createEditor([para(text('a'), text('tmp', [ins(), del()]), text('b'))])
+    applyRevisionsBy(editor, 'Bob', 'reject')
+    expect(editor.state.doc.textContent).toBe('atmpb')
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0]).toMatchObject({ kind: 'ins', author: 'Alice' })
+    editor.destroy()
+  })
+
+  it('accepting only the insertion keeps the text as a pending deletion', () => {
+    const editor = createEditor([para(text('a'), text('tmp', [ins(), del()]), text('b'))])
+    applyRevisionsBy(editor, 'Alice', 'accept')
+    expect(editor.state.doc.textContent).toBe('atmpb')
+    expect(collectRevisions(editor.state.doc)).toMatchObject([{ kind: 'del', author: 'Bob' }])
+    editor.destroy()
+  })
+
+  it('accept all does not strip marks from text after a removed deletion', () => {
+    const editor = createEditor([
+      para(text('a'), text('tmp', [ins(), del()]), text('keep', [del()]), text('b')),
+    ])
+    rejectAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('akeepb')
+    expect(collectRevisions(editor.state.doc)).toHaveLength(0)
+    editor.destroy()
   })
 
   it('resolving a whole-paragraph block revision also clears its run marks', () => {
@@ -418,29 +467,26 @@ describe('track changes recording', () => {
     editor.destroy()
   })
 
-  it('joining two halves that share an anchor re-merges without a phantom deleted block', () => {
+  it('joining two halves that share an anchor records a deleted paragraph mark, no phantom block', () => {
     const editor = trackingEditor([anchored(0, text('first ')), anchored(0, text('second'))])
     editor.chain().setTextSelection(9).joinBackward().run()
-    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.childCount).toBe(2)
     expect(editor.state.doc.textContent).toBe('first second')
-    const blocks = collectRevisions(editor.state.doc).filter(
-      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
-    )
-    expect(blocks).toHaveLength(0)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
     rejectAllRevisions(editor)
+    expect(editor.state.doc.childCount).toBe(2)
     expect(editor.state.doc.textContent).toBe('first second')
     editor.destroy()
   })
 
-  it('joining paragraphs with distinct anchors records no phantom deleted block', () => {
+  it('joining paragraphs with distinct anchors records only the deleted mark; accept joins them', () => {
     const editor = trackingEditor([anchored(0, text('first ')), anchored(1, text('second'))])
     editor.chain().setTextSelection(9).joinBackward().run()
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
+    acceptAllRevisions(editor)
     expect(editor.state.doc.childCount).toBe(1)
     expect(editor.state.doc.textContent).toBe('first second')
-    const blocks = collectRevisions(editor.state.doc).filter(
-      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
-    )
-    expect(blocks).toHaveLength(0)
     editor.destroy()
   })
 
@@ -465,11 +511,8 @@ describe('track changes recording', () => {
       }),
     ])
     editor.chain().setTextSelection(8).joinBackward().run()
-    expect(editor.state.doc.childCount).toBe(1)
-    const blocks = collectRevisions(editor.state.doc).filter(
-      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
-    )
-    expect(blocks).toHaveLength(0)
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
     editor.destroy()
   })
 
@@ -884,13 +927,24 @@ describe('live structural revisions', () => {
     expect(addRowAfter(editor.state, editor.view.dispatch)).toBe(true)
     expect(collectRevisions(editor.state.doc).map((revision) => revision.kind)).toContain('rowIns')
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
-    const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    const savedBytes = await saveDocx(parsed, plan.saveBlocks)
+    const reopened = await parseDocx(savedBytes)
     expect(
       reopened.blocks[0].table?.rowRevisions?.some((revision) => revision?.kind === 'ins'),
     ).toBe(true)
+    // the save mints the row record's id from the shared revision counter
+    const savedXml = await (
+      await JSZip.loadAsync(savedBytes)
+    )
+      .file('word/document.xml')!
+      .async('string')
+    expect(savedXml).toMatch(/<w:trPr><w:ins w:id="9001" w:author="Structural Reviewer"/)
+    expect(savedXml).not.toContain('w:id=""')
     editor.destroy()
 
-    const deleted = await trackedDoc(TABLE_XML)
+    const deleted = await trackedDoc(
+      TABLE_XML.replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/></w:trPr>'),
+    )
     let deletedCell = -1
     deleted.editor.state.doc.descendants((node, pos) => {
       if (deletedCell < 0 && node.type.name === 'docTableCell') deletedCell = pos
@@ -903,6 +957,16 @@ describe('live structural revisions', () => {
     expect(deleteRow(deleted.editor.state, deleted.editor.view.dispatch)).toBe(true)
     expect(collectRevisions(deleted.editor.state.doc).map((revision) => revision.kind)).toContain(
       'rowDel',
+    )
+    // the record joins the row's existing trPr children instead of replacing them
+    const deletedPlan = pmDocToSavePlan(deleted.editor.getJSON() as PmNode, deleted.parsed.blocks)
+    const deletedXml = await (
+      await JSZip.loadAsync(await saveDocx(deleted.parsed, deletedPlan.saveBlocks))
+    )
+      .file('word/document.xml')!
+      .async('string')
+    expect(deletedXml).toMatch(
+      /<w:trPr><w:cantSplit\/><w:del w:id="9001" w:author="Structural Reviewer"/,
     )
     rejectAllRevisions(deleted.editor)
     expect(deleted.editor.state.doc.firstChild?.childCount).toBe(2)
@@ -1334,5 +1398,577 @@ describe('moves and paragraph marks (genoffice#2086)', () => {
     expect(rejected).not.toMatch(/<w:rPrChange|<w:caps/)
     expect(rejected).toContain('<w:pPr><w:rPr><w:b/></w:rPr></w:pPr>')
     again.editor.destroy()
+  })
+})
+
+describe('recorder: Delete, cross-paragraph cuts, paragraph marks, columns, AI author', () => {
+  function trackingEditor(content: JsonNode[]): Editor {
+    const editor = createEditor(content)
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    storage.author = 'Tester'
+    return editor
+  }
+  const anchored = (idx: number, ...content: JsonNode[]): JsonNode => ({
+    type: 'docParagraph',
+    attrs: { docxIndex: idx },
+    content,
+  })
+  const kinds = (editor: Editor) => collectRevisions(editor.state.doc).map((r) => r.kind)
+  const struck = (editor: Editor) =>
+    collectRevisions(editor.state.doc)
+      .filter((r) => r.kind === 'del')
+      .map((r) => editor.state.doc.textBetween(r.from, r.to))
+  const paragraphs = (editor: Editor) => {
+    const out: string[] = []
+    editor.state.doc.forEach((n) => out.push(n.textContent))
+    return out
+  }
+  const markRecord = (editor: Editor, index: number, attr: 'paraMarkDel' | 'paraMarkIns') =>
+    JSON.parse((editor.state.doc.child(index).attrs[attr] as string | null) ?? 'null')
+  // a real keydown: commands.keyboardShortcut captures the handler's transactions and drops their selections
+  const press = (editor: Editor, key: string) =>
+    !!editor.view.someProp('handleKeyDown', (f) =>
+      f(editor.view, new KeyboardEvent('keydown', { key, bubbles: true })),
+    )
+
+  it('Delete steps over an existing struck run and strikes the next live character', () => {
+    const editor = trackingEditor([para(text('AB'), text('CD', [del('Tester')]), text('EF'))])
+    editor.commands.setTextSelection(3)
+    expect(press(editor, 'Delete')).toBe(true)
+    expect(struck(editor).join('')).toBe('CDE')
+    expect(editor.state.doc.textContent).toBe('ABCDEF')
+    // caret rests after the struck run, in front of the newly struck E
+    expect(editor.state.selection.from).toBe(5)
+    editor.destroy()
+  })
+
+  it('Delete before a struck tail with nothing live beyond it parks the caret after the run', () => {
+    const editor = trackingEditor([para(text('AB'), text('CD', [del('Tester')]))])
+    editor.commands.setTextSelection(3)
+    expect(press(editor, 'Delete')).toBe(true)
+    expect(editor.state.selection.from).toBe(5)
+    expect(struck(editor).join('')).toBe('CD')
+    editor.destroy()
+  })
+
+  it('deleting from inside one paragraph into the next strikes both parts and deletes the first mark', () => {
+    const editor = trackingEditor([
+      anchored(0, text('alpha beta')),
+      anchored(1, text('gamma delta')),
+    ])
+    editor.commands.deleteRange({ from: 7, to: 19 })
+    expect(paragraphs(editor)).toEqual(['alpha beta', 'gamma delta'])
+    expect(kinds(editor)).toEqual(['paraMarkDel', 'del', 'del'])
+    expect(struck(editor)).toEqual(['beta', 'gamma '])
+    expect(markRecord(editor, 0, 'paraMarkDel')).toMatchObject({ author: 'Tester' })
+    expect(editor.state.selection.from).toBe(7)
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['alpha delta'])
+
+    const rejected = trackingEditor([
+      anchored(0, text('alpha beta')),
+      anchored(1, text('gamma delta')),
+    ])
+    rejected.commands.deleteRange({ from: 7, to: 19 })
+    rejectAllRevisions(rejected)
+    expect(paragraphs(rejected)).toEqual(['alpha beta', 'gamma delta'])
+    expect(collectRevisions(rejected.state.doc)).toEqual([])
+    editor.destroy()
+    rejected.destroy()
+  })
+
+  it('typing over a cross-paragraph selection keeps the insertion live before the struck tail', () => {
+    const editor = trackingEditor([
+      anchored(0, text('alpha beta')),
+      anchored(1, text('gamma delta')),
+    ])
+    editor.commands.insertContentAt({ from: 7, to: 19 }, 'X')
+    expect(paragraphs(editor)).toEqual(['alpha Xbeta', 'gamma delta'])
+    expect(kinds(editor)).toEqual(['paraMarkDel', 'ins', 'del', 'del'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['alpha Xdelta'])
+    editor.destroy()
+  })
+
+  it('a cut across a middle paragraph strikes it whole and deletes its mark too', () => {
+    const editor = trackingEditor([
+      anchored(0, text('one')),
+      anchored(1, text('mid')),
+      anchored(2, text('three')),
+    ])
+    editor.commands.deleteRange({ from: 2, to: 12 })
+    expect(paragraphs(editor)).toEqual(['one', 'mid', 'three'])
+    expect(struck(editor)).toEqual(['ne', 'mid', 't'])
+    expect(kinds(editor).filter((k) => k === 'paraMarkDel')).toHaveLength(2)
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['ohree'])
+    editor.destroy()
+  })
+
+  it("a cut through this author's own inserted text and mark removes them for real", () => {
+    const editor = trackingEditor([anchored(0, text('first')), anchored(1, text('second'))])
+    editor.chain().setTextSelection(4).splitBlock().run()
+    expect(paragraphs(editor)).toEqual(['fir', 'st', 'second'])
+    expect(kinds(editor)).toEqual(['paraMarkIns'])
+    editor.commands.deleteRange({ from: 3, to: 7 })
+    expect(paragraphs(editor)).toEqual(['first', 'second'])
+    expect(kinds(editor)).toEqual(['del'])
+    expect(struck(editor)).toEqual(['rs'])
+    editor.destroy()
+  })
+
+  it('Enter records the new paragraph mark as an insertion on the first half', () => {
+    const editor = trackingEditor([anchored(0, text('alpha beta'))])
+    editor.chain().setTextSelection(7).splitBlock().run()
+    expect(paragraphs(editor)).toEqual(['alpha ', 'beta'])
+    expect(kinds(editor)).toEqual(['paraMarkIns'])
+    expect(markRecord(editor, 0, 'paraMarkIns')).toMatchObject({ author: 'Tester' })
+    expect(editor.state.doc.child(1).attrs.paraMarkIns).toBeNull()
+    rejectAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['alpha beta'])
+
+    const plain = trackingEditor([para(text('ab'))])
+    plain.chain().setTextSelection(2).splitBlock().run()
+    expect(kinds(plain)).toEqual(['paraMarkIns'])
+    editor.destroy()
+    plain.destroy()
+  })
+
+  it('Backspace at a paragraph start deletes the previous mark instead of joining', () => {
+    const editor = trackingEditor([anchored(0, text('first')), anchored(1, text('second'))])
+    editor.commands.setTextSelection(8)
+    expect(press(editor, 'Backspace')).toBe(true)
+    expect(paragraphs(editor)).toEqual(['first', 'second'])
+    expect(kinds(editor)).toEqual(['paraMarkDel'])
+    expect(editor.state.selection.from).toBe(6)
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['firstsecond'])
+    editor.destroy()
+  })
+
+  it('Delete at a paragraph end deletes its own mark the same way', () => {
+    const editor = trackingEditor([anchored(0, text('first')), anchored(1, text('second'))])
+    editor.commands.setTextSelection(6)
+    expect(press(editor, 'Delete')).toBe(true)
+    expect(paragraphs(editor)).toEqual(['first', 'second'])
+    expect(kinds(editor)).toEqual(['paraMarkDel'])
+    editor.destroy()
+  })
+
+  it("Backspace onto this author's own inserted mark joins for real", () => {
+    const editor = trackingEditor([anchored(0, text('alpha beta'))])
+    editor.chain().setTextSelection(7).splitBlock().run()
+    editor.commands.setTextSelection(9)
+    expect(press(editor, 'Backspace')).toBe(true)
+    expect(paragraphs(editor)).toEqual(['alpha beta'])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    editor.destroy()
+  })
+
+  it('Backspace behind an already deleted mark steps over it and strikes the previous character', () => {
+    const editor = trackingEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: 0, paraMarkDel: JSON.stringify({ author: 'Tester' }) },
+        content: [text('ab')],
+      },
+      anchored(1, text('cd')),
+    ])
+    editor.commands.setTextSelection(5)
+    expect(press(editor, 'Backspace')).toBe(true)
+    expect(paragraphs(editor)).toEqual(['ab', 'cd'])
+    expect(struck(editor)).toEqual(['b'])
+    editor.destroy()
+  })
+
+  it('AI edits with the ribbon tracking on are credited to the Settings user name', () => {
+    setAuthorName('leaf')
+    const editor = trackingEditor([para(text('old text'))])
+    replaceInlineRange(editor, 1, 4, [editor.schema.text('new')])
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => r.kind).sort()).toEqual(['del', 'ins'])
+    expect(ranges.every((r) => r.author === 'leaf')).toBe(true)
+    setAuthorName('')
+    editor.destroy()
+  })
+
+  async function trackedDoc(bodyXml: string) {
+    const parsed = await parseDocx(await buildDocx({ bodyXml }))
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    storage.author = 'Structural Reviewer'
+    return { editor, parsed }
+  }
+  async function savedXml(editor: Editor, parsed: Awaited<ReturnType<typeof parseDocx>>) {
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const bytes = await saveDocx(parsed, plan.saveBlocks)
+    const zip = await JSZip.loadAsync(bytes)
+    return { xml: await zip.file('word/document.xml')!.async('string'), bytes }
+  }
+  const selectFirstCell = (editor: Editor) => {
+    let firstCell = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (firstCell < 0 && node.type.name === 'docTableCell') firstCell = pos
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, firstCell + 2)),
+    )
+  }
+  const P = (t: string) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`
+
+  it('recorder-created paragraph mark revisions save as pPr/rPr markers and reopen', async () => {
+    const { editor, parsed } = await trackedDoc(P('first') + P('second') + P('third'))
+    editor.commands.setTextSelection(8)
+    expect(press(editor, 'Backspace')).toBe(true)
+    editor.chain().setTextSelection(19).splitBlock().run()
+    expect(paragraphs(editor)).toEqual(['first', 'second', 'thi', 'rd'])
+    expect(kinds(editor)).toEqual(['paraMarkDel', 'paraMarkIns'])
+    const { xml, bytes } = await savedXml(editor, parsed)
+    const AUTHOR = 'w:author="Structural Reviewer" w:date="\\d{4}-[^"]+Z"'
+    expect(xml).toMatch(
+      new RegExp(
+        `<w:p><w:pPr><w:rPr><w:del w:id="\\d+" ${AUTHOR}/></w:rPr></w:pPr><w:r><w:t[^>]*>first`,
+      ),
+    )
+    expect(xml).toMatch(
+      new RegExp(
+        `<w:p><w:pPr><w:rPr><w:ins w:id="\\d+" ${AUTHOR}/></w:rPr></w:pPr><w:r><w:t[^>]*>thi<`,
+      ),
+    )
+    const markIds = [
+      ...xml.matchAll(/<w:(?:del|ins) w:id="(\d+)" w:author="Structural Reviewer"/g),
+    ].map((m) => Number(m[1]))
+    expect(markIds).toHaveLength(2)
+    expect(new Set(markIds).size).toBe(2)
+    expect(Math.min(...markIds)).toBeGreaterThanOrEqual(9001)
+    const reopened = await parseDocx(bytes)
+    expect(reopened.blocks[0].paraMarkDel).toMatchObject({ author: 'Structural Reviewer' })
+    expect(reopened.blocks[2].paraMarkIns).toMatchObject({ author: 'Structural Reviewer' })
+    expect(reopened.blocks[3].paraMarkIns).toBeUndefined()
+    const again = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(reopened.blocks),
+    })
+    acceptAllRevisions(again)
+    expect(paragraphs(again)).toEqual(['firstsecond', 'thi', 'rd'])
+    expect(collectRevisions(again.state.doc)).toEqual([])
+    editor.destroy()
+    again.destroy()
+  })
+
+  it('inserting a column while tracking marks every new cell cellIns, saved as w:cellIns', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    expect(insertRowsOrColumns(1, 'right', 600)(editor.state, editor.view.dispatch)).toBe(true)
+    expect(kinds(editor)).toEqual(['cellIns', 'cellIns'])
+    const { xml, bytes } = await savedXml(editor, parsed)
+    expect(xml.match(/<w:cellIns w:id="\d+" w:author="Structural Reviewer"/g)).toHaveLength(2)
+    const reopened = await parseDocx(bytes)
+    const rows = reopened.blocks[0].table!.rows
+    expect(rows.map((r) => r.length)).toEqual([3, 3])
+    expect(rows.map((r) => r[1].cellRevision?.kind)).toEqual(['ins', 'ins'])
+    const again = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(reopened.blocks),
+    })
+    rejectAllRevisions(again)
+    const model = pmDocToSavePlan(again.getJSON() as PmNode, reopened.blocks)
+    const saved = await parseDocx(await saveDocx(reopened, model.saveBlocks))
+    expect(saved.blocks[0].table!.rows.map((r) => r.map((c) => c.paras[0]))).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    editor.destroy()
+    again.destroy()
+  })
+
+  it('deleting a column while tracking keeps it struck; accept removes the column', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    expect(deleteTableColumn(editor.state, editor.view.dispatch)).toBe(true)
+    expect(editor.state.doc.firstChild!.child(0).childCount).toBe(2)
+    expect(kinds(editor)).toEqual(['cellDel', 'cellDel'])
+    expect(editor.state.doc.rangeHasMark(0, 20, editor.schema.marks.del)).toBe(true)
+    const { xml, bytes } = await savedXml(editor, parsed)
+    expect(xml.match(/<w:cellDel w:id="\d+" w:author="Structural Reviewer"/g)).toHaveLength(2)
+    expect(xml).toContain('<w:delText xml:space="preserve">A1</w:delText>')
+    const reopened = await parseDocx(bytes)
+    expect(reopened.blocks[0].table!.rows.map((r) => r[0].cellRevision?.kind)).toEqual([
+      'del',
+      'del',
+    ])
+    acceptAllRevisions(editor)
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    const table = editor.state.doc.firstChild!
+    expect([table.child(0).childCount, table.child(1).childCount]).toEqual([1, 1])
+    expect(table.textContent).toBe('B1B2')
+    editor.destroy()
+  })
+
+  it('a deleted column beside an inserted row resolves on the right nodes (positions mapped)', async () => {
+    const run = async (mode: 'accept' | 'reject') => {
+      const { editor } = await trackedDoc(TABLE_XML)
+      selectFirstCell(editor)
+      expect(addRowAfter(editor.state, editor.view.dispatch)).toBe(true)
+      selectFirstCell(editor)
+      expect(deleteTableColumn(editor.state, editor.view.dispatch)).toBe(true)
+      expect(kinds(editor).sort()).toEqual(['cellDel', 'cellDel', 'cellDel', 'rowIns'])
+      if (mode === 'accept') acceptAllRevisions(editor)
+      else rejectAllRevisions(editor)
+      expect(collectRevisions(editor.state.doc)).toEqual([])
+      const table = editor.state.doc.firstChild!
+      const shape = Array.from({ length: table.childCount }, (_, i) => table.child(i).childCount)
+      editor.destroy()
+      return { shape, text: table.textContent }
+    }
+    expect(await run('accept')).toEqual({ shape: [1, 1, 1], text: 'B1B2' })
+    expect(await run('reject')).toEqual({ shape: [2, 2], text: 'A1B1A2B2' })
+  })
+
+  it('a tracked column delete leaves a merged cell that reaches into a surviving column alone', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>' +
+      '<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>wide</w:t></w:r></w:p></w:tc></w:tr>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc></w:tr>' +
+      '</w:tbl>'
+    const { editor } = await trackedDoc(xml)
+    let a2 = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'A2') a2 = pos
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, a2)))
+    expect(deleteTableColumn(editor.state, editor.view.dispatch)).toBe(true)
+    expect(kinds(editor)).toEqual(['cellDel'])
+    expect(editor.state.doc.firstChild!.child(0).childCount).toBe(1)
+    expect(struck(editor)).toEqual([])
+    acceptAllRevisions(editor)
+    // not a whole column: the cell clears in place, the merged cell keeps its span and text
+    expect(editor.state.doc.firstChild!.child(0).child(0).attrs.colspan).toBe(2)
+    expect(editor.state.doc.firstChild!.textContent).toBe('wideB2')
+    editor.destroy()
+  })
+})
+
+describe('moves (cut + paste, drag-drop)', () => {
+  const trackedEditor = () => {
+    const editor = createEditor([para(text('one two three')), para(text('four'))])
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    storage.author = 'Alice'
+    return editor
+  }
+  const textOf = (editor: Editor, r: { from: number; to: number }) =>
+    editor.state.doc.textBetween(r.from, r.to)
+  // "two " sits at 5..9 in the first paragraph; the second paragraph's text ends at 20
+  const cutThenPaste = (editor: Editor, pasted?: Fragment | ProseNode[]) => {
+    const slice = editor.state.doc.slice(5, 9)
+    editor.view.dispatch(editor.state.tr.delete(5, 9).setMeta('uiEvent', 'cut'))
+    const end = editor.state.doc.content.size - 1
+    editor.view.dispatch(
+      editor.state.tr.insert(end, pasted ?? slice.content).setMeta('uiEvent', 'paste'),
+    )
+  }
+
+  it('pasting the cut content records moveFrom + moveTo under one move id', () => {
+    const editor = trackedEditor()
+    cutThenPaste(editor)
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => r.kind)).toEqual(['moveFrom', 'moveTo'])
+    expect(ranges[0].moveId).toMatch(/^move\d+$/)
+    expect(ranges[1].moveId).toBe(ranges[0].moveId)
+    expect(ranges.map((r) => textOf(editor, r))).toEqual(['two ', 'two '])
+    expect(ranges.every((r) => r.author === 'Alice')).toBe(true)
+    expect(revisionCount(ranges)).toBe(1)
+    editor.destroy()
+  })
+
+  it('pasting something else leaves a deletion and a plain insertion', () => {
+    const editor = trackedEditor()
+    cutThenPaste(editor, [editor.schema.text('other')])
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => r.kind)).toEqual(['del', 'ins'])
+    expect(ranges.some((r) => r.moveId)).toBe(false)
+    editor.destroy()
+  })
+
+  it('a cut followed by typing is no longer a pending move', () => {
+    const editor = trackedEditor()
+    const slice = editor.state.doc.slice(5, 9)
+    editor.view.dispatch(editor.state.tr.delete(5, 9).setMeta('uiEvent', 'cut'))
+    editor.view.dispatch(editor.state.tr.insertText('x', 1))
+    const end = editor.state.doc.content.size - 1
+    editor.view.dispatch(editor.state.tr.insert(end, slice.content).setMeta('uiEvent', 'paste'))
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['ins', 'del', 'ins'])
+    editor.destroy()
+  })
+
+  it('an unrelated deletion by the same author in the same second stays a deletion', () => {
+    const editor = trackedEditor()
+    // "four" -> strike "fo" (16..18) first, then cut "two " and paste it
+    editor.view.dispatch(editor.state.tr.delete(16, 18))
+    const slice = editor.state.doc.slice(5, 9)
+    editor.view.dispatch(editor.state.tr.delete(5, 9).setMeta('uiEvent', 'cut'))
+    editor.view.dispatch(
+      editor.state.tr
+        .insert(editor.state.doc.content.size - 1, slice.content)
+        .setMeta('uiEvent', 'paste'),
+    )
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => [r.kind, textOf(editor, r)])).toEqual([
+      ['moveFrom', 'two '],
+      ['del', 'fo'],
+      ['moveTo', 'two '],
+    ])
+    editor.destroy()
+  })
+
+  it('a drag-drop of a selection is one move', () => {
+    const editor = trackedEditor()
+    const slice = editor.state.doc.slice(5, 9)
+    const tr = editor.state.tr.delete(5, 9)
+    tr.insert(tr.doc.content.size - 1, slice.content).setMeta('uiEvent', 'drop')
+    editor.view.dispatch(tr)
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => r.kind)).toEqual(['moveFrom', 'moveTo'])
+    expect(ranges[0].moveId).toBe(ranges[1].moveId)
+    editor.destroy()
+  })
+
+  it('accepting either side resolves the pair: source gone, destination kept', () => {
+    for (const side of [0, 1]) {
+      const editor = trackedEditor()
+      cutThenPaste(editor)
+      const ranges = collectRevisions(editor.state.doc)
+      applyRevisions(editor, [ranges[side]], 'accept')
+      expect(collectRevisions(editor.state.doc)).toHaveLength(0)
+      expect(editor.state.doc.textContent).toBe('one threefourtwo ')
+      editor.destroy()
+    }
+  })
+
+  it('rejecting either side resolves the pair: source restored, destination removed', () => {
+    for (const side of [0, 1]) {
+      const editor = trackedEditor()
+      cutThenPaste(editor)
+      const ranges = collectRevisions(editor.state.doc)
+      applyRevisions(editor, [ranges[side]], 'reject')
+      expect(collectRevisions(editor.state.doc)).toHaveLength(0)
+      expect(editor.state.doc.textContent).toBe('one two threefour')
+      editor.destroy()
+    }
+  })
+
+  it('a move saves as w:moveFrom / w:moveTo ranges sharing one name', async () => {
+    const editor = trackedEditor()
+    cutThenPaste(editor)
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p>',
+      }),
+    )
+    const out = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    const names = [...xml.matchAll(/<w:move(?:From|To)RangeStart [^>]*w:name="([^"]+)"/g)].map(
+      (m) => m[1],
+    )
+    expect(names).toHaveLength(2)
+    expect(names[0]).toBe(names[1])
+    expect(xml).toMatch(/<w:moveFrom [^>]*><w:r><w:delText[^>]*>two <\/w:delText>/)
+    expect(xml).toMatch(/<w:moveTo [^>]*><w:r><w:t[^>]*>two <\/w:t>/)
+    editor.destroy()
+  })
+})
+
+describe('rPrChange reject restores the full previous rPr', () => {
+  const OLD_RPR =
+    '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:i/><w:color w:val="0000FF"/>' +
+    '<w:spacing w:val="20"/><w:kern w:val="28"/><w:sz w:val="28"/>' +
+    '<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/><w:lang w:val="fr-FR"/>'
+  const P =
+    `<w:p><w:r><w:rPr><w:b/><w:color w:val="FF0000"/>` +
+    `<w:rPrChange w:id="9" w:author="Reviewer" w:date="2026-07-01T00:00:00Z"><w:rPr>${OLD_RPR}</w:rPr></w:rPrChange>` +
+    `</w:rPr><w:t>x</w:t></w:r></w:p>`
+
+  async function resolveAndSave(mode: 'accept' | 'reject') {
+    const bytes = await buildDocx({ bodyXml: P })
+    const parsed = await parseDocx(bytes)
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    const rpr = collectRevisions(editor.state.doc).find((r) => r.kind === 'rPrChange')!
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, rpr.from + 1)),
+    )
+    if (mode === 'reject') rejectCurrentRevision(editor)
+    else acceptCurrentRevision(editor)
+    expect(collectRevisions(editor.state.doc)).toHaveLength(0)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const zip = await JSZip.loadAsync(await saveDocx(parsed, plan.saveBlocks))
+    const xml = await zip.file('word/document.xml')!.async('string')
+    const marks = (() => {
+      let out: Record<string, unknown> = {}
+      editor.state.doc.descendants((node) => {
+        if (!node.isText) return
+        const ts = node.marks.find((m) => m.type.name === 'docTextStyle')
+        out = { ...(ts?.attrs ?? {}), bold: node.marks.some((m) => m.type.name === 'bold') }
+      })
+      return out
+    })()
+    editor.destroy()
+    return { xml, marks }
+  }
+
+  it('reject writes the recorded rPr verbatim (spacing, kern, shd, lang included) and previews it', async () => {
+    const { xml, marks } = await resolveAndSave('reject')
+    expect(xml).toContain(`<w:r><w:rPr>${OLD_RPR}</w:rPr><w:t`)
+    expect(marks).toMatchObject({
+      bold: false,
+      color: '0000FF',
+      fontAscii: 'Arial',
+      sizeHalfPoints: 28,
+      kernHalfPoints: 28,
+      shading: 'FFFF00',
+    })
+  })
+
+  it('reject keeps values the modeled subset used to drop (automatic color, zero spacing)', async () => {
+    const OLD = '<w:color w:val="auto"/><w:spacing w:val="0"/>'
+    const bytes = await buildDocx({
+      bodyXml:
+        `<w:p><w:r><w:rPr><w:color w:val="FF0000"/>` +
+        `<w:rPrChange w:id="9" w:author="Reviewer"><w:rPr>${OLD}</w:rPr></w:rPrChange>` +
+        `</w:rPr><w:t>x</w:t></w:r></w:p>`,
+    })
+    const parsed = await parseDocx(bytes)
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    const rpr = collectRevisions(editor.state.doc).find((r) => r.kind === 'rPrChange')!
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, rpr.from + 1)),
+    )
+    rejectCurrentRevision(editor)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const zip = await JSZip.loadAsync(await saveDocx(parsed, plan.saveBlocks))
+    expect(await zip.file('word/document.xml')!.async('string')).toContain(
+      `<w:r><w:rPr>${OLD}</w:rPr><w:t`,
+    )
+    editor.destroy()
+  })
+
+  it('accept strips only the record', async () => {
+    const { xml, marks } = await resolveAndSave('accept')
+    expect(xml).toContain('<w:r><w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr><w:t')
+    expect(marks).toMatchObject({ bold: true, color: 'FF0000' })
   })
 })

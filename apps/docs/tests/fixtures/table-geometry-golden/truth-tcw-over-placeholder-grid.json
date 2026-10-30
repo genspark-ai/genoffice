@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/tcw-over-placeholder-grid/probe.docx",
+  "tables": 2,
+  "hashes": ["8c3e22c6f8ce4b56", "eac4cc9b7e2aae3a"],
+  "staticTables": 2,
+  "staticHashes": ["c94eb5fa34dd9f9b", "261faf5ce3d281a4"]
+}

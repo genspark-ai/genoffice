@@ -101,6 +101,10 @@ const insideCells = (sel: string): string =>
     .join(', ')
 
 const DOC_FIRST_BLOCK = ':nth-child(1 of :not(.page-float-host))'
+/** the first block's own line may sit inside an anchored-drawing wrapper */
+const docFirstBlockSel = (qualifier: string, nested = qualifier): string =>
+  `.doc-page > ${qualifier}${DOC_FIRST_BLOCK}, ` +
+  `.doc-page > .doc-protected${DOC_FIRST_BLOCK} > :is(.doc-anchor-line, .doc-textbox-stray)${nested}`
 // ...and on a cell's first paragraph; auto space-after goes on its last (styles.css
 // sp-auto-*); .doc-cell-boxes is the zero-width anchored-shape strut ahead of it
 const CELL_BLOCK = '.doc-table :is(td, th, .cell-clip, .cell-vert) > '
@@ -162,6 +166,12 @@ export function docLineFactor(parsed: ParsedDocFull, hasCjk: boolean): number {
   return hasCjk ? docCjkFactor(parsed) : lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')
 }
 
+/** StyleDisplay.font is EA-first: a name shared with fontAscii is a Latin-only
+ *  declaration, unless the shared name is itself a CJK face (Meiryo in every slot). */
+function styleDeclaresEaFace(d: { font?: string; fontAscii?: string }): boolean {
+  return !!d.font && (d.font !== d.fontAscii || isCjkFontName(d.font))
+}
+
 /** CJK line-height factor of the document's East Asian face (feeds --doc-line-factor-cjk:
  *  per-paragraph script overrides resolve CJK paragraphs through this var). */
 export function docCjkFactor(parsed: ParsedDocFull): number {
@@ -169,14 +179,9 @@ export function docCjkFactor(parsed: ParsedDocFull): number {
   // Word-probed substitution factor, same truth as per-paragraph overrides
   const factor = (f: string) => cjkDeclaredLineFactor(f) ?? lineHeightFactor(f)
   // Normal's EA face wins over docDefaults (a Normal declaring e.g. Noto KR must
-  // not fall back to the SimSun factor). font === fontAscii means only a
-  // Latin slot was declared (StyleDisplay.font is EA-first) — not an EA choice,
-  // unless the shared name is itself a CJK face (Meiryo in every slot).
+  // not fall back to the SimSun factor)
   const normal = defaultParaDisplay(parsed)
-  const normalEa =
-    normal?.font && (normal.font !== normal.fontAscii || isCjkFontName(normal.font))
-      ? normal.font
-      : undefined
+  const normalEa = normal?.font && styleDeclaresEaFace(normal) ? normal.font : undefined
   if (normalEa && !normal?.eaSlotEmpty) return factor(normalEa)
   const dd = parsed.docDefaults
   if (dd?.eastAsiaFont && !dd.eaSlotEmpty) return factor(dd.eastAsiaFont)
@@ -380,10 +385,18 @@ function cellOpeningPaths(styleSel: string, cell = ':is(td, th)'): string[] {
   return cellParaPaths(cell, `${styleSel}${CELL_FIRST}`)
 }
 /** `:has()` for the paragraph before a table whose first cell opens with the style */
-function beforeTableOpening(styleSel: string): string {
+/** pagination widgets the canvas keeps between blocks: every sibling rule
+ *  gets a twin that looks through one, so the canvas measures the gapless
+ *  geometry the print preview clones (a page gap must not break contextual
+ *  spacing; styles.css carries the twins of its static rules) */
+const PAGE_WIDGET = ':is(.page-gap, .page-gap-cut, .page-float-host, .page-float-carry)'
+const acrossWidget = (prefix: string, next: string): string =>
+  `${prefix} + ${PAGE_WIDGET} + ${next}`
+
+function beforeTableOpening(styleSel: string, viaWidget = false): string {
   const cell = 'table.doc-table > tbody > tr:first-child > :is(td, th):first-child'
   return `:has(${cellOpeningPaths(styleSel, cell)
-    .map((path) => `+ ${path}`)
+    .map((path) => (viaWidget ? acrossWidget('', path) : `+ ${path}`))
     .join(', ')})`
 }
 function cellClosingWith(closingSel: string, cell: string): string {
@@ -413,6 +426,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         side === 'after'
           ? `.doc-page .doc-li${g}${item}:has(+ .doc-li${g}) { margin-bottom:0${important} }`
           : `.doc-page .doc-li${g} + .doc-li${g}${item} { ${SB}:0${important} }`,
+        side === 'after'
+          ? `.doc-page .doc-li${g}${item}:has(${acrossWidget('', `.doc-li${g}`)}) { margin-bottom:0${important} }`
+          : `${acrossWidget(`.doc-page .doc-li${g}`, `.doc-li${g}${item}`)} { ${SB}:0${important} }`,
       )
     }
   }
@@ -540,20 +556,24 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // at parse time + live decorations in LineFactorExtension).
     const factor = docLineFactor(parsed, docHasCjk(parsed))
     decls.push(`--doc-line-factor:${factor}`)
-    // .page-wrap too: the first-page header/footer strips size their lines by it
-    rules.push(`.page-wrap { --doc-line-factor:${factor} }`)
     // CJK paragraphs resolve their per-paragraph factor through this var
     // (paraLineFactorCss); value follows the document's East Asian face
-    decls.push(`--doc-line-factor-cjk:${docCjkFactor(parsed)}`)
     // Latin factor for per-paragraph overrides (blockAttrs): pure-Western paragraphs
     // follow the body font's real single-line metric instead of a flat 1.2
-    decls.push(`--doc-line-factor-latin:${latinLineFactor(docBodyFont(parsed) ?? 'Calibri')}`)
     // Korean factor for hangul paragraphs (Batang-class 1.15 unless the EA face says otherwise)
     const normalEaKr =
       normal?.font && (normal.font !== normal.fontAscii || isKoreanFontName(normal.font))
         ? normal.font
         : undefined
-    decls.push(`--doc-line-factor-kr:${krLineFactor(normalEaKr ?? dd?.eastAsiaFont)}`)
+    const scriptFactors = [
+      `--doc-line-factor-cjk:${docCjkFactor(parsed)}`,
+      `--doc-line-factor-latin:${latinLineFactor(docBodyFont(parsed) ?? 'Calibri')}`,
+      `--doc-line-factor-kr:${krLineFactor(normalEaKr ?? dd?.eastAsiaFont)}`,
+    ]
+    decls.push(...scriptFactors)
+    // .page-wrap too: the first-page header/footer strips (.doc-page siblings)
+    // size their lines by the same factors (and the document multiple below)
+    const stripVars = [`--doc-line-factor:${factor}`, ...scriptFactors]
     // dual-slot baseline: Latin families first, then the East Asian chain
     const baseAscii = normal?.fontAscii ?? dd?.asciiFont
     const baseEa =
@@ -655,7 +675,11 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // grid span snapping scales by the document default multiple (inherits to runs)
     const lhSrc = normalLh ? normal : ddLh ? dd : undefined
     const docMult = cssAutoLineMult(lhSrc?.lineRule, lhSrc?.lineRawTwips, lhSrc?.lineSpacing)
-    if (docMult) decls.push(`--doc-line-mult:${docMult}`)
+    if (docMult) {
+      decls.push(`--doc-line-mult:${docMult}`)
+      stripVars.push(`--doc-line-mult:${docMult}`)
+    }
+    rules.push(`.page-wrap { ${stripVars.join(';')} }`)
     const docLeadTop = cssLeadTop(lhSrc?.lineRule, lhSrc?.lineRawTwips, lhSrc?.lineSpacing)
     if (docLeadTop && docLeadTop !== 'initial') decls.push(`--doc-lead-top:${docLeadTop}`)
     const docCap = cssExactLineCap(lhSrc?.lineRule, lhSrc?.lineRawTwips)
@@ -696,7 +720,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // declared per block so --doc-line-factor set inline on a paragraph re-evaluates
     // the line-height var (it wouldn't through inheritance)
     const blockSel =
-      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field, .doc-page .doc-protected-formula-display, .doc-page .doc-img-para'
+      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field, .doc-page .doc-protected-formula-display, .doc-page .doc-img-para, .doc-page .doc-textbox-para, .doc-page .doc-cell-para'
     const beforePt =
       (normal?.spaceBeforeAuto ?? dd?.spaceBeforeAuto)
         ? autoPt
@@ -722,21 +746,22 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (additive) {
       // direct w:contextualSpacing between unstyled paragraphs (styles.css zeroes the margin)
       rules.push(
-        `.doc-page :is(p, .doc-li):not([data-style]) + :is(p, .doc-li).ctx-sp:not([data-style]) { padding-top:0 !important }`,
+        `.doc-page :is(p, .doc-li, .doc-outline-only):not([data-style]) + :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]) { padding-top:0 !important }`,
+        `${acrossWidget('.doc-page :is(p, .doc-li, .doc-outline-only):not([data-style])', ':is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style])')} { padding-top:0 !important }`,
       )
     }
     // default-level auto collapses to 0 between two list items like the direct/
     // per-style variants; scoped to unstyled items (styled ones resolve their
     // margins per style) and left un-!important so direct spacing still wins
     const unstyledBlock =
-      ':is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para):not([data-style])'
+      ':is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para, .doc-textbox-para, .doc-cell-para):not([data-style])'
     if (normal?.spaceAfterAuto ?? dd?.spaceAfterAuto) {
       liCollapse(':not([data-style])', 'after')
       rules.push(`${CELL_BLOCK}${unstyledBlock}${CELL_LAST} { margin-bottom:0 }`)
     }
     if (normal?.spaceBeforeAuto ?? dd?.spaceBeforeAuto) {
       liCollapse(':not([data-style])', 'before')
-      rules.push(`.doc-page > ${unstyledBlock}${DOC_FIRST_BLOCK} { ${SB}:0 }`)
+      rules.push(`${docFirstBlockSel(unstyledBlock, ':not([data-style])')} { ${SB}:0 }`)
       rules.push(`${CELL_BLOCK}${unstyledBlock}${CELL_FIRST} { ${SB}:0 }`)
     }
     // textbox paragraphs re-evaluate the line-height var per block too;
@@ -807,7 +832,10 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // table-style layer sits above docDefaults/Normal for unstyled cell text)
     {
       const decls: string[] = []
-      if (t.wholeTable?.sizeHalfPoints) decls.push(`font-size:${t.wholeTable.sizeHalfPoints / 2}pt`)
+      if (t.wholeTable?.sizeHalfPoints) {
+        const pt = `${t.wholeTable.sizeHalfPoints / 2}pt`
+        decls.push(`font-size:${pt}`, `--doc-base-fs:${pt}`)
+      }
       if (t.wholeTable?.italic) decls.push('font-style:italic')
       if (t.wholeTable?.kernHalfPoints !== undefined) {
         const on = wordKerns(
@@ -818,18 +846,21 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       }
       if (decls.length > 0) rules.push(`${sel} td, ${sel} th { ${decls.join(';')} }`)
     }
-    // band1 = first data row after the header → even nth-child when a header row exists
-    if (t.band1Fill) {
-      const bandSel = `${sel} tr:nth-child(even) td`
-      rules.push(`${bandSel} { background:#${t.band1Fill} }`)
-      darkTwin(bandSel, [`background:${darkPageColor(t.band1Fill)}`])
-      autoInk(bandSel, t.band1Fill, tableDark)
+    // w:tblLook opts a table out of its style's bands / header row (data-tbl-* set
+    // from tblLook); band1 = first data row after the header, or row 1 without one
+    const banded = `${sel}:not([data-tbl-nohband])`
+    const bandRules = (fill: string, withHeader: string, noHeader: string) => {
+      const bandSel = [
+        `${banded}:not([data-tbl-nofirstrow]) ${withHeader} td`,
+        `${banded}[data-tbl-nofirstrow] ${noHeader} td`,
+      ].join(', ')
+      rules.push(`${bandSel} { background:#${fill} }`)
+      darkTwin(bandSel, [`background:${darkPageColor(fill)}`])
+      autoInk(bandSel, fill, tableDark)
     }
+    if (t.band1Fill) bandRules(t.band1Fill, 'tr:nth-child(even)', 'tr:nth-child(odd)')
     if (t.band2Fill) {
-      const bandSel = `${sel} tr:nth-child(odd):not(:first-child) td`
-      rules.push(`${bandSel} { background:#${t.band2Fill} }`)
-      darkTwin(bandSel, [`background:${darkPageColor(t.band2Fill)}`])
-      autoInk(bandSel, t.band2Fill, tableDark)
+      bandRules(t.band2Fill, 'tr:nth-child(odd):not(:first-child)', 'tr:nth-child(even)')
     }
     if (t.firstRow) {
       const decls: string[] = []
@@ -844,7 +875,10 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         decls.push(`color:#${t.firstRow.color}`)
         darkDecls.push(`color:${darkPageColor(t.firstRow.color)}`)
       }
-      if (t.firstRow.sizeHalfPoints) decls.push(`font-size:${t.firstRow.sizeHalfPoints / 2}pt`)
+      if (t.firstRow.sizeHalfPoints) {
+        const pt = `${t.firstRow.sizeHalfPoints / 2}pt`
+        decls.push(`font-size:${pt}`, `--doc-base-fs:${pt}`)
+      }
       if (t.firstRow.fontAscii) decls.push(`font-family:${cssFontFamily(t.firstRow.fontAscii)}`)
       if (t.firstRow.charSpacingTwips !== undefined)
         decls.push(`letter-spacing:${t.firstRow.charSpacingTwips / 20}pt`)
@@ -853,7 +887,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       // Word extends header-row formatting over the leading w:tblHeader rows;
       // kept as a comma list because the ink helpers split on ','
       const headerTr = 'tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr)'
-      const firstRowSel = [`${sel} tr:first-child`, `${sel} ${headerTr}`]
+      const headed = `${sel}:not([data-tbl-nofirstrow])`
+      const firstRowSel = [`${headed} tr:first-child`, `${headed} ${headerTr}`]
         .flatMap((tr) => [`${tr} td`, `${tr} th`])
         .join(', ')
       if (decls.length > 0) rules.push(`${firstRowSel} { ${decls.join(';')} }`)
@@ -947,7 +982,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       // style-declared EA face re-anchors the CJK line factor for its paragraphs
       // (runs without their own fonts resolve --doc-line-factor-cjk through this);
       // an empty-theme-slot backfill is not a document choice and stays silent
-      if (!d.eaSlotEmpty && (d.font !== d.fontAscii || isCjkFontName(d.font))) {
+      if (!d.eaSlotEmpty && styleDeclaresEaFace(d)) {
         decls.push(
           `--doc-line-factor-cjk:${cjkDeclaredLineFactor(d.font) ?? lineHeightFactor(d.font)}`,
         )
@@ -1075,7 +1110,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       }
       if (d.spaceBeforeAuto) {
         liCollapse(sa, 'before')
-        rules.push(`.doc-page > ${sa}${DOC_FIRST_BLOCK} { ${SB}:0 }`)
+        rules.push(`${docFirstBlockSel(sa)} { ${SB}:0 }`)
         rules.push(`${CELL_BLOCK}${sa}${CELL_FIRST} { ${SB}:0 }`)
       }
     }
@@ -1148,7 +1183,12 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       rules.push(`.doc-page ${s}:has(+ ${s}):not(.ctx-sp-off) { margin-bottom:0 !important }`)
       rules.push(`.doc-page ${s} + ${s}:not(.ctx-sp-off) { ${SB}:0 !important }`)
       rules.push(
+        `.doc-page ${s}:has(${acrossWidget('', s)}):not(.ctx-sp-off) { margin-bottom:0 !important }`,
+        `${acrossWidget(`.doc-page ${s}`, `${s}:not(.ctx-sp-off)`)} { ${SB}:0 !important }`,
+      )
+      rules.push(
         `.doc-page ${s}${beforeTableOpening(s)}:not(.ctx-sp-off) { margin-bottom:0 !important }`,
+        `.doc-page ${s}${beforeTableOpening(s, true)}:not(.ctx-sp-off) { margin-bottom:0 !important }`,
       )
       rules.push(`${cellClosingBefore(s, `${s}:not(.ctx-sp-off)`)} { margin-bottom:0 !important }`)
       if (info.isDefault) {
@@ -1192,7 +1232,14 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     const s = `[data-style="${CSS.escape(info.styleId)}"]`
     rules.push(`.doc-page ${s}.ctx-sp:has(+ ${s}) { margin-bottom:0 !important }`)
     rules.push(`.doc-page ${s} + ${s}.ctx-sp { margin-top:0 !important }`)
-    rules.push(`.doc-page ${s}.ctx-sp${beforeTableOpening(s)} { margin-bottom:0 !important }`)
+    rules.push(
+      `.doc-page ${s}.ctx-sp:has(${acrossWidget('', s)}) { margin-bottom:0 !important }`,
+      `${acrossWidget(`.doc-page ${s}`, `${s}.ctx-sp`)} { margin-top:0 !important }`,
+    )
+    rules.push(
+      `.doc-page ${s}.ctx-sp${beforeTableOpening(s)} { margin-bottom:0 !important }`,
+      `.doc-page ${s}.ctx-sp${beforeTableOpening(s, true)} { margin-bottom:0 !important }`,
+    )
     rules.push(`${cellClosingBefore(s, `${s}.ctx-sp`)} { margin-bottom:0 !important }`)
     if (info.isDefault) rules.push(`${rowClosing(`${s}.ctx-sp`)} { margin-bottom:0 !important }`)
   }
@@ -1229,7 +1276,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // after every [data-style] family rule so the strut face wins the cascade;
     // the tail keeps each context's own inherited chain rendering the glyphs
     rules.push(
-      `.doc-page :is(${eaStrut ? '.doc-grid-strut,.doc-ea-strut' : '.doc-grid-strut'}) { font-family:'GenOffice Grid Strut',var(--doc-grid-strut-tail,serif) }`,
+      // !important: a declared-face CJK paragraph carries its chain inline (blockAttrs)
+      `.doc-page :is(${eaStrut ? '.doc-grid-strut,.doc-ea-strut' : '.doc-grid-strut'}) { font-family:'GenOffice Grid Strut',var(--doc-grid-strut-tail,serif) !important }`,
     )
     // declared-run and CJK-stretch spans keep their own primary face, whose box
     // sits offset from the strut's; Chromium unions the offset boxes and the

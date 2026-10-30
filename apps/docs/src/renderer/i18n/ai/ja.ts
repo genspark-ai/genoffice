@@ -99,6 +99,11 @@ export const ja = {
     '変更履歴オン:AI による内容の変更は変更履歴として記録されます(挿入は下線、削除は取り消し線)。校閲で承諾または元に戻せます',
   aiTrackOffTitle:
     '変更履歴オフ:AI の変更はすぐに反映されます(バージョンスナップショットからロールバック可能)',
+  aiRevisionBarTitle: '変更履歴',
+  aiRevisionCount: '{count} 件の変更',
+  aiRevisionRejectAll: 'すべて元に戻す',
+  aiRevisionAcceptAll: 'すべて承諾',
+  aiRevisionPara: '段落 {n}',
   aiTurnLimit:
     '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに完了した内容に基づく回答です。不完全な場合があります。）',
   aiStopped: '(停止しました)',

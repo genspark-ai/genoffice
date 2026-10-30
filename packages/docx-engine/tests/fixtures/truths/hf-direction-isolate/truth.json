@@ -1,0 +1,33 @@
+{
+  "id": "hf-direction-isolate",
+  "title": "Strip paragraph direction: a w:bidi Arabic paragraph ends at the right margin, an LTR paragraph runs from the left margin in reading order, a w:bidi paragraph holding only an LTR run sits at the right margin",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins (text column 72 .. 540), header 720, docDefaults Calibri 11; w:bidi + cs Arial 12 w:rtl Arabic paragraph x 462.21 .. 540.00; LTR `abc 123 def` Calibri 12 x 72.00 .. 128.74; the same run inside a w:bidi paragraph without w:rtl x 483.26 .. 540.00 in reading order; an LTR paragraph opening with an Arabic run keeps it at 72.00 .. 101.94 and the Latin tail at 101.94 .. 167.84. gen emitted direction:rtl without isolating the paragraph and no explicit direction for LTR paragraphs",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": { "styles": ["direction:rtl", "unicode-bidi:isolate"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": { "styles": ["direction:ltr"], "notStyles": ["unicode-bidi"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "expect": { "styles": ["direction:rtl", "unicode-bidi:isolate"] },
+      "note": "w:bidi with an LTR-only run: the paragraph is still right-to-left, the run keeps reading order"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "expect": { "styles": ["direction:ltr"] },
+      "note": "no w:bidi: an Arabic first run does not turn the paragraph"
+    }
+  ],
+  "docx": "probe.docx"
+}

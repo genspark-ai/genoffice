@@ -95,4 +95,12 @@ describe('buildBatesInserts', () => {
     expect(inserts[0]!.rotate).toBe(90)
     expect(inserts[0]!.origin).toEqual([567, 814])
   })
+
+  it('scales the display corner by /UserUnit, as every other insert does', () => {
+    // a page with /UserUnit 2 lays out at 2x: the display corner is halved
+    // back into raw PDF units before it lands in the file
+    const inserts = buildBatesInserts([{ ...A4, userUnit: 2 }], base, measure)
+    const [plain] = buildBatesInserts([A4], base, measure)
+    expect(inserts[0]!.origin).toEqual(plain!.origin.map((v) => v / 2))
+  })
 })

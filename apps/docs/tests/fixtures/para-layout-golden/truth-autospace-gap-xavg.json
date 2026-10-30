@@ -1,0 +1,13 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/autospace-gap-xavg/probe.docx",
+  "paragraphs": 2,
+  "hashes": ["ef2484e1c8c62b77", "dc4f541fd5708912"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

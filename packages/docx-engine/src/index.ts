@@ -104,6 +104,8 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  paraMarkRevisionXml,
+  setParaMarkRevision,
   stripParaMarkRevision,
   resolveParaMarkRPrChange,
   paraMarkColor,
@@ -248,8 +250,13 @@ export {
 
 export { previewFontSettings } from './font-settings'
 export {
+  applyRevisionResolutions,
   applyTrackedChangesXml,
   countTrackedChangesXml,
+  readPropChangeXml,
+  resolvePropChangeXml,
+  type PropChangeRecord,
+  type RevisionResolution,
   type RevisionXmlFilter,
   type RevisionXmlMode,
   type RevisionXmlResult,

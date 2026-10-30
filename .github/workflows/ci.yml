@@ -93,6 +93,33 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # Line-metric numbers (fonts.css size-adjust/overrides, knownLineFactor)
+      # must cite the Word measurement they came from.
+      - name: Check font-metric provenance
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:font-metrics-provenance
+
+      # fonts.generated.css / line-factors.generated.ts must match the measurement
+      # manifest; metric values are never hand-written outside it.
+      - name: Check generated font metrics
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:generated-fonts
+
+      # docs/word-truths-index.json and the coverage doc must match the fixtures;
+      # a recently dated truths section needs a fixture or a prose-only marker.
+      - name: Check Word truths coverage
+        run: npm run check:word-truths
+
       # skills/*/SKILL.md ship to users' agent directories; a body change
       # without a metadata.version bump would never be offered as an update.
       - name: Check skill versions

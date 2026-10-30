@@ -59,7 +59,9 @@ describe('run-level wrapNone pictures with a page/margin-relative X', () => {
 
   it('leaves a column-relative X on the plain pixel translate', async () => {
     const r = await render(anchor('column', 914400))
-    expect(r.transform).toBe('translate(96.0px, calc(0.0px - var(--anchor-before,0px)))')
+    expect(r.transform).toBe(
+      'translate(calc(96.0px - var(--anchor-ind,0px)), calc(0.0px - var(--anchor-before,0px)))',
+    )
     expect(r.data.pageRelX).toBeUndefined()
   })
 })

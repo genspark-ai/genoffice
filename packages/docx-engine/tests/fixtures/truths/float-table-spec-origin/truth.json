@@ -1,0 +1,217 @@
+{
+  "id": "float-table-spec-origin",
+  "title": "A w:tblpXSpec keyword places a floating table against its horzAnchor band (margin box, paper, text column), never at a default X",
+  "section": "word-truths.md#L853",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf gridline x and text bboxes; Letter, left margin 72 pt, right margin 36 pt (column 72-576), Calibri 11, 150 pt fixed one-cell tables; right keyword on the margin band draws 425.5-575.5, on the page band 461.5-611.5; center on the margin band 248.6-398.6, on the page band 230.6-380.6; left on the page band 0-150 (the anchor paragraph's first lines start at 151); a numeric tblpX 7000 on the text band draws at 422 = 72 + 350; the same keyword in an indented anchor paragraph (ind left 720) still ends at 576; inside on an even page and outside on an odd page both draw 425.5-575.5 (the keyword follows page parity)",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "floatTableGeom",
+      "block": 3,
+      "expect": {
+        "side": "right",
+        "left": 426,
+        "right": 576
+      },
+      "note": "A1 margin right: the box ends at the right margin (576), not at tblInd + 9360 twips"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 8,
+      "expect": {
+        "side": "right",
+        "left": 462,
+        "right": 612
+      },
+      "note": "A2 page right: the box ends at the paper edge"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 13,
+      "expect": {
+        "side": "left",
+        "left": 249,
+        "right": 399
+      },
+      "note": "A3 margin center: centred on the 72-576 margin box"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 18,
+      "expect": {
+        "side": "left",
+        "left": 231,
+        "right": 381
+      },
+      "note": "A4 page center: centred on the paper"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 23,
+      "expect": {
+        "side": "right",
+        "left": 426,
+        "right": 576
+      },
+      "status": "failing",
+      "note": "A5 margin inside on an EVEN page = the right (binding) side; gen resolves inside as left on every page (page parity not modelled)"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 28,
+      "expect": {
+        "side": "right",
+        "left": 426,
+        "right": 576
+      },
+      "note": "A6 margin outside on an odd page = the right side"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 33,
+      "expect": {
+        "side": "left",
+        "left": 0,
+        "right": 150
+      },
+      "note": "A8 page left: flush with the paper edge, overhanging the left margin"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 38,
+      "expect": {
+        "side": "right",
+        "left": 422,
+        "right": 572
+      },
+      "note": "A10 numeric tblpX 7000 on the text band: 72 + 350"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 43,
+      "expect": {
+        "side": "right",
+        "left": 426,
+        "right": 576
+      },
+      "note": "A7 text-band right keyword in an indented anchor paragraph: the column edge, the indent is ignored"
+    },
+    {
+      "kind": "floatTableGeom",
+      "block": 48,
+      "expect": {
+        "side": "right",
+        "left": 26,
+        "right": 576
+      },
+      "note": "A9 right keyword, 550 pt table on a 504 pt column: the right edge stays pinned, the box overhangs the left margin (Word 25.4-575.5)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 3,
+      "expect": {
+        "classes": ["doc-table-float-right"],
+        "notStyles": ["margin-right: max("]
+      },
+      "note": "A1 editor: the right float keeps the stylesheet's zero right margin, no column - 624px - width expression"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 8,
+      "expect": {
+        "stylesStartWith": ["margin-right: calc(0px - var(--doc-margin-right,0px))"]
+      },
+      "note": "A2 editor: the page band overhangs the right margin"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 33,
+      "expect": {
+        "stylesStartWith": ["margin-left: calc(0px - var(--doc-margin-left,0px))"]
+      },
+      "note": "A8 editor: the page band's left keyword starts at the paper edge"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 48,
+      "expect": {
+        "classes": ["doc-table-float-right"],
+        "notStyles": ["margin-right: max("]
+      },
+      "note": "A9 editor: the over-wide right float stays floated on the right band (CSS places an over-wide right float flush right, overhanging left)"
+    },
+    {
+      "kind": "nestedFloatGeom",
+      "block": 78,
+      "row": 0,
+      "cell": 0,
+      "expect": {
+        "left": 426,
+        "right": 576
+      },
+      "note": "D1 nested margin right: flush with the cell's right edge (Word 425.3-575.3)"
+    },
+    {
+      "kind": "nestedFloatGeom",
+      "block": 82,
+      "row": 0,
+      "cell": 0,
+      "expect": {
+        "left": 249,
+        "right": 399
+      },
+      "note": "D2 nested margin center: centred in the cell (Word 249.1-399.1)"
+    },
+    {
+      "kind": "nestedFloatGeom",
+      "block": 86,
+      "row": 0,
+      "cell": 0,
+      "expect": {
+        "left": 426,
+        "right": 576
+      },
+      "note": "D3 nested page right: the page band is the cell too (Word 425.5-575.5, not the paper edge 612)"
+    },
+    {
+      "kind": "hfRowFloatPt",
+      "part": 0,
+      "para": 1,
+      "expect": {
+        "left": 354
+      },
+      "note": "H1 header margin right keyword: 425.5 - 72 from the strip's left edge"
+    },
+    {
+      "kind": "hfRowFloatPt",
+      "part": 1,
+      "para": 1,
+      "expect": {
+        "left": 159
+      },
+      "note": "H2 header page center keyword: 230.6 - 72"
+    },
+    {
+      "kind": "hfRowFloatPt",
+      "part": 2,
+      "para": 0,
+      "expect": {
+        "left": 0,
+        "top": 36
+      },
+      "note": "H3 header vertAnchor=margin tblpY=0: the table top at the body margin (72), 36 pt below the strip top"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 18,
+      "expect": {
+        "stylesStartWith": [
+          "margin-left: calc((var(--doc-content-w,100%) + var(--doc-margin-left,0px) + var(--doc-margin-right,0px) - 200.0px) / 2 - var(--doc-margin-left,0px))"
+        ]
+      },
+      "note": "A4 editor: the page band centres on the paper, not the content box (231 vs 249 with 72 / 36 pt margins)"
+    }
+  ]
+}

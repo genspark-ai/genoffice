@@ -41,7 +41,7 @@ import {
   updateTableAdd,
 } from './edit-journal'
 import { planFileTableRegistrations } from './file-tables'
-import { optionsOfTableAdd } from './table-design'
+import { areasIntersect, fileTableArea, liveFileTables, optionsOfTableAdd } from './table-design'
 import { DEFAULT_TABLE_STYLE, builtinTablePalette, tableThemeJson } from './table-styles'
 import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotField } from './PivotDialog'
@@ -75,14 +75,13 @@ export function applyAiTableAdd(
     throw new Error(t('appTableNameInFile', { name }))
   }
   for (const table of state.editJournal.tableAdds) {
-    if (table.sheetId !== op.sheetId) continue
-    const apart =
-      bounds.endRow < table.area.startRow ||
-      table.area.endRow < bounds.startRow ||
-      bounds.endColumn < table.area.startColumn ||
-      table.area.endColumn < bounds.startColumn
-    if (!apart) {
+    if (table.sheetId === op.sheetId && areasIntersect(bounds, table.area)) {
       throw new Error(t('appTableOverlapsSession', { name: table.name }))
+    }
+  }
+  for (const { table, originalName } of liveFileTables(state, op.sheetId)) {
+    if (areasIntersect(bounds, fileTableArea(table))) {
+      throw new Error(t('appTableOverlapsFile', { name: table.name ?? originalName }))
     }
   }
   const headerValues =

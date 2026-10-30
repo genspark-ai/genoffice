@@ -45,6 +45,7 @@ import {
   describePending,
   listRevisionEntries,
   validateSelector,
+  type StoryRevisionAccess,
 } from './revision-ops'
 import {
   buildNotesContext,
@@ -675,6 +676,10 @@ export interface AiHeaderFooterAccess {
 export interface AiDocExtras {
   styles?: AiStyleAccess
   watermark?: AiWatermarkAccess
+  /** protection (read-only or enforced tracked changes) forbids accepting / rejecting revisions */
+  revisionsLocked?: boolean
+  /** tracked changes in notes, header / footer parts and textboxes */
+  storyRevisions?: StoryRevisionAccess
 }
 
 export interface AiCommentsAccess {
@@ -1704,7 +1709,7 @@ function executeSyncTool(
 
     case 'read_revisions':
       return {
-        output: buildRevisionsContext(editor),
+        output: buildRevisionsContext(editor, extras?.storyRevisions?.list()),
         mutated: false,
         summary: t('aiSumReadRevisions'),
       }
@@ -1713,11 +1718,16 @@ function executeSyncTool(
     case 'reject_changes': {
       const mode = call.name === 'accept_changes' ? 'accept' : 'reject'
       const summary = t(mode === 'accept' ? 'aiSumAcceptChanges' : 'aiSumRejectChanges')
+      if (extras?.revisionsLocked)
+        return fail(
+          summary,
+          'document protection enforces tracked changes (or read-only editing): revisions cannot be accepted or rejected until the protection is removed',
+        )
       const sel = validateSelector(call.input)
       if ('error' in sel) return fail(summary, sel.error)
-      const r = applyRevisionSelection(editor, sel, mode)
+      const r = applyRevisionSelection(editor, sel, mode, extras?.storyRevisions)
       if ('error' in r) return fail(summary, r.error)
-      const left = listRevisionEntries(editor.state.doc)
+      const left = listRevisionEntries(editor.state.doc, extras?.storyRevisions?.list())
       const verb = mode === 'accept' ? 'Accepted' : 'Rejected'
       return {
         output: `${verb} ${r.entries.length} tracked change(s) (${r.entries.map((e) => e.id).join(', ')}). ${left.length ? `Still ${describePending(left)}.` : 'No tracked changes remain.'}`,

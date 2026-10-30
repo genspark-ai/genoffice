@@ -394,6 +394,8 @@ export const cs = {
   appTableNameUsed: 'Název tabulky „{name}“ už byl v této relaci použit.',
   appTableNameInFile: 'Název tabulky "{name}" již používá tabulka v souboru.',
   appTableOverlapsSession: 'Oblast se překrývá s tabulkou „{name}“ vytvořenou v této relaci.',
+  appTableOverlapsFile: 'Oblast se překrývá s tabulkou „{name}“ v souboru.',
+  appTableAlreadyInTable: 'Výběr už je v tabulce „{name}“ – styl změňte v Návrhu tabulky.',
   appTablesNeedFile: 'Nejprve otevřete soubor XLSX — tabulky se zapisují do souboru.',
   appTableSelectRange: 'Nejprve vyberte oblast dat — záhlaví v jejím prvním řádku.',
   appTableCreated: 'Tabulka vytvořena — uložte pomocí ⌘S.',

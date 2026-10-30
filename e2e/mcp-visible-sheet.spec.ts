@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
+import { launchShell, closeAndSaveVideo, waitForPageWithUrl, freeMcpPort } from './helpers'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import http, { createServer } from 'node:http'
+import http from 'node:http'
 import JSZip from 'jszip'
 
 /**
@@ -16,18 +16,6 @@ import JSZip from 'jszip'
  * on-disk xlsx (values AND the formula) and that a sheets tab actually
  * appeared in the shell UI.
  */
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 interface RpcResponse {
   status: number
@@ -104,7 +92,7 @@ async function waitForHealth(port: number, timeoutMs = 20_000): Promise<void> {
 
 test.describe('MCP visible grid session', () => {
   test('creates, fills and saves an xlsx through a visible sheets tab', async () => {
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-mcp-sheet-'))
     const outFile = join(outDir, 'mcp-sheet.xlsx')
     const userDataDir = await mkdtemp(join(tmpdir(), 'genoffice-mcp-sheet-userdata-'))

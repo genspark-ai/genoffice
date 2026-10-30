@@ -9,12 +9,20 @@ import type { DocumentReadiness } from '../src/renderer/headless-export'
  * settled, and it must fail loudly instead of hanging when it never does.
  */
 
-type PageDebugWindow = typeof globalThis & { __pageDebug?: { slices?: unknown[] } }
+type PageDebugWindow = typeof globalThis & { __pageDebug?: { pageCutSig?: string } }
 
+/** a PageCut signature with `count` pages (the e2e-visible shape, one entry per page) */
 function setSlices(count: number | null): void {
   const w = globalThis as PageDebugWindow
   if (count === null) delete w.__pageDebug
-  else w.__pageDebug = { slices: Array.from({ length: count }, (_, i) => i) }
+  else
+    w.__pageDebug = {
+      pageCutSig: Array.from({ length: count }, (_, i) => `${i}:${i + 1}`).join('|'),
+    }
+}
+
+function setSig(sig: string): void {
+  ;(globalThis as PageDebugWindow).__pageDebug = { pageCutSig: sig }
 }
 
 afterEach(() => {
@@ -53,6 +61,17 @@ describe('waitForDocumentSettled', () => {
     await waitForDocumentSettled(ready, fast)
     clearInterval(timer)
     expect(i).toBeGreaterThan(2)
+  })
+
+  it('keeps waiting while a cut moves inside a steady page count', async () => {
+    const sigs = ['0:10|10:20', '0:11|11:20', '0:12|12:20', '0:12|12:20', '0:12|12:20']
+    let i = 0
+    const timer = setInterval(() => {
+      if (i < sigs.length) setSig(sigs[i++]!)
+    }, 2)
+    await waitForDocumentSettled(ready, fast)
+    clearInterval(timer)
+    expect(i).toBeGreaterThan(3)
   })
 
   it('fails when no document ever opens', async () => {

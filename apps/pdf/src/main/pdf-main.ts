@@ -1683,12 +1683,14 @@ function registerPdfIpc(): void {
   // Compare: the open document's own text through the same pdfium engine as the
   // picked side — pdf.js and pdfium break lines differently, and a diff across
   // engines reports added and removed lines on files that are identical.
-  ipcMain.handle(PDF_CHANNELS.compareReadOpen, async (e, path: unknown) => {
+  ipcMain.handle(PDF_CHANNELS.compareReadOpen, async (e, path: unknown, password: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
       return { ok: false as const, reason: 'pdf: path not granted to this view' }
     }
     try {
-      const text = await readPdfText(new Uint8Array(await readFile(path)))
+      const text = await readPdfText(new Uint8Array(await readFile(path)), {
+        password: typeof password === 'string' ? password : undefined,
+      })
       return {
         ok: true as const,
         name: basename(path),

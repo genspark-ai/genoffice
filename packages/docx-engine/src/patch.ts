@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { applyRevisionResolutions, resolvePropChangeXml } from './revision-xml'
 import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
@@ -183,7 +184,7 @@ const SETTINGS_CHILD_ORDER = [
   'documentType',
   'mailMerge',
   'revisionView',
-  'trackChanges',
+  'trackRevisions',
   'doNotTrackMoves',
   'doNotTrackFormatting',
   'documentProtection',
@@ -409,6 +410,8 @@ export interface SaveOptions {
   zoteroDocumentData?: string
   /** replace the trailing w:sectPr with this XML before the field-level options below apply (headless editors that keep the sectPr itself) */
   trailingSectPr?: string
+  /** resolve the trailing sectPr's tracked w:sectPrChange: accept drops the record, reject restores the previous sectPr */
+  trailingSectPrChange?: 'accept' | 'reject'
   /** rewrite page size / margins in the trailing w:sectPr */
   section?: SectionSettings
   /** last-section start type (w:type); rewrites the trailing sectPr when inserting a continuous section break; undefined = keep */
@@ -459,6 +462,8 @@ export interface SaveOptions {
   evenAndOddHeaders?: boolean
   /** mirrored facing pages: set/remove settings.xml w:mirrorMargins */
   mirrorMargins?: boolean
+  /** Track Changes left on at save time: set/remove settings.xml w:trackRevisions */
+  trackRevisions?: boolean
   /**
    * Inject the newly created header/footer references into EVERY body sectPr
    * that has none (not just the trailing one). Generated multi-section
@@ -740,6 +745,7 @@ export async function saveDocx(
     ) &&
     options.section === undefined &&
     options.trailingSectPr === undefined &&
+    options.trailingSectPrChange === undefined &&
     options.zoteroDocumentData === undefined &&
     options.sectionStartType === undefined &&
     options.pgNumType === undefined &&
@@ -758,6 +764,7 @@ export async function saveDocx(
     (options.styleUpserts === undefined || options.styleUpserts.length === 0) &&
     options.evenAndOddHeaders === undefined &&
     options.mirrorMargins === undefined &&
+    options.trackRevisions === undefined &&
     options.comments === undefined &&
     options.protection === undefined &&
     options.writeProtection === undefined &&
@@ -844,7 +851,10 @@ export async function saveDocx(
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
     allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
-    allocateRevisionId: nextRevisionIdAllocator(documentXml, options.revisionIdFloor),
+    allocateRevisionId: nextRevisionIdAllocator(
+      [documentXml, ...(await storyPartsXml(zip))],
+      options.revisionIdFloor,
+    ),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -1191,10 +1201,12 @@ export async function saveDocx(
       const path = resolveRelationshipTargetPath(docPath, target)
       if (!path) return
       const file = zip.file(path)
-      const originalXml = file ? await file.async('string') : null
+      const originalXml = hfOriginalXml(hf, file ? await file.async('string') : null)
       const partXml = await resolveHfNewPictures(
         path,
-        headerFooterPartXml(kind, hf, undefined, originalXml, options.pageCount),
+        hf.keepContent && originalXml
+          ? originalXml
+          : headerFooterPartXml(kind, hf, undefined, originalXml, options.pageCount),
         hf,
       )
       hfParts.push({ path, xml: partXml })
@@ -1259,12 +1271,14 @@ export async function saveDocx(
       const path = resolveRelationshipTargetPath(docPath, target)
       if (!path) continue
       const file = zip.file(path)
-      const originalXml = file ? await file.async('string') : null
+      const originalXml = hfOriginalXml(edit.hf, file ? await file.async('string') : null)
       hfParts.push({
         path,
         xml: await resolveHfNewPictures(
           path,
-          headerFooterPartXml(edit.kind, edit.hf, undefined, originalXml, options.pageCount),
+          edit.hf.keepContent && originalXml
+            ? originalXml
+            : headerFooterPartXml(edit.kind, edit.hf, undefined, originalXml, options.pageCount),
           edit.hf,
         ),
       })
@@ -1728,6 +1742,8 @@ export async function saveDocx(
       let xml = documentXml.slice(el.start, el.end)
       if (xml.includes('<w:sectPr')) {
         if (options.trailingSectPr) xml = options.trailingSectPr
+        if (options.trailingSectPrChange)
+          xml = resolvePropChangeXml(xml, 'w:sectPrChange', options.trailingSectPrChange)
         if (options.section) xml = applySectionSettings(xml, options.section)
         if (options.sectionStartType) xml = applySectionStartType(xml, options.sectionStartType)
         if (options.pgNumType)
@@ -1923,6 +1939,7 @@ export async function saveDocx(
   if (options.pageColor !== undefined) {
     newDocumentXml = applyPageColor(newDocumentXml, options.pageColor)
   }
+  newDocumentXml = fillRevisionIds(newDocumentXml, genCtx.allocateRevisionId)
 
   const settingsPath = 'word/settings.xml'
   let settingsXml: string | null = null
@@ -1933,7 +1950,8 @@ export async function saveDocx(
     options.writeProtection !== undefined ||
     options.removePersonalInfo !== undefined ||
     options.evenAndOddHeaders !== undefined ||
-    options.mirrorMargins !== undefined
+    options.mirrorMargins !== undefined ||
+    options.trackRevisions !== undefined
   ) {
     const file = zip.file(settingsPath)
     let xml: string
@@ -1979,6 +1997,10 @@ export async function saveDocx(
     }
     if (options.mirrorMargins !== undefined) {
       xml = applySettingsFlag(xml, 'w:mirrorMargins', options.mirrorMargins)
+      touched = true
+    }
+    if (options.trackRevisions !== undefined) {
+      xml = applySettingsFlag(xml, 'w:trackRevisions', options.trackRevisions)
       touched = true
     }
     if (touched) settingsXml = xml
@@ -2334,6 +2356,12 @@ function patchWatermarkInPart(originalXml: string, watermarkXml: string): string
   const kept = splitXmlChildren(inner).filter((c) => !isWatermarkChild(c))
   const rootOpen = watermarkXml ? withWatermarkNs(open) : open
   return `${prefix}${rootOpen}${watermarkXml}${kept.map((c) => c.xml).join('')}</w:hdr>`
+}
+
+/** the part's bytes with the editor's accept / reject decisions replayed (the regeneration basis) */
+function hfOriginalXml(hf: HeaderFooter, originalXml: string | null): string | null {
+  if (!originalXml || !hf.revisionsResolved?.length) return originalXml
+  return applyRevisionResolutions(originalXml, hf.revisionsResolved)
 }
 
 /** `watermarkXml`: undefined keeps the part's own watermark child, '' drops it, otherwise replaces it */
@@ -3009,12 +3037,31 @@ function markParagraphRevision(paragraphXml: string, kind: 'ins' | 'del', attrs:
   return open + rest.slice(0, at) + `<w:rPr>${record}</w:rPr>` + rest.slice(at)
 }
 
-/** revision w:id is unique across every annotation in the part, so start above all existing ids */
-function nextRevisionIdAllocator(documentXml: string, floor = 0): () => string {
+/**
+ * Revision w:id must be unique across every annotation; Word keeps one counter
+ * for the whole package, so the seed sits above every id in every story part,
+ * not only document.xml.
+ */
+function nextRevisionIdAllocator(partsXml: string[], floor = 0): () => string {
   let next = Math.max(9001, floor)
-  for (const m of documentXml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/g))
-    next = Math.max(next, parseInt(m[1], 10) + 1)
+  for (const xml of partsXml)
+    for (const m of xml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/g))
+      next = Math.max(next, parseInt(m[1], 10) + 1)
   return () => String(next++)
+}
+
+const STORY_PART_RE = /^word\/(?:header|footer|footnotes|endnotes|comments)\d*\.xml$/
+
+function storyPartsXml(zip: JSZip): Promise<string[]> {
+  return Promise.all(zip.file(STORY_PART_RE).map((f) => f.async('string')))
+}
+
+/** editor-recorded row/cell revisions leave w:id empty; the save mints one here */
+function fillRevisionIds(xml: string, allocate: () => string): string {
+  return xml.replace(
+    /(<w:(?:ins|del|cellIns|cellDel)\b[^>]*?\sw:id=)""/g,
+    (_, head) => `${head}"${allocate()}"`,
+  )
 }
 
 /** Highest w:bookmarkStart/@w:id in the document, 0 when it holds no bookmark. */

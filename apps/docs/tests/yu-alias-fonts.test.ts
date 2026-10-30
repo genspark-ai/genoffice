@@ -1,5 +1,5 @@
 /**
- * Yu Mincho / Yu Gothic Latin advance aliases (fonts.css): Word lays the
+ * Yu Mincho / Yu Gothic Latin advance aliases (fonts.generated.css): Word lays the
  * Office-private faces out with its own yumin.ttf / YuGoth*.ttc, whose Latin
  * is ~8% narrower than the Noto Serif CJK stand-in a missing declare fell to.
  * The Liberation tier must reproduce the Word advances the class scale is
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const FONTS = join(__dirname, '../src/renderer/fonts')
-const css = readFileSync(join(FONTS, 'fonts.css'), 'utf8')
+const css = readFileSync(join(FONTS, 'fonts.generated.css'), 'utf8')
 
 function faces(family: string) {
   return [...css.matchAll(/@font-face \{([^}]*)\}/g)]

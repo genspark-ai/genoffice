@@ -1,0 +1,43 @@
+{
+  "id": "render-hf-fixed-margin-header-dist",
+  "title": "A fixed top margin under the header distance leaves the strip at the header distance; the body overprints it",
+  "section": "word-truths.md#L868",
+  "probe_date": "2026-10-30",
+  "class": "render",
+  "source": "Letter, pgMar top -720 (fixed 36pt), header 1440, three Calibri 11 header lines, page break after the first body line; Word for Mac PDF: header lines 72.05 / 85.49 / 98.93 and body 36.05 on both pages",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "headerTextTopPt",
+      "page": 1,
+      "expect": 72.05,
+      "note": "first-page edge strip; guards the strip page position; gen draws strip text 1.1pt low (strip chrome)",
+      "tol": 1.5
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 36.05,
+      "note": "fixed margin ignores the header; gen 38.33: canvas body top under a fixed margin sits 1-2pt low",
+      "status": "failing"
+    },
+    {
+      "kind": "headerTextTopPt",
+      "page": 2,
+      "expect": 72.05,
+      "note": "gap strip: not pinned to the 36pt body top; guards the strip page position; gen draws strip text 1.1pt low (strip chrome)",
+      "tol": 1.5
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 36.05,
+      "status": "failing",
+      "note": "gen 37.13: canvas body top under a fixed margin sits 1-2pt low"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -1,5 +1,8 @@
 import katexCss from 'katex/dist/katex.min.css?inline'
 
+/** `[[target|alias]]` as one whole literal; mirrors the editor's link regex */
+const WIKI_ALIAS_RE = /^\[\[[^[\]|\n]+\|([^[\]\n]+)\]\]$/
+
 /** Print-theme CSS: mirrors the editor typography so the PDF matches the canvas */
 const PRINT_CSS = `
 @page {
@@ -70,6 +73,14 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
     '.md-codeblock-bar, .md-diagram-error, .ProseMirror-separator',
   ))
     bar.remove()
+  // an aliased wiki link prints as its alias, from the literal rather than the
+  // view's hidden spans: a link under the caret has none, as it shows its syntax
+  for (const link of clone.querySelectorAll('a.wiki-link')) {
+    // a literal an inline mark splits stays visible on the canvas too
+    if ([...link.children].some((el) => el.tagName !== 'SPAN')) continue
+    const alias = WIKI_ALIAS_RE.exec(link.textContent ?? '')?.[1]
+    if (alias) link.textContent = alias
+  }
   // a rendered diagram block prints as its picture; an unrendered one keeps its source
   for (const block of clone.querySelectorAll('[data-diagram="rendered"] pre')) block.remove()
 

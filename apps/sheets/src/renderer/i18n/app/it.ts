@@ -421,6 +421,9 @@ export const it = {
   appTableNameInFile: 'Il nome di tabella "{name}" è già usato da una tabella nel file.',
   appTableOverlapsSession:
     'L\'intervallo si sovrappone alla tabella "{name}" creata in questa sessione.',
+  appTableOverlapsFile: 'L\'intervallo si sovrappone alla tabella "{name}" del file.',
+  appTableAlreadyInTable:
+    'La selezione è già nella tabella "{name}": cambia lo stile da Progettazione tabella.',
   appTablesNeedFile: 'Apri prima un file XLSX — le tabelle vengono scritte nel file.',
   appTableSelectRange: "Seleziona prima l'intervallo di dati — intestazioni nella prima riga.",
   appTableCreated: 'Tabella creata — salva con ⌘S.',

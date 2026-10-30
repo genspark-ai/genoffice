@@ -431,6 +431,9 @@ export const fr = {
   appTableNameUsed: 'Le nom de tableau « {name} » a déjà été utilisé pendant cette session.',
   appTableNameInFile: 'Le nom de tableau "{name}" est déjà utilisé par un tableau du fichier.',
   appTableOverlapsSession: 'La plage chevauche le tableau « {name} » créé pendant cette session.',
+  appTableOverlapsFile: 'La plage chevauche le tableau « {name} » du fichier.',
+  appTableAlreadyInTable:
+    'La sélection se trouve déjà dans le tableau « {name} » — modifiez le style depuis Création de tableau.',
   appTablesNeedFile: "Ouvrez d'abord un fichier XLSX — les tableaux sont écrits dans le fichier.",
   appTableSelectRange:
     "Sélectionnez d'abord la plage de données — les en-têtes dans sa première ligne.",

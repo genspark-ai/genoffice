@@ -22,6 +22,89 @@ import {
   pctOf,
   reflowColumns,
 } from '../ai/table-ops'
+import { TRACK_IGNORE, activeTracking, revisionDateNow, withTrackMarker } from './revisions'
+
+/** cells (by position in the table) covering grid columns [left, right) */
+function columnCells(table: PmNode, map: TableMap, left: number, right: number): number[] {
+  const seen = new Set<number>()
+  for (let row = 0; row < map.height; row++)
+    for (let col = left; col < right; col++) seen.add(map.map[row * map.width + col]!)
+  return [...seen]
+}
+
+/** Word records a column insert as w:cellIns on each new cell */
+function recordColumnInsert(
+  tr: Transaction,
+  tablePos: number,
+  left: number,
+  right: number,
+  author: string,
+): void {
+  const table = tr.doc.nodeAt(tablePos)!
+  const map = TableMap.get(table)
+  const date = revisionDateNow()
+  for (const pos of columnCells(table, map, left, right)) {
+    const rect = map.findCell(pos)
+    // a widened merged cell is not a new one
+    if (rect.left < left || rect.right > right) continue
+    const cell = table.nodeAt(pos)!
+    tr.setNodeMarkup(tablePos + 1 + pos, undefined, {
+      ...cell.attrs,
+      cellRevision: { kind: 'ins', author, date },
+      rawTcPr: withTrackMarker(
+        cell.attrs.rawTcPr as string | null,
+        'w:cellIns',
+        'w:tcPr',
+        author,
+        date,
+      ),
+    })
+  }
+  tr.setMeta(TRACK_IGNORE, true)
+}
+
+/** Word keeps a tracked-deleted column visible: w:cellDel on each cell, its text struck */
+function recordColumnDelete(
+  state: EditorState,
+  tablePos: number,
+  left: number,
+  right: number,
+  author: string,
+): Transaction | null {
+  const table = state.doc.nodeAt(tablePos)!
+  const map = TableMap.get(table)
+  // a merged cell reaching into surviving columns cannot carry the deletion: it stays
+  const cells = columnCells(table, map, left, right).filter((pos) => {
+    const rect = map.findCell(pos)
+    return rect.left >= left && rect.right <= right
+  })
+  if (cells.length === 0) return null
+  const ownInsertion = (pos: number) => {
+    const rev = table.nodeAt(pos)!.attrs.cellRevision as { kind?: string; author?: string } | null
+    return rev?.kind === 'ins' && rev.author === author
+  }
+  if (cells.every(ownInsertion)) return null
+  const date = revisionDateNow()
+  const tr = state.tr.setMeta(TRACK_IGNORE, true)
+  const del = state.schema.marks.del.create({ author, date })
+  for (const pos of cells.sort((a, b) => b - a)) {
+    const cell = table.nodeAt(pos)!
+    const at = tablePos + 1 + pos
+    tr.setNodeMarkup(at, undefined, {
+      ...cell.attrs,
+      cellRevision: { kind: 'del', author, date },
+      rawTcPr: withTrackMarker(
+        cell.attrs.rawTcPr as string | null,
+        'w:cellDel',
+        'w:tcPr',
+        author,
+        date,
+      ),
+    })
+    tr.addMark(at + 1, at + cell.nodeSize - 1, del)
+  }
+  return tr
+}
 
 /** Word's Table menu operations that prosemirror-tables has no command for.
  *  Structural edits rebuild the whole table node from a placed-cell grid: a
@@ -452,6 +535,8 @@ export function insertRowsOrColumns(
     const fitted =
       newWidths && total > maxWidthPx ? newWidths.map((w) => (w * maxWidthPx) / total) : newWidths
     reflowColumns(tr, tablePos, fitted, newPct)
+    const track = activeTracking(state)
+    if (track) recordColumnInsert(tr, tablePos, at, at + n, track.author)
     dispatch?.(tr)
     return true
   }
@@ -467,6 +552,12 @@ export const deleteTableColumn: Command = (state, dispatch) => {
   if (!isInTable(state)) return false
   const rect = selectedRect(state)
   const tablePos = rect.tableStart - 1
+  const track = activeTracking(state)
+  const recorded = track && recordColumnDelete(state, tablePos, rect.left, rect.right, track.author)
+  if (recorded) {
+    dispatch?.(recorded)
+    return true
+  }
   const widths = columnWidthsPx(rect.table, rect.map)
   const pct = pctOf(rect.table, rect.map, widths)
   const captured: { tr?: Transaction } = {}

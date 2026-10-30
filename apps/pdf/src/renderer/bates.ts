@@ -54,7 +54,14 @@ export function validateBates(cfg: Omit<BatesConfig, 'color' | 'position'>): Bat
  * interactive insert flow uses, because the writer has no glyph metrics.
  */
 export function buildBatesInserts(
-  pages: readonly { width: number; height: number; rotate: number; x0?: number; y0?: number }[],
+  pages: readonly {
+    width: number
+    height: number
+    rotate: number
+    x0?: number
+    y0?: number
+    userUnit?: number
+  }[],
   cfg: BatesConfig,
   measure: (text: string, fontSize: number) => number,
 ): TextInsertInput[] {
@@ -62,7 +69,7 @@ export function buildBatesInserts(
   const last = cfg.lastPage ?? pages.length
   for (let index = cfg.firstPage - 1; index < Math.min(last, pages.length); index++) {
     // display corners are crop-relative: the user-space origin lands on the cropped page
-    const { width, height, rotate, x0 = 0, y0 = 0 } = pages[index]!
+    const { width, height, rotate, x0 = 0, y0 = 0, userUnit = 1 } = pages[index]!
     const landscape = (((rotate % 360) + 360) % 360) % 180 === 90
     const displayWidth = landscape ? height : width
     const displayHeight = landscape ? width : height
@@ -90,7 +97,11 @@ export function buildBatesInserts(
     // The one display→user transform the app owns: a hand-rolled copy agreed
     // with it only for 0°, and viewToPdf also carries the CropBox origin and
     // /UserUnit.
-    const [ux, uy] = viewToPdf({ pw: width, ph: height, rot: rotate, x0, y0 }, xDisplay, yDisplay)
+    const [ux, uy] = viewToPdf(
+      { pw: width, ph: height, rot: rotate, x0, y0, userUnit },
+      xDisplay,
+      yDisplay,
+    )
     out.push({
       pageIndex: index,
       origin: [ux, uy],

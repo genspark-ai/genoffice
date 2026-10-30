@@ -6,7 +6,7 @@ import { modelTextOf, type ModelViewWorkbook } from '../src/renderer/ai/redact-v
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
 
 const PHONE = '13800138000'
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 
 const SHEETS = [
   { id: 'sh1', name: 'Customers' },
@@ -52,7 +52,7 @@ describe('the workbook as the model may read it', () => {
 
   it('shows the label the reader chose, in place of the value', () => {
     const out = modelTextOf(WORKBOOK, indexWith())
-    expect(out).toContain('B2: {{客户电话}}')
+    expect(out).toContain('B2: {{\u5ba2\u6237\u7535\u8bdd}}')
   })
 
   it('leaves the cells around a mark untouched', () => {

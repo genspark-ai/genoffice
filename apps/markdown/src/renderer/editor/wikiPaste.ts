@@ -23,7 +23,7 @@ interface Conversion {
   embed: string | null
 }
 
-/** the `[[...]]` and `![[...]]` literals in the text nodes of the textblocks across [from, to] */
+/** the `[[...]]` and `![[...]]` literals touching [from, to]; typed ones elsewhere in the block stay text */
 function conversions(doc: PmNode, from: number, to: number): Conversion[] {
   const out: Conversion[] = []
   doc.nodesBetween(from, to, (node, pos) => {
@@ -52,11 +52,11 @@ function conversions(doc: PmNode, from: number, to: number): Conversion[] {
           at = open + 2
           continue
         }
-        out.push({
-          from: base + start,
-          to: base + start + match[0].length,
-          embed: bang ? match[0] : null,
-        })
+        const matchFrom = base + start
+        const matchTo = matchFrom + match[0].length
+        if (matchTo > from && matchFrom < to) {
+          out.push({ from: matchFrom, to: matchTo, embed: bang ? match[0] : null })
+        }
         at = start + match[0].length
       }
     })

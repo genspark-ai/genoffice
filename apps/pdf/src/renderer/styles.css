@@ -5022,7 +5022,7 @@ button {
 }
 
 .pdf-compare-other {
-  color: var(--pdf-prop-bg);
+  color: var(--text-muted);
 }
 
 .pdf-compare-list {

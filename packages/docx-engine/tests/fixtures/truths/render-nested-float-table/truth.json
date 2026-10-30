@@ -1,0 +1,54 @@
+{
+  "id": "render-nested-float-table",
+  "title": "A tblpPr table nested in a cell floats tblpY below its cell's content top, not the page top, and the empty paragraphs wrapping beside it do not extend the row",
+  "section": "word-truths.md#L759",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf drawings: Letter, Calibri 11; outer rules 85.68 / 246.96 / 408.24 (two rows of 161.28 = trHeight 150 + 2 x 5.4 cell margin + gridline), nested top rules 104.64 and 265.92 = 18.96 below each outer rule = 5.4 margin + 13.05 tblpY (+ half borders) in both rows although tblpY names page Y 13.05; nested rows 13.92; lead glyph top 72.05, tail 408.53",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "blockPage",
+      "block": 2,
+      "expect": 1,
+      "note": "the five empty paragraphs per cell wrap beside the float; nothing spills"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 1,
+      "expect": 322.56,
+      "tol": 2,
+      "note": "both rows measure exactly their trHeight + cell margins: the float plus its anchor lines is shorter than the minimum"
+    },
+    {
+      "kind": "nestedTableTopPt",
+      "block": 1,
+      "nth": 0,
+      "expect": 13.05,
+      "tol": 0.6,
+      "note": "row 1: tblpY 261 twips below the cell content top; gen floats the nested table 12.42pt below the cell content top (margin-top 17.4px minus the cell padding convention), 0.63pt short of Word",
+      "status": "failing"
+    },
+    {
+      "kind": "nestedTableTopPt",
+      "block": 1,
+      "nth": 1,
+      "expect": 13.05,
+      "tol": 0.6,
+      "note": "row 2: same offset against its own cell, nowhere near page Y; gen 12.42pt, same as row 1",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 336.48,
+      "tol": 1.5,
+      "note": "lead to tail: 13.44 line + 322.56 table + gridline"
+    }
+  ],
+  "docx": "probe.docx"
+}

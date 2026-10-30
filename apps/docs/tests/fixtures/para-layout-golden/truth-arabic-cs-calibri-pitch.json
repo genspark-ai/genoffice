@@ -1,0 +1,19 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/arabic-cs-calibri-pitch/probe.docx",
+  "paragraphs": 5,
+  "hashes": [
+    "b3e7b9f303e4975f",
+    "526c33d93ce90120",
+    "0711530375792149",
+    "c9472bf177d48b59",
+    "a7054a214a79472d"
+  ],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

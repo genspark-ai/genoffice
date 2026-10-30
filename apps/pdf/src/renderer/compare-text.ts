@@ -128,11 +128,7 @@ export function compareDocuments(left: PageText[], right: PageText[]): CompareRe
     const na = normalizePageText(a.text)
     const nb = normalizePageText(b.text)
     if (na.length > MAX_DIFF_LINES || nb.length > MAX_DIFF_LINES) {
-      // Past the cap the quadratic LCS is skipped, but identity still is
-      // not: a linear join compare separates an identical page from a
-      // changed one, so a document with huge pages compared against a copy
-      // of itself does not report phantom diffs wholesale.
-      const identical = na.length === nb.length && na.join('\n') === nb.join('\n')
+      const identical = na.length === nb.length && na.every((line, k) => line === nb[k])
       if (identical) {
         pages.push({ pageIndex: i, added: [], removed: [], addedCount: 0, removedCount: 0 })
       } else {

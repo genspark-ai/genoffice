@@ -100,6 +100,11 @@ export const cs = {
     'Sledování změn zapnuto: úpravy obsahu od AI se označují jako revize (vložení podtržené, odstranění přeškrtnuté); přijměte nebo odmítněte v části Revize',
   aiTrackOffTitle:
     'Sledování změn vypnuto: úpravy AI se použijí okamžitě (stále se můžete vrátit pomocí snímků)',
+  aiRevisionBarTitle: 'Revize',
+  aiRevisionCount: 'Čekající změny: {count}',
+  aiRevisionRejectAll: 'Odmítnout vše',
+  aiRevisionAcceptAll: 'Přijmout vše',
+  aiRevisionPara: 'Odstavec {n}',
   aiTurnLimit:
     'Tento úkol byl pozastaven před dokončením všech kroků. Dokončené úpravy jsou zachovány; vyberte Pokračovat pro dokončení zbývající práce.',
   aiStopped: '(Zastaveno)',

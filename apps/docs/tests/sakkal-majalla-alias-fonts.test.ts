@@ -1,5 +1,5 @@
 /**
- * Sakkal Majalla aliases (fonts.css): Word renders the M365 cloud face real;
+ * Sakkal Majalla aliases (fonts.generated.css): Word renders the M365 cloud face real;
  * the per-class stand-ins must land on its advances (hmtx of the cloud cut)
  * and pin its hhea box.
  */
@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.css'), 'utf8')
+const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.generated.css'), 'utf8')
 
 function faces(family: string) {
   return [...css.matchAll(/@font-face \{([^}]*)\}/g)]

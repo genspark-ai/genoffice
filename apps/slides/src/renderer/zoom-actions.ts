@@ -4,8 +4,8 @@
  * jump link to it; the whole insert is one undo step.
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
-import { mergeSlideUpdate } from '../shared/slide-update'
-import type { GetLayoutsResult, SectionInfo } from '../shared/ipc'
+import { tryMergeSlideUpdate } from '../shared/slide-update'
+import type { GetLayoutsResult, SectionInfo, SlideUpdate } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
 import { FIT_WIDTH } from './app-constants'
 import { t } from './i18n/locale'
@@ -181,6 +181,13 @@ export function summaryZoomSections(
   }))
 }
 
+/** The deck after a reply; refetched whole when the reply names a slide this window has not seen. */
+async function mergedDeck(current: RenderSlide[], update: SlideUpdate): Promise<RenderSlide[]> {
+  return (
+    tryMergeSlideUpdate(current, update) ?? (await window.slidesApi.getRenderSlides()) ?? current
+  )
+}
+
 async function insertSummarySlide(
   ctx: ActionCtx,
   before: number,
@@ -194,7 +201,7 @@ async function insertSummarySlide(
       fitWidthPx: FIT_WIDTH,
       ...(before === 0 ? { before: true } : {}),
     })
-    return r ? { slides: mergeSlideUpdate(ctx.slides, r), index: r.index } : null
+    return r ? { slides: await mergedDeck(ctx.slides, r), index: r.index } : null
   }
   const r = await window.slidesApi.addSlideWithLayout({
     sourceIndex: Math.max(before - 1, 0),
@@ -202,11 +209,11 @@ async function insertSummarySlide(
     fitWidthPx: FIT_WIDTH,
   })
   if (!r) return null
-  const added = { slides: mergeSlideUpdate(ctx.slides, r), index: r.index }
+  const added = { slides: await mergedDeck(ctx.slides, r), index: r.index }
   if (before > 0) return added
   // The layout op only appends after a slide; landing at position 0 takes one more move
   const moved = await window.slidesApi.moveSlide({ fromIndex: r.index, toIndex: 0 })
-  return moved ? { slides: mergeSlideUpdate(added.slides, moved), index: 0 } : added
+  return moved ? { slides: await mergedDeck(added.slides, moved), index: 0 } : added
 }
 
 /**

@@ -62,7 +62,7 @@ describe('docStyleCss header/footer strips under a typed grid', () => {
 
   it('declares the document line factor on .page-wrap for the canvas strips', () => {
     const css = docStyleCss(parsedWith(null))
-    const wrap = /\.page-wrap \{ --doc-line-factor:([0-9.]+) \}/.exec(css)
+    const wrap = /\.page-wrap \{ --doc-line-factor:([0-9.]+);/.exec(css)
     const page = /\.doc-page, \.pv-page \{[^}]*--doc-line-factor:([0-9.]+)/.exec(css)
     expect(wrap?.[1]).toBeDefined()
     expect(wrap?.[1]).toBe(page?.[1])

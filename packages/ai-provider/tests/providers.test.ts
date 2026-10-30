@@ -133,6 +133,15 @@ describe('provider model catalog', () => {
     expect(kimi.defaultModel).toBe('kimi-k3.1-pro')
     expect(kimi.needsBaseUrl).toBeUndefined()
   })
+
+  it('seeds Claude with Sonnet 5.5 as default and Gemini with 4 Argon ahead of 3.8 Flash', () => {
+    const anthropic = AI_PROVIDERS.find((provider) => provider.id === 'anthropic')!
+    expect(anthropic.models.slice(0, 2)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+    expect(anthropic.defaultModel).toBe('claude-sonnet-5-5')
+    const gemini = AI_PROVIDERS.find((provider) => provider.id === 'gemini')!
+    expect(gemini.models.slice(0, 2)).toEqual(['gemini-4-argon', 'gemini-3.8-flash'])
+    expect(gemini.defaultModel).toBe('gemini-3.8-flash')
+  })
 })
 
 describe('resolveAiSettings', () => {

@@ -11,26 +11,47 @@ import {
   type Run,
   type SectionSettings,
 } from '@genoffice/docx-engine'
+import { cssRunFontFamily, estimateHfHeight, runLetterSpacingCss } from '../line-metrics'
 import {
-  asciiOnlyCjkFace,
-  cjkDeclaredLineFactor,
-  cssLineHeight,
-  cssRunFontFamily,
-  emptyEaSlotHangulFactor,
-  estimateHfHeight,
-  isCjkFontName,
-  lineHeightFactor,
-  runLatinFactorFaces,
-  runLetterSpacingCss,
-  runsLineFactor,
-  textHasCjk,
-} from '../line-metrics'
+  anchorXBand,
+  anchorYBand,
+  resolveAnchor,
+  xAlignOf,
+  xOriginOf,
+  yOriginOf,
+  type AnchorFrame,
+} from './anchor-geometry'
 import { borderCssStyle, borderDrawnPx, cellDiagonalCss, isDrawnBorder } from './border-metrics'
 import { effectivePPrStyle, effectiveRPrStyle } from './effective-css'
 import { setDkBackground, setDkBackgroundImage, setDkBorder, setDkColor } from './dark-page'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
 import { hfParasOf } from './hf-text'
+import { currentRevisionDisplay, runHiddenIn } from './revision-view'
 import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
+import {
+  fromHfParagraph,
+  hfLineFactorNumber,
+  hfParaLineHeightCss,
+  hfRunFace,
+  toStyleRecord,
+} from './para-layout-spec'
+export { hfRunFace } from './para-layout-spec'
+import {
+  paraBorderCss,
+  paraBorderLinesWithPad,
+  paraBorderPadding,
+  paraBorderShadowDecls,
+} from './para-border-css'
+export {
+  PARA_BORDER_SHADOW,
+  paraBorderCss,
+  paraBorderLinesWithPad,
+  paraBorderPadding,
+  paraBorderPaddingDecls,
+  paraBorderShadowDecls,
+  type ParaBorderPadding,
+  type ParaBorderSideLines,
+} from './para-border-css'
 
 /**
  * Plain-DOM header/footer rendering for the canvas page gaps (M4 always-on
@@ -38,70 +59,6 @@ import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
  * same PAGE_MARK / NUMPAGES substitution — but built imperatively because page gaps
  * are ProseMirror widget decorations, not React children.
  */
-
-/** w:pBdr line CSS: declared color/width when present, legacy 1px #444 otherwise (document content color) */
-export function paraBorderCss(line?: { color?: string; szPt?: number }): string {
-  const widthPx = line?.szPt ? Math.max(1, Math.round((line.szPt * 96) / 72)) : 1
-  return `${widthPx}px solid #${line?.color ?? '444'}`
-}
-
-export type ParaBorderPadding = Partial<
-  Record<'paddingTop' | 'paddingRight' | 'paddingBottom' | 'paddingLeft', string>
->
-
-export type ParaBorderSideLines = Partial<
-  Record<
-    't' | 'b' | 'l' | 'r',
-    { color?: string; szPt?: number; spacePt?: number; none?: true } | null
-  >
->
-
-/** the model's drawn lines plus the reset sides whose w:space still pads (borderPad) */
-export function paraBorderLinesWithPad(
-  lines?: ParaBorderSideLines | null,
-  pad?: Partial<Record<'t' | 'b' | 'l' | 'r', number>> | null,
-): ParaBorderSideLines {
-  const out: ParaBorderSideLines = { ...lines }
-  for (const ch of ['t', 'b', 'l', 'r'] as const) {
-    if (pad?.[ch]) out[ch] = { none: true, spacePt: pad[ch] }
-  }
-  return out
-}
-
-/**
- * Padding for the drawn w:pBdr sides and the none sides that keep a w:space
- * (Word pads those too), as longhands so a direct side and a style-level side
- * on different edges layer per side (Word merges pBdr per side). Top/bottom:
- * the line sits w:space pt from the text and the gap is part of the paragraph
- * height; left/right sides never move the text (Word probe: x stays at the
- * margin, w:space only widens the border/shading box).
- */
-export function paraBorderPadding(drawn: string, lines?: ParaBorderSideLines): ParaBorderPadding {
-  const out: ParaBorderPadding = {}
-  const v = (ch: 't' | 'b') => {
-    const space = lines?.[ch]?.spacePt
-    return space ? `${space}pt` : '0'
-  }
-  const padded = (ch: 't' | 'b') => drawn.includes(ch) || lines?.[ch]?.none === true
-  if (padded('t')) out.paddingTop = v('t')
-  if (padded('b')) out.paddingBottom = v('b')
-  return out
-}
-
-/** the shading box extended by the none-side left/right w:space; the text never moves */
-export const PARA_BORDER_SHADOW =
-  'calc(-1 * var(--pbdr-l, 0pt)) 0 0 var(--pbdr-fill), var(--pbdr-r, 0pt) 0 0 var(--pbdr-fill)'
-
-/** `--pbdr-l/r` for none left/right sides with a w:space (plus the shadow that paints them) */
-export function paraBorderShadowDecls(lines?: ParaBorderSideLines): string[] {
-  const out: string[] = []
-  for (const ch of ['l', 'r'] as const) {
-    const line = lines?.[ch]
-    if (line?.none && line.spacePt) out.push(`--pbdr-${ch}:${line.spacePt}pt`)
-  }
-  if (out.length > 0) out.push(`box-shadow:${PARA_BORDER_SHADOW}`)
-  return out
-}
 
 export type ParaBorderMergeFlags = { suppressTop: boolean; suppressBottom: boolean }
 
@@ -150,19 +107,6 @@ export function hfParaBorderStyle(
     style[k.startsWith('--') ? k : 'boxShadow'] = decl.slice(i + 1)
   }
   return { style, borders }
-}
-
-const PADDING_PROP = {
-  paddingTop: 'padding-top',
-  paddingRight: 'padding-right',
-  paddingBottom: 'padding-bottom',
-  paddingLeft: 'padding-left',
-} as const
-
-export function paraBorderPaddingDecls(padding: ParaBorderPadding): string[] {
-  return (Object.keys(PADDING_PROP) as Array<keyof typeof PADDING_PROP>)
-    .filter((k) => padding[k] !== undefined)
-    .map((k) => `${PADDING_PROP[k]}:${padding[k]}`)
 }
 
 /** One OOXML border → CSS border value; 'none' means explicitly borderless */
@@ -238,20 +182,153 @@ export function hfCellGeometry(cell: HfTableCell): HfCellGeometry {
   }
 }
 
-/** how far a layout-table row hangs into the start margin (negative tblInd), px */
-export function hfIndentOverhangPx(paras: readonly HfParagraph[]): number {
-  return Math.max(0, ...paras.map((p) => -(p.row?.indentTwips ?? 0) / TWIPS_PER_PX))
+/** strip geometry a positioned layout-table row (w:tblpPr / w:jc) is placed against, px */
+export interface HfRowGeom {
+  kind: 'header' | 'footer'
+  /** strip column width */
+  columnPx?: number
+  /** page x of the strip's left edge */
+  stripLeftPx?: number
+  pageWPx?: number
+  marginRightPx?: number
+  marginTopPx?: number
+  /** header strip top on the page: origin of page-anchored w:tblpY */
+  headerStripTopPx?: number
 }
 
-/** Layout-table row box: left offset of the table edge and the declared w:trHeight */
-export function hfRowStyle(row: HfTableRow | undefined): Record<string, string> {
+export function hfRowGeomOf(
+  kind: 'header' | 'footer',
+  geom: HfStripGeom | undefined,
+  columnPx = hfStripColumnPx(geom),
+): HfRowGeom {
+  if (!geom) return { kind, ...(columnPx != null ? { columnPx } : {}) }
+  return {
+    kind,
+    ...(columnPx != null ? { columnPx } : {}),
+    stripLeftPx: geom.stripLeft ?? geom.marginLeft,
+    pageWPx: geom.pageW,
+    marginRightPx: geom.marginRight,
+    marginTopPx: geom.marginTop,
+    headerStripTopPx: geom.headerStripTop,
+  }
+}
+
+/** Left edge (px from the strip column's left edge) of a w:tblpPr-positioned
+ *  row; null = the row stays in the strip flow (text-anchored, or the geometry
+ *  it positions against is unknown). Word measures w:tblpX from the page edge
+ *  or the margin per w:horzAnchor; w:tblpXSpec centring needs the table width. */
+export function hfRowFloatLeftPx(row: HfTableRow, geom?: HfRowGeom): number | null {
+  const f = row.float
+  if (!f || !geom) return null
+  const x = (f.xTwips ?? 0) / TWIPS_PER_PX
+  const width = row.widthTwips ? row.widthTwips / TWIPS_PER_PX : undefined
+  const align = xAlignOf(f.xSpec)
+  const fromPage = f.horzAnchor === 'page'
+  // numeric X (and the left / inside keyword): from the page edge or the column edge
+  if (!align || align === 'left') {
+    if (!fromPage) return x
+    return geom.stripLeftPx == null ? null : x - geom.stripLeftPx
+  }
+  if (width == null) return null
+  if (fromPage ? geom.stripLeftPx == null : geom.columnPx == null) return null
+  const a = resolveAnchor(
+    { relH: f.horzAnchor ?? null, xSpec: f.xSpec, widthPx: width },
+    hfRowFrame(geom),
+    HF_ROW_CTX,
+  )
+  return a.pageX == null ? null : a.pageX - (geom.stripLeftPx ?? 0)
+}
+
+const HF_ROW_CTX = { kind: 'hf', surface: 'static' } as const
+
+/** page frame of a strip row: the margin band is the strip column (inherited widths included) */
+function hfRowFrame(geom: HfRowGeom): AnchorFrame {
+  const stripLeft = geom.stripLeftPx ?? 0
+  return {
+    ...(geom.pageWPx != null ? { page: { w: geom.pageWPx, h: Number.POSITIVE_INFINITY } } : {}),
+    ...(geom.columnPx != null ? { column: { x: stripLeft, w: geom.columnPx } } : {}),
+    // the margin band is the strip column (inherited widths included)
+    ...(geom.marginTopPx != null
+      ? {
+          margins: {
+            left: stripLeft,
+            right:
+              geom.pageWPx != null && geom.columnPx != null
+                ? geom.pageWPx - stripLeft - geom.columnPx
+                : 0,
+            top: geom.marginTopPx,
+            bottom: 0,
+          },
+        }
+      : {}),
+  }
+}
+
+/** page-anchored w:tblpY of the first row of a header table, as a gap below the
+ *  strip top (px); the footer strip grows upward, so its tables stay in flow */
+function hfRowFloatTopPx(row: HfTableRow, geom: HfRowGeom | undefined, first: boolean): number {
+  const f = row.float
+  if (!f || !geom || !first || geom.kind !== 'header' || f.yTwips == null) return 0
+  if (geom.headerStripTopPx == null) return 0
+  if (f.vertAnchor !== 'page' && f.vertAnchor !== 'margin') return 0
+  const band = anchorYBand(f.vertAnchor, hfRowFrame(geom))
+  if (!band) return 0
+  return Math.max(0, band[0] + f.yTwips / TWIPS_PER_PX - geom.headerStripTopPx)
+}
+
+/** left edge and width (px, strip-column relative) a row's box occupies */
+function hfRowExtentPx(row: HfTableRow, geom?: HfRowGeom): { left: number; width?: number } {
+  const width = row.widthTwips ? row.widthTwips / TWIPS_PER_PX : undefined
+  const floated = hfRowFloatLeftPx(row, geom)
+  if (floated != null) return { left: floated, width }
+  if (row.align && width != null && geom?.columnPx != null) {
+    const free = geom.columnPx - width
+    return { left: row.align === 'center' ? free / 2 : free, width }
+  }
+  return { left: (row.indentTwips ?? 0) / TWIPS_PER_PX, width }
+}
+
+/** how far layout-table rows hang into the start margin (negative tblInd, w:tblpPr past the margin), px */
+export function hfIndentOverhangPx(paras: readonly HfParagraph[], geom?: HfRowGeom): number {
+  return Math.max(0, ...paras.map((p) => (p.row ? -hfRowExtentPx(p.row, geom).left : 0)))
+}
+
+/** how far layout-table rows run past the strip column's right edge (an
+ *  over-wide positioned table), px; capped at the paper edge like tab tails */
+export function hfRowRightOverhangPx(paras: readonly HfParagraph[], geom?: HfRowGeom): number {
+  if (!geom || geom.columnPx == null) return 0
+  let over = 0
+  for (const p of paras) {
+    if (!p.row) continue
+    const { left, width } = hfRowExtentPx(p.row, geom)
+    if (width != null) over = Math.max(over, left + width - geom.columnPx)
+  }
+  return Math.min(over, geom.marginRightPx ?? over)
+}
+
+/** Layout-table row box: left offset of the table edge (w:tblInd, or the
+ *  w:tblpPr / w:jc placement), the declared w:trHeight and a page-anchored
+ *  table's gap below the strip top */
+export function hfRowStyle(
+  row: HfTableRow | undefined,
+  geom?: HfRowGeom,
+  first = false,
+): Record<string, string> {
   const style: Record<string, string> = {}
   if (!row) return style
-  // a negative indent hangs the table into the margin (the strip widens its
-  // clip box by --hf-ind-over) and the auto-width row grows by the overhang
-  if (row.indentTwips) {
+  const floated = hfRowFloatLeftPx(row, geom)
+  if (floated != null) {
+    style.marginLeft = `${floated.toFixed(1)}px`
+  } else if (row.align) {
+    // Word aligns the table in the column; an over-wide one overflows both sides
+    style.justifyContent = row.align === 'center' ? 'center' : 'flex-end'
+  } else if (row.indentTwips) {
+    // a negative indent hangs the table into the margin (the strip widens its
+    // clip box by --hf-ind-over) and the auto-width row grows by the overhang
     style[row.bidiVisual ? 'marginRight' : 'marginLeft'] = px(row.indentTwips)
   }
+  const top = hfRowFloatTopPx(row, geom, first)
+  if (top > 0.5) style.marginTop = `${top.toFixed(1)}px`
   if (row.bidiVisual) style.flexDirection = 'row-reverse'
   if (row.heightTwips) {
     if (row.heightRule === 'exact') {
@@ -285,17 +362,15 @@ export function hfParaIndentStyle(para: {
 /** cell paragraph box; a tab-wrapped paragraph spans several line boxes, so
  *  first-line-only (indent, space before) and last-line-only (space after)
  *  props land on the matching line */
-export function hfCellParaStyle(
+export function hfCellParaBox(
   props: HfCellParaProps | undefined,
   line: { first: boolean; last: boolean } = { first: true, last: true },
   runs?: Run[],
   row?: Pick<HfTableRow, 'additiveSpacing'>,
-): Record<string, string> {
-  const style: Record<string, string> = runs ? hfParaLineFactorStyle(runs) : {}
-  const fs = runs ? hfParaStrutFontSize(runs) : null
-  if (fs) style.fontSize = fs
-  else if (props?.sizeHalfPoints) style.fontSize = `${props.sizeHalfPoints / 2}pt`
-  if (!props) return style
+): { style: Record<string, string>; classes: string[] } {
+  const box = fromHfParagraph(props ?? {}, runs ?? [])
+  const style = toStyleRecord(box)
+  if (!props) return { style, classes: box.classes }
   if (props.align) {
     style.textAlign =
       props.align === 'left' || props.align === 'center' || props.align === 'right'
@@ -315,9 +390,11 @@ export function hfCellParaStyle(
       { length: px, indentLeftAsPadding: true, line },
     ),
   )
-  const lh = hfParaLineHeightCss(props)
-  if (lh) style.lineHeight = lh
-  return style
+  return { style, classes: box.classes }
+}
+
+export function hfCellParaStyle(...args: Parameters<typeof hfCellParaBox>): Record<string, string> {
+  return hfCellParaBox(...args).style
 }
 
 /** Object.assign for style records that may carry custom properties */
@@ -329,18 +406,21 @@ function assignStyle(el: HTMLElement, style: Record<string, string>): void {
 }
 
 function applyRunStyle(span: HTMLElement, run: Run): void {
+  if (run.ins) span.classList.add('doc-ins')
+  if (run.del) span.classList.add('doc-del')
   const cs = run.effective?.cs ? run.effective : undefined
-  const bold = run.bold ?? cs?.bold
-  const italic = run.italic ?? cs?.italic
+  const face = hfRunFace(run)
+  const bold = face.bold ?? cs?.bold
+  const italic = face.italic ?? cs?.italic
   assignStyle(
     span,
     effectiveRPrStyle(
       {
-        sizeHalfPoints: run.sizeHalfPoints ?? cs?.sizeHalfPoints ?? null,
-        fontFamily: run.font || run.fontAscii ? (run.fontAscii ?? run.font ?? null) : null,
+        sizeHalfPoints: face.sizeHalfPoints ?? cs?.sizeHalfPoints ?? null,
+        fontFamily: face.font || face.fontAscii ? (face.fontAscii ?? face.font ?? null) : null,
         bold: bold === true,
       },
-      { boldWeight: '600', fontFamilyCss: () => cssRunFontFamily(run.fontAscii, run.font) },
+      { boldWeight: '600', fontFamilyCss: () => cssRunFontFamily(face.fontAscii, face.font) },
     ),
   )
   if (bold === false) span.style.fontWeight = 'normal'
@@ -427,14 +507,15 @@ function hfRunsWidthPx(runs: Run[], display: (text: string) => string): number {
     if (!run.text) continue
     const shown = display(run.text)
     const text = run.caps === 'all' ? shown.toUpperCase() : shown
-    const sizePt = run.sizeHalfPoints ? run.sizeHalfPoints / 2 : basePt
+    const face = hfRunFace(run)
+    const sizePt = face.sizeHalfPoints ? face.sizeHalfPoints / 2 : basePt
     if (hfMeasureCtx) {
       const family =
-        run.font || run.fontAscii ? cssRunFontFamily(run.fontAscii, run.font) : 'sans-serif'
+        face.font || face.fontAscii ? cssRunFontFamily(face.fontAscii, face.font) : 'sans-serif'
       // Detached-canvas font parsing cannot resolve var() (no element style context —
       // the whole assignment would be ignored): inline each var's fallback chain
       const canvasFamily = family.replace(/var\(--[\w-]+,([^)]*)\)/g, '$1')
-      hfMeasureCtx.font = `${run.italic ? 'italic ' : ''}${run.bold ? '600 ' : ''}${(sizePt * 4) / 3}px ${canvasFamily}`
+      hfMeasureCtx.font = `${face.italic ? 'italic ' : ''}${face.bold ? '600 ' : ''}${(sizePt * 4) / 3}px ${canvasFamily}`
       w += hfMeasureCtx.measureText(text).width
     } else {
       w += text.length * sizePt * 0.5 * (4 / 3)
@@ -453,15 +534,36 @@ function hfRunsWidthPx(runs: Run[], display: (text: string) => string): number {
  * has no tab. Without any stops the implicit header stops apply (center at
  * half the column, then its right edge).
  */
+/** the paragraph's runs as the current Markup view shows them, ptabAligns
+ *  re-indexed to the tabs that remain (it indexes every authored tab) */
+function shownTabPara<T extends Pick<HfParagraph, 'runs' | 'ptabAligns'>>(para: T): T {
+  const mode = currentRevisionDisplay()
+  if (mode === 'all' || !para.runs.some((r) => runHiddenIn(mode, r))) return para
+  const runs: Run[] = []
+  const ptabAligns: HfParagraph['ptabAligns'] = []
+  let tab = 0
+  for (const run of para.runs) {
+    const tabs = run.text.split('\t').length - 1
+    if (!runHiddenIn(mode, run)) {
+      runs.push(run)
+      for (let k = 0; k < tabs; k++) ptabAligns.push(para.ptabAligns?.[tab + k])
+    }
+    tab += tabs
+  }
+  return { ...para, runs, ...(para.ptabAligns ? { ptabAligns } : {}) }
+}
+
 export function hfTabSegments(
-  para: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
+  rawPara: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
   display: (text: string) => string = (t) => t,
   cell?: HfCellTabOpts,
   columnPx?: number,
 ): HfTabLayout | null {
-  if (!para.runs.some((r) => r.text.includes('\t'))) return null
+  const para = shownTabPara(rawPara)
+  const shown = para.runs
+  if (!shown.some((r) => r.text.includes('\t'))) return null
   const chunks: Run[][] = [[]]
-  for (const run of para.runs) {
+  for (const run of shown) {
     const pieces = run.text.split('\t')
     chunks[chunks.length - 1].push({ ...run, text: pieces[0] })
     for (const piece of pieces.slice(1)) chunks.push([{ ...run, text: piece }])
@@ -556,8 +658,8 @@ export function hfTabSegments(
   }
   // absolutely positioned segments add no flow height: an oversized run after a
   // tab (or an empty lead) would collapse to the strip's min-height and clip
-  const maxHalfPoints = Math.max(0, ...para.runs.map((r) => r.sizeHalfPoints ?? 0))
-  const faceFactor = hfRunsFaceFactor(para.runs) ?? 1.3
+  const maxHalfPoints = Math.max(0, ...shown.map((r) => r.sizeHalfPoints ?? 0))
+  const faceFactor = hfLineFactorNumber(shown) ?? 1.3
   const align = para.align
   return {
     lead: chunks[0].filter((r) => r.text !== '' || r.image),
@@ -575,16 +677,19 @@ export function hfTabSegments(
  *  tabs out from the column edge again, w:ptab alignments keep their overall
  *  order across lines. Null when the paragraph has no tab. */
 export function hfTabLines(
-  para: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
+  rawPara: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
   display: (text: string) => string = (t) => t,
   columnPx?: number,
 ): HfTabLayout[] | null {
-  if (!para.runs.some((r) => r.text.includes('\t'))) return null
-  if (!para.runs.some((r) => r.text.includes('\n'))) {
-    return [hfTabSegments(para, display, undefined, columnPx)!]
+  const para = shownTabPara(rawPara)
+  const shown = para.runs
+  if (!shown.some((r) => r.text.includes('\t'))) return null
+  if (!shown.some((r) => r.text.includes('\n'))) {
+    const single = hfTabSegments(para, display, undefined, columnPx)
+    return single ? [single] : null
   }
   const lines: Run[][] = [[]]
-  for (const run of para.runs) {
+  for (const run of shown) {
     const pieces = run.text.split('\n')
     lines[lines.length - 1].push({ ...run, text: pieces[0] })
     for (const piece of pieces.slice(1)) lines.push([{ ...run, text: piece }])
@@ -619,7 +724,7 @@ export function hfSegHasImage(seg: HfTabSegment): boolean {
 
 /** text-column width (px) strip tabs lay out against */
 export function hfStripColumnPx(geom: HfStripGeom | undefined): number | undefined {
-  return geom ? geom.pageW - geom.marginLeft - geom.marginRight : undefined
+  return geom ? (geom.columnW ?? geom.pageW - geom.marginLeft - geom.marginRight) : undefined
 }
 
 /** How far (px) tab segments run past the text column: Word keeps a stop set
@@ -628,7 +733,7 @@ export function hfStripColumnPx(geom: HfStripGeom | undefined): number | undefin
  *  widens by that much, never past the paper edge */
 export function hfTabOverflowPx(lines: HfTabLayout[], geom: HfStripGeom | undefined): number {
   if (!geom) return 0
-  const column = geom.pageW - geom.marginLeft - geom.marginRight
+  const column = hfStripColumnPx(geom)!
   let end = 0
   for (const line of lines) for (const seg of line.segments) end = Math.max(end, seg.endPx ?? 0)
   return Math.min(Math.max(0, end - column), Math.max(0, geom.marginRight))
@@ -702,102 +807,6 @@ export function hfLeadIndentCss(layout: HfTabLayout): string | null {
   return s.align === 'right'
     ? `max(0px, calc(100% - ${s.lineEndPx.toFixed(1)}px))`
     : `max(0px, calc(50% - ${(s.lineEndPx / 2).toFixed(1)}px))`
-}
-
-/** Runs declaring a face size the line by Word's factor for that face (an 8pt
- *  Times New Roman letterhead line is 9.2pt), not by the body font's factor
- *  the strip inherits from .doc-page (Cambria 1.172: 9.4, +0.5pt per line
- *  through the strut/run baseline mismatch) nor by browser metrics of the
- *  substitute. The Normal / docDefaults auto multiple still applies (an
- *  unstyled footer line under docDefaults line=276 is size x face x 1.15);
- *  it cascades as --doc-line-mult, and a direct or style w:spacing multiple
- *  overrides the whole line-height afterwards. */
-export function hfParaLineFactorStyle(runs: Run[]): Record<string, string> {
-  if (!runs.some((r) => r.fontAscii)) return {}
-  return {
-    '--doc-line-factor': runsLineFactor(runs, runs.map((r) => r.text).join('')),
-    lineHeight: HF_FACE_LINE_HEIGHT,
-  }
-}
-
-export const HF_FACE_LINE_HEIGHT = 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))'
-
-/** Largest face factor among the paragraph's text runs when every one declares
- *  a face, else null */
-export function hfRunsFaceFactor(runs: Run[]): number | null {
-  let max = 0
-  for (const run of runs) {
-    if (!(run.text ?? '').trim()) continue
-    let eaKnown = false
-    if (textHasCjk(run.text)) {
-      // CJK ink is sized by the East Asian face, as runsLineFactor picks it
-      const family =
-        run.eaSlotEmpty === true || asciiOnlyCjkFace(run) ? null : (run.font ?? run.fontAscii)
-      const emptySlotKr =
-        run.eaSlotEmpty === true ? emptyEaSlotHangulFactor(run.font, run.text) : null
-      if (emptySlotKr !== null) max = Math.max(max, emptySlotKr)
-      else if (family && isCjkFontName(family)) {
-        max = Math.max(max, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
-      } else return null
-      if (!/[A-Za-z]/.test(run.text)) continue
-      eaKnown = true
-    }
-    for (const face of runLatinFactorFaces(run.text, run.fontAscii, run.csFont)) {
-      // a mixed-script run with no Latin face is still sized by its East Asian face
-      if (!face) {
-        if (eaKnown) continue
-        return null
-      }
-      max = Math.max(max, lineHeightFactor(face))
-    }
-  }
-  return max > 0 ? max : null
-}
-
-/** strip paragraph line-height from its (style-resolved) w:spacing; strips sit
- *  outside the body grid, so multiples stay plain unitless factors */
-export function hfParaLineHeightCss(para: {
-  lineRule?: 'auto' | 'atLeast' | 'exact'
-  lineRawTwips?: number
-  lineSpacing?: number
-}): string | null {
-  if (para.lineRule === 'exact' || para.lineRule === 'atLeast') {
-    return cssLineHeight(para.lineRule, para.lineRawTwips, para.lineSpacing)
-  }
-  const m =
-    para.lineSpacing ??
-    (para.lineRule === 'auto' && para.lineRawTwips ? para.lineRawTwips / 240 : undefined)
-  return m ? `calc(var(--doc-line-factor,1.2) * ${m})` : null
-}
-
-/** Largest declared run size (pt) of one paragraph's runs when every text run
- *  declares one, else null (a run inherits the strip base). Whitespace-only runs
- *  only count when nothing else does (an empty paragraph is sized by its mark). */
-export function hfRunsStrutPt(runs: Run[]): number | null {
-  let text: number | null = null
-  let blank: number | null = null
-  for (const run of runs) {
-    if (!run.text && run.image) continue
-    const sz = run.sizeHalfPoints
-    if (!(run.text ?? '').trim()) {
-      if (sz) blank = Math.max(blank ?? 0, sz)
-      continue
-    }
-    if (!sz) return null
-    text = Math.max(text ?? 0, sz)
-  }
-  const half = text ?? blank
-  return half ? half / 2 : null
-}
-
-/** Word sizes each strip line by its own runs: the paragraph font (the em
- *  behind its strut / empty-line line-height) follows the paragraph's declared
- *  run size, shrink-only against the strip base (growth would over-reserve the
- *  push-down probe). One strip-wide max used to give every 8pt line of a
- *  letterhead the 11pt title's strut (prod corpus 017/020: +18pt body shift). */
-export function hfParaStrutFontSize(runs: Run[]): string | null {
-  const pt = hfRunsStrutPt(runs)
-  return pt == null ? null : `min(${pt}pt, var(--hf-default-fs, 10.5pt))`
 }
 
 /** parsed parts carry PAGE fields as PAGE_MARK; only mark-free values fall back to the user-typed '#' (mirrors HeaderFooterArea) */
@@ -970,15 +979,84 @@ function mountedDocCssSig(): string {
  * value computed before a new document's CSS commits is re-measured on the
  * caller's post-commit pass (App's hfMeasureEpoch) instead of going stale.
  */
+/** probe geometry a floating header table's w:tblpY resolves against; only
+ *  strips that carry one are keyed on it so plain strips still share entries */
+export function hfProbeGeomKey(
+  value: HeaderFooter | null,
+  geom: { marginTopPx: number; headerDistPx: number } | undefined,
+): string {
+  if (!geom || !value?.paras?.some((p) => p.row?.float?.yTwips != null)) return ''
+  return `${Math.round(geom.headerDistPx)}:${Math.round(geom.marginTopPx)}`
+}
+
+/** header geometry the estimate's anchored-drawing floor measures in */
+export interface HfProbeGeom {
+  marginTopPx: number
+  headerDistPx: number
+  /** page x of the strip column: page-relative drawings' side room */
+  marginLeftPx?: number
+}
+
+const isStripGeom = (g: HfStripGeom | HfProbeGeom): g is HfStripGeom => 'pageW' in g
+
+/** the estimate floor is a header rule (the body sits under a header's wrapTopAndBottom drawing) */
+function hfEstimateGeom(
+  kind: 'header' | 'footer',
+  geom: HfStripGeom | HfProbeGeom | undefined,
+): HfProbeGeom | undefined {
+  if (!geom) return undefined
+  if (!isStripGeom(geom)) return geom
+  if (kind !== 'header') return undefined
+  return {
+    marginTopPx: geom.marginTop,
+    headerDistPx: geom.headerStripTop,
+    marginLeftPx: geom.stripLeft ?? geom.marginLeft,
+  }
+}
+
+/** flow height of a strip element: the sentinel after the last flow block sits
+ *  under the collapsed bottom margin and ignores floats hanging below the text
+ *  (a side-wrapped drawing below the header lines reserves nothing, L260) */
+function hfFlowHeightPx(el: HTMLElement): number {
+  const end = document.createElement('div')
+  end.className = 'page-hf-flow-end'
+  el.append(end)
+  const h = end.getBoundingClientRect().top - el.getBoundingClientRect().top
+  end.remove()
+  return h > 0 ? h : el.getBoundingClientRect().height
+}
+
+/** the part as the current Markup view shows it: view-hidden tracked runs leave
+ *  the strip model so they neither reserve height nor place tab segments */
+export function hfValueInView(value: HeaderFooter | null): HeaderFooter | null {
+  const mode = currentRevisionDisplay()
+  if (mode === 'all' || !value?.paras) return value
+  const shown = (runs: Run[]) => runs.filter((r) => !runHiddenIn(mode, r))
+  return {
+    ...value,
+    paras: value.paras.map((p) => ({
+      ...shownTabPara(p),
+      ...(p.cells ? { cells: p.cells.map((c) => ({ ...c, paras: c.paras.map(shown) })) } : {}),
+    })),
+  }
+}
+
 export function hfReservedHeightPx(
   kind: 'header' | 'footer',
-  value: HeaderFooter | null,
+  rawValue: HeaderFooter | null,
   contentWidthPx: number,
   images?: HfImage[] | null,
-  geom?: { marginTopPx: number; headerDistPx: number },
+  /** full strip geometry lays the probe out like the canvas gap strip (floating
+   *  drawings as flow shapers at their page position); the header-only pair
+   *  keeps the positioned-row and floor maths of callers without a page */
+  geom?: HfStripGeom | HfProbeGeom,
 ): number {
-  const est = estimateHfHeight(value, contentWidthPx, images, geom)
-  const inline = (images ?? []).filter((img) => !img.floating)
+  const value = hfValueInView(rawValue)
+  const estGeom = hfEstimateGeom(kind, geom)
+  const est = estimateHfHeight(value, contentWidthPx, images, estGeom)
+  const stripGeom = geom && isStripGeom(geom) ? { ...geom, columnW: contentWidthPx } : undefined
+  const probeImages = stripGeom ? (images ?? []) : (images ?? []).filter((img) => !img.floating)
+  const inline = probeImages.filter((img) => !img.floating)
   // blank paragraphs hold their line and spacing like any other strip paragraph
   // (Word probes 2026-09-06/17): the rendered strip decides for them too
   const blankParas = !!value?.paras?.some((p) => !p.boxAnchored && !p.cells)
@@ -986,10 +1064,15 @@ export function hfReservedHeightPx(
   if (typeof document === 'undefined' || !document.body) return est
   // cell-run images can carry megabytes of base64: key on the dataUrl length only
   const noDataUrl = (k: string, v: unknown) => (k === 'dataUrl' ? String(v).length : v)
+  const geomKey = stripGeom
+    ? `s${[stripGeom.marginLeft, stripGeom.marginRight, stripGeom.marginTop, stripGeom.marginBottom, stripGeom.headerStripTop, stripGeom.footerDist, stripGeom.pageW, stripGeom.pageH, stripGeom.stripLeft ?? ''].map((v) => Math.round(Number(v))).join(':')}`
+    : hfProbeGeomKey(value, estGeom)
   const key =
-    `${kind}|${Math.round(contentWidthPx)}|${mountedDocCssSig()}|${hfProbeFontEpoch}|` +
+    `${kind}|${Math.round(contentWidthPx)}|${geomKey}|${mountedDocCssSig()}|${hfProbeFontEpoch}|` +
     `${JSON.stringify(value, noDataUrl)}|` +
-    inline.map((im) => `${im.widthPx ?? ''}x${im.heightPx ?? ''}:${im.dataUrl.length}`).join(',')
+    probeImages
+      .map((im) => `${JSON.stringify({ ...im, dataUrl: im.dataUrl.length, wordArt: undefined })}`)
+      .join(',')
   let dom = hfHeightCache.get(key)
   if (dom !== undefined) {
     // re-insert: Map iteration order is insertion order, so the oldest entry is first
@@ -1001,10 +1084,22 @@ export function hfReservedHeightPx(
     const el = makeGapHfEl({
       kind,
       value: value ?? { text: '' },
-      images: inline,
+      images: probeImages,
       pageNo: 88,
       pageTotal: 88,
       columnPx: contentWidthPx,
+      ...(stripGeom
+        ? { geom: stripGeom }
+        : estGeom
+          ? {
+              rowGeom: {
+                kind,
+                columnPx: contentWidthPx,
+                marginTopPx: estGeom.marginTopPx,
+                headerStripTopPx: estGeom.headerDistPx,
+              },
+            }
+          : {}),
     })
     el.style.position = 'static'
     el.style.left = 'auto'
@@ -1018,7 +1113,7 @@ export function hfReservedHeightPx(
       }
     }
     host.replaceChildren(el)
-    dom = el.getBoundingClientRect().height
+    dom = hfFlowHeightPx(el)
     host.replaceChildren()
     if (hfHeightCache.size >= HF_HEIGHT_CACHE_MAX) {
       const oldest = hfHeightCache.keys().next().value
@@ -1027,7 +1122,95 @@ export function hfReservedHeightPx(
     hfHeightCache.set(key, dom)
   }
   if (dom <= 0) return est
-  return Math.max(dom, estimateHfHeight(null, contentWidthPx, images, geom))
+  return Math.max(dom, estimateHfHeight(null, contentWidthPx, images, estGeom))
+}
+
+/** a side-wrapped drawing's box in strip coordinates, as the float that shapes the strip's lines */
+export interface HfObstacle {
+  side: 'left' | 'right'
+  top: number
+  height: number
+  /** float width from the strip edge on `side` to the drawing's far edge */
+  width: number
+}
+
+const SIDE_WRAPS = new Set(['square', 'tight', 'through'])
+/** narrowest gap that still takes a word (the body wrap engine's sliver, L462 approximation) */
+const HF_SIDE_WRAP_SLIVER_PX = 36
+
+/**
+ * Side-wrapped (wrapSquare / tight / through) floating drawings of a strip as
+ * flow shapers: Word lays header paragraphs around them with the body rule
+ * (L462, "the next word fits"; a blocked line lands at the drawing's bottom),
+ * and never pushes the body below them (L260). A footer strip grows upward,
+ * so only its paragraph-relative anchors have a known strip position.
+ */
+export function hfSideWrapObstacles(
+  kind: 'header' | 'footer',
+  images: readonly HfImage[] | undefined,
+  geom: HfStripGeom,
+): HfObstacle[] {
+  const column = hfStripColumnPx(geom)
+  if (!images?.length || column === undefined || column <= 0) return []
+  const stripLeft = geom.stripLeft ?? geom.marginLeft
+  const out: HfObstacle[] = []
+  for (const img of images) {
+    if (!img.floating || img.behind || !img.wrap || !SIDE_WRAPS.has(img.wrap)) continue
+    if (hfImageHangsOnPara(img)) continue
+    const w = img.widthPx ?? 0
+    const h = Math.max(1, img.heightPx ?? 0)
+    if (w <= 0) continue
+    if (kind === 'footer' && (img.posVRel !== 'paragraph' || img.posYPx == null)) continue
+    const pos = hfFloatPagePos(img, {
+      pageW: geom.pageW,
+      pageH: geom.pageH,
+      marginLeft: geom.marginLeft,
+      marginRight: geom.marginRight,
+      marginTop: geom.marginTop,
+      marginBottom: geom.marginBottom,
+      headerDist: geom.headerStripTop,
+      sectMarginTop: geom.marginTop,
+      sectMarginBottom: geom.marginBottom,
+      ...(kind === 'footer' ? { paraOriginY: 0 } : {}),
+    })
+    const left = pos.x + (pos.translateX / 100) * w - stripLeft
+    const right = left + w
+    let top = pos.y + (pos.translateY / 100) * h - (kind === 'header' ? geom.headerStripTop : 0)
+    let height = h
+    if (top < 0) {
+      height += top
+      top = 0
+    }
+    if (height <= 0 || right <= 0 || left >= column) continue
+    // text order: the gap on the left takes the line when it holds a word,
+    // otherwise the line moves past the drawing (probe 2026-10-29 CASE02/04)
+    const side: HfObstacle['side'] = left >= HF_SIDE_WRAP_SLIVER_PX ? 'right' : 'left'
+    const width = Math.min(column, side === 'left' ? right : column - left)
+    out.push({ side, top, height, width })
+  }
+  return out.sort((a, b) => a.top - b.top)
+}
+
+/** inline styles of the obstacle floats, in document order: a zero-width
+ *  spacer float lowers each box to its top (a margin would be part of the
+ *  float's margin box and shorten the lines above it); each side stacks under
+ *  its own `clear`, so a spacer bridges from the previous box's bottom */
+export function hfObstacleStyles(obstacles: readonly HfObstacle[]): Array<Record<string, string>> {
+  const bottom = { left: 0, right: 0 }
+  const out: Array<Record<string, string>> = []
+  for (const o of obstacles) {
+    const gap = o.top - bottom[o.side]
+    if (gap > 0)
+      out.push({ float: o.side, clear: o.side, width: '0px', height: `${gap.toFixed(1)}px` })
+    bottom[o.side] = Math.max(bottom[o.side], o.top) + o.height
+    out.push({
+      float: o.side,
+      clear: o.side,
+      width: `${o.width.toFixed(1)}px`,
+      height: `${o.height.toFixed(1)}px`,
+    })
+  }
+  return out
 }
 
 /** page (paper) geometry a floating header image positions against, px */
@@ -1063,15 +1246,25 @@ export function hfFloatPagePos(
   img: HfImage | HfTextBox,
   box: HfFloatBox,
 ): { x: number; y: number; translateX: 0 | -50 | -100; translateY: 0 | -50 | -100 } {
-  // horizontal band the offset/alignment measures in (relativeFrom)
-  const [bandL, bandR]: [number, number] =
-    img.posHRel === 'page'
-      ? [0, box.pageW]
-      : img.posHRel === 'leftMargin'
-        ? [0, box.marginLeft]
-        : img.posHRel === 'rightMargin'
-          ? [box.pageW - box.marginRight, box.pageW]
-          : [box.marginLeft, box.pageW - box.marginRight]
+  const vRel = img.posVRel
+  // paragraph/margin-rel wrapped images use the same origins the body
+  // push-down estimate measures from (header strip top / raw sectPr margin),
+  // so the image never chases the pushed-down margin; watermarks keep the
+  // effective margin
+  const wrapped = img.wrap && img.wrap !== 'none' && !img.behind
+  const frame: AnchorFrame = {
+    page: { w: box.pageW, h: box.pageH },
+    margins: {
+      left: box.marginLeft,
+      right: box.marginRight,
+      top: img.posYPx != null && vRel === 'margin' && wrapped ? box.sectMarginTop : box.marginTop,
+      bottom: box.marginBottom,
+    },
+    sectMargins: { top: box.sectMarginTop, bottom: box.sectMarginBottom ?? box.marginBottom },
+    paragraph: { top: box.paraOriginY ?? box.headerDist },
+  }
+  // no relativeFrom (legacy VML) measures in the margin band
+  const [bandL, bandR] = anchorXBand(img.posHRel ? xOriginOf(img.posHRel) : 'margin', frame)!
   let x: number
   let translateX: 0 | -50 | -100 = 0
   if (img.posXPx != null) {
@@ -1086,29 +1279,13 @@ export function hfFloatPagePos(
   } else {
     x = bandL
   }
-  const vRel = img.posVRel
-  const [bandT, bandB]: [number, number] =
-    vRel === 'page'
-      ? [0, box.pageH]
-      : vRel === 'topMargin'
-        ? [0, box.sectMarginTop]
-        : vRel === 'bottomMargin'
-          ? [box.pageH - (box.sectMarginBottom ?? box.marginBottom), box.pageH]
-          : [box.marginTop, box.pageH - box.marginBottom]
+  // a paragraph-relative alignment keyword measures in the margin band
+  const yOrigin = !vRel || (vRel === 'paragraph' && img.posYPx == null) ? 'margin' : yOriginOf(vRel)
+  const [bandT, bandB] = anchorYBand(yOrigin, frame)!
   let y: number
   let translateY: 0 | -50 | -100 = 0
   if (img.posYPx != null) {
-    // paragraph/margin-rel wrapped images use the same origins the body
-    // push-down estimate measures from (header strip top / raw sectPr margin),
-    // so the image never chases the pushed-down margin; watermarks keep the
-    // effective margin
-    const wrapped = img.wrap && img.wrap !== 'none' && !img.behind
-    y =
-      vRel === 'paragraph'
-        ? (box.paraOriginY ?? box.headerDist) + img.posYPx
-        : vRel === 'margin' && wrapped
-          ? box.sectMarginTop + img.posYPx
-          : bandT + img.posYPx
+    y = bandT + img.posYPx
   } else if (img.posV === 'center') {
     y = vRel && vRel !== 'paragraph' ? (bandT + bandB) / 2 : box.pageH / 2
     translateY = -50
@@ -1312,12 +1489,15 @@ export interface HfStripGeom {
   /** raw sectPr margins: origins of margin-relative offsets */
   marginTop: number
   marginBottom: number
-  /** where the header strip's top edge sits on the page (w:headerDist unless the strip is pinned higher) */
+  /** where the header strip's top edge sits on the page: w:headerDist, also under a fixed top margin above it (probe 2026-10-30) */
   headerStripTop: number
   /** w:footerDist: the footer strip's bottom edge sits this far above the page bottom */
   footerDist: number
   /** page x of the strip's left edge; absent = the left margin (a centered strip on unequal side margins sits elsewhere) */
   stripLeft?: number
+  /** column width the part is laid out at when it differs from the page's own
+   *  (a part inherited from a section of another width keeps that width) */
+  columnW?: number
 }
 
 export function hfStripGeom(set: SectionSettings): HfStripGeom {
@@ -1473,9 +1653,13 @@ export function makeGapHfEl(opts: {
   geom?: HfStripGeom
   /** text-column width tab tails wrap at when no geom is given (the height probe) */
   columnPx?: number
+  /** positioned-row geometry when only part of the page geometry is known (the height probe) */
+  rowGeom?: HfRowGeom
 }): HTMLElement {
-  const { kind, value, images, pageNo, pageTotal, geom } = opts
+  const { kind, images, pageNo, pageTotal, geom } = opts
+  const value = hfValueInView(opts.value)!
   const columnPx = opts.columnPx ?? hfStripColumnPx(geom)
+  const rowGeom = opts.rowGeom ?? hfRowGeomOf(kind, geom, columnPx)
   const legacyHash = hfUsesLegacyHash(value)
   const display = (text: string) => {
     const substituted = text
@@ -1486,6 +1670,14 @@ export function makeGapHfEl(opts: {
   const wrap = document.createElement('div')
   wrap.className = `page-hf page-hf-${kind} page-gap-hf`
   wrap.contentEditable = 'false'
+  if (geom) {
+    for (const style of hfObstacleStyles(hfSideWrapObstacles(kind, images, geom))) {
+      const ob = document.createElement('div')
+      ob.className = 'page-hf-obstacle'
+      assignStyle(ob, style)
+      wrap.append(ob)
+    }
+  }
   const stacked = (images ?? []).filter((img) => !img.floating)
   if (stacked.length > 0) {
     const imgWrap = document.createElement('div')
@@ -1525,11 +1717,14 @@ export function makeGapHfEl(opts: {
     const p = document.createElement('div')
     paraEls[index] = p
     p.className = 'page-hf-para'
-    if (!para.cells) assignStyle(p, hfParaLineFactorStyle(para.runs))
-    const lh = hfParaLineHeightCss(para)
-    if (lh) p.style.lineHeight = lh
-    const fs = para.cells ? null : hfParaStrutFontSize(para.runs)
-    if (fs) p.style.fontSize = fs
+    if (para.cells) {
+      const lh = hfParaLineHeightCss(para)
+      if (lh) p.style.lineHeight = lh
+    } else {
+      const box = fromHfParagraph(para)
+      assignStyle(p, toStyleRecord(box))
+      p.classList.add(...box.classes)
+    }
     // floating-box content: displayed in the strip, but the push-down probe
     // excludes it (Word draws it at the anchor, off the strip flow)
     if (para.boxAnchored) p.classList.add('page-hf-box-anchored')
@@ -1539,7 +1734,7 @@ export function makeGapHfEl(opts: {
     if (para.cells) {
       // layout-table row: flex columns sized by the cell widths
       p.classList.add('page-hf-row')
-      Object.assign(p.style, hfRowStyle(para.row))
+      Object.assign(p.style, hfRowStyle(para.row, rowGeom, index === 0))
       for (const cell of para.cells) {
         const cellEl = document.createElement('div')
         cellEl.className = 'page-hf-cell'
@@ -1565,7 +1760,9 @@ export function makeGapHfEl(opts: {
           if (!tabLines) {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para'
-            assignStyle(paraEl, hfCellParaStyle(props, undefined, runs, para.row))
+            const box = hfCellParaBox(props, undefined, runs, para.row)
+            assignStyle(paraEl, box.style)
+            paraEl.classList.add(...box.classes)
             if (runs.length === 0) paraEl.textContent = ' '
             spansOf(runs, paraEl)
             cellEl.append(paraEl)
@@ -1575,7 +1772,9 @@ export function makeGapHfEl(opts: {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para page-hf-tabbed'
             const pos = { first: m === 0, last: m === tabLines.length - 1 }
-            assignStyle(paraEl, hfCellParaStyle(props, pos, runs, para.row))
+            const box = hfCellParaBox(props, pos, runs, para.row)
+            assignStyle(paraEl, box.style)
+            paraEl.classList.add(...box.classes)
             paraEl.style.textAlign = 'left'
             if (line.minHeightPt) paraEl.style.minHeight = `${line.minHeightPt}pt`
             spansOf(line.lead, paraEl)
@@ -1594,7 +1793,6 @@ export function makeGapHfEl(opts: {
       host.append(p)
       continue
     }
-    if (para.bidi) p.style.direction = 'rtl'
     Object.assign(p.style, hfParaIndentStyle(para))
     if (para.align) {
       p.style.textAlign =
@@ -1658,15 +1856,13 @@ export function makeGapHfEl(opts: {
       host.append(p)
       continue
     }
-    if (para.runs.length === 0) {
-      p.textContent = ' '
-      if (para.emptyRunSizeHalfPoints) p.style.fontSize = `${para.emptyRunSizeHalfPoints / 2}pt`
-    }
+    if (para.runs.length === 0) p.textContent = ' '
     hfRunNodes(para.runs, p, display, 'page-hf-run-img')
     host.append(p)
   }
-  if (tabOver > 0) wrap.style.setProperty('--hf-tab-over', `${tabOver.toFixed(1)}px`)
-  const indOver = hfIndentOverhangPx(paras)
+  const rightOver = Math.max(tabOver, hfRowRightOverhangPx(paras, rowGeom))
+  if (rightOver > 0) wrap.style.setProperty('--hf-tab-over', `${rightOver.toFixed(1)}px`)
+  const indOver = hfIndentOverhangPx(paras, rowGeom)
   if (indOver > 0) wrap.style.setProperty('--hf-ind-over', `${indOver.toFixed(1)}px`)
   for (const img of (images ?? []).filter(hfImageHangsOnPara)) {
     const anchor = paraEls[img.anchorPara!]

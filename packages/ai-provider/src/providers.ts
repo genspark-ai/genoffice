@@ -85,27 +85,33 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'anthropic',
     label: 'Claude',
-    // current-generation ids per platform.claude.com models overview (2026-10-09).
-    // Fable needs data retention enabled on the org, otherwise the API answers
-    // model_not_available; every other id is served to any key.
+    // current lineup per platform.claude.com models overview (2026-10-27):
+    // Sonnet 5.5 (2026-09-28) replaces Sonnet 5 as the speed/intelligence
+    // default; it accepts only tool_choice auto/none, which is all this
+    // adapter sends. Fable needs data retention enabled on the org, otherwise
+    // the API answers model_not_available; every other id is served to any key.
     models: [
       'claude-opus-5-5',
-      'claude-sonnet-5',
+      'claude-sonnet-5-5',
       'claude-fable-5-1',
+      'claude-haiku-5-5',
+      'claude-sonnet-5',
       'claude-opus-5',
       'claude-fable-5',
       'claude-sonnet-4-6',
-      'claude-haiku-5-5',
     ],
-    defaultModel: 'claude-sonnet-5',
+    defaultModel: 'claude-sonnet-5-5',
     keyPlaceholder: 'sk-ant-api03-...',
   },
   {
     id: 'gemini',
     label: 'Gemini',
-    // 3.x lineup per ai.google.dev/gemini-api/docs/models (2026-09-23). 3.8 Flash
-    // is the current stable Flash Google recommends; 3.1 Pro is still preview-only.
+    // Lineup per ai.google.dev/gemini-api/docs/models (2026-10-27). 4 Argon is
+    // the stable flagship (1M context, image/video/audio/PDF input); 3.8 Flash
+    // stays default as the model Google recommends for new projects; 3.1 Pro
+    // is still preview-only.
     models: [
+      'gemini-4-argon',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.1-pro-preview',
@@ -133,14 +139,26 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    // GPT-5.6 naming: sol is the flagship (the bare `gpt-5.6` alias resolves to
-    // it, but spell it out so the picker says which tier it is), terra balances
-    // cost/intelligence, luna is the high-volume tier (2026-08). The GPT-6
-    // family (astra, sol, luna) is deliberately absent: Chat Completions
-    // supports its function calling only with reasoning_effort none, full
-    // tool use needs the Responses API, which has no protocol here (2026-09-24)
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
-    defaultModel: 'gpt-5.6-terra',
+    // Tier names: astra/sol = flagship, terra = balanced cost/intelligence,
+    // luna = high-volume. GPT-5.4+ and GPT-6 run on the Responses API (see
+    // modelUsesResponsesApi), which is the only route where they call tools
+    // with reasoning on (live-verified 2026-10-27). 6.1 Terra (2026-10-26,
+    // $1/$5) is the default: cheaper than 5.6 Terra, and the 5.6 tiers have
+    // left OpenAI's models page.
+    models: [
+      'gpt-6.1-terra',
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+    ],
+    defaultModel: 'gpt-6.1-terra',
     keyPlaceholder: 'sk-...',
   },
   {

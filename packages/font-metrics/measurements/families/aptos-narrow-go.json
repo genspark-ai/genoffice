@@ -1,0 +1,887 @@
+{
+  "family": "Aptos Narrow GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-20",
+    "fonts": [
+      "Aptos-Narrow.ttf, Aptos-Narrow-Bold.ttf, Aptos-Narrow-Italic.ttf, Aptos-Narrow-Bold-Italic.ttf (Word DFonts)",
+      "Carlito-Regular/Bold/Italic/BoldItalic.ttf"
+    ],
+    "probe": "Aptos Narrow hmtx over Carlito hmtx per 1.5% bucket times the corpus kerning factor (0.9958-0.9967)"
+  },
+  "refit": {
+    "method": "aptos-buckets",
+    "kern": {
+      "normal/normal": 0.995846,
+      "bold/normal": 0.996682,
+      "normal/italic": 0.995988,
+      "bold/italic": 0.996621
+    }
+  },
+  "note": "Aptos Narrow: Word DFonts (letters -2% of Carlito, space -17%).",
+  "faces": [
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 97.7,
+      "ascentOverride": 76.76,
+      "descentOverride": 25.59,
+      "lineGapOverride": 22.59
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 80.7,
+      "unicodeRange": "U+002F, U+005C",
+      "ascentOverride": 92.93,
+      "descentOverride": 30.98,
+      "lineGapOverride": 27.35
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 82.4,
+      "unicodeRange": "U+0020, U+00A0",
+      "ascentOverride": 91.04,
+      "descentOverride": 30.35,
+      "lineGapOverride": 26.79
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 83.7,
+      "unicodeRange": "U+0022, U+004D, U+005F, U+2013",
+      "ascentOverride": 89.56,
+      "descentOverride": 29.85,
+      "lineGapOverride": 26.36
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 85.8,
+      "unicodeRange": "U+0026",
+      "ascentOverride": 87.38,
+      "descentOverride": 29.13,
+      "lineGapOverride": 25.71
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 86.8,
+      "unicodeRange": "U+0027",
+      "ascentOverride": 86.39,
+      "descentOverride": 28.8,
+      "lineGapOverride": 25.42
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 88,
+      "unicodeRange": "U+005B, U+005D, U+0072, U+0074",
+      "ascentOverride": 85.19,
+      "descentOverride": 28.4,
+      "lineGapOverride": 25.07
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 89.1,
+      "unicodeRange": "U+0054",
+      "ascentOverride": 84.16,
+      "descentOverride": 28.05,
+      "lineGapOverride": 24.77
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 91.2,
+      "unicodeRange": "U+0057, U+0066, U+0076-0077, U+0079",
+      "ascentOverride": 82.28,
+      "descentOverride": 27.43,
+      "lineGapOverride": 24.21
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 92.8,
+      "unicodeRange": "U+0041, U+0056, U+006A, U+0078",
+      "ascentOverride": 80.8,
+      "descentOverride": 26.93,
+      "lineGapOverride": 23.78
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 95.8,
+      "unicodeRange": "U+0049-004A, U+0055, U+0067-0068, U+006E-006F",
+      "ascentOverride": 78.29,
+      "descentOverride": 26.1,
+      "lineGapOverride": 23.04
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 96.9,
+      "unicodeRange": "U+003A-003B, U+0058, U+0075",
+      "ascentOverride": 77.44,
+      "descentOverride": 25.81,
+      "lineGapOverride": 22.79
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 98.7,
+      "unicodeRange": "U+0051, U+2018-2019",
+      "ascentOverride": 75.97,
+      "descentOverride": 25.32,
+      "lineGapOverride": 22.36
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 99.8,
+      "unicodeRange": "U+0021, U+0028-0029, U+002D, U+0030-0039, U+004B, U+004E-004F, U+0059-005A, U+007A, U+007C",
+      "ascentOverride": 75.14,
+      "descentOverride": 25.05,
+      "lineGapOverride": 22.11
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 101.6,
+      "unicodeRange": "U+002B, U+003D, U+0042, U+0044, U+0047, U+0050, U+0052, U+0061, U+201C-201D",
+      "ascentOverride": 73.81,
+      "descentOverride": 24.6,
+      "lineGapOverride": 21.72
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 103.1,
+      "unicodeRange": "U+002E, U+0048",
+      "ascentOverride": 72.75,
+      "descentOverride": 24.25,
+      "lineGapOverride": 21.41
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 104.2,
+      "unicodeRange": "U+002C, U+0045-0046, U+006C",
+      "ascentOverride": 72.01,
+      "descentOverride": 24,
+      "lineGapOverride": 21.19
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 106,
+      "unicodeRange": "U+0025",
+      "ascentOverride": 70.77,
+      "descentOverride": 23.59,
+      "lineGapOverride": 20.82
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 108.1,
+      "unicodeRange": "U+004C",
+      "ascentOverride": 69.35,
+      "descentOverride": 23.12,
+      "lineGapOverride": 20.41
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 112.6,
+      "unicodeRange": "U+0053, U+0073",
+      "ascentOverride": 66.59,
+      "descentOverride": 22.2,
+      "lineGapOverride": 19.6
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 112.9,
+      "unicodeRange": "U+0063",
+      "ascentOverride": 66.41,
+      "descentOverride": 22.14,
+      "lineGapOverride": 19.54
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 118.2,
+      "unicodeRange": "U+0043",
+      "ascentOverride": 63.45,
+      "descentOverride": 21.15,
+      "lineGapOverride": 18.67
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 99.8,
+      "ascentOverride": 75.15,
+      "descentOverride": 25.05,
+      "lineGapOverride": 22.11,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 79.6,
+      "unicodeRange": "U+0020, U+00A0",
+      "ascentOverride": 94.17,
+      "descentOverride": 31.39,
+      "lineGapOverride": 27.71,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 81,
+      "unicodeRange": "U+005F, U+2013",
+      "ascentOverride": 92.6,
+      "descentOverride": 30.87,
+      "lineGapOverride": 27.25,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 82,
+      "unicodeRange": "U+002F, U+005C",
+      "ascentOverride": 91.47,
+      "descentOverride": 30.49,
+      "lineGapOverride": 26.92,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 83.7,
+      "unicodeRange": "U+004D",
+      "ascentOverride": 89.57,
+      "descentOverride": 29.86,
+      "lineGapOverride": 26.36,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 85.8,
+      "unicodeRange": "U+0022",
+      "ascentOverride": 87.43,
+      "descentOverride": 29.14,
+      "lineGapOverride": 25.73,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 86.3,
+      "unicodeRange": "U+0026",
+      "ascentOverride": 86.95,
+      "descentOverride": 28.98,
+      "lineGapOverride": 25.59,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 88.4,
+      "unicodeRange": "U+0027",
+      "ascentOverride": 84.84,
+      "descentOverride": 28.28,
+      "lineGapOverride": 24.97,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 90.8,
+      "unicodeRange": "U+0041, U+0054, U+0074, U+0077",
+      "ascentOverride": 82.56,
+      "descentOverride": 27.52,
+      "lineGapOverride": 24.29,
+      "weight": "bold",
+      "pin": {
+        "reason": "corpus-weighted bucket; the plain hmtx mean x kern gives 91"
+      }
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 92.7,
+      "unicodeRange": "U+0056-0057, U+005B, U+005D",
+      "ascentOverride": 80.93,
+      "descentOverride": 26.98,
+      "lineGapOverride": 23.81,
+      "weight": "bold",
+      "pin": {
+        "reason": "corpus-weighted bucket; the plain hmtx mean x kern gives 92.9"
+      }
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 94,
+      "unicodeRange": "U+0055, U+0072, U+0076, U+0079",
+      "ascentOverride": 79.78,
+      "descentOverride": 26.59,
+      "lineGapOverride": 23.48,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 95.9,
+      "unicodeRange": "U+003A-003B, U+0051, U+0066, U+006F, U+0078",
+      "ascentOverride": 78.18,
+      "descentOverride": 26.06,
+      "lineGapOverride": 23,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 97.4,
+      "unicodeRange": "U+004E-004F, U+0058, U+0067-0068, U+006E, U+0075, U+007C",
+      "ascentOverride": 77.02,
+      "descentOverride": 25.67,
+      "lineGapOverride": 22.66,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 98.5,
+      "unicodeRange": "U+0028-0029, U+003F, U+0062, U+0064, U+006A, U+006D, U+0070-0071",
+      "ascentOverride": 76.17,
+      "descentOverride": 25.39,
+      "lineGapOverride": 22.42,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 100.8,
+      "unicodeRange": "U+0052, U+0061",
+      "ascentOverride": 74.43,
+      "descentOverride": 24.81,
+      "lineGapOverride": 21.9,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 101.6,
+      "unicodeRange": "U+002B, U+003D, U+0049, U+0050, U+0059-005A, U+0069",
+      "ascentOverride": 73.82,
+      "descentOverride": 24.61,
+      "lineGapOverride": 21.72,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 102.9,
+      "unicodeRange": "U+0025, U+002C, U+0048, U+004B, U+2018-2019",
+      "ascentOverride": 72.89,
+      "descentOverride": 24.3,
+      "lineGapOverride": 21.45,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 104.8,
+      "unicodeRange": "U+0045-0046, U+007A",
+      "ascentOverride": 71.59,
+      "descentOverride": 23.86,
+      "lineGapOverride": 21.07,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 108.3,
+      "unicodeRange": "U+004C",
+      "ascentOverride": 69.26,
+      "descentOverride": 23.09,
+      "lineGapOverride": 20.38,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 110.8,
+      "unicodeRange": "U+006C, U+201C-201D",
+      "ascentOverride": 67.68,
+      "descentOverride": 22.56,
+      "lineGapOverride": 19.91,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 113.5,
+      "unicodeRange": "U+0053",
+      "ascentOverride": 66.11,
+      "descentOverride": 22.04,
+      "lineGapOverride": 19.45,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 114.8,
+      "unicodeRange": "U+0073",
+      "ascentOverride": 65.34,
+      "descentOverride": 21.78,
+      "lineGapOverride": 19.23,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 118.1,
+      "unicodeRange": "U+0063",
+      "ascentOverride": 63.48,
+      "descentOverride": 21.16,
+      "lineGapOverride": 18.68,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Bold.ttf')",
+      "sizeAdjust": 119.3,
+      "unicodeRange": "U+0043",
+      "ascentOverride": 62.85,
+      "descentOverride": 20.95,
+      "lineGapOverride": 18.49,
+      "weight": "bold"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 97.7,
+      "ascentOverride": 76.77,
+      "descentOverride": 25.59,
+      "lineGapOverride": 22.59,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 79.9,
+      "unicodeRange": "U+002F",
+      "ascentOverride": 93.88,
+      "descentOverride": 31.29,
+      "lineGapOverride": 27.63,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 80.7,
+      "unicodeRange": "U+005C",
+      "ascentOverride": 92.91,
+      "descentOverride": 30.97,
+      "lineGapOverride": 27.34,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 82,
+      "unicodeRange": "U+0020, U+0022, U+0027, U+00A0",
+      "ascentOverride": 91.5,
+      "descentOverride": 30.5,
+      "lineGapOverride": 26.92,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 83.6,
+      "unicodeRange": "U+004D, U+005F, U+2013",
+      "ascentOverride": 89.76,
+      "descentOverride": 29.92,
+      "lineGapOverride": 26.41,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 85.4,
+      "unicodeRange": "U+0067, U+0074",
+      "ascentOverride": 87.84,
+      "descentOverride": 29.28,
+      "lineGapOverride": 25.85,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 86.5,
+      "unicodeRange": "U+005B, U+005D, U+0066",
+      "ascentOverride": 86.75,
+      "descentOverride": 28.92,
+      "lineGapOverride": 25.53,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 88,
+      "unicodeRange": "U+0026",
+      "ascentOverride": 85.26,
+      "descentOverride": 28.42,
+      "lineGapOverride": 25.09,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 89.3,
+      "unicodeRange": "U+0054, U+006A, U+0072",
+      "ascentOverride": 83.94,
+      "descentOverride": 27.98,
+      "lineGapOverride": 24.7,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 91.2,
+      "unicodeRange": "U+0057, U+0077",
+      "ascentOverride": 82.27,
+      "descentOverride": 27.42,
+      "lineGapOverride": 24.21,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 92.4,
+      "unicodeRange": "U+003B, U+0041, U+0056, U+0076, U+0079",
+      "ascentOverride": 81.19,
+      "descentOverride": 27.06,
+      "lineGapOverride": 23.89,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 93.6,
+      "unicodeRange": "U+0061, U+0069, U+0078",
+      "ascentOverride": 80.1,
+      "descentOverride": 26.7,
+      "lineGapOverride": 23.57,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 95.9,
+      "unicodeRange": "U+0049-004A, U+0055",
+      "ascentOverride": 78.18,
+      "descentOverride": 26.06,
+      "lineGapOverride": 23.01,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 96.9,
+      "unicodeRange": "U+0058",
+      "ascentOverride": 77.43,
+      "descentOverride": 25.81,
+      "lineGapOverride": 22.78,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 98.6,
+      "unicodeRange": "U+002C, U+003F, U+004B, U+005A, U+2018-2019",
+      "ascentOverride": 76.09,
+      "descentOverride": 25.36,
+      "lineGapOverride": 22.39,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 99.8,
+      "unicodeRange": "U+0021, U+0028-0029, U+002D, U+0030-0039, U+004E, U+0051, U+0059, U+0062, U+0064, U+0070-0071, U+007A, U+007C",
+      "ascentOverride": 75.19,
+      "descentOverride": 25.06,
+      "lineGapOverride": 22.12,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 101.5,
+      "unicodeRange": "U+002B, U+003D, U+0042, U+0044, U+0047, U+004F, U+0052, U+0065, U+201C-201D",
+      "ascentOverride": 73.86,
+      "descentOverride": 24.62,
+      "lineGapOverride": 21.73,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 103.2,
+      "unicodeRange": "U+002E, U+0045, U+0048, U+006C",
+      "ascentOverride": 72.71,
+      "descentOverride": 24.24,
+      "lineGapOverride": 21.4,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 104.2,
+      "unicodeRange": "U+0050",
+      "ascentOverride": 71.98,
+      "descentOverride": 23.99,
+      "lineGapOverride": 21.18,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 107.4,
+      "unicodeRange": "U+0046, U+004C",
+      "ascentOverride": 69.85,
+      "descentOverride": 23.28,
+      "lineGapOverride": 20.55,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 111.6,
+      "unicodeRange": "U+0025",
+      "ascentOverride": 67.19,
+      "descentOverride": 22.4,
+      "lineGapOverride": 19.77,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 113.3,
+      "unicodeRange": "U+0053, U+0073",
+      "ascentOverride": 66.17,
+      "descentOverride": 22.06,
+      "lineGapOverride": 19.47,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 115.6,
+      "unicodeRange": "U+0063",
+      "ascentOverride": 64.88,
+      "descentOverride": 21.63,
+      "lineGapOverride": 19.09,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 121.3,
+      "unicodeRange": "U+0043",
+      "ascentOverride": 61.85,
+      "descentOverride": 20.62,
+      "lineGapOverride": 18.2,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 98.8,
+      "ascentOverride": 75.87,
+      "descentOverride": 25.29,
+      "lineGapOverride": 22.33,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 79,
+      "unicodeRange": "U+0020, U+002F, U+00A0",
+      "ascentOverride": 94.93,
+      "descentOverride": 31.64,
+      "lineGapOverride": 27.94,
+      "weight": "bold",
+      "style": "italic",
+      "pin": {
+        "reason": "corpus-weighted bucket; the plain hmtx mean x kern gives 79.2"
+      }
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 81,
+      "unicodeRange": "U+005F, U+2013",
+      "ascentOverride": 92.62,
+      "descentOverride": 30.87,
+      "lineGapOverride": 27.25,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 82.1,
+      "unicodeRange": "U+0022, U+0027, U+005C",
+      "ascentOverride": 91.39,
+      "descentOverride": 30.46,
+      "lineGapOverride": 26.89,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 83.2,
+      "unicodeRange": "U+004D",
+      "ascentOverride": 90.19,
+      "descentOverride": 30.06,
+      "lineGapOverride": 26.54,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 85.7,
+      "unicodeRange": "U+0067",
+      "ascentOverride": 87.49,
+      "descentOverride": 29.16,
+      "lineGapOverride": 25.75,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 87.1,
+      "unicodeRange": "U+0026",
+      "ascentOverride": 86.07,
+      "descentOverride": 28.69,
+      "lineGapOverride": 25.33,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 88.6,
+      "unicodeRange": "U+005D, U+0074",
+      "ascentOverride": 84.7,
+      "descentOverride": 28.23,
+      "lineGapOverride": 24.92,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 90.3,
+      "unicodeRange": "U+0041",
+      "ascentOverride": 83.03,
+      "descentOverride": 27.68,
+      "lineGapOverride": 24.43,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 91.2,
+      "unicodeRange": "U+0054, U+0056-0057, U+005B, U+0077",
+      "ascentOverride": 82.21,
+      "descentOverride": 27.4,
+      "lineGapOverride": 24.19,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 91.9,
+      "unicodeRange": "U+0066",
+      "ascentOverride": 81.57,
+      "descentOverride": 27.19,
+      "lineGapOverride": 24,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 93.8,
+      "unicodeRange": "U+0055, U+0061, U+006A, U+0072, U+0076, U+0079",
+      "ascentOverride": 79.92,
+      "descentOverride": 26.64,
+      "lineGapOverride": 23.52,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 96.1,
+      "unicodeRange": "U+003A, U+0051",
+      "ascentOverride": 78.07,
+      "descentOverride": 26.02,
+      "lineGapOverride": 22.97,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 97,
+      "unicodeRange": "U+003B, U+004E-004F, U+0058, U+006F, U+0078, U+007C",
+      "ascentOverride": 77.32,
+      "descentOverride": 25.77,
+      "lineGapOverride": 22.75,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 98.1,
+      "unicodeRange": "U+0028-0029",
+      "ascentOverride": 76.47,
+      "descentOverride": 25.49,
+      "lineGapOverride": 22.5,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 99.8,
+      "unicodeRange": "U+0021, U+002D, U+0030-0039, U+0042, U+0049, U+004B, U+0052, U+0059-005A, U+0064, U+0071",
+      "ascentOverride": 75.16,
+      "descentOverride": 25.05,
+      "lineGapOverride": 22.12,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 101.7,
+      "unicodeRange": "U+002B, U+003D, U+0048, U+0065",
+      "ascentOverride": 73.74,
+      "descentOverride": 24.58,
+      "lineGapOverride": 21.7,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 103.4,
+      "unicodeRange": "U+002C, U+0045, U+0050, U+007A, U+2018-2019",
+      "ascentOverride": 72.51,
+      "descentOverride": 24.17,
+      "lineGapOverride": 21.34,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 106.8,
+      "unicodeRange": "U+004C",
+      "ascentOverride": 70.24,
+      "descentOverride": 23.41,
+      "lineGapOverride": 20.67,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 107.7,
+      "unicodeRange": "U+0025, U+0046, U+006C",
+      "ascentOverride": 69.65,
+      "descentOverride": 23.22,
+      "lineGapOverride": 20.5,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 110.9,
+      "unicodeRange": "U+201C-201D",
+      "ascentOverride": 67.61,
+      "descentOverride": 22.54,
+      "lineGapOverride": 19.9,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 114.1,
+      "unicodeRange": "U+0053",
+      "ascentOverride": 65.75,
+      "descentOverride": 21.92,
+      "lineGapOverride": 19.35,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 115.8,
+      "unicodeRange": "U+0073",
+      "ascentOverride": 64.76,
+      "descentOverride": 21.59,
+      "lineGapOverride": 19.06,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 119.8,
+      "unicodeRange": "U+0063",
+      "ascentOverride": 62.58,
+      "descentOverride": 20.86,
+      "lineGapOverride": 18.42,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf')",
+      "sizeAdjust": 121.2,
+      "unicodeRange": "U+0043",
+      "ascentOverride": 61.87,
+      "descentOverride": 20.62,
+      "lineGapOverride": 18.21,
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "family": "Yu Gothic GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["YuGoth*.ttc (Word)", "YuGo-Medium/Bold (Apple)"],
+    "probe": "Yu Gothic Regular/Bold equal the Apple Medium/Bold advances; box = Word hhea 0.88/0.222"
+  },
+  "faces": [
+    {
+      "src": "local('YuGo-Medium'), local('YuGothic Medium')",
+      "unicodeRange": "U+0020-007E, U+00A0-00FF",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "local('YuGo-Bold'), local('YuGothic Bold')",
+      "unicodeRange": "U+0020-007E, U+00A0-00FF",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    }
+  ]
+}

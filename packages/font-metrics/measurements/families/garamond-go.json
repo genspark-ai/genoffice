@@ -1,0 +1,151 @@
+{
+  "family": "Garamond GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-27",
+    "fonts": ["Garamond (macOS asset ttc)", "LiberationSerif"],
+    "probe": "word-truths 2026-10-27: per-class advances"
+  },
+  "faces": [
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 100
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 95.4,
+      "unicodeRange": "U+0061-007A"
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 94.9,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 100.3,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 93.8,
+      "unicodeRange": "U+0030-0039"
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 104.9,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 100,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 98.3,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 100.2,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 99.1,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 92.3,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 108,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 100,
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 82.3,
+      "unicodeRange": "U+0061-007A",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 76.8,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 104.3,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 93.8,
+      "unicodeRange": "U+0030-0039",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-Italic.ttf')",
+      "sizeAdjust": 101.1,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 100,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 98.3,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 94.5,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 99.6,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 93.8,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSerif-BoldItalic.ttf')",
+      "sizeAdjust": 110.2,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

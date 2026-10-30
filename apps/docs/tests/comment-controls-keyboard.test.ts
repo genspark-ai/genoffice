@@ -48,28 +48,45 @@ const press = (el: HTMLElement, key: string) =>
     el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
   })
 
-describe('comment controls keyboard activation', () => {
-  it('Enter on the reply pencil opens the editor', () => {
+const click = (el: HTMLElement) => act(() => el.click())
+
+describe('comment card menu', () => {
+  it('Edit in the reply menu opens the editor', () => {
     const { root, container } = mount()
-    const pencil = container.querySelector<HTMLElement>('.comment-reply .comment-card-edit')!
-    press(pencil, 'Enter')
+    click(container.querySelector<HTMLElement>('.comment-reply .comment-more')!)
+    click(container.querySelector<HTMLElement>('.comment-reply .comment-card-edit')!)
     expect(container.querySelector('.comment-reply textarea')).not.toBeNull()
     act(() => root.unmount())
   })
 
-  it('Space on the reply trash deletes the reply', () => {
+  it('Delete in the reply menu deletes the reply', () => {
     const onDelete = vi.fn()
     const { root, container } = mount(onDelete)
-    press(container.querySelector<HTMLElement>('.comment-reply .comment-card-del')!, ' ')
+    click(container.querySelector<HTMLElement>('.comment-reply .comment-more')!)
+    click(container.querySelector<HTMLElement>('.comment-reply .comment-card-del')!)
     expect(onDelete).toHaveBeenCalledWith('r1')
     act(() => root.unmount())
   })
 
-  it('Space on the thread trash deletes the thread', () => {
+  it('Delete in the thread menu deletes the thread; Escape closes an open menu', () => {
     const onDelete = vi.fn()
     const { root, container } = mount(onDelete)
-    press(container.querySelector<HTMLElement>('.comment-card .comment-card-del')!, ' ')
+    click(container.querySelector<HTMLElement>('.comment-card .comment-more')!)
+    expect(container.querySelector('.comment-card .comment-menu')).not.toBeNull()
+    press(container, 'Escape')
+    expect(container.querySelector('.comment-menu')).toBeNull()
+    click(container.querySelector<HTMLElement>('.comment-card .comment-more')!)
+    click(container.querySelector<HTMLElement>('.comment-card .comment-card-del')!)
     expect(onDelete).toHaveBeenCalledWith('c1')
+    act(() => root.unmount())
+  })
+
+  it('Enter on the card jumps without touching the actions', () => {
+    const onDelete = vi.fn()
+    const { root, container } = mount(onDelete)
+    press(container.querySelector<HTMLElement>('.comment-card')!, 'Enter')
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(container.querySelector('.comment-thread')!.className).toContain('active')
     act(() => root.unmount())
   })
 })

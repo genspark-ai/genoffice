@@ -79,6 +79,8 @@ export interface ColumnBlockSpec {
   /** paragraph straddling two columns of different widths: a leading float
    *  (doc-col-split-float) rewraps the head or the tail at the narrower width */
   split?: ColumnSplitShape
+  /** first block of a page-opening section (doc-sect-page-start: clear floats) */
+  sectionPageStart?: true
 }
 
 const SPLIT_CLASS = 'doc-col-split-float'
@@ -117,6 +119,7 @@ const PATCH_CLASSES = [
   'doc-vert-tbRl',
   'doc-vert-tbRlV',
   'doc-vert-btLr',
+  'doc-sect-page-start',
 ]
 
 /** pitch/charSpace-only specs get an inert marker class: .doc-col-block's
@@ -129,7 +132,8 @@ function specClass(spec: ColumnBlockSpec): string {
   const varsOnly =
     (spec.gridPitchPt !== undefined ||
       spec.charSpacePt !== undefined ||
-      spec.marginTopPx !== undefined) &&
+      spec.marginTopPx !== undefined ||
+      spec.sectionPageStart) &&
     spec.widthPx === undefined &&
     spec.contentWPx === undefined &&
     spec.dx === 0 &&
@@ -138,6 +142,7 @@ function specClass(spec: ColumnBlockSpec): string {
   let cls = varsOnly ? 'doc-grid-block' : 'doc-col-block'
   if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
   if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
+  if (spec.sectionPageStart) cls += ' doc-sect-page-start'
   if (spec.vertical) {
     cls += ` doc-vert-block doc-vert-${spec.vertical.mode}`
     if (spec.vertical.firstOnPage) cls += ' doc-vert-first'

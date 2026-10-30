@@ -138,7 +138,7 @@ describe('shape insertion', () => {
     expect(box!.paras[0]?.align).toBe('center')
 
     const css = textboxBoxStyle(box!)
-    expect(css).toContain('justify-content:center')
+    expect(css).toContain('justify-content:safe center')
     expect(css).toContain('color:#FFFFFF')
     editor.destroy()
   })

@@ -61,7 +61,7 @@ describe('table styles in the editor', () => {
 
     const css = docStyleCss(parsed as never)
     const sel = '.doc-page table[data-tbl-style="Calendar2"]'
-    expect(css).toContain(`${sel} td, ${sel} th { font-size:14pt }`)
+    expect(css).toContain(`${sel} td, ${sel} th { font-size:14pt;--doc-base-fs:14pt }`)
     expect(css).toMatch(/tr:first-child td[^{]*\{[^}]*font-size:16pt/)
     expect(css).toMatch(/td p[^{]*\{[^}]*text-align:center/)
     expect(css).toMatch(/td p[^{]*\{[^}]*margin-bottom:0/)

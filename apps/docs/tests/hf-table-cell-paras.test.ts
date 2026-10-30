@@ -68,9 +68,15 @@ describe('header table cells keep per-paragraph lines', () => {
       hfCellParaStyle({ styleId: 'Caption8', sizeHalfPoints: 16 }, undefined, [{ text: 'x' }]),
     ).toMatchObject({ fontSize: '8pt' })
     expect(
-      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [{ text: 'x', sizeHalfPoints: 20 }])
-        .fontSize,
-    ).toContain('10pt')
+      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [{ text: 'x', sizeHalfPoints: 20 }]),
+    ).toMatchObject({ '--doc-strut': '10pt', fontSize: 'var(--doc-strut)' })
+    // runs without their own size take the style size back (.doc-strut-mixed reads --doc-base-fs)
+    expect(
+      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [
+        { text: 'x', sizeHalfPoints: 20 },
+        { text: 'y' },
+      ]),
+    ).toMatchObject({ '--doc-base-fs': '8pt', '--doc-strut': 'min(10pt,var(--doc-base-fs,10pt))' })
   })
 
   it('estimateHfHeight sizes a table row by its tallest cell paragraph stack', () => {
@@ -119,7 +125,9 @@ describe('header table cells keep per-paragraph lines', () => {
     expect(
       hfCellParaStyle({ lineRule: 'auto', lineRawTwips: 240, lineSpacing: 1 }).lineHeight,
     ).toBe('calc(var(--doc-line-factor,1.2) * 1)')
-    expect(hfCellParaStyle({ align: 'right' }).lineHeight).toBeUndefined()
+    expect(hfCellParaStyle({ align: 'right' }).lineHeight).toBe(
+      'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    )
   })
 })
 
@@ -556,7 +564,11 @@ describe('cell paragraph line factor and row-anchored pictures', () => {
     const style = hfCellParaStyle(undefined, undefined, runs)
     expect(style['--doc-line-factor']).toBe('1.226')
     expect(style.lineHeight).toContain('var(--doc-line-factor')
-    expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }]).lineHeight).toBeUndefined()
+    expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }])).toEqual({
+      direction: 'ltr',
+      '--doc-line-factor': 'var(--doc-line-factor-latin,1.2)',
+      lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    })
   })
 
   it('hosts a row-anchored picture inside its anchor row at the paragraph offset', () => {

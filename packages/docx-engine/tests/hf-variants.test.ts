@@ -308,6 +308,73 @@ describe('non-schema and non-self-closing variants (POI corpus)', () => {
   })
 })
 
+describe('page-anchored header tables and empty-mark faces', () => {
+  const FLOAT_TABLE =
+    '<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="page" w:tblpX="464" w:tblpY="346"/>' +
+    '<w:tblW w:w="11058" w:type="dxa"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="2368"/><w:gridCol w:w="8690"/></w:tblGrid><w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:w="2368" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Logo</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:w="8690" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Title band</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+  const FLOW_TABLE =
+    '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="6520"/><w:gridCol w:w="2665"/></w:tblGrid><w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:w="6520" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Steps</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:w="2665" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Party</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+
+  async function parseHeader(inner: string) {
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels:
+        '<Relationship Id="rId81" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [{ path: 'word/header1.xml', xml: hdrPart(inner), contentType: HEADER_TYPE }],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId81"/>',
+    })
+    return (await parseDocx(bytes)).headerParas!
+  }
+
+  it('a page-anchored table keeps markup order and carries its placement, width and w:jc', async () => {
+    const paras = await parseHeader(FLOAT_TABLE + FLOW_TABLE + '<w:p/>')
+    expect(paras[0].cells![1].paras[0][0].text).toBe('Title band')
+    expect(paras[0].row).toMatchObject({
+      widthTwips: 11058,
+      float: { xTwips: 464, yTwips: 346, horzAnchor: 'page', vertAnchor: 'page' },
+    })
+    expect(paras[0].row!.align).toBeUndefined()
+    expect(paras[1].cells![0].paras[0][0].text).toBe('Steps')
+    expect(paras[1].row).toMatchObject({ align: 'center', widthTwips: 9185 })
+    expect(paras[1].row!.float).toBeUndefined()
+  })
+
+  it('an empty mark is sized by its East Asian face only under the hint and an East Asian w:lang, else its own Latin face', async () => {
+    const mark = (rFonts: string, lang = '') =>
+      `<w:p><w:pPr><w:rPr><w:rFonts ${rFonts}/>${lang}</w:rPr></w:pPr></w:p>`
+    const paras = await parseHeader(
+      mark(
+        'w:ascii="Calibri" w:eastAsia="SimSun" w:hint="eastAsia"',
+        '<w:lang w:eastAsia="zh-CN"/>',
+      ) +
+        mark(
+          'w:ascii="Calibri" w:eastAsia="SimSun" w:hint="eastAsia"',
+          '<w:lang w:eastAsia="en-US"/>',
+        ) +
+        mark('w:ascii="Calibri" w:eastAsia="SimSun"', '<w:lang w:eastAsia="zh-CN"/>') +
+        mark('w:ascii="Malgun Gothic" w:eastAsia="Malgun Gothic"') +
+        mark('w:hint="eastAsia"') +
+        '<w:p/>',
+    )
+    expect(paras.map((p) => p.emptyRunFont)).toEqual([
+      'SimSun',
+      'Calibri',
+      'Calibri',
+      'Malgun Gothic',
+      undefined,
+      undefined,
+    ])
+  })
+})
+
 describe('header style-inherited rtl', () => {
   it('hf runs pick the Cs property set when their paragraph style sets w:rtl', async () => {
     const headerXml =

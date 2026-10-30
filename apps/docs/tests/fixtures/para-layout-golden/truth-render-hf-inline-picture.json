@@ -1,0 +1,28 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-hf-inline-picture/probe.docx",
+  "paragraphs": 14,
+  "hashes": [
+    "4b76e98c4b886426",
+    "33cbed4961c163c1",
+    "046cfcddfc3f4070",
+    "da4b98a140fc73b7",
+    "1e4783d0b88ae88a",
+    "dd4a76a232c39784",
+    "9e0a4a9bdd87429b",
+    "3a9ad2d21683db46",
+    "cb7ac95fdf4549b3",
+    "c0edd121e0bbaa65",
+    "3befd8a2506b6d9c",
+    "ff1bd79247309155",
+    "8dc1e82da852440f",
+    "e76d1266be73ec99"
+  ],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 3,
+  "hfHashes": ["dab330c70c27aeb2", "dde5599d1e8734f6", "ec03eced3ef27d82"],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

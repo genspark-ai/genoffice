@@ -187,11 +187,12 @@ describe('docStyleCss dark twins', () => {
     expect(dark).toContain(
       `.page-dark .doc-page table[data-tbl-style="Grid"] td${island}, .page-dark .doc-page table[data-tbl-style="Grid"] th${island} { background:${DARK_PAPER_HEX} }`,
     )
+    const grid = '.page-dark .doc-page table[data-tbl-style="Grid"]'
     expect(dark).toContain(
-      `tr:nth-child(even) td${island} { background:${darkPageColor('d9d9d9')} }`,
+      `${grid}:not([data-tbl-nohband]):not([data-tbl-nofirstrow]) tr:nth-child(even) td${island}, ${grid}:not([data-tbl-nohband])[data-tbl-nofirstrow] tr:nth-child(odd) td${island} { background:${darkPageColor('d9d9d9')} }`,
     )
     expect(dark).toContain(
-      `tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr) th${island} { background:${darkPageColor('4472c4')};color:${DARK_PAPER_HEX} }`,
+      `${grid}:not([data-tbl-nofirstrow]) tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr) th${island} { background:${darkPageColor('4472c4')};color:${DARK_PAPER_HEX} }`,
     )
     // a filled box would inherit the remapped document default from .doc-page:
     // the island re-sets the authored one

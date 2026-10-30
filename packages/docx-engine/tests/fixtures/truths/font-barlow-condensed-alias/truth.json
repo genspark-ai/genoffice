@@ -1,0 +1,34 @@
+{
+  "id": "font-barlow-condensed-alias",
+  "title": "Barlow Condensed (M365 cloud font) is laid out by Word at its own condensed hmtx advances (unlike Bahnschrift's variable instances); a weight word in the name maps to the family; the advance-ratio-bucket Liberation Sans alias reproduces the advances",
+  "section": "word-truths.md#L818",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf spans at the 11.04 pt device size: pangram Regular 214.18 pt (19.40 em), Bold 229.29 (20.77); hmtx sums of the cloud-cache static TTFs 19.27 / 20.64 em; the run named 'Barlow Condensed Bold' came back BarlowCondensed-Regular at 214.18. gen before the fix: no alias, Helvetica at 1.35x the Word width wrapped every table cell of a condensed-face schedule",
+  "cases": [
+    { "kind": "cssFamilyIncludes", "font": "Barlow Condensed", "expect": "Barlow Condensed GO" },
+    {
+      "kind": "cssFamilyIncludes",
+      "font": "Barlow Condensed Bold",
+      "expect": "Barlow Condensed GO"
+    },
+    { "kind": "latinLineFactor", "font": "Barlow Condensed", "expect": 1.2, "tol": 0.001 },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Barlow Condensed GO",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 19.4,
+      "tol": 0.2,
+      "note": "Word 214.18 pt / 11.04"
+    },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Barlow Condensed GO",
+      "weight": "bold",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 20.77,
+      "tol": 0.2
+    }
+  ],
+  "docx": "probe.docx"
+}

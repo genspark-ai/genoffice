@@ -1,0 +1,44 @@
+{
+  "id": "render-hf-side-wrap-flow",
+  "title": "Header lines flow around a side-wrapped drawing with the body rule: a line that cannot sit beside it lands at the drawing's bottom and the body follows; a line that fits beside it leaves the body top alone",
+  "section": "word-truths.md#L848",
+  "probe_date": "2026-10-29",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter, 1in margins, header 36pt, Calibri 11, four header lines (36.05/49.49/62.93/76.37) and a 1.5pt wrapSquare picture at page y 80; control body glyph top 89.81; a 540pt rule across the column (page x 36) puts line four at 81.65 and the body at 94.85 (+5.04); a 100pt rule at the column's left edge leaves line four beside it at x 136 and the body at 89.81; the same 540pt rule anchored paragraph-relative at the same page y: 94.85; a 100pt rule in the middle (x 236-336): line four stays at x 72, body 89.81",
+  "cases": [
+    { "kind": "pages", "expect": 5 },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 1,
+      "expect": 5.04,
+      "tol": 0.6,
+      "note": "CASE01 full-width rule at page y 80: header line four lands at the rule bottom (81.65), body +5.04"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 3,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.6,
+      "note": "CASE02 100pt rule at the column's left edge: line four flows beside it (x 136), body unmoved"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 4,
+      "control": 1,
+      "expect": 5.04,
+      "tol": 0.6,
+      "note": "CASE03 the full-width rule anchored paragraph-relative (44pt below the strip top = page y 80): same as CASE01"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 5,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.6,
+      "note": "CASE04 100pt rule in the middle of the column: line four keeps the left gap (x 72), body unmoved"
+    }
+  ],
+  "docx": "probe.docx"
+}

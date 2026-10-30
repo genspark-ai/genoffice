@@ -1,0 +1,25 @@
+{
+  "family": "MS Mincho GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-17",
+    "probe": "Word probe: the same fixed-pitch half-width Latin as MS Gothic"
+  },
+  "note": "MS Mincho: the same fixed-pitch half-width Latin as MS Gothic (Word probe 2026-09-17)",
+  "faces": [
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 83.333,
+      "unicodeRange": "U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
+      "unicodeRange": "U+00A7, U+00B1, U+00B6, U+00D7, U+00F7"
+    },
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 166.667,
+      "unicodeRange": "U+00A8, U+00B0, U+00B4"
+    }
+  ]
+}

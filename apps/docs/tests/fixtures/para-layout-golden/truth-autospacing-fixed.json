@@ -1,0 +1,13 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/autospacing-fixed/probe.docx",
+  "paragraphs": 4,
+  "hashes": ["3497b09ebe669f2d", "0035f95567165e44", "6dade886155dfc2a", "2d5070719fea2780"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

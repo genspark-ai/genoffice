@@ -218,7 +218,7 @@ async function httpJson(
   for (const [i, impl] of channels.entries()) {
     try {
       const attempt =
-        process.env.GENOFFICE_NATIVE_WAF === '1' ? await nativeWaf.prepare(url, init, impl) : init
+        process.env.GENOFFICE_NATIVE_WAF !== '0' ? await nativeWaf.prepare(url, init, impl) : init
       // per-attempt timeout: a blackholed direct connection would otherwise
       // hang for the OS TCP timeout before the fallback ever runs
       resp = await impl(url, {
@@ -296,7 +296,7 @@ async function revokeKey(cookie: string, keyId: string, signal: AbortSignal): Pr
   const fetcher = resolveFetch()
   await fetcher(
     url,
-    process.env.GENOFFICE_NATIVE_WAF === '1' ? await nativeWaf.prepare(url, init, fetcher) : init,
+    process.env.GENOFFICE_NATIVE_WAF !== '0' ? await nativeWaf.prepare(url, init, fetcher) : init,
   )
 }
 

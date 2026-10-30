@@ -192,7 +192,7 @@ export function countMindMapNodes(root: MindMapTreeNode): number {
 export function mindMapToMermaid(root: MindMapTreeNode): string {
   const clean = (label: string): string => {
     const text = label
-      .replace(/[[\]{}()"]/g, ' ')
+      .replace(/[[\]{}()"`]|%%|:::/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
     return text || 'Topic'

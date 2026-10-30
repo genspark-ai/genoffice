@@ -73,9 +73,43 @@ describe('VML horizontal rule sharing a text paragraph', () => {
     editor.destroy()
   })
 
+  it('a lead rule no smaller than its text keeps a full line of the paragraph font', () => {
+    const hr = { text: '', image: { dataUrl: '', xml: HR_XML, rule: RULE } }
+    // both inherit the heading size: full line (18pt heading, 21.3pt band measured)
+    const inherited = runsToInline([hr, { text: 'Worksheet 1', bold: true }])
+    expect(inherited[0].attrs?.leadRule).toBeUndefined()
+    expect(inherited[0].attrs?.leadRuleFull).toBe(true)
+    // rule run as large as the text: full line too
+    const same = runsToInline([
+      { ...hr, sizeHalfPoints: 28 },
+      { text: 'T', sizeHalfPoints: 28 },
+    ])
+    expect(same[0].attrs?.leadRuleFull).toBe(true)
+    // text set larger than the rule run: compact band (probe 2026-09-05)
+    const smaller = runsToInline([
+      { ...hr, sizeHalfPoints: 22 },
+      { text: 'T', sizeHalfPoints: 28 },
+    ])
+    expect(smaller[0].attrs?.leadRule).toBe(true)
+    expect(smaller[0].attrs?.leadRuleFull).toBeUndefined()
+
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [{ type: 'docParagraph', attrs: { docxIndex: 0 }, content: inherited }],
+      },
+    })
+    const rule = editor.view.dom.querySelector<HTMLElement>('.doc-inline-rule')!
+    expect(rule.hasAttribute('data-lead-rule-full')).toBe(true)
+    expect(rule.hasAttribute('data-lead-rule')).toBe(false)
+    editor.destroy()
+  })
+
   it('flags only a rule that opens a paragraph continuing with text as the lead rule', () => {
     const hr = { text: '', image: { dataUrl: '', xml: HR_XML, rule: RULE } }
-    const lead = runsToInline([hr, { text: 'Title', bold: true }, hr])
+    const lead = runsToInline([hr, { text: 'Title', bold: true, sizeHalfPoints: 28 }, hr])
     expect(lead[0].attrs?.leadRule).toBe(true)
     expect(lead[2].attrs?.leadRule).toBeUndefined()
     expect(runsToInline([hr])[0].attrs?.leadRule).toBeUndefined()

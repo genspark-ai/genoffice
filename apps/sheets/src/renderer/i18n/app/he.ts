@@ -359,6 +359,8 @@ export const he = {
   appTableNameUsed: 'שם הטבלה "{name}" כבר שימש בהפעלה זו.',
   appTableNameInFile: 'שם הטבלה "{name}" כבר בשימוש על ידי טבלה בקובץ.',
   appTableOverlapsSession: 'הטווח חופף לטבלה "{name}" שנוצרה בהפעלה זו.',
+  appTableOverlapsFile: 'הטווח חופף לטבלה "{name}" שבקובץ.',
+  appTableAlreadyInTable: 'הבחירה כבר נמצאת בטבלה "{name}" — שנו את הסגנון דרך עיצוב טבלה.',
   appTablesNeedFile: 'פתח תחילה קובץ XLSX — טבלאות נכתבות לקובץ.',
   appTableSelectRange: 'בחר תחילה את טווח הנתונים — כותרות בשורה הראשונה.',
   appTableCreated: 'הטבלה נוצרה — שמור עם ⌘S.',

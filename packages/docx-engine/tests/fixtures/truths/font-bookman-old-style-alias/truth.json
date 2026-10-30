@@ -1,0 +1,52 @@
+{
+  "id": "font-bookman-old-style-alias",
+  "title": "Bookman Old Style (Office-only) is laid out by Word at its own hmtx advances and the hhea 1.1738 pitch; the advance-ratio-bucket Caladea alias reproduces the advances where the face is missing",
+  "section": "word-truths.md#L818",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf spans at the 11.04 pt device size: pangram 'The quick brown fox jumps over the lazy dog 0123456789' Regular 315.49 pt (28.58 em), Bold 337.52 (30.57), Italic 309.77 (28.06), Bold Italic 342.80 (31.05); hmtx sums of the DFonts files 28.36 / 30.34 / 27.86 / 30.82 em. gen before the fix: no alias, the name-guess sans chain drew Helvetica at 0.80x the Word width",
+  "cases": [
+    { "kind": "cssFamilyIncludes", "font": "Bookman Old Style", "expect": "Bookman Old Style GO" },
+    { "kind": "latinLineFactor", "font": "Bookman Old Style", "expect": 1.1738, "tol": 0.001 },
+    {
+      "kind": "runProps",
+      "block": 1,
+      "run": 0,
+      "expect": { "effective": { "fonts": { "ascii": "Bookman Old Style" } } }
+    },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Bookman Old Style GO",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 28.58,
+      "tol": 0.3,
+      "note": "Word 315.49 pt / 11.04"
+    },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Bookman Old Style GO",
+      "weight": "bold",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 30.57,
+      "tol": 0.35
+    },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Bookman Old Style GO",
+      "style": "italic",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 28.06,
+      "tol": 0.35
+    },
+    {
+      "kind": "aliasWidthEm",
+      "family": "Bookman Old Style GO",
+      "weight": "bold",
+      "style": "italic",
+      "text": "The quick brown fox jumps over the lazy dog 0123456789",
+      "expect": 31.05,
+      "tol": 0.35
+    }
+  ],
+  "docx": "probe.docx"
+}

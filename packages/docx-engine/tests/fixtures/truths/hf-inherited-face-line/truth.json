@@ -1,0 +1,75 @@
+{
+  "id": "hf-inherited-face-line",
+  "title": "A header strip line whose run declares no face is size x the inherited face's factor, like the body: sz 32 Calibri pitch 19.52, sz 16 9.76, CJK inheriting SimSun 15.60, an empty paragraph the mark's own Latin face",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Calibri 11 / eastAsia SimSun; br-line pitches 19.44-19.68 (sz 32), 9.60-9.84 (sz 16), 13.44 (inherited 11pt), 15.60 (SimSun sz 24); body tops 94.61 / 72.05 / 76.37 / 82.61; four Times New Roman sz 16 empty marks over a Calibri line push the body to 86.21 = 36 + 4 x 9.2 + 13.42, four bare empty paragraphs to 103.25 = 36 + 5 x 13.42; control Calibri 11 declared pitch 13.44. gen re-evaluated the strip factor only when a run declared a Latin face and otherwise kept the page's computed line height",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:var(--doc-line-factor-latin,1.2)",
+          "line-height:calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))"
+        ]
+      },
+      "note": "sz 32 run inheriting Calibri: the strip paragraph re-declares its line height from the Latin factor"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": { "styles": ["--doc-line-factor:var(--doc-line-factor-latin,1.2)"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:var(--doc-line-factor-latin,1.2)",
+          "line-height:calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))"
+        ]
+      },
+      "note": "everything inherited: still size x face x document multiple, not the page's computed pixels"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "expect": { "styles": ["--doc-line-factor:var(--doc-line-factor-cjk,1.7)"] },
+      "note": "CJK run inheriting the docDefaults eastAsia face: the document CJK var (SimSun 1.30)"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 4,
+      "para": 0,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:1.15",
+          "font-size:8pt",
+          "line-height:calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))"
+        ]
+      },
+      "note": "empty paragraph with a Times New Roman sz 16 mark: the mark's Latin face, 9.2 pt lines"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 5,
+      "para": 0,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:var(--doc-line-factor-latin,1.2)",
+          "line-height:calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))"
+        ],
+        "notStyles": ["font-size"]
+      },
+      "note": "bare empty paragraph: the inherited Latin face at the strip size, 13.42 pt"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 6,
+      "expect": { "styles": ["--doc-line-factor:1.22"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

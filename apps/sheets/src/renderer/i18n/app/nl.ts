@@ -417,6 +417,9 @@ export const nl = {
   appTableNameUsed: 'Tabelnaam "{name}" is in deze sessie al gebruikt.',
   appTableNameInFile: 'Tabelnaam "{name}" wordt al gebruikt door een tabel in het bestand.',
   appTableOverlapsSession: 'Het bereik overlapt tabel "{name}" die in deze sessie is gemaakt.',
+  appTableOverlapsFile: 'Het bereik overlapt tabel "{name}" in het bestand.',
+  appTableAlreadyInTable:
+    'De selectie staat al in tabel "{name}" — wijzig de stijl via Tabelontwerp.',
   appTablesNeedFile: 'Open eerst een XLSX-bestand — tabellen worden in het bestand geschreven.',
   appTableSelectRange: 'Selecteer eerst het gegevensbereik — veldnamen in de eerste rij.',
   appTableCreated: 'Tabel gemaakt — sla op met ⌘S.',

@@ -1,0 +1,14 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-nested-cell-default-after/probe.docx",
+  "tables": 3,
+  "hashes": ["969fa1f5abb0044a", "969fa1f5abb0044a", "969fa1f5abb0044a"],
+  "staticTables": 6,
+  "staticHashes": [
+    "34d18fe72f852176",
+    "24842cb0cffb0c3f",
+    "34d18fe72f852176",
+    "24842cb0cffb0c3f",
+    "34d18fe72f852176",
+    "24842cb0cffb0c3f"
+  ]
+}

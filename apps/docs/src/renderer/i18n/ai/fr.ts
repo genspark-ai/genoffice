@@ -102,6 +102,11 @@ export const fr = {
     "Suivi des modifications activé : les modifications de contenu de l'IA sont marquées comme révisions (insertions soulignées, suppressions barrées) ; acceptez ou refusez dans Révision",
   aiTrackOffTitle:
     "Suivi des modifications désactivé : les modifications de l'IA s'appliquent immédiatement (vous pouvez toujours restaurer via les instantanés de version)",
+  aiRevisionBarTitle: 'Révisions',
+  aiRevisionCount: '{count} modifications en attente',
+  aiRevisionRejectAll: 'Tout refuser',
+  aiRevisionAcceptAll: 'Tout accepter',
+  aiRevisionPara: 'Paragraphe {n}',
   aiTurnLimit:
     "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus reflète les étapes déjà effectuées et peut être incomplète.)",
   aiStopped: '(Arrêté)',

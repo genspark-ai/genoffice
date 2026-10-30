@@ -1,0 +1,15 @@
+{
+  "family": "Noto Naskh Arabic TNR",
+  "source": {
+    "kind": "probe",
+    "date": "2026-08-14",
+    "probe": "M3 probe: bundled Naskh subset shapes 1.125x (Arabic) / 1.074x (Persian) wider than Times New Roman"
+  },
+  "note": "Missing Arabic serif names (incl. Persian B/XB/IR faces) substitute wholesale\nto Times New Roman in Word; the bundled Naskh subset shapes 1.125\u00d7 (Arabic) /\n1.074\u00d7 (Persian) wider than Times (M3 probe 2026-08-14, whole-sentence shaped\nR). 90% splits the difference; same value as the TA alias above but from a\ndifferent calibration source, so they stay separate (like the W alias).",
+  "faces": [
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 90
+    }
+  ]
+}

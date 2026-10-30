@@ -26,6 +26,7 @@ interface TruthCase {
   control?: number
   from?: number
   to?: number
+  nth?: number
   expect: unknown
   status?: 'failing'
 }
@@ -170,61 +171,115 @@ async function firstTextTopPx(page: Page, docxIndex: number): Promise<number> {
   }, BLOCK_SEL(docxIndex))
 }
 
-/** top (pt) of the first body glyph box on the 1-based page, measured from that page's
- *  top; page frames are rebuilt from the gap widgets exactly like pageFramesFromGaps */
-async function pageTextTopPt(page: Page, pageNo: number): Promise<number> {
-  return page.evaluate((n) => {
-    const pm = document.querySelector('.editor-scroll .ProseMirror')
-    const wrap = pm?.closest('.page-wrap') as HTMLElement | null
-    if (!pm || !wrap) throw new Error('no editor page wrap')
-    const zoomHost = pm.closest('.doc-zoom') as HTMLElement | null
-    const zoom = zoomHost ? parseFloat(getComputedStyle(zoomHost).zoom || '1') || 1 : 1
-    const wr = wrap.getBoundingClientRect()
-    const gaps = Array.from(
-      wrap.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-carry), .page-gap-cut'),
-    )
-      .map((g) => {
-        const r = g.getBoundingClientRect()
-        const cs = getComputedStyle(g)
-        return {
-          top: (r.top - wr.top) / zoom,
-          height: r.height / zoom,
-          mb: parseFloat(cs.getPropertyValue('--gap-mb')) || 0,
-          mt: parseFloat(cs.getPropertyValue('--gap-mt')) || 0,
-        }
-      })
-      .sort((a, b) => a.top - b.top)
-    const frames: Array<{ top: number; bottom: number }> = []
-    let top = 0
-    for (const g of gaps) {
-      frames.push({ top, bottom: g.top + g.mb })
-      top = g.top + g.height - g.mt
-    }
-    frames.push({ top, bottom: wr.height / zoom })
-    const f = frames[n - 1]
-    if (!f) throw new Error(`no page frame ${n} (${frames.length} pages)`)
-    // header/footer strips of later pages live inside the gap widgets: body text only
-    const walker = document.createTreeWalker(pm, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) =>
-        node.textContent &&
-        node.textContent.trim() !== '' &&
-        !node.parentElement?.closest('.page-gap, .page-gap-cut, .page-float-host')
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT,
-    })
-    let best = Infinity
-    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
-      const range = document.createRange()
-      range.selectNodeContents(t)
-      for (const r of Array.from(range.getClientRects())) {
-        const y = (r.top - wr.top) / zoom
-        if (r.height === 0 || y < f.top - 0.5 || y >= f.bottom) continue
-        if (y < best) best = y
+/** top (pt) of the first glyph box on the 1-based page, measured from that page's top;
+ *  page frames are rebuilt from the gap widgets exactly like pageFramesFromGaps. `body`
+ *  reads the flow text, `header` the page's header strip (the first page's edge area,
+ *  later pages' gap strips) */
+async function pageTextTopPt(
+  page: Page,
+  pageNo: number,
+  part: 'body' | 'header' = 'body',
+): Promise<number> {
+  return page.evaluate(
+    ({ n, part }) => {
+      const pm = document.querySelector('.editor-scroll .ProseMirror')
+      const wrap = pm?.closest('.page-wrap') as HTMLElement | null
+      if (!pm || !wrap) throw new Error('no editor page wrap')
+      const zoomHost = pm.closest('.doc-zoom') as HTMLElement | null
+      const zoom = zoomHost ? parseFloat(getComputedStyle(zoomHost).zoom || '1') || 1 : 1
+      const wr = wrap.getBoundingClientRect()
+      const gaps = Array.from(
+        wrap.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-carry), .page-gap-cut'),
+      )
+        .map((g) => {
+          const r = g.getBoundingClientRect()
+          const cs = getComputedStyle(g)
+          return {
+            top: (r.top - wr.top) / zoom,
+            height: r.height / zoom,
+            mb: parseFloat(cs.getPropertyValue('--gap-mb')) || 0,
+            mt: parseFloat(cs.getPropertyValue('--gap-mt')) || 0,
+          }
+        })
+        .sort((a, b) => a.top - b.top)
+      const frames: Array<{ top: number; bottom: number }> = []
+      let top = 0
+      for (const g of gaps) {
+        frames.push({ top, bottom: g.top + g.mb })
+        top = g.top + g.height - g.mt
       }
-    }
-    if (best === Infinity) throw new Error(`no text on page ${n}`)
-    return ((best - f.top) * 72) / 96
-  }, pageNo)
+      frames.push({ top, bottom: wr.height / zoom })
+      const f = frames[n - 1]
+      if (!f) throw new Error(`no page frame ${n} (${frames.length} pages)`)
+      // header/footer strips of later pages live inside the gap widgets: body text only
+      const inBody = (node: Node) =>
+        !node.parentElement?.closest('.page-gap, .page-gap-cut, .page-float-host')
+      const inHeader = (node: Node) => {
+        const strip = node.parentElement?.closest<HTMLElement>('.page-hf-header, .page-gap-hf')
+        if (!strip) return false
+        return strip.classList.contains('page-gap-hf')
+          ? strip.dataset.hfKind === 'header' && strip.dataset.hfPageIdx === String(n - 1)
+          : n === 1
+      }
+      const root = part === 'header' ? wrap : pm
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.textContent &&
+          node.textContent.trim() !== '' &&
+          (part === 'header' ? inHeader(node) : inBody(node))
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT,
+      })
+      let best = Infinity
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        const range = document.createRange()
+        range.selectNodeContents(t)
+        for (const r of Array.from(range.getClientRects())) {
+          const y = (r.top - wr.top) / zoom
+          if (r.height === 0 || y < f.top - 0.5 || y >= f.bottom) continue
+          if (y < best) best = y
+        }
+      }
+      if (best === Infinity) throw new Error(`no ${part} text on page ${n}`)
+      return ((best - f.top) * 72) / 96
+    },
+    { n: pageNo, part },
+  )
+}
+
+/** top (pt) of the first nested table of a top-level table block, measured from the
+ *  content-box top of the cell that holds it (Word positions a floated nested table
+ *  against its cell, not the page) */
+async function nestedTableTopPt(page: Page, docxIndex: number, nth: number): Promise<number> {
+  return page.evaluate(
+    ({ sel, nth }) => {
+      const nested = document.querySelectorAll<HTMLElement>(`${sel} td table`)[nth]
+      if (!nested) throw new Error(`no nested table ${nth} in ${sel}`)
+      const td = nested.closest('td')!
+      const cs = getComputedStyle(td)
+      const contentTop =
+        td.getBoundingClientRect().top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop)
+      const zoomHost = td.closest('.doc-zoom') as HTMLElement | null
+      const zoom = zoomHost ? parseFloat(getComputedStyle(zoomHost).zoom || '1') || 1 : 1
+      return (((nested.getBoundingClientRect().top - contentTop) / zoom) * 72) / 96
+    },
+    { sel: BLOCK_SEL(docxIndex), nth },
+  )
+}
+
+/** height (pt) of the nth equation box of a block: the inline-math span wraps the
+ *  MathML, so its border box is the equation's line extents */
+async function mathBoxPt(page: Page, docxIndex: number, nth: number): Promise<number> {
+  return page.evaluate(
+    ({ sel, nth }) => {
+      const el = document.querySelectorAll<HTMLElement>(`${sel} span[data-inline-math]`)[nth]
+      if (!el) throw new Error(`no equation ${nth} in ${sel}`)
+      const zoomHost = el.closest('.doc-zoom') as HTMLElement | null
+      const zoom = zoomHost ? parseFloat(getComputedStyle(zoomHost).zoom || '1') || 1 : 1
+      return ((el.getBoundingClientRect().height / zoom) * 72) / 96
+    },
+    { sel: BLOCK_SEL(docxIndex), nth },
+  )
 }
 
 test.describe('executable Word truths (rendered)', () => {
@@ -305,6 +360,13 @@ test.describe('executable Word truths (rendered)', () => {
                 .toBeLessThanOrEqual(c.tol ?? 0.6)
               break
             }
+            case 'headerTextTopPt': {
+              const got = await pageTextTopPt(editorPage, c.page!, 'header')
+              expect
+                .soft(Math.abs(got - (c.expect as number)), `${label}: got ${got}`)
+                .toBeLessThan(c.tol ?? 0.6)
+              break
+            }
             case 'pageTextTopDeltaPt': {
               // against a control page: independent of the face's ascent convention
               const got =
@@ -354,7 +416,8 @@ test.describe('executable Word truths (rendered)', () => {
               const b = blockAt(dbg, c.block!)
               const rows = dbg.tableRows.find((r) => Math.abs(r.top - b.top) < 0.5)
               expect.soft(rows, `${label}: table rows at top ${b.top}`).toBeTruthy()
-              const got = rows!.rows.map((r) => r.h * PT_PER_PX)
+              if (!rows) break
+              const got = rows.rows.map((r) => r.h * PT_PER_PX)
               const want = c.expect as number[]
               expect.soft(got.length, label).toBe(want.length)
               for (let i = 0; i < want.length; i++) {
@@ -375,6 +438,20 @@ test.describe('executable Word truths (rendered)', () => {
               expect
                 .soft(Math.abs(b.height - wantPx), `${label}: block height`)
                 .toBeLessThanOrEqual(0.02)
+              break
+            }
+            case 'nestedTableTopPt': {
+              const got = await nestedTableTopPt(editorPage, c.block!, c.nth ?? 0)
+              expect
+                .soft(Math.abs(got - (c.expect as number)), `${label}: ${got.toFixed(2)}pt`)
+                .toBeLessThanOrEqual(c.tol ?? 0.6)
+              break
+            }
+            case 'mathLinePt': {
+              const got = await mathBoxPt(editorPage, c.block!, c.nth ?? 0)
+              expect
+                .soft(Math.abs(got - (c.expect as number)), `${label}: ${got.toFixed(2)}pt`)
+                .toBeLessThanOrEqual(c.tol ?? 0.6)
               break
             }
             default:

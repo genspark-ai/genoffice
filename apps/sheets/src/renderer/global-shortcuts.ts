@@ -164,7 +164,10 @@ const BINDINGS: readonly Binding[] = [
   { code: 'PageUp', chord: {}, gate: 'grid', action: command('page-row:-1') },
   { code: 'PageDown', chord: { alt: true }, gate: 'grid', action: command('page-col:1') },
   { code: 'PageUp', chord: { alt: true }, gate: 'grid', action: command('page-col:-1') },
-  { code: 'KeyY', chord: { mod: true }, gate: 'sheet', action: command('redo') },
+  // Excel's Ctrl+Y: Redo when the redo stack has entries, repeat-last-action
+  // otherwise (its F4 twin); Ctrl+Shift+Z stays a plain Redo alias.
+  { code: 'KeyY', chord: { mod: true }, gate: 'sheet', action: command('redo-or-repeat') },
+  { code: 'KeyZ', chord: { mod: true, shift: true }, gate: 'sheet', action: command('redo') },
   { code: 'Quote', chord: { mod: true }, gate: 'sheet', action: command('copy-above:formula') },
   {
     code: 'Quote',

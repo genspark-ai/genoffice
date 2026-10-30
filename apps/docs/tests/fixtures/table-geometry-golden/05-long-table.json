@@ -1,0 +1,7 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/05-long-table.docx",
+  "tables": 1,
+  "hashes": ["e3a063d52a43c41e"],
+  "staticTables": 1,
+  "staticHashes": ["ce30df316c863bf8"]
+}

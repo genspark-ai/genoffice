@@ -1,0 +1,44 @@
+{
+  "id": "cell-cjk-mark-face",
+  "title": "An empty cell paragraph is as tall as its paragraph-mark face, CJK marks included: SimSun 12 mark 15.60, Calibri 12 mark 14.64, no mark rPr the body line",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf rules under docDefaults Calibri 11: SimSun sz 24 mark row 16.08 (15.60 + gridline), Calibri sz 24 mark row 15.12, bare mark row 13.92; the empty-line probe 2026-08-25 gave the same per-face factors in the body",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "styles": [
+          "font-size:12pt",
+          "--doc-line-factor:1.3",
+          "font-family:'SimSun','GenOffice SimSun Latin','GenOffice Songti SC','STSong','Noto Serif CJK SC',serif",
+          "--doc-lead-gap:0px"
+        ]
+      },
+      "note": "the earlier Western-only scoping left this cell at the Latin factor (13.4 where Word has 15.6)"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": {
+        "styles": [
+          "font-size:12pt",
+          "--doc-line-factor:1.22",
+          "font-family:'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif"
+        ]
+      }
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 2,
+      "expect": { "notStyles": ["font-size", "font-family", "--doc-line-factor"] },
+      "note": "no mark rPr: the .doc-table .doc-p-empty rule keeps the Latin factor at the body size"
+    }
+  ],
+  "docx": "probe.docx"
+}

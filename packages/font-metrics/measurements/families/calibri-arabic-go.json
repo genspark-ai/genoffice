@@ -1,0 +1,19 @@
+{
+  "family": "Calibri Arabic GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-14",
+    "fonts": ["Calibri", "NotoSansArabic-Regular-subset.woff2"],
+    "probe": "hb-shape of a 57-letter Arabic pangram, 278 vs 325 at 12pt; box = Calibri hhea 1536/512 over 2048"
+  },
+  "note": "Calibri ships its own compact Arabic; Carlito has none, so Arabic in a\ncs=\"Calibri\" run would fall through to Geeza Pro (8.6% wider, taller box).\nScale = shaped width of a 57-letter Arabic pangram in Calibri vs the bundled\nNoto Sans Arabic subset (harfbuzz over the real files, 2026-10-14: 278 vs\n325 at 12 pt; bold cut 0.902, synthesized from the regular group). Box\npinned to Calibri's hhea 1536/512 over 2048 so the fallback face never\nlifts a Calibri line.",
+  "faces": [
+    {
+      "src": "url('./NotoSansArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 85.5,
+      "unicodeRange": "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF",
+      "ascentOverride": 75,
+      "descentOverride": 25
+    }
+  ]
+}

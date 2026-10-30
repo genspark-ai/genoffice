@@ -59,3 +59,31 @@ describe('textboxBoxStyle on-page clamp', () => {
     )
   })
 })
+
+describe('textboxBoxStyle vertical anchor and picture geometry', () => {
+  it('anchor=ctr/b use safe alignment so overflowing text starts at the box top (Word)', () => {
+    expect(textboxBoxStyle(box({ vAlign: 'center' }))).toContain(
+      'display:flex;flex-direction:column;justify-content:safe center',
+    )
+    expect(textboxBoxStyle(box({ vAlign: 'bottom' }))).toContain('justify-content:safe flex-end')
+  })
+
+  it('a photo box with a preset geometry clips the picture to the outline', () => {
+    const style = textboxBoxStyle(
+      box({
+        fillImageDataUrl: 'data:image/png;base64,AA==',
+        prst: 'ellipse',
+        widthPx: 100,
+        heightPx: 50,
+      }),
+    )
+    expect(style).toContain('clip-path:path("M 0 25 A 50 25 0 1 1 100 25 A 50 25 0 1 1 0 25 Z")')
+    expect(style).not.toContain('background-image:url("data:image/svg')
+  })
+
+  it('a photo box without geometry stays rectangular', () => {
+    expect(textboxBoxStyle(box({ fillImageDataUrl: 'data:image/png;base64,AA==' }))).not.toContain(
+      'clip-path',
+    )
+  })
+})

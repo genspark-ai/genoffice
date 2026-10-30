@@ -1,0 +1,23 @@
+{
+  "family": "GenOffice YaHei Latin",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-23",
+    "fonts": ["Microsoft YaHei", "Helvetica"],
+    "probe": "tabular digits 0.586em (bold 0.617) vs Helvetica 0.556"
+  },
+  "note": "Latin stand-in for Microsoft YaHei on machines without it: YaHei's tabular\ndigits advance 0.586em (bold 0.617), Helvetica's 0.556, so the size-adjusted\nalias keeps digit-heavy cells wrapping like Word. A locally installed YaHei\nprecedes it in the chain.",
+  "faces": [
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 106,
+      "unicodeRange": "U+0020-007E"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 108,
+      "unicodeRange": "U+0020-007E",
+      "weight": "bold"
+    }
+  ]
+}

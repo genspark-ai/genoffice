@@ -377,6 +377,9 @@ export const ar = {
   appTableNameUsed: 'اسم الجدول «{name}» مستخدم بالفعل في هذه الجلسة.',
   appTableNameInFile: 'اسم الجدول "{name}" مستخدم بالفعل بواسطة جدول في الملف.',
   appTableOverlapsSession: 'يتداخل النطاق مع الجدول «{name}» الذي أُنشئ في هذه الجلسة.',
+  appTableOverlapsFile: 'يتداخل النطاق مع الجدول «{name}» الموجود في الملف.',
+  appTableAlreadyInTable:
+    'التحديد موجود بالفعل داخل الجدول «{name}» — غيّر النمط من «تصميم الجدول».',
   appTablesNeedFile: 'افتح ملف XLSX أولاً — تُكتب الجداول في الملف.',
   appTableSelectRange: 'حدد نطاق بيانات أولاً — الرؤوس في صفه الأول.',
   appTableCreated: 'تم إنشاء الجدول — احفظ بـ ⌘S.',

@@ -349,6 +349,8 @@ export const zh = {
   appTableNameUsed: '表名 "{name}" 本次会话已使用过。',
   appTableNameInFile: '表名 "{name}" 已被文件中的表使用。',
   appTableOverlapsSession: '该区域与本次会话创建的表格 "{name}" 重叠。',
+  appTableOverlapsFile: '该区域与文件中的表格 "{name}" 重叠。',
+  appTableAlreadyInTable: '所选区域已在表格 "{name}" 内——请到「表格设计」更改样式。',
   appTablesNeedFile: '请先打开 XLSX 文件——表格会写入文件。',
   appTableSelectRange: '请先选中数据区域——首行为表头。',
   appTableCreated: '表格已创建——⌘S 保存。',

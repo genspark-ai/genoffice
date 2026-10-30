@@ -132,6 +132,31 @@ describe('resolveFace', () => {
     expect(resolveFace('Montserrat', ctxWith(hints))?.family).toBe('Montserrat')
   })
 
+  it('lets a missing Arabic name follow its altName ahead of the Times New Roman rule', () => {
+    const hints = {
+      'fixture uthman naskh': { altName: 'Arial', charset: 'B2' },
+      'fixture kufi': { altName: 'Fixture Naskh Alt' },
+    }
+    expect(resolveFace('Fixture Uthman Naskh', ctxWith(hints))?.family).toBe('Arial')
+    expect(resolveFace('Fixture Kufi', ctxWith(hints))?.family).toMatch(/^times new roman$/i)
+    expect(resolveFace('Fixture Uthman Naskh', ctxWith())?.family).toMatch(/^times new roman$/i)
+  })
+
+  it('sends a missing Latin-charset name covering the Arabic code page to Arial', () => {
+    const hints = {
+      'fixture sans ar': { panose: '00000500000000000000', charset: '00', csb0: '00000041' },
+      'fixture naskh ar': { charset: 'B2', csb0: '00000040' },
+      'fixture sans latin': { panose: '00000500000000000000', charset: '00', csb0: '00000001' },
+    }
+    expect(resolveFace('Fixture Sans AR', ctxWith(hints))).toMatchObject({
+      family: 'Arial',
+      substituted: true,
+      exception: true,
+    })
+    expect(resolveFace('Fixture Naskh AR', ctxWith(hints))?.family).toMatch(/^times new roman$/i)
+    expect(resolveFace('Fixture Sans Latin', ctxWith(hints))?.family).toBe('Calibri')
+  })
+
   it('routes the East Asian substitutions', () => {
     const HUMAN_GOTHIC = '\ud734\uba3c\uace0\ub515'
     const han = resolveFace('\u6c49\u4eea\u4e66\u5b8b\u4e8cKW', ctxWith())
@@ -170,6 +195,20 @@ describe('resolveFace', () => {
       resolveFace('Arial Bold', ctxWith({ 'arial bold': { panose: '020B0604020202090204' } })),
     ).toMatchObject({ family: 'Arial', substituted: true, exception: false })
     expect(resolveFace('Courier New Regular', ctxWith())?.family).toBe('Courier New')
+    // a weight-worded instance of a cloud family is not laid out as that family: Word for Mac
+    // paces Bahnschrift Light Condensed at Calibri-like advances (truth 2026-10-28), so it
+    // substitutes like any missing swiss name
+    expect(
+      resolveFace(
+        'Bahnschrift Light Condensed',
+        ctxWith({ 'bahnschrift light condensed': { panose: '020B0502040204020203' } }),
+      ),
+    ).toMatchObject({ family: 'Calibri', substituted: true, lineFactor: 1.2207 })
+    expect(resolveFace('Roboto Condensed Light', ctxWith())?.family).toBe('Roboto Condensed Light')
+    // a cloud family name wins over its fontTable altName (truth 2026-10-19)
+    expect(
+      resolveFace('Roboto', ctxWith({ roboto: { altName: 'Times New Roman', family: 'roman' } })),
+    ).toMatchObject({ family: 'Roboto', substituted: false, lineFactor: 1.1719 })
     expect(resolveFace('Arial MT', ctxWith({ 'arial mt': { altName: 'Arial MT' } }))?.family).toBe(
       'Arial',
     )

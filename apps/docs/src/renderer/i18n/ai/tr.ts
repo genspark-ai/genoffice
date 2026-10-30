@@ -100,6 +100,11 @@ export const tr = {
     'Değişiklikleri izleme açık: AI içerik düzenlemeleri düzeltme olarak işaretlenir (eklemeler altı çizili, silmeler üstü çizili); Gözden Geçir sekmesinden kabul edin veya reddedin',
   aiTrackOffTitle:
     'Değişiklikleri izleme kapalı: AI düzenlemeleri hemen uygulanır (anlık görüntülerle yine de geri alabilirsiniz)',
+  aiRevisionBarTitle: 'Düzeltmeler',
+  aiRevisionCount: '{count} bekleyen değişiklik',
+  aiRevisionRejectAll: 'Tümünü reddet',
+  aiRevisionAcceptAll: 'Tümünü kabul et',
+  aiRevisionPara: 'Paragraf {n}',
   aiTurnLimit:
     'Bu görev tüm adımlar tamamlanmadan duraklatıldı. Tamamlanan düzenlemeler korunur; kalan işi bitirmek için Devam et seçeneğini seçin.',
   aiStopped: '(Durduruldu)',

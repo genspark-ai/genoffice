@@ -1,0 +1,6 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-nested-float-table/probe.docx",
+  "editor": [],
+  "nested": ["4e324fdf7c8c051a", "019c16db3f5cc8d6"],
+  "hf": []
+}

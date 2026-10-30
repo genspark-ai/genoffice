@@ -1,0 +1,826 @@
+{
+  "family": "Segoe UI GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-29",
+    "fonts": [
+      "Segoe UI (Office CloudFonts cache: Regular, Bold, Italic, Bold Italic)",
+      "Helvetica (macOS Helvetica.ttc)"
+    ],
+    "probe": "hmtx advance-ratio buckets (<= 1.5 % span, build-font-aliases.mjs --refit-buckets); Word lays the cloud face out at its own advances"
+  },
+  "refit": {
+    "method": "hmtx-buckets",
+    "span": 0.015,
+    "range": "U+0020-007E, U+00A0-00FF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+20AC",
+    "cuts": {
+      "normal/normal": {
+        "word": "cloud:Segoe UI/Segoe UI",
+        "base": "system:/System/Library/Fonts/Helvetica.ttc#0",
+        "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')"
+      },
+      "bold/normal": {
+        "word": "cloud:Segoe UI/Segoe UI Bold",
+        "base": "system:/System/Library/Fonts/Helvetica.ttc#1",
+        "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')"
+      },
+      "normal/italic": {
+        "word": "cloud:Segoe UI/Segoe UI Italic",
+        "base": "system:/System/Library/Fonts/Helvetica.ttc#2",
+        "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')"
+      },
+      "bold/italic": {
+        "word": "cloud:Segoe UI/Segoe UI Bold Italic",
+        "base": "system:/System/Library/Fonts/Helvetica.ttc#3",
+        "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')"
+      }
+    }
+  },
+  "note": "Segoe UI is an M365 cloud font Word downloads and renders real; where it is\nnot installed Chromium falls to Helvetica/Arial, whose letters run wider.\nWhole-face ratios (shaped widths of a long body per cut, 2026-09-11: 0.986\nregular, 0.987 bold) still moved a wrap every few lines on English body text\n(validation corpus 2026-10-29: 14 Segoe UI documents at 5.2 % mean deviation);\nthe faces are now advance-ratio buckets over Helvetica (Word advance / Helvetica\nadvance per Latin-1 glyph, greedy buckets no wider than 1.5 %, one size-adjusted\nface per bucket with an explicit unicode-range, the rangeless face at the median\nlowercase ratio). An installed Segoe UI precedes this alias in the chain.",
+  "faces": [
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 103.4
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 61.6,
+      "unicodeRange": "U+00B8"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 67.4,
+      "unicodeRange": "U+2020-2021"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 71.9,
+      "unicodeRange": "U+004A, U+20AC"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 73.3,
+      "unicodeRange": "U+00BF, U+2026"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 74.6,
+      "unicodeRange": "U+005F"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 75.8,
+      "unicodeRange": "U+0045, U+00C8-00CB"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 78,
+      "unicodeRange": "U+002C, U+002E, U+003A-003B, U+00B7"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 80.3,
+      "unicodeRange": "U+003F, U+0046, U+0053, U+0060, U+00A7"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 83.3,
+      "unicodeRange": "U+0050, U+0052, U+0059, U+00DD-00DE"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 85.3,
+      "unicodeRange": "U+0043, U+004C, U+0054, U+0073, U+00A1, U+00B4, U+00B6, U+00C7"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 86.8,
+      "unicodeRange": "U+0042, U+004B, U+00C6, U+00EC-00EF"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 88.6,
+      "unicodeRange": "U+0047, U+0058, U+00DF"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 90.5,
+      "unicodeRange": "U+0028-0029, U+007A-007B, U+007D, U+00AB, U+00BB, U+2013"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 91.8,
+      "unicodeRange": "U+0025, U+0061, U+0063, U+0078, U+007C, U+00A6, U+00E0-00E5, U+00E7"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 93.9,
+      "unicodeRange": "U+0040, U+0056, U+005A, U+0065, U+00B0, U+00E6, U+00E8-00EB"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 95.5,
+      "unicodeRange": "U+0049, U+0055, U+0076, U+00CC-00CF, U+00D9-00DC, U+00F8"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 96.9,
+      "unicodeRange": "U+0024, U+0030-0039, U+0041, U+0044, U+004F, U+0051, U+0079, U+00A2-00A3, U+00A5, U+00C0-00C5, U+00D0, U+00D2-00D6, U+00D8, U+00FD, U+00FF"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 98.8,
+      "unicodeRange": "U+0020, U+0048, U+0057, U+006B, U+00A0"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 100.1,
+      "unicodeRange": "U+0077, U+00A4, U+00B5, U+00F0, U+2014-2015"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 102.2,
+      "unicodeRange": "U+0021, U+0068, U+006E, U+0075, U+00F1, U+00F9-00FC, U+2018-201B"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 103.7,
+      "unicodeRange": "U+004E, U+006D, U+0072, U+00D1"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 105.6,
+      "unicodeRange": "U+0023, U+0062, U+0064, U+0067, U+006F-0071, U+00AA, U+00B9, U+00F2-00F6, U+00FE"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 108.2,
+      "unicodeRange": "U+002A, U+004D, U+005B, U+005D, U+00BC"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 109.6,
+      "unicodeRange": "U+0022, U+0069-006A, U+006C, U+00B2-00B3"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 112.8,
+      "unicodeRange": "U+0066, U+00BD, U+201C-201E"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 114.2,
+      "unicodeRange": "U+00BE"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 117,
+      "unicodeRange": "U+002B, U+003C-003E, U+007E, U+00AC, U+00D7, U+2022"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 117.9,
+      "unicodeRange": "U+00BA"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 120.4,
+      "unicodeRange": "U+0026-0027, U+002D, U+00A9, U+00AD-00AE"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 122,
+      "unicodeRange": "U+0074"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 124.6,
+      "unicodeRange": "U+00A8, U+00AF, U+00B1, U+00F7, U+2017"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 136.4,
+      "unicodeRange": "U+005C"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 140.2,
+      "unicodeRange": "U+002F"
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 145.8,
+      "unicodeRange": "U+005E"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 101.4,
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 64.7,
+      "unicodeRange": "U+00B8",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 71.7,
+      "unicodeRange": "U+003F, U+00BF",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 73,
+      "unicodeRange": "U+2020-2021",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 74.6,
+      "unicodeRange": "U+005F",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 77.3,
+      "unicodeRange": "U+20AC",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 79.7,
+      "unicodeRange": "U+0045, U+004A, U+0073, U+00C8-00CB",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 81.4,
+      "unicodeRange": "U+003A-003B",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 83.9,
+      "unicodeRange": "U+004C, U+0053",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 85.9,
+      "unicodeRange": "U+0046, U+0063, U+00E7",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 86.7,
+      "unicodeRange": "U+0043, U+00A7, U+00C7",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 89.5,
+      "unicodeRange": "U+0042, U+004B, U+2013",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 91.1,
+      "unicodeRange": "U+0047, U+0052, U+0059, U+00B4, U+00B6, U+00DD, U+2026",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 92.4,
+      "unicodeRange": "U+0050, U+00DE, U+00E6",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 94.4,
+      "unicodeRange": "U+0060, U+007B, U+007D, U+00C6",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 95.6,
+      "unicodeRange": "U+0054, U+007A, U+00B0",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 97.2,
+      "unicodeRange": "U+0025, U+002C, U+002E, U+0040-0041, U+004F, U+0051, U+0061, U+0065, U+0076, U+0079, U+00B7, U+00C0-00C5, U+00D2-00D6, U+00D8, U+00E0-00E5, U+00E8-00EB, U+00F0, U+00FD, U+00FF",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 98.9,
+      "unicodeRange": "U+0020-0021, U+0058, U+005A, U+0068, U+006E, U+0075, U+0078, U+00A0-00A1, U+00F1, U+00F9-00FC, U+201C-201E",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 100.3,
+      "unicodeRange": "U+0055-0056, U+0064, U+0067, U+006B, U+006F, U+0071, U+00A4, U+00D9-00DC, U+00F2-00F6, U+00F8, U+2014-2015",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 102.2,
+      "unicodeRange": "U+0044, U+0062, U+0069-006A, U+006C-006D, U+0070, U+0072, U+0077, U+00D0, U+00DF, U+00EC-00EF, U+00FE",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 103.7,
+      "unicodeRange": "U+0022, U+0024, U+0030-0039, U+00A2-00A3, U+00A5, U+00AB, U+00BB, U+2018-201B",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 106.4,
+      "unicodeRange": "U+0023, U+0048, U+0057, U+00B5",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 110.4,
+      "unicodeRange": "U+0028-0029, U+004E, U+005B, U+005D, U+00AA, U+00D1",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 114.5,
+      "unicodeRange": "U+0049, U+004D, U+0066, U+00BC-00BD, U+00CC-00CF",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 117,
+      "unicodeRange": "U+0026, U+002A, U+0074, U+007C, U+00A6, U+00BE",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 118.5,
+      "unicodeRange": "U+00A9, U+00AE, U+00B9",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 121.1,
+      "unicodeRange": "U+002B, U+002D, U+003C-003E, U+005E, U+007E, U+00AC-00AD, U+00B2-00B3, U+00D7, U+2022",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 124.3,
+      "unicodeRange": "U+0027, U+00AF, U+00BA, U+2017",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 128.8,
+      "unicodeRange": "U+00B1, U+00F7",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 138.7,
+      "unicodeRange": "U+00A8",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 156.9,
+      "unicodeRange": "U+005C",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 159.6,
+      "unicodeRange": "U+002F",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 97.5,
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 67.6,
+      "unicodeRange": "U+2020-2021",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 69.2,
+      "unicodeRange": "U+004A",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 70.4,
+      "unicodeRange": "U+00BF",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 72.4,
+      "unicodeRange": "U+20AC",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 74.2,
+      "unicodeRange": "U+0053, U+005F, U+2026",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 74.8,
+      "unicodeRange": "U+0045, U+00C8-00CB",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 78.2,
+      "unicodeRange": "U+002C, U+002E, U+003A-003B, U+003F, U+00B7",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 79.5,
+      "unicodeRange": "U+0046, U+0073",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 80.6,
+      "unicodeRange": "U+0052, U+00A7",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 83.1,
+      "unicodeRange": "U+004C, U+0059, U+00DD",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 85.9,
+      "unicodeRange": "U+0042, U+0050, U+0054, U+00B6, U+00C6, U+00DE",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 87.8,
+      "unicodeRange": "U+0043, U+0047, U+0063, U+0065, U+00C7, U+00DF, U+00E7-00EB, U+00F8",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 89.5,
+      "unicodeRange": "U+004B, U+0058, U+2013",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 91.1,
+      "unicodeRange": "U+0028-0029, U+0078, U+007A-007B, U+007D",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 92.8,
+      "unicodeRange": "U+0025, U+005A, U+007C, U+00A6, U+00AB, U+00BB, U+00E6, U+00EC-00EF",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 94.6,
+      "unicodeRange": "U+0040-0041, U+0056, U+0076, U+00B0, U+00C0-00C5, U+00F0, U+2018-201B",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 96,
+      "unicodeRange": "U+0049, U+0055, U+006F, U+0079, U+00A1, U+00CC-00CF, U+00D9-00DC, U+00F2-00F6, U+00FD, U+00FF",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 97.2,
+      "unicodeRange": "U+0024, U+0030-0039, U+0048, U+004D, U+004F, U+0051, U+0061-0062, U+0064, U+0067, U+006B, U+0070-0071, U+00A2-00A3, U+00A5, U+00D2-00D6, U+00D8, U+00E0-00E5, U+00FE",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 99,
+      "unicodeRange": "U+0020, U+0044, U+0057, U+0077, U+00A0, U+00B5, U+00D0",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 100.4,
+      "unicodeRange": "U+0068, U+006E, U+0075, U+00A4, U+00F1, U+00F9-00FC, U+2014-2015",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 103.7,
+      "unicodeRange": "U+004E, U+006D, U+00D1",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 105.2,
+      "unicodeRange": "U+0022-0023, U+0060, U+0066, U+00A8, U+00AF, U+00B4, U+00B8",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 107.4,
+      "unicodeRange": "U+002A, U+006A, U+0072",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 109.8,
+      "unicodeRange": "U+005B, U+005D, U+00B2-00B3, U+00B9, U+00BC",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 112.6,
+      "unicodeRange": "U+00BD, U+201C-201E",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 115.8,
+      "unicodeRange": "U+0021, U+0026, U+0069, U+006C, U+0074, U+00BE, U+2022",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 117.5,
+      "unicodeRange": "U+0027, U+002B, U+003C-003E, U+007E, U+00AA, U+00AC, U+00D7",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 120.3,
+      "unicodeRange": "U+002D, U+00AD-00AE",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 122.9,
+      "unicodeRange": "U+00A9, U+00BA",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 124.8,
+      "unicodeRange": "U+00B1, U+00F7, U+2017",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 139,
+      "unicodeRange": "U+005C",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 142.5,
+      "unicodeRange": "U+002F",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 146,
+      "unicodeRange": "U+005E",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 97.9,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 73.2,
+      "unicodeRange": "U+003F, U+00BF, U+2020-2021",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 74.6,
+      "unicodeRange": "U+005F",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 77.4,
+      "unicodeRange": "U+20AC",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 79.4,
+      "unicodeRange": "U+0045, U+004A, U+0073, U+00C8-00CB",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 81.1,
+      "unicodeRange": "U+003A-003B, U+0053",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 83.3,
+      "unicodeRange": "U+004C, U+0063, U+00E7",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 85.3,
+      "unicodeRange": "U+0046",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 87.9,
+      "unicodeRange": "U+0043, U+0052, U+00A7, U+00C7",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 89.9,
+      "unicodeRange": "U+0042, U+004B, U+2013",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 91.3,
+      "unicodeRange": "U+0047, U+0059, U+00B6, U+00DD, U+2026",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 93.9,
+      "unicodeRange": "U+0050, U+0065, U+006F, U+00C6, U+00DE, U+00E8-00EB, U+00F0, U+00F2-00F6, U+00F8",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 95.1,
+      "unicodeRange": "U+006A, U+0076, U+007B, U+007D, U+00B0",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 97.1,
+      "unicodeRange": "U+0041, U+0054, U+0062, U+0064, U+0067, U+0070-0071, U+0079-007A, U+00C0-00C5, U+00E6, U+00FD-00FF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 98,
+      "unicodeRange": "U+0020, U+0025, U+002C, U+002E, U+0040, U+004F, U+0051, U+0058, U+0068, U+006E, U+0075, U+0078, U+00A0, U+00B7, U+00D2-00D6, U+00D8, U+00DF, U+00F1, U+00F9-00FC, U+201C-201E",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 100,
+      "unicodeRange": "U+0055-0056, U+005A, U+00A4, U+00D9-00DC, U+2014-2015",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 101.9,
+      "unicodeRange": "U+006B, U+006D, U+0077",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 103.6,
+      "unicodeRange": "U+0021-0024, U+0030-0039, U+0044, U+0072, U+00A1-00A3, U+00A5, U+00D0",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 104.9,
+      "unicodeRange": "U+0048, U+004D, U+00AB, U+00BB, U+2018-201B",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 106.6,
+      "unicodeRange": "U+0057, U+0061, U+00B5, U+00E0-00E5",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 111,
+      "unicodeRange": "U+0026, U+0028-0029, U+004E, U+005B, U+005D, U+00D1",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 113.9,
+      "unicodeRange": "U+0049, U+0066, U+0069, U+006C, U+0074, U+00B9, U+00BC, U+00CC-00CF, U+00EC-00EF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 116.4,
+      "unicodeRange": "U+002A, U+007C, U+00A6, U+00BD",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 118.3,
+      "unicodeRange": "U+00A9, U+00AE, U+00BE",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 121.2,
+      "unicodeRange": "U+002B, U+002D, U+003C-003E, U+005E, U+007E, U+00AC-00AD, U+00D7, U+2022",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 124.2,
+      "unicodeRange": "U+0027, U+00B2-00B3, U+00BA, U+2017",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 126.8,
+      "unicodeRange": "U+00AA",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 129,
+      "unicodeRange": "U+00B1, U+00F7",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 131.8,
+      "unicodeRange": "U+0060, U+00A8, U+00AF, U+00B4, U+00B8",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 157.3,
+      "unicodeRange": "U+005C",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 159.8,
+      "unicodeRange": "U+002F",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

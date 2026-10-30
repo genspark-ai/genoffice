@@ -1,0 +1,35 @@
+[
+  {
+    "section": 0,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 720,
+    "pageWidthPx": 720,
+    "estimatePx": 35.8,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 1,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 720,
+    "pageWidthPx": 960,
+    "estimatePx": 35.8,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": ["inherited-width-edge-strip"]
+  },
+  {
+    "section": 2,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 960,
+    "pageWidthPx": 960,
+    "estimatePx": 35.8,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  }
+]

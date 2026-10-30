@@ -12,6 +12,7 @@ import {
   FOCUSING_EDITOR_INPUT_FORMULA,
   FOCUSING_EDITOR_STANDALONE,
   IContextService,
+  IUndoRedoService,
   WrapStrategy,
   type ICellData,
   type IStyleData,
@@ -255,6 +256,15 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
   if (!runtime) return
   if (command === 'undo' || command === 'redo') {
     void runtime.univerAPI[command]()
+    return
+  }
+  if (command === 'redo-or-repeat') {
+    // Excel's Ctrl+Y semantics: Redo when there is something to redo,
+    // otherwise repeat the last action on the current selection (F4's
+    // command). Keeps "Ctrl+Y after typing" doing what Excel users expect.
+    const undoRedo = runtime.univer.__getInjector().get(IUndoRedoService)
+    if (undoRedo.pitchTopRedoElement()) void runtime.univerAPI.redo()
+    else void runtime.univerAPI.executeCommand('sheet.command.repeat-last-action')
     return
   }
   if (command.startsWith('error:')) {
@@ -658,22 +668,19 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       stepSelectionDecimals(runtime, command === 'decimal-inc' ? 1 : -1)
       return
     case 'filter-toggle': {
-      // A declined command — nothing selected, a range the filter cannot take —
-      // says nothing on its own, and a filter that never appeared reads as a dead
-      // button. While the sheet is still loading, the gate in App.tsx already
-      // says why (a footer note, a "load it all" prompt, or the projection
-      // path's own progress), so this stays quiet rather than talking over it.
+      // While the sheet is still loading the App.tsx gate already explains the
+      // decline, so stay quiet rather than talk over it.
       const lazy = ctx.lazyWorkbookRef.current
       const stillLoading = lazy !== null && !lazy.flags.preloadComplete
       void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter').then((ok) => {
         if (ok !== false || stillLoading) return
-        // A canceling guard also answers `false`: when the sheet's protection
-        // has already spoken — blocked outright, or unknown while still being
-        // indexed — this notice would overwrite it with the wrong advice.
+        // A canceling protection guard also answers false and has already spoken.
         const state = ctx.lazyWorkbookRef.current
         const sheetId = worksheet?.getSheetId()
-        const protection = state && sheetId ? effectiveSheetProtection(state, sheetId) : null
-        if (!protection || (protection.protected && !protection.allow.autoFilter)) return
+        if (state && sheetId) {
+          const protection = effectiveSheetProtection(state, sheetId)
+          if (!protection || (protection.protected && !protection.allow.autoFilter)) return
+        }
         ctx.setMessage(t('appFilterToggleFailed'))
       })
       return
@@ -1370,7 +1377,9 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     return
   }
   if (command === 'format-as-table') {
-    handleFormatAsTable(ctx.dataToolsContext(), 'TableStyleMedium2')
+    const existing = selectedTableEcho(ctx.tableDesignContext())
+    if (existing) ctx.setMessage(t('appTableAlreadyInTable', { name: existing.name }))
+    else handleFormatAsTable(ctx.dataToolsContext(), 'TableStyleMedium2')
     return
   }
   if (command.startsWith('page-layout:')) {

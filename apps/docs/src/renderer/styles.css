@@ -126,6 +126,39 @@
   --docs-paper-field-bg: rgb(0 0 0 / 7%);
   --docs-paper-watermark: rgb(128 128 128 / 18%);
   --docs-paper-rev-ink: #b91c1c;
+  --docs-paper-rev-ink-1: #1d4ed8;
+  --docs-paper-rev-ink-2: #15803d;
+  --docs-paper-rev-ink-3: #7e22ce;
+  --docs-paper-rev-ink-4: #0e7490;
+  --docs-paper-rev-ink-5: #c2410c;
+  --docs-paper-rev-ink-6: #be185d;
+  --docs-paper-rev-ink-7: #4d7c0f;
+  --docs-paper-rev-move: #15803d;
+  --docs-paper-rev-color-black: #000000;
+  --docs-paper-rev-color-blue: #0000ff;
+  --docs-paper-rev-color-turquoise: #00ffff;
+  --docs-paper-rev-color-brightGreen: #00ff00;
+  --docs-paper-rev-color-pink: #ff00ff;
+  --docs-paper-rev-color-red: #ff0000;
+  --docs-paper-rev-color-yellow: #ffff00;
+  --docs-paper-rev-color-white: #ffffff;
+  --docs-paper-rev-color-darkBlue: #000080;
+  --docs-paper-rev-color-teal: #008080;
+  --docs-paper-rev-color-green: #008000;
+  --docs-paper-rev-color-violet: #800080;
+  --docs-paper-rev-color-darkRed: #800000;
+  --docs-paper-rev-color-darkYellow: #808000;
+  --docs-paper-rev-color-gray50: #808080;
+  --docs-paper-rev-color-gray25: #c0c0c0;
+  --docs-paper-rev-color-classicRed: #c00000;
+  --docs-paper-rev-color-classicBlue: #0070c0;
+  --docs-paper-rev-color-lightBlue: #bdd6ee;
+  --docs-paper-rev-color-palePink: #f7c8d8;
+  --docs-paper-rev-color-lightYellow: #ffffcc;
+  --docs-paper-rev-color-lightOrange: #fbd5b5;
+  --docs-paper-cell-ins-bg: var(--docs-paper-rev-color-lightBlue);
+  --docs-paper-cell-del-bg: var(--docs-paper-rev-color-palePink);
+  --docs-paper-cell-merge-bg: var(--docs-paper-rev-color-lightYellow);
   --docs-paper-ins-bg: rgb(22 163 74 / 8%);
   --docs-paper-del-bg: rgb(220 38 38 / 8%);
   --docs-paper-del-line: #dc2626;
@@ -557,6 +590,94 @@ html.genoffice-popover-open .ribbon-tabs {
 
 .ribbon-tabs-spacer {
   flex: 1;
+}
+
+/* Word-style top-right cluster: Comments toggle + Editing/Reviewing/Viewing mode */
+.ribbon-mode-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
+.ribbon-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ribbon-mode-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.ribbon-mode-btn.on,
+.ribbon-mode-btn.open {
+  background: var(--active-bg);
+  border-color: var(--border-strong);
+}
+
+.ribbon-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ribbon-mode-caret {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.mode-menu-wrap {
+  position: relative;
+}
+
+/* Show Comments: the label toggles, the caret picks Contextual / List */
+.ribbon-mode-split {
+  display: flex;
+}
+
+.ribbon-mode-split > .ribbon-mode-btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.ribbon-mode-split > .mode-menu-wrap > .ribbon-mode-btn {
+  border-radius: 0 6px 6px 0;
+  border-left: 0;
+  padding: 2px 5px;
+}
+
+.mode-menu {
+  left: auto;
+  right: 0;
+}
+
+.mode-menu button {
+  justify-content: flex-start;
+}
+
+.mode-menu .mode-menu-check {
+  display: inline-block;
+  width: 16px;
+  color: var(--accent);
+}
+
+/* the cluster labels give way before the tabs start overflowing */
+@media (max-width: 1280px) {
+  .ribbon-mode-text {
+    display: none;
+  }
+
+  .ribbon-mode-cluster .mode-menu-wrap .ribbon-mode-text {
+    display: inline;
+  }
 }
 
 .qa-sep {
@@ -2148,19 +2269,63 @@ tr:not([style*='height']):not(
   padding: 0;
 }
 
-/* table row/cell revisions: insert = green background, delete = red background (inline text has separate ins/del underline/strike styles) */
+/* table row/cell revisions: Word's cell highlighting (inserted light blue, deleted pink,
+   merged light yellow; Track Changes Options can repaint them) */
 tr.row-rev-ins > td,
 tr.row-rev-ins > th,
 td.cell-rev-ins,
 th.cell-rev-ins {
-  background: var(--docs-paper-ins-bg);
+  background: var(--rev-ins-bg, var(--docs-paper-cell-ins-bg));
 }
 
 tr.row-rev-del > td,
 tr.row-rev-del > th,
 td.cell-rev-del,
 th.cell-rev-del {
-  background: var(--docs-paper-del-bg);
+  background: var(--rev-del-bg, var(--docs-paper-cell-del-bg));
+}
+
+td[data-rev-merge],
+th[data-rev-merge] {
+  background: var(--rev-merge-bg, var(--docs-paper-cell-merge-bg));
+}
+
+.rev-display-none td[data-rev-merge],
+.rev-display-none th[data-rev-merge],
+.rev-display-simple td[data-rev-merge],
+.rev-display-simple th[data-rev-merge],
+.rev-display-original td[data-rev-merge],
+.rev-display-original th[data-rev-merge],
+.rev-hide-format td[data-rev-merge],
+.rev-hide-format th[data-rev-merge] {
+  background: none;
+}
+
+/* pending table / row / cell property revisions (tblPrChange &c.): a change bar on the left edge */
+table.doc-table[data-rev-fmt],
+tr[data-rev-fmt] > td:first-child,
+tr[data-rev-fmt] > th:first-child,
+td[data-rev-fmt],
+th[data-rev-fmt] {
+  box-shadow: inset 3px 0 0 var(--docs-paper-ppr);
+}
+
+.rev-display-none table.doc-table[data-rev-fmt],
+.rev-display-none tr[data-rev-fmt] > td:first-child,
+.rev-display-none tr[data-rev-fmt] > th:first-child,
+.rev-display-none td[data-rev-fmt],
+.rev-display-none th[data-rev-fmt],
+.rev-display-simple table.doc-table[data-rev-fmt],
+.rev-display-simple tr[data-rev-fmt] > td:first-child,
+.rev-display-simple tr[data-rev-fmt] > th:first-child,
+.rev-display-simple td[data-rev-fmt],
+.rev-display-simple th[data-rev-fmt],
+.rev-display-original table.doc-table[data-rev-fmt],
+.rev-display-original tr[data-rev-fmt] > td:first-child,
+.rev-display-original tr[data-rev-fmt] > th:first-child,
+.rev-display-original td[data-rev-fmt],
+.rev-display-original th[data-rev-fmt] {
+  box-shadow: none;
 }
 
 /* no-markup / simple-markup mode = as if all accepted: deleted rows hidden, insert background removed */
@@ -2743,6 +2908,15 @@ th.cell-rev-del {
   width: var(--col-w, auto);
 }
 
+/* a page-opening section never sits beside the previous section's floats; its
+   page gap clears them too, so the opener measures at the boundary whether or
+   not the gap is in the DOM (a gap beside the float band made the opener's
+   flow top flip between passes) */
+.doc-page .doc-sect-page-start,
+.doc-page .page-gap:has(+ .doc-sect-page-start) {
+  clear: both;
+}
+
 /* floating-anchor wrappers and side-wrap carriers force width:100%, which
    beats the section-width decoration above: their stray in-flow lines then
    wrap at the full canvas width on the canvas but at the section width in
@@ -2990,6 +3164,14 @@ th.cell-rev-del {
   text-align: left;
 }
 
+/* tab whose stop lies past the right edge with only whitespace behind it:
+   Word wraps it on to a new line (a blank line) instead of hanging it; the
+   forced break puts the tab at the start of that line */
+.doc-tab-wrap::before {
+  content: '\A';
+  white-space: pre;
+}
+
 /* right/center/decimal tab glued to the word after it (TabStopExtension):
    Chromium treats the boundary from a white-space:pre tab to the following
    text as unbreakable, so a TOC entry that outgrows its line wraps before
@@ -3152,6 +3334,13 @@ th.cell-rev-del {
 .page-hf-para {
   white-space: pre-wrap;
   min-height: 1.3em;
+}
+
+/* side-wrapped floating drawing of the part: an invisible float at the
+   drawing's box so the strip's lines flow around it as in Word; the drawing
+   itself is painted by the page's float layer */
+.page-hf-obstacle {
+  pointer-events: none;
 }
 
 /* w:framePr floated frame (page number at a margin edge): the frame shares
@@ -3806,15 +3995,15 @@ th.cell-rev-del {
 
 /* tracked changes: insertions underlined, deletions struck through (Word revisions) */
 .doc-ins {
-  color: var(--docs-paper-rev-ink);
+  color: var(--rev-ins-ink, var(--docs-paper-rev-ink));
   text-decoration: underline;
-  text-decoration-color: var(--docs-paper-rev-ink);
+  text-decoration-color: var(--rev-ins-ink, var(--docs-paper-rev-ink));
 }
 
 .doc-del {
-  color: var(--docs-paper-rev-ink);
+  color: var(--rev-del-ink, var(--docs-paper-rev-ink));
   text-decoration: line-through;
-  text-decoration-color: var(--docs-paper-rev-ink);
+  text-decoration-color: var(--rev-del-ink, var(--docs-paper-rev-ink));
   opacity: 0.72;
 }
 
@@ -3824,12 +4013,57 @@ th.cell-rev-del {
   text-decoration: underline line-through;
 }
 
+/* moved text (Word): double underline at the destination, double strikethrough at the source, move green */
+.doc-move-to,
+.doc-move-from {
+  --docs-paper-rev-ink: var(--docs-paper-rev-move);
+  color: var(--docs-paper-rev-ink);
+  text-decoration-color: var(--docs-paper-rev-ink);
+  text-decoration-style: double;
+}
+
+/* All Markup: a tracked-deleted paragraph mark shows as a struck pilcrow (Word); the
+   paragraphs stay apart on screen in every view (the join happens on accept) */
+.doc-para-mark-del::after {
+  content: '\00B6';
+  color: var(--rev-del-ink, var(--docs-paper-rev-ink));
+  text-decoration: line-through;
+  opacity: 0.72;
+}
+
+.rev-display-none .doc-para-mark-del::after,
+.rev-display-simple .doc-para-mark-del::after,
+.rev-display-original .doc-para-mark-del::after,
+.rev-balloon .doc-para-mark-del::after {
+  content: none;
+}
+
+/* a pending paragraph-mark deletion joins the paragraph into the next one in the
+   final-text views (Word): both flow inline, so the pair shares one line box.
+   The anonymous block they form inherits the page's text properties; the head's
+   own spacing and alignment do not carry over (display-time approximation). */
+.rev-display-none .doc-para-join-head,
+.rev-display-none .doc-para-join-tail,
+.rev-display-simple .doc-para-join-head,
+.rev-display-simple .doc-para-join-tail {
+  display: inline;
+}
+
+.rev-display-none .doc-para-join-head > br.ProseMirror-trailingBreak,
+.rev-display-none .doc-para-join-tail > br.ProseMirror-trailingBreak,
+.rev-display-simple .doc-para-join-head > br.ProseMirror-trailingBreak,
+.rev-display-simple .doc-para-join-tail > br.ProseMirror-trailingBreak {
+  display: none;
+}
+
 /* revision display mode: No Markup = as if all accepted (insertions shown normally, deletions hidden);
    Simple Markup renders the same text and only adds the changed-line bars */
 .rev-display-none .doc-ins,
 .rev-display-simple .doc-ins {
   color: inherit;
   text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
 }
 
 .rev-display-none .doc-del,
@@ -3848,7 +4082,10 @@ th.cell-rev-del {
 
 .rev-display-none .has-rpr-change,
 .rev-display-simple .has-rpr-change {
+  color: inherit;
   text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
 }
 
 .rev-display-none .has-ppr-change,
@@ -3867,6 +4104,8 @@ th.cell-rev-del {
 .rev-display-original .doc-del {
   color: inherit;
   text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
   opacity: 1;
 }
 
@@ -3881,7 +4120,10 @@ th.cell-rev-del {
 }
 
 .rev-display-original .has-rpr-change {
+  color: inherit;
   text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
 }
 
 .rev-display-original .has-ppr-change {
@@ -3890,6 +4132,41 @@ th.cell-rev-del {
 }
 
 .rev-display-original .has-ppr-change::after {
+  content: none;
+}
+
+/* Show Markup filters: an unticked kind renders as accepted (Word) */
+.rev-hide-insdel .doc-ins {
+  color: inherit;
+  text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
+}
+
+.rev-hide-insdel .doc-del,
+.rev-hide-insdel .doc-del-marker,
+.rev-hide-insdel .has-move-from,
+.rev-hide-insdel .doc-para-del-collapse {
+  display: none;
+}
+
+.rev-hide-insdel .has-move-to {
+  background: none;
+}
+
+.rev-hide-format .has-rpr-change {
+  color: inherit;
+  text-decoration: none;
+  font-weight: inherit;
+  font-style: inherit;
+}
+
+.rev-hide-format .has-ppr-change {
+  border-left: none;
+  padding-left: 0;
+}
+
+.rev-hide-format .has-ppr-change::after {
   content: none;
 }
 
@@ -3916,12 +4193,15 @@ th.cell-rev-del {
   display: none;
 }
 
-.rev-balloon .has-ppr-change {
+/* paragraph format changes live in their Formatted: balloon in both balloon modes (Word shows no inline chip) */
+.rev-balloon .has-ppr-change,
+[data-balloons='comments'] .has-ppr-change {
   border-left: none;
   padding-left: 0;
 }
 
-.rev-balloon .has-ppr-change::after {
+.rev-balloon .has-ppr-change::after,
+[data-balloons='comments'] .has-ppr-change::after {
   content: none;
 }
 
@@ -3991,6 +4271,44 @@ th.cell-rev-del {
   background: var(--docs-del-bg);
 }
 
+/* Reviewing Pane (Review → Reviewing Pane): one card per tracked change */
+.review-pane-meta {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-pane-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.review-pane-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+}
+
+.review-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--docs-paper-rev-ink);
+  flex: none;
+}
+
+.layout-menu .rb-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
 /* comment composer (new comment) */
 .comment-compose {
   border-bottom: 1px solid var(--border);
@@ -4035,47 +4353,161 @@ th.cell-rev-del {
   color: var(--docs-on-accent);
 }
 
-.comment-card-del,
-.comment-card-edit {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  display: inline-flex;
+/* Reviewing Pane (left column, Word's vertical pane) */
+.review-pane-title {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  flex: none;
-  padding: 3px;
-  border-radius: 4px;
+  gap: 6px;
 }
 
-/* the pencil sits directly before the trash; only the first icon pushes to the right edge */
-.comment-card-edit + .comment-card-del {
-  margin-left: 0;
-}
-
-.comment-card-del:hover {
+.review-pane-count {
+  padding: 0 7px;
+  border-radius: 9px;
   background: var(--hover);
-  color: var(--danger);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.comment-card-edit:hover {
-  background: var(--hover);
+.review-pane-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto max-content;
+  gap: 2px 12px;
+  justify-content: start;
+}
+
+.review-pane-sum-line {
+  display: contents;
+}
+
+.review-pane-summary dd {
+  margin: 0;
   color: var(--text);
+  font-weight: 600;
+  text-align: right;
+}
+
+.review-pane-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.review-row {
+  position: relative;
+  padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.review-row:hover,
+.review-row:focus-within {
+  background: var(--hover);
+}
+
+.review-row.active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.review-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.review-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.review-row-kind {
+  font-weight: 600;
+  color: var(--docs-paper-rev-ink);
+}
+
+.review-row-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-row-when {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-dim);
+}
+
+.review-row-text {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.review-del .review-row-text {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+.review-ins .review-row-text {
+  text-decoration: underline;
+}
+
+/* Accept / Reject overlay the date on hover, focus and the active row */
+.review-row-actions {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  padding-left: 8px;
+  /* covers the date underneath, in the row's own hover / active colour */
+  background: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.review-row:hover .review-row-actions,
+.review-row:focus-within .review-row-actions,
+.review-row.active .review-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.review-row-act {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.review-row-act:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.review-row-act:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* comments: in-text highlight + right-side pane */
 .doc-comment {
-  background: var(--docs-paper-comment-bg);
-  border-bottom: 2px solid var(--docs-paper-comment-line);
+  background: var(--rev-comment-bg, var(--docs-paper-comment-bg));
+  border-bottom: 2px solid var(--rev-comment-ink, var(--docs-paper-comment-line));
   cursor: pointer;
 }
 
 /* range picked for a comment that is still being composed */
 .comment-pending {
-  background: var(--docs-paper-comment-bg);
-  border-bottom: 2px dashed var(--docs-paper-comment-line);
+  background: var(--rev-comment-bg, var(--docs-paper-comment-bg));
+  border-bottom: 2px dashed var(--rev-comment-ink, var(--docs-paper-comment-line));
 }
 
 /* Word: body shading of resolved threads is hidden (the jump flash animation can still briefly reveal the position) */
@@ -4152,60 +4584,149 @@ th.cell-rev-del {
 
 .comment-card {
   display: block;
-  width: 100%;
   text-align: left;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  padding: 8px 10px;
   cursor: pointer;
   font-size: 12.5px;
   color: var(--text);
 }
 
-.comment-card:hover {
-  border-color: var(--docs-comment-accent);
+.comment-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
-.comment-card.active {
-  border-color: var(--docs-comment-accent);
-  box-shadow: 0 0 0 1px var(--docs-comment-accent);
-}
-
+/* Word's modern comment header, shared by the pane and the margin bubbles */
 .comment-card-head {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .comment-avatar {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--docs-comment-accent);
   color: var(--docs-on-accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.comment-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
 .comment-author {
   font-weight: 600;
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.comment-date {
-  margin-left: auto;
-  flex: none;
+.comment-when {
   font-size: 10.5px;
   color: var(--text-dim);
+}
+
+.comment-card-actions {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+
+.comment-resolve,
+.comment-more {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.comment-resolve:hover,
+.comment-more:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.comment-resolve.on {
+  color: var(--docs-ok-ink);
+}
+
+.comment-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  min-width: 170px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+}
+
+.comment-menu[hidden] {
+  display: none;
+}
+
+.comment-menu button {
+  white-space: nowrap;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.comment-menu button:hover {
+  background: var(--hover);
+}
+
+.comment-menu .comment-card-del:hover {
+  color: var(--danger);
+}
+
+.comment-reply-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.comment-reply-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .comment-anchor {
@@ -4565,6 +5086,38 @@ th.cell-rev-del {
     --docs-paper-field-bg: rgb(255 255 255 / 7%);
     --docs-paper-watermark: rgb(142 142 142 / 18%);
     --docs-paper-rev-ink: #ff8a8a;
+    --docs-paper-rev-ink-1: #5a86ff;
+    --docs-paper-rev-ink-2: #96f4b9;
+    --docs-paper-rev-ink-3: #9746dd;
+    --docs-paper-rev-ink-4: #6ac4dd;
+    --docs-paper-rev-ink-5: #ff996a;
+    --docs-paper-rev-ink-6: #f25f9c;
+    --docs-paper-rev-ink-7: #c4ed8d;
+    --docs-paper-rev-color-black: #ffffff;
+    --docs-paper-rev-color-blue: #6969ff;
+    --docs-paper-rev-color-turquoise: #1eb4b4;
+    --docs-paper-rev-color-brightGreen: #69ff69;
+    --docs-paper-rev-color-pink: #b41eb4;
+    --docs-paper-rev-color-red: #ff6969;
+    --docs-paper-rev-color-yellow: #b4b41e;
+    --docs-paper-rev-color-white: #1e1e1e;
+    --docs-paper-rev-color-darkBlue: #b4b4ff;
+    --docs-paper-rev-color-teal: #68d9d9;
+    --docs-paper-rev-color-green: #b4ffb4;
+    --docs-paper-rev-color-violet: #d968d9;
+    --docs-paper-rev-color-darkRed: #ffb4b4;
+    --docs-paper-rev-color-darkYellow: #d9d968;
+    --docs-paper-rev-color-gray50: #8e8e8e;
+    --docs-paper-rev-color-gray25: #555555;
+    --docs-paper-rev-color-classicRed: #ff8e8e;
+    --docs-paper-rev-color-classicBlue: #4caff5;
+    --docs-paper-rev-color-lightBlue: #2d4358;
+    --docs-paper-rev-color-palePink: #532937;
+    --docs-paper-rev-color-lightYellow: #3c3c1e;
+    --docs-paper-rev-color-lightOrange: #613f23;
+    --docs-paper-cell-ins-bg: var(--docs-paper-rev-color-lightBlue);
+    --docs-paper-cell-del-bg: var(--docs-paper-rev-color-palePink);
+    --docs-paper-cell-merge-bg: var(--docs-paper-rev-color-lightYellow);
     --docs-paper-ins-bg: rgb(122 246 168 / 8%);
     --docs-paper-del-bg: rgb(255 114 114 / 8%);
     --docs-paper-del-line: #ff7272;
@@ -4839,6 +5392,11 @@ th.cell-rev-del {
    and spills into the bottom margin instead of being clipped mid-line */
 .page-gap-note {
   cursor: default;
+}
+
+.page-gap-note.rev-target {
+  outline: 2px solid var(--docs-paper-rev-ink);
+  outline-offset: 1px;
 }
 
 .pv-footnote {
@@ -5162,7 +5720,7 @@ th.cell-rev-del {
 
 .pv-comment-leaders path {
   fill: none;
-  stroke: var(--docs-paper-comment-line);
+  stroke: var(--rev-comment-ink, var(--docs-paper-comment-line));
   stroke-width: 1;
   stroke-dasharray: 3 2;
 }
@@ -5171,7 +5729,7 @@ th.cell-rev-del {
   position: absolute;
   box-sizing: border-box;
   padding: 5px 8px;
-  border: 1px solid var(--docs-paper-comment-line);
+  border: 1px solid var(--rev-comment-ink, var(--docs-paper-comment-line));
   border-radius: 4px;
   background: var(--docs-print-comment-fill);
   color: var(--docs-print-comment-ink);
@@ -5198,8 +5756,19 @@ th.cell-rev-del {
   line-height: 14px;
 }
 
-/* crowded page: one line per balloon, like Word before it spills to the overflow pane */
-.pv-rev-bubble-compact {
+.pv-rev-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pv-rev-when {
+  flex: none;
+  opacity: 0.7;
+}
+
+/* crowded page: author line + one text line per balloon, like Word before it spills to the overflow pane */
+.pv-rev-bubble-compact .pv-rev-body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5359,7 +5928,10 @@ th.cell-rev-del {
    two items of the same list: doc-style-css.ts emits those rules per list.
    auto space-before is also suppressed on the document's first paragraph (Word);
    the page-1 float host is a zero-height widget that may precede the block */
-.doc-page > .sp-auto-b:nth-child(1 of :not(.page-float-host)) {
+.doc-page > .sp-auto-b:nth-child(1 of :not(.page-float-host)),
+.doc-page
+  > .doc-protected:nth-child(1 of :not(.page-float-host))
+  > :is(.doc-anchor-line, .doc-textbox-stray).sp-auto-b {
   margin-top: 0 !important;
 }
 
@@ -5375,13 +5947,37 @@ th.cell-rev-del {
 }
 
 /* direct w:contextualSpacing between unstyled (Normal) paragraphs, list items
-   (.doc-li) included: same-style suppression (styled pairs are handled per
-   style in doc-style-css.ts) */
-.doc-page :is(p, .doc-li).ctx-sp:not([data-style]):has(+ :is(p, .doc-li):not([data-style])) {
+   (.doc-li) and outline-only headings (Normal with w:outlineLvl, Word compares
+   styles: word-truths 2026-10-30) included: same-style suppression (styled
+   pairs are handled per style in doc-style-css.ts) */
+.doc-page
+  :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]):has(
+    + :is(p, .doc-li, .doc-outline-only):not([data-style])
+  ) {
   margin-bottom: 0 !important;
 }
 
-.doc-page :is(p, .doc-li):not([data-style]) + :is(p, .doc-li).ctx-sp:not([data-style]) {
+.doc-page
+  :is(p, .doc-li, .doc-outline-only):not([data-style])
+  + :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]) {
+  margin-top: 0 !important;
+}
+
+/* twins of the two rules above across a pagination widget the canvas keeps
+   between blocks (doc-style-css.ts PAGE_WIDGET): a page gap must not break
+   the spacing the gapless print clones show */
+.doc-page
+  :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]):has(
+    + :is(.page-gap, .page-gap-cut, .page-float-host, .page-float-carry)
+      + :is(p, .doc-li, .doc-outline-only):not([data-style])
+  ) {
+  margin-bottom: 0 !important;
+}
+
+.doc-page
+  :is(p, .doc-li, .doc-outline-only):not([data-style])
+  + :is(.page-gap, .page-gap-cut, .page-float-host, .page-float-carry)
+  + :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]) {
   margin-top: 0 !important;
 }
 
@@ -5390,7 +5986,7 @@ th.cell-rev-del {
    paragraph before the table, the next cell's first paragraph after a cell's
    last one, and the end-of-row mark (default style) after the row's last cell */
 .doc-page
-  :is(p, .doc-li).ctx-sp:not([data-style]):has(
+  :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]):has(
     + table.doc-table
       > tbody
       > tr:first-child
@@ -6366,6 +6962,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   translate: 0 var(--page-float-dy, 0px);
 }
 
+/* overlay picture whose paragraph holds nothing else: the anchor line is the
+   paragraph's own empty line (Word keeps it in the flow). flow-root keeps its
+   space-before inside, where paragraph-relative picture offsets count from */
+.doc-protected.doc-img-float.doc-img-float-line {
+  height: auto;
+  display: flow-root;
+}
+
 /* a banded picture may overhang the column (cover art at the paper edge): it
    keeps its wp:extent instead of the wrapper-width cap */
 .doc-img-float.img-wrap-band > .doc-img-wrap,
@@ -6608,6 +7212,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   vertical-align: bottom;
 }
 
+/* the editable picture wrapper's baseline is its bottom edge, so the trailing
+   break's descent hung 3.5px under a row of two or more pictures (Word probe
+   2026-10-29: one, two or three inline pictures are the picture extent alike) */
+.doc-page .doc-p-pic .doc-inline-pic {
+  vertical-align: bottom;
+}
+
 /* floating (wp:anchor) run pictures: zero-size marker at the run, the picture
    overlays without consuming flow space. The hosting paragraph is the
    positioning origin — wp:posOffset measures from the column / paragraph top
@@ -6651,6 +7262,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   .doc-mixed-face:not(.doc-lh-fixed)
   span[style*='--doc-run-lh']:not([style*='vertical-align']) {
   line-height: calc(var(--doc-run-lh) * 1em * var(--doc-line-mult, 1));
+}
+
+/* Paragraph mixing declared and inherited run sizes (extensions strutHalfPoints):
+   the strut carries the smallest declared size and the inheriting runs take the
+   base size back, so each line is as tall as the runs on it (Word). :where keeps
+   it at zero specificity: any stylesheet size (.doc-note-ref, .doc-cs) still wins */
+:where(:is(.doc-page, .page-hf) .doc-strut-mixed > :not([style*='font-size'])) {
+  font-size: var(--doc-base-fs, 11pt);
 }
 
 /* rtl run (marks.ts doc-cs): weight / style resolved by the engine through the whole
@@ -6755,6 +7374,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-inline-img--wrap-topBottom {
   display: block;
   margin: 2px auto;
+}
+
+/* wrapTopAndBottom placed below its anchor paragraph's top (paragraph-relative
+   posOffset): a column-wide float the paragraph contains, so its height is the
+   band bottom and the next paragraph follows the box like Word */
+.doc-inline-img--wrap-topBottom.doc-inline-img--band-offset {
+  float: left;
+  clear: both;
+}
+
+.doc-page .doc-band-host {
+  display: flow-root;
 }
 
 /* Floating run pictures reach into the paragraphs after their anchor, which
@@ -6958,6 +7589,13 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   padding-bottom: 0;
 }
 
+/* a lead rule whose text is no larger than the rule run keeps a full line of the
+   paragraph's own font, stroke on the baseline (18pt heading: band 21.3pt measured,
+   rule bottom 3.8pt = the descent above the line bottom) */
+.doc-inline-rule[data-lead-rule-full] {
+  font-size: inherit;
+}
+
 /* exact / atLeast runs keep their own natural box: an inherited absolute
    line-height centred on a smaller glyph would hang below the strut and grow
    the line (Word: atLeast is max(rule value, tallest run)); an exact rule caps
@@ -7027,7 +7665,7 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
    paragraph. The phantom line after it (directly, or after the run-mark span
    holding the break) would charge one more line to the page-bottom fit */
 .doc-page br.doc-page-br + br.ProseMirror-trailingBreak,
-.doc-page span:has(br.doc-page-br:last-child) + br.ProseMirror-trailingBreak {
+.doc-page *:has(br.doc-page-br:last-child) + br.ProseMirror-trailingBreak {
   display: none;
 }
 
@@ -7584,6 +8222,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 .doc-protected[data-doc-protected='image'] .doc-img-wrap > img,
 .doc-protected[data-doc-protected='image'] .doc-img-crop-viewport > img {
   vertical-align: bottom;
+}
+
+/* caption text sharing the picture's paragraph: a text line under the zero-line-height picture */
+.doc-protected[data-doc-protected='image'] .doc-img-caption {
+  line-height: var(--doc-line-max, calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1)));
 }
 
 /* Word never shrinks an in-line picture to the column: a wp:extent wider than
@@ -9266,11 +9909,12 @@ body.docs-crop-active
 }
 
 /* a non-contiguous range added with ctrl/cmd+click (genoffice#2013): painted
-   as a decoration, never as document data, so it survives without editing
-   anything */
+   as a decoration, never as document data. The live selection is the
+   browser's native highlight, so the system Highlight color makes the added
+   ranges read as the same selection in both themes. */
 .doc-multi-range {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 2px;
+  background: Highlight;
+  color: HighlightText;
 }
 
 /* floating Ask-AI entry that follows the text selection */
@@ -9741,6 +10385,156 @@ body.docs-crop-active
 
 .ai-track-btn.on .ai-track-dot {
   background: var(--color-brand-secondary);
+}
+
+/* pending-revision summary above the composer: count + reject all / accept all */
+.ai-revision-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--color-bg-subtle);
+}
+
+.ai-revision-bar .ai-revision-count {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  font: inherit;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ai-revision-bar .ai-revision-count:disabled {
+  cursor: default;
+}
+
+.ai-revision-chevron {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.ai-revision-count.open .ai-revision-chevron {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.ai-revision-list {
+  flex-basis: 100%;
+  margin: 0 -10px -8px;
+  border-top: 1px solid var(--border);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.ai-revision-row {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+.ai-revision-row:last-child {
+  border-bottom: 0;
+}
+
+.ai-revision-row:hover,
+.ai-revision-row.active {
+  background: var(--hover);
+}
+
+.ai-revision-row-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+}
+
+.ai-revision-row-head b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ai-revision-dot {
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 2px;
+  border-radius: 50%;
+  background: var(--color-border-strong);
+}
+
+.ai-revision-dot.ins {
+  background: var(--success);
+}
+
+.ai-revision-dot.del {
+  background: var(--danger);
+}
+
+.ai-revision-row-text {
+  margin-top: 3px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-revision-row-text.del {
+  text-decoration: line-through;
+  color: var(--color-text-secondary);
+}
+
+.ai-revision-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.ai-revision-reject,
+.ai-revision-accept {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-revision-accept {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.ai-revision-reject:hover:not(:disabled),
+.ai-revision-accept:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--color-border-strong);
+}
+
+.ai-revision-reject:disabled,
+.ai-revision-accept:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ai-revision-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* attachment chips above the composer */
@@ -11483,6 +12277,7 @@ body.docs-crop-active
 
   .page-wrap.has-markup-area {
     padding-right: 0 !important;
+    padding-left: 0 !important;
   }
 
   /* mixed-paper grouped export: pages outside the current group don't print */
@@ -11851,6 +12646,48 @@ ruby.doc-ruby rt {
 
 .doc-inline-math math {
   font-size: 1em;
+  /* a real OpenType MATH face: the run's Cambria Math alias (Caladea) has no
+     MATH table, so large operators, stacked limits and radicals collapse */
+  font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', serif;
+}
+
+/* Word sizes a math line by Cambria Math's font box (ascent 0.95em, descent
+   0.222em) around every element; Chromium's MathML layout works from glyph
+   ink, so lines and stacked constructs come out shorter. The strut and the
+   script/limit/numerator paddings restore the measured Word extents
+   (sub bottom +0.1em, limits +0.38/+0.29em gap and +0.25/+0.22em box,
+   display numerator +0.117em = Cambria vs STIX FractionNumeratorDisplayStyleShiftUp) */
+.doc-inline-math::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 1.172em;
+  vertical-align: -0.222em;
+}
+
+:is(.doc-inline-math, .doc-formula-math) :is(msub, msubsup) > :nth-child(2) {
+  padding-bottom: 0.1em;
+}
+
+:is(.doc-inline-math, .doc-formula-math) :is(mover:not([accent]), munderover) > :last-child {
+  padding-top: 0.25em;
+  padding-bottom: 0.38em;
+}
+
+:is(.doc-inline-math, .doc-formula-math) :is(munder, munderover) > :nth-child(2) {
+  padding-top: 0.29em;
+  padding-bottom: 0.22em;
+}
+
+:is(.doc-inline-math, .doc-formula-math) math[displaystyle='true'] mfrac > :first-child,
+.doc-formula-math mfrac > :first-child {
+  padding-bottom: 0.117em;
+}
+
+/* an oMathPara line under an auto multiple adds the (m - 1) x single-line
+   extra below the equation like a picture-only paragraph (cf. .doc-p-pic) */
+.doc-inline-math-display {
+  padding-bottom: calc((var(--doc-line-mult, 1) - 1) * var(--doc-line-factor, 1.2) * 1em);
 }
 
 /* EQ field layouts draw in the paragraph face like Word, not the UA math font */
@@ -12042,6 +12879,13 @@ ruby.doc-ruby rt {
 .ctx-label {
   flex: 1;
   margin-right: 28px;
+}
+
+.ctx-ico {
+  display: inline-flex;
+  width: 18px;
+  margin-right: 6px;
+  color: var(--text-dim);
 }
 
 .ctx-key {
@@ -12545,15 +13389,40 @@ tr > .page-gap-cut {
   right: var(--markup-w, 0px);
 }
 
+.page-wrap.has-markup-area.markup-left {
+  padding-right: 0;
+  padding-left: var(--markup-w, 0px);
+}
+
+.page-wrap.has-markup-area.markup-left:not(.paper-mixed)::before,
+.page-wrap.has-markup-area.markup-left:not(.paper-mixed)::after {
+  left: calc((100% + var(--markup-w, 0px) - var(--page-w, 816px)) / 2);
+}
+
+.page-wrap.has-markup-area.markup-left .page-hf {
+  left: calc((100% + var(--markup-w, 0px)) / 2);
+}
+
+.page-wrap.has-markup-area.markup-left .page-hf.page-hf-has-boxes {
+  left: calc(
+    (100% + var(--markup-w, 0px) - var(--section-content-w, calc(var(--page-w, 816px) - 120px))) / 2
+  );
+}
+
+.page-wrap.has-markup-area.markup-left .page-watermark {
+  right: 0;
+  left: var(--markup-w, 0px);
+}
+
 .change-bar {
   position: absolute;
   width: 2px;
-  background: var(--docs-paper-rev-ink);
+  background: var(--rev-bar-ink, var(--docs-paper-rev-ink));
 }
 
 /* Simple Markup: Word's fixed-red changed-line bar, clickable (switches to All Markup) */
 .rev-display-simple .change-bar {
-  background: var(--docs-revision-bar);
+  background: var(--rev-bar-ink, var(--docs-revision-bar));
   pointer-events: auto;
   cursor: pointer;
 }
@@ -12572,7 +13441,7 @@ tr > .page-gap-cut {
   border: 0;
   border-radius: 3px;
   background: transparent;
-  color: var(--docs-paper-comment-line);
+  color: var(--rev-comment-ink, var(--docs-paper-comment-line));
   pointer-events: auto;
   cursor: pointer;
 }
@@ -12588,16 +13457,43 @@ tr > .page-gap-cut {
   background: var(--docs-paper-comment-bg);
 }
 
+/* selected thread: Word fills the anchor glyph */
+.comment-balloon.on svg path:first-child {
+  fill: currentColor;
+}
+
+.comment-balloon.on svg path:last-child {
+  stroke: var(--surface);
+}
+
 .comment-leaders {
   position: absolute;
   inset: 0;
   overflow: visible;
 }
 
+.markup-no-lines .comment-leaders,
+.markup-no-lines .pv-comment-leaders {
+  display: none;
+}
+
 .comment-leaders path {
   fill: none;
-  stroke: var(--docs-paper-comment-line);
+  stroke: var(--rev-comment-ink, var(--docs-paper-comment-line));
   stroke-dasharray: 3 2;
+}
+
+/* Word's markup area: a paper-coloured strip glued to the page, divided by a hairline */
+.markup-strip {
+  position: absolute;
+  box-sizing: border-box;
+  background: var(--docs-paper);
+  border-left: 1px solid var(--border);
+}
+
+.page-wrap.markup-left .markup-strip {
+  border-left: 0;
+  border-right: 1px solid var(--border);
 }
 
 .comment-bubble {
@@ -12606,34 +13502,172 @@ tr > .page-gap-cut {
   pointer-events: auto;
   cursor: pointer;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--docs-paper-comment-line);
-  border-radius: 4px;
-  padding: 5px 8px;
-  font-size: 10px;
-  line-height: 1.35;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: var(--docs-shadow-chip);
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--text);
 }
 
-.comment-bubble-author {
+.comment-bubble .comment-card-head {
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.comment-bubble .comment-avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+
+.comment-bubble .comment-author {
+  font-size: 11px;
+}
+
+.comment-bubble .comment-when {
+  font-size: 9.5px;
+}
+
+.comment-bubble .comment-text {
+  margin-left: 28px;
+}
+
+.comment-bubble .comment-reply {
+  margin: 6px 0 0 0;
+  padding: 6px 0 0 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.comment-bubble .comment-reply-input {
+  display: none;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.comment-bubble.active .comment-reply-input,
+.comment-bubble.comment-popup .comment-reply-input {
+  display: block;
+}
+
+.comment-bubble .comment-card-actions {
+  visibility: hidden;
+}
+
+.comment-bubble:hover .comment-card-actions,
+.comment-bubble.active .comment-card-actions,
+.comment-bubble.comment-popup .comment-card-actions,
+.comment-bubble .comment-card-actions:has([aria-expanded='true']) {
+  visibility: visible;
+}
+
+.comment-bubble .comment-resolve,
+.comment-bubble .comment-more,
+.comment-bubble .comment-like {
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+}
+
+.comment-like {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.comment-like:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.comment-like.on {
+  color: var(--accent);
+}
+
+.comment-like.on svg {
+  fill: currentColor;
+}
+
+.comment-bubble .comment-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  resize: vertical;
+}
+
+.comment-bubble .comment-compose-actions button {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.comment-bubble.active {
+  border-color: var(--accent);
+  box-shadow: var(--docs-shadow-menu);
+}
+
+/* thread popped up from its anchor glyph while Show Comments is off: floats over the margin */
+.comment-bubble.comment-popup {
+  z-index: 4;
+  box-shadow: var(--docs-shadow-menu);
+}
+
+/* revision balloons (Deleted:/Formatted:) sit in the markup strip as Word draws them:
+   a revision-ink bar and bare text, no card frame */
+.rev-bubble {
+  cursor: default;
+  background: none;
+  border: 0;
+  border-left: 3px solid var(--docs-paper-rev-ink);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 2px 6px 2px 8px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.rev-bubble-del {
+  border-left-color: var(--rev-del-ink, var(--docs-paper-rev-ink));
+}
+
+.rev-bubble-fmt {
+  border-left-color: var(--rev-fmt-ink, var(--docs-paper-rev-ink));
+}
+
+.rev-bubble .rev-bubble-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 1px;
+}
+
+.rev-bubble .rev-bubble-author {
   font-weight: 700;
 }
 
-.comment-bubble-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.comment-bubble-reply {
-  margin-top: 4px;
-  padding-top: 3px;
-  border-top: 1px solid var(--border);
-}
-
-/* revision balloons (Deleted:/Formatted:) share the bubble frame, keyed by revision ink */
-.rev-bubble {
-  cursor: default;
-  border-left-color: var(--docs-paper-rev-ink);
+.rev-bubble .rev-bubble-when {
+  flex: none;
+  opacity: 0.7;
+  font-size: 0.9em;
 }
 
 .rev-bubble .rev-bubble-label {
@@ -13379,9 +14413,19 @@ tr > .page-gap-cut {
 
 /* comment threads: replies and resolution */
 .comment-thread {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 6px;
-  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.comment-thread:hover {
+  border-color: var(--docs-comment-accent);
+}
+
+.comment-thread.active {
+  border-color: var(--docs-comment-accent);
+  box-shadow: 0 0 0 1px var(--docs-comment-accent);
 }
 
 .comment-thread.resolved {
@@ -13419,37 +14463,11 @@ tr > .page-gap-cut {
   transform: rotate(90deg);
 }
 
-.comment-resolved-badge {
-  font-size: 10px;
-  color: var(--docs-ok-ink);
-  border: 1px solid var(--docs-ok-border);
-  border-radius: 3px;
-  padding: 0 4px;
-}
-
 .comment-reply {
-  margin: 4px 8px 4px 26px;
-  padding: 6px 8px;
+  margin: 8px 0 0 18px;
+  padding: 6px 0 0 8px;
   border-left: 2px solid var(--border);
-  background: var(--surface);
-  border-radius: 4px;
   font-size: 12px;
-}
-
-.comment-thread-actions {
-  display: flex;
-  gap: 8px;
-  margin: 2px 8px 0 26px;
-}
-
-.comment-thread-actions > button {
-  font-size: 11px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  cursor: pointer;
-  color: var(--text-dim);
 }
 
 .comment-reply-compose {
@@ -13777,6 +14795,77 @@ tr > .page-gap-cut {
   width: min(380px, calc(100vw - 48px));
 }
 
+/* Review → Track Changes Options (Word's Advanced Track Changes Options layout) */
+.tco-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.tco-dialog fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px 10px;
+  margin: 0 0 10px;
+}
+
+.tco-dialog legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.tco-grid {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.tco-grid > span {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* scoped above the generic .modal label rule */
+.tco-dialog .tco-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tco-dialog .tco-check input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+.tco-dialog .tco-grid select,
+.tco-dialog .tco-grid input {
+  margin-top: 0;
+  height: 28px;
+  min-width: 0;
+}
+
+.tco-color-cell {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.tco-dialog .modal-actions {
+  justify-content: space-between;
+}
+
+.tco-dialog .modal-actions .tco-actions-right {
+  display: flex;
+  gap: 8px;
+}
+
 .zoom-dialog-group {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -14102,4 +15191,34 @@ tr > .page-gap-cut {
 
 .rb-field-item:hover {
   background: var(--color-bg-subtle);
+}
+
+/* Show Revisions in Balloons: the deleted run leaves the flow; a thin marker
+   stands at its spot as the balloon leader's foot (Word's connector mark) */
+.rev-balloon .doc-del-marker {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+  border-left: 2px solid var(--rev-del-ink, var(--docs-paper-rev-ink));
+  margin: 0 1px;
+  cursor: context-menu;
+}
+
+.doc-del-marker.doc-move-from {
+  border-left-style: double;
+  border-left-width: 3px;
+}
+
+/* Show All Revisions Inline: Word's [initials N] tag after a commented range */
+.doc-comment-marker {
+  font-size: 0.75em;
+  font-weight: 600;
+  vertical-align: super;
+  color: var(--rev-comment-ink, var(--docs-paper-comment-line));
+  background: var(--rev-comment-bg, var(--docs-paper-comment-bg));
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
 }

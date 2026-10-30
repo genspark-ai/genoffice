@@ -1,0 +1,16 @@
+{
+  "family": "Noto Naskh Arabic TA",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-11",
+    "fonts": ["Traditional Arabic (M365 cloud)", "NotoNaskhArabic-Regular-subset.woff2"],
+    "probe": "hb-shape width of a long Arabic body, 0.800 (bold 0.834)"
+  },
+  "note": "Stand-ins for Traditional/Simplified Arabic (compact Windows naskh faces\nWord downloads from M365 and renders real). Ratios are the shaped width of\na long Arabic body in the cloud font vs the bundled Noto Naskh\nsubset (harfbuzz over the real files, 2026-09-11): Traditional Arabic\n0.800 (bold cut 0.834), Simplified Arabic 0.924 (bold 0.916). Registered\nweight-normal only so Blink still synthesizes bold; bold runs keep the\nregular ratio. Canvas measureText resolves the same @font-face, so metrics\nfollow automatically.",
+  "faces": [
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 80
+    }
+  ]
+}

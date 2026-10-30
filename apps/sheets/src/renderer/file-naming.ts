@@ -30,8 +30,16 @@
  * the drift is silent: the file would simply start carrying a secret.
  */
 import { suggestFileName } from '@genoffice/ui'
-import { modelTextOf, type ModelViewWorkbook } from './ai/redact-view'
+import {
+  modelTextOf,
+  type ModelViewCell,
+  type ModelViewSheet,
+  type ModelViewWorkbook,
+} from './ai/redact-view'
 import { redactionsOf, type WorkbookReadContext } from './ai/workbook-readers'
+import { lazyCellReader } from './univer-sync'
+import { lazySheetScreenExtent } from './univer-state'
+import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 /**
  * A file name is read off the first sheets: a sketch of a few hundred cells
@@ -43,15 +51,45 @@ import { redactionsOf, type WorkbookReadContext } from './ai/workbook-readers'
  */
 const NAME_TEXT_BUDGET = { maxLines: 200, maxChars: 8000 } as const
 
+/** Grid cells read for a name, at most: a sketch, not the sheet. */
+const NAME_GRID_CAP = { rows: 60, columns: 30, cells: 400 } as const
+
 /**
  * The workbook as a `ModelViewWorkbook`, in the shape the projection reads.
  *
- * The adapter snapshot is the in-memory model, and `WorksheetState` is already
- * `{ id, name, cells }` — so the snapshot is handed over as-is rather than
- * translated into a second copy that could fall out of step with the grid.
+ * An opened file lives in the grid and `lazyWorkbookRef`, not in the adapter,
+ * whose snapshot stays the blank boot workbook until an AI plan writes to it.
+ * So with a file open the view is read off the grid, bounded by
+ * `NAME_GRID_CAP`; the adapter snapshot is the model only for a session
+ * workbook, where `WorksheetState` is already `{ id, name, cells }`.
  */
 function modelViewOf(ctx: WorkbookReadContext): ModelViewWorkbook {
-  return ctx.adapterRef.current.getSnapshot()
+  const state = ctx.lazyWorkbookRef.current
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  if (!state || !workbook) return ctx.adapterRef.current.getSnapshot()
+  let budget = NAME_GRID_CAP.cells
+  const sheets: ModelViewSheet[] = []
+  for (const worksheet of workbook.getSheets()) {
+    const id = worksheet.getSheetId()
+    const extent = lazySheetScreenExtent(state, id)
+    const rows = Math.min(extent?.rows ?? NAME_GRID_CAP.rows, NAME_GRID_CAP.rows)
+    const columns = Math.min(extent?.columns ?? NAME_GRID_CAP.columns, NAME_GRID_CAP.columns)
+    const read = lazyCellReader(worksheet)
+    const cells: Record<string, ModelViewCell> = {}
+    for (let row = 0; row < rows && budget > 0; row += 1) {
+      for (let column = 0; column < columns && budget > 0; column += 1) {
+        const cell = read(`${columnLabel(column)}${row + 1}`)
+        // rich-text cells carry their text only in rawValue
+        const value = cell.value ?? cell.rawValue ?? null
+        if (!cell.formula && (value === null || value === '')) continue
+        cells[`${columnLabel(column)}${row + 1}`] = { value }
+        budget -= 1
+      }
+    }
+    sheets.push({ id, name: worksheet.getSheetName(), cells })
+    if (budget <= 0) break
+  }
+  return { sheets }
 }
 
 /** The workbook's own cells, as the model may read them. Never a raw value. */

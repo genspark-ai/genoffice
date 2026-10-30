@@ -236,6 +236,26 @@ describe('fixed-layout grid vs tcW arbitration', () => {
     expect(fixed.blocks[0].table!.colWidthsTwips).toEqual([542, 1038, 719, 966])
   })
 
+  // Word draws the gridCol rules of a fixed table whose grid and tcW total the
+  // same width but split it differently (production rubric, measured 2026-10-27)
+  it('fixed layout keeps an unequal grid that totals the tcW width', async () => {
+    const grid = [522, 2683, 2677, 1965, 1545]
+    const tcw = [522, 2860, 2853, 1577, 1580]
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="9392" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
+      `<w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>` +
+      '<w:tr>' +
+      tcw
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual(grid)
+  })
+
   // Word PDF of a fixed table with w:tblCellSpacing 15: column pitches follow the
   // saved grid (tcW + 45 each), the table spans Sigma(grid) past the right margin
   it('fixed layout with cell spacing keeps a grid that is tcW plus the spacing gaps', async () => {

@@ -2294,19 +2294,21 @@ export function SettingsModal({
                     <div className="set-field-text">
                       <label className="set-field-label">{t('setUpdateAvailableLabel')}</label>
                     </div>
-                    <button
-                      type="button"
-                      className="set-update-btn"
-                      onClick={() => void window.aiOffice.openUpdateDialog?.()}
-                    >
-                      {updateState.phase === 'downloading'
-                        ? t('setUpdateDownloading', {
-                            percent: Math.round(updateState.percent),
-                          })
-                        : updateState.phase === 'downloaded'
+                    {updateState.phase === 'downloading' ? (
+                      <span className="set-field-value">
+                        {t('setUpdateDownloading', { percent: Math.round(updateState.percent) })}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="set-update-btn"
+                        onClick={() => void window.aiOffice.openUpdateDialog?.()}
+                      >
+                        {updateState.phase === 'downloaded'
                           ? t('setUpdateRestart')
                           : t('setUpdateTo', { version: updateState.version })}
-                    </button>
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="set-field">

@@ -1,0 +1,200 @@
+{
+  "family": "Montserrat GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-23",
+    "fonts": ["Montserrat (Word cloud-font cache)", "LiberationSans"],
+    "probe": "hmtx per class, usage-weighted for accented lowercase"
+  },
+  "note": "Montserrat is an M365 cloud font Word downloads and renders real even when\nthe fontTable names an altName for it. Its geometry is not a uniform scale\nof Liberation Sans (hmtx of Word's cached faces, 2026-09-23): lowercase\n+17.3% (+12.1% bold), capitals +5.8%, digits +4.8% (+9.5% bold), the space\nand no-break space -5.7% (+1.9% bold), Cyrillic lowercase +13.9% (+9.9%\nbold) and capitals +10%, punctuation and extended Cyrillic +11.5%, so\nper-class faces carry the adjustment (later faces win inside their\nunicode-range). Latin-1 accented capitals share the capitals face; the\naccented lowercase set is vowel-heavy and measures +10% (usage-weighted),\nso it gets a face of its own. Pitch stays the probed 1.219\n(`lineHeightFactor`).",
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 111.5
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 117.3,
+      "unicodeRange": "U+0061-007A"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 110,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 105.8,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 104.8,
+      "unicodeRange": "U+0030-0039"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 94.3,
+      "unicodeRange": "U+0020, U+00A0"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 113.9,
+      "unicodeRange": "U+0430-044F"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 110,
+      "unicodeRange": "U+0410-042F"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 113,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 112.1,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 111.3,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 106.9,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 109.5,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 101.9,
+      "unicodeRange": "U+0020, U+00A0",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 109.9,
+      "unicodeRange": "U+0430-044F",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 108.8,
+      "unicodeRange": "U+0410-042F",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 112,
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 117.9,
+      "unicodeRange": "U+0061-007A",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 113.9,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 105.8,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 104.8,
+      "unicodeRange": "U+0030-0039",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 94.3,
+      "unicodeRange": "U+0020, U+00A0",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 111.4,
+      "unicodeRange": "U+0430-044F",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 110,
+      "unicodeRange": "U+0410-042F",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 110,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 112.5,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 114.2,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 106.9,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 109.5,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 101.9,
+      "unicodeRange": "U+0020, U+00A0",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 106.9,
+      "unicodeRange": "U+0430-044F",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 109.1,
+      "unicodeRange": "U+0410-042F",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

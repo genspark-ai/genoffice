@@ -26,8 +26,13 @@ const COMMENT_LINE = /^\s*(\/\*|\*)/
 function git(commandArgs, { allowFailure = false } = {}) {
   const result = spawnSync('git', commandArgs, {
     encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'inherit'],
   })
+  if (result.error) {
+    console.error(`git ${commandArgs[0]} failed: ${result.error.message}`)
+    process.exit(1)
+  }
   if (result.status !== 0 && !allowFailure) process.exit(result.status ?? 1)
   return result
 }

@@ -1,0 +1,32 @@
+{
+  "family": "Consolas GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-11",
+    "fonts": ["Consolas (Word DFonts)", "Menlo"],
+    "probe": "hmtx 0.550em vs 0.602em"
+  },
+  "note": "Consolas ships only inside Office (Word's DFonts), so Chromium never resolves\nit and the mono chain fell to Menlo, whose 0.602em advance runs 9.5% wider\nthan Consolas' 0.550em (hmtx, both fonts): indented code drifted right and\nlong lines wrapped. The size-adjusted alias keeps advances at Consolas' pitch;\na locally installed Consolas still precedes it in the chain.",
+  "faces": [
+    {
+      "src": "local('Menlo-Regular'), local('CourierNewPSMT'), url('./LiberationMono-Regular.ttf')",
+      "sizeAdjust": 91.3
+    },
+    {
+      "src": "local('Menlo-Bold'), local('CourierNewPS-BoldMT'), url('./LiberationMono-Bold.ttf')",
+      "sizeAdjust": 91.3,
+      "weight": "bold"
+    },
+    {
+      "src": "local('Menlo-Italic'), local('CourierNewPS-ItalicMT'), url('./LiberationMono-Italic.ttf')",
+      "sizeAdjust": 91.3,
+      "style": "italic"
+    },
+    {
+      "src": "local('Menlo-BoldItalic'), local('CourierNewPS-BoldItalicMT'), url('./LiberationMono-BoldItalic.ttf')",
+      "sizeAdjust": 91.3,
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

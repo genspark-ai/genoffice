@@ -129,8 +129,12 @@ describe('leadLeakCss hanging page-anchored floats', () => {
   const pages = [slice(0, 739), slice(739, 1500), slice(1500, 2000)]
 
   it('hides a float hanging above its page start on the page before', () => {
-    const table = block(9, 760, 300, { floated: true, pageRelVyPx: 0, pageRelVAnchor: 'page' })
-    table.el!.dataset.tblpDy = '-80'
+    const table = block(9, 760, 300, {
+      floated: true,
+      pageRelVyPx: 0,
+      pageRelVAnchor: 'page',
+      floatShiftPx: -80,
+    })
     const empty = block(8, 739, 21, { emptyPara: true })
     const body = block(3, 600, 100)
     expect(hidden(leadLeakCss([body, empty, table], pages))).toEqual([

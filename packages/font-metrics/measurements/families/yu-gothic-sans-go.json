@@ -1,0 +1,85 @@
+{
+  "family": "Yu Gothic Sans GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["YuGoth*.ttc (Word)", "LiberationSans"],
+    "probe": "class scales for hosts without the Apple cuts; box = Word hhea 0.88/0.222"
+  },
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 104.62,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 100.55,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "unicodeRange": "U+0030-0039",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 113.27,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf') format('truetype')",
+      "sizeAdjust": 102.64,
+      "unicodeRange": "U+0020",
+      "ascentOverride": 88,
+      "descentOverride": 22.2
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 102.2,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 103.79,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 103.07,
+      "unicodeRange": "U+0030-0039",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 110.96,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 102.64,
+      "unicodeRange": "U+0020",
+      "ascentOverride": 88,
+      "descentOverride": 22.2,
+      "weight": "bold"
+    }
+  ]
+}

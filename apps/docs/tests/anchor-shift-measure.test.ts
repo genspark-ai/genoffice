@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   anchorBoxLift,
   computeSectionedSlicesF2,
+  hoistWindow,
   measureBlocks,
   pinnedFloatPage,
 } from '../src/renderer/pagination'
 import {
   hoistPlan,
   hoistSlotOf,
-  hoistWindow,
   pinnedCloneCss,
 } from '../src/renderer/components/PaginationPreview'
 import type { FloatBox } from '../src/renderer/pagination-types'
