@@ -150,6 +150,15 @@ describe('provider registry', () => {
     })
   })
 
+  it('resolves AtmoRouter to its chat-completions endpoint', () => {
+    expect(AI_PROVIDER_ADAPTERS.atmorouter.resolveEndpoint(config('cc/claude-sonnet-4-6'))).toEqual(
+      {
+        protocol: 'openai-compatible',
+        baseUrl: 'https://atmorouter.dev/v1',
+      },
+    )
+  })
+
   it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
     const spark = AI_PROVIDERS.find((p) => p.id === 'spark')!
     expect(spark.models).toEqual(['spark-x2.5'])
@@ -497,6 +506,18 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('glm-5.3-flash')).toBe(false)
     expect(modelLacksVision('kimi-k2.6')).toBe(false)
     expect(modelLacksVision('minimax-m3')).toBe(false)
+  })
+
+  it('keeps vision on for the AtmoRouter ids', () => {
+    for (const model of [
+      'cc/claude-sonnet-4-6',
+      'cc/claude-sonnet-5',
+      'cc/claude-opus-4-8',
+      'cb/kimi-k3.1-pro',
+      'cb/minimax-m3',
+    ]) {
+      expect(modelLacksVision(model)).toBe(false)
+    }
   })
 
   it('matches case-insensitively like its sibling matchers', () => {

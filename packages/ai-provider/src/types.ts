@@ -26,6 +26,7 @@ export type AiProviderId =
   | 'atlascloud'
   | 'runcrate'
   | 'cloudgpu'
+  | 'atmorouter'
   | 'opencode-zen'
   | 'opencode-go'
   | 'custom'

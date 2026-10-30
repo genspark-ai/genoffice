@@ -100,6 +100,21 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds AtmoRouter with prefixed ids from its catalog', () => {
+    const atmorouter = AI_PROVIDERS.find((provider) => provider.id === 'atmorouter')!
+    expect(atmorouter.models).toEqual([
+      'cc/claude-sonnet-4-6',
+      'cc/claude-sonnet-5',
+      'cc/claude-opus-4-8',
+      'cb/kimi-k3.1-pro',
+      'cb/minimax-m3',
+    ])
+    expect(atmorouter.defaultModel).toBe('cc/claude-sonnet-4-6')
+    expect(atmorouter.models).toContain(atmorouter.defaultModel)
+    expect(atmorouter.needsBaseUrl).toBeUndefined()
+    expect(atmorouter.keyPlaceholder).toBe('sk-...')
+  })
+
   it('seeds CloudGPU with bare model ids (no vendor prefix)', () => {
     const cloudgpu = AI_PROVIDERS.find((provider) => provider.id === 'cloudgpu')!
     expect(cloudgpu.models).toEqual([

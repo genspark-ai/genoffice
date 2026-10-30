@@ -404,6 +404,23 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'atmorouter',
+    label: 'AtmoRouter',
+    // Vendor-prefixed ids exactly as GET https://atmorouter.dev/v1/models lists
+    // them (2026-10-30, public endpoint, no key needed); the prefix is part of
+    // the id and picks the upstream. The rest of the catalog works as-is when
+    // typed in. Every id below takes images per the catalog's modality field.
+    models: [
+      'cc/claude-sonnet-4-6',
+      'cc/claude-sonnet-5',
+      'cc/claude-opus-4-8',
+      'cb/kimi-k3.1-pro',
+      'cb/minimax-m3',
+    ],
+    defaultModel: 'cc/claude-sonnet-4-6',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
