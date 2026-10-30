@@ -115,12 +115,20 @@ describe('template center — manifest matches the outputs', () => {
     expect(() => readSourceManifest(dir)).toThrow(/category must be/)
   })
 
-  it('packages build/templates as resources/templates', () => {
-    const resource = config.win.extraResources.find(
-      (entry: { to: string }) => entry.to === 'templates',
-    )
-    expect(resource, 'the Windows package must ship the template center files').toBeDefined()
-    expect(resource.from).toBe('build/templates')
+  it('packages the Home desktop resources for every platform', () => {
+    // desktop-ipc.ts and templates-ipc.ts read these from
+    // process.resourcesPath in every packaged build, so the entries belong to
+    // the top-level extraResources: as win-only entries the mac/linux installs
+    // shipped with an empty wallpaper picker and template center.
+    for (const name of ['templates', 'wallpapers']) {
+      const resource = config.extraResources.find((entry: { to: string }) => entry.to === name)
+      expect(resource, `every packaged platform must ship resources/${name}`).toBeDefined()
+      expect(resource.from).toBe(`build/${name}`)
+      expect(
+        config.win.extraResources.find((entry: { to: string }) => entry.to === name),
+        `win.extraResources must not duplicate resources/${name}`,
+      ).toBeUndefined()
+    }
   })
 })
 

@@ -579,6 +579,19 @@ const config = {
       from: '../../node_modules/ws',
       to: 'gsk/node_modules/ws',
     },
+    // Home desktop features read these from process.resourcesPath on EVERY
+    // platform in packaged mode (src/main/desktop-ipc.ts the wallpapers,
+    // src/main/templates-ipc.ts the templates), so they must live in this
+    // platform-independent list: as win.extraResources entries the mac/linux
+    // installers shipped with an empty wallpaper picker and template center.
+    {
+      from: 'build/wallpapers',
+      to: 'wallpapers',
+    },
+    {
+      from: 'build/templates',
+      to: 'templates',
+    },
   ],
   // `mimeType` is read only by the Linux target, where it becomes the
   // desktop entry's MimeType= list; associations without it are dropped
@@ -592,6 +605,11 @@ const config = {
   // pairs are generated from the shell renderer's file-type tiles by
   // tools/gen-file-association-icons.mjs.
   fileAssociations: FILE_ASSOCIATIONS,
+  // The genoffice:// deep link (src/main/system-presence.ts: genoffice://ask?q=… →
+  // Home's Ask AI). electron-builder writes CFBundleURLTypes into the macOS
+  // plist and the Windows registry URL-protocol key; the runtime
+  // setAsDefaultProtocolClient call stays as the dev/repair path.
+  protocols: [{ name: 'GenOffice', schemes: ['genoffice'] }],
   npmRebuild: false,
   mac: {
     // Two separate arch packages (NOT universal): arm64 keeps the exact
@@ -637,18 +655,14 @@ const config = {
         from: WIN_SIDECAR,
         to: 'native/xlsx-sidecar.exe',
       },
+      // Windows Explorer "New" menu blank documents, registered by
+      // build/installer.nsh (ShellNew → $INSTDIR\resources\shell-new) —
+      // genuinely win-only, unlike the wallpapers/templates entries in the
+      // top-level extraResources that every platform's Home desktop reads.
       {
         from: 'build/shell-new',
         to: 'shell-new',
         filter: ['*.docx', '*.xlsx', '*.pptx'],
-      },
-      {
-        from: 'build/templates',
-        to: 'templates',
-      },
-      {
-        from: 'build/wallpapers',
-        to: 'wallpapers',
       },
     ],
   },
