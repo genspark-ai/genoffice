@@ -1015,7 +1015,7 @@ export class ProjectStore {
     for (const file of files) {
       const runId = file.replace(/\.jsonl$/, '')
       if (!SAFE_ID_PATTERN.test(runId)) continue
-      let events: RunEvent[] = []
+      let events: RunEvent[]
       try {
         events = parseRunEvents(readFileSync(join(dir, file), 'utf8'))
       } catch {

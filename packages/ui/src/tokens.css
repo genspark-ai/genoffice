@@ -149,6 +149,8 @@
   --color-border-default: #3a3a3a;
   --color-border-strong: #555;
   --color-border-brand: #4a9eff;
+  --color-error: #f87171;
+  --color-error-hover: #ef4444;
 
   color-scheme: dark;
 }
@@ -208,6 +210,8 @@
     --color-border-default: #3a3a3a;
     --color-border-strong: #555;
     --color-border-brand: #4a9eff;
+    --color-error: #f87171;
+    --color-error-hover: #ef4444;
 
     color-scheme: dark;
   }

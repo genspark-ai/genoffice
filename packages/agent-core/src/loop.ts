@@ -758,13 +758,12 @@ export class AgentLoop<TSnapshot = unknown> {
   }
 
   private handleOf(record: RunRecord): AgentRunHandle {
-    const loop = this
     return {
       id: record.id,
       done: record.done,
-      pause: () => loop.pauseRun(record),
-      resume: () => loop.resumeRun(record),
-      cancel: () => loop.cancelRun(record),
+      pause: () => this.pauseRun(record),
+      resume: () => this.resumeRun(record),
+      cancel: () => this.cancelRun(record),
       on: (event, listener) => {
         record.listeners[event].add(listener)
         return () => record.listeners[event].delete(listener)

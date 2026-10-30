@@ -46,6 +46,13 @@ export const th: Dict = {
   askStep3Title: 'คลิกการอ้างอิง',
   askStep3Desc: 'คำตอบระบุไฟล์ต้นทาง คลิกเพื่อไปที่ไฟล์นั้น',
   askCtaRecents: 'ให้ดาวจากเมนูล่าสุด',
+  askHeroIndexedTagline:
+    'Ask AI ค้นหาในทุกไฟล์ที่จัดดัชนีแล้ว — โฟลเดอร์บันทึกและโฟลเดอร์ที่เพิ่มในการตั้งค่า ยังไม่มีอะไรถูกจัดดัชนี การสแกนครั้งแรกจะเริ่มหลังเปิดใช้งานไม่นาน',
+  askIndexedStep1Title: 'รอการสแกน',
+  askIndexedStep1Desc: 'การสแกนครั้งแรกทำงานเบื้องหลัง ไฟล์จะปรากฏทีละส่วน',
+  askIntroIndexed:
+    'ถามเกี่ยวกับไฟล์ของคุณ — ครอบคลุมดัชนีในเครื่องทั้งหมด คำตอบระบุแหล่งที่มา คลิกเพื่อเปิด',
+  askCtaBrowseRecents: 'ดูไฟล์ของคุณในล่าสุด',
   askNoSave: 'บทสนทนาจะไม่ถูกบันทึก และจะล้างเมื่อรีสตาร์ทแอป',
   askUnknownError: 'คำขอ AI ล้มเหลว โปรดลองอีกครั้ง',
   askTasksTitle: 'งานเบื้องหลัง',
@@ -237,7 +244,9 @@ export const th: Dict = {
   setGlobalHotkeyDesc: 'เรียกพาเลตคำสั่งของหน้าโฮมจากที่ใดก็ได้',
   setGlobalHotkeyAccelerator: 'ปุ่มลัด',
   setGlobalHotkeyAcceleratorDesc:
-    'รูปแบบ accelerator เช่น Alt+Space หรือ Ctrl+Shift+K; กด Enter เพื่อใช้ ค่าที่ไม่รู้จักจะถูกละเว้น',
+    'รูปแบบ accelerator เช่น Ctrl+Shift+Space หรือ Ctrl+Shift+K; กด Enter เพื่อใช้ ค่าที่ไม่รู้จักจะถูกละเว้น',
+  setGlobalHotkeyBlocked: 'คีย์ลัดนี้ถูกแอปอื่นใช้อยู่ จึงยังไม่ทำงานในตอนนี้',
+  setGlobalHotkeyRetry: 'ลองลงทะเบียนอีกครั้ง',
   setKbScope: 'ขอบเขตคลัง Ask AI',
   setKbScopeDesc:
     'กำหนดไฟล์ที่ Ask AI ค้นหาและอ้างอิงได้ ทั้งหมดที่อยู่ในดัชนี หรือเฉพาะไฟล์ที่ดาวน์เครื่อง',

@@ -46,6 +46,36 @@ interface TabRecord {
 
 const HOME_ID = 'home'
 
+/**
+ * The palette's Ctrl/Cmd+K summon, shared by the shell's tab views and the
+ * detached editor windows so the same app behaves the same in both. The chord
+ * is only claimed plain: shift/alt variants always belong to the app beneath
+ * (Word-style dialog shortcuts), and `ownsPlainCtrlK` lets an app that ships
+ * its own plain binding (docs: Word's hyperlink dialog) keep it — the palette
+ * stays reachable through the global hotkey and the tray either way. Control
+ * combos arrive as rawKeyDown on Windows, keyDown elsewhere. Returns the
+ * listener's disposer.
+ */
+export function installPaletteSummon(
+  wc: WebContents,
+  ownsPlainCtrlK: () => boolean,
+  summon: () => void,
+): () => void {
+  const listener = (event: Electron.Event, input: Electron.Input): void => {
+    if (input.type !== 'keyDown' && input.type !== 'rawKeyDown') return
+    if (!input.control && !input.meta) return
+    if (input.shift || input.alt) return
+    if (input.key?.toLowerCase() !== 'k') return
+    if (ownsPlainCtrlK()) return
+    event.preventDefault()
+    summon()
+  }
+  wc.on('before-input-event', listener)
+  return () => {
+    if (!wc.isDestroyed()) wc.removeListener('before-input-event', listener)
+  }
+}
+
 /** the live shell tab manager. main/index.ts owns its instance but hands it to
  *  no one; feature IPC modules registered without injected deps (the template
  *  center) reach the tab strip through this instead of a closure there. */
@@ -94,24 +124,41 @@ export class TabManager {
    * window's surfaces (the home chrome or a document view) lands you on Home
    * with the palette open. Attached per webContents — `web-contents-created`
    * does not fire for this app's tab views, so activation is the hook point.
-   * Control combos arrive as rawKeyDown on Windows, keyDown elsewhere.
+   * The lookup is live: a view torn into a detached window has no tab record
+   * here and this listener stands down (the detached window's own hook is the
+   * one alive); docked back, the record exists again and this one answers.
    */
   private installPaletteShortcut(wc: WebContents): void {
     if (this.paletteHooked.has(wc) || wc.isDestroyed()) return
     this.paletteHooked.add(wc)
-    wc.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown' && input.type !== 'rawKeyDown') return
-      if (!input.control && !input.meta) return
-      if (input.key?.toLowerCase() !== 'k') return
-      event.preventDefault()
-      const win = this.shellWindow
-      if (win.isDestroyed()) return
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-      this.openHomeTab()
-      win.webContents.send(HOME_CHANNELS.paletteOpen)
-    })
+    // the shell window's own webContents is Home's chrome: the palette host,
+    // never an app that could own the chord
+    const isShellChrome = wc === this.shellWindow.webContents
+    const tabOf = (): TabRecord | undefined => this.tabs.find((t) => t.view?.webContents === wc)
+    installPaletteSummon(
+      wc,
+      () => {
+        if (isShellChrome) return false
+        const tab = tabOf()
+        return tab ? appForKind(tab.kind)?.ownsPlainCtrlK === true : false
+      },
+      () => {
+        // a detached view is the detached window's to summon
+        if (isShellChrome || tabOf()) this.summonPalette()
+      },
+    )
+  }
+
+  /** bring the shell window forward on Home and open the command palette —
+   *  the shared Ctrl/Cmd+K answer, also used by the detached windows */
+  summonPalette(): void {
+    const win = this.shellWindow
+    if (win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    this.openHomeTab()
+    win.webContents.send(HOME_CHANNELS.paletteOpen)
   }
 
   constructor(

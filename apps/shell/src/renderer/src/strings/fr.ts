@@ -49,6 +49,14 @@ export const fr: Dict = {
   askStep3Title: 'Ouvrez les citations',
   askStep3Desc: 'Les réponses citent le fichier source ; cliquez pour y aller',
   askCtaRecents: 'Ajouter depuis Récents',
+  askHeroIndexedTagline:
+    'Ask AI recherche tous les fichiers indexés — votre dossier d’enregistrement et les dossiers ajoutés dans les réglages. Rien n’est encore indexé : le premier balayage démarre peu après le lancement.',
+  askIndexedStep1Title: 'Attendre le balayage',
+  askIndexedStep1Desc:
+    'Le premier balayage tourne en arrière-plan ; les fichiers apparaissent au fur et à mesure',
+  askIntroIndexed:
+    'Posez vos questions sur vos fichiers — tout l’index local est concerné. Les réponses citent leurs sources ; cliquez pour ouvrir.',
+  askCtaBrowseRecents: 'Parcourir les fichiers récents',
   askNoSave: 'La conversation n’est pas enregistrée ; elle s’efface au redémarrage de l’app.',
   askUnknownError: 'La requête IA a échoué. Réessayez.',
   askTasksTitle: 'Tâches en arrière-plan',
@@ -247,7 +255,10 @@ export const fr: Dict = {
   setGlobalHotkeyDesc: 'Affiche la palette de commandes de l’accueil depuis n’importe où.',
   setGlobalHotkeyAccelerator: 'Touches du raccourci',
   setGlobalHotkeyAcceleratorDesc:
-    'Syntaxe d’accélérateur comme Alt+Space ou Ctrl+Shift+K ; Entrée applique, les valeurs non reconnues sont ignorées.',
+    'Syntaxe d’accélérateur comme Ctrl+Shift+Space ou Ctrl+Shift+K ; Entrée applique, les valeurs non reconnues sont ignorées.',
+  setGlobalHotkeyBlocked:
+    'Une autre application occupe ce raccourci, il n’est donc pas actif pour le moment.',
+  setGlobalHotkeyRetry: 'Réessayer l’enregistrement',
   setKbScope: 'Portée du corpus Ask AI',
   setKbScopeDesc:
     'Les fichiers qu’Ask AI peut rechercher et citer : tout ce que l’index local couvre, ou les fichiers favoris seulement.',

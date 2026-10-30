@@ -48,6 +48,14 @@ export const es: Dict = {
   askStep3Title: 'Abre las citas',
   askStep3Desc: 'Las respuestas citan el archivo fuente; haz clic para ir a él',
   askCtaRecents: 'Marcar desde Recientes',
+  askHeroIndexedTagline:
+    'Ask AI busca en todos los archivos indexados: tu carpeta de guardado y las carpetas añadidas en Ajustes. Aún no hay nada indexado; el primer escaneo empieza poco tras el inicio.',
+  askIndexedStep1Title: 'Esperar el escaneo',
+  askIndexedStep1Desc:
+    'El primer escaneo se ejecuta en segundo plano; los archivos aparecen a medida que se leen',
+  askIntroIndexed:
+    'Pregunta sobre tus archivos: todo el índice local está en juego. Las respuestas citan sus fuentes; haz clic para abrirlas.',
+  askCtaBrowseRecents: 'Ver tus archivos en Recientes',
   askNoSave: 'La conversación no se guarda; se borra al reiniciar la aplicación.',
   askUnknownError: 'La solicitud de IA falló. Inténtalo de nuevo.',
   askTasksTitle: 'Tareas en segundo plano',
@@ -248,7 +256,9 @@ export const es: Dict = {
   setGlobalHotkeyDesc: 'Invoca la paleta de comandos de Inicio desde cualquier lugar.',
   setGlobalHotkeyAccelerator: 'Teclas del atajo',
   setGlobalHotkeyAcceleratorDesc:
-    'Sintaxis de acelerador como Alt+Space o Ctrl+Shift+K; Intro aplica y los valores no reconocidos se ignoran.',
+    'Sintaxis de acelerador como Ctrl+Shift+Space o Ctrl+Shift+K; Intro aplica y los valores no reconocidos se ignoran.',
+  setGlobalHotkeyBlocked: 'Otra aplicación retiene este atajo, así que ahora mismo no está activo.',
+  setGlobalHotkeyRetry: 'Reintentar el registro',
   setKbScope: 'Ámbito del corpus de Ask AI',
   setKbScopeDesc:
     'Qué archivos puede buscar y citar Ask AI: todo lo que cubre el índice local, o solo los destacados.',

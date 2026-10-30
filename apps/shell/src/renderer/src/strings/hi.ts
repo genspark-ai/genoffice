@@ -47,6 +47,13 @@ export const hi: Dict = {
   askStep3Title: 'उद्धरण खोलें',
   askStep3Desc: 'उत्तर स्रोत फ़ाइल बताते हैं; वहाँ जाने के लिए क्लिक करें',
   askCtaRecents: 'हाल की फ़ाइलों को तारांकित करें',
+  askHeroIndexedTagline:
+    'Ask AI हर अनुक्रमित फ़ाइल में खोजता है — सेव फ़ोल्डर और सेटिंग्स में जोड़े गए फ़ोल्डर। अभी कुछ भी अनुक्रमित नहीं है; पहला स्कैन लॉन्च होने के थोड़ी देर बाद शुरू होता है।',
+  askIndexedStep1Title: 'स्कैन का इंतज़ार करें',
+  askIndexedStep1Desc: 'पहला स्कैन बैकग्राउंड में चलता है; फ़ाइलें पढ़े जाने पर दिखती जाती हैं',
+  askIntroIndexed:
+    'अपनी फ़ाइलों के बारे में पूछें — पूरा स्थानीय अनुक्रमणिका शामिल है। जवाब स्रोत बताते हैं; खोलने के लिए क्लिक करें।',
+  askCtaBrowseRecents: 'हाल की फ़ाइलों में ब्राउज़ करें',
   askNoSave: 'बातचीत सहेजी नहीं जाती; ऐप पुनः आरंभ होने पर साफ़ हो जाती है।',
   askUnknownError: 'AI अनुरोध विफल रहा। फिर से प्रयास करें।',
   askTasksTitle: 'बैकग्राउंड कार्य',
@@ -235,7 +242,9 @@ export const hi: Dict = {
   setGlobalHotkeyDesc: 'कहीं से भी होम कमांड पैलेट खोलता है।',
   setGlobalHotkeyAccelerator: 'शॉर्टकट कुंजियाँ',
   setGlobalHotkeyAcceleratorDesc:
-    'Alt+Space या Ctrl+Shift+K जैसा accelerator सिंटैक्स; Enter लागू करता है, अपरिचित मान अनदेखे जाते हैं।',
+    'Ctrl+Shift+Space या Ctrl+Shift+K जैसा accelerator सिंटैक्स; Enter लागू करता है, अपरिचित मान अनदेखे जाते हैं।',
+  setGlobalHotkeyBlocked: 'यह शॉर्टकट किसी दूसरे ऐप के पास है, इसलिए यह फ़िलहाल सक्रिय नहीं है।',
+  setGlobalHotkeyRetry: 'पंजीकरण फिर से आज़माएँ',
   setKbScope: 'Ask AI कोष का दायरा',
   setKbScopeDesc:
     'Ask AI कौन सी फ़ाइलें खोज और उद्धृत कर सकता है: स्थानीय अनुक्रमणिका की सभी फ़ाइलें, या केवल तारांकित फ़ाइलें।',

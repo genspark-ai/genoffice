@@ -3,7 +3,7 @@ import type { Extracted } from './extract'
 import type { WorkerRequest, WorkerResponse } from './extract-worker'
 import { isSupportedTreeFile } from '../folder-tree'
 import { statOrNull, type ScannedFile } from './scan'
-import type { FileIndexStore } from './store'
+import type { IndexStore } from './index-store'
 
 export interface IndexProgress {
   /** files currently in the index */
@@ -45,9 +45,12 @@ const WORKER_IDLE_MS = 5_000
 
 /**
  * Keeps the store in step with the disk: a scan diffs mtime/size against the
- * index, changed files queue for extraction on the worker one at a time, and
- * vanished files are dropped. Scans coalesce; extraction is sequential so the
- * user's foreground work keeps the CPU.
+ * index (the diff itself runs store-side, so the whole-index listing never
+ * materializes here), changed files queue for extraction on the worker one at
+ * a time, and vanished files are dropped. Scans coalesce; extraction is
+ * sequential so the user's foreground work keeps the CPU. The store is the
+ * async IndexStore — the SQLite work happens in the store worker, so neither
+ * a slow query nor a heavy write blocks the main process.
  */
 export class FileIndexer {
   private worker: Worker | null = null
@@ -66,7 +69,7 @@ export class FileIndexer {
   private stopped = false
 
   constructor(
-    private readonly store: FileIndexStore,
+    private readonly store: IndexStore,
     private readonly workerPath: string,
     private readonly sources: IndexerSources,
     private readonly requestTimeoutMs = WORKER_REQUEST_TIMEOUT_MS,
@@ -79,8 +82,12 @@ export class FileIndexer {
     return this.worker !== null
   }
 
-  progress(): IndexProgress {
-    return { indexed: this.store.count(), pending: this.queue.length, scanning: this.scanning }
+  async progress(): Promise<IndexProgress> {
+    return {
+      indexed: await this.store.count(),
+      pending: this.queue.length,
+      scanning: this.scanning,
+    }
   }
 
   /** schedule a scan soon; repeated calls within the debounce window fold into one */
@@ -117,7 +124,11 @@ export class FileIndexer {
           if (res.truncated) complete = false
         } else walked = false
       }
-      if (walked) this.diff(seen, complete)
+      if (walked) await this.diff(seen, complete)
+    } catch (e) {
+      // a failed diff keeps the previous index: search stays answerable, and
+      // the next refresh (or the next stale-triggered scan) retries it
+      console.warn('[file-index] scan diff failed:', e instanceof Error ? e.message : e)
     } finally {
       this.scanning = false
       this.scheduleIdleRecycle()
@@ -130,27 +141,16 @@ export class FileIndexer {
   }
 
   /** bring the store in step with what the walk saw; extra paths are stat-ed here */
-  // a budget-capped walk cannot tell a vanished file from one it never reached,
-  // so entries are only removed when every root was walked to the end
-  private diff(seen: Map<string, ScannedFile>, complete: boolean): void {
+  private async diff(seen: Map<string, ScannedFile>, complete: boolean): Promise<void> {
     for (const p of this.sources.extraPaths()) {
       if (seen.has(p) || !isSupportedTreeFile(p)) continue
       const st = statOrNull(p)
       if (st) seen.set(p, st)
     }
-    const known = this.store.listAll()
-    if (complete) {
-      const gone: string[] = []
-      for (const path of known.keys()) if (!seen.has(path)) gone.push(path)
-      this.store.remove(gone)
-    }
-    for (const f of seen.values()) {
-      // an unchanged file that already failed is not retried: a parse that
-      // kills the worker would otherwise be re-run on every scan
-      const k = known.get(f.path)
-      if (k && k.mtimeMs === f.mtimeMs && k.sizeBytes === f.sizeBytes) continue
-      this.enqueue(f)
-    }
+    // the diff against the known index runs store-side: listAll over the
+    // whole corpus must not materialize in the main process
+    const changed = await this.store.diff([...seen.values()], complete)
+    for (const f of changed) this.enqueue(f)
     this.lastScanAt = Date.now()
   }
 
@@ -171,12 +171,12 @@ export class FileIndexer {
         // the file may have changed again while queued; index what is on disk now
         const st = statOrNull(f.path)
         if (!st) {
-          this.store.remove([f.path])
+          await this.store.remove([f.path])
           continue
         }
         const res = await this.ask({ id: 0, type: 'extract', path: st.path })
         if (res.type !== 'extract') continue
-        this.apply(st, res.result)
+        await this.apply(st, res.result)
       }
     } finally {
       this.draining = false
@@ -194,13 +194,13 @@ export class FileIndexer {
     this.idleTimer.unref?.()
   }
 
-  private apply(f: ScannedFile, r: Extracted): void {
+  private async apply(f: ScannedFile, r: Extracted): Promise<void> {
     try {
-      if (r.kind === 'text') this.store.upsert(f, r.text, 'ok')
-      else if (r.kind === 'name-only') this.store.upsert(f, null, 'name-only')
-      else this.store.upsert(f, null, 'error')
+      if (r.kind === 'text') await this.store.upsert(f, r.text, 'ok')
+      else if (r.kind === 'name-only') await this.store.upsert(f, null, 'name-only')
+      else await this.store.upsert(f, null, 'error')
     } catch {
-      // a corrupt row must not stall the queue; the next scan retries it
+      // a failed write must not stall the queue; the next scan retries it
     }
   }
 

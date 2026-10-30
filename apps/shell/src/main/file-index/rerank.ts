@@ -12,7 +12,7 @@ import {
   type DecisionCallOptions,
   type JevTransport,
 } from './decider'
-import type { FileIndexStore } from './store'
+import type { IndexStore } from './index-store'
 
 const EXCERPT_CHARS = 1200
 const CACHE_TTL_MS = 30 * 60 * 1000
@@ -108,7 +108,7 @@ export class SearchReranker {
   private readonly inflight = new Map<string, Promise<FileSearchRerank | null>>()
 
   constructor(
-    private readonly store: FileIndexStore,
+    private readonly store: IndexStore,
     private readonly send?: JevTransport,
   ) {}
 
@@ -122,7 +122,7 @@ export class SearchReranker {
     if (!settings.rerank || (!isLocalEndpoint(settings.endpoint) && !opts.key)) return null
     if (settings.endpoint === 'custom' && !settings.customBaseUrl.trim()) return null
     if (isCloudflareEndpoint(settings.endpoint) && !settings.cloudflareAccountId.trim()) return null
-    const hits = this.store.excerptsFor(paths.slice(0, MAX_DOCS), q, EXCERPT_CHARS)
+    const hits = await this.store.excerptsFor(paths.slice(0, MAX_DOCS), q, EXCERPT_CHARS)
     if (hits.length < 2) return null
     const cacheKey = [
       settings.endpoint,
@@ -144,7 +144,7 @@ export class SearchReranker {
 
   private async judge(
     q: string,
-    hits: ReturnType<FileIndexStore['excerptsFor']>,
+    hits: Awaited<ReturnType<IndexStore['excerptsFor']>>,
     opts: DecisionCallOptions,
     cacheKey: string,
   ): Promise<FileSearchRerank | null> {

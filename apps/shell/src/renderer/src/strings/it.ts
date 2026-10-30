@@ -47,6 +47,14 @@ export const it: Dict = {
   askStep3Title: 'Apri le citazioni',
   askStep3Desc: 'Le risposte citano il file di origine; fai clic per aprirlo',
   askCtaRecents: 'Stella da Recenti',
+  askHeroIndexedTagline:
+    'Ask AI cerca in tutti i file indicizzati — la cartella di salvataggio e le cartelle aggiunte nelle impostazioni. Ancora nulla è indicizzato: la prima scansione parte poco dopo l’avvio.',
+  askIndexedStep1Title: 'Attendi la scansione',
+  askIndexedStep1Desc:
+    'La prima scansione avviene in background; i file compaiono man mano che vengono letti',
+  askIntroIndexed:
+    'Chiedi dei tuoi file — tutto l’indice locale è incluso. Le risposte citano le fonti; clicca per aprirle.',
+  askCtaBrowseRecents: 'Sfoglia i tuoi file in Recenti',
   askNoSave: 'La conversazione non viene salvata; si cancella al riavvio dell’app.',
   askUnknownError: 'La richiesta IA non è riuscita. Riprova.',
   askTasksTitle: 'Attività in background',
@@ -238,7 +246,9 @@ export const it: Dict = {
   setGlobalHotkeyDesc: 'Richiama la tavolozza dei comandi della Home da ovunque.',
   setGlobalHotkeyAccelerator: 'Tasti della scorciatoia',
   setGlobalHotkeyAcceleratorDesc:
-    'Sintassi accelerator come Alt+Space o Ctrl+Shift+K; Invio applica, i valori non riconosciuti vengono ignorati.',
+    'Sintassi accelerator come Ctrl+Shift+Space o Ctrl+Shift+K; Invio applica, i valori non riconosciuti vengono ignorati.',
+  setGlobalHotkeyBlocked: "Un'altra app occupa questa scorciatoia, quindi al momento non è attiva.",
+  setGlobalHotkeyRetry: 'Riprova registrazione',
   setKbScope: 'Ambito del corpus Ask AI',
   setKbScopeDesc:
     'Quali file Ask AI può cercare e citare: tutto ciò che copre l’indice locale, o solo i preferiti.',

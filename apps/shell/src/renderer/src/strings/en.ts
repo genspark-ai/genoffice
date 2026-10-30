@@ -45,6 +45,13 @@ export const en: Dict = {
   askStep3Title: 'Open citations',
   askStep3Desc: 'Answers name the source file; click one to jump there',
   askCtaRecents: 'Star files from Recents',
+  askHeroIndexedTagline:
+    'Ask AI searches every indexed file — your save folder and any folders you added in Settings. Nothing is indexed yet; the first scan runs shortly after launch.',
+  askIndexedStep1Title: 'Wait for the scan',
+  askIndexedStep1Desc: 'The first scan runs in the background; files appear as they are read',
+  askIntroIndexed:
+    'Ask about your files — the whole local index is in scope. Answers cite their sources; click one to open it.',
+  askCtaBrowseRecents: 'Browse your files in Recents',
   askNoSave: 'The conversation is not saved; it clears when the app restarts.',
   askUnknownError: 'The AI request failed. Try again.',
   askTasksTitle: 'Background tasks',
@@ -233,7 +240,9 @@ export const en: Dict = {
   setGlobalHotkeyDesc: 'Summons the Home command palette from anywhere.',
   setGlobalHotkeyAccelerator: 'Shortcut keys',
   setGlobalHotkeyAcceleratorDesc:
-    'Accelerator syntax such as Alt+Space or Ctrl+Shift+K; Enter applies, unrecognized values are ignored.',
+    'Accelerator syntax such as Ctrl+Shift+Space or Ctrl+Shift+K; Enter applies, unrecognized values are ignored.',
+  setGlobalHotkeyBlocked: 'Another app holds this shortcut, so it is not active right now.',
+  setGlobalHotkeyRetry: 'Retry registration',
   setKbScope: 'Ask AI corpus scope',
   setKbScopeDesc:
     'Which files Ask AI may search and cite: everything the local index covers, or the starred files only.',

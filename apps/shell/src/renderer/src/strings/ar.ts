@@ -47,6 +47,13 @@ export const ar: Dict = {
   askStep3Title: 'افتح الاستشهادات',
   askStep3Desc: 'تذكر الإجابات ملف المصدر؛ انقر للانتقال إليه',
   askCtaRecents: 'أضف نجمة من الملفات الأخيرة',
+  askHeroIndexedTagline:
+    'يبحث Ask AI في كل الملفات المفهرسة — مجلد الحفظ والمجلدات المضافة في الإعدادات. لا شيء مفهرس بعد؛ يبدأ الفحص الأول بعد التشغيل بقليل.',
+  askIndexedStep1Title: 'انتظر الفحص',
+  askIndexedStep1Desc: 'يعمل الفحص الأول في الخلفية وتظهر الملفات تدريجيًا',
+  askIntroIndexed:
+    'اسأل عن ملفاتك — الفهرس المحلي بأكمله مشمول. تستشهد الإجابات بمصادرها؛ انقر لفتحها.',
+  askCtaBrowseRecents: 'تصفح ملفاتك في «الأحدث»',
   askNoSave: 'لا يتم حفظ المحادثة؛ تُمسح عند إعادة تشغيل التطبيق.',
   askUnknownError: 'فشل طلب الذكاء الاصطناعي. حاول مجدداً.',
   askTasksTitle: 'المهام في الخلفية',
@@ -239,7 +246,9 @@ export const ar: Dict = {
   setGlobalHotkeyDesc: 'يستدعي لوحة أوامر الصفحة الرئيسية من أي مكان.',
   setGlobalHotkeyAccelerator: 'مفاتيح الاختصار',
   setGlobalHotkeyAcceleratorDesc:
-    'صيغة المسرّع مثل Alt+Space أو Ctrl+Shift+K؛ يطبَّق بمفتاح Enter وتُتجاهل القيم غير المعروفة.',
+    'صيغة المسرّع مثل Ctrl+Shift+Space أو Ctrl+Shift+K؛ يطبَّق بمفتاح Enter وتُتجاهل القيم غير المعروفة.',
+  setGlobalHotkeyBlocked: 'يحتفظ تطبيق آخر بهذا الاختصار، وهو غير مفعّل حاليًا.',
+  setGlobalHotkeyRetry: 'إعادة محاولة التسجيل',
   setKbScope: 'نطاق مدونة Ask AI',
   setKbScopeDesc:
     'الملفات التي يمكن لـ Ask AI البحث فيها والاستشهاد بها: كل ما يغطيه الفهرس المحلي، أو الملفات المميزة بنجمة فقط.',

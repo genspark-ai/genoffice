@@ -47,6 +47,13 @@ export const ja: Dict = {
   askStep3Title: '出典をクリック',
   askStep3Desc: '回答には来源ファイルが示され、クリックで開きます',
   askCtaRecents: '「最近」からスターを付ける',
+  askHeroIndexedTagline:
+    'Ask AI は索引済みの全ファイル——保存フォルダーと設定で追加したフォルダー——を検索します。まだファイルが索引されていません:最初のスキャンは起動後まもなく始まります。',
+  askIndexedStep1Title: 'スキャンを待つ',
+  askIndexedStep1Desc: '最初の索引スキャンはバックグラウンドで実行され、ファイルは順次表示されます',
+  askIntroIndexed:
+    'ファイルについて何でも聞いてください——ローカルの索引全体が対象です。回答には出典が付き、クリックで開けます。',
+  askCtaBrowseRecents: '最近のファイルを見る',
   askNoSave: '会話は保存されません。アプリを再起動すると消えます。',
   askUnknownError: 'AI リクエストに失敗しました。もう一度お試しください。',
   askTasksTitle: 'バックグラウンドタスク',
@@ -243,7 +250,10 @@ export const ja: Dict = {
   setGlobalHotkeyDesc: 'どこからでもホームのコマンドパレットを呼び出します。',
   setGlobalHotkeyAccelerator: 'ショートカットキー',
   setGlobalHotkeyAcceleratorDesc:
-    'Alt+Space、Ctrl+Shift+K などの accelerator 記法。Enter で適用し、認識できない値は無視されます。',
+    'Ctrl+Shift+Space、Ctrl+Shift+K などの accelerator 記法。Enter で適用し、認識できない値は無視されます。',
+  setGlobalHotkeyBlocked:
+    'このショートカットは別のアプリが保持しているため、現在有効ではありません。',
+  setGlobalHotkeyRetry: '登録を再試行',
   setKbScope: 'Ask AI のコーパス範囲',
   setKbScopeDesc:
     'Ask AI が検索・引用できるファイルの範囲です。ローカル索引のすべて、またはスター付きファイルのみ。',

@@ -120,17 +120,28 @@ export function useToolConfirm(
     [],
   )
 
+  // stable identities: hosts hand these to memoized message rows, and a
+  // fresh closure per render would invalidate every row on every parent
+  // render (the streaming path re-renders the panel per frame)
+  const allow = useCallback(() => settle(true), [settle])
+  const deny = useCallback(() => settle(false), [settle])
+  const settleAll = useCallback(
+    (allowed: boolean) => {
+      if (resolverRef.current) settle(allowed)
+    },
+    [settle],
+  )
+  const clear = useCallback(() => {
+    if (resolverRef.current) settle(false)
+    setCard(null)
+  }, [settle])
+
   return {
     card,
     confirm,
-    allow: () => settle(true),
-    deny: () => settle(false),
-    settleAll: (allowed: boolean) => {
-      if (resolverRef.current) settle(allowed)
-    },
-    clear: () => {
-      if (resolverRef.current) settle(false)
-      setCard(null)
-    },
+    allow,
+    deny,
+    settleAll,
+    clear,
   }
 }

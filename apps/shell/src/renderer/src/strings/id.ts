@@ -48,6 +48,13 @@ export const id: Dict = {
   askStep3Title: 'Klik sitasi',
   askStep3Desc: 'Jawaban menyebut berkas sumbernya; klik untuk membukanya',
   askCtaRecents: 'Tandai dari Terbaru',
+  askHeroIndexedTagline:
+    'Ask AI menelusuri semua file yang terindeks — folder simpan dan folder yang ditambahkan di Pengaturan. Belum ada yang terindeks; pemindaian pertama dimulai tak lama setelah peluncuran.',
+  askIndexedStep1Title: 'Tunggu pemindaian',
+  askIndexedStep1Desc: 'Pemindaian pertama berjalan di latar belakang; file muncul seiring dibaca',
+  askIntroIndexed:
+    'Tanyakan tentang file Anda — seluruh indeks lokal ikut dicakup. Jawaban menyebutkan sumbernya; klik untuk membuka.',
+  askCtaBrowseRecents: 'Lihat file Anda di Terbaru',
   askNoSave: 'Percakapan tidak disimpan; akan hilang saat aplikasi dimulai ulang.',
   askUnknownError: 'Permintaan AI gagal. Coba lagi.',
   askTasksTitle: 'Tugas latar belakang',
@@ -245,7 +252,9 @@ export const id: Dict = {
   setGlobalHotkeyDesc: 'Memanggil palet perintah Beranda dari mana saja.',
   setGlobalHotkeyAccelerator: 'Tombol pintasan',
   setGlobalHotkeyAcceleratorDesc:
-    'Sintaks akselerator seperti Alt+Space atau Ctrl+Shift+K; Enter menerapkan, nilai yang tidak dikenali diabaikan.',
+    'Sintaks akselerator seperti Ctrl+Shift+Space atau Ctrl+Shift+K; Enter menerapkan, nilai yang tidak dikenali diabaikan.',
+  setGlobalHotkeyBlocked: 'Aplikasi lain memegang pintasan ini, jadi saat ini tidak aktif.',
+  setGlobalHotkeyRetry: 'Coba daftarkan ulang',
   setKbScope: 'Cakupan korpus Ask AI',
   setKbScopeDesc:
     'Berkas mana yang dapat dicari dan dikutip Ask AI: semua yang tercakup indeks lokal, atau hanya berkas berbintang.',

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FileIndexer } from '../src/main/file-index/indexer'
 import { FileIndexStore } from '../src/main/file-index/store'
+import { inProcessIndexStore } from '../src/main/file-index/index-store'
 
 const WORKER = join(__dirname, 'file-index-oom-worker.mjs')
 
@@ -18,13 +19,14 @@ describe('FileIndexer when a parse exhausts the worker heap', () => {
     const dir = mkdtempSync(join(tmpdir(), 'genoffice-indexer-oom-'))
     const storeDir = mkdtempSync(join(tmpdir(), 'genoffice-indexer-oom-db-'))
     const store = new FileIndexStore(join(storeDir, 'index.db'))
+    const indexStore = inProcessIndexStore(store)
     try {
       const hog = join(dir, 'hog.xlsx')
       const notes = join(dir, 'notes.md')
       writeFileSync(hog, 'x')
       writeFileSync(notes, 'y')
       indexer = new FileIndexer(
-        store,
+        indexStore,
         WORKER,
         { roots: () => [dir], extraPaths: () => [] },
         30_000,
@@ -32,8 +34,8 @@ describe('FileIndexer when a parse exhausts the worker heap', () => {
       )
       await indexer.scan()
       await vi.waitFor(
-        () => {
-          expect(indexer!.progress()).toMatchObject({ pending: 0, scanning: false })
+        async () => {
+          await expect(indexer!.progress()).resolves.toMatchObject({ pending: 0, scanning: false })
           expect(store.listAll().get(notes)?.status).toBe('ok')
         },
         { timeout: 20_000, interval: 50 },
@@ -43,8 +45,8 @@ describe('FileIndexer when a parse exhausts the worker heap', () => {
       const ask = vi.spyOn(indexer as unknown as { ask: (r: unknown) => unknown }, 'ask')
       await indexer.scan()
       await vi.waitFor(
-        () => {
-          expect(indexer!.progress()).toMatchObject({ pending: 0, scanning: false })
+        async () => {
+          await expect(indexer!.progress()).resolves.toMatchObject({ pending: 0, scanning: false })
         },
         { timeout: 5_000, interval: 25 },
       )

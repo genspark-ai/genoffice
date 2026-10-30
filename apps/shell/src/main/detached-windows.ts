@@ -4,7 +4,7 @@ import type { Rectangle, WebContents } from 'electron'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 
 import { appForKind, appIsDirty, resetSheetsShuttingDown } from './app-registry'
-import { canonicalPath } from './tab-manager'
+import { canonicalPath, installPaletteSummon, shellTabManager } from './tab-manager'
 import type { DetachedTab } from './tab-manager'
 import { shellQuitTracker } from './window-close-guard'
 import { showErrorDialog } from './error-dialog'
@@ -61,6 +61,8 @@ interface DetachedRecord {
   pinned: boolean
   /** the widget's drag strip (pinned windows only; owns the dock-back control) */
   strip?: WebContentsView
+  /** removes this window's Ctrl/Cmd+K palette listener (the strip's takes over on dock-back) */
+  disposePaletteSummon: () => void
 }
 
 /** keyed by the view's webContents id — the same key the app modules use */
@@ -715,6 +717,9 @@ function releaseDetached(rec: DetachedRecord): DetachedTab {
   const { window: win, view, kind, filePath, strip } = rec
   clearDockHover(rec)
   rec.released = true
+  // the view returns to the strip, where the tab manager's own Ctrl/Cmd+K
+  // listener takes over — without this, a docked view would summon twice
+  rec.disposePaletteSummon()
   if (torn?.rec === rec) torn = null
   const title = win.isDestroyed() ? (filePath ? basename(filePath) : '') : win.getTitle()
   detached.delete(view.webContents.id)
@@ -871,6 +876,7 @@ export function createDetachedEditorWindow(options: {
     closeConfirmed = true
     clearDockHover(rec)
     if (torn?.rec === rec) torn = null
+    rec.disposePaletteSummon()
     win.contentView.removeChildView(view)
     if (rec.strip) {
       win.contentView.removeChildView(rec.strip)
@@ -897,7 +903,16 @@ export function createDetachedEditorWindow(options: {
     hovering: false,
     dockTimer: null,
     pinned: !!pin,
+    disposePaletteSummon: () => {},
   }
+  // the same Ctrl/Cmd+K palette summon a tab view carries, so one app behaves
+  // the same in its own window: the chord yields for an app that owns it
+  // (docs' hyperlink dialog) and otherwise summons the shell's palette
+  rec.disposePaletteSummon = installPaletteSummon(
+    view.webContents,
+    () => appForKind(kind)?.ownsPlainCtrlK === true,
+    () => shellTabManager()?.summonPalette(),
+  )
   detached.set(wcId, rec)
   onChanged()
   if (pin) {

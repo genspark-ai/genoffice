@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { basename, dirname, extname } from 'node:path'
 import { MAX_BODY_CHARS } from './extract'
 import { buildSnippet, containsAny, excerpt, type SnippetPart } from './snippet'
+import type { ScannedFile } from './scan'
 import {
   parseQuery,
   termChars,
@@ -56,6 +57,15 @@ export interface SearchResult {
 /** a term with no phrase hit still matches a file covering more than this share of its characters */
 const RELAXED_MIN_COVERAGE = 0.5
 const RELAXED_MIN_TOKENS = 3
+/**
+ * Per-term cap on MATCH rows. The corpus is bounded by the scan budget
+ * (200k files); a common term would otherwise materialize every rowid, score
+ * and row into this process before ranking discards all but a page of them.
+ * The cap keeps the best-scoring rows (bm25 ascending), so the all-term vs
+ * any-term decision and the ranked order only degrade for terms whose hit
+ * count is already beyond any page the UI shows.
+ */
+const MATCH_ROW_LIMIT = 5000
 
 interface Row {
   id: number
@@ -282,7 +292,10 @@ export class FileIndexStore {
     }
     if (parsed.exclude.length) {
       const expr = toMatchExpression({ include: parsed.exclude, exclude: [] }, 'OR')
-      if (expr) for (const id of this.matchIds(expr)) candidates.delete(id)
+      if (expr)
+        for (const id of this.matchExcludedIds(expr, [...candidates.keys()])) {
+          candidates.delete(id)
+        }
     }
     if (candidates.size === 0) return { hits: [], total: 0 }
     const wanted = parsed.include.length
@@ -373,7 +386,7 @@ export class FileIndexStore {
   private matchScored(expr: string): Array<{ rowid: number; score: number }> {
     return this.db
       .prepare(
-        'SELECT rowid, bm25(file_fts, 10.0, 5.0, 1.0, 10.0, 5.0, 1.0) AS score FROM file_fts WHERE file_fts MATCH ?',
+        `SELECT rowid, bm25(file_fts, 10.0, 5.0, 1.0, 10.0, 5.0, 1.0) AS score FROM file_fts WHERE file_fts MATCH ? ORDER BY score LIMIT ${MATCH_ROW_LIMIT}`,
       )
       .all(expr) as unknown as Array<{ rowid: number; score: number }>
   }
@@ -381,11 +394,33 @@ export class FileIndexStore {
   private matchIds(expr: string): number[] {
     return (
       this.db
-        .prepare('SELECT rowid FROM file_fts WHERE file_fts MATCH ?')
+        .prepare(`SELECT rowid FROM file_fts WHERE file_fts MATCH ? LIMIT ${MATCH_ROW_LIMIT}`)
         .all(expr) as unknown as Array<{
         rowid: number
       }>
     ).map((r) => r.rowid)
+  }
+
+  /**
+   * Exclusion must stay exact — a filter pill that silently misses hits is a
+   * correctness bug, not a latency tradeoff — but an unbounded MATCH for the
+   * excluded term is exactly the blowup the row cap exists to prevent. So the
+   * exclusion runs against the candidate pool in id chunks: bounded by the
+   * pool's size, exact over it, and the only rows beyond the pool that a bare
+   * MATCH would have found were never candidates to delete.
+   */
+  private matchExcludedIds(expr: string, ids: readonly number[]): number[] {
+    const out: number[] = []
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500)
+      const rows = this.db
+        .prepare(
+          `SELECT rowid FROM file_fts WHERE rowid IN (${chunk.map(() => '?').join(',')}) AND file_fts MATCH ?`,
+        )
+        .all(...chunk, expr) as unknown as Array<{ rowid: number }>
+      for (const r of rows) out.push(r.rowid)
+    }
+    return out
   }
 
   /** files covering more than half of the term's characters, with the tokens they hold */
@@ -440,4 +475,34 @@ export class FileIndexStore {
   close(): void {
     this.db.close()
   }
+}
+
+/**
+ * The scan-diff half of indexing, run wherever the store lives (the store
+ * worker; tests in-process): entries missing from a complete walk are removed,
+ * and the files whose mtime/size moved — or that are new — are answered for
+ * extraction. An unchanged file that already failed is not retried: a parse
+ * that once killed a worker would otherwise re-run on every scan.
+ */
+export function diffAgainstKnown(
+  store: FileIndexStore,
+  seen: readonly ScannedFile[],
+  complete: boolean,
+): ScannedFile[] {
+  // a budget-capped walk cannot tell a vanished file from one it never reached,
+  // so entries are only removed when every root was walked to the end
+  const seenPaths = new Set(seen.map((f) => f.path))
+  const known = store.listAll()
+  if (complete) {
+    const gone: string[] = []
+    for (const path of known.keys()) if (!seenPaths.has(path)) gone.push(path)
+    store.remove(gone)
+  }
+  const changed: ScannedFile[] = []
+  for (const f of seen) {
+    const k = known.get(f.path)
+    if (k && k.mtimeMs === f.mtimeMs && k.sizeBytes === f.sizeBytes) continue
+    changed.push(f)
+  }
+  return changed
 }

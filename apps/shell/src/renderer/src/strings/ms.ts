@@ -46,6 +46,13 @@ export const ms: Dict = {
   askStep3Title: 'Buka petikan',
   askStep3Desc: 'Jawaban menyatakan fail sumber; klik untuk terus ke sana',
   askCtaRecents: 'Tandakan dari Terkini',
+  askHeroIndexedTagline:
+    'Ask AI mencari dalam semua fail terindeks — folder simpan dan folder yang ditambah dalam Tetapan. Belum ada apa-apa terindeks; imbasan pertama bermula sejurus selepas pelancaran.',
+  askIndexedStep1Title: 'Tunggu imbasan',
+  askIndexedStep1Desc: 'Imbasan pertama berjalan di latar belakang; fail muncul ketika dibaca',
+  askIntroIndexed:
+    'Tanya tentang fail anda — seluruh indeks setempat tercakup. Jawapan menyatakan sumbernya; klik untuk membuka.',
+  askCtaBrowseRecents: 'Lihat fail anda dalam Terkini',
   askNoSave: 'Perbualan tidak disimpan; ia dikosongkan apabila aplikasi dimulakan semula.',
   askUnknownError: 'Permintaan AI gagal. Cuba lagi.',
   askTasksTitle: 'Tugas latar belakang',
@@ -236,7 +243,10 @@ export const ms: Dict = {
   setGlobalHotkeyDesc: 'Memanggil palet perintah Laman Utama dari mana-mana sahaja.',
   setGlobalHotkeyAccelerator: 'Kekunci pintasan',
   setGlobalHotkeyAcceleratorDesc:
-    'Sintaks pemecut seperti Alt+Space atau Ctrl+Shift+K; Enter melaksanakan, nilai yang tidak dikenali diabaikan.',
+    'Sintaks pemecut seperti Ctrl+Shift+Space atau Ctrl+Shift+K; Enter melaksanakan, nilai yang tidak dikenali diabaikan.',
+  setGlobalHotkeyBlocked:
+    'Pintasan ini dipegang oleh aplikasi lain, jadi ia tidak aktif buat masa ini.',
+  setGlobalHotkeyRetry: 'Cuba daftar semula',
   setKbScope: 'Skop korpus Ask AI',
   setKbScopeDesc:
     'Fail yang boleh dicari dan dipetik oleh Ask AI: semua yang diliputi indeks tempatan, atau hanya fail berbintang.',

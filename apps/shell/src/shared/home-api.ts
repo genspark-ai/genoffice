@@ -371,12 +371,17 @@ export interface DesktopPrefs {
 }
 
 /**
- * A genoffice:// deep link routed to the Home surface. `view: 'ask'` opens the
- * Ask AI view, optionally carrying the query text the link embedded.
+ * A genoffice:// deep link. `ask` opens Home's Ask AI view (optionally
+ * carrying the query text the link embedded), `palette` summons the command
+ * palette, and `open` opens a document by absolute path. Only `ask` is
+ * forwarded to the renderer; the main process handles the other two itself.
  */
 export interface DeepLinkPayload {
-  view: 'ask'
+  view: 'ask' | 'palette' | 'open'
+  /** ask: the query text the link embedded */
   query?: string
+  /** open: absolute path of the document to open */
+  path?: string
 }
 
 /** the system-presence prefs (login item + global hotkey), persisted in app-settings.json */

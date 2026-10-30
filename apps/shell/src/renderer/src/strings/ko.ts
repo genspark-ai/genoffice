@@ -47,6 +47,13 @@ export const ko: Dict = {
   askStep3Title: '인용 클릭',
   askStep3Desc: '답변에 출처 파일이 표시되고, 클릭하면 바로 이동해요',
   askCtaRecents: '최근 파일에 별표하기',
+  askHeroIndexedTagline:
+    'Ask AI는 색인된 모든 파일을 검색합니다—저장 폴더와 설정에서 추가한 폴더가 대상입니다. 아직 색인된 파일이 없습니다. 첫 스캔은 시작 직후 곧 실행됩니다.',
+  askIndexedStep1Title: '스캔 기다리기',
+  askIndexedStep1Desc: '첫 색인 스캔은 백그라운드에서 실행되며 파일이 순차적으로 나타납니다',
+  askIntroIndexed:
+    '파일에 대해 무엇이든 물어보세요—로컬 색인 전체가 대상입니다. 답변은 출처를 표시하며 클릭하면 열립니다.',
+  askCtaBrowseRecents: '최근 파일 둘러보기',
   askNoSave: '대화는 저장되지 않으며, 앱을 다시 시작하면 지워집니다.',
   askUnknownError: 'AI 요청에 실패했습니다. 다시 시도해 주세요.',
   askTasksTitle: '백그라운드 작업',
@@ -239,7 +246,9 @@ export const ko: Dict = {
   setGlobalHotkeyDesc: '어디서든 홈 명령 팔레트를 불러냅니다.',
   setGlobalHotkeyAccelerator: '단축키 조합',
   setGlobalHotkeyAcceleratorDesc:
-    'Alt+Space, Ctrl+Shift+K 같은 accelerator 표기. Enter로 적용하며 인식할 수 없는 값은 무시됩니다.',
+    'Ctrl+Shift+Space, Ctrl+Shift+K 같은 accelerator 표기. Enter로 적용하며 인식할 수 없는 값은 무시됩니다.',
+  setGlobalHotkeyBlocked: '다른 앱이 이 단축키를 점유하고 있어 지금은 활성화되어 있지 않습니다.',
+  setGlobalHotkeyRetry: '등록 다시 시도',
   setKbScope: 'Ask AI 말뭉치 범위',
   setKbScopeDesc:
     'Ask AI가 검색하고 인용할 수 있는 파일의 범위입니다. 로컬 색인 전체 또는 별표 파일만.',

@@ -46,6 +46,13 @@ export const cs: Dict = {
   askStep3Title: 'Otevírejte odkazy',
   askStep3Desc: 'Odpovědi uvádějí zdrojový soubor; kliknutím na něj přejdete',
   askCtaRecents: 'Označit z Nedávných',
+  askHeroIndexedTagline:
+    'Ask AI prohledává všechny indexované soubory — složku ukládání a složky přidané v nastavení. Zatím nic indexováno není; první sken startuje krátce po spuštění.',
+  askIndexedStep1Title: 'Počkejte na sken',
+  askIndexedStep1Desc: 'První sken běží na pozadí; soubory se objevují podle toho, jak se čtou',
+  askIntroIndexed:
+    'Ptejte se na své soubory — zahrnuje celý místní index. Odpovědi uvádějí zdroje; kliknutím otevřete.',
+  askCtaBrowseRecents: 'Prohlédněte si soubory v Posledních',
   askNoSave: 'Konverzace se neukládá; po restartu aplikace se vymaže.',
   askUnknownError: 'Požadavek na AI selhal. Zkuste to znovu.',
   askTasksTitle: 'Úlohy na pozadí',
@@ -460,7 +467,9 @@ export const cs: Dict = {
   setGlobalHotkeyDesc: 'Vyvolá paletu příkazů domovské stránky odkudkoli.',
   setGlobalHotkeyAccelerator: 'Klávesy zkratky',
   setGlobalHotkeyAcceleratorDesc:
-    'Syntaxe akcelerátoru, např. Alt+Space nebo Ctrl+Shift+K; Enter použije, nerozpoznané hodnoty se ignorují.',
+    'Syntaxe akcelerátoru, např. Ctrl+Shift+Space nebo Ctrl+Shift+K; Enter použije, nerozpoznané hodnoty se ignorují.',
+  setGlobalHotkeyBlocked: 'Tuto zkratku drží jiná aplikace, proto teď není aktivní.',
+  setGlobalHotkeyRetry: 'Zkusit znovu zaregistrovat',
   setKbScope: 'Rozsah korpusu Ask AI',
   setKbScopeDesc:
     'Které soubory může Ask AI prohledávat a citovat: vše, co pokrývá místní index, nebo jen oblíbené.',

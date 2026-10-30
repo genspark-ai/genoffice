@@ -139,20 +139,21 @@ export function listIndexedKnowledgeFiles(
  * means the indexed scope: no post-filter, so the store's own ranked page is
  * the answer (the SQL pushdown the starred scope cannot express). A real path
  * set keeps the starred behavior: a bounded pool, JS-filtered by membership.
+ * Async because the search runs in the store worker.
  */
-export function searchKnowledgeBase(
+export async function searchKnowledgeBase(
   search: (
     q: string,
     limit: number,
-  ) => ReadonlyArray<{ path: string; name: string; ext: string; snippetText?: string }>,
+  ) => Promise<ReadonlyArray<{ path: string; name: string; ext: string; snippetText?: string }>>,
   query: string,
   scopePaths: readonly string[] | null,
   limit: number,
-): KbSearchHit[] {
+): Promise<KbSearchHit[]> {
   const q = query.trim().slice(0, KB_QUERY_MAX_CHARS)
   if (!q) return []
   const scoped = scopePaths === null ? null : new Set(scopePaths)
-  const pool = search(q, scoped === null ? limit : KB_SEARCH_POOL)
+  const pool = await search(q, scoped === null ? limit : KB_SEARCH_POOL)
   const seen = new Set<string>()
   const out: KbSearchHit[] = []
   for (const hit of pool) {

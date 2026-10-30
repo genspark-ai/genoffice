@@ -44,6 +44,12 @@ export const zhTW: Dict = {
   askStep3Title: '點擊引用',
   askStep3Desc: '回答標註來源檔案,點引用直接跳過去',
   askCtaRecents: '去最近檔案收藏',
+  askHeroIndexedTagline:
+    'AI 問答會檢索所有已索引的檔案——儲存資料夾與設定裡新增的資料夾都算。目前還沒有索引到檔案:首次掃描會在啟動後很快開始。',
+  askIndexedStep1Title: '等待掃描',
+  askIndexedStep1Desc: '首次索引掃描在背景進行,檔案會陸續出現',
+  askIntroIndexed: '直接問關於檔案的問題——全部本地索引都在範圍內。回答會標註來源,點擊即可開啟。',
+  askCtaBrowseRecents: '去最近檔案瀏覽',
   askNoSave: '對話不會保存,重啟應用程式後清空。',
   askUnknownError: 'AI 請求失敗,請重試。',
   askTasksTitle: '後台任務',
@@ -228,7 +234,9 @@ export const zhTW: Dict = {
   setGlobalHotkeyDesc: '按下後回到首頁並開啟命令選板。',
   setGlobalHotkeyAccelerator: '快捷鍵組合',
   setGlobalHotkeyAcceleratorDesc:
-    '如 Alt+Space、Ctrl+Shift+K；Enter 生效，無法識別的寫法會被忽略。',
+    '如 Ctrl+Shift+Space、Ctrl+Shift+K；Enter 生效，無法識別的寫法會被忽略。',
+  setGlobalHotkeyBlocked: '該組合已被其他應用程式占用，快速鍵目前未生效。',
+  setGlobalHotkeyRetry: '重試註冊',
   setKbScope: 'Ask AI 語料範圍',
   setKbScopeDesc: '決定 Ask AI 可以搜尋與引用哪些檔案：全部本機索引，或僅收藏的檔案。',
   setKbScopeIndexed: '全部索引檔案',

@@ -46,6 +46,13 @@ export const pl: Dict = {
   askStep3Title: 'Otwórz przypisy',
   askStep3Desc: 'Odpowiedzi podają plik źródłowy; kliknij, aby go otworzyć',
   askCtaRecents: 'Oznacz z Ostatnich',
+  askHeroIndexedTagline:
+    'Ask AI przeszukuje wszystkie zindeksowane pliki — folder zapisywania i foldery dodane w ustawieniach. Nic jeszcze nie jest zindeksowane; pierwszy skan rusza wkrótce po uruchomieniu.',
+  askIndexedStep1Title: 'Poczekaj na skan',
+  askIndexedStep1Desc: 'Pierwsze indeksowanie działa w tle; pliki pojawiają się w miarę czytania',
+  askIntroIndexed:
+    'Pytaj o swoje pliki — objęty jest cały lokalny indeks. Odpowiedzi podają źródła; kliknij, aby otworzyć.',
+  askCtaBrowseRecents: 'Zobacz swoje pliki w Ostatnich',
   askNoSave: 'Rozmowa nie jest zapisywana; znika po ponownym uruchomieniu aplikacji.',
   askUnknownError: 'Żądanie AI nie powiodło się. Spróbuj ponownie.',
   askTasksTitle: 'Zadania w tle',
@@ -235,7 +242,9 @@ export const pl: Dict = {
   setGlobalHotkeyDesc: 'Przywołuje paletę poleceń strony głównej z dowolnego miejsca.',
   setGlobalHotkeyAccelerator: 'Klawisze skrótu',
   setGlobalHotkeyAcceleratorDesc:
-    'Składnia akceleratora, np. Alt+Space lub Ctrl+Shift+K; Enter zastosowuje, nierozpoznane wartości są ignorowane.',
+    'Składnia akceleratora, np. Ctrl+Shift+Space lub Ctrl+Shift+K; Enter zastosowuje, nierozpoznane wartości są ignorowane.',
+  setGlobalHotkeyBlocked: 'Ten skrót jest zajęty przez inną aplikację, dlatego obecnie nie działa.',
+  setGlobalHotkeyRetry: 'Spróbuj ponownie zarejestrować',
   setKbScope: 'Zakres korpusu Ask AI',
   setKbScopeDesc:
     'Które pliki Ask AI może przeszukiwać i cytować: wszystko objęte indeksem lokalnym lub tylko oznaczone gwiazdką.',

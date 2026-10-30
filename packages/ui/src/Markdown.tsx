@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, memo, useMemo, useState, type ReactNode } from 'react'
 
 /**
  * Minimal dependency-free markdown for chat bubbles: paragraphs, ul/ol,
@@ -308,7 +308,7 @@ function CodeBlock({
   )
 }
 
-export function Markdown({
+export const Markdown = memo(function Markdown({
   text,
   nav,
   navs,
@@ -323,11 +323,20 @@ export function Markdown({
   codeCopyLabel?: string
 }): React.JSX.Element {
   // the legacy single nav rides along with the newer list; first scheme
-  // match wins, and hosts never pass overlapping schemes anyway
-  const navList: readonly MarkdownNav[] = nav ? [nav, ...(navs ?? [])] : (navs ?? [])
+  // match wins, and hosts never pass overlapping schemes anyway. Memoized so
+  // a re-render with unchanged nav/navs keeps the array identity and a
+  // memoized parent's props stay shallow-equal.
+  const navList: readonly MarkdownNav[] = useMemo(
+    () => (nav ? [nav, ...(navs ?? [])] : (navs ?? [])),
+    [nav, navs],
+  )
+  // parsing is the expensive half of rendering a message, and every chat
+  // panel streams through here; keyed on the text so a re-render without a
+  // text change — the memoized rows above it — never re-parses
+  const blocks = useMemo(() => parseBlocks(text), [text])
   return (
     <div className="ai-md">
-      {parseBlocks(text).map((b, i) => {
+      {blocks.map((b, i) => {
         if (b.kind === 'h') {
           // level class lets hosts scale heading sizes (chat keeps them equal;
           // the manual styles h2/h3 distinctly)
@@ -396,4 +405,4 @@ export function Markdown({
       })}
     </div>
   )
-}
+})

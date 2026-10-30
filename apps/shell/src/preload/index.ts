@@ -13,7 +13,6 @@ import { normalizeAiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 import type {
   AccountLoginEvent,
   AccountStatus,
-  AppendRunEventRequest,
   CloudProjectsSnapshot,
   DefaultAppStatus,
   FolderListing,

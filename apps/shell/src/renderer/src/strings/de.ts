@@ -48,6 +48,13 @@ export const de: Dict = {
   askStep3Title: 'Verweise öffnen',
   askStep3Desc: 'Antworten nennen die Quelldatei; ein Klick springt dorthin',
   askCtaRecents: 'Aus Zuletzt verwendet markieren',
+  askHeroIndexedTagline:
+    'Ask AI durchsucht alle indexierten Dateien — den Speicherordner und alle in den Einstellungen hinzugefügten Ordner. Noch ist nichts indexiert: der erste Scan beginnt kurz nach dem Start.',
+  askIndexedStep1Title: 'Auf den Scan warten',
+  askIndexedStep1Desc: 'Der erste Scan läuft im Hintergrund; Dateien erscheinen nach und nach',
+  askIntroIndexed:
+    'Fragen Sie nach Ihren Dateien — der gesamte lokale Index ist einbezogen. Antworten nennen ihre Quellen; klicken zum Öffnen.',
+  askCtaBrowseRecents: 'Dateien in „Zuletzt verwendet“ ansehen',
   askNoSave: 'Die Unterhaltung wird nicht gespeichert; sie wird beim Neustart der App gelöscht.',
   askUnknownError: 'Die KI-Anfrage ist fehlgeschlagen. Bitte erneut versuchen.',
   askTasksTitle: 'Hintergrund-Aufgaben',
@@ -249,7 +256,10 @@ export const de: Dict = {
   setGlobalHotkeyDesc: 'Ruft von überall die Befehlspalette der Startseite auf.',
   setGlobalHotkeyAccelerator: 'Tastenkombination',
   setGlobalHotkeyAcceleratorDesc:
-    'Accelerator-Schreibweise wie Alt+Space oder Strg+Shift+K; Eingabe übernimmt, unerkannte Werte werden ignoriert.',
+    'Accelerator-Schreibweise wie Ctrl+Shift+Space oder Strg+Shift+K; Eingabe übernimmt, unerkannte Werte werden ignoriert.',
+  setGlobalHotkeyBlocked:
+    'Eine andere App belegt diese Tastenkombination, sie ist daher gerade nicht aktiv.',
+  setGlobalHotkeyRetry: 'Erneut registrieren',
   setKbScope: 'Ask-AI-Korpus-Umfang',
   setKbScopeDesc:
     'Welche Dateien Ask AI durchsuchen und zitieren darf: alles im lokalen Index oder nur die Favoriten.',

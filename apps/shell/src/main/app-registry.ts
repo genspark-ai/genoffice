@@ -155,6 +155,12 @@ export interface AppDescriptor {
   claimActiveTarget?: (getActive: () => WebContents | null) => void
   /** what the MCP open-documents tool can read/save/discard for this app */
   agentControl?: AgentDocumentIo
+  /**
+   * This app ships its own plain Ctrl/Cmd+K binding (docs: Word's hyperlink
+   * dialog) and keeps it: the shell's palette summon yields inside it — the
+   * palette stays reachable through the global hotkey and the tray.
+   */
+  ownsPlainCtrlK?: boolean
 }
 
 /** the requestClose signature, for close-guard plumbing */
@@ -173,6 +179,9 @@ export const documentApps: readonly AppDescriptor[] = [
     requestClose: requestDocsClose,
     teardown: teardownDocsRenderer,
     installMenu: buildDocsMenu,
+    // Ctrl/Cmd+K is Word's insert-hyperlink dialog, and the shell's palette
+    // summon yields to it (the palette keeps the global hotkey and the tray)
+    ownsPlainCtrlK: true,
     open: {
       afterCreate: (wcId, { newBlank, aiContent }) => {
         if (newBlank) markDocsNewBlank(wcId)

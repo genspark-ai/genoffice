@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -21,59 +21,33 @@ import {
   clipboard,
   dialog,
   ipcMain,
-  nativeImage,
   nativeTheme,
   screen,
   session,
   shell,
   webContents,
 } from 'electron'
-import type { MenuItemConstructorOptions, NativeImage, Rectangle, WebContents } from 'electron'
+import type { MenuItemConstructorOptions, Rectangle, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
 import { tabStripOverlay } from './title-bar-overlay'
-import { shellWindowBackground } from './window-background'
-import {
-  applyUiScaleTo,
-  applyUiScaleToAll,
-  changeUiScale,
-  onUiScaleChanged,
-  readUiScale,
-} from './ui-scale'
-import menuDocxIcon1x from './assets/menu-docx.png?asset'
-import menuDocxIcon2x from './assets/menu-docx@2x.png?asset'
-import menuXlsxIcon1x from './assets/menu-xlsx.png?asset'
-import menuXlsxIcon2x from './assets/menu-xlsx@2x.png?asset'
-import menuPptxIcon1x from './assets/menu-pptx.png?asset'
-import menuPptxIcon2x from './assets/menu-pptx@2x.png?asset'
-import menuPdfIcon1x from './assets/menu-pdf.png?asset'
-import menuPdfIcon2x from './assets/menu-pdf@2x.png?asset'
-import menuMdIcon1x from './assets/menu-md.png?asset'
-import menuMdIcon2x from './assets/menu-md@2x.png?asset'
-import menuHtmlIcon1x from './assets/menu-html.png?asset'
-import menuHtmlIcon2x from './assets/menu-html@2x.png?asset'
-import menuHomeIcon1x from './assets/menu-home.png?asset'
-import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
+import { applyUiScaleTo, applyUiScaleToAll, onUiScaleChanged, readUiScale } from './ui-scale'
 import trayIcon1x from './assets/tray-icon.png?asset'
 import trayIcon2x from './assets/tray-icon@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
-  DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
-  GITHUB_REPO_URL,
   appMenuLabels,
   appMenuTemplate,
   contextMenuLabels,
   editMenuTemplate,
   installContextMenu,
   installNavigationGuard,
-  isUsableSaveDir,
   HEADLESS_EXIT,
   formatHeadlessEnvelope,
   headlessExitCode,
   parseHeadlessExportArgv,
   setHeadlessMode,
   type HeadlessArgvParse,
-  showOpenDialogWithMemory,
   showSaveDialogWithMemory,
   windowMenuTemplate,
   aboutMenuItem,
@@ -99,7 +73,6 @@ import { OPEN_DOCUMENTS_FILE, clearOpenDocuments, publishOpenDocuments } from '.
 import { startControlServer, type ControlServer } from './control-server'
 import { controlHandler } from './control-handlers'
 import { installCliLinkBestEffort } from './cli-link'
-import { createDefaultAppService, execFileRunner } from './default-app'
 import { registerIntegrationsIpc } from './integrations-ipc'
 import { registerPluginsIpc } from './plugins-ipc'
 import { registerTemplatesIpc } from './templates-ipc'
@@ -116,7 +89,7 @@ import {
   type DesktopWindowInfo,
 } from './desktop-control'
 import {
-  deepLinkFromArgv,
+  deepLinksFromArgv,
   installDeepLinkListener,
   installSystemPresence,
   parseDeepLink,
@@ -146,14 +119,34 @@ import {
   withResolved,
   withShown,
 } from './star-prompt'
-import {
-  clearCloudProjectsStore,
-  cloudProjectExternalUrl,
-  readCloudProjectsStore,
-  syncCloudProjects,
-} from './cloud-projects'
+import { clearCloudProjectsStore } from './cloud-projects'
 import { handleDroppedFiles } from './dropped-files'
 import { collectLaunchPaths } from './launch-paths'
+import {
+  createShellWindow as createShellWindowIn,
+  detachTabToWindow as detachTabToWindowIn,
+  ensureTabManager as ensureTabManagerIn,
+  pinTabToDesktop as pinTabToDesktopIn,
+  restoreDesktopPins as restoreDesktopPinsIn,
+  revealShellWindow as revealShellWindowIn,
+  tearOffTabToWindow as tearOffTabToWindowIn,
+  type ShellWindowDeps,
+} from './window-lifecycle'
+import {
+  activeEditorTarget as activeEditorTargetIn,
+  closeFocusedEditor as closeFocusedEditorIn,
+  installBackToHomeItems as installBackToHomeItemsIn,
+  installDockMenu as installDockMenuIn,
+  loadMenuIcon,
+  menuIcons,
+  openFileViaDialog as openFileViaDialogIn,
+  TAB_MENU_ICON,
+  viewMenuTemplate as viewMenuTemplateIn,
+  withUserGuide as withUserGuideIn,
+  withViewMenu as withViewMenuIn,
+  type MenuHost,
+} from './menus'
+import { registerHomeFileIpc, stringPaths } from './home-ipc'
 import {
   genofficeLogout,
   gskLoginInfo,
@@ -209,8 +202,6 @@ import {
   readRecentFiles,
   readSlidesRecentFiles,
   readStarredFiles,
-  readStarredGroupMap,
-  readStarredGroups,
   recordRecentFile,
   registerAiIpc,
   registerDocsIpc,
@@ -230,42 +221,13 @@ import {
   sendMarkdownPrintRequest,
   sendPdfPrintRequest,
   sendSheetsMenuAction,
-  setDocsExtraFileMenuItems,
-  setDocsFileOpenedHook,
-  setDocsFileSavedHook,
-  setDocsHostWindowHook,
-  setDocsMenuGate,
-  setDocsShellHooks,
-  setDocsShellWindow,
-  setHtmlDocxExportPrepareHook,
-  setHtmlDocxExportedHook,
-  setHtmlFileSavedHook,
-  setHtmlPresentHooks,
-  setHtmlProvisionalTitleHook,
-  setMarkdownDocxExportedHook,
-  setMarkdownFileSavedHook,
-  setPdfRedactionSavedHook,
-  setPdfRenamedHook,
   setPdfSaveAsInFlight,
   setSessionPathResolver,
-  setSheetsCloseTabHook,
-  setSheetsExtraFileMenuItems,
-  setSheetsHostWindowHook,
-  setSheetsShellWindow,
-  setSheetsWorkbookOpenedHook,
-  setSlidesCloseTabHook,
-  setSlidesExtraFileMenuItems,
-  setSlidesHostWindowHook,
-  setSlidesOpenedHook,
-  setSlidesShellWindow,
-  setSlidesShowBleed,
-  setStarredGroup,
   sheetsFileRenamed,
   sheetsSuggestedPathTaken,
   slidesFileRenamed,
   startSheetsCaptureServer,
   stopSheetsSidecar,
-  toggleStarredFile,
   uniquePathIn,
   unmarkSheetsUnsavedNew,
 } from './app-registry'
@@ -297,20 +259,10 @@ import type {
   AutoSaveDefault,
   AuthorNameSetting,
   DeepLinkPayload,
-  FolderListing,
-  FolderRoot,
-  MoveConflictPolicy,
-  MoveResult,
   NewFileOpts,
-  RecentEntry,
-  RecentPage,
-  RenameResult,
   DocTheme,
   StarPromptShow,
   UiTheme,
-  FileSearchPage,
-  FileSearchQuery,
-  FileSearchRerank,
   FileSearchSettings,
 } from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
@@ -323,53 +275,16 @@ import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { startRendererWatchdog } from './renderer-watchdog'
-import {
-  capStatPaths,
-  matchesExtFamily,
-  normalizeRecentQuery,
-  pageRecentPaths,
-  statPathEntries,
-} from './recent-files'
-import { isMoveSource, isUserVisibleFile, type FileTargetSources } from './file-targets'
-import { renameStaysInApp } from './app-routing'
-import { isSameFile, pdfSaveAsTarget, isValidRawRenameName } from './rename-validation'
-import {
-  FolderWatcher,
-  createFolder,
-  describeRoot,
-  isInsideRoot,
-  pathsUnder,
-  listFolder,
-  movePathsInto,
-  rebasePath,
-  renameFolder,
-  uniqueNameIn,
-  type FolderErrors,
-} from './folder-tree'
-import {
-  FOLDER_ROOTS_KEY,
-  describeExtraRoot,
-  readExtraRoots,
-  withExtraRoot,
-  withoutExtraRoot,
-} from './folder-roots'
+import { isUserVisibleFile, type FileTargetSources } from './file-targets'
+import { pdfSaveAsTarget } from './rename-validation'
+import { FolderWatcher, isInsideRoot, pathsUnder, rebasePath, uniqueNameIn } from './folder-tree'
+import { readExtraRoots } from './folder-roots'
 import extractWorkerPath from './file-index/extract-worker?modulePath'
+import storeWorkerPath from './file-index/store-worker?modulePath'
+import type { IndexStore } from './file-index/index-store'
 import { FileIndexer } from './file-index/indexer'
-import { FileIndexStore } from './file-index/store'
-import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
-import {
-  createKnowledgeDocument,
-  KB_LIST_CAP,
-  listIndexedKnowledgeFiles,
-  listKnowledgeFiles,
-  normalizeKbScope,
-  parseKbCreateRequest,
-  readKnowledgeFilePage,
-  searchKnowledgeBase,
-} from './knowledge-base'
-import { createFileViaCli } from './mcp/headless-cli'
-import { homeCliContext, runHomeCli, type HomeCliDeps } from './home-cli'
-import { sanitizeFileBase } from './mcp/tools/document-tools'
+import { StoreClient } from './file-index/store-client'
+import { normalizeFileSearchSettings, SearchReranker } from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { tabMenuTemplate, type TabMenuActions, isProgramFile } from './tab-menu'
@@ -377,45 +292,25 @@ import { runTabDocumentAction, type TabDocumentAction } from './tab-document-act
 import { duplicateDocumentFile } from './tab-duplicate'
 import { closeTabsInOrder, createRecentlyClosedTracker } from './tab-lifecycle'
 import {
-  installShellWindowBoundsPersistence,
-  readShellWindowState,
-  SHELL_WINDOW_DEFAULT_HEIGHT,
-  SHELL_WINDOW_DEFAULT_WIDTH,
-  SHELL_WINDOW_MIN_HEIGHT,
-  SHELL_WINDOW_MIN_WIDTH,
-} from './window-bounds'
-import { installShellCloseGuard } from './window-close-guard'
-import {
   activateDetached,
-  attachPinnedWidgetsToShell,
   closeDetachedWithoutPrompt,
   createDetachedEditorWindow,
-  detachPinnedWidgetsFromShell,
   detachedFileForWebContents,
   detachedFilePaths,
   detachedOpenDocuments,
   detachedRenameFile,
-  detachedSetFileFor,
   detachedWebContentsFor,
-  detachedSetTitleFor,
   detachedWindowForWebContents,
-  dockBandFor,
   dragTornWindow,
   endTornDrag,
   findDetachedTabByPath,
   focusDetachedByPath,
-  focusPinnedWidget,
-  focusedDetachedKind,
-  focusedDetachedTab,
-  isDetachedEditorWindow,
   isDetachedTabId,
-  isTearingOff,
   registerDetachedPinsIpc,
   setDesktopPinStore,
   setDetachedChangedListener,
   setDockHost,
   setPinsChangedListener,
-  setPinsHostSurfaceActive,
   takeTornTab,
 } from './detached-windows'
 import { applyUpdateChannel, checkForUpdatesNow, initAutoUpdater } from './updater'
@@ -767,16 +662,6 @@ function initAnalytics(): void {
     // analytics must never block startup
   }
 }
-
-// ---- first-run onboarding ----
-// The GenTeam community page opened from the onboarding's second slide.
-// Stable short link served by the genoffice.ai site; it 302s to the tokened
-// invite link, which stays out of this repo and rotates server-side.
-const GENTEAM_URL = 'https://genoffice.ai/join'
-
-// Genspark credit-usage page opened from the account menu's credits row.
-// Kept main-side so the renderer never supplies the URL.
-const CREDIT_USAGE_URL = 'https://www.genspark.ai/credit-usage'
 
 // ---- "star us on GitHub" prompt (see star-prompt.ts for the rules) ----
 
@@ -3624,20 +3509,34 @@ function summonPalette(): void {
   sendToShellRenderer(HOME_CHANNELS.paletteOpen)
 }
 
-/** genoffice://ask?q=… → Home's Ask AI view, carrying the query when present */
+/** genoffice://ask?q=… → Home's Ask AI view, carrying the query when present;
+ *  genoffice://palette → the command palette; genoffice://open?path=… → the
+ *  document in its owning app (the same router a file drop takes) */
 function deliverDeepLink(payload: DeepLinkPayload): void {
   if (!app.isReady()) {
     // open-url can beat ready on a cold macOS protocol launch; the window and
-    // renderer do not exist yet — deliver once whenReady has built them
-    pendingDeepLink = payload
+    // renderer do not exist yet — links queue in arrival order and deliver
+    // once whenReady has built them (a single slot made the second link
+    // silently overwrite the first)
+    pendingDeepLinks.push(payload)
+    return
+  }
+  if (payload.view === 'palette') {
+    summonPalette()
+    return
+  }
+  if (payload.view === 'open') {
+    // focus the shell first so a background launch still surfaces the document
+    revealShellWindow()
+    if (payload.path) routeDocumentPath(payload.path)
     return
   }
   summonHome()
   sendToShellRenderer(HOME_CHANNELS.deepLink, payload)
 }
 
-/** a deep link that arrived before the shell window existed */
-let pendingDeepLink: DeepLinkPayload | null = null
+/** deep links that arrived before the shell window existed, in arrival order */
+const pendingDeepLinks: DeepLinkPayload[] = []
 
 /**
  * New file from a folder view: the click remembers the folder per kind, the
@@ -3798,19 +3697,35 @@ function afterFolderMoved(oldDir: string, newDir: string, filesBefore: readonly 
 
 const folderWatchers = new Map<string, FolderWatcher>()
 
-let fileIndexStore: FileIndexStore | null = null
+let fileIndexStore: IndexStore | null = null
 let fileIndexer: FileIndexer | null = null
 let searchReranker: SearchReranker | null = null
+
+/** the rerank handler's lazy singleton; null while no index store is up */
+function ensureSearchReranker(): SearchReranker | null {
+  if (searchReranker) return searchReranker
+  if (!fileIndexStore) return null
+  searchReranker = new SearchReranker(fileIndexStore)
+  return searchReranker
+}
 
 function readFileSearchSettings(): FileSearchSettings {
   return normalizeFileSearchSettings(readAppSettings(APP_SETTINGS_PATH()).fileSearch)
 }
 
-/** the search index lives in userData and follows the save folder plus recents/starred */
+/**
+ * The search index lives in userData and follows the save folder plus
+ * recents/starred. The store itself is a worker thread (StoreClient): search
+ * and writes never block the main process — the process serving every
+ * window's IPC.
+ */
 function ensureFileIndexer(): FileIndexer | null {
   if (fileIndexer) return fileIndexer
   try {
-    fileIndexStore = new FileIndexStore(join(app.getPath('userData'), 'file-index.db'))
+    fileIndexStore = new StoreClient(
+      storeWorkerPath,
+      join(app.getPath('userData'), 'file-index.db'),
+    )
   } catch (e) {
     console.warn('[file-index] unavailable:', e instanceof Error ? e.message : e)
     return null
@@ -3822,13 +3737,7 @@ function ensureFileIndexer(): FileIndexer | null {
   return fileIndexer
 }
 
-const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
-  docx: ['docx', 'doc', 'odt', 'ott'],
-  xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
-  pptx: ['pptx', 'ppt', 'odp', 'otp'],
-  md: ['md', 'markdown', 'txt', 'json'],
-  html: ['html', 'htm'],
-}
+// (SEARCH_EXT_FAMILY moved to home-ipc.ts)
 
 /** one recursive watcher per tree root; follows the save-folder setting and the added folders */
 function ensureFolderWatchers(): void {
@@ -3850,58 +3759,9 @@ function ensureFolderWatchers(): void {
   }
 }
 
-/**
- * Put the manual in whatever menu is currently installed.
- *
- * Every tab kind builds its own application menu, which is how File and Edit
- * stay tab-shaped — and which is also why an item added to one builder is
- * missing from the other six. F1 worked from Home and nowhere else, and the
- * manual's own shortcut table was wrong for six of the seven tab kinds.
- *
- * Injecting after the builder has run is the one place that cannot be
- * forgotten: a new tab kind gets the manual for free, and a builder that
- * already has it is left alone rather than getting a second copy.
- */
-function withUserGuide(): void {
-  const menu = Menu.getApplicationMenu()
-  if (!menu) return
-  const userGuide = {
-    label: tm('menuUserGuide'),
-    accelerator: 'F1',
-    click: () => tabManager?.openHelpTab(),
-  }
-  const help = menu.items.find((item) => item.role === 'help')
-  // Slides and Sheets build a File/Edit/View template with no Help menu at
-  // all, so there is nothing to insert into — one is created instead. Without
-  // this the manual would be reachable from four of the seven tab kinds.
-  if (!help) {
-    menu.append(
-      Menu.buildFromTemplate([{ role: 'help', label: tm('menuHelp'), submenu: [userGuide] }])
-        .items[0]!,
-    )
-    return
-  }
-  const submenu = help.submenu
-  if (!submenu || submenu.items.some((i) => i.accelerator === 'F1')) return
-  // A separator survives a template only *between* two real items — Electron
-  // drops one at either end, so `[userGuide, separator]` builds a single item
-  // and the destructure below used to hand `undefined` to `insert`, which threw
-  // "Invalid item" and took the main process down on the next tab switch. The
-  // third entry is filler, discarded; the type check is what stops this from
-  // silently regressing if Electron's rule ever changes again.
-  const [item, separator] = Menu.buildFromTemplate([
-    userGuide,
-    { type: 'separator' },
-    { role: 'undo' },
-  ]).items
-  if (!item) return
-  submenu.insert(0, item)
-  if (separator?.type === 'separator') submenu.insert(1, separator)
-}
-
+// the app registry installs the editor menu for the app that owns the kind;
+// home/help tabs (and any kind no app claims) get the home menu
 function applyMenuFor(kind: TabKind): void {
-  // the app registry installs the editor menu for the app that owns the kind;
-  // home/help tabs (and any kind no app claims) get the home menu
   if (!installAppMenu(kind)) buildHomeMenu()
   withUserGuide()
   withViewMenu()
@@ -3918,69 +3778,6 @@ setShellMenuBuilders({
   markdown: buildMarkdownMenu,
   html: buildHtmlMenu,
 })
-
-/**
- * The View › interface-scale items, shared by the home menu and every editor
- * tab. CmdOrCtrl+Alt (not Shift): Shift+= is Sheets insert-cells and Docs
- * superscript, and the View menu now exists on editor tabs too, where those
- * accelerators are taken.
- */
-function uiScaleMenuItems(): MenuItemConstructorOptions[] {
-  return [
-    {
-      label: tm('menuUiZoomIn'),
-      accelerator: 'CmdOrCtrl+Alt+=',
-      click: () => changeUiScale(APP_SETTINGS_PATH(), 1),
-    },
-    {
-      label: tm('menuUiZoomOut'),
-      accelerator: 'CmdOrCtrl+Alt+-',
-      click: () => changeUiScale(APP_SETTINGS_PATH(), -1),
-    },
-    { type: 'separator' },
-    {
-      label: tm('menuUiZoomReset'),
-      accelerator: 'CmdOrCtrl+Alt+0',
-      click: () => changeUiScale(APP_SETTINGS_PATH(), 0),
-    },
-  ]
-}
-
-function viewMenuTemplate(): MenuItemConstructorOptions {
-  return { label: tm('menuView'), submenu: uiScaleMenuItems() }
-}
-
-/**
- * Interface-scale items in the View menu of every tab kind. Editor menus are
- * built in the editor apps (docs/sheets/slides) or by the three shell-owned
- * builders, so rather than teaching seven menu builders about the scale, the
- * current menu is post-processed here — the same shape as withUserGuide below.
- * An existing View menu (docs, slides: document zoom) gains the items after a
- * separator; the rest get a fresh View menu inserted before the Help menu that
- * withUserGuide has just guaranteed.
- */
-function withViewMenu(): void {
-  const menu = Menu.getApplicationMenu()
-  if (!menu) return
-  const hasScale = menu.items.some((item) =>
-    item.submenu?.items.some((i) => i.accelerator === 'CmdOrCtrl+Alt+='),
-  )
-  if (hasScale) return
-  const view = menu.items.find((item) => item.label === tm('menuView'))
-  if (view?.submenu) {
-    // build the separator together with the items: Electron drops a separator
-    // that sits alone in a template
-    for (const item of Menu.buildFromTemplate([{ type: 'separator' }, ...uiScaleMenuItems()])
-      .items) {
-      view.submenu.append(item)
-    }
-    return
-  }
-  const viewItem = Menu.buildFromTemplate([viewMenuTemplate()]).items[0]!
-  const helpIdx = menu.items.findIndex((item) => item.role === 'help')
-  if (helpIdx === -1) menu.append(viewItem)
-  else menu.insert(helpIdx, viewItem)
-}
 
 /// Interface scale (genoffice#1913). Read once at boot, then replaced by the View menu.
 let currentUiScale = 1
@@ -4014,279 +3811,61 @@ function refreshTitleBarOverlay(): void {
   shellWindow.setTitleBarOverlay(tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale))
 }
 
-function createShellWindow(): void {
-  // Last session's geometry, when a display can still show it (issue #2049).
-  // A saved position on an unplugged monitor falls back to the default
-  // placement rather than opening where it cannot be grabbed.
-  const restored = readShellWindowState(
-    APP_SETTINGS_PATH(),
-    screen.getAllDisplays().map((display) => display.workArea),
-  )
-  const win = new BrowserWindow({
-    width: restored?.width ?? SHELL_WINDOW_DEFAULT_WIDTH,
-    height: restored?.height ?? SHELL_WINDOW_DEFAULT_HEIGHT,
-    // x/y only when a saved position survived validation; omitting them keeps
-    // Electron's default placement on a first run
-    ...(restored ? { x: restored.x, y: restored.y } : {}),
-    minWidth: SHELL_WINDOW_MIN_WIDTH,
-    minHeight: SHELL_WINDOW_MIN_HEIGHT,
-    title: 'GenOffice',
-    // Paint the theme's surface before the renderer's first frame so the window
-    // does not flash white in dark mode. nativeTheme.themeSource is already set
-    // from the saved theme in app.whenReady, before this window is created.
-    // macOS uses vibrancy below, which must stay transparent.
-    ...(process.platform === 'darwin'
-      ? {}
-      : { backgroundColor: shellWindowBackground(nativeTheme.shouldUseDarkColors) }),
-    // vibrancy: editor modules punch translucent regions (e.g. the slides
-    // thumbnail pane) through to the desktop
-    ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, vibrancy: 'sidebar' as const }
-      : {
-          // the tab strip is the title bar, as on macOS; the application menu
-          // stays registered for its accelerators and opens from the strip's
-          // menu button (Alt still reveals the native bar where one exists)
-          titleBarStyle: 'hidden' as const,
-          titleBarOverlay: tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale),
-          autoHideMenuBar: true,
-        }),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  })
-  // the stored rectangle is the normal-state one, so a maximized session
-  // reopens maximized instead of as a screen-sized ordinary window
-  if (restored?.maximized) win.maximize()
-  shellWindow = win
-  nativeTheme.on('updated', refreshTitleBarOverlay)
-  win.once('closed', () => nativeTheme.off('updated', refreshTitleBarOverlay))
-  // dragging the window by the tab strip's blank (draggable) area produces no
-  // DOM event anywhere — will-move is the only signal to dismiss popovers
-  win.on('will-move', () => broadcastChromePressed())
-  // remember the window's position and size for the next launch (issue #2049)
-  installShellWindowBoundsPersistence(APP_SETTINGS_PATH(), win)
-  // A detached editor window claims the process-global menu/active-editor targets
-  // while focused; take them back when the shell window regains focus. Keyboard
-  // focus must land back on the active tab's view too — regaining window focus
-  // gives it to the chrome webContents, leaving typing dead in the document.
-  win.on('focus', () => {
-    tabManager?.refreshActiveTargets()
-    tabManager?.focusActiveView()
-  })
-
-  const manager = new TabManager(
-    win,
-    () => {
-      win.webContents.send(TABS_CHANNELS.changed, manager.list())
-      publishOpenDocumentsIfOwner([...manager.openFilePaths(), ...detachedFilePaths()])
-      // the pinned widgets layer over the Home desktop: another tab covering
-      // it hides them until Home is active again
-      setPinsHostSurfaceActive(manager.list().some((t) => t.active && t.kind === 'home'))
-    },
-    applyMenuFor,
-    // no extension: these tabs have no file on disk yet; the title becomes the
-    // real filename (the localized untitled default + .docx etc.) once the first save lands
-    // — keyed off each app's registry entry
-    (kind) =>
-      kind === 'help'
-        ? tm('menuUserGuide')
-        : appForKind(kind)
-          ? tm(appForKind(kind)!.untitledTitleKey)
-          : tm('untitledSheet'),
-    // the tab strip is interface chrome, so its height follows the scale
-    () => currentUiScale,
-  )
-  tabManager = manager
-  manager.setClosedListener((closed) => recentlyClosed.push(closed))
-  const stopSleepSweeper = manager.startSleepSweeper(tabSleepEnabled)
-  win.once('closed', stopSleepSweeper)
-
-  // Docking: a detached window dragged over this window's tab strip hands its
-  // document back. The strip reports the insertion slot for each preview
-  // (lastDockIndex); the slot is consumed by the dock that follows.
-  setDockHost({
-    band: () => dockBandFor(win, currentUiScale),
-    preview: (x) => {
-      if (!win.isDestroyed())
-        win.webContents.send(TABS_CHANNELS.dockPreview, x === null ? null : { x })
-    },
-    dock: (tab) => {
-      const index = lastDockIndex
-      lastDockIndex = undefined
-      if (!win.isDestroyed()) win.webContents.send(TABS_CHANNELS.dockPreview, null)
-      manager.attachTab(tab, index)
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    },
-  })
-  // the pinned widgets re-parent to this window so they keep stacking above
-  // the desktop they decorate (the shell can be recreated around them)
-  attachPinnedWidgetsToShell(win)
-  // and they must not be destroyed with it when it closes — their documents
-  // outlive the shell like any detached editor's
-  win.on('close', () => detachPinnedWidgetsFromShell(win))
-
-  // pushRecent-triggered docs menu rebuilds must not clobber the active tab's
-  // menu; a focused detached docs window owns the menu just like an active tab
-  setDocsMenuGate(
-    () =>
-      focusedDetachedKind() === 'docs' || manager.list().some((t) => t.active && t.kind === 'docs'),
-  )
-
-  setDocsShellWindow(win)
-  setSheetsShellWindow(win)
-  setDocsHostWindowHook((wc) => detachedWindowForWebContents(wc.id))
-  setSheetsHostWindowHook((wc) => detachedWindowForWebContents(wc.id))
-  setSlidesShellWindow(win)
-  setSlidesHostWindowHook((wc) => detachedWindowForWebContents(wc.id))
-  setSlidesShowBleed((wc, on) => manager.setContentBleed(wc, on))
-  setHtmlPresentHooks({
-    setBleed: (wc, on) => manager.setContentBleed(wc, on),
-    hostWindow: (wc) => detachedWindowForWebContents(wc.id) ?? win,
-    openTab: (owner, title) => {
-      manager.openHtmlPresentTab(owner, title)
-      return true
-    },
-    closeTab: (wc) => {
-      const id = manager.tabIdForWebContents(wc.id)
-      if (id) void manager.closeTab(id)
-      return !!id
-    },
-  })
-  // A detached docs/sheets window can outlive the shell window; its hooks must
-  // then reach the live tab manager (recreating the shell), never this closure's.
-  setDocsShellHooks({
-    openTab: (openPath, options) => ensureTabManager().openDocsTab(openPath, options),
-    openAiDocTab: (content) =>
-      ensureTabManager().openDocsTab(undefined, { newBlank: true, aiContent: content }),
-    listTabs: () =>
-      (tabManager?.list() ?? [])
-        .filter((t) => t.kind === 'docs')
-        .map((t) => ({ id: t.id, title: t.title, focused: t.active })),
-    focusTab: (id) => tabManager?.activateTab(id),
-    // ⌘W in a detached docs window closes that window (its own close guard runs)
-    closeActiveTab: () => {
-      const focused = BrowserWindow.getFocusedWindow()
-      if (focused && focused !== win) focused.close()
-      else tabManager?.closeActiveTab()
-    },
-    openGeneratedPath: (path) => openGeneratedDocument(path),
-  })
-  setSheetsCloseTabHook(() => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (focused && focused !== win) focused.close()
-    else tabManager?.closeActiveTab()
-  })
-  // ⌘W targets the focused window: in a detached slides editor window it closes
-  // that window (running its own close guard), not the shell's active tab
-  setSlidesCloseTabHook(() => {
-    const focused = BrowserWindow.getFocusedWindow()
-    if (focused && focused !== win) focused.close()
-    else manager.closeActiveTab()
-  })
-  // When ⌘O opens a file inside a tab, sync the tab title/path (used for de-dup by path) and record it as recent.
-  // The first save / save-as fires this too, so applyPendingDir also runs here.
-  setSheetsWorkbookOpenedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-  })
-  setSlidesOpenedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-    applyPendingDir(wc.id, path)
-  })
-  // docs' save-as / silent first save lands on a new path → sync the tab title too
-  setDocsFileSavedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-    return applyPendingDir(wc.id, path)
-  })
-  // ⌘O / open-path inside a docs tab: sync the tab title immediately, same
-  // contract as the sheets/slides opened hooks (a plain save to the original
-  // path never renames the tab, so the open must — r115)
-  setDocsFileOpenedHook((wcId, path) => {
-    manager.setTabFileFor(wcId, path)
-    detachedSetFileFor(wcId, path)
-    recordRecentFile(path)
-    applyPendingDir(wcId, path)
-  })
-  // markdown untitled first save / Save As lands on a new path
-  setMarkdownFileSavedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-    applyPendingDir(wc.id, path)
-  })
-  setHtmlFileSavedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-    applyPendingDir(wc.id, path)
-  })
-  setHtmlProvisionalTitleHook((wc, title) => {
-    manager.setTabTitleFor(wc.id, title)
-    detachedSetTitleFor(wc.id, title)
-  })
-  // A redacted copy becomes this tab's document; the source still exists.
-  setPdfRedactionSavedHook((wc, path) => {
-    manager.setTabFileFor(wc.id, path)
-    detachedSetFileFor(wc.id, path)
-    recordRecentFile(path)
-    applyPendingDir(wc.id, path)
-  })
-  // pdf content-derived auto-rename: the file moved on disk, follow it everywhere
-  setPdfRenamedHook((wc, oldPath, newPath) => {
-    manager.setTabFileFor(wc.id, newPath)
-    detachedSetFileFor(wc.id, newPath)
-    replaceRecentFile(oldPath, newPath)
-    projectFileRenamed(oldPath, newPath)
-  })
-  // markdown "convert & open in Docs" → route the fresh .docx to a docs tab
-  setMarkdownDocxExportedHook((path) => {
-    openDocumentPath(path)
-  })
-  // Word export to a path already open in a docs tab: close that tab before the file is
-  // written (its unsaved-changes prompt applies, and a later save of the stale document
-  // could otherwise overwrite the export); a cancelled close aborts the export.
-  setHtmlDocxExportPrepareHook(async (path) => {
-    const stale = manager.findDocsTabByPath(path)
-    if (!stale) return true
-    const active = manager.list().find((t) => t.active)?.id
-    await manager.closeTab(stale)
-    if (active && active !== stale) manager.activateTab(active)
-    return !manager.findDocsTabByPath(path)
-  })
-  setHtmlDocxExportedHook((path) => {
-    openDocumentPath(path)
-  })
-
-  // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
-  // the same save/don't-save/cancel prompt; any cancel aborts the close. An
-  // all-clean close is left untouched, so ⌘Q keeps quitting the app.
-  installShellCloseGuard(win, manager)
-
-  win.on('closed', () => {
+// ── the shell window's lifecycle (creation/reveal/detach/pin/tear-off) ──
+// The implementation lives in window-lifecycle.ts; index.ts still owns the
+// shellWindow/tabManager singletons and hands them over through these deps.
+const shellWindowDeps: ShellWindowDeps = {
+  appSettingsPath: APP_SETTINGS_PATH,
+  userDataDir: () => app.getPath('userData'),
+  uiScale: () => currentUiScale,
+  tabSleepEnabled,
+  untitledTitle: (kind) =>
+    kind === 'help'
+      ? tm('menuUserGuide')
+      : appForKind(kind)
+        ? tm(appForKind(kind)!.untitledTitleKey)
+        : tm('untitledSheet'),
+  applyMenuFor,
+  getTabManager: () => tabManager,
+  setTabManager: (manager) => {
+    tabManager = manager
+  },
+  getShellWindow: () => shellWindow,
+  setShellWindow: (win) => {
+    shellWindow = win
+  },
+  onShellWindowClosed: (win, manager) => {
     if (shellWindow === win) shellWindow = null
     if (tabManager === manager) {
       tabManager = null
       setDockHost(null)
       publishAllOpenDocuments()
     }
-  })
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  },
+  onTabsClosed: (closed) => recentlyClosed.push(closed),
+  publishOpenDocumentsIfOwner,
+  broadcastChromePressed,
+  refreshTitleBarOverlay,
+  applyPendingDir,
+  openDocumentPath,
+  openGeneratedDocument,
+  takeLastDockIndex: () => {
+    const index = lastDockIndex
+    lastDockIndex = undefined
+    return index
+  },
+  sendToShellRenderer,
 }
+
+const createShellWindow = () => createShellWindowIn(shellWindowDeps)
+const ensureTabManager = () => ensureTabManagerIn(shellWindowDeps)
+const revealShellWindow = () => revealShellWindowIn(shellWindowDeps)
+const detachTabToWindow = (id: string) => detachTabToWindowIn(shellWindowDeps, id)
+const pinTabToDesktop = (id: string, bounds?: Rectangle) =>
+  pinTabToDesktopIn(shellWindowDeps, id, bounds)
+const restoreDesktopPins = () => restoreDesktopPinsIn(shellWindowDeps)
+const tearOffTabToWindow = (id: string, x: number, y: number) =>
+  tearOffTabToWindowIn(shellWindowDeps, id, x, y)
 
 // ---- routing: one dispatch function for every open path ----
 
@@ -4299,6 +3878,37 @@ function createShellWindow(): void {
 const OPEN_DIALOG_EXTENSIONS = [
   ...new Set([...documentApps.flatMap((app) => app.extensions), 'doc', 'ppt']),
 ]
+
+// ── the shared menu machinery (icons, injections, dock menu, target
+// resolution) lives in menus.ts; the host wires it to this module's state ──
+const menuHost: MenuHost = {
+  translate: tm,
+  appSettingsPath: APP_SETTINGS_PATH,
+  getTabManager: () => tabManager,
+  getShellWindow: () => shellWindow,
+  openDocumentPath,
+  openDialogExtensions: OPEN_DIALOG_EXTENSIONS,
+  newDocTab,
+  newSheetTab,
+  newSlideTab,
+  newMarkdownTab,
+  newHtmlTab,
+  newPdfTab,
+}
+
+const withUserGuide = () => withUserGuideIn(menuHost)
+const withViewMenu = () => withViewMenuIn(menuHost)
+const viewMenuTemplate = () => viewMenuTemplateIn(menuHost)
+const activePdfTarget = () =>
+  activeEditorTargetIn(menuHost, 'pdf', () => tabManager?.activePdfTab())
+const activeMarkdownTarget = () =>
+  activeEditorTargetIn(menuHost, 'markdown', () => tabManager?.activeMarkdownTab())
+const activeHtmlTarget = () =>
+  activeEditorTargetIn(menuHost, 'html', () => tabManager?.activeHtmlTab())
+const closeFocusedEditor = () => closeFocusedEditorIn(menuHost)
+const openFileViaDialog = () => openFileViaDialogIn(menuHost)
+const installBackToHomeItems = () => installBackToHomeItemsIn(menuHost)
+const installDockMenu = () => installDockMenuIn(menuHost)
 
 function notifyUnsupportedFile(filePath: string): void {
   const ext = extname(filePath).slice(1).toLowerCase() || basename(filePath)
@@ -4652,9 +4262,7 @@ function startQueuedWorkbookNudge(): void {
 
 // ---- home IPC ----
 
-function statEntries(paths: string[]): RecentEntry[] {
-  return statPathEntries(paths, new Set(readStarredFiles()))
-}
+// (statEntries moved to home-ipc.ts)
 
 function registerHomeIpc(): void {
   // signed-in means GenOffice's own device-code login; the shared gsk CLI key
@@ -4708,323 +4316,41 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.getAppVersion, (): string => app.getVersion())
 
-  ipcMain.handle(HOME_CHANNELS.recents, (_event, query: unknown): RecentPage =>
-    pageRecentPaths(readRecentFiles(), query, new Set(readStarredFiles())),
-  )
-
-  ipcMain.handle(HOME_CHANNELS.searchFiles, (_event, raw: unknown): FileSearchPage => {
-    const query = (raw && typeof raw === 'object' ? raw : {}) as Partial<FileSearchQuery>
-    const indexer = ensureFileIndexer()
-    if (!indexer || !fileIndexStore) {
-      return { hits: [], total: 0, index: { indexed: 0, pending: 0, scanning: false } }
-    }
-    // an open search box is the moment a stale index shows; rescan at most once a minute
-    indexer.refreshIfStale(60_000)
-    const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
-    const filter = typeof query.ext === 'string' ? query.ext : ''
-    const exts = filter && filter !== 'all' ? (SEARCH_EXT_FAMILY[filter] ?? [filter]) : undefined
-    const offset = Number.isFinite(query.offset) ? Math.max(0, Math.floor(query.offset!)) : 0
-    const limit = Number.isFinite(query.limit) ? Math.max(0, Math.floor(query.limit!)) : 50
-    const starred = new Set(readStarredFiles())
-    const result = q ? fileIndexStore.search(q, { exts, offset, limit }) : { hits: [], total: 0 }
-    return {
-      hits: result.hits.map((h) => ({ ...h, starred: starred.has(h.path) })),
-      total: result.total,
-      index: indexer.progress(),
-    }
+  // ── the file-domain handlers (search/kb/lists/folders/new-file/rename/
+  // move/delete-folder/links) live in home-ipc.ts; the host hands them this
+  // module's singletons and routing ──
+  registerHomeFileIpc({
+    translate: tm,
+    appSettingsPath: APP_SETTINGS_PATH,
+    getShellWindow: () => shellWindow,
+    getTabManager: () => tabManager,
+    ensureFileIndexer,
+    indexStore: () => fileIndexStore,
+    refreshIndexer: () => fileIndexer?.refresh(),
+    readFileSearchSettings,
+    ensureSearchReranker,
+    openDocumentPath,
+    rememberPendingDir,
+    newDocTab,
+    newSheetTab,
+    newSlideTab,
+    newMarkdownTab,
+    newHtmlTab,
+    newPdfTab,
+    afterFileMoved,
+    afterFolderMoved,
+    trackedFilesUnder,
+    fileTargetSources,
+    statMaybeFile,
+    extraFolderRoots,
+    insideAnyRoot,
+    isAnyRoot,
+    ensureFolderWatchers,
+    droppedFilesDeps,
+    cliRunner: bundledCliRunner,
+    fetchGithubStars,
+    openDialogExtensions: OPEN_DIALOG_EXTENSIONS,
   })
-
-  // Knowledge-base channel: the AI-side read access to the user's local corpus
-  // (docs wires these into its panel; see knowledge-base.ts). The corpus is the
-  // app-settings `kbScope`: 'indexed' (default) is every file the local index
-  // covers, 'starred' the original hand-picked set. Path arguments are
-  // validated against the scope — a corpus file is the only thing a knowledge
-  // tool may read.
-  const kbScope = () => normalizeKbScope(readAppSettings(APP_SETTINGS_PATH()).kbScope)
-
-  ipcMain.handle('kb:list', (): unknown => {
-    const starred = readStarredFiles()
-    if (kbScope() === 'starred' || !fileIndexStore) return listKnowledgeFiles(starred)
-    return listIndexedKnowledgeFiles(starred, fileIndexStore.recentFiles(KB_LIST_CAP))
-  })
-
-  ipcMain.handle('kb:search', (_event, raw: unknown): unknown => {
-    const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; limit?: unknown }
-    const q = typeof query.q === 'string' ? query.q : ''
-    const limitRaw = Number(query.limit)
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.floor(limitRaw)) : 8
-    const store = fileIndexStore
-    if (!q.trim() || !store) return []
-    ensureFileIndexer()?.refreshIfStale(60_000)
-    const starred = readStarredFiles()
-    const hits = searchKnowledgeBase(
-      (qq, pool) =>
-        store.search(qq, { limit: pool }).hits.map((h) => ({
-          path: h.path,
-          name: h.name,
-          ext: h.ext,
-          snippetText: (h.snippet ?? []).map((part) => part.text).join(''),
-        })),
-      q,
-      kbScope() === 'starred' ? starred : null,
-      Math.min(limit, 20),
-    )
-    return hits
-  })
-
-  ipcMain.handle('kb:read', async (_event, raw: unknown): Promise<unknown> => {
-    const req = (raw && typeof raw === 'object' ? raw : {}) as {
-      path?: unknown
-      offset?: unknown
-    }
-    const path = typeof req.path === 'string' ? req.path : ''
-    const offsetRaw = Number(req.offset)
-    const offset = Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0
-    // a starred file stays readable in every scope (even with the index
-    // momentarily unavailable); the indexed scope adds "in the index"
-    const starred = readStarredFiles().includes(path)
-    const inScope =
-      kbScope() === 'starred' ? starred : starred || (fileIndexStore?.has(path) ?? false)
-    if (!path || !inScope) {
-      throw new Error('path is not in the knowledge base')
-    }
-    return readKnowledgeFilePage(path, offset)
-  })
-
-  ipcMain.handle('kb:create-document', async (_event, raw: unknown): Promise<unknown> => {
-    const req = parseKbCreateRequest(raw)
-    return createKnowledgeDocument(
-      {
-        dir: defaultSaveDir,
-        uniquePath: uniquePathIn,
-        sanitizeBase: sanitizeFileBase,
-        writeText: (path, text) => atomicWriteFile(path, Buffer.from(text, 'utf8')),
-        markdownToDocx: async (markdown, out) => {
-          await createFileViaCli(bundledCliRunner(), {
-            type: 'docx',
-            input: { name: 'content.md', content: markdown },
-            out,
-          })
-        },
-        recordRecent: recordRecentFile,
-      },
-      req,
-    )
-  })
-
-  // Ask AI building files: the bundled CLI, confined to the conversation's
-  // work directory, the save folder and the starred files' folders (home-cli.ts)
-  const homeCliDeps: HomeCliDeps = {
-    runner: bundledCliRunner,
-    workRoot: () => join(app.getPath('userData'), 'ask-ai-work'),
-    outDir: defaultSaveDir,
-    sourcePaths: readStarredFiles,
-    recordRecent: recordRecentFile,
-  }
-  ipcMain.handle('kb:cli-context', (_event, sessionId: unknown): unknown =>
-    homeCliContext(homeCliDeps, typeof sessionId === 'string' ? sessionId : ''),
-  )
-  ipcMain.handle('kb:run-cli', async (_event, raw: unknown): Promise<unknown> => {
-    const req = (raw && typeof raw === 'object' ? raw : {}) as {
-      sessionId?: unknown
-      args?: unknown
-      files?: unknown
-      sources?: unknown
-    }
-    return runHomeCli(homeCliDeps, typeof req.sessionId === 'string' ? req.sessionId : '', {
-      args: Array.isArray(req.args) ? (req.args as string[]) : [],
-      files: Array.isArray(req.files) ? (req.files as { name: string; content: string }[]) : [],
-      sources: Array.isArray(req.sources) ? (req.sources as string[]) : [],
-    })
-  })
-
-  ipcMain.handle(
-    HOME_CHANNELS.rerankSearch,
-    async (_event, raw: unknown): Promise<FileSearchRerank | null> => {
-      const settings = readFileSearchSettings()
-      if (!settings.rerank) return null
-      const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; paths?: unknown }
-      const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
-      const paths = Array.isArray(query.paths)
-        ? query.paths.filter((p): p is string => typeof p === 'string').slice(0, 20)
-        : []
-      if (!q || paths.length < 2 || !ensureFileIndexer() || !fileIndexStore) return null
-      searchReranker ??= new SearchReranker(fileIndexStore)
-      return searchReranker.rerank(q, paths, settings)
-    },
-  )
-
-  ipcMain.handle(HOME_CHANNELS.getFileSearchSettings, (): FileSearchSettings =>
-    readFileSearchSettings(),
-  )
-
-  ipcMain.handle(
-    HOME_CHANNELS.setFileSearchSettings,
-    (_event, patch: unknown): FileSearchSettings => {
-      const current = readFileSearchSettings()
-      const p = (patch && typeof patch === 'object' ? patch : {}) as Partial<FileSearchSettings>
-      const next = normalizeFileSearchSettings({
-        ...current,
-        ...p,
-        keys: { ...current.keys, ...(p.keys ?? {}) },
-      })
-      writeAppSetting(APP_SETTINGS_PATH(), 'fileSearch', next)
-      return next
-    },
-  )
-
-  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) =>
-    probeDecision(normalizeFileSearchSettings(input)),
-  )
-
-  // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine
-  ipcMain.handle(HOME_CHANNELS.starred, (_event, query: unknown): RecentPage => {
-    const { offset, limit, ext } = normalizeRecentQuery(query)
-    // the Starred view's group pills scope the whole query (totals included)
-    const raw = (query && typeof query === 'object' ? query : {}) as { group?: unknown }
-    const group = typeof raw.group === 'string' && raw.group ? raw.group : undefined
-    const groupOf = readStarredGroupMap()
-    const paths = readStarredFiles()
-    const scoped = group ? paths.filter((p) => groupOf.get(p) === group) : paths
-    const all = statEntries(scoped)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
-      .map((entry) => {
-        const g = groupOf.get(entry.path)
-        return g ? { ...entry, group: g } : entry
-      })
-    const filtered = ext ? all.filter((entry) => matchesExtFamily(entry.ext, ext)) : all
-    return {
-      entries: limit === 0 ? [] : filtered.slice(offset, offset + limit),
-      total: filtered.length,
-      totalAll: all.length,
-    }
-  })
-
-  ipcMain.handle(HOME_CHANNELS.starredGroups, (): string[] => readStarredGroups())
-
-  ipcMain.handle(HOME_CHANNELS.setStarredGroup, (_event, paths: unknown, group: unknown) => {
-    setStarredGroup(stringPaths(paths), typeof group === 'string' && group ? group : null)
-  })
-
-  ipcMain.handle(HOME_CHANNELS.statPaths, (_event, paths: unknown): RecentEntry[] =>
-    statEntries(capStatPaths(stringPaths(paths))),
-  )
-
-  ipcMain.handle(HOME_CHANNELS.toggleStar, (_event, path: unknown) => {
-    if (typeof path === 'string') toggleStarredFile(path)
-  })
-
-  ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
-    if (typeof path !== 'string' || !path || path.length > 4096) return
-    openDocumentPath(path)
-    fileIndexer?.refresh()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.browse, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender) ?? shellWindow
-    if (!win) return
-    const result = await showOpenDialogWithMemory(dialog, win, {
-      title: tm('dlgOpenTitle'),
-      filters: [
-        { name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS },
-        { name: tm('filterWord'), extensions: ['docx', 'doc', 'odt', 'ott'] },
-        {
-          name: tm('filterExcel'),
-          extensions: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
-        },
-        { name: tm('filterPpt'), extensions: ['pptx', 'ppt', 'odp', 'otp'] },
-        { name: tm('filterPdf'), extensions: ['pdf'] },
-        { name: tm('filterMarkdown'), extensions: ['md', 'markdown', 'txt', 'json'] },
-        { name: tm('filterHtml'), extensions: ['html', 'htm'] },
-      ],
-      properties: ['openFile', 'multiSelections'],
-    })
-    if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('doc', opts)
-    newDocTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newSheet, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('sheet', opts)
-    void newSheetTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newSlide, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('slide', opts)
-    newSlideTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newMarkdown, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('markdown', opts)
-    newMarkdownTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newHtml, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('html', opts)
-    newHtmlTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.newPdf, (_event, opts?: NewFileOpts) => {
-    rememberPendingDir('pdf', opts)
-    void newPdfTab()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
-    const list = stringPaths(paths)
-    removeRecentFiles(list)
-    // an unavailable entry's star must go with it, or the Starred view keeps
-    // a dead dimmed row the recents list no longer shows
-    removeStarredFiles(list.filter((p) => !existsSync(p)))
-  })
-
-  // Bulk unstar from the Starred view: every row there is a favorite, so the
-  // selection action is "unstar", not "remove from recents" — removeRecent
-  // keeps existing files' stars on purpose, which made the Starred view's
-  // bulk removal a no-op for anything still on disk
-  ipcMain.handle(HOME_CHANNELS.unstarPaths, (_event, paths: unknown) => {
-    removeStarredFiles(stringPaths(paths))
-  })
-
-  ipcMain.handle(HOME_CHANNELS.revealPath, (_event, path: unknown) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
-  })
-
-  ipcMain.handle(
-    HOME_CHANNELS.renameFile,
-    (_event, path: unknown, newName: unknown): RenameResult => {
-      if (typeof path !== 'string' || typeof newName !== 'string')
-        return { ok: false, error: tm('errBadArgs') }
-      // Validate the raw name before trimming: trimming first would
-      // silently turn "report " into "report" and make the
-      // trailing-space gate in isValidRenameName unreachable. Reject
-      // with the localized gate instead of renaming to a different
-      // name than requested.
-      if (!isValidRawRenameName(newName)) return { ok: false, error: tm('errBadName') }
-      if (!renameStaysInApp(path, newName.trim()))
-        return { ok: false, error: tm('errBadExtension') }
-      if (!isUserVisibleFile(path, fileTargetSources()))
-        return { ok: false, error: tm('errBadArgs') }
-      const name = newName.trim()
-      if (!existsSync(path)) return { ok: false, error: tm('errMissing') }
-      const target = join(dirname(path), name)
-      if (target === path) return { ok: true, path }
-      // A case-only rename (Report.pdf -> report.pdf) hits the source itself on
-      // case-insensitive filesystems; only a genuinely different file blocks.
-      if (existsSync(target) && !isSameFile(path, target)) {
-        return { ok: false, error: tm('errExists') }
-      }
-      try {
-        renameSync(path, target)
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : tm('errRenameFailed') }
-      }
-      afterFileMoved(path, target)
-      return { ok: true, path: target }
-    },
-  )
 
   ipcMain.handle(HOME_CHANNELS.duplicateFile, async (_event, path: unknown) => {
     if (typeof path !== 'string' || !existsSync(path)) return
@@ -5050,19 +4376,7 @@ function registerHomeIpc(): void {
     removeStarredFiles(list)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openTrash, () => {
-    if (process.platform === 'darwin') {
-      void shell.openPath(join(app.getPath('home'), '.Trash'))
-    } else if (process.platform === 'win32') {
-      spawn('explorer.exe', ['shell:RecycleBin'], { detached: true }).unref()
-    } else {
-      void shell.openPath(join(app.getPath('home'), '.local', 'share', 'Trash', 'files'))
-    }
-  })
-
-  ipcMain.handle(HOME_CHANNELS.openHelp, () => {
-    tabManager?.openHelpTab()
-  })
+  // (openTrash/openHelp moved to home-ipc.ts)
   ipcMain.handle(HOME_CHANNELS.getLanguage, (): Lang => currentLang())
 
   ipcMain.handle(HOME_CHANNELS.setLanguage, (_event, lang: unknown) => {
@@ -5262,219 +4576,9 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.setAiPanelPrefs, (_event, patch) => setAiPanelPrefs(patch))
   ipcMain.handle('app:set-ai-panel-prefs', (_event, patch) => setAiPanelPrefs(patch))
 
-  // effective folder where new/untitled files land; the editor mains resolve
-  // the same setting themselves (configuredDefaultSaveDir via docs' defaultSaveDir)
-  // ── folder tree over the default save folder ──
-  const folderErrors = (): FolderErrors => ({
-    badArgs: tm('errBadArgs'),
-    badName: tm('errBadName'),
-    missing: tm('errMissing'),
-    exists: tm('errExists'),
-    failed: tm('errRenameFailed'),
-  })
-  const insideRoot = (path: unknown): path is string =>
-    typeof path === 'string' && insideAnyRoot(path)
-  const isRoot = (path: string) => isAnyRoot(path)
-
-  ipcMain.handle(HOME_CHANNELS.folderRoots, (): FolderRoot[] => {
-    // describeRoot creates a missing save folder, so its watcher has something to attach to
-    const roots = [describeRoot(defaultSaveDir()), ...extraFolderRoots().map(describeExtraRoot)]
-    ensureFolderWatchers()
-    return roots
-  })
-
-  // an added folder joins the tree where it is: nothing on disk is created, copied or moved
-  const addFolderRoot = (path: string): FolderRoot | null => {
-    const extras = withExtraRoot(extraFolderRoots(), defaultSaveDir(), path)
-    if (!extras) return null
-    writeAppSetting(APP_SETTINGS_PATH(), FOLDER_ROOTS_KEY, extras)
-    ensureFolderWatchers()
-    fileIndexer?.refresh()
-    return describeExtraRoot(path)
-  }
-
-  ipcMain.handle(HOME_CHANNELS.addFolderRoot, async (): Promise<FolderRoot | null> => {
-    const result = await showOpenDialogWithMemory(dialog, shellWindow, {
-      title: tm('dlgAddFolderRoot'),
-      properties: ['openDirectory'],
-    })
-    const picked = result.filePaths[0]
-    if (result.canceled || !picked) return null
-    if (!describeExtraRoot(picked).readable) {
-      showErrorDialog(shellWindow, tm('errFolderRootUnusable'), picked)
-      return null
-    }
-    return addFolderRoot(picked)
-  })
-
-  ipcMain.handle(HOME_CHANNELS.dropFolderRoots, (_event, paths: unknown): FolderRoot[] => {
-    const added: FolderRoot[] = []
-    const files: string[] = []
-    for (const path of stringPaths(paths)) {
-      if (!describeExtraRoot(path).readable) {
-        files.push(path)
-        continue
-      }
-      const root = addFolderRoot(path)
-      if (root) added.push(root)
-    }
-    if (files.length > 0) handleDroppedFiles(files, droppedFilesDeps())
-    return added
-  })
-
-  ipcMain.handle(HOME_CHANNELS.removeFolderRoot, (_event, path: unknown) => {
-    if (typeof path !== 'string') return
-    const extras = withoutExtraRoot(extraFolderRoots(), path)
-    writeAppSetting(APP_SETTINGS_PATH(), FOLDER_ROOTS_KEY, extras)
-    ensureFolderWatchers()
-    fileIndexer?.refresh()
-  })
-
-  ipcMain.handle(HOME_CHANNELS.listFolder, (_event, dir: unknown): FolderListing => {
-    if (!insideRoot(dir)) return { dir: String(dir), folders: [], files: [] }
-    return listFolder(dir, new Set(readStarredFiles()))
-  })
-
-  ipcMain.handle(
-    HOME_CHANNELS.createFolder,
-    (_event, parent: unknown, name: unknown): RenameResult => {
-      if (!insideRoot(parent) || typeof name !== 'string')
-        return { ok: false, error: tm('errBadArgs') }
-      return createFolder(parent, name, folderErrors())
-    },
-  )
-
-  ipcMain.handle(
-    HOME_CHANNELS.renameFolder,
-    (_event, dir: unknown, newName: unknown): RenameResult => {
-      if (!insideRoot(dir) || isRoot(dir) || typeof newName !== 'string')
-        return { ok: false, error: tm('errBadArgs') }
-      const filesBefore = trackedFilesUnder(dir)
-      const result = renameFolder(dir, newName, folderErrors())
-      if (result.ok && result.path && result.path !== dir) {
-        afterFolderMoved(dir, result.path, filesBefore)
-      }
-      return result
-    },
-  )
-
-  ipcMain.handle(
-    HOME_CHANNELS.movePaths,
-    async (_event, paths: unknown, targetDir: unknown, policy: unknown): Promise<MoveResult> => {
-      const list = stringPaths(paths)
-      if (!insideRoot(targetDir)) {
-        const error = tm('errBadArgs')
-        return { moved: [], conflicts: [], failed: list.map((path) => ({ path, error })) }
-      }
-      const conflictPolicy: MoveConflictPolicy =
-        policy === 'replace' || policy === 'keepBoth' || policy === 'skip' ? policy : 'ask'
-      const isDir = (p: string) => {
-        try {
-          return statSync(p).isDirectory()
-        } catch {
-          return false
-        }
-      }
-      // files may come from anywhere the UI can show (the Recent list); folders only from inside the tree, never a root itself
-      const moveSources = { ...fileTargetSources(), isDirectory: isDir, isAnyRoot }
-      const sources = list.filter((p) => isMoveSource(p, moveSources))
-      const dirFiles = new Map(sources.filter(isDir).map((p) => [p, trackedFilesUnder(p)]))
-      // 'replace' must not destroy data: the displaced target goes to the trash,
-      // and everything keyed on its path (recents, stars, chat history) leaves
-      // with it so the incoming file does not inherit another document's record
-      const displaced: string[] = []
-      const result = movePathsInto(sources, targetDir, conflictPolicy, folderErrors(), {
-        replaceExisting: (path) => {
-          const parked = join(dirname(path), `.genoffice-replaced-${Date.now()}-${basename(path)}`)
-          const files = isDir(path) ? trackedFilesUnder(path) : [path]
-          renameSync(path, parked)
-          return {
-            commit: () => {
-              displaced.push(parked)
-              removeRecentFiles(files)
-              removeStarredFiles(files)
-              for (const file of files) projectFileRenamed(file, rebasePath(file, path, parked))
-            },
-            rollback: () => renameSync(parked, path),
-          }
-        },
-      })
-      for (const parked of displaced) {
-        try {
-          await shell.trashItem(parked)
-        } catch {
-          rmSync(parked, { recursive: true, force: true })
-        }
-      }
-      for (const { from, to } of result.moved) {
-        const files = dirFiles.get(from)
-        if (files) afterFolderMoved(from, to, files)
-        else afterFileMoved(from, to)
-      }
-      return result
-    },
-  )
-
-  ipcMain.handle(HOME_CHANNELS.deleteFolder, async (_event, dir: unknown) => {
-    if (!insideRoot(dir) || isRoot(dir)) return
-    const files = trackedFilesUnder(dir)
-    try {
-      await shell.trashItem(dir)
-    } catch {
-      return
-    }
-    removeRecentFiles(files)
-    removeStarredFiles(files)
-  })
-
-  ipcMain.handle(HOME_CHANNELS.getDefaultSaveDir, (): string => defaultSaveDir())
-
-  const defaultApp = createDefaultAppService({
-    platform: process.platform,
-    packaged: app.isPackaged,
-    exePath: app.getPath('exe'),
-    run: execFileRunner,
-    openExternal: (url) => shell.openExternal(url),
-  })
-  ipcMain.handle(HOME_CHANNELS.getDefaultAppStatus, () => defaultApp.status())
-  ipcMain.handle(HOME_CHANNELS.setDefaultApp, () => defaultApp.set())
-
-  ipcMain.handle(HOME_CHANNELS.pickDefaultSaveDir, async (): Promise<string | null> => {
-    const result = await showOpenDialogWithMemory(dialog, shellWindow, {
-      title: tm('dlgPickSaveDir'),
-      defaultPath: defaultSaveDir(),
-      properties: ['openDirectory', 'createDirectory'],
-    })
-    const picked = result.filePaths[0]
-    if (result.canceled || !picked) return null
-    if (!isUsableSaveDir(picked)) {
-      showErrorDialog(shellWindow, tm('errSaveDirUnusable'), picked)
-      return null
-    }
-    writeAppSetting(APP_SETTINGS_PATH(), DEFAULT_SAVE_DIR_KEY, picked)
-    ensureFolderWatchers()
-    return picked
-  })
-
-  ipcMain.handle(HOME_CHANNELS.openGenTeam, () => {
-    shell.openExternal(GENTEAM_URL).catch(() => {
-      // no browser handler available; nothing actionable for the user here
-    })
-  })
-
-  ipcMain.handle(HOME_CHANNELS.openCreditUsage, () => {
-    shell.openExternal(CREDIT_USAGE_URL).catch(() => {
-      // no browser handler available; nothing actionable for the user here
-    })
-  })
-
-  ipcMain.handle(HOME_CHANNELS.openGitHubRepo, () => {
-    shell.openExternal(GITHUB_REPO_URL).catch(() => {
-      // no browser handler available; nothing actionable for the user here
-    })
-  })
-
-  ipcMain.handle(HOME_CHANNELS.githubStars, () => fetchGithubStars())
+  // (the folder-tree family, the default-save-dir pickers, the default-app
+  // service, the outgoing links and the cloud-projects handlers moved to
+  // home-ipc.ts)
 
   // returning true also counts as "shown": the renderer displays it
   // unconditionally, so no separate mark-shown round-trip is needed
@@ -5511,65 +4615,9 @@ function registerHomeIpc(): void {
   })
 
   const cloudProjectsStorePath = () => join(app.getPath('userData'), 'cloud-projects.json')
-
-  ipcMain.handle(HOME_CHANNELS.cloudProjectsCached, () =>
-    readCloudProjectsStore(cloudProjectsStorePath()),
-  )
-
-  ipcMain.handle(HOME_CHANNELS.cloudProjects, () => syncCloudProjects(cloudProjectsStorePath()))
-
-  ipcMain.handle(HOME_CHANNELS.openCloudProject, (_event, projectUrl: unknown) => {
-    const url = cloudProjectExternalUrl(projectUrl)
-    if (url) void shell.openExternal(url)
-  })
 }
 
-function stringPaths(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((p): p is string => typeof p === 'string') : []
-}
-
-// electron-vite emits ?asset files under hashed names, which breaks nativeImage's
-// automatic `@2x` sibling lookup — attach the retina representation by hand
-function loadMenuIcon(path1x: string, path2x: string): NativeImage {
-  const icon = nativeImage.createFromPath(path1x)
-  icon.addRepresentation({ scaleFactor: 2, buffer: readFileSync(path2x) })
-  return icon
-}
-
-// loaded once, not on every menu open
-interface MenuIconSet {
-  docx: NativeImage
-  xlsx: NativeImage
-  pptx: NativeImage
-  pdf: NativeImage
-  md: NativeImage
-  html: NativeImage
-  home: NativeImage
-}
-let menuIconCache: MenuIconSet | null = null
-function menuIcons(): MenuIconSet {
-  menuIconCache ??= {
-    docx: loadMenuIcon(menuDocxIcon1x, menuDocxIcon2x),
-    xlsx: loadMenuIcon(menuXlsxIcon1x, menuXlsxIcon2x),
-    pptx: loadMenuIcon(menuPptxIcon1x, menuPptxIcon2x),
-    pdf: loadMenuIcon(menuPdfIcon1x, menuPdfIcon2x),
-    md: loadMenuIcon(menuMdIcon1x, menuMdIcon2x),
-    html: loadMenuIcon(menuHtmlIcon1x, menuHtmlIcon2x),
-    home: loadMenuIcon(menuHomeIcon1x, menuHomeIcon2x),
-  }
-  return menuIconCache
-}
-
-const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
-  home: 'home',
-  docs: 'docx',
-  sheets: 'xlsx',
-  slides: 'pptx',
-  pdf: 'pdf',
-  markdown: 'md',
-  html: 'html',
-  help: 'home',
-}
+// (menu icons, TAB_MENU_ICON and loadMenuIcon moved to menus.ts)
 
 // tab views see neither DOM events nor a focus change when the user clicks the
 // shell chrome — relay the press so open popovers in documents can dismiss.
@@ -5584,114 +4632,16 @@ function broadcastChromePressed(exclude?: WebContents): void {
   }
 }
 
-/** the shell's tab manager, recreating the shell window when a detached editor outlived it */
-function ensureTabManager(): TabManager {
-  if (!tabManager) createShellWindow()
-  if (!tabManager) throw new Error('the shell window could not be created')
-  return tabManager
-}
-
-/** "Open in New Window": reparent the tab's live view into a detached editor
- *  window — the document moves as-is, unsaved edits included. */
-function detachTabToWindow(id: string): void {
-  if (!tabManager) return
-  const record = tabManager.detachTab(id)
-  if (!record) return
-  const win = createDetachedEditorWindow({ ...record, applyMenuFor })
-  win.focus()
-}
-
-/**
- * "Pin to Desktop": the tab's live view moves into a borderless widget window
- * floating over the Home desktop (unsaved edits included — nothing reloads).
- * The shell then lands on the desktop so the widget is visible where it was
- * placed; a document already pinned shows its widget instead of a second one.
- */
-function pinTabToDesktop(id: string, bounds?: Rectangle): void {
-  if (!tabManager) return
-  const tab = tabManager.list().find((t) => t.id === id)
-  if (tab?.filePath && focusPinnedWidget(tab.filePath)) return
-  const record = tabManager.detachTab(id)
-  if (!record) return
-  if (!shellWindow) {
-    // no shell to pin over (it closed): fall back to an ordinary window
-    createDetachedEditorWindow({ ...record, applyMenuFor }).focus()
-    return
-  }
-  createDetachedEditorWindow({
-    ...record,
-    applyMenuFor,
-    pin: { parent: shellWindow, ...(bounds ? { bounds } : {}) },
-  })
-  tabManager.openHomeTab()
-  sendToShellRenderer(HOME_CHANNELS.showDesktop)
-}
-
-/**
- * Restore last session's pinned widgets: reopen each document (its saved file
- * — anything unsaved was prompted for at quit, like any detached window) and
- * pin it back at its saved rect. Missing files are skipped; the pin store's
- * own normalization caps and validates what is read.
- */
-function restoreDesktopPins(): void {
-  if (!tabManager) return
-  for (const pin of readDesktopPins(app.getPath('userData'))) {
-    if (!existsSync(pin.filePath)) continue
-    openDocumentPath(pin.filePath)
-    const tab = tabManager.findTabByPath(pin.filePath)
-    if (!tab || !tabManager.canDetachTab(tab.id)) continue
-    pinTabToDesktop(tab.id, pin.bounds)
-  }
-}
-
-/** Tear-off: the tab leaves the strip for a window created under the held
- *  pointer at (x, y); the strip keeps steering it until release. */
-function tearOffTabToWindow(id: string, x: number, y: number): boolean {
-  if (!tabManager || isTearingOff() || !tabManager.canDetachTab(id)) return false
-  const record = tabManager.detachTab(id)
-  if (!record) return false
-  createDetachedEditorWindow({ ...record, applyMenuFor, tearOffAt: { x, y } })
-  return true
-}
+/** the detach/pin/tear-off family moved to window-lifecycle.ts (shellWindowDeps) */
 
 /** insertion slot the shell strip reported for the current dock preview */
 let lastDockIndex: number | undefined
-
-/** Menu-command target for the editors whose menus resolve through the shell
- *  (pdf / markdown / html): the focused detached window of that kind first,
- *  else the shell's active tab of that kind. */
-function activeEditorTarget(
-  kind: TabKind,
-  fromTabs: () => { id: string; webContents: WebContents; filePath?: string } | undefined,
-): { id: string; webContents: WebContents; filePath?: string } | undefined {
-  const detachedTab = focusedDetachedTab()
-  if (detachedTab?.kind === kind) return detachedTab
-  return fromTabs()
-}
-function activePdfTarget() {
-  return activeEditorTarget('pdf', () => tabManager?.activePdfTab())
-}
-
-/** ⌘W / File > Close targets the focused window: a detached editor closes
- *  itself (its own unsaved-changes guard runs), otherwise the shell's active tab
- *  — the same rule the docs / sheets / slides close hooks follow */
-function closeFocusedEditor(): void {
-  const focused = BrowserWindow.getFocusedWindow()
-  if (focused && focused !== shellWindow && isDetachedEditorWindow(focused)) focused.close()
-  else tabManager?.closeActiveTab()
-}
 
 /** the window a pdf command's dialogs and progress belong to: the detached
  *  editor hosting the tab when there is one, else the shell */
 function pdfHostWindow(tab: { webContents: WebContents } | undefined): BrowserWindow | null {
   if (!tab) return null
   return detachedWindowForWebContents(tab.webContents.id) ?? shellWindow
-}
-function activeMarkdownTarget() {
-  return activeEditorTarget('markdown', () => tabManager?.activeMarkdownTab())
-}
-function activeHtmlTarget() {
-  return activeEditorTarget('html', () => tabManager?.activeHtmlTab())
 }
 
 /** files of tabs that were closed, newest last, so "Reopen closed tab" can bring them back */
@@ -5922,15 +4872,7 @@ function registerTabsIpc(): void {
 
 // ---- home menu ----
 
-async function openFileViaDialog(): Promise<void> {
-  const win = shellWindow ?? BrowserWindow.getFocusedWindow()
-  if (!win) return
-  const result = await showOpenDialogWithMemory(dialog, win, {
-    filters: [{ name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS }],
-    properties: ['openFile', 'multiSelections'],
-  })
-  if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
-}
+// (openFileViaDialog moved to menus.ts)
 
 function buildHomeMenu(): void {
   const labels = appMenuLabels(currentLang())
@@ -6756,16 +5698,7 @@ function openThirdPartyNotices(): Promise<string> {
 }
 
 /** every module's File menu gets a way back to the launcher */
-function installBackToHomeItems(): void {
-  const backToHomeItem: MenuItemConstructorOptions = {
-    label: tm('backToHome'),
-    accelerator: 'Shift+CmdOrCtrl+H',
-    click: () => tabManager?.openHomeTab(),
-  }
-  setDocsExtraFileMenuItems([backToHomeItem])
-  setSheetsExtraFileMenuItems([backToHomeItem])
-  setSlidesExtraFileMenuItems([backToHomeItem])
-}
+// (installBackToHomeItems moved to menus.ts)
 
 /** The Settings view lives in the Home tab, so every app's menu points here:
  *  ⌘, lands on it from anywhere in the suite. The window comes back first if
@@ -6781,25 +5714,7 @@ function openSettingsView(): void {
   win.webContents.send(HOME_CHANNELS.openSettings, { section: 'aiModel' })
 }
 
-function installDockMenu(): void {
-  if (process.platform !== 'darwin') return
-  app.dock?.setMenu(
-    Menu.buildFromTemplate([
-      { label: tm('menuHome'), click: () => tabManager?.openHomeTab() },
-      {
-        label: tm('menuNewDoc'),
-        click: () => newDocTab(),
-      },
-      {
-        label: tm('menuNewSheet'),
-        click: () => void newSheetTab(),
-      },
-      { label: tm('menuNewSlide'), click: () => newSlideTab() },
-      { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
-      { label: tm('menuNewPdf'), click: () => void newPdfTab() },
-    ]),
-  )
-}
+// (installDockMenu moved to menus.ts)
 
 // On mainland-China networks the main process's Node fetch (undici) bypasses the system proxy,
 // so direct calls to overseas LLM/image-search APIs time out or get region-blocked (403).
@@ -6852,12 +5767,7 @@ let controlServer: ControlServer | null = null
 
 // show() does not un-minimize, and on macOS ⌘W destroys the shell window while the
 // app keeps running — either way a file opened from Finder would land out of sight.
-function revealShellWindow(): void {
-  if (!shellWindow) createShellWindow()
-  if (shellWindow?.isMinimized()) shellWindow.restore()
-  shellWindow?.show()
-  shellWindow?.focus()
-}
+// revealShellWindow moved to window-lifecycle.ts (shellWindowDeps)
 
 function openLaunchPaths(paths: readonly string[]): void {
   let opened = false
@@ -6880,14 +5790,14 @@ app.on('open-file', (event, filePath) => {
 })
 
 app.on('second-instance', (_event, argv, _cwd, additionalData) => {
-  // a genoffice:// launch on Windows/Linux arrives as a plain argv entry
-  const link = deepLinkFromArgv(argv)
-  if (link) {
-    const payload = parseDeepLink(link)
-    if (payload) {
-      deliverDeepLink(payload)
-      return
-    }
+  // a genoffice:// launch on Windows/Linux arrives as a plain argv entry;
+  // several protocol launches can queue up in one argv, all in order
+  const links = deepLinksFromArgv(argv)
+    .map(parseDeepLink)
+    .filter((payload): payload is DeepLinkPayload => payload !== null)
+  if (links.length > 0) {
+    for (const payload of links) deliverDeepLink(payload)
+    return
   }
   const paths = collectLaunchPaths(argv, additionalData)
   revealShellWindow()
@@ -7307,16 +6217,13 @@ app.whenReady().then(async () => {
     (err: unknown) => console.warn('[control] not listening:', err),
   )
 
-  // a cold win/linux protocol launch carries the link in this process's argv
-  const coldLink = deepLinkFromArgv(process.argv)
-  if (coldLink) {
-    const payload = parseDeepLink(coldLink)
+  // a cold win/linux protocol launch carries its links in this process's argv
+  for (const link of deepLinksFromArgv(process.argv)) {
+    const payload = parseDeepLink(link)
     if (payload) deliverDeepLink(payload)
   }
-  if (pendingDeepLink) {
-    const payload = pendingDeepLink
-    pendingDeepLink = null
-    deliverDeepLink(payload)
+  if (pendingDeepLinks.length > 0) {
+    for (const payload of pendingDeepLinks.splice(0)) deliverDeepLink(payload)
   }
 
   systemPresence = installSystemPresence({
@@ -7335,6 +6242,13 @@ app.whenReady().then(async () => {
     openAsk: (query) => deliverDeepLink(query ? { view: 'ask', query } : { view: 'ask' }),
   })
   registerDeepLinkClient()
+
+  // a failed hotkey registration is not permanent: whatever held the
+  // accelerator may have quit since, so each time one of our windows gains
+  // focus is a free moment to try again (retryHotkey no-ops while active)
+  app.on('browser-window-focus', () => {
+    systemPresence?.retryHotkey()
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createShellWindow()

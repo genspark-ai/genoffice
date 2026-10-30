@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AgentLoop,
   ATTACHMENT_IMAGE_EXTS,
@@ -37,8 +37,11 @@ import {
   useAiSlash,
   useToolConfirm,
   type AiTokenUsageView,
+  type MarkdownNav,
+  type ToolConfirmCard,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
+import type { Lang } from '@genoffice/i18n'
 import { activeProvider } from '@genoffice/ai-provider/browser'
 import type { ChatMessage, ChatMeta, ProjectApi, RunSummary } from '@genoffice/project-store'
 import { useI18n } from './locale'
@@ -49,6 +52,7 @@ import { planPendingAskQuery, type PendingAskQuery } from './ask-intent'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
 import { RunRecorder, runsBridgeOf } from './ask-runs'
+import { RafFlushQueue, sticksToBottom } from './ask-stream'
 import sendEnterOn from './assets/send-enter-on.png'
 import sendEnterOff from './assets/send-enter-off.png'
 import sendStop from './assets/send-stop.png'
@@ -77,6 +81,9 @@ import sendStop from './assets/send-stop.png'
 
 /** The one transcript the panel keeps. Stable across launches by design. */
 const CHAT_ID = 'kb-ask'
+
+/** the two corpus scopes app-settings `kbScope` may hold (mirrors home-api's KbScope) */
+type KbScopeValue = 'indexed' | 'starred'
 
 const TOOL_NOTE_LABEL = {
   search: 'askToolSearch',
@@ -217,6 +224,213 @@ export function restoreAskMessages(stored: ChatMessage[]): AskMessage[] {
     .map((message) => ({ role: message.role, text: message.text, toolNotes: [], artifacts: [] }))
 }
 
+/**
+ * patchLast's pure half, exported for tests: the patch lands on the last
+ * message only when it is an assistant turn — an empty thread or a user tail
+ * returns the input array unchanged (same reference, so memoized rows keep
+ * their identity).
+ */
+export function applyAskPatch(
+  prev: AskMessage[],
+  patch: Partial<AskMessage> | ((last: AskMessage) => Partial<AskMessage>),
+): AskMessage[] {
+  if (prev.length === 0 || prev[prev.length - 1]!.role !== 'assistant') return prev
+  const last = prev[prev.length - 1]!
+  const delta = typeof patch === 'function' ? patch(last) : patch
+  return [...prev.slice(0, -1), { ...last, ...delta }]
+}
+
+/**
+ * One thread row, memoized: a streaming token only replaces the last
+ * assistant message object, so every history row keeps both its object
+ * identity and its props and never re-renders while an answer streams — the
+ * bar the streaming animation is judged against. The row calls useI18n
+ * itself: t from the parent is not referentially stable, so receiving it as
+ * a prop would defeat the memo on every parent render.
+ */
+const AskMessageRow = memo(function AskMessageRow({
+  m,
+  index,
+  isLast,
+  lang,
+  showStreaming,
+  showToolCalls,
+  showThinking,
+  busy,
+  fileNav,
+  confirmCard,
+  onAllow,
+  onDeny,
+  onOpenPath,
+  onRetry,
+  onSaveAnswer,
+}: {
+  m: AskMessage
+  index: number
+  isLast: boolean
+  lang: Lang
+  showStreaming: boolean
+  showToolCalls: boolean
+  showThinking: boolean
+  busy: boolean
+  fileNav: MarkdownNav
+  /** the open approval card; handed to the last assistant row only, so history rows never see it change */
+  confirmCard: ToolConfirmCard | null
+  onAllow: () => void
+  onDeny: () => void
+  onOpenPath: (path: string) => void
+  onRetry: (instruction: string) => void
+  onSaveAnswer: (index: number, format: CreateDocumentFormat) => void
+}): React.JSX.Element {
+  const { t } = useI18n()
+  // one stable navs array for the row's lifetime: Markdown memoizes on it
+  const navs = useMemo(() => [fileNav], [fileNav])
+  // streaming off: the answer is held until it completes — the typing
+  // indicator stays up and the full text appears in one piece
+  const held = m.role === 'assistant' && m.streaming && !showStreaming
+  return (
+    <div className={`kb-ask-msg kb-ask-${m.role}${m.isError ? ' kb-ask-error' : ''}`}>
+      {m.role === 'user' && m.attachments && <AskAttachments items={m.attachments} />}
+      {m.role === 'user' && m.skills && <AiSkillChips lang={lang} names={m.skills} />}
+      {m.role === 'assistant' && isLast && confirmCard && (
+        <AiConfirmCard
+          labels={AI_CONFIRM_LABELS[lang]}
+          card={confirmCard}
+          onAllow={onAllow}
+          onDeny={onDeny}
+        />
+      )}
+      {m.role === 'assistant' && showToolCalls && m.toolNotes.length > 0 && (
+        <div className="kb-ask-tools">
+          {m.toolNotes.map((note, j) => (
+            <span key={j} className="kb-ask-tool-note">
+              {note.kind === 'search' ? (
+                <IconSearch />
+              ) : note.kind === 'create' || note.kind === 'cli' ? (
+                <IconFilePlus />
+              ) : (
+                <IconFileText />
+              )}
+              {note.label}
+              {note.detail && <span className="kb-ask-tool-detail">{note.detail}</span>}
+              {note.count > 1 && <span className="kb-ask-tool-count">×{note.count}</span>}
+              {m.streaming && j === m.toolNotes.length - 1 ? '…' : ''}
+            </span>
+          ))}
+        </div>
+      )}
+      {m.role === 'assistant' && m.artifacts.length > 0 && (
+        <div className="kb-ask-card" role="list">
+          {m.artifacts.map((a) => (
+            <div
+              key={a.callId}
+              className={`kb-ask-card-row kb-ask-card-${a.status}`}
+              role="listitem"
+            >
+              {a.status === 'done' && a.path ? (
+                <button
+                  type="button"
+                  className="kb-ask-card-name"
+                  onClick={() => onOpenPath(a.path!)}
+                >
+                  <IconFileText />
+                  {a.name}
+                </button>
+              ) : (
+                <span className="kb-ask-card-name">
+                  <IconFileText />
+                  {a.name}
+                </span>
+              )}
+              {a.status === 'building' && (
+                <span className="kb-ask-card-status">{t('askArtifactBuilding')}…</span>
+              )}
+              {a.status === 'failed' && (
+                <>
+                  <span className="kb-ask-card-status kb-ask-card-error" title={a.error}>
+                    {t('askArtifactFailed')}
+                  </span>
+                  <button
+                    type="button"
+                    className="kb-ask-action"
+                    disabled={busy}
+                    onClick={() => onRetry(retryInstruction(a))}
+                  >
+                    {t('askArtifactRetry')}
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {m.role === 'assistant' && showThinking && m.reasoning && (
+        <KbThinkingBlock
+          text={m.reasoning}
+          live={m.streaming === true}
+          label={t('setAiShowThinking')}
+        />
+      )}
+      {held ? (
+        <AiTypingIndicator label={t('askHintBusy')} />
+      ) : m.text ? (
+        m.role === 'assistant' ? (
+          <Markdown text={m.text} navs={navs} />
+        ) : (
+          m.text
+        )
+      ) : m.streaming ? (
+        <AiTypingIndicator label={t('askHintBusy')} />
+      ) : null}
+      {m.role === 'assistant' && m.usage && (
+        <div className="ai-message-usage">
+          <AiUsageChip usage={m.usage} lang={lang} />
+        </div>
+      )}
+      {m.role === 'assistant' && m.text && !m.streaming && !m.isError && (
+        <div className="kb-ask-actions">
+          {m.saved && typeof m.saved === 'object' && 'path' in m.saved ? (
+            <button
+              type="button"
+              className="kb-ask-action kb-ask-action-saved"
+              onClick={() => onOpenPath((m.saved as { path: string }).path)}
+            >
+              <IconFileText />
+              {t('askSavedAs', { name: m.saved.name })}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="kb-ask-action"
+                disabled={m.saved === 'saving'}
+                onClick={() => onSaveAnswer(index, 'md')}
+              >
+                <IconFilePlus />
+                {t('askSaveMd')}
+              </button>
+              <button
+                type="button"
+                className="kb-ask-action"
+                disabled={m.saved === 'saving'}
+                onClick={() => onSaveAnswer(index, 'docx')}
+              >
+                <IconFilePlus />
+                {t('askSaveDocx')}
+              </button>
+              {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
+                <span className="kb-ask-action-error">
+                  {t('askSaveFailed', { error: m.saved.error })}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+
 export function KbAskPanel({
   onOpenPath,
   onGoToRecents,
@@ -288,12 +502,59 @@ export function KbAskPanel({
   const runReasoningRef = useRef('')
   /** tokens billed across the panel's session (the composer chip) */
   const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
-  /** the rendered thread, readable from callbacks that close over an older one */
+  /**
+   * The thread's single source of truth: every mutation writes the ref first
+   * and the state second (mutateMessages), so the ref is always at least as
+   * fresh as the render — persistence and finish logic can read the final
+   * stream text before React has painted it (see patchLast).
+   */
   const messagesRef = useRef<AskMessage[]>([])
-  messagesRef.current = messages
+
+  /** the one writer of the thread: ref first, then state, in that order */
+  const mutateMessages = useCallback((next: (prev: AskMessage[]) => AskMessage[]): void => {
+    messagesRef.current = next(messagesRef.current)
+    setMessages(messagesRef.current)
+  }, [])
+
+  /**
+   * Stream patches land on the ref synchronously; the React flush is what is
+   * deferred. onText and onReasoning fire per token, and one render per frame
+   * (instead of one per token) is what keeps the streaming animation off the
+   * O(history × tokens) path. Every other patch — tool notes, artifacts,
+   * usage, the finish — flushes synchronously: they are rare, and finishLast
+   * must see the final text before React has painted it (onText and onDone
+   * can arrive in one tick). A deferred flush landing after a synchronous one
+   * sets the same array reference, which React's Object.is bailout turns into
+   * a no-op.
+   */
+  const streamFlush = useMemo(
+    () => new RafFlushQueue(() => setMessages(messagesRef.current)),
+    // setMessages and messagesRef are stable for the component's life
+    [],
+  )
+
+  const patchLast = useCallback(
+    (
+      patch: Partial<AskMessage> | ((last: AskMessage) => Partial<AskMessage>),
+      opts: { sync?: boolean } = {},
+    ): void => {
+      messagesRef.current = applyAskPatch(messagesRef.current, patch)
+      if (opts.sync) setMessages(messagesRef.current)
+      else streamFlush.request()
+    },
+    [streamFlush],
+  )
   /** where this panel's transcript lives, once project-store has answered */
   const [activeChat, setActiveChat] = useState<string>(CHAT_ID)
   const [threads, setThreads] = useState<ListedThread[]>([])
+  /**
+   * The corpus scope the panel's guidance teaches (app-settings `kbScope`):
+   * 'indexed' is the default and its empty state is about the index, while
+   * 'starred' keeps the original star-your-files teaching. Read once on
+   * mount; the settings center owns changes and the panel remounts on the
+   * next Ask view entry.
+   */
+  const [kbScope, setKbScope] = useState<KbScopeValue>('indexed')
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
   /** the thread id the CLI tools key their work directory on */
   const activeChatRef = useRef<string>(CHAT_ID)
@@ -387,8 +648,7 @@ export function KbAskPanel({
     let current = true
     // a question asked while the thread was loading stays on screen, below it
     const show = (restored: AskMessage[]): void => {
-      setMessages((prev) => [...restored, ...prev])
-      messagesRef.current = [...restored, ...messagesRef.current]
+      mutateMessages((prev) => [...restored, ...prev])
       loopRef.current?.restore(restored.map((m) => ({ role: m.role, text: m.text })))
     }
     cliContextRef.current = null
@@ -410,7 +670,9 @@ export function KbAskPanel({
     return () => {
       current = false
     }
-  }, [activeChat])
+    // mutateMessages is identity-stable (ref + setter only), so it never
+    // re-triggers the claim
+  }, [activeChat, mutateMessages])
 
   const refreshThreads = async (api: ProjectApi): Promise<void> => {
     try {
@@ -436,8 +698,7 @@ export function KbAskPanel({
     confirm.clear()
     chatIdsRef.current = null
     pendingRef.current = []
-    messagesRef.current = []
-    setMessages([])
+    mutateMessages(() => [])
     setAttachedSkills([])
     // staged files belong to the thread they were dropped into
     setAttachments([])
@@ -542,6 +803,14 @@ export function KbAskPanel({
     [onOpenModelSettings],
   )
 
+  // the corpus scope behind the guidance: read only when the bridge carries
+  // the channel, so a preload that predates it keeps the default guidance
+  useEffect(() => {
+    const bridge = window.aiOffice as unknown as { getKbScope?: () => Promise<KbScopeValue> }
+    if (typeof bridge.getKbScope !== 'function') return
+    void bridge.getKbScope().then(setKbScope, () => undefined)
+  }, [])
+
   useEffect(() => {
     // one corpus snapshot per mount; sends refresh it again (see ask()).
     // A bridge without the kb channel (defensive: the shell always exposes
@@ -631,7 +900,9 @@ export function KbAskPanel({
           patchLast({ reasoning: runReasoningRef.current })
         },
         onToolExecuted: ({ call, execution }) =>
-          patchLast((last) => ({ artifacts: settleArtifact(last.artifacts, call, execution) })),
+          patchLast((last) => ({ artifacts: settleArtifact(last.artifacts, call, execution) }), {
+            sync: true,
+          }),
         onToolStart: (call) =>
           patchLast((last) => ({
             artifacts: (() => {
@@ -653,42 +924,36 @@ export function KbAskPanel({
         onUsage: (usage) => {
           runUsageRef.current = addTokenUsage(runUsageRef.current, usage)
           setSessionUsage((prev) => addTokenUsage(prev, usage))
-          patchLast({ usage: runUsageRef.current })
+          patchLast({ usage: runUsageRef.current }, { sync: true })
         },
         onError: (error) =>
-          patchLast((last) => ({
-            text: last.text || error,
-            streaming: false,
-            isError: !last.text,
-          })),
+          patchLast(
+            (last) => ({
+              text: last.text || error,
+              streaming: false,
+              isError: !last.text,
+            }),
+            { sync: true },
+          ),
       },
     })
     return () => {
       offTabsChanged?.()
+      streamFlush.dispose()
       loopRef.current?.cancel()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; the loop reads live refs
   }, [])
 
+  // Follow the thread's growth only while the reader is pinned to the bottom:
+  // scrolling up to reread an earlier answer must not be yanked back down
+  // mid-stream (the same guard the editors' AiPanel uses).
+  const stickToBottomRef = useRef(true)
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [messages])
-
-  // Stream patches land on the ref synchronously as well as on state: onText
-  // and onDone can arrive in one tick, and finishLast must see the final text
-  // before React has rendered it.
-  const patchLast = (
-    patch: Partial<AskMessage> | ((last: AskMessage) => Partial<AskMessage>),
-  ): void => {
-    const apply = (prev: AskMessage[]): AskMessage[] => {
-      if (prev.length === 0 || prev[prev.length - 1]!.role !== 'assistant') return prev
-      const last = prev[prev.length - 1]!
-      const delta = typeof patch === 'function' ? patch(last) : patch
-      return [...prev.slice(0, -1), { ...last, ...delta }]
+    if (stickToBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     }
-    messagesRef.current = apply(messagesRef.current)
-    setMessages(apply)
-  }
+  }, [messages])
 
   const finishLast = (): void => {
     // The answer is whole for the first time here; streaming it as it grows
@@ -699,7 +964,9 @@ export function KbAskPanel({
     if (last?.role === 'assistant' && last.streaming && last.text) {
       persist({ role: 'assistant', text: last.text })
     }
-    patchLast({ streaming: false })
+    // sync: the finish must repaint now, not on the next frame — Stop and
+    // onDone land in the same tick, and busy turns false in the same breath
+    patchLast({ streaming: false }, { sync: true })
     setBusy(false)
   }
 
@@ -856,17 +1123,20 @@ export function KbAskPanel({
     if (askSeqRef.current !== seq) return
     // a question about an attached file needs no starred corpus
     if (corpusRef.current.length === 0 && availableAttachments().length === 0) {
-      setMessages((prev) => [
+      // the scope says which empty this is: nothing starred yet, or an index
+      // that has not scanned anything yet
+      const guidance = t(kbScope === 'starred' ? 'askEmptyCorpus' : 'askEmptyCorpusHint')
+      mutateMessages((prev) => [
         ...prev,
         { role: 'user', text: instruction, toolNotes: [], artifacts: [] },
-        { role: 'assistant', text: t('askEmptyCorpus'), toolNotes: [], artifacts: [] },
+        { role: 'assistant', text: guidance, toolNotes: [], artifacts: [] },
       ])
       persist({ role: 'user', text: instruction })
-      persist({ role: 'assistant', text: t('askEmptyCorpus') })
+      persist({ role: 'assistant', text: guidance })
       setBusy(false)
       return
     }
-    setMessages((prev) => [
+    mutateMessages((prev) => [
       ...prev,
       {
         role: 'user',
@@ -892,7 +1162,17 @@ export function KbAskPanel({
     }
   }
 
-  const fileNav = createFileNav((path) => onOpenPath(path))
+  // Stable identities for the memoized rows' props: the rows must not see a
+  // new callback each time the parent re-renders (per token, per settings
+  // change), so anything that varies per render reaches them through refs.
+  const onOpenPathRef = useRef(onOpenPath)
+  onOpenPathRef.current = onOpenPath
+  const openPath = useCallback((path: string) => onOpenPathRef.current(path), [])
+  const askWithRef = useRef(askWith)
+  askWithRef.current = askWith
+  /** a failed artifact's retry re-enters askWith with the rebuilt instruction */
+  const retryAsk = useCallback((instruction: string) => void askWithRef.current(instruction), [])
+  const fileNav = useMemo(() => createFileNav(openPath), [openPath])
 
   // A question routed in from the palette's Ask AI fallback or a deep link: a
   // palette question (the user's own just-typed text) is submitted through the
@@ -912,26 +1192,33 @@ export function KbAskPanel({
   })
 
   // the deterministic half of "keep this answer": the question becomes the
-  // file name, the answer's markdown the body, same write path as the tool
-  const saveAnswer = async (index: number, format: CreateDocumentFormat): Promise<void> => {
-    const answer = messages[index]
-    if (!answer || answer.saved === 'saving') return
-    const question = [...messages.slice(0, index)].reverse().find((m) => m.role === 'user')
-    const title = (question?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
-    const patchAt = (saved: AskMessage['saved']): void =>
-      setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, saved } : m)))
-    patchAt('saving')
-    try {
-      const { path } = await window.aiOffice.kbCreateDocument({
-        title,
-        format,
-        content: answer.text,
-      })
-      patchAt({ path, name: path.split(/[\\/]/).pop() ?? path })
-    } catch (error) {
-      patchAt({ error: error instanceof Error ? error.message : String(error) })
-    }
-  }
+  // file name, the answer's markdown the body, same write path as the tool.
+  // useCallback + ref reads: the memoized rows receive this as a prop, so its
+  // identity must not change per render.
+  const saveAnswer = useCallback(
+    async (index: number, format: CreateDocumentFormat): Promise<void> => {
+      const answer = messagesRef.current[index]
+      if (!answer || answer.saved === 'saving') return
+      const question = [...messagesRef.current.slice(0, index)]
+        .reverse()
+        .find((m) => m.role === 'user')
+      const title = (question?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
+      const patchAt = (saved: AskMessage['saved']): void =>
+        mutateMessages((prev) => prev.map((m, i) => (i === index ? { ...m, saved } : m)))
+      patchAt('saving')
+      try {
+        const { path } = await window.aiOffice.kbCreateDocument({
+          title,
+          format,
+          content: answer.text,
+        })
+        patchAt({ path, name: path.split(/[\\/]/).pop() ?? path })
+      } catch (error) {
+        patchAt({ error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+    [mutateMessages],
+  )
 
   const hasFiles = (e: React.DragEvent): boolean => e.dataTransfer.types.includes('Files')
   // files dropped on the panel attach to the question; stopPropagation keeps
@@ -1068,20 +1355,33 @@ export function KbAskPanel({
           <p className="kb-ask-tasks-note">{t('askTasksNote')}</p>
         </div>
       )}
-      <div className="kb-ask-thread" ref={scrollRef}>
+      <div
+        className="kb-ask-thread"
+        ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current
+          if (el) {
+            stickToBottomRef.current = sticksToBottom(
+              el.scrollTop,
+              el.scrollHeight,
+              el.clientHeight,
+            )
+          }
+        }}
+      >
         {messages.length === 0 && corpusCount === 0 && (
           <div className="kb-ask-hero">
             <div className="kb-ask-hero-icon" aria-hidden="true">
               <IconBookOpen />
             </div>
             <h3>{t('askTitle')}</h3>
-            <p>{t('askHeroTagline')}</p>
+            <p>{t(kbScope === 'starred' ? 'askHeroTagline' : 'askHeroIndexedTagline')}</p>
             <div className="kb-ask-steps">
               <div className="kb-ask-step">
                 <span className="kb-ask-step-num">1</span>
                 <div>
-                  <b>{t('askStep1Title')}</b>
-                  <span>{t('askStep1Desc')}</span>
+                  <b>{t(kbScope === 'starred' ? 'askStep1Title' : 'askIndexedStep1Title')}</b>
+                  <span>{t(kbScope === 'starred' ? 'askStep1Desc' : 'askIndexedStep1Desc')}</span>
                 </div>
               </div>
               <div className="kb-ask-step">
@@ -1100,163 +1400,36 @@ export function KbAskPanel({
               </div>
             </div>
             <button className="kb-ask-cta" type="button" onClick={onGoToRecents}>
-              <IconStar />
-              {t('askCtaRecents')}
+              {kbScope === 'starred' ? <IconStar /> : <IconFolder />}
+              {t(kbScope === 'starred' ? 'askCtaRecents' : 'askCtaBrowseRecents')}
             </button>
           </div>
         )}
         {messages.length === 0 && corpusCount !== null && corpusCount > 0 && (
-          <p className="kb-ask-hint">{t('askIntro')}</p>
+          <p className="kb-ask-hint">{t(kbScope === 'starred' ? 'askIntro' : 'askIntroIndexed')}</p>
         )}
-        {messages.map((m, i) => {
-          // streaming off: the answer is held until it completes — the typing
-          // indicator stays up and the full text appears in one piece
-          const held = m.role === 'assistant' && m.streaming && !aiPrefs.showStreaming
-          return (
-            <div
-              key={i}
-              className={`kb-ask-msg kb-ask-${m.role}${m.isError ? ' kb-ask-error' : ''}`}
-            >
-              {m.role === 'user' && m.attachments && <AskAttachments items={m.attachments} />}
-              {m.role === 'user' && m.skills && <AiSkillChips lang={lang} names={m.skills} />}
-              {m.role === 'assistant' && i === messages.length - 1 && confirm.card && (
-                <AiConfirmCard
-                  labels={AI_CONFIRM_LABELS[lang]}
-                  card={confirm.card}
-                  onAllow={confirm.allow}
-                  onDeny={confirm.deny}
-                />
-              )}
-              {m.role === 'assistant' && aiPrefs.showToolCalls && m.toolNotes.length > 0 && (
-                <div className="kb-ask-tools">
-                  {m.toolNotes.map((note, j) => (
-                    <span key={j} className="kb-ask-tool-note">
-                      {note.kind === 'search' ? (
-                        <IconSearch />
-                      ) : note.kind === 'create' || note.kind === 'cli' ? (
-                        <IconFilePlus />
-                      ) : (
-                        <IconFileText />
-                      )}
-                      {note.label}
-                      {note.detail && <span className="kb-ask-tool-detail">{note.detail}</span>}
-                      {note.count > 1 && <span className="kb-ask-tool-count">×{note.count}</span>}
-                      {m.streaming && j === m.toolNotes.length - 1 ? '…' : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {m.role === 'assistant' && m.artifacts.length > 0 && (
-                <div className="kb-ask-card" role="list">
-                  {m.artifacts.map((a) => (
-                    <div
-                      key={a.callId}
-                      className={`kb-ask-card-row kb-ask-card-${a.status}`}
-                      role="listitem"
-                    >
-                      {a.status === 'done' && a.path ? (
-                        <button
-                          type="button"
-                          className="kb-ask-card-name"
-                          onClick={() => onOpenPath(a.path!)}
-                        >
-                          <IconFileText />
-                          {a.name}
-                        </button>
-                      ) : (
-                        <span className="kb-ask-card-name">
-                          <IconFileText />
-                          {a.name}
-                        </span>
-                      )}
-                      {a.status === 'building' && (
-                        <span className="kb-ask-card-status">{t('askArtifactBuilding')}…</span>
-                      )}
-                      {a.status === 'failed' && (
-                        <>
-                          <span className="kb-ask-card-status kb-ask-card-error" title={a.error}>
-                            {t('askArtifactFailed')}
-                          </span>
-                          <button
-                            type="button"
-                            className="kb-ask-action"
-                            disabled={busy}
-                            onClick={() => void askWith(retryInstruction(a))}
-                          >
-                            {t('askArtifactRetry')}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {m.role === 'assistant' && aiPrefs.showThinking && m.reasoning && (
-                <KbThinkingBlock
-                  text={m.reasoning}
-                  live={m.streaming === true}
-                  label={t('setAiShowThinking')}
-                />
-              )}
-              {held ? (
-                <AiTypingIndicator label={t('askHintBusy')} />
-              ) : m.text ? (
-                m.role === 'assistant' ? (
-                  <Markdown text={m.text} navs={[fileNav]} />
-                ) : (
-                  m.text
-                )
-              ) : m.streaming ? (
-                <AiTypingIndicator label={t('askHintBusy')} />
-              ) : null}
-              {m.role === 'assistant' && m.usage && (
-                <div className="ai-message-usage">
-                  <AiUsageChip usage={m.usage} lang={lang} />
-                </div>
-              )}
-              {m.role === 'assistant' && m.text && !m.streaming && !m.isError && (
-                <div className="kb-ask-actions">
-                  {m.saved && typeof m.saved === 'object' && 'path' in m.saved ? (
-                    <button
-                      type="button"
-                      className="kb-ask-action kb-ask-action-saved"
-                      onClick={() => onOpenPath((m.saved as { path: string }).path)}
-                    >
-                      <IconFileText />
-                      {t('askSavedAs', { name: m.saved.name })}
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="kb-ask-action"
-                        disabled={m.saved === 'saving'}
-                        onClick={() => void saveAnswer(i, 'md')}
-                      >
-                        <IconFilePlus />
-                        {t('askSaveMd')}
-                      </button>
-                      <button
-                        type="button"
-                        className="kb-ask-action"
-                        disabled={m.saved === 'saving'}
-                        onClick={() => void saveAnswer(i, 'docx')}
-                      >
-                        <IconFilePlus />
-                        {t('askSaveDocx')}
-                      </button>
-                      {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
-                        <span className="kb-ask-action-error">
-                          {t('askSaveFailed', { error: m.saved.error })}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {messages.map((m, i) => (
+          <AskMessageRow
+            key={i}
+            m={m}
+            index={i}
+            isLast={i === messages.length - 1}
+            lang={lang}
+            showStreaming={aiPrefs.showStreaming}
+            showToolCalls={aiPrefs.showToolCalls}
+            showThinking={aiPrefs.showThinking}
+            busy={busy}
+            fileNav={fileNav}
+            // the card is the last row's alone: handing it to history rows
+            // would churn their props while a decision is in flight
+            confirmCard={i === messages.length - 1 && m.role === 'assistant' ? confirm.card : null}
+            onAllow={confirm.allow}
+            onDeny={confirm.deny}
+            onOpenPath={openPath}
+            onRetry={retryAsk}
+            onSaveAnswer={saveAnswer}
+          />
+        ))}
       </div>
       {messages.length > 0 && (
         <p className="kb-ask-nosave">
@@ -1366,6 +1539,25 @@ function IconStar(): React.JSX.Element {
       aria-hidden="true"
     >
       <path d="M12 3.6l2.6 5.2 5.8.9-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.9z" />
+    </svg>
+  )
+}
+
+/** folder for the indexed-scope empty-corpus CTA (inline, like every Home icon) */
+function IconFolder(): React.JSX.Element {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 6.8A1.8 1.8 0 0 1 5.3 5h3.4l2 2.4h6A1.8 1.8 0 0 1 18.5 9.2v8A1.8 1.8 0 0 1 16.7 19H5.3a1.8 1.8 0 0 1-1.8-1.8z" />
     </svg>
   )
 }

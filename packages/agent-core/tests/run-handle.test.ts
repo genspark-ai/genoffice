@@ -138,7 +138,7 @@ describe('AgentLoop run handles', () => {
     const loop = new AgentLoop({
       transport: t.transport,
       skill: makeSkill(
-        (call) =>
+        () =>
           new Promise<ToolExecution>((resolve) => {
             releaseTool = (execution) => resolve(execution)
           }),

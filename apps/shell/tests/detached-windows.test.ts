@@ -188,6 +188,10 @@ vi.mock('../../html/src/main/html-main', () => ({
 
 vi.mock('../src/main/tab-manager', () => ({
   canonicalPath: (p: string) => p.toLowerCase(),
+  // the palette summon hook's own behavior lives in tab-manager.test.ts; here
+  // it only needs to install and dispose quietly against the fake view
+  installPaletteSummon: () => () => {},
+  shellTabManager: () => null,
 }))
 
 type DetachedModule = typeof import('../src/main/detached-windows')

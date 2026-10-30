@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileIndexer } from '../src/main/file-index/indexer'
 import { FileIndexStore } from '../src/main/file-index/store'
+import { inProcessIndexStore, type IndexStore } from '../src/main/file-index/index-store'
 
 // the worker double never answers the extraction for poison.pdf, so these tests
 // only pass once a wedged request fails on timeout and the queue moves on to
@@ -13,6 +14,7 @@ const WORKER = join(__dirname, 'file-index-test-worker.mjs')
 let dir: string
 let storeDir: string
 let store: FileIndexStore
+let indexStore: IndexStore
 let indexer: FileIndexer | null
 
 beforeEach(() => {
@@ -23,6 +25,7 @@ beforeEach(() => {
   mkdirSync(join(dir, 'good'))
   writeFileSync(join(dir, 'good', 'notes.md'), 'searchable body text')
   store = new FileIndexStore(join(storeDir, 'index.db'))
+  indexStore = inProcessIndexStore(store)
 })
 afterEach(() => {
   indexer?.stop()
@@ -33,7 +36,7 @@ afterEach(() => {
 })
 
 const indexerWithShortTimeout = () =>
-  new FileIndexer(store, WORKER, { roots: () => [dir], extraPaths: () => [] }, 400)
+  new FileIndexer(indexStore, WORKER, { roots: () => [dir], extraPaths: () => [] }, 400)
 
 const notesPath = () => join(dir, 'good', 'notes.md')
 const poisonPath = () => join(dir, 'hang', 'poison.pdf')
@@ -41,7 +44,7 @@ const poisonPath = () => join(dir, 'hang', 'poison.pdf')
 describe('FileIndexer idle worker', () => {
   it('retires the worker once scan and queue are idle, and spawns a fresh one for the next scan', async () => {
     indexer = new FileIndexer(
-      store,
+      indexStore,
       WORKER,
       { roots: () => [dir], extraPaths: () => [] },
       400,
@@ -78,7 +81,7 @@ describe('FileIndexer idle worker', () => {
 describe('FileIndexer worker replacement', () => {
   it('a scan started while the retired worker is still exiting is answered by the new one', async () => {
     indexer = new FileIndexer(
-      store,
+      indexStore,
       WORKER,
       { roots: () => [dir], extraPaths: () => [] },
       400,
@@ -115,7 +118,7 @@ describe('FileIndexer wedged-worker recovery', () => {
     )
     const settleMs = Date.now() - started
     expect(store.listAll().get(notesPath())?.status).toBe('ok')
-    expect(indexer.progress()).toMatchObject({ pending: 0, scanning: false })
+    await expect(indexer.progress()).resolves.toMatchObject({ pending: 0, scanning: false })
     // the queue waited out the injected 400ms wedge, then finished
     expect(settleMs).toBeGreaterThanOrEqual(400)
     expect(settleMs).toBeLessThan(5_000)
@@ -126,8 +129,8 @@ describe('FileIndexer wedged-worker recovery', () => {
     indexer = indexerWithShortTimeout()
     await indexer.scan()
     await vi.waitFor(
-      () => {
-        expect(indexer!.progress().pending).toBe(0)
+      async () => {
+        await expect(indexer!.progress()).resolves.toMatchObject({ pending: 0 })
       },
       { timeout: 5_000, interval: 25 },
     )
@@ -135,8 +138,8 @@ describe('FileIndexer wedged-worker recovery', () => {
     // an unchanged error row is not re-queued; the rescan itself must not wedge
     await indexer.scan()
     await vi.waitFor(
-      () => {
-        expect(indexer!.progress()).toMatchObject({ pending: 0, scanning: false })
+      async () => {
+        await expect(indexer!.progress()).resolves.toMatchObject({ pending: 0, scanning: false })
       },
       { timeout: 5_000, interval: 25 },
     )

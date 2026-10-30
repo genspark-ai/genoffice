@@ -2523,6 +2523,39 @@ export function SettingsModal({
                         />
                       </div>
                     )}
+                    {/* a taken accelerator is a live state, not a settings
+                        failure: the switch says "on" while the OS says no, so
+                        the field below says which one is telling the truth and
+                        offers the retry (the holding app may have quit) */}
+                    {presence.hotkey.enabled && !presence.hotkeyActive && (
+                      <div className="set-field">
+                        <div className="set-field-text">
+                          <div className="set-field-stack">
+                            <div className="set-field-desc">{t('setGlobalHotkeyBlocked')}</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="set-btn"
+                          onClick={() => {
+                            // re-applying the current prefs re-registers the
+                            // accelerator; the answered snapshot is the truth —
+                            // it may report the retry failed again
+                            void window.aiOffice
+                              .setGlobalHotkey?.({
+                                enabled: true,
+                                accelerator: presence.hotkey.accelerator,
+                              })
+                              .then((sp) => {
+                                if (sp) setPresence(sp)
+                              })
+                              .catch(() => {})
+                          }}
+                        >
+                          {t('setGlobalHotkeyRetry')}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
                 {kbScope !== null && (

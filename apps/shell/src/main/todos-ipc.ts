@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
-import { atomicWriteFile } from './atomic-write'
+import { createJsonStore } from './json-store'
 import { HOME_CHANNELS, type TodoItem } from '../shared/home-api'
 
 /** where the todo list lives: one file the whole widget reads and writes through */
@@ -44,26 +43,23 @@ function normalizeTodos(raw: unknown): TodoItem[] {
  * A missing, corrupt or shapeless file is the empty list — the todos are a
  * convenience, never a reason Home fails to open. Reading is also the one
  * moment a hand-edited or foreign file is normalized into the invariant.
+ * Version 1 is today's bare array body (see json-store.ts for the marker and
+ * migration convention).
  */
+const todosStore = (userDataDir: string) =>
+  createJsonStore<TodoItem[]>({
+    path: () => todosFilePath(userDataDir),
+    version: 1,
+    normalize: normalizeTodos,
+  })
+
 export function readTodos(userDataDir: string): TodoItem[] {
-  let text: string
-  try {
-    text = readFileSync(todosFilePath(userDataDir), 'utf8')
-  } catch {
-    return []
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return []
-  }
-  return normalizeTodos(parsed)
+  return todosStore(userDataDir).read()
 }
 
 /** the scratch-then-rename write the imports use, so a crash mid-write costs nothing */
 export async function writeTodos(userDataDir: string, items: readonly TodoItem[]): Promise<void> {
-  await atomicWriteFile(todosFilePath(userDataDir), Buffer.from(JSON.stringify(items, null, 2)))
+  await todosStore(userDataDir).write([...items])
 }
 
 /**

@@ -30,14 +30,17 @@ export interface SystemPresencePrefs {
   /** launch at login (macOS/Windows; Linux has no single API — see applyLoginItem) */
   loginItem: boolean
   hotkeyEnabled: boolean
-  /** Electron accelerator, e.g. 'Alt+Space' */
+  /** Electron accelerator, e.g. 'CommandOrControl+Shift+Space' */
   hotkeyAccelerator: string
 }
 
 export const DEFAULT_SYSTEM_PRESENCE_PREFS: SystemPresencePrefs = {
   loginItem: false,
   hotkeyEnabled: true,
-  hotkeyAccelerator: 'Alt+Space',
+  // the system window-menu accelerator on Windows and the non-breaking space
+  // in macOS text fields (also Raycast's default) — a modifier-heavy combo
+  // nobody else claims is the safer default
+  hotkeyAccelerator: 'CommandOrControl+Shift+Space',
 }
 
 /** a stored accelerator can be longish, never arbitrary text */
@@ -235,8 +238,10 @@ const tPresence = createI18n({
 export const DEEP_LINK_SCHEME = 'genoffice'
 
 /**
- * Parse one deep-link URL. Only the `ask` view exists today:
- * genoffice://ask?q=hello → { view: 'ask', query: 'hello' }. Anything else is
+ * Parse one deep-link URL. Three verbs exist:
+ * genoffice://ask?q=hello → { view: 'ask', query: 'hello' },
+ * genoffice://palette → { view: 'palette' },
+ * genoffice://open?path=%2F… → { view: 'open', path: '…' }. Anything else is
  * not a deep link (null) rather than an error.
  */
 export function parseDeepLink(raw: string): DeepLinkPayload | null {
@@ -247,17 +252,24 @@ export function parseDeepLink(raw: string): DeepLinkPayload | null {
     return null
   }
   if (url.protocol !== `${DEEP_LINK_SCHEME}:`) return null
-  if (url.hostname.toLowerCase() !== 'ask') return null
-  const query = url.searchParams.get('q')
-  return { view: 'ask', ...(query ? { query } : {}) }
-}
-
-/** the deep-link URL in a process argv (Windows/Linux protocol launches), when present */
-export function deepLinkFromArgv(argv: readonly string[]): string | null {
-  for (const arg of argv) {
-    if (typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_SCHEME}://`)) return arg
+  const host = url.hostname.toLowerCase()
+  if (host === 'ask') {
+    const query = url.searchParams.get('q')
+    return { view: 'ask', ...(query ? { query } : {}) }
+  }
+  if (host === 'palette') return { view: 'palette' }
+  if (host === 'open') {
+    // a link without a path has nothing to open; refusing it beats guessing
+    const path = url.searchParams.get('path')
+    return path ? { view: 'open', path } : null
   }
   return null
+}
+
+/** every genoffice:// URL in a process argv, in order (Windows/Linux protocol
+ *  launches; several can queue up in one argv) */
+export function deepLinksFromArgv(argv: readonly string[]): string[] {
+  return argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_SCHEME}://`))
 }
 
 /**
@@ -278,7 +290,7 @@ export function registerDeepLinkClient(): void {
  * The macOS half of deep-link intake: `open-url` (can fire before ready, so it
  * must be installed early — the delivery callback decides what "not ready"
  * means). Windows/Linux links arrive in argv instead; the caller checks
- * deepLinkFromArgv in its second-instance and cold-start paths.
+ * deepLinksFromArgv in its second-instance and cold-start paths.
  */
 export function installDeepLinkListener(deliver: (payload: DeepLinkPayload) => void): void {
   app.on('open-url', (event, url) => {
@@ -314,6 +326,13 @@ export interface SystemPresence {
   applyPrefs(next: SystemPresencePrefs): SystemPresenceSettings
   /** the live settings snapshot the settings UI renders */
   settings(): SystemPresenceSettings
+  /**
+   * Re-register the hotkey from the in-memory prefs (no disk read): the app
+   * that held the accelerator when registration failed may since have quit, so
+   * a window gaining focus is a cheap moment to try again. An active hotkey is
+   * left untouched — churn on every focus risks losing a working registration.
+   */
+  retryHotkey(): SystemPresenceSettings
   /** drop the tray icon and unregister every global shortcut (will-quit) */
   dispose(): void
 }
@@ -401,6 +420,11 @@ export function installSystemPresence(deps: SystemPresenceDeps): SystemPresence 
       return snapshot()
     },
     settings: snapshot,
+    retryHotkey(): SystemPresenceSettings {
+      if (hotkeyActive) return snapshot()
+      hotkeyActive = applyHotkey(prefs)
+      return snapshot()
+    },
     dispose() {
       offLangChange()
       // quit-time hygiene: nothing outlives the app (unregisterAll, not just ours)
@@ -454,7 +478,7 @@ export function registerSystemPresenceIpc(presence: () => SystemPresence | null)
       }
       if (patch.accelerator !== undefined && !isAcceleratorLike(patch.accelerator)) {
         throw new Error(
-          'the hotkey accelerator must be modifiers + one key, e.g. "Alt+Space" or "CommandOrControl+Shift+K"',
+          'the hotkey accelerator must be modifiers + one key, e.g. "CommandOrControl+Shift+Space" or "Alt+P"',
         )
       }
       const p = presence()

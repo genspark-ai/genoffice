@@ -46,6 +46,13 @@ export const he: Dict = {
   askStep3Title: 'פתחו ציטוטים',
   askStep3Desc: 'התשובות מציינות את קובץ המקור; לחצו כדי לדלג אליו',
   askCtaRecents: 'סימון מ״אחרונים״',
+  askHeroIndexedTagline:
+    'Ask AI מחפש בכל הקבצים הממודדים — תיקיית השמירה והתיקיות שנוספו בהגדרות. עדיין שום דבר לא ממודד; הסריקה הראשונה מתחילה זמן קצר לאחר ההפעלה.',
+  askIndexedStep1Title: 'המתן לסריקה',
+  askIndexedStep1Desc: 'הסריקה הראשונה רצה ברקע; הקבצים מופיעים בהדרגה',
+  askIntroIndexed:
+    'שאלו על הקבצים שלכם — כל האינדקס המקומי נכלל. התשובות מציינות את המקורות; לחצו לפתיחה.',
+  askCtaBrowseRecents: 'עיינו בקבצים ב״אחרונים״',
   askNoSave: 'השיחה אינה נשמרת; היא מתנקה כשהאפליקציה מופעלת מחדש.',
   askUnknownError: 'בקשת ה-AI נכשלה. נסה שוב.',
   askTasksTitle: 'משימות רקע',
@@ -231,7 +238,9 @@ export const he: Dict = {
   setGlobalHotkeyDesc: 'מזמן את לוח הפקודות של מסך הבית מכל מקום.',
   setGlobalHotkeyAccelerator: 'מקשי הקיצור',
   setGlobalHotkeyAcceleratorDesc:
-    'תחביר accelerator כמו Alt+Space או Ctrl+Shift+K; Enter מחיל, ערכים לא מזוהים מתעלמים.',
+    'תחביר accelerator כמו Ctrl+Shift+Space או Ctrl+Shift+K; Enter מחיל, ערכים לא מזוהים מתעלמים.',
+  setGlobalHotkeyBlocked: 'אפליקציה אחרת מחזיקה בקיצור הזה, ולכן הוא אינו פעיל כרגע.',
+  setGlobalHotkeyRetry: 'נסה שוב',
   setKbScope: 'היקף הגוף של Ask AI',
   setKbScopeDesc:
     'אילו קבצים Ask AI רשאי לחפש ולצטט: כל מה שהאינדקס המקומי מכסה, או רק קבצים מסומנים בכוכב.',

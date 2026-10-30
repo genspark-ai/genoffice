@@ -111,7 +111,7 @@ describe('runsBridgeOf', () => {
 
 describe('RunRecorder over the runs IPC (bridge roundtrip)', () => {
   it('reads back the runs earlier sessions left unfinished', async () => {
-    const { recorder, store, bridge, tmpDir } = recorderWithStore()
+    const { recorder, store, tmpDir } = recorderWithStore()
     try {
       // an earlier session: started, window closed before any terminal
       store.appendRunEvent('default', 'run-7', {

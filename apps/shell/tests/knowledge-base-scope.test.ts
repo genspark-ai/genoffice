@@ -36,32 +36,37 @@ describe('normalizeKbScope', () => {
 describe('searchKnowledgeBase', () => {
   const poolOf = (paths: string[]) => paths.map(HIT)
 
-  it('indexed scope (null) takes the store page directly — no 200-pool fetch', () => {
+  it('indexed scope (null) takes the store page directly — no 200-pool fetch', async () => {
     const requested: number[] = []
     const search = (q: string, limit: number) => {
       requested.push(limit)
       return poolOf(['/a/1.docx', '/b/2.docx'])
     }
-    const hits = searchKnowledgeBase(search, 'report', null, 8)
+    const hits = await searchKnowledgeBase(async (q, limit) => search(q, limit), 'report', null, 8)
     expect(requested).toEqual([8])
     expect(hits.map((h) => h.path)).toEqual(['/a/1.docx', '/b/2.docx'])
   })
 
-  it('starred scope keeps the pool fetch and the membership filter', () => {
+  it('starred scope keeps the pool fetch and the membership filter', async () => {
     const requested: number[] = []
     const search = (q: string, limit: number) => {
       requested.push(limit)
       return poolOf(['/a/starred.docx', '/b/other.docx'])
     }
-    const hits = searchKnowledgeBase(search, 'report', ['/a/starred.docx'], 8)
+    const hits = await searchKnowledgeBase(
+      async (q, limit) => search(q, limit),
+      'report',
+      ['/a/starred.docx'],
+      8,
+    )
     expect(requested).toEqual([200])
     expect(hits.map((h) => h.path)).toEqual(['/a/starred.docx'])
   })
 
-  it('trims and de-duplicates in both scopes', () => {
+  it('trims and de-duplicates in both scopes', async () => {
     const search = () => poolOf(['/a/1.docx', '/a/1.docx', '/b/2.docx'])
-    expect(searchKnowledgeBase(search, '  x  ', null, 5)).toHaveLength(2)
-    expect(searchKnowledgeBase(search, '   ', null, 5)).toEqual([])
+    expect(await searchKnowledgeBase(async () => search(), '  x  ', null, 5)).toHaveLength(2)
+    expect(await searchKnowledgeBase(async () => search(), '   ', null, 5)).toEqual([])
   })
 })
 

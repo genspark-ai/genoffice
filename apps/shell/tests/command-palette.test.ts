@@ -109,8 +109,21 @@ beforeEach(() => {
   askedQueries = []
 })
 
-afterEach(() => {
-  act(() => root.unmount())
+afterEach(async () => {
+  // clear the files provider's pending debounce before unmount: an armed
+  // 200ms timer would fire after jsdom teardown and read a torn-down
+  // `window` (an uncaught ReferenceError that fails the whole run under
+  // full-suite load). The empty query is the provider's cancel path.
+  await act(async () => {
+    const el = host.querySelector<HTMLInputElement>('.cmd-input')
+    if (el) {
+      const proto = window.HTMLInputElement.prototype
+      Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, '')
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      await Promise.resolve()
+    }
+    root.unmount()
+  })
   host.remove()
 })
 

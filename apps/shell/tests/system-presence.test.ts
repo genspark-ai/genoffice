@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   handlers: new Map<string, (...args: never[]) => unknown>(),
   appListeners: new Map<string, Array<(...args: never[]) => void>>(),
   protocolClients: [] as string[],
+  refuseRegistrations: false,
+  unregisterCalls: 0,
 }))
 
 vi.mock('electron', () => ({
@@ -67,10 +69,14 @@ vi.mock('electron', () => ({
   },
   globalShortcut: {
     register: (accelerator: string, callback: () => void) => {
+      // the flag simulates an accelerator another app already holds: the OS
+      // refuses the registration and the presence must surface that
+      if (state.refuseRegistrations) return false
       state.registered.set(accelerator, callback)
       return true
     },
     unregister: (accelerator: string) => {
+      state.unregisterCalls += 1
       state.registered.delete(accelerator)
     },
     unregisterAll: () => {
@@ -82,7 +88,7 @@ vi.mock('electron', () => ({
 import { HOME_CHANNELS } from '../src/shared/home-api'
 import {
   DEFAULT_SYSTEM_PRESENCE_PREFS,
-  deepLinkFromArgv,
+  deepLinksFromArgv,
   installDeepLinkListener,
   installSystemPresence,
   isAcceleratorLike,
@@ -131,6 +137,8 @@ beforeEach(() => {
   state.handlers.clear()
   state.appListeners.clear()
   state.protocolClients.length = 0
+  state.refuseRegistrations = false
+  state.unregisterCalls = 0
 })
 
 afterEach(() => {
@@ -147,20 +155,38 @@ describe('parseDeepLink', () => {
     expect(parseDeepLink('genoffice://ask')).toEqual({ view: 'ask' })
   })
 
+  it('parses the palette and open verbs', () => {
+    expect(parseDeepLink('genoffice://palette')).toEqual({ view: 'palette' })
+    expect(parseDeepLink('genoffice://open?path=%2Ftmp%2Fa.docx')).toEqual({
+      view: 'open',
+      path: '/tmp/a.docx',
+    })
+    // a link without a path has nothing to open; refusing it beats guessing
+    expect(parseDeepLink('genoffice://open')).toBeNull()
+  })
+
   it('rejects other schemes, hosts and garbage', () => {
     expect(parseDeepLink('https://ask?q=hi')).toBeNull()
-    expect(parseDeepLink('genoffice://open?path=/x')).toBeNull()
+    expect(parseDeepLink('genoffice://nope?path=/x')).toBeNull()
     expect(parseDeepLink('not a url')).toBeNull()
     expect(parseDeepLink('')).toBeNull()
   })
 })
 
-describe('deepLinkFromArgv', () => {
-  it('finds the genoffice:// entry a Windows/Linux protocol launch carries', () => {
-    expect(deepLinkFromArgv(['/app/genoffice', 'genoffice://ask?q=hi'])).toBe(
+describe('deepLinksFromArgv', () => {
+  it('finds every genoffice:// entry a Windows/Linux protocol launch carries, in order', () => {
+    expect(deepLinksFromArgv(['/app/genoffice', 'genoffice://ask?q=hi'])).toEqual([
       'genoffice://ask?q=hi',
-    )
-    expect(deepLinkFromArgv(['/app/genoffice', '/tmp/a.docx'])).toBeNull()
+    ])
+    expect(
+      deepLinksFromArgv([
+        '/app/genoffice',
+        'genoffice://palette',
+        '/tmp/a.docx',
+        'genoffice://ask',
+      ]),
+    ).toEqual(['genoffice://palette', 'genoffice://ask'])
+    expect(deepLinksFromArgv(['/app/genoffice', '/tmp/a.docx'])).toEqual([])
   })
 })
 
@@ -229,7 +255,7 @@ describe('installSystemPresence', () => {
       'separator',
       'Quit GenOffice',
     ])
-    expect([...state.registered.keys()]).toEqual(['Alt+Space'])
+    expect([...state.registered.keys()]).toEqual(['CommandOrControl+Shift+Space'])
     expect(presence.settings().hotkeyActive).toBe(true)
     presence.dispose()
   })
@@ -246,7 +272,7 @@ describe('installSystemPresence', () => {
     menu[4]!.click!()
     expect(state.quitCalls).toBe(1)
     // the registered hotkey summons the palette
-    state.registered.get('Alt+Space')!()
+    state.registered.get('CommandOrControl+Shift+Space')!()
     expect(calls.palette).toBe(2)
     presence.dispose()
   })
@@ -278,7 +304,7 @@ describe('installSystemPresence', () => {
       hotkeyEnabled: true,
       hotkeyAccelerator: 'Control+Shift+K',
     })
-    expect(state.registered.has('Alt+Space')).toBe(false)
+    expect(state.registered.has('CommandOrControl+Shift+Space')).toBe(false)
     expect([...state.registered.keys()]).toEqual(['Control+Shift+K'])
     expect(next.hotkey).toEqual({ enabled: true, accelerator: 'Control+Shift+K' })
     const onDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
@@ -296,6 +322,27 @@ describe('installSystemPresence', () => {
     expect(state.registered.size).toBe(0)
     expect(state.trays[0]!.destroyed).toBe(true)
   })
+
+  it('retryHotkey re-registers a refused accelerator without touching a working one', () => {
+    // the accelerator is taken at install time: the snapshot says so and
+    // nothing is registered
+    state.refuseRegistrations = true
+    const { presence } = makePresence()
+    expect(presence.settings().hotkeyActive).toBe(false)
+    expect(state.registered.size).toBe(0)
+
+    // the holding app quit: a focus-time retry now succeeds
+    state.refuseRegistrations = false
+    const retried = presence.retryHotkey()
+    expect(retried.hotkeyActive).toBe(true)
+    expect([...state.registered.keys()]).toEqual(['CommandOrControl+Shift+Space'])
+
+    // an already-active hotkey is left alone: no unregister/re-register churn
+    const unregistersBefore = state.unregisterCalls
+    expect(presence.retryHotkey().hotkeyActive).toBe(true)
+    expect(state.unregisterCalls).toBe(unregistersBefore)
+    presence.dispose()
+  })
 })
 
 describe('registerSystemPresenceIpc', () => {
@@ -306,7 +353,10 @@ describe('registerSystemPresenceIpc', () => {
     const initial = (await invoke(HOME_CHANNELS.systemPresenceGet)) as {
       hotkey: { enabled: boolean; accelerator: string }
     }
-    expect(initial.hotkey).toEqual({ enabled: true, accelerator: 'Alt+Space' })
+    expect(initial.hotkey).toEqual({
+      enabled: true,
+      accelerator: 'CommandOrControl+Shift+Space',
+    })
 
     const afterLogin = (await invoke(HOME_CHANNELS.systemPresenceSetLoginItem, true)) as {
       loginItem: boolean

@@ -46,6 +46,13 @@ export const vi: Dict = {
   askStep3Title: 'Nhấp trích dẫn',
   askStep3Desc: 'Câu trả lời nêu tên tệp nguồn; nhấp để nhảy tới',
   askCtaRecents: 'Gắn sao từ Gần đây',
+  askHeroIndexedTagline:
+    'Ask AI tìm trong mọi tệp đã lập chỉ mục — thư mục lưu và các thư mục thêm trong Cài đặt. Chưa có gì được lập chỉ mục; lần quét đầu tiên chạy ngay sau khi khởi động.',
+  askIndexedStep1Title: 'Chờ lần quét',
+  askIndexedStep1Desc: 'Lần quét đầu chạy ở nền; các tệp xuất hiện dần khi được đọc',
+  askIntroIndexed:
+    'Hỏi về tệp của bạn — toàn bộ chỉ mục cục bộ đều bao gồm. Câu trả lời nêu nguồn; bấm để mở.',
+  askCtaBrowseRecents: 'Xem tệp của bạn trong Gần đây',
   askNoSave: 'Cuộc trò chuyện không được lưu; sẽ bị xóa khi khởi động lại ứng dụng.',
   askUnknownError: 'Yêu cầu AI thất bại. Thử lại.',
   askTasksTitle: 'Tác vụ nền',
@@ -233,7 +240,9 @@ export const vi: Dict = {
   setGlobalHotkeyDesc: 'Gọi bảng lệnh của Trang chủ từ bất kỳ đâu.',
   setGlobalHotkeyAccelerator: 'Tổ hợp phím tắt',
   setGlobalHotkeyAcceleratorDesc:
-    'Cú pháp accelerator như Alt+Space hoặc Ctrl+Shift+K; Enter áp dụng, giá trị không nhận dạng được sẽ bị bỏ qua.',
+    'Cú pháp accelerator như Ctrl+Shift+Space hoặc Ctrl+Shift+K; Enter áp dụng, giá trị không nhận dạng được sẽ bị bỏ qua.',
+  setGlobalHotkeyBlocked: 'Ứng dụng khác đang giữ tổ hợp phím này nên nó chưa hoạt động.',
+  setGlobalHotkeyRetry: 'Thử đăng ký lại',
   setKbScope: 'Phạm vi kho ngữ liệu Ask AI',
   setKbScopeDesc:
     'Những tệp Ask AI có thể tìm kiếm và trích dẫn: tất cả những gì chỉ mục cục bộ bao phủ, hoặc chỉ các tệp đã gắn sao.',

@@ -186,6 +186,7 @@ vi.mock('../../html/src/main/html-main', () => ({
 }))
 
 import { TabManager } from '../src/main/tab-manager'
+import { HOME_CHANNELS } from '../src/shared/home-api'
 import type { TabKind } from '../src/shared/tabs-api'
 
 const TAB_STRIP_HEIGHT = 40
@@ -194,9 +195,20 @@ const WINDOW_HEIGHT = 600
 
 interface FakeShellWindow {
   on: ReturnType<typeof vi.fn>
-  webContents: { once: ReturnType<typeof vi.fn>; focus: ReturnType<typeof vi.fn> }
+  webContents: {
+    once: ReturnType<typeof vi.fn>
+    focus: ReturnType<typeof vi.fn>
+    on: ReturnType<typeof vi.fn>
+    send: ReturnType<typeof vi.fn>
+    listeners: Map<string, (event: never, input: never) => void>
+    isDestroyed: ReturnType<typeof vi.fn>
+  }
   isDestroyed: ReturnType<typeof vi.fn>
   isFocused: ReturnType<typeof vi.fn>
+  isMinimized: ReturnType<typeof vi.fn>
+  restore: ReturnType<typeof vi.fn>
+  show: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
   getContentBounds: () => { x: number; y: number; width: number; height: number }
   contentView: {
     addChildView: ReturnType<typeof vi.fn>
@@ -205,11 +217,27 @@ interface FakeShellWindow {
 }
 
 function makeShellWindow(): FakeShellWindow {
+  // the chrome webContents records its listeners so the palette-summon tests
+  // can press keys at the shell window itself (Home is the palette host)
+  const chromeListeners = new Map<string, (event: never, input: never) => void>()
   return {
     on: vi.fn(),
-    webContents: { once: vi.fn(), focus: vi.fn(), on: vi.fn(), isDestroyed: vi.fn(() => false) },
+    webContents: {
+      once: vi.fn(),
+      focus: vi.fn(),
+      on: vi.fn((event: string, handler: (event: never, input: never) => void) => {
+        chromeListeners.set(event, handler)
+      }),
+      send: vi.fn(),
+      listeners: chromeListeners,
+      isDestroyed: vi.fn(() => false),
+    },
     isDestroyed: vi.fn(() => false),
     isFocused: vi.fn(() => true),
+    isMinimized: vi.fn(() => false),
+    restore: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
     getContentBounds: () => ({ x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }),
     contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
   }
@@ -530,6 +558,80 @@ describe('activation', () => {
       width: WINDOW_WIDTH,
       height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
     })
+  })
+})
+
+describe('palette summon (Ctrl/Cmd+K)', () => {
+  /** fire the installed before-input-event listener with a key combo */
+  const press = (
+    wc: { listeners: Map<string, (event: never, input: never) => void> },
+    input: Record<string, unknown>,
+  ) => {
+    const handler = wc.listeners.get('before-input-event')
+    expect(handler).toBeTypeOf('function')
+    const event = { preventDefault: vi.fn() }
+    handler!(
+      { ...event } as never,
+      {
+        type: 'keyDown',
+        control: true,
+        ...input,
+      } as never,
+    )
+    return event
+  }
+
+  it('yields plain Ctrl/Cmd+K inside docs (Word hyperlink) and never claims shift/alt combos', () => {
+    manager.openDocsTab()
+    const view = lastCreatedView(createDocsView)
+    // docs owns the plain chord: the app's own dialog binding sees the key
+    const plain = press(view.webContents, { key: 'k' })
+    expect(plain.preventDefault).not.toHaveBeenCalled()
+    expect(shellWindow.webContents.send).not.toHaveBeenCalled()
+    // every app keeps its shift/alt variants; the palette never claims them
+    for (const combo of [
+      { key: 'k', shift: true },
+      { key: 'k', alt: true },
+    ]) {
+      const variant = press(view.webContents, combo)
+      expect(variant.preventDefault).not.toHaveBeenCalled()
+    }
+    expect(shellWindow.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('summons the palette from a non-owner tab and from the Home chrome', () => {
+    manager.openSheetsTab()
+    const view = lastCreatedView(createSheetsView)
+    const plain = press(view.webContents, { key: 'k' })
+    expect(plain.preventDefault).toHaveBeenCalled()
+    expect(shellWindow.webContents.send).toHaveBeenCalledWith(HOME_CHANNELS.paletteOpen)
+    shellWindow.webContents.send.mockClear()
+    // Home's own webContents is the palette host
+    const chrome = press(shellWindow.webContents, { key: 'k', meta: true, control: false })
+    expect(chrome.preventDefault).toHaveBeenCalled()
+    expect(shellWindow.webContents.send).toHaveBeenCalledWith(HOME_CHANNELS.paletteOpen)
+  })
+
+  it('stands down while the view is detached and answers again once docked back', () => {
+    manager.openSheetsTab()
+    const view = lastCreatedView(createSheetsView)
+    const id = manager.list().find((t) => t.kind === 'sheets')!.id
+    // torn into its own window, the view is that window's to summon — the
+    // strip's listener must not double-summon (its own hook is still attached)
+    expect(manager.detachTab(id)).not.toBeNull()
+    const detached = press(view.webContents, { key: 'k' })
+    expect(detached.preventDefault).toHaveBeenCalled()
+    expect(shellWindow.webContents.send).not.toHaveBeenCalled()
+    // docked back, the record exists again and the strip's listener answers
+    manager.attachTab({
+      view: view as never,
+      kind: 'sheets',
+      title: 't',
+      filePath: undefined,
+    })
+    const docked = press(view.webContents, { key: 'k' })
+    expect(docked.preventDefault).toHaveBeenCalled()
+    expect(shellWindow.webContents.send).toHaveBeenCalledWith(HOME_CHANNELS.paletteOpen)
   })
 })
 

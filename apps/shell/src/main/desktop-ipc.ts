@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSyn
 import { basename, extname, isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { IpcMainInvokeEvent, OpenDialogOptions } from 'electron'
-import { atomicCopyFile, atomicWriteFile } from './atomic-write'
+import { atomicCopyFile } from './atomic-write'
+import { createJsonStore } from './json-store'
 import { readAppSettings, writeAppSetting } from './app-settings'
 import { isProgramFile } from './tab-menu'
 import { normalizeKbScope, type KbScope } from './knowledge-base'
@@ -137,21 +138,19 @@ function normalizeAliases(raw: unknown): string[] {
  * A missing, corrupt or shapeless file is the empty layout — positions are a
  * convenience, never a reason Home fails to open. Reading is also the one
  * moment a hand-edited or foreign file is normalized into the invariant.
+ * The store goes through the shared versioned json-store factory; version 1
+ * is today's bare `{ positions, aliases }` body (see json-store.ts for the
+ * marker/migration convention).
  */
+const layoutStore = (userDataDir: string) =>
+  createJsonStore<DesktopLayout>({
+    path: () => desktopLayoutPath(userDataDir),
+    version: 1,
+    normalize: normalizeLayout,
+  })
+
 export function readDesktopLayout(userDataDir: string): DesktopLayout {
-  let text: string
-  try {
-    text = readFileSync(desktopLayoutPath(userDataDir), 'utf8')
-  } catch {
-    return emptyLayout()
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return emptyLayout()
-  }
-  return normalizeLayout(parsed)
+  return layoutStore(userDataDir).read()
 }
 
 // ── pinned widgets: the store detached-windows writes, restore reads ─────
@@ -219,23 +218,21 @@ const clampPinCoord = (value: number): number =>
 
 /**
  * A missing, corrupt or shapeless pins file is the empty list — a widget is a
- * convenience, never a reason the launch path fails.
+ * convenience, never a reason the launch path fails. Version 1 is today's
+ * `{ pins }` envelope: the file body wraps the list, the domain value is the
+ * bare list (see json-store.ts for the convention).
  */
+const pinsStore = (userDataDir: string) =>
+  createJsonStore<DesktopPinRecord[]>({
+    path: () => desktopPinsPath(userDataDir),
+    version: 1,
+    normalize: normalizePins,
+    unwrap: (raw) => (raw as { pins?: unknown } | null)?.pins,
+    wrap: (pins) => ({ pins }),
+  })
+
 export function readDesktopPins(userDataDir: string): DesktopPinRecord[] {
-  let text: string
-  try {
-    text = readFileSync(desktopPinsPath(userDataDir), 'utf8')
-  } catch {
-    return []
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return []
-  }
-  const pins = (parsed as { pins?: unknown } | null)?.pins
-  return normalizePins(Array.isArray(pins) ? pins : undefined)
+  return pinsStore(userDataDir).read()
 }
 
 /** the scratch-then-rename write every pin mutation funnels through */
@@ -243,43 +240,33 @@ export async function writeDesktopPins(
   userDataDir: string,
   pins: readonly DesktopPinRecord[],
 ): Promise<void> {
-  await atomicWriteFile(
-    desktopPinsPath(userDataDir),
-    Buffer.from(JSON.stringify({ pins: normalizePins(pins) }, null, 2)),
-  )
+  await pinsStore(userDataDir).write([...pins])
 }
 
 /**
  * The prefs' read half: a missing, corrupt or shapeless file is the default
  * set — the desktop opens with its fallback look rather than failing.
+ * Version 1 is today's bare prefs object (see json-store.ts).
  */
+const prefsStore = (userDataDir: string) =>
+  createJsonStore<DesktopPrefs>({
+    path: () => desktopPrefsPath(userDataDir),
+    version: 1,
+    normalize: normalizePrefs,
+  })
+
 export function readDesktopPrefs(userDataDir: string): DesktopPrefs {
-  let text: string
-  try {
-    text = readFileSync(desktopPrefsPath(userDataDir), 'utf8')
-  } catch {
-    return { ...DEFAULT_DESKTOP_PREFS }
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return { ...DEFAULT_DESKTOP_PREFS }
-  }
-  return normalizePrefs(parsed)
+  return prefsStore(userDataDir).read()
 }
 
 /** the scratch-then-rename write both the IPC save and the CLI control path use */
 export async function writeDesktopPrefs(userDataDir: string, prefs: DesktopPrefs): Promise<void> {
-  await atomicWriteFile(desktopPrefsPath(userDataDir), Buffer.from(JSON.stringify(prefs, null, 2)))
+  await prefsStore(userDataDir).write(prefs)
 }
 
 /** the scratch-then-rename write the imports use, so a crash mid-write costs nothing */
 async function writeLayout(userDataDir: string, layout: DesktopLayout): Promise<void> {
-  await atomicWriteFile(
-    desktopLayoutPath(userDataDir),
-    Buffer.from(JSON.stringify(layout, null, 2)),
-  )
+  await layoutStore(userDataDir).write(layout)
 }
 
 // ── the alias gate the open and add channels share ──────

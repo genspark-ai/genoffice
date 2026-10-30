@@ -45,6 +45,14 @@ export const nl: Dict = {
   askStep3Title: 'Open verwijzingen',
   askStep3Desc: 'Antwoorden noemen het bronbestand; klik om erheen te gaan',
   askCtaRecents: 'Sterren vanuit Onlangs',
+  askHeroIndexedTagline:
+    'Ask AI doorzoekt alle geïndexeerde bestanden — de opslagmap en mappen die je in Instellingen toevoegde. Er is nog niets geïndexeerd; de eerste scan start kort na de lancering.',
+  askIndexedStep1Title: 'Wacht op de scan',
+  askIndexedStep1Desc:
+    'De eerste scan draait op de achtergrond; bestanden verschijnen naarmate ze gelezen worden',
+  askIntroIndexed:
+    'Vraag naar je bestanden — de hele lokale index is inbegrepen. Antwoorden noemen hun bron; klik om te openen.',
+  askCtaBrowseRecents: 'Bekijk je bestanden in Recent',
   askNoSave: 'Het gesprek wordt niet opgeslagen; het wordt gewist bij herstart van de app.',
   askUnknownError: 'De AI-aanvraag is mislukt. Probeer het opnieuw.',
   askTasksTitle: 'Achtergrondtaken',
@@ -235,7 +243,10 @@ export const nl: Dict = {
   setGlobalHotkeyDesc: 'Roept het opdrachtenpalet van Home overal op.',
   setGlobalHotkeyAccelerator: 'Sneltoetscombinatie',
   setGlobalHotkeyAcceleratorDesc:
-    'Accelerator-syntax zoals Alt+Space of Ctrl+Shift+K; Enter past toe, onherkende waarden worden genegeerd.',
+    'Accelerator-syntax zoals Ctrl+Shift+Space of Ctrl+Shift+K; Enter past toe, onherkende waarden worden genegeerd.',
+  setGlobalHotkeyBlocked:
+    'Een andere app gebruikt deze sneltoets, dus die is momenteel niet actief.',
+  setGlobalHotkeyRetry: 'Opnieuw registreren',
   setKbScope: 'Bereik van Ask AI-corpus',
   setKbScopeDesc:
     'Welke bestanden Ask AI mag doorzoeken en citeren: alles in de lokale index, of alleen favoriete bestanden.',

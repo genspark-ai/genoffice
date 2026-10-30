@@ -174,4 +174,14 @@ describe('FileIndexStore', () => {
     expect(store.search('alpha beta').hits.map((h) => h.name)).toEqual(['both.pdf'])
     expect(store.search('alpha beta', { exts: ['md'] }).hits.map((h) => h.name)).toEqual(['one.md'])
   })
+
+  it('excludes files matching a -term, exactly over the candidate pool', () => {
+    store.upsert(meta('/f/keep.md'), 'alpha report', 'ok')
+    store.upsert(meta('/f/drop.md'), 'alpha summary', 'ok')
+    store.upsert(meta('/f/drop2.md'), 'alpha summary extra', 'ok')
+    // the excluded term deletes its matches from the candidate pool
+    expect(store.search('alpha -summary').hits.map((h) => h.name)).toEqual(['keep.md'])
+    // an excluded term nothing matches leaves every candidate in place
+    expect(store.search('alpha -irrelevant').hits).toHaveLength(3)
+  })
 })

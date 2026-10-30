@@ -3,7 +3,7 @@
 // card before they execute. Denying must leave the document untouched and hand
 // the model a do-not-retry result; allowing runs the tool. Driven end-to-end
 // through the stubbed window.markdownApi stream, like ai-panel-prefs.test.ts.
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
