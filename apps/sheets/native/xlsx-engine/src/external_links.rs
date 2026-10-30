@@ -928,14 +928,16 @@ fn cell_literal(model: &Model, sheet: u32, row: u32, column: u32) -> Option<Stri
 /// The value a break freezes one cell at: the file-cached `<v>` with its
 /// cell type. Mirrors the gateway's `literalCell` spelling one-to-one, so the
 /// cells reported here are exactly the cells a break transform converts.
-#[derive(serde::Serialize, Clone)]
+/// Struct variants on purpose — serde's internally-tagged enums reject
+/// scalar newtype variants.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum UsageValue {
-    Number(f64),
-    Text(String),
-    Bool(bool),
+    Number { value: f64 },
+    Text { value: String },
+    Bool { value: bool },
     /// An error result keeps its `t="e"` spelling (`#REF!`, `#NAME?`, …).
-    Error(String),
+    Error { value: String },
     Missing,
 }
 
@@ -1021,7 +1023,7 @@ fn parse_cell_reference(reference: &str) -> Option<(u32, u32)> {
         if !upper.is_ascii_uppercase() {
             return None;
         }
-        column = column * 26 + u32::from(upper - b'A') + 1;
+        column = column * 26 + u32::from(upper as u8 - b'A') + 1;
     }
     let row = digits.parse::<u32>().ok()?;
     if row == 0 {
@@ -1125,7 +1127,8 @@ fn element_start(xml: &str, tag: &str, from: usize) -> Option<usize> {
 fn element_span(xml: &str, tag: &str, from: usize) -> Option<(usize, usize, usize)> {
     let open = element_start(xml, tag, from)?;
     let after_open = xml[open..].find('>')? + open + 1;
-    if xml[open..after_open].ends_with('/') {
+    // the slice ends at the `>`, so a self-closing tag spells `/>`
+    if xml[open..after_open].ends_with("/>") {
         return Some((open, after_open, after_open));
     }
     let close = xml[after_open..].find(&format!("</{tag}>"))? + after_open;
@@ -1144,14 +1147,22 @@ fn attribute_value(tag: &str, name: &str) -> Option<String> {
 fn usage_value(cell_open: &str, body: &str) -> UsageValue {
     let raw = element_span(body, "v", 0).map(|(_open, inner, close)| body[inner..close].to_string());
     match attribute_value(cell_open, "t").as_deref() {
-        Some("str") => UsageValue::Text(raw.map(|v| decode_xml_entities(&v)).unwrap_or_default()),
-        Some("e") => UsageValue::Error(raw.map(|v| decode_xml_entities(&v)).unwrap_or_default()),
-        Some("b") => UsageValue::Bool(raw.as_deref() == Some("1") || raw.as_deref() == Some("true")),
+        Some("str") => UsageValue::Text {
+            value: raw.map(|v| decode_xml_entities(&v)).unwrap_or_default(),
+        },
+        Some("e") => UsageValue::Error {
+            value: raw.map(|v| decode_xml_entities(&v)).unwrap_or_default(),
+        },
+        Some("b") => UsageValue::Bool {
+            value: raw.as_deref() == Some("1") || raw.as_deref() == Some("true"),
+        },
         _ => match raw.as_deref() {
             Some(text) if text.is_empty() => UsageValue::Missing,
             Some(text) => match text.parse::<f64>() {
-                Ok(number) => UsageValue::Number(number),
-                Err(_) => UsageValue::Text(decode_xml_entities(text)),
+                Ok(value) => UsageValue::Number { value },
+                Err(_) => UsageValue::Text {
+                    value: decode_xml_entities(text),
+                },
             },
             None => UsageValue::Missing,
         },
@@ -1196,7 +1207,10 @@ pub(crate) fn read_external_link_usage(
     }
     let mut part_paths: Vec<String> = Vec::new();
     for index in 0..archive.len() {
-        let name = archive.by_index_raw(index).name().to_string();
+        let Ok(file) = archive.by_index_raw(index) else {
+            continue;
+        };
+        let name = file.name().to_string();
         if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
             part_paths.push(name);
         }
@@ -1748,19 +1762,19 @@ mod tests {
         let usage = &usages[0];
         assert_eq!(usage.index, 1);
         assert!(usage.cells.iter().all(|cell| cell.sheet == "Sheet1"));
-        let values: Vec<(&str, &UsageValue)> = usage
+        let values: Vec<(String, UsageValue)> = usage
             .cells
             .iter()
-            .map(|cell| (cell_reference(cell.row, cell.column), &cell.value))
+            .map(|cell| (cell_reference(cell.row, cell.column), cell.value.clone()))
             .collect();
         assert_eq!(
             values,
             vec![
-                ("A1", &UsageValue::Number(84.0)),
-                ("B1", &UsageValue::Number(2.0)),
-                ("C1", &UsageValue::Text("Total!".to_string())),
-                ("A2", &UsageValue::Number(60.0)),
-                ("A3", &UsageValue::Number(9.0)),
+                ("A1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("B1".to_string(), UsageValue::Number { value: 2.0 }),
+                ("C1".to_string(), UsageValue::Text { value: "Total!".to_string() }),
+                ("A2".to_string(), UsageValue::Number { value: 60.0 }),
+                ("A3".to_string(), UsageValue::Number { value: 9.0 }),
             ]
         );
     }
@@ -1771,23 +1785,23 @@ mod tests {
     fn usage_scan_resolves_shared_instances_and_error_caches() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("book.xlsx");
-        write_usage_fixture(
+        super::tests::write_usage_fixture(
             &path,
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="shared" si="0">[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f t="shared" si="0"/><v>84</v></c><c r="C1" t="e"><f>[1]Sheet1!ZZZ9</f><v>#REF!</v></c></row></sheetData></worksheet>"#,
         );
         let usages = read_external_link_usage(&path).unwrap();
         assert_eq!(usages.len(), 1);
-        let values: Vec<(&str, &UsageValue)> = usages[0]
+        let values: Vec<(String, UsageValue)> = usages[0]
             .cells
             .iter()
-            .map(|cell| (cell_reference(cell.row, cell.column), &cell.value))
+            .map(|cell| (cell_reference(cell.row, cell.column), cell.value.clone()))
             .collect();
         assert_eq!(
             values,
             vec![
-                ("A1", &UsageValue::Number(84.0)),
-                ("B1", &UsageValue::Number(84.0)),
-                ("C1", &UsageValue::Error("#REF!".to_string())),
+                ("A1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("B1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("C1".to_string(), UsageValue::Error { value: "#REF!".to_string() }),
             ]
         );
     }
@@ -1816,3 +1830,4 @@ mod tests {
         format!("{letters}{}", row + 1)
     }
 }
+
