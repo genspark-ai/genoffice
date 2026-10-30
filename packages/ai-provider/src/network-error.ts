@@ -11,6 +11,12 @@ const NETWORK_ERROR_PATTERN = new RegExp(
     'fetch failed',
     'socket hang up',
     'network error',
+    // OpenAI SDK transport failures ("Connection error." for APIConnectionError,
+    // "Request timed out." for APIConnectionTimeoutError). pi's event stream
+    // carries only the SDK's message — not the cause chain — so the wording
+    // itself has to classify.
+    'connection error',
+    'request timed out',
     'ECONNRESET',
     'ECONNREFUSED',
     'ECONNABORTED',

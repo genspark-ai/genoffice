@@ -6,6 +6,11 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "@earendil-works/pi-ai": "^1.4.0",
     "@earendil-works/pi-agent-core": "^1.4.0",

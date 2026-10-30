@@ -11,7 +11,6 @@ import {
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { googleGenerativeAIApi } from '@earendil-works/pi-ai/api/google-generative-ai.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type {
   AssistantMessageEventStream,
   Context,
@@ -32,9 +31,12 @@ import type {
   StreamCallbacks,
 } from '@genoffice/ai-provider'
 import {
+  AI_CHAT_RESPONSE_TIMEOUT_MS,
   activeProvider,
   getProviderAdapter,
   clampMaxOutputTokens,
+  AiCreditsError,
+  createStreamWatchdog,
 } from '@genoffice/ai-provider'
 import { endpointSupportsVision } from '@genoffice/ai-provider/browser'
 
@@ -52,6 +54,16 @@ function modelsInstance(): Models {
 /** Map GenOffice provider config onto a pi Model for one request. */
 export function piModelFor(settings: AiSettings): Model<Api> {
   const providerId = activeProvider(settings)
+  // Protocol gap frozen by the migration charter (principle 4): GenOffice's
+  // codex provider speaks the local codex-app-server subprocess protocol; pi
+  // only offers the HTTP Responses API, which is not isomorphic. Fail loudly
+  // instead of attempting an HTTP call that can only end in a confusing
+  // auth/URL error. Rollback for codex users: GENOFFICE_AI_BACKEND=legacy.
+  if (providerId === 'codex') {
+    throw new Error(
+      'The codex provider is not supported on the pi backend; set GENOFFICE_AI_BACKEND=legacy to use it.',
+    )
+  }
   const adapter = getProviderAdapter(providerId)
   const config = settings.providers[providerId]
   const endpoint = adapter.resolveEndpoint(config)
@@ -65,9 +77,6 @@ export function piModelFor(settings: AiSettings): Model<Api> {
       break
     case 'gemini':
       api = 'google-generative-ai'
-      break
-    case 'codex':
-      api = 'openai-codex-responses'
       break
     default:
       api = 'openai-completions'
@@ -92,9 +101,7 @@ export function piModelFor(settings: AiSettings): Model<Api> {
         ? anthropicMessagesApi()
         : api === 'google-generative-ai'
           ? googleGenerativeAIApi()
-          : api === 'openai-codex-responses'
-            ? openAIResponsesApi()
-            : openAICompletionsApi()
+          : openAICompletionsApi()
     models.setProvider(
       createProvider({
         id: providerId,
@@ -174,6 +181,55 @@ export function piMessages(messages: AgentMessage[]): PiMessage[] {
 }
 
 // ---------------------------------------------------------------------------
+// pi failure events → GenOffice typed errors
+// ---------------------------------------------------------------------------
+
+// pi ends every failed stream with an `error` event whose payload is an
+// AssistantMessage carrying only the composed `errorMessage` string — the
+// underlying SDK error object (HTTP status field, abort name, cause chain)
+// never crosses the stream boundary. The helpers below read that text the same
+// way the legacy protocol streams read their error bodies, so the apps'
+// errorCode classification (timeout / credits / network / overloaded / region)
+// behaves identically behind either backend. Watchdog timeouts are not mapped
+// here: wd.guard rewrites those into AiTimeoutError before this code runs.
+
+/**
+ * pi's formatProviderError puts a leading HTTP status on provider failures in
+ * one of three shapes: "NNN: {body}" when the SDK message lacks the body,
+ * "NNN {body}" when it already carries it, and `NNN "plain body"` when the
+ * body is not JSON. All of them normalize to the legacy "HTTP NNN: …" form.
+ */
+const PI_STATUS_PREFIX = /^\s*(\d{3})(?:\s*:\s*|\s+)/
+
+/**
+ * Credits-exhaustion notices, mirroring the legacy openai-completions
+ * creditsNoticeText wording (order-insensitive so both "credits … exhausted"
+ * and "insufficient … credits" match, plus the Genspark pricing pointer).
+ */
+const PI_CREDITS_NOTICE =
+  /(genspark\.ai\/pricing)|(credits?[^\n]{0,120}(exhausted|insufficient))|((exhausted|insufficient)[^\n]{0,120}credits?)/i
+
+/**
+ * Map one pi `error` event onto the error the legacy stack would have thrown
+ * for the same failure, so the callers' instanceof/predicate classification
+ * (docs-main.ts timeout/credits/network/overloaded/region) needs no
+ * pi-specific branches:
+ * - a credits notice, or an HTTP 402 (billing) → AiCreditsError ('credits')
+ * - an HTTP status prefix is rewritten to the legacy "HTTP NNN: …" form, which
+ *   is the shape isAiOverloadedError / isAiRegionBlockedError / the network
+ *   classifier pattern-match on in the legacy streams
+ * - anything else (including aborts — the IPC layer recognizes those via the
+ *   request signal before it ever looks at error classes) stays a plain Error
+ *   carrying pi's message
+ */
+export function mapPiErrorEvent(errorMessage?: string): Error {
+  const raw = errorMessage?.trim() || 'stream error'
+  const status = PI_STATUS_PREFIX.exec(raw)
+  if (status?.[1] === '402' || PI_CREDITS_NOTICE.test(raw)) return new AiCreditsError(raw)
+  return new Error(status ? `HTTP ${status[1]}: ${raw.slice(status[0].length)}` : raw)
+}
+
+// ---------------------------------------------------------------------------
 // One-shot chat (ai:chat channel), backed by pi-ai streamSimple collected to
 // completion. Same contract as chatForProvider: failures report as { ok:false }.
 // ---------------------------------------------------------------------------
@@ -185,15 +241,27 @@ export async function chatViaPi(
 ): Promise<{ ok: boolean; content?: string; error?: string }> {
   try {
     const model = piModelFor(settings)
-    const stream = modelsInstance().streamSimple(model, {
-      systemPrompt: system,
-      messages: [{ role: 'user', content: [{ type: 'text', text: user }] } as PiMessage],
-    })
+    // Same budget chatForProvider gives a one-shot chat: a gateway may answer a
+    // streaming request with one buffered body (then the whole generation
+    // elapses before the first event), so the connect phase gets the long
+    // AI_CHAT_RESPONSE_TIMEOUT_MS and the idle phase the watchdog default.
+    const wd = createStreamWatchdog(undefined, AI_CHAT_RESPONSE_TIMEOUT_MS)
     let text = ''
-    for await (const ev of stream) {
-      if (ev.type === 'text_delta') text += ev.delta
-      else if (ev.type === 'error') throw new Error(ev.error.errorMessage ?? 'stream error')
-    }
+    await wd.guard(async () => {
+      const stream = modelsInstance().streamSimple(
+        model,
+        {
+          systemPrompt: system,
+          messages: [{ role: 'user', content: [{ type: 'text', text: user }] } as PiMessage],
+        },
+        { signal: wd.signal },
+      )
+      for await (const ev of stream) {
+        wd.touch()
+        if (ev.type === 'text_delta') text += ev.delta
+        else if (ev.type === 'error') throw mapPiErrorEvent(ev.error.errorMessage)
+      }
+    })
     return { ok: true, content: text }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -218,44 +286,70 @@ export async function streamViaPi(
     messages: piMessages(messages),
     tools: piTools(tools),
   }
-  const stream: AssistantMessageEventStream = modelsInstance().streamSimple(model, context, {
-    maxTokens: clampMaxOutputTokens(maxTokens),
-    signal: cb.signal,
-  })
+  // pi's own lifecycle knobs do not match GenOffice's watchdog budgets: pi maps
+  // `timeoutMs` to the provider SDK's request timeout (OpenAI/Anthropic SDKs:
+  // time to response headers, 10-minute default, cleared once they arrive) and
+  // has no idle timeout of its own — post-header idleness is left to Node's
+  // fetch defaults (undici bodyTimeout, 5 minutes). Neither equals the legacy
+  // 60s connect / 180s idle budget, and arming timeoutMs at 180s would cap a
+  // turn's total wall time, re-creating the false kills that moved the legacy
+  // watchdog to a re-armed idle budget in the first place. So keep the legacy
+  // watchdog and align through pi's `signal` option instead: wd.signal aborts
+  // pi's in-flight request, wd.guard surfaces the trip as AiTimeoutError.
+  const wd = createStreamWatchdog(cb.signal)
 
   try {
-    for await (const ev of stream) {
-      switch (ev.type) {
-        case 'text_delta':
-          cb.onDelta(ev.delta)
-          break
-        case 'thinking_delta':
-          cb.onReasoningDelta?.(ev.delta)
-          break
-        case 'toolcall_end': {
-          // toolcall_end carries the complete ToolCall; earlier deltas are not
-          // needed because GenOffice's transport only wants the final call.
-          const tc = ev.toolCall
-          cb.onToolCall({
-            id: tc.id,
-            name: tc.name,
-            input: tc.arguments as Record<string, unknown>,
-          })
-          break
-        }
-        case 'done': {
-          if (ev.message.usage) {
-            const u = ev.message.usage
-            cb.onUsage?.({ inputTokens: u.input, outputTokens: u.output })
+    await wd.guard(async () => {
+      const stream: AssistantMessageEventStream = modelsInstance().streamSimple(model, context, {
+        maxTokens: clampMaxOutputTokens(maxTokens),
+        signal: wd.signal,
+      })
+
+      for await (const ev of stream) {
+        // every event is parsed provider output — bytes were on the wire
+        wd.touch()
+        switch (ev.type) {
+          // Events with no callback of their own still count as activity for
+          // the host: `start` is the headers-arrived ping (legacy touches the
+          // watchdog and pings the renderer at that exact moment), and
+          // toolcall deltas are the only signal during long tool-argument
+          // generation, which otherwise stays silent until toolcall_end.
+          case 'start':
+          case 'toolcall_start':
+          case 'toolcall_delta':
+            cb.onActivity?.()
+            break
+          case 'text_delta':
+            cb.onDelta(ev.delta)
+            break
+          case 'thinking_delta':
+            cb.onReasoningDelta?.(ev.delta)
+            break
+          case 'toolcall_end': {
+            // toolcall_end carries the complete ToolCall; earlier deltas are not
+            // needed because GenOffice's transport only wants the final call.
+            const tc = ev.toolCall
+            cb.onToolCall({
+              id: tc.id,
+              name: tc.name,
+              input: tc.arguments as Record<string, unknown>,
+            })
+            break
           }
-          cb.onStopReason?.(ev.reason)
-          break
-        }
-        case 'error': {
-          throw new Error(ev.error.errorMessage ?? 'stream error')
+          case 'done': {
+            if (ev.message.usage) {
+              const u = ev.message.usage
+              cb.onUsage?.({ inputTokens: u.input, outputTokens: u.output })
+            }
+            cb.onStopReason?.(ev.reason)
+            break
+          }
+          case 'error': {
+            throw mapPiErrorEvent(ev.error.errorMessage)
+          }
         }
       }
-    }
+    })
   } catch (err) {
     // streamForProvider throws on transport failure; the IPC layer maps it to
     // an error chunk. Keep the same contract here.

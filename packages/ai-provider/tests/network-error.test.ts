@@ -44,6 +44,13 @@ describe('isAiNetworkError', () => {
     expect(isAiNetworkError(new Error('connect ENETUNREACH 1.2.3.4:443'))).toBe(true)
   })
 
+  it('matches the OpenAI SDK transport-failure wording pi surfaces verbatim', () => {
+    // pi's event stream carries only the SDK's message, not the cause chain,
+    // so APIConnectionError/APIConnectionTimeoutError text must classify alone
+    expect(isAiNetworkError(new Error('Connection error.'))).toBe(true)
+    expect(isAiNetworkError(new Error('Request timed out.'))).toBe(true)
+  })
+
   it('does not match HTTP, credits, or content errors', () => {
     expect(isAiNetworkError(new Error('Claude HTTP 500: internal error'))).toBe(false)
     expect(isAiNetworkError(new Error('Your Genspark credits have been exhausted.'))).toBe(false)
