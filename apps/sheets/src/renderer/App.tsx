@@ -916,12 +916,13 @@ export function App({
   const [calcManual, setCalcManual] = useState(false)
   /// Non-null while the "Insert Slicer" field picker is open.
   const [slicerPicker, setSlicerPicker] = useState<SlicerPickerState | null>(null)
-  /// In-session timelines (same persistence model as slicers).
+  /// In-session timelines (session-only: timeline parts are not persisted yet).
   const [timelines, setTimelines] = useState<readonly TimelineUiState[]>([])
   /// Non-null while the "Insert Timeline" field picker is open.
   const [timelinePicker, setTimelinePicker] = useState<TimelinePickerState | null>(null)
-  /// True while slicer/timeline panels changed since the last restore (open)
-  /// and the next save should persist them as OOXML parts.
+  /// True while slicer panels changed since the last restore (open) and the
+  /// next save should persist the slicers as OOXML parts. Timelines are
+  /// session-only, so they never contribute here.
   const slicersDirtyRef = useRef(false)
   /// File-restored controls deleted this session: their parts and references
   /// are removed on save (nothing else may ever be listed here).

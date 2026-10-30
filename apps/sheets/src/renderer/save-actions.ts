@@ -76,9 +76,10 @@ export interface SaveContext {
    */
   redactionStates?: () => readonly SheetRedactionState[] | null
   /**
-   * Slicer/timeline panels to persist as OOXML parts on this save, null when
-   * the session changed nothing slicer-related (any file parts stay
+   * Slicer panels to persist as OOXML parts on this save, null when the
+   * session changed nothing slicer-related (any file parts stay
    * byte-identical). Like redactionStates it can be the only change pending.
+   * Timelines are session-only and never ride a save.
    */
   slicerState?: (() => WorkbookSlicerSaveState | null) | undefined
   /** Saving swaps the session and reinstalls the workbook, which resets the

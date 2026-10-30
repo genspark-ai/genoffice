@@ -101,10 +101,10 @@ export interface PivotActionContext {
     update: (current: readonly TimelineUiState[]) => readonly TimelineUiState[],
   ) => void
   setTimelinePicker: (value: TimelinePickerState | null) => void
-  /** Marks the slicer/timeline state dirty so the next save persists it. */
+  /** Marks the slicer state dirty so the next save persists it (timelines are session-only). */
   markSlicersChanged: () => void
-  /** Records a file-restored control's part identity for save-time cleanup. */
-  recordSlicerRemoval: (control: SlicerUiState | TimelineUiState) => void
+  /** Records a file-restored slicer's part identity for save-time cleanup. */
+  recordSlicerRemoval: (control: SlicerUiState) => void
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
 }
@@ -1125,7 +1125,8 @@ export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string
     return
   }
   ctx.setTimelines((current) => current.filter((entry) => entry.id !== timelineId))
-  ctx.recordSlicerRemoval(timeline)
+  // Timelines are session-only: there is no file part to remove, and the
+  // slicer state is untouched by removing one.
   ctx.markSlicersChanged()
   ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
 }

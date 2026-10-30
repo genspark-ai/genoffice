@@ -10,25 +10,28 @@
 ///     x14:slicerList ext entries,
 ///   workbook rels (…/slicerCache) + workbook extLst x14:slicerCaches ext
 ///     entries,
-///   the bound pivotCacheDefinition's own x14 ext (pivotCacheId,
-///     slicerData="1") — tabular@pivotCacheId must equal it or Excel drops
-///     the whole slicerCache part as 'Removed Part: slicerCache',
+///   the bound pivotCacheDefinition's own x14 ext (pivotCacheId, its own
+///     slicer-space id — not the workbook cacheId) — tabular@pivotCacheId
+///     must equal it or Excel drops the whole slicerCache part as
+///     'Removed Part: slicerCache',
 ///   a hidden Slicer_<name> definedName in the workbook,
 ///   [Content_Types].xml overrides per part.
 ///
-/// Read side mirrors the writer exactly (the reader keys on container element
-/// names and relationship types, not on ext URIs, so a URI mismatch between
-/// writers degrades to "control not restored" instead of corrupt state).
-/// Excel-side fidelity of the ext URIs is best-effort: a real-Excel round
-/// trip cannot be verified in this environment (declared in the PR body).
+/// Read side mirrors the writer (the reader keys on container element names
+/// and relationship types). The x14 ext URIs below are the MS-XLSX 2.2.2
+/// values — Excel writes exactly these, and addExtRef/removeExtRef key on the
+/// worksheet one, so a wrong URI both hides our ext from Excel and makes
+/// Excel-authored parts invisible here. A test pins the literal strings: a
+/// writer-mirrors-reader round trip cannot catch a wrong constant.
 ///
-/// Pivot binding: slicerCacheDefinition carries the spec'd tabular@pivotCacheId
-/// (the workbook pivotCache@cacheId, mirrored into the pivot cache
-/// definition's x14 ext) and a pivotTables/pivotTable entry whose tabId is
-/// the hosting worksheet's sheetId and whose name is the pivot table's own
-/// name (MS-XLSX) — Excel does not bind the slicer to its pivot without
-/// them. The reader prefers pivotCacheId and falls back to the tabId rule
-/// over sorted pivot parts for foreign files.
+/// Pivot binding: slicerCacheDefinition carries tabular@pivotCacheId (the
+/// bound pivot cache definition's x14 pivotCacheId — Excel keeps those in an
+/// id space separate from workbook pivotCache@cacheId) and a
+/// pivotTables/pivotTable entry whose tabId is the hosting worksheet's sheetId
+/// and whose name is the pivot table's own name (MS-XLSX) — Excel does not
+/// bind the slicer to its pivot without them. The reader resolves the id
+/// through each definition's x14 ext and only falls back to workbook cacheId
+/// for packages whose definitions carry no ext at all.
 
 import {
   allocatePartPath,
@@ -61,13 +64,16 @@ const PIVOT_TABLE_REL_TYPE =
 const SLICER_CONTENT_TYPE = 'application/vnd.ms-excel.slicer+xml'
 const SLICER_CACHE_CONTENT_TYPE = 'application/vnd.ms-excel.slicerCache+xml'
 
-/// Ext URIs per MS-XLSX; the reader below does not depend on them (it matches
-/// container names + relationship types), so a wrong URI can only affect
-/// Excel, never our own round trip.
-const WORKSHEET_SLICER_LIST_URI = '{A8765BA9-456A-4dab-B4F3-ACF1056F45AA}'
+/// Ext URIs per MS-XLSX 2.2.2. The worksheet URI must be this exact value:
+/// a wrong one made Excel treat the worksheet ext as foreign, never
+/// instantiate the slicer, and discard the slicerCache + drawing on save.
+/// It is also the key addExtRef/removeExtRef use to find Excel's own
+/// x14:slicerList ext.
+const WORKSHEET_SLICER_LIST_URI = '{A8765BA9-456A-4dab-B4F3-ACF838C121DE}'
 const WORKBOOK_SLICER_CACHES_URI = '{BBE1A952-AA13-448e-AADC-164F8A28A991}'
 /// The x14 pivotCacheDefinition ext that makes a pivot cache slicer-bound
-/// (MS-XLSX): its @pivotCacheId is what tabular@pivotCacheId must equal.
+/// (MS-XLSX): its @pivotCacheId is what tabular@pivotCacheId must equal. The
+/// id lives in its own space, unrelated to the workbook pivotCache@cacheId.
 const PIVOT_CACHE_SLICER_EXT_URI = '{725AE2AE-9491-48be-B2B4-4EB974FC3084}'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -166,7 +172,7 @@ export interface SlicerStateWrite {
 
 // ─── Part XML builders ─────────────────────────────────────────────────────
 
-/// SlicerCache/timelineCache pivot binding per MS-XLSX: pivotTables/pivotTable
+/// SlicerCache pivot binding per MS-XLSX: pivotTables/pivotTable
 /// carries the hosting worksheet's sheetId as tabId and the pivot table's own
 /// name. The hosting worksheet is the one whose rels reference the pivot part.
 async function pivotBinding(
@@ -222,6 +228,52 @@ async function pivotCacheIdOf(pkg: MutablePackage, pivotPath: string): Promise<n
     throw new SlicerAddError(`Pivot part ${pivotPath} has no cacheId.`)
   }
   return parsed
+}
+
+/// The slicer-space id a pivotCacheDefinition's x14 ext carries, or null when
+/// the definition has no slicer ext. This is NOT the workbook
+/// pivotCache@cacheId: Excel keeps the two in separate id spaces (a genuine
+/// file pairs cacheId="110" with x14 pivotCacheId="2124480673"), and only this
+/// id is what slicerCache tabular@pivotCacheId refers to.
+function x14PivotCacheIdOf(definitionXml: string): number | null {
+  const ext = new RegExp(
+    `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>`,
+  ).exec(definitionXml)?.[0]
+  if (ext === undefined) return null
+  const raw = attr(/<x14:pivotCacheDefinition\b[^>]*>/.exec(ext)?.[0] ?? '', 'pivotCacheId')
+  const parsed = raw === undefined ? Number.NaN : Number(raw)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+/// Every pivotCacheDefinition part the workbook's pivotCaches list resolves to.
+async function pivotCacheDefinitionPaths(
+  pkg: MutablePackage,
+  workbookXml: string,
+): Promise<string[]> {
+  const paths: string[] = []
+  for (const pivotCache of workbookXml.matchAll(/<pivotCache\b[^>]*>/g)) {
+    const cacheId = attr(pivotCache[0], 'cacheId')
+    if (cacheId === undefined) continue
+    const parsed = Number(cacheId)
+    if (!Number.isInteger(parsed)) continue
+    const path = await pivotCacheDefinitionPathOf(pkg, workbookXml, parsed)
+    if (path !== null && !paths.includes(path)) paths.push(path)
+  }
+  return paths
+}
+
+/// A fresh x14 pivotCacheId: one past the highest id any pivot cache
+/// definition in this workbook already carries (1 when none does). The ids are
+/// their own space, MUST be non-zero when a slicer cache uses the cache, and
+/// must not collide.
+async function nextX14PivotCacheId(pkg: MutablePackage, workbookXml: string): Promise<number> {
+  let max = 0
+  for (const path of await pivotCacheDefinitionPaths(pkg, workbookXml)) {
+    if (!(await pkg.has(path))) continue
+    const id = x14PivotCacheIdOf(await pkg.readText(path))
+    if (id !== null && id > max) max = id
+  }
+  return max + 1
 }
 
 interface RawAttribute {
@@ -301,7 +353,7 @@ function buildSlicerCacheXml(
   cacheName: string,
   sourceName: string,
   binding: { readonly tabId: number; readonly name: string },
-  pivotCacheId: number,
+  x14PivotCacheId: number,
   items: readonly SlicerItemWrite[],
   existingXml: string | null,
 ): string {
@@ -331,17 +383,24 @@ function buildSlicerCacheXml(
     extLstStart !== -1 && extLstClose > extLstStart
       ? existing.slice(extLstStart, extLstClose + '</extLst>'.length)
       : ''
+  // An Excel slicer can be connected to several pivot tables (Report
+  // Connections); its pivotTables block lists them all. Keep the file's block
+  // on rewrite — the session model binds one pivot, which is only the default
+  // for a fresh part.
+  const pivotTablesBlock =
+    /<pivotTables\b[^>]*?(?:\/>|>[\s\S]*?<\/pivotTables>)/.exec(existing)?.[0] ??
+    `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>`
   const itemsXml = items
     .map((item) => `<i x="${item.x}"${item.selected ? ' s="1"' : ''}/>`)
     .join('')
   return (
     `${XML_DECL}<slicerCacheDefinition xmlns="${X14_NS}" xmlns:r="${REL_NS}"${root}` +
     ` name="${escapeAttribute(cacheName)}" sourceName="${escapeAttribute(sourceName)}">` +
-    `<pivotTables><pivotTable tabId="${binding.tabId}" name="${escapeAttribute(binding.name)}"/></pivotTables>` +
+    pivotTablesBlock +
     '<data>' +
-    // pivotCacheId mirrors the pivot cache definition's x14 ext below — the
-    // two must match or Excel repairs the file ('Removed Part: slicerCache')
-    `<tabular pivotCacheId="${pivotCacheId}"${tabular}>` +
+    // tabular@pivotCacheId is the pivot cache definition's x14 id below — the
+    // two must match or Excel repairs/drops the file ('Removed Part: slicerCache')
+    `<tabular pivotCacheId="${x14PivotCacheId}"${tabular}>` +
     `<items count="${items.length}">${itemsXml}</items>` +
     `</tabular></data>${extLst}</slicerCacheDefinition>`
   )
@@ -373,22 +432,27 @@ async function pivotCacheDefinitionPathOf(
 /// only for OLAP slicer sources and MUST be "false" for our tabular
 /// (worksheet-pivot) caches — writing slicerData="1" made Excel remove the
 /// whole slicer cache part as a repair ("Removed Feature: Slicer Cache").
+///
+/// Returns the x14 id to put in the slicerCache's tabular. An existing ext
+/// keeps its id (other slicer caches and Excel refer to it, and it is not the
+/// workbook cacheId); only a definition without a slicer ext gets a fresh id.
 async function ensurePivotCacheSlicerExt(
   pkg: MutablePackage,
   workbookXml: string,
   pivotPath: string,
   cacheId: number,
   touchedEntries: Set<string>,
-): Promise<void> {
+): Promise<number> {
   const definitionPath = await pivotCacheDefinitionPathOf(pkg, workbookXml, cacheId)
   if (definitionPath === null) {
     throw new SlicerAddError(`No pivotCacheDefinition carries cacheId ${cacheId}.`)
   }
 
   const xml = await pkg.readText(definitionPath)
+  const x14CacheId = x14PivotCacheIdOf(xml) ?? (await nextX14PivotCacheId(pkg, workbookXml))
   const extElement =
     `<ext uri="${PIVOT_CACHE_SLICER_EXT_URI}" xmlns:x14="${X14_NS}">` +
-    `<x14:pivotCacheDefinition pivotCacheId="${cacheId}"/></ext>`
+    `<x14:pivotCacheDefinition pivotCacheId="${x14CacheId}"/></ext>`
   let patched: string
   const existing = new RegExp(
     `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>`,
@@ -421,14 +485,15 @@ async function ensurePivotCacheSlicerExt(
   }
   pkg.write(definitionPath, patched)
   touchedEntries.add(definitionPath)
+  return x14CacheId
 }
 
-/// Drops the x14 slicer ext from a pivot cache definition once no remaining
-/// slicerCache part binds that cacheId anymore.
+/// Drops the x14 slicer ext from the pivot cache definition that carries
+/// `x14CacheId`, once no remaining slicerCache part binds that id anymore.
 async function removePivotCacheSlicerExt(
   pkg: MutablePackage,
   workbookXml: string,
-  cacheId: number,
+  x14CacheId: number,
   touchedEntries: Set<string>,
 ): Promise<void> {
   for (const path of await pkg.paths()) {
@@ -436,25 +501,28 @@ async function removePivotCacheSlicerExt(
     const bound = Number(
       attr(/<tabular\b[^>]*>/.exec(await pkg.readText(path))?.[0] ?? '', 'pivotCacheId') ?? NaN,
     )
-    if (bound === cacheId) return // another slicer still binds this cache
+    if (bound === x14CacheId) return // another slicer still binds this cache
   }
-  const definitionPath = await pivotCacheDefinitionPathOf(pkg, workbookXml, cacheId)
-  if (definitionPath === null || !(await pkg.has(definitionPath))) return
-  const xml = await pkg.readText(definitionPath)
-  const ext = new RegExp(
-    `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>\\s*`,
-  )
-  let patched = xml.replace(ext, '')
-  const open = patched.lastIndexOf('<extLst>')
-  if (open !== -1) {
-    const close = patched.indexOf('</extLst>', open)
-    if (close !== -1 && patched.slice(open + '<extLst>'.length, close).trim() === '') {
-      patched = patched.slice(0, open) + patched.slice(close + '</extLst>'.length)
+  for (const definitionPath of await pivotCacheDefinitionPaths(pkg, workbookXml)) {
+    if (!(await pkg.has(definitionPath))) continue
+    const xml = await pkg.readText(definitionPath)
+    if (x14PivotCacheIdOf(xml) !== x14CacheId) continue
+    const ext = new RegExp(
+      `<ext\\b[^>]*\\buri="${PIVOT_CACHE_SLICER_EXT_URI}"[^>]*>[\\s\\S]*?</ext>\\s*`,
+    )
+    let patched = xml.replace(ext, '')
+    const open = patched.lastIndexOf('<extLst>')
+    if (open !== -1) {
+      const close = patched.indexOf('</extLst>', open)
+      if (close !== -1 && patched.slice(open + '<extLst>'.length, close).trim() === '') {
+        patched = patched.slice(0, open) + patched.slice(close + '</extLst>'.length)
+      }
     }
-  }
-  if (patched !== xml) {
-    pkg.write(definitionPath, patched)
-    touchedEntries.add(definitionPath)
+    if (patched !== xml) {
+      pkg.write(definitionPath, patched)
+      touchedEntries.add(definitionPath)
+    }
+    return
   }
 }
 
@@ -932,10 +1000,17 @@ async function writeControl(
     throw new SlicerAddError(`Slicer host worksheet ${control.worksheetPath} is missing.`)
   }
   const binding = await pivotBinding(pkg, workbookXml, control.pivotPath)
-  const pivotCacheId = await pivotCacheIdOf(pkg, control.pivotPath)
-  // The bound pivot cache definition gains its x14 slicer ext — the
-  // pivotCacheId tabular@pivotCacheId must equal (MS-XLSX)
-  await ensurePivotCacheSlicerExt(pkg, workbookXml, control.pivotPath, pivotCacheId, touchedEntries)
+  const workbookCacheId = await pivotCacheIdOf(pkg, control.pivotPath)
+  // The bound pivot cache definition gains (or keeps) its x14 slicer id — the
+  // slicerCache's tabular@pivotCacheId must equal that id (MS-XLSX), and it is
+  // not the workbook cacheId.
+  const x14PivotCacheId = await ensurePivotCacheSlicerExt(
+    pkg,
+    workbookXml,
+    control.pivotPath,
+    workbookCacheId,
+    touchedEntries,
+  )
 
   // Identity: reuse the restored part paths / names, else allocate fresh ones
   // that do not collide with anything already in the package.
@@ -957,7 +1032,7 @@ async function writeControl(
     cacheName,
     control.sourceName,
     binding,
-    pivotCacheId,
+    x14PivotCacheId,
     control.items,
     existingCache,
   )
@@ -1029,7 +1104,8 @@ export async function applySlicerState(
 
   for (const removal of state.removals) {
     // the control's name keys the drawing anchor and the definedName; the
-    // cache's bound pivotCacheId keys the pivot cache definition's x14 ext
+    // cache's tabular@pivotCacheId IS the pivot cache definition's x14 ext
+    // slicer id (its own id space, not the workbook cacheId)
     const partXml = (await pkg.has(removal.partPath)) ? await pkg.readText(removal.partPath) : null
     const rawName =
       partXml === null ? undefined : attr(/<slicer\b[^>]*?\/?>/.exec(partXml)?.[0] ?? '', 'name')
@@ -1037,7 +1113,7 @@ export async function applySlicerState(
     const cacheXml = (await pkg.has(removal.cachePath))
       ? await pkg.readText(removal.cachePath)
       : null
-    const boundCacheId = Number(
+    const boundX14CacheId = Number(
       attr(/<tabular\b[^>]*>/.exec(cacheXml ?? '')?.[0] ?? '', 'pivotCacheId') ?? NaN,
     )
     for (const host of await worksheetsReferencing(pkg, removal.partPath, SLICER_REL_TYPE)) {
@@ -1073,8 +1149,8 @@ export async function applySlicerState(
     }
     await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
     await removePartWithSatellites(pkg, removal.cachePath, touchedEntries)
-    if (Number.isInteger(boundCacheId)) {
-      await removePivotCacheSlicerExt(pkg, workbookXml, boundCacheId, touchedEntries)
+    if (Number.isInteger(boundX14CacheId)) {
+      await removePivotCacheSlicerExt(pkg, workbookXml, boundX14CacheId, touchedEntries)
     }
   }
 
@@ -1127,10 +1203,10 @@ interface ParsedCachePart {
   readonly path: string
   readonly name: string
   readonly sourceName: string
-  /// tabular@pivotCacheId; null when the part carries none.
+  /// tabular@pivotCacheId — the bound pivot cache definition's x14 slicer id
+  /// (its own id space, not the workbook cacheId); null when the part
+  /// carries none.
   readonly pivotCacheId: number | null
-  /// pivotTables/pivotTable@tabId, for the fallback binding.
-  readonly tabId: number | null
   /// true when the data section is tabular (OLAP caches cannot be
   /// represented by the session model).
   readonly tabular: boolean
@@ -1150,8 +1226,6 @@ function parseCachePart(path: string, xml: string): ParsedCachePart | null {
     attr(/<tabular\b[^>]*>/.exec(element)?.[0] ?? '', 'pivotCacheId') ??
     attr(element, 'pivotCacheId')
   const pivotCacheId = pivotCacheIdRaw === undefined ? null : Number(pivotCacheIdRaw)
-  const tabIdRaw = attr(/<pivotTable\b[^>]*\/?>/.exec(element)?.[0] ?? '', 'tabId')
-  const tabId = tabIdRaw === undefined ? null : Number(tabIdRaw)
 
   let selectedItems: readonly number[] | null = null
   const itemsBlock = /<items\b[^>]*>([\s\S]*?)<\/items>/.exec(element)?.[1]
@@ -1172,7 +1246,6 @@ function parseCachePart(path: string, xml: string): ParsedCachePart | null {
     name: decodeAttribute(name),
     sourceName: decodeAttribute(sourceName),
     pivotCacheId: pivotCacheId !== null && Number.isInteger(pivotCacheId) ? pivotCacheId : null,
-    tabId: tabId !== null && Number.isInteger(tabId) ? tabId : null,
     tabular,
     selectedItems,
   }
@@ -1198,7 +1271,7 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
     return resolveRelTarget('xl/workbook.xml', entry.target)
   }
 
-  // pivotCacheId → pivotCacheDefinition part path (workbook pivotCaches).
+  // Workbook pivotCaches: cacheId → pivotCacheDefinition part path.
   const cachePathByCacheId = new Map<number, string>()
   for (const pivotCache of workbookXml.matchAll(/<pivotCache\b[^>]*>/g)) {
     const cacheId = attr(pivotCache[0], 'cacheId')
@@ -1208,6 +1281,22 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
     const target = relTarget(relId)
     if (target === null || !Number.isInteger(parsed)) continue
     cachePathByCacheId.set(parsed, target)
+  }
+  // tabular@pivotCacheId refers to the pivot cache definition's x14
+  // pivotCacheId, an id space of its own — Excel pairs workbook cacheId="110"
+  // with x14 pivotCacheId="2124480673". Resolve through the definitions'
+  // x14 exts; the workbook cacheId map is only for packages whose definitions
+  // carry no ext at all (older files here wrote the cacheId in both places).
+  const cachePathByX14Id = new Map<number, string>()
+  const cachePathByLegacyCacheId = new Map<number, string>()
+  for (const [cacheId, definitionPath] of cachePathByCacheId) {
+    if (!(await hasEntry(reader, definitionPath))) continue
+    const x14CacheId = x14PivotCacheIdOf(await reader.readText(definitionPath))
+    if (x14CacheId === null) {
+      cachePathByLegacyCacheId.set(cacheId, definitionPath)
+    } else if (!cachePathByX14Id.has(x14CacheId)) {
+      cachePathByX14Id.set(x14CacheId, definitionPath)
+    }
   }
 
   // Worksheet part path → sidecar sheet id (sheet-<sheetId attr>).
@@ -1252,22 +1341,15 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
       const host = hostByPart.get(partPath)
       if (cache === undefined || host === undefined) continue
       if (!cache.tabular) continue // OLAP caches: skip
-      // Binding: prefer tabular pivotCacheId; fall back to our tabId rule
-      // over the sorted pivot table parts.
+      // Binding: tabular@pivotCacheId is the bound definition's x14 slicer id;
+      // only a definition without any x14 ext falls back to the workbook
+      // cacheId (tabId is a sheetId, never a cache discriminator).
       let pivotCacheDefinitionPath: string | null = null
       if (cache.pivotCacheId !== null) {
-        pivotCacheDefinitionPath = cachePathByCacheId.get(cache.pivotCacheId) ?? null
-      }
-      if (pivotCacheDefinitionPath === null && cache.tabId !== null) {
-        const pivotParts = paths.filter((path) => /^xl\/pivotTables\/[^/]+\.xml$/.test(path)).sort()
-        const pivotPath = pivotParts[cache.tabId - 1]
-        if (pivotPath !== undefined) {
-          const pivotCacheId = attr(await reader.readText(pivotPath), 'cacheId')
-          const parsed = pivotCacheId === undefined ? Number.NaN : Number(pivotCacheId)
-          if (Number.isInteger(parsed)) {
-            pivotCacheDefinitionPath = cachePathByCacheId.get(parsed) ?? null
-          }
-        }
+        pivotCacheDefinitionPath =
+          cachePathByX14Id.get(cache.pivotCacheId) ??
+          cachePathByLegacyCacheId.get(cache.pivotCacheId) ??
+          null
       }
       states.push({
         sheetId: sheetIdByWorksheet.get(host) ?? '',

@@ -7,10 +7,9 @@ import { useI18n } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
 
 /// Timeline: a month-granularity date-range filter bound to one pivot date
-/// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer)
-/// and persists on save as xl/timelines + xl/timelineCaches parts (gateway
-/// xlsx-slicer); the restore carries the file identity below so a re-save
-/// updates the parts in place.
+/// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer),
+/// but timelines are session-only for now: this PR persists slicers only, a
+/// file's own timeline parts ride a save untouched, and there is no restore.
 
 export interface TimelineUiState {
   readonly id: string
@@ -25,12 +24,6 @@ export interface TimelineUiState {
   readonly maxMonth: MonthKey
   /// Selected inclusive month range; null = unfiltered.
   readonly range: { readonly start: MonthKey; readonly end: MonthKey } | null
-  /// timeline@name — file identity from the restore (absent until the first
-  /// save writes the parts).
-  readonly name?: string
-  readonly partPath?: string
-  readonly cachePath?: string
-  readonly cacheName?: string
 }
 
 function monthLabel(key: MonthKey): string {

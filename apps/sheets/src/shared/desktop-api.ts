@@ -3232,8 +3232,9 @@ export interface DesktopApi {
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
-  /// Slicer/timeline controls the file carries; read once per open so the
-  /// session can restore the panels (and re-save them update-in-place).
+  /// Slicer controls the file carries; read once per open so the session can
+  /// restore the panels (and re-save them update-in-place). Timelines are not
+  /// read or restored: they stay session-only for now.
   readSlicerState(request: WorkbookSlicerStateRequest): Promise<WorkbookSlicerState>
   /**
    * The cells the reader withheld from the model, read once per open. An

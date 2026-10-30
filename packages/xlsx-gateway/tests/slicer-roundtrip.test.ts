@@ -97,6 +97,21 @@ function dashboardFixture(): MutablePackage {
   })
 }
 
+/// A definition that already carries the slicer ext with x14 pivotCacheId 7 —
+/// what an Excel-authored (or previously saved) file looks like.
+const PIVOT_CACHE_WITH_X14_EXT_7 = PIVOT_CACHE.replace(
+  '</pivotCacheDefinition>',
+  '<extLst><ext uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:pivotCacheDefinition pivotCacheId="7"/></ext></extLst></pivotCacheDefinition>',
+)
+
+/// A worksheet wired the way Excel writes it: the x14:slicerList ext under the
+/// real MS-XLSX 2.2.2 URI.
+const EXCEL_WORKSHEET_WITH_SLICER_EXT = `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+  <extLst><ext uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:slicerList><x14:slicer r:id="rId9"/></x14:slicerList></ext></extLst>
+</worksheet>`
+
 function inMemoryPackage(entries: Record<string, string>): MutablePackage {
   const files = new Map(Object.entries(entries))
   return {
@@ -133,6 +148,49 @@ function fixture(): MutablePackage {
 
 function readerOf(pkg: MutablePackage) {
   return { paths: pkg.paths, readText: pkg.readText }
+}
+
+/// A package shaped like a genuine Excel file: the workbook pivotCache@cacheId
+/// and the definition's x14 pivotCacheId are unrelated numbers, and the slicer
+/// cache's tabular points at the x14 id.
+function excelIdPackage(options: {
+  readonly workbookCacheId: number
+  readonly definitionX14Id: number | null
+  readonly cacheTabularId: number
+}): MutablePackage {
+  const definition =
+    options.definitionX14Id === null
+      ? PIVOT_CACHE
+      : PIVOT_CACHE.replace(
+          '</pivotCacheDefinition>',
+          `<extLst><ext uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:pivotCacheDefinition pivotCacheId="${options.definitionX14Id}"/></ext></extLst></pivotCacheDefinition>`,
+        )
+  return inMemoryPackage({
+    '[Content_Types].xml': CONTENT_TYPES,
+    'xl/workbook.xml': WORKBOOK.replace('cacheId="7"', `cacheId="${options.workbookCacheId}"`),
+    'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+    'xl/worksheets/sheet1.xml': WORKSHEET,
+    'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+  <Relationship Id="sRel1" Type="${SLICER_REL_TYPE}" Target="../slicers/slicer1.xml"/>
+</Relationships>`,
+    'xl/slicers/slicer1.xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+      '<slicer name="Region" cache="Slicer_Region" caption="Region" rowHeight="241300"/></slicers>',
+    'xl/slicerCaches/slicerCache1.xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      '<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" name="Slicer_Region" sourceName="Region">' +
+      '<pivotTables><pivotTable tabId="1" name="Pivot1"/></pivotTables>' +
+      `<data><tabular pivotCacheId="${options.cacheTabularId}"><items count="3"><i x="0" s="1"/><i x="1"/><i x="2"/></items></tabular></data>` +
+      '</slicerCacheDefinition>',
+    'xl/pivotTables/pivotTable1.xml': PIVOT_TABLE.replace(
+      'cacheId="7"',
+      `cacheId="${options.workbookCacheId}"`,
+    ),
+    'xl/pivotCache/pivotCacheDefinition1.xml': definition,
+  })
 }
 
 const SLICER_INPUT = {
@@ -173,7 +231,9 @@ describe('slicer write + read round trip', () => {
     // the pivot binding: tabId is the hosting worksheet's sheetId, name the
     // pivot table's own name
     expect(cacheXml).toContain('<pivotTable tabId="1" name="Pivot1"/>')
-    expect(cacheXml).toContain('<tabular pivotCacheId="7"')
+    // the definition had no x14 id, so the writer allocates the first one (1);
+    // tabular@pivotCacheId is that id, NOT the workbook cacheId (7)
+    expect(cacheXml).toContain('<tabular pivotCacheId="1"')
     expect(cacheXml).toContain('<i x="0" s="1"/><i x="1"/><i x="2" s="1"/>')
 
     // The pivot cache definition carries its x14 slicer ext, and the two
@@ -183,7 +243,7 @@ describe('slicer write + read round trip', () => {
     // tabular cache — slicerData="1" made Excel remove the slicer cache
     // ("Removed Feature: Slicer Cache").
     const pivotCache = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
-    expect(pivotCache).toContain('<x14:pivotCacheDefinition pivotCacheId="7"/>')
+    expect(pivotCache).toContain('<x14:pivotCacheDefinition pivotCacheId="1"/>')
     expect(pivotCache).not.toContain('slicerData')
     expect(pivotCache).toContain('uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}"')
 
@@ -191,6 +251,10 @@ describe('slicer write + read round trip', () => {
     const sheetRels = await pkg.readText('xl/worksheets/_rels/sheet1.xml.rels')
     expect(sheetRels).toContain(`Type="${SLICER_REL_TYPE}" Target="../slicers/slicer1.xml"`)
     const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
+    // MS-XLSX 2.2.2 pins this exact worksheet ext URI; a wrong one makes Excel
+    // treat the ext as foreign and discard the slicer on save.
+    expect(worksheet).toContain('uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}"')
+    expect(worksheet).not.toContain('{A8765BA9-456A-4dab-B4F3-ACF1056F45AA}')
     expect(worksheet).toContain('<x14:slicerList><x14:slicer r:id="rId1"/></x14:slicerList>')
     // the visible control: a drawing part with a graphicFrame, wired from the
     // worksheet and wrapped in an mc:AlternateContent with a down-level fallback
@@ -342,7 +406,7 @@ describe('slicer write + read round trip', () => {
     await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
     const xml = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
     expect(xml).toContain('refreshOnLoad="1"')
-    expect(xml).toContain('<x14:pivotCacheDefinition pivotCacheId="7"/>')
+    expect(xml).toContain('<x14:pivotCacheDefinition pivotCacheId="1"/>')
     expect(xml).not.toContain('slicerData')
     expect(xml).toContain('</pivotCacheDefinition>')
   })
@@ -497,6 +561,9 @@ it('keeps one definedName per control across saves and refreshes its value', asy
 
 it('preserves Excel-authored slicer part and slicerCache bits on rewrite', async () => {
   const pkg = fixture()
+  // the definition already carries x14 pivotCacheId 7, which is what the
+  // Excel-authored cache's tabular points at
+  pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
   pkg.add('xl/slicers/slicer1.xml', EXCEL_SLICER_PART)
   pkg.add('xl/slicerCaches/slicerCache1.xml', EXCEL_SLICER_CACHE_PART)
   await applySlicerState(
@@ -536,6 +603,83 @@ it('preserves Excel-authored slicer part and slicerCache bits on rewrite', async
   expect(cacheXml).toContain('<items count="3"><i x="0" s="1"/><i x="1"/><i x="2" s="1"/></items>')
   // a file crossFilter is not duplicated by the writer's default
   expect(cacheXml.match(/crossFilter=/g) ?? []).toHaveLength(1)
+  // the definition's existing x14 id is reused (not replaced by cacheId 7's
+  // successor): tabular still points at it
+  const definition = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+  expect(definition).toContain('<x14:pivotCacheDefinition pivotCacheId="7"/>')
+  expect(definition).not.toContain('pivotCacheId="8"')
+  expect(cacheXml).toContain('<tabular pivotCacheId="7"')
+})
+
+it('pins the MS-XLSX 2.2.2 ext URIs Excel writes', async () => {
+  const { pkg } = await writeInitial()
+  const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
+  expect(worksheet).toContain('uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}"')
+  expect(worksheet).not.toContain('{A8765BA9-456A-4dab-B4F3-ACF1056F45AA}')
+  const workbook = await pkg.readText('xl/workbook.xml')
+  expect(workbook).toContain('uri="{BBE1A952-AA13-448e-AADC-164F8A28A991}"')
+  const pivotCache = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+  expect(pivotCache).toContain('uri="{725AE2AE-9491-48be-B2B4-4EB974FC3084}"')
+})
+
+it("adds to Excel's real x14:slicerList ext instead of creating a second one", async () => {
+  const pkg = fixture()
+  pkg.write('xl/worksheets/sheet1.xml', EXCEL_WORKSHEET_WITH_SLICER_EXT)
+  await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+  const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
+  expect(worksheet.match(/uri="\{A8765BA9-456A-4dab-B4F3-ACF838C121DE\}"/g) ?? []).toHaveLength(1)
+  // the sheet was already wired (rId9); the new control joins the same list
+  expect(worksheet).toContain('<x14:slicer r:id="rId9"/>')
+  expect(worksheet).toContain('<x14:slicer r:id="rId1"/>')
+})
+
+it("removes a restored control wired through Excel's real worksheet ext URI", async () => {
+  const pkg = fixture()
+  pkg.add('xl/slicers/slicer1.xml', EXCEL_SLICER_PART)
+  pkg.add('xl/slicerCaches/slicerCache1.xml', EXCEL_SLICER_CACHE_PART)
+  pkg.write('xl/worksheets/sheet1.xml', EXCEL_WORKSHEET_WITH_SLICER_EXT)
+  pkg.write(
+    'xl/worksheets/_rels/sheet1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+  <Relationship Id="rId9" Type="${SLICER_REL_TYPE}" Target="../slicers/slicer1.xml"/>
+</Relationships>`,
+  )
+  const workbookWithExt = WORKBOOK.replace(
+    '</workbook>',
+    `<extLst><ext uri="{BBE1A952-AA13-448e-AADC-164F8A28A991}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x14:slicerCaches><x14:slicerCache r:id="wRel"/></x14:slicerCaches></ext></extLst></workbook>`,
+  )
+  pkg.write('xl/workbook.xml', workbookWithExt)
+  pkg.write(
+    'xl/_rels/workbook.xml.rels',
+    WORKBOOK_RELS.replace(
+      '</Relationships>',
+      `<Relationship Id="wRel" Type="${SLICER_CACHE_REL_TYPE}" Target="slicerCaches/slicerCache1.xml"/></Relationships>`,
+    ),
+  )
+  pkg.write(
+    'xl/workbook.xml',
+    await applySlicerState(
+      pkg,
+      {
+        slicers: [],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache1.xml' },
+        ],
+      },
+      workbookWithExt,
+      new Set(),
+    ),
+  )
+  const worksheet = await pkg.readText('xl/worksheets/sheet1.xml')
+  // no dangling <x14:slicer r:id> left behind in Excel's own ext
+  expect(worksheet).not.toContain('slicerList')
+  expect(worksheet).not.toContain('<x14:slicer ')
+  const workbook = await pkg.readText('xl/workbook.xml')
+  expect(workbook).not.toContain('slicerCaches')
+  expect(await pkg.has('xl/slicers/slicer1.xml')).toBe(false)
+  expect(await pkg.has('xl/slicerCaches/slicerCache1.xml')).toBe(false)
 })
 
 it('wires the control to the sheet that hosts it, not the pivot sheet', async () => {
@@ -595,6 +739,103 @@ it('wires the control to the sheet that hosts it, not the pivot sheet', async ()
   const drawing = await pkg.readText('xl/drawings/drawing1.xml')
   expect(drawing.match(/<xdr:twoCellAnchor\b/g) ?? []).toHaveLength(1)
   expect((await pkg.readText('xl/worksheets/sheet1.xml')).includes('slicerList')).toBe(false)
+})
+
+it('resolves tabular@pivotCacheId through the x14 id space, not the workbook cacheId', async () => {
+  // genuine Excel pairing: workbook cacheId 110, x14 pivotCacheId 2124480673
+  const pkg = excelIdPackage({
+    workbookCacheId: 110,
+    definitionX14Id: 2124480673,
+    cacheTabularId: 2124480673,
+  })
+  const [restored] = await parseSlicerState(readerOf(pkg))
+  expect(restored?.pivotCacheDefinitionPath).toBe('xl/pivotCache/pivotCacheDefinition1.xml')
+
+  // a rewrite keeps Excel's id instead of replacing it with the cacheId (or a
+  // freshly allocated one, which would strand every other cache on that id)
+  pkg.write(
+    'xl/workbook.xml',
+    await applySlicerState(
+      pkg,
+      {
+        slicers: [
+          {
+            ...SLICER_INPUT,
+            name: 'Region',
+            partPath: 'xl/slicers/slicer1.xml',
+            cachePath: 'xl/slicerCaches/slicerCache1.xml',
+            cacheName: 'Slicer_Region',
+          },
+        ],
+        removals: [],
+      },
+      await pkg.readText('xl/workbook.xml'),
+      new Set(),
+    ),
+  )
+  const definition = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+  expect(definition).toContain('<x14:pivotCacheDefinition pivotCacheId="2124480673"/>')
+  expect(definition).not.toContain('pivotCacheId="110"')
+  const cache = await pkg.readText('xl/slicerCaches/slicerCache1.xml')
+  expect(cache).toContain('<tabular pivotCacheId="2124480673"')
+})
+
+it('resolves a genuine Excel round-tripped file (cacheId 0, x14 id 1)', async () => {
+  // the reviewer saw Excel write cacheId="0" with x14 pivotCacheId="1" after
+  // Save As; the tabular id is the latter, so the reader must not require a
+  // non-zero workbook cacheId match
+  const pkg = excelIdPackage({ workbookCacheId: 0, definitionX14Id: 1, cacheTabularId: 1 })
+  const [restored] = await parseSlicerState(readerOf(pkg))
+  expect(restored?.pivotCacheDefinitionPath).toBe('xl/pivotCache/pivotCacheDefinition1.xml')
+})
+
+it('falls back to the workbook cacheId only for definitions without an x14 ext', async () => {
+  const pkg = excelIdPackage({ workbookCacheId: 110, definitionX14Id: null, cacheTabularId: 110 })
+  const [restored] = await parseSlicerState(readerOf(pkg))
+  expect(restored?.pivotCacheDefinitionPath).toBe('xl/pivotCache/pivotCacheDefinition1.xml')
+})
+
+it('does not guess a pivot from tabId when the cache id matches nothing', async () => {
+  const pkg = excelIdPackage({
+    workbookCacheId: 110,
+    definitionX14Id: 2124480673,
+    cacheTabularId: 999,
+  })
+  const [restored] = await parseSlicerState(readerOf(pkg))
+  expect(restored?.pivotCacheDefinitionPath).toBeNull()
+})
+
+it('keeps every Report Connections pivot on a slicerCache rewrite', async () => {
+  const pkg = fixture()
+  pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
+  pkg.add(
+    'xl/slicerCaches/slicerCache1.xml',
+    EXCEL_SLICER_CACHE_PART.replace(
+      '<pivotTables><pivotTable tabId="1" name="Pivot1"/></pivotTables>',
+      '<pivotTables><pivotTable tabId="1" name="Pivot1"/><pivotTable tabId="2" name="Pivot2"/></pivotTables>',
+    ),
+  )
+  await applySlicerState(
+    pkg,
+    {
+      slicers: [
+        {
+          ...SLICER_INPUT,
+          name: 'Region',
+          partPath: 'xl/slicers/slicer1.xml',
+          cachePath: 'xl/slicerCaches/slicerCache1.xml',
+          cacheName: 'Slicer_Region',
+        },
+      ],
+      removals: [],
+    },
+    WORKBOOK,
+    new Set(),
+  )
+  const cacheXml = await pkg.readText('xl/slicerCaches/slicerCache1.xml')
+  expect(cacheXml.match(/<pivotTables>/g) ?? []).toHaveLength(1)
+  expect(cacheXml).toContain('<pivotTable tabId="1" name="Pivot1"/>')
+  expect(cacheXml).toContain('<pivotTable tabId="2" name="Pivot2"/>')
 })
 
 describe('slicer state through the save planner', () => {
@@ -700,6 +941,7 @@ describe('slicer state through the save planner', () => {
       savedWorkbook.indexOf('<pivotCaches>'),
     )
     const savedWorksheet = await saved.file('xl/worksheets/sheet1.xml')!.async('string')
+    expect(savedWorksheet).toContain('uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}"')
     expect(savedWorksheet).toContain('<x14:slicerList><x14:slicer r:id="rId1"/></x14:slicerList>')
     expect(savedWorksheet).toContain('<drawing r:id="rId2"/>')
     const savedSheetRels = await saved.file('xl/worksheets/_rels/sheet1.xml.rels')!.async('string')
@@ -710,11 +952,11 @@ describe('slicer state through the save planner', () => {
     expect(savedDrawing).toContain('</mc:AlternateContent><xdr:clientData/></xdr:twoCellAnchor>')
     expect(savedDrawing).not.toContain('<xdr:clientData/></xdr:graphicFrame>')
     const savedCache = await saved.file('xl/slicerCaches/slicerCache1.xml')!.async('string')
-    expect(savedCache).toContain('<tabular pivotCacheId="7"')
+    expect(savedCache).toContain('<tabular pivotCacheId="1"')
     const savedPivotCache = await saved
       .file('xl/pivotCache/pivotCacheDefinition1.xml')!
       .async('string')
-    expect(savedPivotCache).toContain('<x14:pivotCacheDefinition pivotCacheId="7"/>')
+    expect(savedPivotCache).toContain('<x14:pivotCacheDefinition pivotCacheId="1"/>')
     expect(savedPivotCache).not.toContain('slicerData')
     const savedContentTypes = await saved.file('[Content_Types].xml')!.async('string')
     expect(savedContentTypes).toContain('application/vnd.ms-excel.slicer+xml')
