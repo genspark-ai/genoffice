@@ -21,15 +21,14 @@ import {
   measureBlocks,
   noteAreaPlacement,
   type HfSet,
+  hfPartWidthPx,
   hfVariantOf,
+  type HfVariant,
   type PageHf,
   pageHfStrips,
-  pageNumbers,
-  markTableSeamSlices,
+  singleVariantGeomOf,
   pinnedFloatPage,
   anchorBoxLift,
-  applyLeadSpills,
-  applyLiftTops,
   pageRelHang,
   anchorShiftPx,
   sectionBidi,
@@ -43,6 +42,13 @@ import {
   rowSplitCss,
   sliceWithLineSplit,
   seamWindow,
+  seamDecision,
+  buildPageCuts,
+  hoistWindow,
+  pageCutDiffs,
+  type PageCut,
+  tableRowTops,
+  ROW_SEAM_TOL_PX,
   type BlockBox,
   type BlockMetaOf,
   type FloatBox,
@@ -51,14 +57,19 @@ import {
   type SectionGeom,
   type SectionHfHeights,
   type SliceOutputs,
+  type RowSplitPatch,
 } from '../pagination'
+import type { PlanOf } from '../pagination-plan'
+import type { PageLayout } from '../editor/goto'
+import { hfVariantHeightsPx, sectionHfHeights } from '../hf-heights'
 import { pageMargins } from '../page-margins'
-import { cssFontFamily, hfHeaderGeom, FOOTNOTE_SEPARATOR_H } from '../line-metrics'
+import { cssFontFamily, FOOTNOTE_SEPARATOR_H } from '../line-metrics'
 import { syncPreviewLineNumbers } from '../editor/line-numbers'
 import type { EditorView } from '@tiptap/pm/view'
 import {
   anchorPointFor,
   revGroupsOf,
+  revWhen,
   visiblePointNear,
   type AnchorBlock,
   type AnchorPoint,
@@ -67,12 +78,12 @@ import { pageBorderArtStripStyle, pageBorderStyleOf } from '../editor/pagination
 import { textColorValue } from '../editor/text-color'
 import { textOutlineCssValue } from '../editor/text-outline'
 import { noteMarkText } from '../note-format'
+import { noteRowBox, noteRunClass } from '../editor/note-dom'
 import { useI18n } from '../i18n/locale'
 import {
   hfFloatPagePos,
   hfImageHangsOnPara,
   hfFloatTransform,
-  hfReservedHeightPx,
   hfStripGeom,
   hfWashoutFilter,
   wordArtSvgMarkup,
@@ -114,6 +125,8 @@ export type RevSpot = {
   key: string
   kind: 'del' | 'fmt'
   text: string
+  author: string
+  date: string | null
   top: number
   endX: number
   endY: number
@@ -303,16 +316,20 @@ export function measureRevisionSpots(
   origin: number,
   factor: number,
   pmContentLeft: number,
+  kinds: ReadonlySet<RevSpot['kind']> = new Set(['del', 'fmt']),
 ): RevSpot[] {
   const spots: RevSpot[] = []
   if (view) {
     for (const g of revGroupsOf(view.state.doc)) {
+      if (!kinds.has(g.kind)) continue
       const p = anchorPointFor(view, pm, g.from)
       if (!p) continue
       spots.push({
         key: `m${g.from}`,
         kind: g.kind,
         text: g.text,
+        author: g.author,
+        date: g.date,
         top: (p.top - origin) / factor,
         endX: (p.left - pmContentLeft) / factor,
         endY: (p.bottom - origin) / factor - 1,
@@ -320,6 +337,7 @@ export function measureRevisionSpots(
     }
   }
   for (const b of blocks ?? []) {
+    if (!kinds.has('del')) break
     if (b.type !== 'passthrough' || b.docxIndex == null || !b.originalXml?.includes('<w:delText'))
       continue
     const el = pm.querySelector<HTMLElement>(`[data-idx="${String(b.docxIndex)}"]`)
@@ -339,10 +357,15 @@ export function measureRevisionSpots(
       b.originalXml.matchAll(/<w:delText(?:\s[^>]*)?>([\s\S]*?)<\/w:delText>|<w:tab\/>/g),
       (m) => (m[1] === undefined ? ' ' : m[1]),
     ).join('')
+    const delTag = /<w:del\b[^>]*>/.exec(b.originalXml)?.[0] ?? ''
+    const attr = (name: string) =>
+      decodeEntities(new RegExp(`w:${name}="([^"]*)"`).exec(delTag)?.[1] ?? '')
     spots.push({
       key: `x${b.docxIndex}`,
       kind: 'del',
       text: decodeEntities(text.trim()),
+      author: attr('author'),
+      date: attr('date') || null,
       top: (p.top - origin) / factor,
       endX: (p.left - pmContentLeft) / factor,
       endY: (p.bottom - origin) / factor - 1,
@@ -566,33 +589,6 @@ export function prunedCloneHtml(kids: CloneChild[], from: number, to: number): s
  * visibility (not display): a stray-run wrapper carries flow height the slices
  * were measured with, and hidden ink must not emit glyphs into the PDF layer.
  */
-/**
- * Flow window owning an anchor on its page and the hoisted box's content-area
- * Y: the page window on plain pages, the anchor's column on regioned pages
- * (column-relative X boxes in a multi-column region are left to the column).
- */
-export function hoistWindow(
-  slice: PageSlice,
-  anchorTop: number,
-): { start: number; end: number; dy: number; multiCol: boolean } | null {
-  if (!slice.regions) {
-    return { start: slice.start, end: slice.end, dy: anchorTop - slice.start, multiCol: false }
-  }
-  for (const region of slice.regions) {
-    for (const col of region.columns) {
-      if (anchorTop >= col.start && anchorTop < col.end) {
-        return {
-          start: col.start,
-          end: col.end,
-          dy: region.top + anchorTop - col.start,
-          multiCol: region.columns.length > 1,
-        }
-      }
-    }
-  }
-  return null
-}
-
 /** Word keeps a paragraph-relative box on the paper: one whose top would land
  *  above the page edge is pushed down to it (boxOffsets = box top - anchor top) */
 export function hoistPaperClamp(dy: number, topPx: number, boxOffsets: number[]): number {
@@ -711,17 +707,15 @@ export function leadLeakCss(blocks: BlockBox[], slices: PageSlice[]): string {
     // whole and with it the next row's glyph tops; hide that row's cell
     // contents (its borders and fills stay for the seam)
     for (const b of blocks) {
-      if (!b.tableRows || !b.el || b.top >= slice.end - 0.5 || b.top + b.height <= slice.end + 0.5)
+      if (
+        !b.tableRows ||
+        !b.el ||
+        b.top >= slice.end - ROW_SEAM_TOL_PX ||
+        b.top + b.height <= slice.end + ROW_SEAM_TOL_PX
+      )
         continue
-      // slice.end came from these same row heights: the nearest row top matches
-      // exactly or the cut is mid-row
-      let y = b.top
-      let lead = -1
-      b.tableRows.forEach((row, k) => {
-        if (k > 0 && Math.abs(y - slice.end) <= 0.5) lead = k
-        y += row.height
-      })
-      const tr = lead > 0 ? outerTableRows(b.el)[lead] : undefined
+      const seam = seamDecision(tableRowTops(b), slice.end)
+      const tr = seam && seam.row > 0 ? outerTableRows(b.el)[seam.row] : undefined
       if (!tr) continue
       tr.dataset.pvLead = String(leadRows)
       rules.push(
@@ -962,6 +956,8 @@ export function PaginationPreview({
   watermarkDirty,
   watermarkPicture,
   blockMetaOf,
+  blockPlans,
+  layout,
   pageFootnotesOf,
   footnotesBeneathText,
   endnoteItems,
@@ -970,6 +966,7 @@ export function PaginationPreview({
   comments,
   anchorBlocks,
   revisionView,
+  balloonKinds,
   onExportPdf,
   onClose,
   suppressEscape,
@@ -998,6 +995,10 @@ export function PaginationPreview({
   watermarkPicture?: HfImage | null
   /** docxIndex → parse-layer pagination constraints (keepNext/widow/table-row flags) */
   blockMetaOf?: BlockMetaOf
+  /** model-side block facts for measureBlocks (App builds them from the editor state) */
+  blockPlans?: () => PlanOf | undefined
+  /** the canvas pass's layout (after any pending pass): the PageCut list the sheets print */
+  layout?: () => PageLayout | null
   /** Per-page footnote collection (referencing page → entry list), for page-bottom rendering */
   pageFootnotesOf?: (blocks: BlockBox[], slices: PageSlice[]) => PageNoteItem[][]
   /** w:footnotePr w:pos="beneathText": the note area follows the last body line instead of sitting at the page bottom */
@@ -1010,7 +1011,7 @@ export function PaginationPreview({
     sectionIndex: number,
     kind: 'header' | 'footer',
     variant: 'default' | 'first' | 'even',
-  ) => { value: HeaderFooter | null; images?: HfImage[] }
+  ) => { value: HeaderFooter | null; images?: HfImage[]; owner?: number }
   /**
    * Clears the canvas page-gap decorations before the snapshot measure. In-table
    * gap/repeated-header widgets are extra <tr>s that consume rowspan slots, so a
@@ -1025,13 +1026,15 @@ export function PaginationPreview({
   anchorBlocks?: AnchorBlock[]
   /** editor view while the canvas is in balloon mode (print view, All Markup): deletions / format changes print as margin balloons */
   revisionView?: EditorView | null
+  /** revision balloon kinds of the current Show Markup → Balloons mode */
+  balloonKinds?: ReadonlySet<RevSpot['kind']>
   onExportPdf: () => void
   onClose: () => void
   /** While true (e.g. the print dialog is stacked on top), Escape must not close the preview */
   suppressEscape?: boolean
 }) {
   const { t } = useI18n()
-  const [slices, setSlices] = useState<PageSlice[]>([])
+  const [slices, setSlices] = useState<PageCut[]>([])
   const [splitCss, setSplitCss] = useState('')
   const [hoistWinCss, setHoistWinCss] = useState('')
   const [vertCss, setVertCss] = useState('')
@@ -1066,6 +1069,9 @@ export function PaginationPreview({
   useEffect(() => {
     const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
     if (!pm) return
+    // before the gaps go: a pending canvas pass runs now and rebuilds its
+    // widgets, which the clones below must not carry
+    const pass = layout?.()
     clearPageGaps?.()
     // Measure at zoom 1: CSS zoom rounds every box to device pixels, so dividing
     // zoomed rects by the factor drifts from the zoom-1 clones the pages render
@@ -1094,7 +1100,12 @@ export function PaginationPreview({
     if (measureNeutralize) pm.classList.add('measuring-columns')
     try {
       const origin = pm.getBoundingClientRect().top + canvasTop * factor
-      const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
+      const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(
+        pm,
+        origin,
+        factor,
+        blockPlans?.(),
+      )
       const live = liveSections(sections, blocks, sectBreaks, delSectBreaks)
       setSecs(live)
       if (live.length > 0) assignSections(blocks, live)
@@ -1115,154 +1126,129 @@ export function PaginationPreview({
       )
       const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
       setEndnotesTop(withEndnotes?.top ?? null)
-      let computed: PageSlice[]
-      const splitOut: SliceOutputs = { rowSplits: [] }
-      /** flow-coordinate bottom of page i's clip window (the last page opens to full capacity unless vertically aligned) */
-      let winEndOf: (s: PageSlice, i: number) => number
-      let liveGeoms: SectionGeom[] = []
-      let liveHfHs: SectionHfHeights[] = []
-      if (live.length > 0) {
-        // each section's default-variant header/footer estimated heights → body push-down (matching the canvas)
-        const refs = effectiveHfRefs(live)
-        const hfHs: SectionHfHeights[] = live.map((s, i) => {
-          const set = s.settings
-          const w = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
-          const pick = (kind: 'header' | 'footer'): HeaderFooter | null => {
-            if (resolveHf) return resolveHf(live, i, kind, 'default').value
-            if (i === live.length - 1) return kind === 'header' ? hf.header : hf.footer
-            const rId = refs[i]?.[kind]?.default
-            const part = rId ? hfParts[rId] : undefined
-            return part
-              ? { text: part.text, pageNumber: part.hasPageNumber, paras: part.paras }
-              : null
+      /** the preview's own slicing of this snapshot: the fallback without a
+       *  canvas pass, and the dev / e2e shadow of the canvas cuts */
+      const sliceHere = (): {
+        cuts: PageCut[]
+        geoms: SectionGeom[]
+        hfHs: SectionHfHeights[]
+        rowSplits: RowSplitPatch[]
+      } => {
+        const splitOut: SliceOutputs = { rowSplits: [] }
+        if (live.length > 0) {
+          // each section's header/footer variant heights → body push-down (matching the canvas)
+          const refs = effectiveHfRefs(live)
+          const partOf = (i: number, kind: 'header' | 'footer', variant: HfVariant) => {
+            const rId = refs[i]?.[kind]?.[variant]
+            return rId ? hfParts[rId] : undefined
           }
-          const imagesOf = (kind: 'header' | 'footer') => {
-            if (resolveHf) return resolveHf(live, i, kind, 'default').images
-            const rId = refs[i]?.[kind]?.default
-            const fromPart = rId ? hfParts[rId]?.images : undefined
-            if (fromPart?.length) return fromPart
-            return i === live.length - 1 ? hf.images?.[kind] : undefined
-          }
-          // titlePg first-page variant heights: the section's first page renders
-          // these strips (hfFor), so its slice capacity must match or the taller
-          // variant's push-down clips slice content off the page (prod100r4/43)
-          const firstPart = (kind: 'header' | 'footer') => {
-            if (resolveHf) return resolveHf(live, i, kind, 'first').value
-            const rId = refs[i]?.[kind]?.first
-            const part = rId ? hfParts[rId] : undefined
-            return part
-              ? { text: part.text, pageNumber: part.hasPageNumber, paras: part.paras }
-              : null
-          }
-          const firstImagesOf = (kind: 'header' | 'footer') => {
-            if (resolveHf) return resolveHf(live, i, kind, 'first').images
-            const rId = refs[i]?.[kind]?.first
-            return rId ? hfParts[rId]?.images : undefined
-          }
-          return {
-            headerPx: hfReservedHeightPx(
-              'header',
-              pick('header'),
-              w,
-              imagesOf('header'),
-              hfHeaderGeom(set),
-            ),
-            footerPx: hfReservedHeightPx('footer', pick('footer'), w, imagesOf('footer')),
-            // a single-section preview follows the live "different first page"
-            // toggle (hfFor), so its first-page geometry must too
-            ...((live.length === 1 ? hf.titlePg : s.titlePg)
-              ? {
-                  firstHeaderPx: hfReservedHeightPx(
-                    'header',
-                    firstPart('header'),
-                    w,
-                    firstImagesOf('header'),
-                    hfHeaderGeom(set),
-                  ),
-                  firstFooterPx: hfReservedHeightPx(
-                    'footer',
-                    firstPart('footer'),
-                    w,
-                    firstImagesOf('footer'),
-                  ),
-                }
-              : {}),
-          }
-        })
-        const geoms = sectionGeoms(live, hfHs, hf.evenOddHf)
-        liveGeoms = geoms
-        liveHfHs = hfHs
-        // when the canvas column layout is inactive, measure as full-width single flow; the geometry drops column flow to match
-        if (colMode === 'none') for (const g of geoms) if (g.cols) g.cols = undefined
-        computed = sliceWithLineSplit(blocks, geoms, flowH, factor, blockMetaOf, splitOut)
-        const firsts = sectionFirstPages(computed)
-        const last = computed.length - 1
-        winEndOf = (s, i) => {
-          const g = geoms[Math.min(s.section, geoms.length - 1)]
-          const cap = (firsts[i] ? g?.firstContentHeight : undefined) ?? g?.contentHeight ?? flowH
-          const vAlign = live[Math.min(s.section, live.length - 1)]?.settings.vAlign
-          const full = i === last && vAlign !== 'center' && vAlign !== 'bottom'
-          return full ? s.start + cap : Math.min(s.end, s.start + cap)
-        }
-      } else {
-        const contentH =
-          twipsToPx(section.pageHeight) -
-          effectiveTopPx(
-            section,
-            hfReservedHeightPx(
-              'header',
-              hf.header,
-              canvasContentW,
-              hf.images?.header,
-              hfHeaderGeom(section),
-            ),
-          ) -
-          effectiveBottomPx(
-            section,
-            hfReservedHeightPx('footer', hf.footer, canvasContentW, hf.images?.footer),
+          const hfHs = sectionHfHeights(
+            live,
+            resolveHf
+              ? (i, kind, variant) => resolveHf(live, i, kind, variant)
+              : (i, kind, variant) => {
+                  const part = partOf(i, kind, variant)
+                  const value = part
+                    ? { text: part.text, pageNumber: part.hasPageNumber, paras: part.paras }
+                    : null
+                  if (variant !== 'default') return { value, images: part?.images }
+                  // the parsed set carries the last section's default strips
+                  const last = i === live.length - 1
+                  return {
+                    value: last ? (kind === 'header' ? hf.header : hf.footer) : value,
+                    images: part?.images?.length
+                      ? part.images
+                      : last
+                        ? hf.images?.[kind]
+                        : undefined,
+                  }
+                },
+            { titlePg: hf.titlePg, evenOddHf: hf.evenOddHf },
           )
-        // titlePg: the first page renders the first-page header/footer variant
-        // (hfFor), so it gets its own capacity
-        const firstContentH = hf.titlePg
-          ? twipsToPx(section.pageHeight) -
-            effectiveTopPx(
-              section,
-              hfReservedHeightPx(
-                'header',
-                hf.headerFirst,
-                canvasContentW,
-                hf.images?.headerFirst,
-                hfHeaderGeom(section),
-              ),
-            ) -
-            effectiveBottomPx(
-              section,
-              hfReservedHeightPx('footer', hf.footerFirst, canvasContentW, hf.images?.footerFirst),
-            )
-          : undefined
-        computed = sliceWithLineSplit(
+          const geoms = sectionGeoms(live, hfHs, hf.evenOddHf)
+          // when the canvas column layout is inactive, measure as full-width single flow; the geometry drops column flow to match
+          if (colMode === 'none') for (const g of geoms) if (g.cols) g.cols = undefined
+          const computed = sliceWithLineSplit(blocks, geoms, flowH, factor, blockMetaOf, splitOut)
+          const cuts = buildPageCuts(blocks, computed, geoms, hfHs, {
+            evenOddHf: hf.evenOddHf,
+            titlePgOf:
+              live.length > 1
+                ? (si) => live[Math.min(si, live.length - 1)].titlePg
+                : () => hf.titlePg,
+            pageNumberFmtOf: (si) => live[Math.min(si, live.length - 1)]?.pageNumberFmt,
+          })
+          return { cuts, geoms, hfHs, rowSplits: splitOut.rowSplits ?? [] }
+        }
+        const hfPx = hfVariantHeightsPx(
+          (kind, variant) => {
+            const strips = pageHfStrips(variant, undefined, hf)
+            return kind === 'header'
+              ? { value: strips.header, images: strips.headerImages }
+              : { value: strips.footer, images: strips.footerImages }
+          },
+          () => canvasContentW,
+          hfStripGeom(section),
+          hf.titlePg,
+          hf.evenOddHf,
+        )
+        const singleGeom: SectionGeom = {
+          contentHeight:
+            twipsToPx(section.pageHeight) -
+            effectiveTopPx(section, hfPx.headerPx) -
+            effectiveBottomPx(section, hfPx.footerPx),
+          forceBreak: false,
+          ...singleVariantGeomOf(section, hfPx),
+          ...(sections[0]?.pageNumberStart !== undefined
+            ? { pageNumberStart: sections[0].pageNumberStart }
+            : {}),
+          ...(colFlow ? { cols: colFlow.cols } : {}),
+        }
+        const computed = sliceWithLineSplit(
           blocks,
-          [
-            {
-              contentHeight: contentH,
-              forceBreak: false,
-              ...(firstContentH !== undefined ? { firstContentHeight: firstContentH } : {}),
-              ...(colFlow ? { cols: colFlow.cols } : {}),
-            },
-          ],
+          [singleGeom],
           flowH,
           factor,
           blockMetaOf,
           splitOut,
         )
-        const last = computed.length - 1
-        winEndOf = (s, i) => {
-          const cap = i === 0 ? (firstContentH ?? contentH) : contentH
-          const full = i === last && section.vAlign !== 'center' && section.vAlign !== 'bottom'
-          return full ? s.start + cap : Math.min(s.end, s.start + cap)
-        }
+        const cuts = buildPageCuts(blocks, computed, [singleGeom], [hfPx], {
+          evenOddHf: hf.evenOddHf,
+          titlePgOf: () => hf.titlePg,
+          pageNumberFmtOf: () => sections[0]?.pageNumberFmt,
+        })
+        return { cuts, geoms: [singleGeom], hfHs: [hfPx], rowSplits: splitOut.rowSplits ?? [] }
       }
-      markTableSeamSlices(computed, blocks)
+      // the sheets print the canvas pass's cuts; the preview measures only for
+      // clone geometry. The shadow re-slices this snapshot and counts where it
+      // disagrees (previewCutMismatch, asserted 0 by the invariants e2e).
+      const shadow =
+        import.meta.env.DEV ||
+        (window as unknown as { __previewShadow?: boolean }).__previewShadow === true
+      let computed: PageCut[]
+      let liveGeoms: SectionGeom[]
+      let liveHfHs: SectionHfHeights[]
+      let rowSplits: RowSplitPatch[]
+      let previewCutDiag: string[] = []
+      let shadowed = false
+      if (pass && pass.cuts.length > 0) {
+        ;({ cuts: computed, geoms: liveGeoms, hfHeights: liveHfHs, rowSplits } = pass)
+        if (shadow) {
+          previewCutDiag = pageCutDiffs(computed, sliceHere().cuts)
+          shadowed = true
+        }
+      } else {
+        ;({ cuts: computed, geoms: liveGeoms, hfHs: liveHfHs, rowSplits } = sliceHere())
+      }
+      const lastIdx = computed.length - 1
+      /** flow-coordinate bottom of page i's clip window (the last page opens to full capacity unless vertically aligned) */
+      const winEndOf = (s: PageCut, i: number) => {
+        const vAlign =
+          live.length > 0
+            ? live[Math.min(s.section, live.length - 1)]?.settings.vAlign
+            : section.vAlign
+        const full = i === lastIdx && vAlign !== 'center' && vAlign !== 'bottom'
+        return full ? s.start + s.capacityPx : Math.min(s.end, s.start + s.capacityPx)
+      }
       // anchor-shifted textbox wrappers paint off their flow slot: the owning
       // page hides the ride-along copies and its boxes are shifted back inside
       // that page's window (Word keeps a box on its anchor's page)
@@ -1437,15 +1423,30 @@ export function PaginationPreview({
         )
         wrap.style.setProperty('--pv-hoist-dy', `${dy}px`)
       }
-      applyLiftTops(computed, blocks)
-      applyLeadSpills(computed, blocks, liveGeoms)
-      setSplitCss(rowSplitCss(splitOut.rowSplits ?? [], blocks, computed))
+      setSplitCss(rowSplitCss(rowSplits, blocks, computed))
       setHoistWinCss(hoistWindowCss(hoistWins))
       setVertCss(
         liveGeoms.some((g) => g.vertical) ? verticalPageCss(blocks, computed, live, liveGeoms) : '',
       )
       setLeakCss(leadLeakCss(blocks, computed))
       setSlices(computed)
+      // read-only snapshot for e2e: the cuts the sheets print and the shadow's verdict
+      ;(window as unknown as Record<string, unknown>).__previewDebug = {
+        slices: computed,
+        shadowed,
+        previewCutMismatch: previewCutDiag.length,
+        previewCutDiag,
+        // the snapshot's block geometry, to locate where a shadow disagreement starts
+        blocks: shadowed
+          ? blocks.map((b) => ({
+              top: b.top,
+              height: b.height,
+              spaceBeforePx: b.spaceBeforePx,
+              spaceAfterPx: b.spaceAfterPx,
+              idx: b.el?.dataset.idx,
+            }))
+          : undefined,
+      }
       setPageNotes(pageFootnotesOf ? pageFootnotesOf(blocks, computed) : [])
       setTextEnds(footnotesBeneathText ? pageTextEnds(blocks, computed) : [])
       // comment anchors, measured in the same neutralized geometry as the blocks;
@@ -1460,7 +1461,15 @@ export function PaginationPreview({
       )
       setRevSpots(
         revisionView
-          ? measureRevisionSpots(revisionView, pm, anchorBlocks, origin, factor, pmContentLeft)
+          ? measureRevisionSpots(
+              revisionView,
+              pm,
+              anchorBlocks,
+              origin,
+              factor,
+              pmContentLeft,
+              balloonKinds,
+            )
           : [],
       )
       // Per-page full clones explode on large documents (pages × doc DOM →
@@ -1538,11 +1547,7 @@ export function PaginationPreview({
   const multiSection = secs.length > 1
   const commentById = useMemo(() => new Map((comments ?? []).map((c) => [c.id, c])), [comments])
   const effRefs = useMemo(() => effectiveHfRefs(secs), [secs])
-  // single-section also uses pageNumbers: pgNumType w:start renumbering applies to single-section documents too
-  const nums = useMemo(
-    () => (secs.length > 0 ? pageNumbers(slices, secs) : slices.map((_, i) => i + 1)),
-    [slices, secs],
-  )
+  const nums = useMemo(() => slices.map((s) => s.pageNo), [slices])
   const firsts = useMemo(() => sectionFirstPages(slices), [slices])
 
   // line positions of endnote entries in virtual coordinates (matching appendEndnotesBlock's line boxes)
@@ -1578,10 +1583,25 @@ export function PaginationPreview({
     const sec = secs[Math.min(slice.section, secs.length - 1)]
     const refs = effRefs[Math.min(slice.section, effRefs.length - 1)]
     const variant = hfVariantOf(sec.titlePg, firsts[i], hf.evenOddHf, pageNo)
+    const ownW = twipsToPx(
+      sec.settings.pageWidth - sec.settings.marginLeft - sec.settings.marginRight,
+    )
+    const inheritedW = (kind: 'header' | 'footer') => {
+      const owner = resolveHf?.(secs, slice.section, kind, variant).owner
+      const w = hfPartWidthPx(secs, slice.section, kind, variant, owner)
+      return Math.abs(w - ownW) > 0.5 ? w : undefined
+    }
+    const widths = { headerColumnPx: inheritedW('header'), footerColumnPx: inheritedW('footer') }
     if (resolveHf) {
       const h = resolveHf(secs, slice.section, 'header', variant)
       const f = resolveHf(secs, slice.section, 'footer', variant)
-      return { header: h.value, footer: f.value, headerImages: h.images, footerImages: f.images }
+      return {
+        header: h.value,
+        footer: f.value,
+        headerImages: h.images,
+        footerImages: f.images,
+        ...widths,
+      }
     }
     const headerRId = refs.header[variant]
     const footerRId = refs.footer[variant]
@@ -1590,6 +1610,7 @@ export function PaginationPreview({
       footer: toHf(footerRId),
       headerImages: headerRId ? hfParts[headerRId]?.images : undefined,
       footerImages: footerRId ? hfParts[footerRId]?.images : undefined,
+      ...widths,
     }
   }
 
@@ -1626,23 +1647,10 @@ export function PaginationPreview({
           const pageW = pageBox.width
           const pageH = pageBox.height
           const secContentW = pageBox.contentWidth
-          // effective margins after this page's variant header/footer push-down (an over-tall header pushes the body down)
-          const mTop = effectiveTopPx(
-            s,
-            hfReservedHeightPx(
-              'header',
-              parts.header,
-              secContentW,
-              parts.headerImages,
-              hfHeaderGeom(s),
-            ),
-          )
-          const footerReservedPx = hfReservedHeightPx(
-            'footer',
-            parts.footer,
-            secContentW,
-            parts.footerImages,
-          )
+          // effective margins after this page's variant header/footer push-down (an over-tall
+          // header pushes the body down): the cut's reserved heights, as the slicer used them
+          const mTop = effectiveTopPx(s, slice.hf.headerPx)
+          const footerReservedPx = slice.hf.footerPx
           const mBottom = effectiveBottomPx(s, footerReservedPx)
           const contentH = pageH - mTop - mBottom
           const notes = pageNotes[i] ?? []
@@ -1855,7 +1863,12 @@ export function PaginationPreview({
                     onCommit={() => {}}
                     pageNo={pageNoText}
                     pageTotal={slices.length}
-                    boxGeom={hfStripGeom(s)}
+                    style={
+                      parts.headerColumnPx !== undefined
+                        ? { width: parts.headerColumnPx }
+                        : undefined
+                    }
+                    boxGeom={{ ...hfStripGeom(s), columnW: parts.headerColumnPx }}
                   />
                 )}
                 {slice.repeatHeader && !slice.regions && (
@@ -2068,13 +2081,8 @@ export function PaginationPreview({
                       // instead of overprinting the next entry
                       <div
                         key={n.id}
-                        className="pv-footnote"
-                        style={{
-                          minHeight: n.height,
-                          ...(n.lineHeightPx ? { lineHeight: `${n.lineHeightPx}px` } : {}),
-                          ...(n.fontSizePt ? { fontSize: `${n.fontSizePt}pt` } : {}),
-                          ...(n.fontFamily ? { fontFamily: n.fontFamily } : {}),
-                        }}
+                        className={['pv-footnote', ...noteRowBox(n).classes].join(' ')}
+                        style={{ minHeight: n.height, ...noteRowBox(n).style }}
                       >
                         {!n.noRefMark && <sup>{noteMarkText('footnote', n.no)}</sup>}
                         {n.richParas
@@ -2084,6 +2092,7 @@ export function PaginationPreview({
                                 {para.map((run, ri) => (
                                   <span
                                     key={ri}
+                                    className={noteRunClass(run)}
                                     style={{
                                       fontWeight: run.bold ? 600 : undefined,
                                       fontStyle: run.italic ? 'italic' : undefined,
@@ -2139,13 +2148,8 @@ export function PaginationPreview({
                       {rows.map(({ item: n, height, withSeparator }) => (
                         <div
                           key={n.id}
-                          className="pv-footnote"
-                          style={{
-                            minHeight: height,
-                            ...(n.lineHeightPx ? { lineHeight: `${n.lineHeightPx}px` } : {}),
-                            ...(n.fontSizePt ? { fontSize: `${n.fontSizePt}pt` } : {}),
-                            ...(n.fontFamily ? { fontFamily: n.fontFamily } : {}),
-                          }}
+                          className={['pv-footnote', ...noteRowBox(n).classes].join(' ')}
+                          style={{ minHeight: height, ...noteRowBox(n).style }}
                         >
                           {withSeparator && <div className="pv-endnote-separator" />}
                           {!n.noRefMark && <sup>{noteMarkText('endnote', n.no)}</sup>}
@@ -2156,6 +2160,7 @@ export function PaginationPreview({
                                   {para.map((run, ri) => (
                                     <span
                                       key={ri}
+                                      className={noteRunClass(run)}
                                       style={{
                                         fontWeight: run.bold ? 600 : undefined,
                                         fontStyle: run.italic ? 'italic' : undefined,
@@ -2203,7 +2208,12 @@ export function PaginationPreview({
                     onCommit={() => {}}
                     pageNo={pageNoText}
                     pageTotal={slices.length}
-                    boxGeom={hfStripGeom(s)}
+                    style={
+                      parts.footerColumnPx !== undefined
+                        ? { width: parts.footerColumnPx }
+                        : undefined
+                    }
+                    boxGeom={{ ...hfStripGeom(s), columnW: parts.footerColumnPx }}
                   />
                 )}
                 <div className="pv-pageno">{i + 1}</div>
@@ -2255,6 +2265,8 @@ export function PaginationPreview({
                     kind: 'comment' | 'del' | 'fmt'
                     label: string
                     text: string
+                    /** revision balloons: author line with the relative time (Word's header) */
+                    head?: { author: string; when: string }
                     endY: number
                     /** merge key: comments stay in document order even where anchors invert (next column) */
                     orderTop: number
@@ -2298,12 +2310,17 @@ export function PaginationPreview({
                       kind: sp.kind,
                       label,
                       text,
+                      head: {
+                        author: sp.author || t('editorUnknownAuthor'),
+                        when: revWhen(sp.date),
+                      },
                       anchorTop,
                       orderTop: anchorTop,
                       endX: sp.endX,
                       endY: sp.endY,
-                      height: estimateBubbleHeight(label + text, bubbleW - 12, REV_METRICS),
-                      compactHeight: REV_LINE_H + REV_PAD_H,
+                      height:
+                        REV_LINE_H + estimateBubbleHeight(label + text, bubbleW - 12, REV_METRICS),
+                      compactHeight: 2 * REV_LINE_H + REV_PAD_H,
                       sticky: false,
                     })
                   }
@@ -2366,8 +2383,16 @@ export function PaginationPreview({
                           }
                           style={{ left: bubbleLeft, top: p.top, width: bubbleW }}
                         >
-                          <span className="pv-comment-label">{p.label}</span>
-                          {p.text}
+                          {p.head && (
+                            <div className="pv-rev-head">
+                              <span className="pv-comment-label">{p.head.author}</span>
+                              <span className="pv-rev-when">{p.head.when}</span>
+                            </div>
+                          )}
+                          <div className="pv-rev-body">
+                            <span className="pv-comment-label">{p.label}</span>
+                            {p.text}
+                          </div>
                         </div>
                       ))}
                     </div>

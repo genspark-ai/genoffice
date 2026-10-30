@@ -71,6 +71,21 @@ describe('balanceSingleByteDoubleByteWidth character spacing', () => {
     expect(doc.blocks[2].runs![0].charSpacingTwips).toBe(-30) // half -> x1.5
   })
 
+  it('gates on the paragraph style East Asian face when the run declares none', async () => {
+    const styles =
+      '<w:style w:type="paragraph" w:styleId="KoBody"><w:name w:val="KoBody"/>' +
+      '<w:rPr><w:rFonts w:ascii="\uB9D1\uC740 \uACE0\uB515" w:eastAsia="\uB9D1\uC740 \uACE0\uB515"/></w:rPr></w:style>'
+    const body =
+      '<w:p><w:pPr><w:pStyle w:val="KoBody"/></w:pPr><w:r><w:rPr><w:spacing w:val="-20"/></w:rPr>' +
+      '<w:t>\uC815\uBCF4\uD654\uBE44\uC804</w:t></w:r></w:p>' +
+      spacedPara('\uC815\uBCF4\uD654\uBE44\uC804', -20)
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: body, extraStylesXml: styles, extraParts: [SETTINGS_PART] }),
+    )
+    expect(doc.blocks[0].runs![0].charSpacingTwips).toBe(-20)
+    expect(doc.blocks[1].runs![0].charSpacingTwips).toBe(-40)
+  })
+
   it('keeps hangul and kana single in Malgun Gothic while Han still doubles', async () => {
     const body =
       spacedPara('정보화비전및전략수립', -20, 'Malgun Gothic') +

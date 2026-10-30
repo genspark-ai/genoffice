@@ -6,8 +6,9 @@ import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
 import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
-import { ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
+import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
+import { readPropChangeXml } from './revision-xml'
 import { NOTE_PART_PATH, parseNotesXml, type NoteParagraphReader } from './notes'
 import { scanBody, type BodyElement } from './scan'
 import {
@@ -45,6 +46,7 @@ import type {
   HfTextBox,
   HfParagraph,
   HfTableCell,
+  HfTableFloat,
   HfTableRow,
   HfPartInfo,
   NumberingDef,
@@ -64,6 +66,7 @@ import type {
   StrayIndent,
   StyleInfo,
   TableBorders,
+  PropChangeInfo,
   TableCell,
   TableModel,
   TextboxDisplay,
@@ -87,7 +90,6 @@ import {
   nameOf,
   serializeXNode,
   textOf,
-  textHasComplexScript,
   underlineProp,
   deepXmlParser,
   xmlParser,
@@ -170,6 +172,7 @@ import {
   convertibleHyperlink,
   crossParaCommentMarkers,
   emptyParaMarkFont,
+  EMPTY_EA_THEME_FONT,
   emptyParaSizeHalfPoints,
   hasLayoutRunContent,
   spaceOnlyRuns,
@@ -216,6 +219,8 @@ import {
   resolveParagraphPropsXml,
   resolveRunProps,
   shadowCompare,
+  directParaFormat,
+  directRunFormat,
   type EffectivePPr,
   type TableCond,
   type EffectiveRPr,
@@ -582,6 +587,7 @@ export async function parseDocx(
   const titlePg = xmlFlagOn(documentXml, 'w:titlePg')
   const evenAndOddHeaders = await parseSettingsFlag(zip, 'w:evenAndOddHeaders')
   const mirrorMargins = await parseSettingsFlag(zip, 'w:mirrorMargins')
+  const trackRevisions = await parseSettingsFlag(zip, 'w:trackRevisions')
   const hfParts = await parseAllHfParts(
     zip,
     rels,
@@ -659,6 +665,7 @@ export async function parseDocx(
     titlePg,
     evenAndOddHeaders,
     ...(mirrorMargins ? { mirrorMargins } : {}),
+    ...(trackRevisions ? { trackRevisions } : {}),
     ...(gutterAtTop ? { gutterAtTop } : {}),
     compatibilityMode,
     ...layoutSettings,
@@ -699,6 +706,8 @@ interface BuildContext {
   styles: Map<string, StyleInfo>
   rels: Map<string, RelInfo>
   numFormats: Map<string, 'bullet' | 'ordered'>
+  /** move ranges open at the current point of the body walk (a move may span paragraphs) */
+  openMoves?: Array<{ id: string; name: string; side: 'from' | 'to' }>
   /** full per-level definitions, for level-aware kind classification */
   numbering: Map<string, NumberingDef>
   /** collector: chart part XML seen while building blocks (partPath -> xml) */
@@ -910,7 +919,14 @@ async function buildBlock(
   }
 
   if (el.name === 'w:sectPr') {
-    return { ...base, type: 'passthrough', label: 'Section properties', hidden: true }
+    const sectPrChange = propChangeInfo(xml, 'w:sectPrChange')
+    return {
+      ...base,
+      type: 'passthrough',
+      label: 'Section properties',
+      hidden: true,
+      ...(sectPrChange ? { sectPrChange } : {}),
+    }
   }
   if (el.name === 'w:tbl') {
     return {
@@ -1010,11 +1026,13 @@ async function buildBlock(
     // need the display paths further down, which the sectPr chip still guards.
     if (!RICH_DRAWING_RE.test(detect) && (await hasResolvablePicture(detect, ctx)))
       return buildTextParagraph(base, xml, ctx, true, el.start)
+    const sectPrChange = propChangeInfo(xml, 'w:sectPrChange')
     return {
       ...base,
       type: 'passthrough',
       label: 'Section break paragraph',
       previewText: '',
+      ...(sectPrChange ? { sectPrChange } : {}),
     }
   }
   // Field chars inside textbox content don't make the paragraph itself a field
@@ -1028,8 +1046,9 @@ async function buildBlock(
     fieldDetect.includes('<w:instrText')
   // Field paragraphs whose visible result is a picture (e.g. INCLUDEPICTURE)
   // should still display the image; the block stays protected either way.
-  // Only when the picture is the whole visible content — a paragraph that also
-  // carries text falls through to the field passthrough, whose preview keeps
+  // Text after an in-line picture (a "Figure <SEQ>" caption sharing the
+  // paragraph) rides along as the block's field display, like chart captions;
+  // any other mix falls through to the field passthrough, whose preview keeps
   // the text instead of silently dropping it behind an image block.
   // Non-field drawing paragraphs take the drawing branch below, which keeps
   // mixed text + inline-image paragraphs editable.
@@ -1038,17 +1057,31 @@ async function buildBlock(
     detect.includes('<w:drawing') &&
     !detect.includes('<c:chart') &&
     !detect.includes('r:dm=') &&
-    !detect.includes('<dgm:') &&
-    plainText(stripTextboxes(detect)).trim() === ''
+    !detect.includes('<dgm:')
   ) {
-    const image = await extractImage(detect, ctx)
+    const visible = plainText(stripTextboxes(detect)).trim()
+    const drawingAt = detect.indexOf('<w:drawing')
+    const trailingCaption =
+      visible !== '' &&
+      detect.includes('<wp:inline') &&
+      !RICH_DRAWING_RE.test(detect) &&
+      plainText(stripTextboxes(detect.slice(0, drawingAt))).trim() === ''
+    const image = visible === '' || trailingCaption ? await extractImage(detect, ctx) : null
     if (image) {
-      return {
-        ...base,
-        type: 'image',
-        label: 'Image',
-        imageDataUrl: image,
-        ...imageMeta(detect, ctx),
+      const caption = trailingCaption ? fieldDisplayOf(xml, ctx.styles, ctx.resolver) : undefined
+      if (caption?.kind === 'text') {
+        const runs = fieldResultRuns(xml, ctx, caption.left ?? '')
+        if (runs) caption.runs = runs
+      }
+      if (!trailingCaption || caption?.kind === 'text') {
+        return {
+          ...base,
+          type: 'image',
+          label: 'Image',
+          imageDataUrl: image,
+          ...imageMeta(detect, ctx),
+          ...(caption?.kind === 'text' ? { fieldDisplay: caption } : {}),
+        }
       }
     }
   }
@@ -1506,13 +1539,18 @@ async function buildBlock(
             }
           }
           const sideWrapped = /^(?:square|tight|through)-(?:left|right)$/.test(meta.imageWrap ?? '')
+          // Word lays out the anchor paragraph's own (empty) line beside a
+          // side-wrapped picture and under a behind/in-front one alike
+          const overlay = meta.imageWrap === 'front' || meta.imageWrap === 'behind'
           return {
             ...base,
             type: 'image',
             label: 'Image',
             imageDataUrl: image,
             ...meta,
-            ...(sideWrapped && !meta.imageBand ? { anchorLine: anchorLineOf(xml, ctx) } : {}),
+            ...((sideWrapped && !meta.imageBand) || overlay
+              ? { anchorLine: anchorLineOf(xml, ctx) }
+              : {}),
           }
         }
       }
@@ -1782,32 +1820,50 @@ function defaultParaStyle(styles?: Map<string, StyleInfo>): StyleInfo | undefine
 }
 
 /**
- * Shadow mode: resolve the paragraph through resolve-props and record where it
- * disagrees with the legacy format path. No effect on the parsed model.
+ * Shadow mode: read the paragraph's own w:pPr through the legacy reader and
+ * record where it disagrees with the resolver's direct view. No effect on the
+ * parsed model.
  */
-function shadowResolve(
+function shadowParaFormat(
   ctx: BuildContext,
-  pNode: XNode,
+  surface: NonNullable<ResolveDiff['surface']>,
   pPr: XNode | undefined,
-  styleId: string | undefined,
+  styleBidi: boolean | undefined,
+  resolved: ParaFormat | undefined,
   runs: Run[],
-  format: ParaFormat | undefined,
-  old: { hidden: boolean; emptySize?: number; markSize?: number },
-  docOffset?: number,
-): EffectivePPr | undefined {
-  if (!ctx.resolver || !ctx.resolveDiff) return undefined
-  const eff = resolveParagraphProps(pPr, ctx.resolver, {
-    charUnits: charUnitsOf(ctx, runs, pNode, pPr, styleId, docOffset),
-  })
-  const diffs = shadowCompare(eff, format, { ...old, charResolved: !!format?.charIndents })
-  if (diffs.length > 0) {
-    const text = runs
-      .map((r) => r.text)
-      .join('')
-      .slice(0, 40)
-    for (const d of diffs) ctx.resolveDiff.push({ ...d, text })
-  }
-  return eff
+): void {
+  if (!ctx.resolveDiff) return
+  const legacy = extractParaFormat(pPr ?? {}, ctx.themeColors, styleBidi)
+  const diffs = shadowCompare(legacy, resolved)
+  if (diffs.length === 0) return
+  const text = runs
+    .map((r) => r.text)
+    .join('')
+    .slice(0, 40)
+  for (const d of diffs) ctx.resolveDiff.push({ ...d, surface, text })
+}
+
+/** the legacy reader's style-chain bidi: numbering level, paragraph style, docDefaults */
+function styleBidiOf(
+  ctx: BuildContext,
+  styleId: string | undefined,
+  listRef: { numId: string; ilvl: number } | undefined,
+): boolean | undefined {
+  const levelBidi = listRef
+    ? ctx.numbering.get(listRef.numId)?.levels[listRef.ilvl]?.bidi
+    : undefined
+  const paraStyle = styleId ? ctx.styles.get(styleId) : ctx.defaultParaStyle
+  return levelBidi ?? paraStyle?.display?.bidi ?? ctx.docDefaults?.bidi
+}
+
+/** the paragraph's direct ParaFormat off the resolver, plus the w:pPr-only keys */
+function resolvedParaFormat(
+  eff: EffectivePPr,
+  pPr: XNode | undefined,
+  theme: ThemeColors | null | undefined,
+): ParaFormat | undefined {
+  const format: ParaFormat = { ...directParaFormat(eff), ...(pPr ? pPrOnlyFormat(pPr, theme) : {}) }
+  return Object.keys(format).length > 0 ? format : undefined
 }
 
 /** parse a w:p as editable text content (paragraph / heading / listItem) */
@@ -1892,14 +1948,40 @@ interface RunResolve extends ParaResolve {
   memo: Map<string, EffectiveRPr>
   /** the paragraph style chain's w:rtl (the inherited value of a run without its own flag) */
   paraRtl: boolean | undefined
+  /** shadow mode collector */
+  diff?: ResolveDiff[]
 }
 
 function runResolveOf(ctx: BuildContext, pNode: XNode, para: ParaResolve | undefined): RunResolve {
   const rctx = para?.rctx ?? resolverOf(ctx)
   const eff = para?.eff ?? resolveParagraphProps(findChild(pNode, 'w:pPr'), rctx)
   const paraStyle = eff.styleId ? rctx.styles.get(eff.styleId) : rctx.defaultParaStyle
-  return { eff, rctx, memo: new Map(), paraRtl: paraStyle?.display?.rtl }
+  return {
+    eff,
+    rctx,
+    memo: new Map(),
+    paraRtl: paraStyle?.display?.rtl ?? rctx.docDefaults?.rtl,
+    ...(ctx.resolveDiff ? { diff: ctx.resolveDiff } : {}),
+  }
 }
+
+/** the direct run fields the resolver reads for extractRun */
+const DIRECT_RUN_KEYS = [
+  'bold',
+  'italic',
+  'sizeHalfPoints',
+  'underline',
+  'strike',
+  'caps',
+  'charSpacingTwips',
+  'kernHalfPoints',
+  'vertAlign',
+  'font',
+  'fontAscii',
+  'eastAsiaFont',
+  'eaSlotEmpty',
+  'csFont',
+] as const
 
 function effectiveRunOf(res: RunResolve, rPr: XNode | undefined, key = ''): EffectiveRPr {
   const hit = res.memo.get(key)
@@ -1934,6 +2016,13 @@ function foldEffectiveFormat(
   eff: EffectivePPr,
 ): ParaFormat {
   const out: ParaFormat = format ? { ...format } : {}
+  // a paragraph without its own w:bidi takes the resolved direction; the
+  // generator needs the flag to write the logical jc Word expects
+  if (eff.bidi && !out.bidi && !out.bidiInherited) {
+    out.bidiInherited = true
+    if (out.align === 'left' || out.align === 'right')
+      out.align = out.align === 'left' ? 'right' : 'left'
+  }
   const autoSpace = autoSpaceMode(eff.autoSpaceDE, eff.autoSpaceDN)
   if (autoSpace !== undefined && autoSpace !== true) out.autoSpace = autoSpace
   if (!eff.wordWrap && out.wordWrap === undefined) out.wordWrap = false
@@ -2167,6 +2256,17 @@ function vmlHrRule(hrRect: string): NonNullable<NonNullable<Run['image']>['rule'
   }
 }
 
+// Math fragment source for a paragraph: the run walk never enters mc:Fallback
+// or w:txbxContent, so their m:oMath copies are dropped to keep fragment indexes
+// aligned with the visited nodes.
+function mathSourceXmlOf(xml: string): string {
+  return stripTextboxes(
+    xml.includes('<mc:Fallback')
+      ? xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
+      : xml,
+  )
+}
+
 function buildTextParagraph(
   base: Pick<Block, 'id' | 'docxIndex' | 'originalXml'>,
   xml: string,
@@ -2195,7 +2295,6 @@ function buildTextParagraph(
   // marker, counter advances), so the numbering reference rides along
   const hiddenParagraph = (): Block => {
     const list = listRefOf(ctx, pPr, styleId)
-    shadowResolve(ctx, pNode, pPr, styleId, [], undefined, { hidden: true }, docOffset)
     return {
       ...base,
       type: 'passthrough',
@@ -2219,22 +2318,11 @@ function buildTextParagraph(
   ) {
     return hiddenParagraph()
   }
-  const paraStyle = styleId ? ctx.styles.get(styleId) : ctx.defaultParaStyle
   const listRef = listRefOf(ctx, pPr, styleId)
-  const levelBidi = listRef
-    ? ctx.numbering.get(listRef.numId)?.levels[listRef.ilvl]?.bidi
-    : undefined
-  let format = pPr
-    ? extractParaFormat(pPr, ctx.themeColors, levelBidi ?? paraStyle?.display?.bidi)
-    : undefined
+  const direct = resolvedParaFormat(eff0, pPr, ctx.themeColors)
+  let format = direct
   const rawPPr = rawPPrOf(xml)
-  // inline math: raw <m:oMath> fragments in document order, aligned with the
-  // walk below (strip fallback/textbox copies so indexes match visited nodes)
-  const mathXml = stripTextboxes(
-    xml.includes('<mc:Fallback')
-      ? xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
-      : xml,
-  )
+  const mathXml = mathSourceXmlOf(xml)
   const runs = extractRuns(
     pNode,
     ctx,
@@ -2244,6 +2332,7 @@ function buildTextParagraph(
     zoteroField,
     { eff: eff0, rctx },
   )
+  shadowParaFormat(ctx, 'body', pPr, styleBidiOf(ctx, styleId, listRef), direct, runs)
   const spaceOnly = runs.length > 0 && spaceOnlyRuns(runs) && !hasLayoutRunContent(pNode)
   // a paragraph holding only page/column breaks lays its break line like an
   // empty one: by the mark's face and size, else the break run's
@@ -2371,6 +2460,19 @@ function buildTextParagraph(
   const paraMarkDel = paraMarkRevision('w:del') ?? paraMarkRevision('w:moveFrom')
   const paraMarkIns = paraMarkRevision('w:ins') ?? paraMarkRevision('w:moveTo')
   const paraMarkRPrChange = paraMarkRevision('w:rPrChange')
+  const propChangeIn = (holder: string, tag: string): PropChangeInfo | undefined => {
+    const el = pPr ? findChild(findChild(pPr, holder) ?? {}, tag) : undefined
+    if (!el) return undefined
+    const a = attrsOf(el)
+    return {
+      author: a['w:author'] ?? '',
+      ...(a['w:date'] ? { date: a['w:date'] } : {}),
+      ...(a['w16du:dateUtc'] ? { dateUtc: a['w16du:dateUtc'] } : {}),
+      ...(a['w:id'] ? { id: a['w:id'] } : {}),
+    }
+  }
+  const numberingChange = propChangeIn('w:numPr', 'w:numberingChange')
+  const sectPrChange = propChangeIn('w:sectPr', 'w:sectPrChange')
 
   // character-unit indents scale with the first text run, so the full
   // resolution waits for the runs
@@ -2382,22 +2484,6 @@ function buildTextParagraph(
   format = foldEffectiveFormat(format, pPr, eff)
   const markSz = listRef ? markSizeOf(eff, pPr) : undefined
   if (markSz) format.markSizeHalfPoints = markSz
-  shadowResolve(
-    ctx,
-    pNode,
-    pPr,
-    styleId,
-    runs,
-    format,
-    {
-      hidden: false,
-      ...(format?.emptyRunSizeHalfPoints !== undefined
-        ? { emptySize: format.emptyRunSizeHalfPoints }
-        : {}),
-      ...(markSz !== undefined ? { markSize: markSz } : {}),
-    },
-    docOffset,
-  )
   /** extra revision fields shared across all return paths */
   const revExtras = {
     ...(moveRevision ? { moveRevision } : {}),
@@ -2405,6 +2491,8 @@ function buildTextParagraph(
     ...(paraMarkDel ? { paraMarkDel } : {}),
     ...(paraMarkIns ? { paraMarkIns } : {}),
     ...(paraMarkRPrChange ? { paraMarkRPrChange } : {}),
+    ...(numberingChange ? { numberingChange } : {}),
+    ...(sectPrChange ? { sectPrChange } : {}),
   }
   if (listRef) {
     const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)
@@ -2598,7 +2686,9 @@ function collectTxbxParas(
             ? extractParaFormat(
                 pPr,
                 ctx.themeColors,
-                levelBidi ?? (styleId ? ctx.styles.get(styleId)?.display?.bidi : undefined),
+                levelBidi ??
+                  (styleId ? ctx.styles.get(styleId)?.display?.bidi : undefined) ??
+                  ctx.docDefaults?.bidi,
               )
             : undefined,
           ctx,
@@ -3358,9 +3448,13 @@ function extractTextboxes(
           insetLeftPx: 0,
         }
         // rotation lives on the pic's own xfrm (same read as imageMeta)
-        const picXfrm = /<pic:spPr[^>]*>[\s\S]*?<a:xfrm([^>]*)>/.exec(frag)?.[1]
+        const picSpPr = /<pic:spPr[^>]*>([\s\S]*?)<\/pic:spPr>/.exec(frag)?.[1] ?? ''
+        const picXfrm = /<a:xfrm([^>]*)>/.exec(picSpPr)?.[1]
         const rot = parseInt(/\brot="(-?\d+)"/.exec(picXfrm ?? '')?.[1] ?? '', 10)
         if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+        // Word clips the photo to its preset geometry (rounded, flowchart...)
+        const picPrst = /<a:prstGeom\b[^>]*\bprst="([^"]+)"/.exec(picSpPr)?.[1]
+        if (picPrst && picPrst !== 'rect') box.prst = picPrst
         applyAnchor(box, meta, pagePos)
         out.push(box)
       }
@@ -3736,6 +3830,8 @@ function anchorLineOf(xml: string, ctx: BuildContext): Block['anchorLine'] {
   const mark = resolveParagraphProps(pPr, resolverOf(ctx)).mark
   if (mark.source.sizeHalfPoints === 'direct')
     format = { ...(format ?? {}), emptyRunSizeHalfPoints: mark.sizeHalfPoints }
+  const markFont = emptyParaMarkFont(pNode, pPr, ctx.themeFonts, true)
+  if (markFont) format = { ...(format ?? {}), emptyRunFontFamily: markFont }
   const clear = /<w:br\b[^>]*\bw:clear="(all|left|right)"/.exec(xml)?.[1] as
     'all' | 'left' | 'right' | undefined
   return {
@@ -3808,10 +3904,14 @@ function extractParaFormat(
   const format: ParaFormat = {}
   const bidiOwn = onOffOf(pPr, 'w:bidi')
   if (bidiOwn) format.bidi = true
+  else if (bidiOwn === undefined && styleBidi) format.bidiInherited = true
   const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
   if (jc && JC_ALIGN[jc]) format.align = JC_ALIGN[jc]
   // Word quirk: in bidi paragraphs w:jc left/right are logical values (start/end); convert to visual direction
-  if ((bidiOwn ?? styleBidi) && (format.align === 'left' || format.align === 'right')) {
+  if (
+    (format.bidi || format.bidiInherited) &&
+    (format.align === 'left' || format.align === 'right')
+  ) {
     format.align = format.align === 'left' ? 'right' : 'left'
   }
   const spacing = findChild(pPr, 'w:spacing')
@@ -3870,11 +3970,7 @@ function extractParaFormat(
     if (sln !== undefined) format.suppressLineNumbers = sln
   }
   // snapToGrid: default ON; only store when explicitly set to OFF
-  const snapEl = findChild(pPr, 'w:snapToGrid')
-  if (snapEl) {
-    const v = attrsOf(snapEl)['w:val']
-    if (v === '0' || v === 'false') format.snapToGrid = false
-  }
+  if (onOffOf(pPr, 'w:snapToGrid') === false) format.snapToGrid = false
   // widowControl: Word default is ON; tri-state so an explicit on overrides a
   // style chain that turns it off
   const wc = onOffOf(pPr, 'w:widowControl')
@@ -3894,6 +3990,13 @@ function extractParaFormat(
   if (wordWrap !== undefined) format.wordWrap = wordWrap
   const overflowPunct = onOffOf(pPr, 'w:overflowPunct')
   if (overflowPunct !== undefined) format.overflowPunct = overflowPunct
+  Object.assign(format, pPrOnlyFormat(pPr, theme))
+  return Object.keys(format).length > 0 ? format : undefined
+}
+
+/** the w:pPr keys the resolver does not model (shading, borders, tab stops, frames, flow) */
+function pPrOnlyFormat(pPr: XNode, theme?: ThemeColors | null): ParaFormat {
+  const format: ParaFormat = {}
   const shd = findChild(pPr, 'w:shd')
   if (shd) {
     const fill = attrsOf(shd)['w:fill']
@@ -3924,7 +4027,7 @@ function extractParaFormat(
   }
   const flow = attrsOf(findChild(pPr, 'w:textDirection') ?? {})['w:val']
   if (flow === 'tbRl' || flow === 'tbRlV' || flow === 'btLr') format.textDirection = flow
-  return Object.keys(format).length > 0 ? format : undefined
+  return format
 }
 
 /** positioned frame from w:framePr attributes; frames without a width are not modeled */
@@ -4115,6 +4218,7 @@ function extractRuns(
 ): Run[] {
   const runs: Run[] = []
   let mathIndex = 0
+  let mathParaDepth = 0
   let rubyIndex = 0
   const pStyleId = attrsOf(findChild(findChild(pNode, 'w:pPr') ?? {}, 'w:pStyle') ?? {})['w:val']
   const res = runResolveOf(ctx, pNode, para)
@@ -4423,9 +4527,10 @@ function extractRuns(
         ctx.vmlShapeTypes,
       )
       if (run) {
-        // only a w:rtl run reads the cs slot; without it Word lays even Arabic
-        // text in the ascii/hAnsi face at w:sz
-        if (!run.csFont && run.cs && textHasComplexScript(run.text)) {
+        // only a w:rtl run reads the cs slot, and it does so for all its text
+        // (Latin included); without it Word lays even Arabic text in the
+        // ascii/hAnsi face at w:sz
+        if (!run.csFont && run.cs) {
           const cs = inheritedCsFont(run.styleId, pStyleId, ctx)
           if (cs) run.csFont = cs
         }
@@ -4509,15 +4614,31 @@ function extractRuns(
         if (attrs['w:id']) info.id = attrs['w:id']
         const next: RevCtx = name === 'w:ins' ? { ...rev, ins: info } : { ...rev, del: info }
         walk(childrenOf(node), link, next)
+      } else if (name === 'w:moveFromRangeStart' || name === 'w:moveToRangeStart') {
+        const attrs = attrsOf(node)
+        const open = (ctx.openMoves ??= [])
+        open.push({
+          id: attrs['w:id'] ?? '',
+          name: attrs['w:name'] ?? `move${attrs['w:id'] ?? ''}`,
+          side: name === 'w:moveFromRangeStart' ? 'from' : 'to',
+        })
+      } else if (name === 'w:moveFromRangeEnd' || name === 'w:moveToRangeEnd') {
+        const id = attrsOf(node)['w:id'] ?? ''
+        const open = ctx.openMoves ?? []
+        const at = open.map((m) => m.id).lastIndexOf(id)
+        if (at >= 0) open.splice(at, 1)
       } else if (name === 'w:moveFrom' || name === 'w:moveTo') {
-        // Treat moveFrom like del (content was moved away) and moveTo like ins (content arrived here).
-        // This allows the existing accept/reject mechanism to handle moves via del/ins marks.
+        // moveFrom is a deletion at the source, moveTo an insertion at the
+        // destination; the shared range name pairs them for accept / reject
         const attrs = attrsOf(node)
         const info: RevisionInfo = { author: attrs['w:author'] ?? '' }
         if (attrs['w:date']) info.date = attrs['w:date']
         if (attrs['w16du:dateUtc']) info.dateUtc = attrs['w16du:dateUtc']
         if (attrs['w:id']) info.id = attrs['w:id']
-        const next: RevCtx = name === 'w:moveFrom' ? { ...rev, del: info } : { ...rev, ins: info }
+        const side = name === 'w:moveFrom' ? 'from' : 'to'
+        const range = [...(ctx.openMoves ?? [])].reverse().find((m) => m.side === side)
+        info.move = range?.name ?? attrs['w:name'] ?? `move${attrs['w:id'] ?? ''}`
+        const next: RevCtx = side === 'from' ? { ...rev, del: info } : { ...rev, ins: info }
         walk(childrenOf(node), link, next)
       } else if (name === 'w:r') {
         handleRun(node, link, rev)
@@ -4529,7 +4650,11 @@ function extractRuns(
           pushRun(
             {
               text: mathTokens(omml).join(''),
-              math: { omml },
+              math: {
+                omml,
+                ...(mathParaDepth > 0 ? { display: true } : {}),
+                ...(ommlEndsWithBreak(omml) ? { breakAfter: true } : {}),
+              },
               ...(Number.isFinite(sz) ? { sizeHalfPoints: Math.max(1, sz) } : {}),
             },
             rev,
@@ -4571,6 +4696,12 @@ function extractRuns(
         name === 'w:bdo'
       ) {
         walk(childrenOf(node), link, rev)
+      } else if (name === 'm:oMathPara') {
+        // display equation inside a cell paragraph: its m:oMath runs flag
+        // display so the wrapper regenerates and the renderer uses display style
+        mathParaDepth++
+        walk(childrenOf(node), link, rev)
+        mathParaDepth--
       } else if (name === 'w:fldSimple') {
         // single-element field form: the children are the cached result runs
         // (Word shows them until the field refreshes) — MERGEFIELD address
@@ -4755,30 +4886,22 @@ function buildRun(
     // runs read the base props and ignore the Cs twins entirely. Script content
     // and paragraph w:bidi play no part. Font slot choice is separate.
     const inheritedRtl = (rStyle ? styles.get(rStyle)?.display?.rtl : undefined) ?? res.paraRtl
-    const bold = onOffOf(rPr, cs ? 'w:bCs' : 'w:b')
-    if (bold !== undefined) run.bold = bold
-    const italic = onOffOf(rPr, cs ? 'w:iCs' : 'w:i')
-    if (italic !== undefined) run.italic = italic
-    if (underlineProp(rPr)) run.underline = true
-    else if (attrsOf(findChild(rPr, 'w:u') ?? {})['w:val'] === 'none') run.underline = false
-    const strike = onOffOf(rPr, 'w:strike')
-    if (strike !== undefined) run.strike = strike
+    Object.assign(run, directRunFormat(eff))
+    if (res.diff) {
+      for (const d of shadowCompare(
+        legacyDirectRunFormat(rPr, cs, themeFonts),
+        run,
+        DIRECT_RUN_KEYS,
+      ))
+        res.diff.push({ ...d, surface: 'run', text: run.text.slice(0, 40) })
+    }
     const color = colorFrom(rPr, theme) ?? w14TextFillHex(rPr, theme) ?? autoColorOf(rPr)
     if (color) run.color = color
     if (color && theme && attrsOf(findChild(rPr, 'w:color') ?? {})['w:themeColor']) {
       run.themeColor = color
     }
-    const sz = parseInt(attrsOf(findChild(rPr, cs ? 'w:szCs' : 'w:sz') ?? {})['w:val'] ?? '', 10)
-    // Word clamps w:sz to one half-point: sz=0 lays out at 0.5pt, not at the default size
-    if (Number.isFinite(sz)) run.sizeHalfPoints = Math.max(1, sz)
     const rfAttrs = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
     const rf = themedRFonts(rfAttrs, themeFonts)
-    const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
-    if (font) run.font = font
-    if (rf.eastAsia) run.eastAsiaFont = rf.eastAsia
-    if (rf.eaSlotEmpty && font && font === rf.eastAsia) run.eaSlotEmpty = true
-    const fontAscii = rf.ascii ?? rf.hAnsi
-    if (fontAscii) run.fontAscii = fontAscii
     // record which resolved values came from theme refs (per winning slot)
     const fontThemed =
       rf.eastAsia !== undefined
@@ -4787,30 +4910,17 @@ function buildRun(
           ? rf.themed?.ascii
           : rf.themed?.hAnsi
     const fontAsciiThemed = rf.ascii !== undefined ? rf.themed?.ascii : rf.themed?.hAnsi
-    if ((fontThemed && font) || (fontAsciiThemed && fontAscii)) {
+    if ((fontThemed && run.font) || (fontAsciiThemed && run.fontAscii)) {
       run.themeRFonts = {
-        ...(fontThemed && font ? { font } : {}),
-        ...(fontAsciiThemed && fontAscii ? { fontAscii } : {}),
+        ...(fontThemed && run.font ? { font: run.font } : {}),
+        ...(fontAsciiThemed && run.fontAscii ? { fontAscii: run.fontAscii } : {}),
       }
     }
     // complex-script slot: literal attribute only — theme refs (w:cstheme) stay in
     // rawRPr so untouched runs keep their original bytes
     if (rfAttrs['w:cs']) run.fontCs = rfAttrs['w:cs']
-    // theme-resolved cs font for display consumers
-    if (rf.cs) run.csFont = rf.cs
     const rtl = onOffOf(rPr, 'w:rtl')
     if (rtl !== undefined) run.rtl = rtl
-    const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
-    // an explicit 0 must beat the style's letter spacing
-    if (!Number.isNaN(spc)) run.charSpacingTwips = spc
-    const kern = attrsOf(findChild(rPr, 'w:kern') ?? {})['w:val']
-    if (kern !== undefined) run.kernHalfPoints = parseInt(kern, 10) || 0
-    // w:caps wins over w:smallCaps when both are on (Word)
-    const capsOn = onOffOf(rPr, 'w:caps')
-    const smallCapsOn = onOffOf(rPr, 'w:smallCaps')
-    if (capsOn) run.caps = 'all'
-    else if (smallCapsOn) run.caps = 'small'
-    else if (capsOn === false || smallCapsOn === false) run.caps = 'none'
     const wScale = parseInt(attrsOf(findChild(rPr, 'w:w') ?? {})['w:val'] ?? '', 10)
     if (wScale > 0 && wScale !== 100) run.charScalePct = wScale
     const highlight = attrsOf(findChild(rPr, 'w:highlight') ?? {})['w:val']
@@ -4830,8 +4940,6 @@ function buildRun(
     if (glow) run.glow = glow
     const position = parseInt(attrsOf(findChild(rPr, 'w:position') ?? {})['w:val'] ?? '', 10)
     if (position) run.positionHalfPoints = position
-    const vertAlign = attrsOf(findChild(rPr, 'w:vertAlign') ?? {})['w:val']
-    if (vertAlign === 'superscript' || vertAlign === 'subscript') run.vertAlign = vertAlign
     const em = attrsOf(findChild(rPr, 'w:em') ?? {})['w:val']
     if (em && em !== 'none') run.em = em as NonNullable<Run['em']>
     const rPrChange = findChild(rPr, 'w:rPrChange')
@@ -4846,7 +4954,7 @@ function buildRun(
         if (boolProp(oldRPr, ocs ? 'w:iCs' : 'w:i')) old.italic = true
         if (underlineProp(oldRPr)) old.underline = true
         if (boolProp(oldRPr, 'w:strike')) old.strike = true
-        const oc = colorFrom(oldRPr, theme)
+        const oc = colorFrom(oldRPr, theme) ?? w14TextFillHex(oldRPr, theme) ?? autoColorOf(oldRPr)
         if (oc) old.color = oc
         const osz = attrsOf(findChild(oldRPr, ocs ? 'w:szCs' : 'w:sz') ?? {})['w:val']
         if (osz) old.sizeHalfPoints = parseInt(osz, 10) || undefined
@@ -4856,7 +4964,7 @@ function buildRun(
         const ofa = ofonts['w:ascii'] ?? ofonts['w:hAnsi']
         if (ofa) old.fontAscii = ofa
         const ospc = parseInt(attrsOf(findChild(oldRPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
-        if (ospc) old.charSpacingTwips = ospc
+        if (Number.isFinite(ospc)) old.charSpacingTwips = ospc
         const owScale = parseInt(attrsOf(findChild(oldRPr, 'w:w') ?? {})['w:val'] ?? '', 10)
         if (owScale > 0 && owScale !== 100) old.charScalePct = owScale
         const ohighlight = attrsOf(findChild(oldRPr, 'w:highlight') ?? {})['w:val']
@@ -4865,6 +4973,25 @@ function buildRun(
         if (overtAlign === 'superscript' || overtAlign === 'subscript') old.vertAlign = overtAlign
         const ostyle = attrsOf(findChild(oldRPr, 'w:rStyle') ?? {})['w:val']
         if (ostyle) old.styleId = ostyle
+        const ocaps = onOffOf(oldRPr, 'w:caps')
+        const osmall = onOffOf(oldRPr, 'w:smallCaps')
+        if (ocaps === true) old.caps = 'all'
+        else if (osmall === true) old.caps = 'small'
+        else if (ocaps === false || osmall === false) old.caps = 'none'
+        if (boolProp(oldRPr, 'w:dstrike')) old.dstrike = true
+        const ovanish =
+          onOffOf(oldRPr, 'w:specVanish') === true ? undefined : onOffOf(oldRPr, 'w:vanish')
+        if (ovanish !== undefined) old.vanishOwn = ovanish
+        const okern = attrsOf(findChild(oldRPr, 'w:kern') ?? {})['w:val']
+        if (okern !== undefined) old.kernHalfPoints = parseInt(okern, 10) || 0
+        const opos = parseInt(attrsOf(findChild(oldRPr, 'w:position') ?? {})['w:val'] ?? '', 10)
+        if (opos) old.positionHalfPoints = opos
+        const oshd = attrsOf(findChild(oldRPr, 'w:shd') ?? {})['w:fill']
+        if (oshd && oshd !== 'auto') old.shading = stripHash(oshd)
+        const ortl = onOffOf(oldRPr, 'w:rtl')
+        if (ortl !== undefined) old.rtl = ortl
+        if (oc && theme && attrsOf(findChild(oldRPr, 'w:color') ?? {})['w:themeColor'])
+          old.themeColor = oc
       }
       run.rPrChange = {
         author: a['w:author'] ?? '',
@@ -4872,6 +4999,7 @@ function buildRun(
         ...(a['w16du:dateUtc'] ? { dateUtc: a['w16du:dateUtc'] } : {}),
         ...(a['w:id'] ? { id: a['w:id'] } : {}),
         ...(Object.keys(old).length > 0 ? { old } : {}),
+        ...(oldRPr ? { oldRPr: childrenOf(oldRPr).map(serializeXNode).join('') } : {}),
       }
     }
   }
@@ -4891,6 +5019,50 @@ function buildRun(
       if (run.rawRPr) run.rawRPr = run.rawRPr.replace(/<w:rFonts[^>]*\/>/, '')
     }
   }
+  return run
+}
+
+/** shadow mode: extractRun's former direct rPr reader for the keys the resolver now owns */
+function legacyDirectRunFormat(
+  rPr: XNode,
+  cs: boolean,
+  themeFonts: ThemeFonts | null | undefined,
+): Run {
+  const run: Run = { text: '' }
+  const bold = onOffOf(rPr, cs ? 'w:bCs' : 'w:b')
+  if (bold !== undefined) run.bold = bold
+  const italic = onOffOf(rPr, cs ? 'w:iCs' : 'w:i')
+  if (italic !== undefined) run.italic = italic
+  if (underlineProp(rPr)) run.underline = true
+  else if (attrsOf(findChild(rPr, 'w:u') ?? {})['w:val'] === 'none') run.underline = false
+  const strike = onOffOf(rPr, 'w:strike')
+  if (strike !== undefined) run.strike = strike
+  const sz = parseInt(attrsOf(findChild(rPr, cs ? 'w:szCs' : 'w:sz') ?? {})['w:val'] ?? '', 10)
+  // Word clamps w:sz to one half-point: sz=0 lays out at 0.5pt, not at the default size
+  if (Number.isFinite(sz)) run.sizeHalfPoints = Math.max(1, sz)
+  const rfAttrs = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
+  const rf = themedRFonts(rfAttrs, themeFonts)
+  const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
+  if (font) run.font = font
+  if (rf.eastAsia) run.eastAsiaFont = rf.eastAsia
+  if (rf.eaSlotEmpty && font && font === rf.eastAsia) run.eaSlotEmpty = true
+  const fontAscii = rf.ascii ?? rf.hAnsi
+  if (fontAscii) run.fontAscii = fontAscii
+  // theme-resolved cs font for display consumers
+  if (rf.cs) run.csFont = rf.cs
+  const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
+  // an explicit 0 must beat the style's letter spacing
+  if (!Number.isNaN(spc)) run.charSpacingTwips = spc
+  const kern = attrsOf(findChild(rPr, 'w:kern') ?? {})['w:val']
+  if (kern !== undefined) run.kernHalfPoints = parseInt(kern, 10) || 0
+  // w:caps wins over w:smallCaps when both are on (Word)
+  const capsOn = onOffOf(rPr, 'w:caps')
+  const smallCapsOn = onOffOf(rPr, 'w:smallCaps')
+  if (capsOn) run.caps = 'all'
+  else if (smallCapsOn) run.caps = 'small'
+  else if (capsOn === false || smallCapsOn === false) run.caps = 'none'
+  const vertAlign = attrsOf(findChild(rPr, 'w:vertAlign') ?? {})['w:val']
+  if (vertAlign === 'superscript' || vertAlign === 'subscript') run.vertAlign = vertAlign
   return run
 }
 
@@ -4919,7 +5091,7 @@ function extractTable(xml: string, ctx: BuildContext, docOffset?: number): Table
     const model = extractTableModel(tbl, ctx, 1, docOffset)
     if (!model) return undefined
     const rawTrPrs: Array<string | null> = model.rows.map(() => null)
-    attachRawTablePr(xml, model.rows, rawTrPrs)
+    attachRawTablePr(xml, model, rawTrPrs)
     if (rawTrPrs.some((r) => r !== null)) model.rawTrPrs = rawTrPrs
     return model
   } catch {
@@ -4934,7 +5106,7 @@ function extractTable(xml: string, ctx: BuildContext, docOffset?: number): Table
  * narrows it). Undefined unless every column got a value — partial data would skew
  * the ratio worse than the tblGrid fallback.
  */
-function tcwColumnWidths(tbl: XNode): number[] | undefined {
+function tcwColumnWidths(tbl: XNode, pctTableTwips = 0): number[] | undefined {
   const cols: number[] = []
   let colCount = 0
   for (const tr of childrenThroughSdt(tbl, 'w:tr')) {
@@ -4948,7 +5120,14 @@ function tcwColumnWidths(tbl: XNode): number[] | undefined {
       )
       // duplicated w:tcW: Word keeps the last occurrence (generators leave stale first values)
       const a = attrsOf(findChildren(tcPr ?? {}, 'w:tcW').at(-1) ?? {})
-      const w = !a['w:type'] || a['w:type'] === 'dxa' ? Number(a['w:w']) || 0 : 0
+      // pct cell widths (1/50 of a percent) of a pct table resolve against its width
+      // (probe 2026-10-29: tcW pct 15/40/30/15 drawn as those shares, grid ignored)
+      const w =
+        !a['w:type'] || a['w:type'] === 'dxa'
+          ? Number(a['w:w']) || 0
+          : a['w:type'] === 'pct' && pctTableTwips > 0
+            ? Math.round(((Number(a['w:w']) || 0) / 5000) * pctTableTwips)
+            : 0
       if (span === 1 && w > 0) cols[idx] = Math.max(cols[idx] || 0, w)
       idx += span
     }
@@ -5185,14 +5364,34 @@ function extractTableModel(
   const tblSpacing =
     spacingOf(tblPrNode) ?? (firstTr ? spacingOf(findChild(firstTr, 'w:trPr')) : undefined)
   const uniformGrid = isUniformGrid(colWidthsTwips)
+  let widthPct: number | undefined
+  if (tblW['w:type'] === 'pct') {
+    const raw = String(tblW['w:w'] ?? '')
+    // The pct unit is 1/50 of a percentage point; some generators write a literal "NN%"
+    const pct = raw.endsWith('%') ? parseFloat(raw) : Number(raw) / 50
+    if (Number.isFinite(pct) && pct > 0 && pct <= 100) widthPct = pct
+  }
+  const sect = docOffset !== undefined ? ctx.sectionAt?.(docOffset) : undefined
+  const gridTotalRaw = (colWidthsTwips ?? []).reduce((a, b) => a + b, 0)
+  // a pct table's saved grid is Word's own layout only when it sums to the pct
+  // width (3 %); any other non-uniform grid is a generator artefact and yields
+  // to tcW (probe 2026-10-29)
+  const pctWidths =
+    widthPct && sect ? usableTableWidths(sect, tblIndTwips).map((u) => (u * widthPct!) / 100) : []
+  const gridMatchesPct =
+    !!widthPct &&
+    gridTotalRaw > 0 &&
+    !tableLacksTcW(tbl) &&
+    (pctWidths.length === 0 || pctWidths.some((w) => Math.abs(gridTotalRaw - w) <= w * 0.03))
   // Cell-level w:tcW is Word's actual layout input for auto tables; generators often
   // leave a stale evenly-split tblGrid behind. When the two disagree, tcW wins.
-  const tcwWidths = tcwColumnWidths(tbl)
+  const tcwWidths = tcwColumnWidths(tbl, widthPct ? (pctWidths[0] ?? gridTotalRaw) : 0)
   let tcwWins = false
   if (tcwWidths) {
     const tcwTotal = tcwWidths.reduce((a, b) => a + b, 0)
     const tcwPct = tcwWidths.map((w) => (w / tcwTotal) * 100)
-    // Fixed layout sizes columns from tcW alone, so a matching ratio with a
+    // Fixed layout draws the saved grid when its total agrees with tcW (Word
+    // keeps gridCol over disagreeing cell widths); a matching ratio with a
     // different absolute sum still means the grid is stale. So does a table with
     // no declared width (tblW auto): Word sizes it from the cells' preferred widths,
     // unless those overflow the text column - then Word shrinks the table to the
@@ -5205,7 +5404,6 @@ function extractTableModel(
     const tblWAuto =
       tblW['w:type'] === 'auto' ||
       ((!tblW['w:type'] || tblW['w:type'] === 'dxa') && !(Number(tblW['w:w']) > 0))
-    const sect = docOffset !== undefined ? ctx.sectionAt?.(docOffset) : undefined
     const gridIsShrunkLayout = (sect ? usableTableWidths(sect, tblIndTwips, legacyHang) : []).some(
       (usable) =>
         tcwTotal > usable + tcwWidths.length && Math.abs(gridTotal - usable) <= usable * 0.03,
@@ -5218,21 +5416,15 @@ function extractTableModel(
     const disagree =
       !colWidthsPct ||
       colWidthsPct.length !== tcwPct.length ||
-      ((fixedLayout || uniformGrid) && colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2)) ||
+      (uniformGrid && colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2)) ||
       ((fixedLayout || (tblWAuto && !gridIsShrunkLayout)) &&
-        (gridExcess < -tcwWidths.length || gridExcess > tcwWidths.length + spacingRoom))
+        (gridExcess < -tcwWidths.length || gridExcess > tcwWidths.length + spacingRoom)) ||
+      (!!widthPct && !gridMatchesPct)
     if (disagree) {
       colWidthsPct = tcwPct
       colWidthsTwips = tcwWidths
       tcwWins = true
     }
-  }
-  let widthPct: number | undefined
-  if (tblW['w:type'] === 'pct') {
-    const raw = String(tblW['w:w'] ?? '')
-    // The pct unit is 1/50 of a percentage point; some generators write a literal "NN%"
-    const pct = raw.endsWith('%') ? parseFloat(raw) : Number(raw) / 50
-    if (Number.isFinite(pct) && pct > 0 && pct <= 100) widthPct = pct
   }
   // Placeholder grids (generators emit 100-twip gridCols without computing a
   // layout) collapse the table to a strip. Word lays autofit tables out from
@@ -5293,7 +5485,7 @@ function extractTableModel(
     // page gallery tables sit at the bottom margin); a numeric Y stays text-relative
     const vertAnchor = tblpPr['w:vertAnchor'] ?? (ySpecOk ? 'margin' : undefined)
     floatPos = {
-      xTwips: Number.isFinite(x) ? x : floatSide === 'right' ? 9360 : 0,
+      xTwips: Number.isFinite(x) ? x : 0,
       yTwips: Number.isFinite(y) ? y : 0,
       ...(horzAnchor === 'page' || horzAnchor === 'margin' || horzAnchor === 'text'
         ? { horzAnchor }
@@ -5415,7 +5607,7 @@ function extractTableModel(
   // Word lays an autofit table (tblW auto or dxa) out from tcW/content and saves
   // the result as the grid, so an unequal grid it kept is Word's own measure of
   // every word (probe: a dxa table drawn at its saved grid, not its tcW)
-  if (!fixedLayout && !widthPct && colWidthsTwips && !tcwWins && !uniformGrid)
+  if (!fixedLayout && (!widthPct || gridMatchesPct) && colWidthsTwips && !tcwWins && !uniformGrid)
     model.layoutGrid = true
   // no w:tcW at all: Word lays the pct table out from the cell content and never
   // consults the generator's grid (probe 2026-10-20: uniform and skewed grids
@@ -5476,20 +5668,39 @@ function rowRevisionOf(trPr: XNode): ({ kind: 'ins' | 'del' } & RevisionInfo) | 
  * not misalign; gives up when row/column counts disagree with the parse result
  * (conservative — never attach to the wrong cell).
  */
-function attachRawTablePr(xml: string, rows: TableCell[][], rawTrPrs: Array<string | null>): void {
+function attachRawTablePr(xml: string, model: TableModel, rawTrPrs: Array<string | null>): void {
+  const rows = model.rows
   const open = /<w:tbl[\s>]/.exec(xml)
   if (!open) return
   const innerStart = xml.indexOf('>', open.index) + 1
   const innerEnd = xml.lastIndexOf('</w:tbl>')
   if (innerStart <= 0 || innerEnd < 0) return
-  const trs = splitXmlChildren(xml.slice(innerStart, innerEnd)).filter((c) => c.name === 'w:tr')
+  const tblKids = splitXmlChildren(xml.slice(innerStart, innerEnd))
+  const tblPr = tblKids.find((c) => c.name === 'w:tblPr')
+  const tblPrChange = tblPr && propChangeInfo(tblPr.xml, 'w:tblPrChange')
+  if (tblPrChange) model.tblPrChange = tblPrChange
+  const tblGrid = tblKids.find((c) => c.name === 'w:tblGrid')
+  const tblGridChange = tblGrid && propChangeInfo(tblGrid.xml, 'w:tblGridChange')
+  if (tblGridChange) model.tblGridChange = tblGridChange
+  const trs = tblKids.filter((c) => c.name === 'w:tr')
   if (trs.length !== rows.length) return
+  const rowPrChanges: Array<PropChangeInfo | null> = rows.map(() => null)
+  const rawTblPrExs: Array<string | null> = rows.map(() => null)
+  const rowTblPrExChanges: Array<PropChangeInfo | null> = rows.map(() => null)
   trs.forEach((tr, ri) => {
     const trOpenEnd = tr.xml.indexOf('>') + 1
     const trInner = tr.xml.slice(trOpenEnd, tr.xml.lastIndexOf('</w:tr>'))
     const kids = splitXmlChildren(trInner)
     const trPr = kids.find((k) => k.name === 'w:trPr')
-    if (trPr) rawTrPrs[ri] = trPr.xml
+    if (trPr) {
+      rawTrPrs[ri] = trPr.xml
+      rowPrChanges[ri] = propChangeInfo(trPr.xml, 'w:trPrChange') ?? null
+    }
+    const tblPrEx = kids.find((k) => k.name === 'w:tblPrEx')
+    if (tblPrEx) {
+      rawTblPrExs[ri] = tblPrEx.xml
+      rowTblPrExChanges[ri] = propChangeInfo(tblPrEx.xml, 'w:tblPrExChange') ?? null
+    }
     const tcs = kids.filter((k) => k.name === 'w:tc')
     // gridGap placeholders have no w:tc in the source: align against real cells only
     const targets = rows[ri].filter((cell) => !cell.gridGap)
@@ -5498,9 +5709,24 @@ function attachRawTablePr(xml: string, rows: TableCell[][], rawTrPrs: Array<stri
       const tcOpenEnd = tc.xml.indexOf('>') + 1
       const tcInner = tc.xml.slice(tcOpenEnd, tc.xml.lastIndexOf('</w:tc>'))
       const tcPr = splitXmlChildren(tcInner).find((k) => k.name === 'w:tcPr')
-      if (tcPr) targets[ci].rawTcPr = tcPr.xml
+      if (!tcPr) return
+      targets[ci].rawTcPr = tcPr.xml
+      const tcPrChange = propChangeInfo(tcPr.xml, 'w:tcPrChange')
+      if (tcPrChange) targets[ci].tcPrChange = tcPrChange
+      const cellMerge = propChangeInfo(tcPr.xml, 'w:cellMerge')
+      if (cellMerge) targets[ci].cellMerge = cellMerge
     })
   })
+  if (rowPrChanges.some(Boolean)) model.rowPrChanges = rowPrChanges
+  if (rawTblPrExs.some(Boolean)) model.rawTblPrExs = rawTblPrExs
+  if (rowTblPrExChanges.some(Boolean)) model.rowTblPrExChanges = rowTblPrExChanges
+}
+
+function propChangeInfo(xml: string, changeName: string): PropChangeInfo | undefined {
+  const record = readPropChangeXml(xml, changeName)
+  if (!record) return undefined
+  const { oldXml, ...info } = record
+  return oldXml ? { ...info, oldXml } : info
 }
 
 /**
@@ -5623,6 +5849,7 @@ function applyTableStyleDisplay(
 }
 
 const ANCHOR_HOSTS = new Set(['w:drawing', 'w:pict'])
+const MATH_HOSTS = new Set(['m:oMath'])
 const TXBX_CONTENT = new Set(['w:txbxContent'])
 const WP_INLINE = new Set(['wp:inline'])
 const WP_ANCHOR = new Set(['wp:anchor'])
@@ -5804,13 +6031,20 @@ function extractCell(
         }
       : undefined
     const eff0 = resolveParagraphProps(pPr, rctx)
-    const runs = extractRuns(p, ctx, [], [], true, undefined, { eff: eff0, rctx })
+    // equations in cells: the m:oMath fragments the run walk turns into atomic
+    // math runs (without them the walk yields nothing and the formula is lost)
+    const mathFragments = hasDeepChild(p, MATH_HOSTS)
+      ? ommlFragmentsOf(mathSourceXmlOf(serializeXNode(p)))
+      : []
+    const runs = extractRuns(p, ctx, mathFragments, [], true, undefined, { eff: eff0, rctx })
     const eff = eff0.indent.chars
       ? resolveParagraphProps(pPr, rctx, {
           charUnits: charUnitsOf(ctx, runs, p, pPr, cellStyleId, docOffset),
         })
       : eff0
-    const format = foldEffectiveFormat(extractParaFormat(pPr ?? {}, ctx.themeColors), pPr, eff)
+    const direct = resolvedParaFormat(eff0, pPr, ctx.themeColors)
+    shadowParaFormat(ctx, 'cell', pPr, styleBidiOf(ctx, cellStyleId, cellRef), direct, runs)
+    const format = foldEffectiveFormat(direct, pPr, eff)
     const spaceOnly = runs.length > 0 && spaceOnlyRuns(runs) && !hasLayoutRunContent(p)
     const markSized = runs.length === 0 || spaceOnly
     const emptySz = markSized
@@ -6289,13 +6523,16 @@ function hfShapeDrawingSvg(frag: string): string | null {
 
 /** [start, end) spans of top-level w:tbl elements (nesting-aware) */
 /**
- * Tracked deletions in a header/footer part leave the strip as in Word's
- * markup views (a deleted logo run no longer pushes the body down); the save
- * path keeps the part's original bytes. The Original view is not restored.
+ * Tracked deletions of drawings in a header/footer part leave the strip (a
+ * deleted logo run no longer pushes the body down; the image scanners read the
+ * same stripped XML). Deleted text runs stay and parse as Run.del so the
+ * markup views and the sub-editor round trip can treat them as revisions.
  */
 function stripHfDeletions(xml: string): string {
   if (!/<w:(?:del|moveFrom)[\s>]/.test(xml)) return xml
-  return xml.replace(/<w:(del|moveFrom)(?=[\s>])(?:[^>/]|\/(?!>))*>[\s\S]*?<\/w:\1>/g, '')
+  return xml.replace(/<w:(del|moveFrom)(?=[\s>])(?:[^>/]|\/(?!>))*>[\s\S]*?<\/w:\1>/g, (block) =>
+    /<w:(?:drawing|pict|object)[\s>]/.test(block) ? '' : block,
+  )
 }
 
 function hfTblRanges(xml: string): Array<[number, number]> {
@@ -6762,6 +6999,32 @@ function hfParaStyleLayers(
   return { direct, d: styleId ? styles?.get(styleId)?.display : undefined }
 }
 
+/** Face sizing an empty strip paragraph's line. Word lays the mark with its
+ *  East Asian font only under w:hint="eastAsia" AND an East Asian w:lang
+ *  (probe 2026-10-27: a hinted mark under lang en-US in a Korean document is a
+ *  Latin-height line, not a Malgun one); otherwise the Latin font. Decided
+ *  only for hinted marks and marks whose two slots name one face; other marks
+ *  keep the strip's document line factor. */
+function hfEmptyMarkFont(pPr: XNode | undefined, ctx: BuildContext): string | undefined {
+  const rPr = pPr ? findChild(pPr, 'w:rPr') : undefined
+  const hinted = attrsOf(findChild(rPr ?? {}, 'w:rFonts') ?? {})['w:hint'] === 'eastAsia'
+  const mark = resolveParagraphProps(pPr, resolverOf(ctx)).mark
+  const { fonts } = mark
+  // an empty theme slot that only reaches the generic stand-in has no real face
+  const ea =
+    fonts.eaSlotEmpty && fonts.eastAsia === EMPTY_EA_THEME_FONT ? undefined : fonts.eastAsia
+  // without the hint the mark's own (direct or style) Latin face sizes the
+  // line: four Times New Roman sz 16 marks push the body 4 x 9.2, not 4 x 9.76
+  // (Word probe 2026-10-29); a docDefaults face is the strip's inherited face
+  if (!hinted) {
+    const src = mark.source.ascii
+    const declared = src === 'direct' || src === 'paraStyle' || src === 'tableStyle'
+    return declared ? fonts.ascii : ea && ea === fonts.ascii ? ea : undefined
+  }
+  const eaLang = /^(zh|ja|ko)(-|$)/i.test(mark.eastAsiaLang ?? '')
+  return (eaLang ? ea : undefined) ?? fonts.ascii
+}
+
 /** display format of a strip paragraph: the direct pPr with the geometry the
  *  resolver settles through the style chain, docDefaults and compat (spacing,
  *  line, alignment, indents, borders) laid over it */
@@ -6828,8 +7091,10 @@ function hfParagraphs(
   const out: HfParagraph[] = []
   const runImageIds = new Set<string>()
   hfRunImageIds.set(out, runImageIds)
-  // floating tables (w:tblpPr) anchor to the paragraph that follows them in
-  // markup; Word draws that paragraph first, so their rows are deferred past it
+  // text-anchored floating tables (w:tblpPr) hang off the paragraph that
+  // follows them in markup; Word draws that paragraph first, so their rows are
+  // deferred past it. Page/margin-anchored ones sit at their own coordinates
+  // and the strip flow continues below them in markup order.
   const deferred: HfParagraph[] = []
   const flushDeferred = () => {
     out.push(...deferred)
@@ -6847,7 +7112,8 @@ function hfParagraphs(
         compatibilityMode,
         tblIndex++,
       )
-      if (findChild(findChild(node, 'w:tblPr') ?? {}, 'w:tblpPr')) deferred.push(...rows)
+      const float = hfTableFloatOf(findChild(node, 'w:tblPr'))
+      if (float && (float.vertAnchor ?? 'text') === 'text') deferred.push(...rows)
       else out.push(...rows)
       continue
     }
@@ -6940,19 +7206,23 @@ function hfParagraphs(
             ? ('left' as const)
             : undefined
     const mergedStops = mergeTabStops(d?.tabStops, direct?.tabStops)
-    // a blank strip line is sized by its paragraph mark, else by the style's run size
+    // a blank strip line is sized by its paragraph mark, else by the style's run
+    // size; space-only runs never size a line, so such a paragraph is blank too
+    // (Word probe 2026-10-29: a sz 32 space under a sz 16 mark is a sz 16 line)
     const styleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
-    const emptySz =
-      runs.length === 0
-        ? (emptyParaSizeHalfPoints(pNode, pPr) ??
-          (styleId ? styles?.get(styleId)?.display?.sizeHalfPoints : undefined))
-        : undefined
+    const blank = runs.every((r) => !r.image && /^[ \u00a0\u3000]*$/.test(r.text))
+    const emptySz = blank
+      ? (emptyParaSizeHalfPoints(pNode, pPr) ??
+        (styleId ? styles?.get(styleId)?.display?.sizeHalfPoints : undefined))
+      : undefined
+    const emptyFont = blank ? hfEmptyMarkFont(pPr, ctx) : undefined
     out.push({
       ...hfStyledParaFormat(pNode, ctx),
       ...(mergedStops ? { tabStops: mergedStops } : {}),
       ...(sawPtab ? { ptabAligns } : {}),
       ...(frameXAlign ? { frameXAlign } : {}),
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
+      ...(emptyFont ? { emptyRunFont: emptyFont } : {}),
       runs,
     })
     out.push(...anchoredBoxes)
@@ -7055,16 +7325,26 @@ function hfTableRowParagraphs(
   const indentTwips =
     (Number.isFinite(indRaw) ? indRaw : 0) - (compatibilityMode >= 15 ? 0 : (tblMar?.left ?? 108))
   const bidiVisual = boolProp(tblPr ?? {}, 'w:bidiVisual')
+  const tblJc = attrsOf(findChild(tblPr ?? {}, 'w:jc') ?? {})['w:val']
+  const align =
+    tblJc === 'center' ? 'center' : tblJc === 'right' || tblJc === 'end' ? 'right' : undefined
+  const float = hfTableFloatOf(tblPr)
   const rowBase: HfTableRow = {
     indentTwips,
     tabOverflow: compatibilityMode >= 15 ? 'wrap' : 'clip',
     ...(bidiVisual ? { bidiVisual: true } : {}),
+    ...(align ? { align } : {}),
+    ...(float ? { float } : {}),
     ...(resolverOf(ctx).compat.additiveParaSpacing ? { additiveSpacing: true } : {}),
   }
   const grid = findChild(tbl, 'w:tblGrid')
   const gridCols = grid
     ? findChildren(grid, 'w:gridCol').map((g) => Number(attrsOf(g)['w:w']) || 0)
     : []
+  const gridWidth = gridCols.reduce((sum, w) => sum + w, 0)
+  const tblWidth =
+    gridWidth || (tblW['w:type'] === 'dxa' || !tblW['w:type'] ? Number(tblW['w:w']) || 0 : 0)
+  if (tblWidth > 0) rowBase.widthTwips = tblWidth
   const trs = childrenThroughSdt(tbl, 'w:tr')
   const rawRows: HfRawCell[][] = trs.map((tr) => {
     let col = 0
@@ -7140,6 +7420,33 @@ function hfTableRowParagraphs(
     }
   })
   return out
+}
+
+/** w:tblpPr of a header/footer layout table; undefined when the table is in flow */
+function hfTableFloatOf(tblPr: XNode | undefined): HfTableFloat | undefined {
+  const pos = findChild(tblPr ?? {}, 'w:tblpPr')
+  if (!pos) return undefined
+  const a = attrsOf(pos)
+  const anchor = (v: string | undefined) =>
+    v === 'page' || v === 'margin' || v === 'text' ? v : undefined
+  const x = Number(a['w:tblpX'])
+  const y = Number(a['w:tblpY'])
+  const xSpec = a['w:tblpXSpec']
+  const horzAnchor = anchor(a['w:horzAnchor'])
+  const vertAnchor = anchor(a['w:vertAnchor'])
+  return {
+    ...(Number.isFinite(x) ? { xTwips: x } : {}),
+    ...(Number.isFinite(y) ? { yTwips: y } : {}),
+    ...(horzAnchor ? { horzAnchor } : {}),
+    ...(vertAnchor ? { vertAnchor } : {}),
+    ...(xSpec === 'left' ||
+    xSpec === 'center' ||
+    xSpec === 'right' ||
+    xSpec === 'inside' ||
+    xSpec === 'outside'
+      ? { xSpec }
+      : {}),
+  }
 }
 
 /** Cell content in document order, nested layout tables flattened into the cell
@@ -7480,6 +7787,8 @@ function noteRunOf(run: Run, base: EffectiveRPr): NoteRun {
   const caps = run.caps ?? base.caps
   if (caps === 'all' || caps === 'small') out.caps = caps
   if (run.textOutline) out.textOutline = run.textOutline
+  if (run.ins) out.ins = run.ins
+  if (run.del) out.del = run.del
   return out
 }
 
@@ -7636,6 +7945,8 @@ export type RunPictureAnchor = Pick<
   | 'offsetYEmu'
   | 'relV'
   | 'relH'
+  | 'posH'
+  | 'posV'
   | 'wrapDistTopEmu'
   | 'wrapDistBottomEmu'
   | 'wrapDistLeftEmu'
@@ -7658,6 +7969,8 @@ export function runPictureAnchorOf(drawingXml: string): RunPictureAnchor {
   if (meta.imageOffsetYEmu !== undefined) anchor.offsetYEmu = meta.imageOffsetYEmu
   if (meta.imageRelV) anchor.relV = meta.imageRelV
   if (meta.imageRelH) anchor.relH = meta.imageRelH
+  if (meta.imagePosH) anchor.posH = meta.imagePosH
+  if (meta.imagePosV) anchor.posV = meta.imagePosV
   if (meta.imageWrapDistTopEmu !== undefined) anchor.wrapDistTopEmu = meta.imageWrapDistTopEmu
   if (meta.imageWrapDistBottomEmu !== undefined)
     anchor.wrapDistBottomEmu = meta.imageWrapDistBottomEmu
@@ -7894,25 +8207,18 @@ function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
       !alignV
     )
       meta.imageRelV = posVFrom
-    // wp:align top on page/margin = a zero page offset: the picture pins to
-    // the top of the page its anchor lands on (center/bottom still flow)
-    if (
-      (posVFrom === 'page' || posVFrom === 'margin') &&
-      alignV === 'top' &&
-      offsetY === undefined &&
-      !(posHFrom === 'margin' && alignH)
-    ) {
+    // wp:align on the page/margin bands is a page position like a posOffset
+    // (probe 2026-10-29: center/bottom of the margin band = body centre /
+    // body bottom, top = the band top); the renderer resolves it on the
+    // anchor's page. A column/paragraph-relative keyword aligns in the column.
+    if ((posVFrom === 'page' || posVFrom === 'margin') && alignV && offsetY === undefined) {
       meta.imageRelV = posVFrom
-      meta.imagePosV = 'top'
+      meta.imagePosV = alignV as ImageMeta['imagePosV']
     }
     if ((posHFrom === 'page' || posHFrom === 'margin') && offsetX !== undefined && !alignH)
       meta.imageRelH = posHFrom
-    if (posHFrom === 'margin' && posVFrom === 'margin' && alignH && alignV) {
-      meta.imagePosH = alignH as ImageMeta['imagePosH']
-      meta.imagePosV = alignV as ImageMeta['imagePosV']
-    } else if ((posHFrom === 'margin' || posHFrom === 'page') && alignH && !alignV) {
-      // mixed positioning (H aligned, V by offset): keep the horizontal preset
-      // so no-wrap images at least center like Word/LO
+    if (alignH && offsetX === undefined) {
+      if (posHFrom === 'page' || posHFrom === 'margin') meta.imageRelH = posHFrom
       meta.imagePosH = alignH as ImageMeta['imagePosH']
     }
   }

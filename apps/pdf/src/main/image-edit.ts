@@ -570,39 +570,46 @@ export function renderPagePreviewPng(
 export function verifyImageEdits(
   bytes: Uint8Array,
   edits: { pageIndex: number; rect: Rect }[],
+  /** the password when the saved output is encrypted again */
+  password?: string,
 ): Promise<{ pageIndex: number; reason: string }[]> {
   return chainPdfium(async () => {
     const m = await loadPdfium()
-    return withDocument(m, bytes, async (doc) => {
-      const failures: { pageIndex: number; reason: string }[] = []
-      const pageCount = m._FPDF_GetPageCount(doc)
-      const byPage = new Map<number, Rect[]>()
-      for (const e of edits) {
-        if (e.pageIndex < 0 || e.pageIndex >= pageCount) {
-          failures.push({ pageIndex: e.pageIndex, reason: 'page missing from saved output' })
-          continue
-        }
-        byPage.set(e.pageIndex, [...(byPage.get(e.pageIndex) ?? []), e.rect])
-      }
-      for (const [pageIndex, rects] of byPage) {
-        const page = m._FPDF_LoadPage(doc, pageIndex)
-        if (!page) {
-          for (const _ of rects)
-            failures.push({ pageIndex, reason: 'page unreadable in saved output' })
-          continue
-        }
-        try {
-          const objects = collectImages(m, page)
-          for (const rect of rects) {
-            if (!matchImage(objects, rect)) {
-              failures.push({ pageIndex, reason: 'image missing from saved output' })
-            }
+    return withDocument(
+      m,
+      bytes,
+      async (doc) => {
+        const failures: { pageIndex: number; reason: string }[] = []
+        const pageCount = m._FPDF_GetPageCount(doc)
+        const byPage = new Map<number, Rect[]>()
+        for (const e of edits) {
+          if (e.pageIndex < 0 || e.pageIndex >= pageCount) {
+            failures.push({ pageIndex: e.pageIndex, reason: 'page missing from saved output' })
+            continue
           }
-        } finally {
-          m._FPDF_ClosePage(page)
+          byPage.set(e.pageIndex, [...(byPage.get(e.pageIndex) ?? []), e.rect])
         }
-      }
-      return failures
-    })
+        for (const [pageIndex, rects] of byPage) {
+          const page = m._FPDF_LoadPage(doc, pageIndex)
+          if (!page) {
+            for (const _ of rects)
+              failures.push({ pageIndex, reason: 'page unreadable in saved output' })
+            continue
+          }
+          try {
+            const objects = collectImages(m, page)
+            for (const rect of rects) {
+              if (!matchImage(objects, rect)) {
+                failures.push({ pageIndex, reason: 'image missing from saved output' })
+              }
+            }
+          } finally {
+            m._FPDF_ClosePage(page)
+          }
+        }
+        return failures
+      },
+      password,
+    )
   })
 }

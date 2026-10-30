@@ -1,6 +1,14 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection, type Selection } from '@tiptap/pm/state'
-import type { Mapping } from '@tiptap/pm/transform'
+import { Fragment, Slice, type Mark, type MarkType, type Node } from '@tiptap/pm/model'
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Selection,
+  type Transaction,
+} from '@tiptap/pm/state'
+import { AddMarkStep, RemoveMarkStep, type Mapping } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import { wordSegmentAt } from './word-range'
@@ -25,6 +33,11 @@ import { wordSegmentAt } from './word-range'
  * selectNodeModifier path, which would otherwise turn the whole paragraph into
  * a NodeSelection. A plain mousedown clears the added ranges, and a modifier
  * drag adds both the pre-drag range and the dragged one.
+ *
+ * The added ranges take part in three operations: a mark change applied to the
+ * live selection (bold, font, color, … from the ribbon, a shortcut or a dialog)
+ * is replayed on every added range by appendTransaction; copy/cut put all
+ * ranges on the clipboard; Backspace/Delete and cut remove them all.
  */
 
 /** one added range, in document coordinates */
@@ -42,7 +55,7 @@ const multiSelectKey = new PluginKey<MultiSelectState>('docsMultiSelect')
 
 const EMPTY: MultiSelectState = { ranges: [] }
 
-type MultiSelectMeta = { add: readonly MultiSelectRange[] } | { clear: true }
+type MultiSelectMeta = { add: readonly MultiSelectRange[] } | { clear: true } | { replay: true }
 
 export interface MultiSelectOptions {
   /** class painted on an added range; matches the app's selection styling */
@@ -137,6 +150,162 @@ function addClickedWord(view: EditorView, pos: number, before: Selection | null)
   }
 }
 
+/** every selected range — the added ones plus the live selection — sorted and merged */
+export function allSelectedRanges(state: EditorState): MultiSelectRange[] {
+  const { selection } = state
+  const extra = multiSelectKey.getState(state)?.ranges ?? []
+  if (extra.length === 0) return []
+  const list = [...extra]
+  if (selection instanceof TextSelection && !selection.empty) {
+    list.push({ from: selection.from, to: selection.to })
+  }
+  list.sort((a, b) => a.from - b.from)
+  const merged: MultiSelectRange[] = []
+  for (const r of list) {
+    const last = merged[merged.length - 1]
+    if (last && r.from <= last.to) {
+      if (r.to > last.to) merged[merged.length - 1] = { from: last.from, to: r.to }
+    } else merged.push(r)
+  }
+  return merged
+}
+
+/**
+ * The attrs the command set: identical across every AddMarkStep of the type
+ * and different from the mark that sat there before. Attrs that vary between
+ * steps are the live range's own formatting carried along by setMark's
+ * per-run merge, and replaying those would overwrite the other ranges.
+ */
+function markPatch(oldDoc: Node, steps: readonly AddMarkStep[]): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  const first = steps[0].mark
+  for (const [k, v] of Object.entries(first.attrs)) {
+    if (!steps.every((st) => st.mark.attrs[k] === v)) continue
+    const changed = steps.some((st) => {
+      const prev =
+        oldDoc.nodeAt(st.from)?.marks.find((m) => m.type === first.type) ?? first.type.create()
+      return prev.attrs[k] !== v
+    })
+    if (changed) patch[k] = v
+  }
+  return patch
+}
+
+function addMarkPatched(
+  tr: Transaction,
+  range: MultiSelectRange,
+  type: MarkType,
+  patch: Record<string, unknown>,
+): void {
+  if (Object.keys(type.spec.attrs ?? {}).length === 0) {
+    tr.addMark(range.from, range.to, type.create())
+    return
+  }
+  const runs: { from: number; to: number; mark: Mark }[] = []
+  tr.doc.nodesBetween(range.from, range.to, (node, pos) => {
+    if (!node.isInline) return
+    const prev = node.marks.find((m) => m.type === type)
+    runs.push({
+      from: Math.max(pos, range.from),
+      to: Math.min(pos + node.nodeSize, range.to),
+      mark: type.create({ ...prev?.attrs, ...patch }),
+    })
+  })
+  for (const r of runs) tr.addMark(r.from, r.to, r.mark)
+}
+
+/** the mark steps of `trs`, or null when they are not a pure mark change of the live selection */
+function markStepsOnSelection(
+  trs: readonly Transaction[],
+  oldState: EditorState,
+): (AddMarkStep | RemoveMarkStep)[] | null {
+  const { selection } = oldState
+  if (selection.empty) return null
+  const steps: (AddMarkStep | RemoveMarkStep)[] = []
+  for (const tr of trs) {
+    for (const step of tr.steps) {
+      if (!(step instanceof AddMarkStep || step instanceof RemoveMarkStep)) return null
+      if (step.from < selection.from || step.to > selection.to) return null
+      steps.push(step)
+    }
+  }
+  return steps.length > 0 ? steps : null
+}
+
+// formatting only: a comment, link or revision anchors one place in the document
+const REPLAYED_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'docTextStyle'])
+
+/** replay the mark changes of `transactions` on the added ranges, or null when there is nothing to do */
+function replayMarks(
+  transactions: readonly Transaction[],
+  oldState: EditorState,
+  newState: EditorState,
+): Transaction | null {
+  const extra = multiSelectKey.getState(newState)?.ranges ?? []
+  if (extra.length === 0) return null
+  if (transactions.some((t) => t.getMeta(multiSelectKey))) return null
+  const steps = markStepsOnSelection(transactions, oldState)
+  if (!steps) return null
+  const live = oldState.selection
+  const targets = extra.filter((r) => r.to <= live.from || r.from >= live.to)
+  if (targets.length === 0) return null
+  const tr = newState.tr.setMeta(multiSelectKey, { replay: true })
+  const adds = new Map<MarkType, AddMarkStep[]>()
+  const removes = new Set<MarkType>()
+  for (const step of steps) {
+    if (!REPLAYED_MARKS.has(step.mark.type.name)) continue
+    if (step instanceof AddMarkStep)
+      adds.set(step.mark.type, [...(adds.get(step.mark.type) ?? []), step])
+    else removes.add(step.mark.type)
+  }
+  // setMark rewrites a run as remove+add; only a lone remove is an unset
+  for (const type of removes) {
+    if (adds.has(type)) continue
+    for (const r of targets) tr.removeMark(r.from, r.to, type)
+  }
+  for (const [type, typeSteps] of adds) {
+    const patch = markPatch(oldState.doc, typeSteps)
+    for (const r of targets) addMarkPatched(tr, r, type, patch)
+  }
+  return tr.steps.length > 0 ? tr : null
+}
+
+/** one block per range so the clipboard HTML keeps the runs' formatting */
+function clipboardSlice(state: EditorState, ranges: readonly MultiSelectRange[]): Slice {
+  const blocks: Node[] = []
+  for (const r of ranges) {
+    const $from = state.doc.resolve(r.from)
+    const slice = state.doc.slice(r.from, r.to)
+    if ($from.parent.isTextblock && $from.sameParent(state.doc.resolve(r.to))) {
+      blocks.push($from.parent.copy(slice.content))
+    } else slice.content.forEach((n) => blocks.push(n))
+  }
+  return new Slice(Fragment.from(blocks), 0, 0)
+}
+
+function deleteRanges(view: EditorView, ranges: readonly MultiSelectRange[]): void {
+  const tr = view.state.tr
+  for (let i = ranges.length - 1; i >= 0; i--) tr.delete(ranges[i].from, ranges[i].to)
+  view.dispatch(tr.setMeta(multiSelectKey, { clear: true }).scrollIntoView())
+}
+
+function copyRanges(view: EditorView, event: ClipboardEvent, cut: boolean): boolean {
+  const ranges = allSelectedRanges(view.state)
+  if (ranges.length === 0 || !event.clipboardData) return false
+  const slice = clipboardSlice(view.state, ranges)
+  const { dom } = view.serializeForClipboard(slice)
+  event.preventDefault()
+  event.clipboardData.clearData()
+  event.clipboardData.setData('text/html', dom.innerHTML)
+  // tiptap's text serializer reads the live selection, not the slice
+  event.clipboardData.setData(
+    'text/plain',
+    slice.content.textBetween(0, slice.content.size, '\n\n'),
+  )
+  if (cut && view.editable) deleteRanges(view, ranges)
+  return true
+}
+
 export const MultiSelect = Extension.create<MultiSelectOptions>({
   name: 'multiSelect',
 
@@ -184,7 +353,7 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
             const meta = tr.getMeta(multiSelectKey) as MultiSelectMeta | undefined
             if (meta && 'clear' in meta) return EMPTY
             const mapped = mapRanges(value.ranges, tr.mapping)
-            if (meta) return { ranges: [...mapped, ...meta.add] }
+            if (meta && 'add' in meta) return { ranges: [...mapped, ...meta.add] }
             // nothing changed and the text did not move: keep the identical
             // state object so decorations are not rebuilt on every keystroke
             return mapped.length === value.ranges.length &&
@@ -193,6 +362,7 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
               : { ranges: mapped }
           },
         },
+        appendTransaction: replayMarks,
         props: {
           decorations(state) {
             const ranges = multiSelectKey.getState(state)?.ranges ?? []
@@ -202,7 +372,17 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
               ranges.map((r) => Decoration.inline(r.from, r.to, { class: className })),
             )
           },
+          handleKeyDown: (view, e) => {
+            if ((e.key !== 'Backspace' && e.key !== 'Delete') || e.metaKey || e.ctrlKey || e.altKey)
+              return false
+            const ranges = allSelectedRanges(view.state)
+            if (ranges.length === 0 || !view.editable) return false
+            deleteRanges(view, ranges)
+            return true
+          },
           handleDOMEvents: {
+            copy: (view, event) => copyRanges(view, event as ClipboardEvent, false),
+            cut: (view, event) => copyRanges(view, event as ClipboardEvent, true),
             mousedown: (view, event) => {
               const e = event as MouseEvent
               if (e.button !== 0) return false

@@ -16,7 +16,7 @@ import { dkBackground } from './dark-page'
 import { runBorderDecls } from './run-border'
 import { fillInk } from './shading-ink'
 import { textColorDecls } from './text-color'
-import type { RevisionDisplayMode } from './revision-view'
+import { DEFAULT_BALLOON_MODE, type BalloonMode, type RevisionDisplayMode } from './revision-view'
 import { parseTextOutlineAttr, textOutlineDecl } from './text-outline'
 import {
   charScaleXDecls,
@@ -191,18 +191,20 @@ export const InsMark = Mark.create({
       date: { default: null as string | null },
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
+      move: { default: null as string | null },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-ins-author]' }]
   },
   renderHTML({ mark }) {
+    const moved = !!mark.attrs.move
     return [
       'span',
       {
         'data-ins-author': mark.attrs.author,
-        class: 'doc-ins',
-        title: `${t('editorInsertedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
+        class: moved ? 'doc-ins doc-move-to' : 'doc-ins',
+        title: `${t(moved ? 'editorMovedBy' : 'editorInsertedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
       },
       0,
     ]
@@ -219,18 +221,20 @@ export const DelMark = Mark.create({
       date: { default: null as string | null },
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
+      move: { default: null as string | null },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-del-author]' }]
   },
   renderHTML({ mark }) {
+    const moved = !!mark.attrs.move
     return [
       'span',
       {
         'data-del-author': mark.attrs.author,
-        class: 'doc-del',
-        title: `${t('editorDeletedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
+        class: moved ? 'doc-del doc-move-from' : 'doc-del',
+        title: `${t(moved ? 'editorMovedBy' : 'editorDeletedBy', { author: String(mark.attrs.author) })}${mark.attrs.date ? ` · ${String(mark.attrs.date).slice(0, 10)}` : ''}`,
       },
       0,
     ]
@@ -315,7 +319,12 @@ export const SymMark = Mark.create({
 })
 
 /** Revision display mode (synced by App; in original mode the extension below restores old formatting via decorations) */
-export const revisionDisplayState = { mode: 'all' as RevisionDisplayMode }
+export const revisionDisplayState = {
+  mode: 'all' as RevisionDisplayMode,
+  balloons: DEFAULT_BALLOON_MODE as BalloonMode,
+  /** balloons exist on screen (All Markup, print layout) — the root carries data-balloons */
+  balloonsActive: false,
+}
 
 const revisionOriginalKey = new PluginKey('revisionOriginal')
 
@@ -371,6 +380,8 @@ export const RprChangeMark = Mark.create({
       dateUtc: { default: null as string | null },
       id: { default: null as string | null },
       old: { default: null as Record<string, unknown> | null, rendered: false },
+      /** the recorded previous w:rPr's inner XML; reject writes it back verbatim */
+      oldRPr: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {
@@ -381,6 +392,7 @@ export const RprChangeMark = Mark.create({
       'span',
       {
         'data-rpr-change': '1',
+        'data-rpr-author': mark.attrs.author,
         class: 'has-rpr-change',
         title: t('editorFormatChangeBy', {
           author: String(mark.attrs.author || t('editorUnknownAuthor')),

@@ -1,0 +1,231 @@
+{
+  "id": "anchor-align-origin",
+  "title": "Anchored pictures: a column X ignores the paragraph indent, a margin Y counts from the margin top, wp:align keywords resolve in the margin / page bands",
+  "section": "word-truths.md#L839",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "build.py -> Word for Mac direct PDF, pymupdf image bboxes; Letter 1440 margins, Calibri 11, 72 x 36 pt pictures, one keyword case per page",
+  "cases": [
+    { "kind": "blockText", "block": 13, "expect": "L1 margin 0 topBottom anchor" },
+    {
+      "kind": "anchorPt",
+      "block": 0,
+      "expect": { "x": 144 },
+      "tol": 0.3,
+      "note": "column posOffset 72 pt, wrapNone, ind left 720 firstLine 360"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 1,
+      "expect": { "x": 144 },
+      "tol": 0.3,
+      "note": "column posOffset 72 pt, wrapSquare, same indent"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 2,
+      "expect": { "x": 144 },
+      "tol": 0.3,
+      "note": "column posOffset 72 pt, wrapSquare, hanging indent"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 3,
+      "expect": { "x": 325.96 },
+      "tol": 0.3,
+      "note": "character posOffset 72 pt after a 27-character label = run x + 72 (gen: column)",
+      "status": "failing"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 4,
+      "expect": { "x": 292.75 },
+      "tol": 0.3,
+      "note": "character posOffset 72 pt, no indent = run x + 72 (gen: column)",
+      "status": "failing"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 5,
+      "expect": { "x": 108 },
+      "tol": 0.3,
+      "note": "column posOffset 36 pt control"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 6,
+      "expect": { "x": 144 },
+      "tol": 0.3,
+      "note": "margin posOffset 72 pt under the indent"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 7,
+      "expect": { "x": 144 },
+      "tol": 0.3,
+      "note": "picture-only paragraph, column posOffset 72 pt under the indent"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 13,
+      "expect": { "x": 72, "y": 72 },
+      "tol": 0.3,
+      "note": "margin posOffset 0 topAndBottom after three empties: margin top"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 19,
+      "expect": { "x": 72, "y": 54 },
+      "tol": 0.3,
+      "note": "margin posOffset -18 pt: into the top margin"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 25,
+      "expect": { "x": 72, "y": 72 },
+      "tol": 0.3,
+      "note": "margin posOffset 0 wrapSquare"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 31,
+      "expect": { "x": 72, "y": 92 },
+      "tol": 0.3,
+      "note": "margin posOffset 20 pt"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 36,
+      "expect": { "x": 72, "y": 72 },
+      "tol": 0.3,
+      "note": "margin left/top square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 41,
+      "expect": { "x": 72, "y": 378 },
+      "tol": 0.3,
+      "note": "margin left/center square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 46,
+      "expect": { "x": 72, "y": 684 },
+      "tol": 0.3,
+      "note": "margin left/bottom square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 51,
+      "expect": { "x": 270, "y": 72 },
+      "tol": 0.3,
+      "note": "margin center/top square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 56,
+      "expect": { "x": 270, "y": 378 },
+      "tol": 0.3,
+      "note": "margin center/center square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 61,
+      "expect": { "x": 270, "y": 684 },
+      "tol": 0.3,
+      "note": "margin center/bottom square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 66,
+      "expect": { "x": 468, "y": 72 },
+      "tol": 0.3,
+      "note": "margin right/top square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 71,
+      "expect": { "x": 468, "y": 378 },
+      "tol": 0.3,
+      "note": "margin right/center square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 76,
+      "expect": { "x": 468, "y": 684 },
+      "tol": 0.3,
+      "note": "margin right/bottom square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 81,
+      "expect": { "x": 270, "y": 0 },
+      "tol": 0.3,
+      "note": "page center/top square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 86,
+      "expect": { "x": 540, "y": 756 },
+      "tol": 0.3,
+      "note": "page right/bottom square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 91,
+      "expect": { "x": 270, "y": 378 },
+      "tol": 0.3,
+      "note": "page center/center square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 96,
+      "expect": { "x": 270, "y": 378 },
+      "tol": 0.3,
+      "note": "margin H + page V center/center square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 101,
+      "expect": { "x": 270, "y": 72 },
+      "tol": 0.3,
+      "note": "column center / margin top square"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 106,
+      "expect": { "x": 270 },
+      "tol": 0.3,
+      "note": "column center / paragraph top square (y is the paragraph top)"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 111,
+      "expect": { "x": 72, "y": 72 },
+      "tol": 0.3,
+      "note": "margin left/top topAndBottom"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 136,
+      "expect": { "x": 270, "y": 684 },
+      "tol": 0.3,
+      "note": "margin center/bottom topAndBottom"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 161,
+      "expect": { "x": 540, "y": 756 },
+      "tol": 0.3,
+      "note": "page right/bottom topAndBottom"
+    },
+    {
+      "kind": "anchorPt",
+      "block": 176,
+      "expect": { "x": 270, "y": 72 },
+      "tol": 0.3,
+      "note": "column center / margin top topAndBottom"
+    }
+  ],
+  "docx": "probe.docx"
+}

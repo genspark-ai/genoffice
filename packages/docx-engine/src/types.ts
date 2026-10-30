@@ -1,3 +1,4 @@
+import type { RevisionResolution } from './revision-xml'
 import type { DocumentProperties } from './doc-properties'
 import type { EffectivePPr, EffectiveRPr } from './resolve-props'
 
@@ -19,6 +20,24 @@ export interface RevisionInfo {
   dateUtc?: string
   /** original w:id, kept so an edited paragraph re-emits stable ids */
   id?: string
+  /** w:name of the move range (w:moveFrom / w:moveTo): the source and the destination share it */
+  move?: string
+}
+
+/**
+ * Tracked property change (w:tblPrChange / w:trPrChange / w:tcPrChange / w:tblGridChange /
+ * w:tblPrExChange / w:sectPrChange / w:numberingChange / w:cellMerge). The record itself
+ * stays in the raw property bytes; the writer resolves it from `resolved`: 'accept' drops
+ * the record, 'reject' puts `oldXml` (the recorded previous properties) back. A model field
+ * set to null is the accept shorthand the editor uses.
+ */
+export interface PropChangeInfo extends RevisionInfo {
+  /** inner XML of the previous properties; absent for records without one (numberingChange, cellMerge) */
+  oldXml?: string
+  /** w:cellMerge only: merge state after / before the revision (w:vMerge / w:vMergeOrig) */
+  vMerge?: string
+  vMergeOrig?: string
+  resolved?: 'accept' | 'reject'
 }
 
 /** A styled text run inside a paragraph-like block. */
@@ -173,11 +192,13 @@ export interface Run {
    * box glyph, and write-back sets w14:checked from it */
   sdtCheckboxXml?: string
   /**
-   * Run-level formatting revision (w:rPrChange): records the review info and the modeled
-   * subset of the pre-revision formatting. Accept = keep the current formatting and clear
-   * the record; reject = restore the formatting from `old` and clear the record.
+   * Run-level formatting revision (w:rPrChange): records the review info, the modeled
+   * subset of the pre-revision formatting (drives the on-screen reject preview) and the
+   * recorded previous w:rPr verbatim (`oldRPr`: its inner children; what reject writes).
+   * Accept = keep the current formatting and clear the record.
    */
   rPrChange?: RevisionInfo & {
+    oldRPr?: string
     old?: {
       bold?: boolean
       italic?: boolean
@@ -192,6 +213,14 @@ export interface Run {
       highlight?: string
       vertAlign?: 'superscript' | 'subscript'
       styleId?: string
+      caps?: 'all' | 'small' | 'none'
+      dstrike?: boolean
+      vanishOwn?: boolean
+      kernHalfPoints?: number
+      positionHalfPoints?: number
+      shading?: string
+      rtl?: boolean
+      themeColor?: string
     }
   }
   /**
@@ -199,7 +228,12 @@ export interface Run {
    * strip (previews / word count); `omml` is the exact <m:oMath> fragment,
    * emitted verbatim when the paragraph regenerates.
    */
-  math?: { omml: string }
+  math?: {
+    omml: string
+    display?: boolean
+    /** the fragment ends in a <w:br/> run: Word starts the next m:oMath on a new line */
+    breakAfter?: boolean
+  }
   /**
    * The run is a single symbol-font glyph (w:sym). `text` holds the display
    * character; the element regenerates with its original font and hex char so
@@ -231,6 +265,9 @@ export interface Run {
     relV?: 'page' | 'margin' | 'line'
     /** wp:positionH relativeFrom page/margin with a posOffset: offsetXEmu measures from that edge */
     relH?: 'page' | 'margin'
+    /** wp:align keywords (display-only; the band is relH / relV, column / paragraph when absent) */
+    posH?: 'left' | 'center' | 'right'
+    posV?: 'top' | 'center' | 'bottom'
     /** wp:anchor text-wrap distances (EMU; display-only) */
     wrapDistTopEmu?: number
     wrapDistBottomEmu?: number
@@ -547,6 +584,9 @@ export interface ParaFormat {
    * visual direction and writing back converts again.
    */
   bidi?: boolean
+  /** w:bidi inherited from the style chain / pPrDefault: align is mirrored like
+   * an own w:bidi, but nothing is written back (display-only) */
+  bidiInherited?: boolean
   /**
    * w:sz (half-points) governing a run-less paragraph's line height: the
    * paragraph-mark rPr, else the last (dropped) empty run's rPr. Set only when
@@ -724,6 +764,10 @@ export interface HfParagraph extends ParaFormat {
   box?: HfTextBox
   /** w:ptab alignments indexed by overall tab order (regular w:tab slots are undefined); margin-relative, ignores tab stops */
   ptabAligns?: Array<'left' | 'center' | 'right' | undefined>
+  /** face that sizes an empty paragraph's line: the mark's East Asian font
+   *  under w:hint="eastAsia", else its Latin font (Word; the document-wide
+   *  CJK factor would over-reserve a Latin-marked blank line) */
+  emptyRunFont?: string
   runs: Run[]
   /** the flow line of a paragraph whose only content is a protected drawing
    *  (anchored logo, textbox, picture watermark). Display-only — saving keeps
@@ -756,6 +800,21 @@ export interface HfTableRow {
   /** where the row came from: index of the w:tbl among the part's top-level
    *  tables and of the w:tr inside it (saving patches edited cells there) */
   source?: { tbl: number; tr: number }
+  /** w:jc of the table: Word centres / right-aligns the whole row in the strip column */
+  align?: 'center' | 'right'
+  /** the table's grid width (twips): what w:jc / w:tblpPr position */
+  widthTwips?: number
+  /** w:tblpPr: a page- or margin-anchored table sits at its page coordinates
+   *  (overhanging the strip column on either side) instead of the strip flow */
+  float?: HfTableFloat
+}
+
+export interface HfTableFloat {
+  xTwips?: number
+  yTwips?: number
+  horzAnchor?: 'page' | 'margin' | 'text'
+  vertAnchor?: 'page' | 'margin' | 'text'
+  xSpec?: 'left' | 'center' | 'right' | 'inside' | 'outside'
 }
 
 /** display props of one paragraph inside a layout-table cell */
@@ -919,6 +978,12 @@ export interface HeaderFooter {
   /** editor-side: bytes of pictures inserted into the part, keyed by the
    *  placeholder token their drawing XML carries (see SaveOptions.newPictures) */
   newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
+  /** tracked changes the editor accepted / rejected in the part: replayed on the
+   *  original bytes before the paragraphs regenerate */
+  revisionsResolved?: RevisionResolution[]
+  /** editor-side: `paras` only mirror the resolutions; the part keeps its
+   *  original bytes with the resolutions applied instead of regenerating */
+  keepContent?: true
 }
 
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
@@ -1004,6 +1069,10 @@ export interface NoteRun {
   caps?: 'all' | 'small' | 'none'
   /** w14:textOutline solid srgb stroke (display only) */
   textOutline?: TextOutline
+  /** run is inside a w:ins (tracked insertion) */
+  ins?: RevisionInfo
+  /** run is inside a w:del (tracked deletion; text came from w:delText) */
+  del?: RevisionInfo
 }
 
 /** One footnote or endnote (display/edit model; separators are preserved separately). */
@@ -1028,6 +1097,9 @@ export interface NoteInfo {
     lineRule?: 'auto' | 'atLeast' | 'exact'
     lineRawTwips?: number
   }
+  /** tracked changes the editor accepted / rejected in this note: replayed on the
+   *  entry's original bytes at save (the rich runs already show the outcome) */
+  revisionsResolved?: RevisionResolution[]
 }
 
 /** display-only run of a field result: the Run subset the passthrough renderer paints */
@@ -1364,6 +1436,10 @@ export interface TableCell {
   rawTcPr?: string
   /** cell-level revision (tcPr w:cellIns / w:cellDel) */
   cellRevision?: { kind: 'ins' | 'del' } & RevisionInfo
+  /** tracked cell-property change (tcPr w:tcPrChange); null = accepted */
+  tcPrChange?: PropChangeInfo | null
+  /** tracked vertical-merge revision (tcPr w:cellMerge); null = accepted */
+  cellMerge?: PropChangeInfo | null
 }
 
 export type TableAutoFitMode = 'contents' | 'window' | 'fixed'
@@ -1454,6 +1530,16 @@ export interface TableModel {
   tableLook?: TableLook
   /** RTL table (tblPr w:bidiVisual): columns display right to left */
   bidiVisual?: boolean
+  /** tracked table-property change (tblPr w:tblPrChange); null = accepted */
+  tblPrChange?: PropChangeInfo | null
+  /** tracked grid change (tblGrid w:tblGridChange); null = accepted */
+  tblGridChange?: PropChangeInfo | null
+  /** per-row tracked row-property change (trPr w:trPrChange), aligned with rows */
+  rowPrChanges?: Array<PropChangeInfo | null>
+  /** per-row raw <w:tblPrEx>…</w:tblPrEx> bytes (passed through verbatim), aligned with rows */
+  rawTblPrExs?: Array<string | null>
+  /** per-row tracked table-property exception change (tblPrEx w:tblPrExChange), aligned with rows */
+  rowTblPrExChanges?: Array<PropChangeInfo | null>
 }
 
 /**
@@ -1799,6 +1885,10 @@ export interface Block {
   paraMarkIns?: { author: string; date?: string; dateUtc?: string; id?: string }
   /** Tracked formatting change of the paragraph mark (w:pPr/w:rPr/w:rPrChange). */
   paraMarkRPrChange?: { author: string; date?: string; dateUtc?: string; id?: string }
+  /** Tracked numbering change (w:pPr/w:numPr/w:numberingChange); the record lives in rawPPr. */
+  numberingChange?: PropChangeInfo
+  /** Tracked section-property change (w:sectPr/w:sectPrChange) of a section-break paragraph or the trailing hidden sectPr block. */
+  sectPrChange?: PropChangeInfo
 }
 
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
@@ -2026,6 +2116,10 @@ export interface GeneratedBlock {
   paraMarkIns?: string | null
   /** null = accepted (record dropped); JSON with resolved:'reject' = the old mark rPr comes back */
   paraMarkRPrChange?: string | null
+  /** JSON numbering-change record; null = accepted/rejected, strip w:numberingChange from rawPPr */
+  numberingChange?: string | null
+  /** JSON section-change record; null = accepted, JSON with resolved:'reject' = the old sectPr comes back */
+  sectPrChange?: string | null
   /** Used by editor dirty detection; SaveBlock carries the actual wrapper metadata. */
   blockRevision?: ({ kind: 'ins' | 'del' } & RevisionInfo) | null
 }
@@ -2230,6 +2324,12 @@ export interface DocDefaults {
   italicCs?: boolean
   /** pPrDefault w:widowControl: false = widow/orphan protection off for the whole document */
   widowControl?: boolean
+  /** pPrDefault w:ind in twips (left/start, right/end, firstLine > 0 / hanging < 0); the root of every paragraph's indent chain */
+  indentLeftTwips?: number
+  indentRightTwips?: number
+  indentFirstLineTwips?: number
+  /** pPrDefault w:ind *Chars attributes, resolved per paragraph like a style's */
+  indentChars?: CharIndents
   /** rPrDefault w:kern threshold in half-points (0 = explicitly off) */
   kernHalfPoints?: number
   /** default Latin font (rPrDefault w:rFonts w:ascii) */
@@ -2263,6 +2363,10 @@ export interface DocDefaults {
   spaceAfterAuto?: boolean
   /** rPrDefault w:lang w:val (BCP-47) — hyphenation/locale of the body text */
   lang?: string
+  /** rPrDefault w:rtl: every run without its own flag is a complex-script run */
+  rtl?: boolean
+  /** pPrDefault w:bidi: paragraphs default to a right-to-left base direction */
+  bidi?: boolean
   /** rPrDefault w:lang w:eastAsia (BCP-47) */
   eastAsiaLang?: string
   /** pPrDefault w:suppressAutoHyphens — every paragraph opts out of w:autoHyphenation */
@@ -2350,6 +2454,8 @@ export interface FontTableEntry {
   family?: string
   /** w:charset hex (81 = Hangul) */
   charset?: string
+  /** w:sig csb0 hex: code pages the face covers (bit 6 = Arabic 1256) */
+  csb0?: string
   /** w:pitch — fixed / variable / default */
   pitch?: string
   /** w:embedRegular / embedBold / embedItalic / embedBoldItalic parts */
@@ -2459,6 +2565,8 @@ export interface ParsedDoc {
   evenAndOddHeaders?: boolean
   /** settings.xml w:mirrorMargins: left/right margins are inside/outside on facing pages */
   mirrorMargins?: boolean
+  /** settings.xml w:trackRevisions: the document was saved with Track Changes on */
+  trackRevisions?: boolean
   /** settings.xml w:gutterAtTop: section gutters widen the top margin, not the left */
   gutterAtTop?: boolean
   /** settings.xml compatSetting compatibilityMode (0 when absent; >=15 = Word 2013+ layout) */

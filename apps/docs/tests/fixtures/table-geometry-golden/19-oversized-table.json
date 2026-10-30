@@ -1,0 +1,7 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/19-oversized-table.docx",
+  "tables": 1,
+  "hashes": ["bfc6261319cf95b3"],
+  "staticTables": 1,
+  "staticHashes": ["11dd37dad7eb5c82"]
+}

@@ -5,6 +5,7 @@ import {
   isFormulaBarKeyTarget,
   isGridKeyTarget,
   shouldInterceptClearSelection,
+  shouldInterceptRedoRepeat,
   SKIP_HOST_SELECTOR,
   type ClearSelectionKeyEvent,
 } from '../src/renderer/clear-selection-keyboard'
@@ -188,5 +189,33 @@ describe('isFormulaBarKeyTarget', () => {
     expect(isFormulaBarKeyTarget(keyEvent('u', ['formula-bar']).target)).toBe(true)
     expect(isFormulaBarKeyTarget(keyEvent('u', ['input']).target)).toBe(false)
     expect(isFormulaBarKeyTarget(null)).toBe(false)
+  })
+})
+
+describe('shouldInterceptRedoRepeat', () => {
+  const yEvent = (extra: Partial<ClearSelectionKeyEvent> = {}, hosts: readonly string[] = []) => ({
+    ...keyEvent('y', hosts, { ctrlKey: true, ...extra }),
+    code: 'KeyY',
+  })
+
+  it('claims Ctrl/Cmd+Y on the grid', () => {
+    expect(shouldInterceptRedoRepeat(yEvent(), false, false)).toBe(true)
+    expect(shouldInterceptRedoRepeat(yEvent({ ctrlKey: false, metaKey: true }), false, false)).toBe(
+      true,
+    )
+  })
+
+  it('leaves other chords, editing, modals and text fields alone', () => {
+    expect(shouldInterceptRedoRepeat({ ...yEvent(), code: 'KeyZ' }, false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ shiftKey: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ altKey: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ ctrlKey: false }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ defaultPrevented: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({ isComposing: true }), false, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent(), true, false)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent(), false, true)).toBe(false)
+    expect(shouldInterceptRedoRepeat(yEvent({}, ['input, textarea, select']), false, false)).toBe(
+      false,
+    )
   })
 })

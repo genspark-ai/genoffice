@@ -1,0 +1,19 @@
+{
+  "family": "PMingLiU GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-23",
+    "probe": "probed line factor 1.3029 split as PMingLiU hhea 0.801/0.199 plus half the remainder each side"
+  },
+  "note": "weight-normal only: bold synthesizes like Word's faux-bold PMingLiU",
+  "faces": [
+    {
+      "src": "local('PMingLiU'), local('STSongti-TC-Regular'), local('Songti TC Regular')",
+      "unicodeRange": "U+0020, U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F",
+      "ascentOverride": 95.2,
+      "descentOverride": 35.1,
+      "lineGapOverride": 0,
+      "display": null
+    }
+  ]
+}

@@ -91,6 +91,8 @@ describe('runsToInline image runs', () => {
           offsetYEmu: null,
           relV: null,
           relH: null,
+          posH: null,
+          posV: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -138,6 +140,8 @@ describe('runsToInline image runs', () => {
           offsetYEmu: null,
           relV: null,
           relH: null,
+          posH: null,
+          posV: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -183,6 +187,25 @@ describe('paragraph format signatures', () => {
     const ltr = signatureOfBlock(base)
     const rtl = signatureOfBlock({ ...base, format: { bidi: true } })
     expect(ltr).not.toBe(rtl)
+  })
+
+  it('keeps a bare <w:br/> run between formatted runs its own run (genoffice#524)', () => {
+    const runs = [
+      { text: 'First line', bold: true },
+      { text: '\n' },
+      { text: 'Second line', bold: true },
+    ]
+    const roundtripped = inlineToRuns(runsToInline(runs))
+    expect(roundtripped).toEqual(runs)
+    expect(signatureOfGenerated({ type: 'paragraph', runs: roundtripped })).toBe(
+      signatureOfBlock({ ...base, runs }),
+    )
+  })
+
+  it('still folds a bare break into a plain neighbour', () => {
+    expect(inlineToRuns(runsToInline([{ text: 'a' }, { text: '\n' }, { text: 'b' }]))).toEqual([
+      { text: 'a\nb' },
+    ])
   })
 })
 

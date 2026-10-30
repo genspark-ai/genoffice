@@ -386,6 +386,9 @@ export const vi = {
   appTableNameUsed: 'Tên bảng "{name}" đã được sử dụng trong phiên này.',
   appTableNameInFile: 'Tên bảng "{name}" đã được một bảng trong tệp sử dụng.',
   appTableOverlapsSession: 'Vùng chọn chồng chéo với bảng "{name}" được tạo trong phiên này.',
+  appTableOverlapsFile: 'Vùng chọn chồng chéo với bảng "{name}" trong tệp.',
+  appTableAlreadyInTable:
+    'Vùng chọn đã nằm trong bảng "{name}" — hãy đổi kiểu trong Thiết kế bảng.',
   appTablesNeedFile: 'Trước tiên hãy mở tệp XLSX — các bảng sẽ được ghi vào tệp.',
   appTableSelectRange: 'Trước tiên hãy chọn vùng dữ liệu — hàng đầu tiên là tiêu đề.',
   appTableCreated: 'Đã tạo bảng — lưu bằng ⌘S.',

@@ -7,7 +7,14 @@
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { BlockIndex } from '../pagination-index'
-import type { BlockBox, PageSlice } from '../pagination-types'
+import type { PageCut } from '../pagination-cuts'
+import type {
+  BlockBox,
+  PageSlice,
+  RowSplitPatch,
+  SectionGeom,
+  SectionHfHeights,
+} from '../pagination-types'
 
 export type GoToTarget =
   | 'page'
@@ -41,6 +48,11 @@ export interface PageLayout {
   blocks: BlockBox[]
   slices: PageSlice[]
   sections: Array<{ firstBlockIndex: number }>
+  /** the pass's PageCut list (one per slice), geometry and row splits: what the preview sheets print */
+  cuts: PageCut[]
+  geoms: SectionGeom[]
+  hfHeights: SectionHfHeights[]
+  rowSplits: RowSplitPatch[]
 }
 
 /** structural targets in document order (bookmarks carry their name as label) */

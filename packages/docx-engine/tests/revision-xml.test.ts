@@ -183,3 +183,22 @@ describe('applyTrackedChangesXml', () => {
     expect(applyTrackedChangesXml(xml, 'accept')).toEqual({ xml, applied: 0, remaining: 0 })
   })
 })
+
+describe('applyTrackedChangesXml move pairs', () => {
+  it('an author filter resolves both sides of a move together', () => {
+    const xml = hdr(
+      p(
+        `<w:moveFromRangeStart w:id="1" ${AT} w:name="m"/><w:moveFrom w:id="2" ${AT}>${dr('MOVED')}</w:moveFrom><w:moveFromRangeEnd w:id="1"/>` +
+          `<w:ins w:id="5" w:author="Other">${r('keep')}</w:ins>`,
+      ) +
+        p(
+          `<w:moveToRangeStart w:id="3" ${AT} w:name="m"/><w:moveTo w:id="4" ${AT}>${r('MOVED')}</w:moveTo><w:moveToRangeEnd w:id="3"/>`,
+        ),
+    )
+    const out = applyTrackedChangesXml(xml, 'reject', { author: 'x' })
+    expect(out.applied).toBe(2)
+    expect(out.remaining).toBe(1)
+    expect(out.xml).not.toMatch(/moveFrom|moveTo/)
+    expect(texts(out.xml)).toEqual(['MOVEDkeep', ''])
+  })
+})

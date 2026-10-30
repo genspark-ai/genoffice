@@ -1,5 +1,5 @@
 /**
- * Width contract of the Lucida Handwriting alias (fonts.css): Word renders the
+ * Width contract of the Lucida Handwriting alias (fonts.generated.css): Word renders the
  * Office-bundled script face, the per-case size-adjusted Liberation Sans Italic
  * faces must reproduce its advances so line breaks match. Truth = hmtx sums of
  * Word's Lucida Handwriting Italic (2026-09-24), in em.
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import * as opentype from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.css'), 'utf8')
+const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.generated.css'), 'utf8')
 const FONT_DIR = join(__dirname, '../src/renderer/fonts')
 
 interface Face {

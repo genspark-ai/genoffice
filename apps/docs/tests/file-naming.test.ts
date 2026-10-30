@@ -37,11 +37,11 @@ import { t } from '../src/renderer/i18n/locale'
 // jsdom has no CSS.escape, and the document's stylesheet builder needs it
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 const SECRET = '13800138000'
-const FILE_NAME = '现有文档.docx'
-const ANSWER = '季度营收总结'
-const SAVED_PATH = '/tmp/季度营收总结.docx'
+const FILE_NAME = '\u73b0\u6709\u6587\u6863.docx'
+const ANSWER = '\u5b63\u5ea6\u8425\u6536\u603b\u7ed3'
+const SAVED_PATH = '/tmp/\u5b63\u5ea6\u8425\u6536\u603b\u7ed3.docx'
 const extensions = [...editorExtensions, DocRedaction]
 const editors = new Set<Editor>()
 afterEach(() => {
@@ -119,7 +119,7 @@ function selectText(editor: Editor, needle: string): void {
 
 /** a document that already has a name, holding one withheld span */
 async function namedWithSecret(): Promise<Opened> {
-  const opened = await open(`联系 ${SECRET} 确认季度营收`)
+  const opened = await open(`\u8054\u7cfb ${SECRET} \u786e\u8ba4\u5b63\u5ea6\u8425\u6536`)
   selectText(opened.editor, SECRET)
   opened.editor.commands.setRedaction(LABEL)
   return opened
@@ -179,6 +179,7 @@ function ctxFor(opened: Opened, fileName: string, filePath: string | null): File
     setEvenOddHfDirty: noop,
     setMirrorMargins: noop,
     setMirrorMarginsDirty: noop,
+    setTrackRevisionsDirty: noop,
     setComments: noop,
     setCommentsDirty: noop,
     setWatermark: noop,
@@ -231,6 +232,7 @@ function ctxFor(opened: Opened, fileName: string, filePath: string | null): File
     titlePgDirty: false,
     evenOddHfDirty: false,
     mirrorMarginsDirty: false,
+    trackRevisionsDirty: false,
     pgNumEdit: null,
   } as unknown as FileActionContext
 }
@@ -280,7 +282,7 @@ describe('the manual trigger: the reader asks the model for a name', () => {
 
 describe('the first save of a document that has never been on disk', () => {
   it('never asks the model — a save does not wait on a model round-trip', async () => {
-    const opened = await open('季度营收总结与明细')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
     const ok = await save(ctxFor(opened, t('appUntitledDocx'), null), false)
     expect(ok).toBe(true)
     expect(sent).toHaveLength(0)
@@ -293,7 +295,7 @@ describe('the first save of a document that has never been on disk', () => {
   })
 
   it('never renames a document that already has a name', async () => {
-    const opened = await open('季度营收总结与明细')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
     await save(ctxFor(opened, FILE_NAME, '/tmp/existing.docx'), false)
     expect(sent).toHaveLength(0)
     expect(saved).toEqual([{ kind: 'save', name: '/tmp/existing.docx' }])
@@ -304,7 +306,7 @@ describe('the first save of a document that has never been on disk', () => {
     // first-save branch would take it — but it is already a file on disk, and
     // a file on disk is never renamed behind the reader's back. The dialog
     // opens on the name the file already has.
-    const opened = await open('季度营收总结与明细')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
     await save(ctxFor(opened, t('appUntitledDocx'), '/tmp/existing.docx'), true)
     expect(sent).toHaveLength(0)
     expect(saved).toEqual([{ kind: 'as', name: t('appUntitledDocx') }])
@@ -314,7 +316,7 @@ describe('the first save of a document that has never been on disk', () => {
     // Save As is the branch that reaches the naming, so it is where a
     // first-save naming would wrongly rename a file that is already on disk.
     // The manual button is the only thing that may rename it.
-    const opened = await open('季度营收总结与明细')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
     await save(ctxFor(opened, FILE_NAME, '/tmp/existing.docx'), true)
     expect(sent).toHaveLength(0)
     expect(saved).toEqual([{ kind: 'as', name: FILE_NAME }])
@@ -332,14 +334,19 @@ describe('the first save of a document that has never been on disk', () => {
     // That name is settled, so the save path asks nobody: a second opinion
     // would be a model call nobody asked for, spent on every document the
     // model itself wrote.
-    const opened = await open('季度营收总结与明细')
-    await save(ctxFor(opened, t('appUntitledDocx'), null), false, false, 'AI 写好的标题.docx')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
+    await save(
+      ctxFor(opened, t('appUntitledDocx'), null),
+      false,
+      false,
+      'AI \u5199\u597d\u7684\u6807\u9898.docx',
+    )
     expect(sent).toHaveLength(0)
-    expect(saved).toEqual([{ kind: 'new', name: 'AI 写好的标题.docx' }])
+    expect(saved).toEqual([{ kind: 'new', name: 'AI \u5199\u597d\u7684\u6807\u9898.docx' }])
   })
 
   it('asks nobody however many times the save is retried', async () => {
-    const opened = await open('季度营收总结与明细')
+    const opened = await open('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3\u4e0e\u660e\u7ec6')
     const ctx = ctxFor(opened, t('appUntitledDocx'), null)
     await save(ctx, true)
     await save(ctx, true)
@@ -353,11 +360,15 @@ describe('the name the Save As dialog opens on', () => {
   })
 
   it('falls back to the name derived from the document, then to its own', () => {
-    expect(dialogNameFor(undefined, '季度营收.docx', FILE_NAME)).toBe('季度营收.docx')
+    expect(dialogNameFor(undefined, '\u5b63\u5ea6\u8425\u6536.docx', FILE_NAME)).toBe(
+      '\u5b63\u5ea6\u8425\u6536.docx',
+    )
     expect(dialogNameFor(undefined, null, FILE_NAME)).toBe(FILE_NAME)
   })
 
   it('lets a proposal win over the derived name', () => {
-    expect(dialogNameFor('手动命名.docx', '季度营收.docx', FILE_NAME)).toBe('手动命名.docx')
+    expect(
+      dialogNameFor('\u624b\u52a8\u547d\u540d.docx', '\u5b63\u5ea6\u8425\u6536.docx', FILE_NAME),
+    ).toBe('\u624b\u52a8\u547d\u540d.docx')
   })
 })

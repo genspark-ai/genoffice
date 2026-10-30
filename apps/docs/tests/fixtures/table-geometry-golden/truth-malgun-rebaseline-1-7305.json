@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/malgun-rebaseline-1-7305/probe.docx",
+  "tables": 2,
+  "hashes": ["3e86e4dfa429c884", "3e86e4dfa429c884"],
+  "staticTables": 2,
+  "staticHashes": ["50ef6fb225bbdec2", "50ef6fb225bbdec2"]
+}

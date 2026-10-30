@@ -97,3 +97,23 @@ function hasClosest(value: ClearSelectionKeyEvent['target']): value is Element {
 export function isFormulaBarKeyTarget(target: ClearSelectionKeyEvent['target']): boolean {
   return hasClosest(target) && target.closest('[data-u-comp="formula-bar"]') !== null
 }
+
+/**
+ * Excel's Ctrl/Cmd+Y must beat Univer's own capture-phase shortcut
+ * dispatcher: Univer binds the chord to a bare Redo and preventDefaults it
+ * even when the redo stack is empty, which swallows the "repeat last
+ * action" half of Excel's semantics. Intercepted on window capture
+ * (registered before Univer exists, the same race clear-selection wins) and
+ * routed to the app's 'redo-or-repeat' command instead.
+ */
+export function shouldInterceptRedoRepeat(
+  event: ClearSelectionKeyEvent & { readonly code: string },
+  isCellEditing: boolean,
+  modalOpen: boolean,
+): boolean {
+  if (event.code !== 'KeyY') return false
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return false
+  if (event.defaultPrevented || event.isComposing) return false
+  if (modalOpen || isCellEditing) return false
+  return isGridKeyTarget(event.target)
+}

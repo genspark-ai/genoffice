@@ -216,7 +216,7 @@ test('headings tree, search results, pages and heading edits', async () => {
     )
     await pane.locator('.nav-pane-close').click()
     await expect(pane).toHaveCount(0)
-    expect(await editor.evaluate(() => localStorage.getItem('aidocs.showNav'))).toBe('0')
+    expect(await editor.evaluate(() => localStorage.getItem('aidocs.leftPane'))).toBe('')
   } finally {
     await closeAndSaveVideo(launched, 'docs-nav-pane')
   }

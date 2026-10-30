@@ -1112,9 +1112,11 @@ mod tests {
     #[test]
     fn an_external_reference_with_a_spaced_or_cjk_sheet_name_is_recognised() {
         assert!(references_an_external_workbook("'[1]Sheet Name'!A1"));
-        assert!(references_an_external_workbook("SUM('[1]Sheet Name'!A1:B2)"));
+        assert!(references_an_external_workbook(
+            "SUM('[1]Sheet Name'!A1:B2)"
+        ));
         // a CJK name needs no quotes
-        assert!(references_an_external_workbook("[1]数据!A1"));
+        assert!(references_an_external_workbook("[1]\u{6570}\u{636e}!A1"));
         // an R1C1 offset is still not an external workbook, quoted or not
         assert!(!references_an_external_workbook("R[1]C[0]"));
         assert!(!references_an_external_workbook("'My Sheet'!R[1]C[0]"));
@@ -1155,7 +1157,11 @@ mod tests {
             ),
             (
                 "xl/worksheets/sheet1.xml",
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C3"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row><row r="3"><c r="A3"><f>'[1]Sheet Name'!A1+1</f><v>43</v></c><c r="B3"><f>[1]数据!A1+1</f><v>8</v></c></row></sheetData></worksheet>"#,
+                concat!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C3"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c><c r="C1" t="str"><f>'[1]Sheet1'!A1&amp;" units"</f><v>42 units</v></c></row><row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row><row r="3"><c r="A3"><f>'[1]Sheet Name'!A1+1</f><v>43</v></c><c r="B3"><f>[1]"#,
+                    "\u{6570}\u{636e}",
+                    r#"!A1+1</f><v>8</v></c></row></sheetData></worksheet>"#
+                ),
             ),
         ];
         let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());

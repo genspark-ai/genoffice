@@ -344,6 +344,8 @@ export const zhTW = {
   appTableNameUsed: '表格名稱 "{name}" 本次工作階段已使用過。',
   appTableNameInFile: '表格名稱 "{name}" 已被檔案中的表格使用。',
   appTableOverlapsSession: '該範圍與本次工作階段建立的表格 "{name}" 重疊。',
+  appTableOverlapsFile: '該範圍與檔案中的表格 "{name}" 重疊。',
+  appTableAlreadyInTable: '所選範圍已在表格 "{name}" 內——請到「表格設計」更改樣式。',
   appTablesNeedFile: '請先開啟 XLSX 檔案——表格會寫入檔案。',
   appTableSelectRange: '請先選取資料範圍——首列為標題。',
   appTableCreated: '表格已建立——⌘S 儲存。',

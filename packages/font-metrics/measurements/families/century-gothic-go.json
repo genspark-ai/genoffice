@@ -1,0 +1,76 @@
+{
+  "family": "Century Gothic GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-12",
+    "fonts": ["Century Gothic (Word DFonts)", "LiberationSans"],
+    "probe": "hmtx per case class"
+  },
+  "note": "Century Gothic ships only inside Office (Word's DFonts), so Chromium fell to\nthe Helvetica-class sans: ~9% narrower per body line (hmtx of both fonts,\n2026-09-12). Its geometry is not a uniform scale of Liberation Sans: the\nlowercase runs +10.6% (+1.7% bold), capitals -5% (-7.3% bold), digits, space\nand punctuation within 1%, so per-case faces carry the adjustment (later\nfaces win inside their unicode-range). Latin-1 accented letters measure\nthe same per-case ratios and share the faces; Latin Extended-A does not. Pitch stays the probed 1.226\n(`lineHeightFactor`).",
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 110.6,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 95,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 101.7,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 92.7,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 110.6,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 95,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 101.7,
+      "unicodeRange": "U+0061-007A, U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 92.7,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

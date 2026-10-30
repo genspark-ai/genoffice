@@ -181,3 +181,40 @@ describe('use-in-formula cell guard', () => {
     expect(writes).toEqual([{ f: '=Revenue' }])
   })
 })
+
+describe('handleRibbonCommand redo-or-repeat (Excel Ctrl+Y)', () => {
+  function makeHarness(hasRedo: boolean) {
+    const calls: string[] = []
+    const runtime = {
+      univerAPI: {
+        redo: () => {
+          calls.push('redo')
+          return Promise.resolve(true)
+        },
+        executeCommand: (id: string) => {
+          calls.push(id)
+          return Promise.resolve(true)
+        },
+      },
+      univer: {
+        __getInjector: () => ({
+          get: () => ({ pitchTopRedoElement: () => (hasRedo ? {} : null) }),
+        }),
+      },
+    }
+    const ctx = { univerRef: { current: runtime } } as unknown as RibbonCommandContext
+    return { ctx, calls }
+  }
+
+  it('redoes when the redo stack has entries', () => {
+    const { ctx, calls } = makeHarness(true)
+    handleRibbonCommand(ctx, 'redo-or-repeat')
+    expect(calls).toEqual(['redo'])
+  })
+
+  it('repeats the last action when there is nothing to redo', () => {
+    const { ctx, calls } = makeHarness(false)
+    handleRibbonCommand(ctx, 'redo-or-repeat')
+    expect(calls).toEqual(['sheet.command.repeat-last-action'])
+  })
+})

@@ -1,0 +1,48 @@
+{
+  "id": "render-tab-trailing-wrap",
+  "title": "A trailing tab whose default stop lies past the right edge opens a blank line; a tab ending on the last in-column stop does not",
+  "section": "word-truths.md#L749",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28): Letter 1125 margins (column 9990 twips), Arial 11 line 240 (12.48/12.72 alternating), text ending at ~2594 twips; 11 tabs + 20 spaces: baselines 82.32 -> next paragraph 107.52 (two lines); 10 tabs + spaces: 107.52 -> 120.24 (one line); 11 tabs + 'end': 'end' at x 36 on a second line (132.96 -> 145.44 -> LAST 158.16); 10 tabs + 'end': 'end' at x 468 on the same line (170.88 -> TAIL 183.36)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 1,
+      "expect": 25.2,
+      "tol": 0.3,
+      "note": "eleventh tab past the edge + spaces: two lines"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 1,
+      "to": 2,
+      "expect": 12.72,
+      "tol": 0.3,
+      "note": "tenth tab on 9360 + spaces: one line, the spaces hang"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 4,
+      "expect": 25.2,
+      "tol": 0.3,
+      "status": "failing",
+      "note": "eleventh tab past the edge + 'end': Word wraps the tab and 'end' lands on the first stop of a second line; gen pins it flush right on one line"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 5,
+      "to": 6,
+      "expect": 12.48,
+      "tol": 0.3,
+      "note": "tenth tab on 9360 + 'end': one line"
+    }
+  ],
+  "docx": "probe.docx"
+}

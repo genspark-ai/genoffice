@@ -990,18 +990,21 @@
 
 /* Settings → About: the one-click update entry next to the version row */
 .set-update-btn {
-  height: 26px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: none;
-  color: var(--text);
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
   font: inherit;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.set-update-btn:hover {
-  background: var(--hover);
+.set-update-btn:hover,
+.set-update-btn:focus-visible {
+  filter: brightness(0.95);
 }
 
 .set-ai-endpoint-row {

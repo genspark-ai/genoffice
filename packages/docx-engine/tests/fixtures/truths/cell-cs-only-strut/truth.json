@@ -1,0 +1,48 @@
+{
+  "id": "cell-cs-only-strut",
+  "title": "An Arabic-only cell paragraph in a cs face is paced by that face alone (Arial 1.15, Sakkal Majalla 1.40): the strut takes the cs chain, not the ascii Calibri",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf rules: cs Arial 12 + w:rtl row 14.40 (13.92 + gridline), cs Sakkal Majalla 14 row 19.92, Calibri 12 Latin control 15.12; same pitches as the 2026-10-13 body probe",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:1.15",
+          "font-family:'Arial','Arial Arabic GO','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC','Liberation Sans',sans-serif",
+          "--doc-strut:12pt"
+        ]
+      },
+      "note": "strut face = the cs chain the run span renders; a Calibri strut under Arial spans unions to 1.25"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:1.3965",
+          "font-family:'Sakkal Majalla','Sakkal Majalla GO','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC','Sakkal Majalla Latin GO','Geeza Pro','Al Bayan',sans-serif",
+          "--doc-strut:14pt"
+        ]
+      }
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 2,
+      "expect": {
+        "styles": [
+          "--doc-line-factor:1.22",
+          "font-family:'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif"
+        ]
+      },
+      "note": "Latin control keeps the ascii chain"
+    }
+  ],
+  "docx": "probe.docx"
+}

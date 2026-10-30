@@ -28,6 +28,11 @@ export function ommlFragmentsOf(paragraphXml: string): string[] {
   return paragraphXml.match(re) ?? []
 }
 
+/** a trailing <m:r><w:br/></m:r>: Word's manual line break inside a math zone */
+export function ommlEndsWithBreak(ommlXml: string): boolean {
+  return /<w:br\b[^>]*\/>\s*<\/m:r>\s*<\/m:oMath>\s*$/.test(ommlXml)
+}
+
 /** visible <m:t> leaf texts in document order (the editable formula tokens) */
 export function mathTokensOf(xml: string): string[] {
   const tokens: string[] = []

@@ -67,9 +67,10 @@ pub(crate) fn zip_entry<'a>(
             let wanted = normalize(candidate);
             if let Some(found) = archive
                 .file_names()
+                .filter_map(Result::ok)
                 .find(|candidate| normalize(candidate) == wanted)
             {
-                resolved = Some(found.to_owned());
+                resolved = Some(found.into_owned());
                 break;
             }
         }

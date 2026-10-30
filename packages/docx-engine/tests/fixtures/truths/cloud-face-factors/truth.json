@@ -1,0 +1,64 @@
+{
+  "id": "cloud-face-factors",
+  "title": "Office cloud faces pace by their own box: Algerian 1.3167, Dubai 1.688 (also under a line multiple), while a missing name with an altName paces as the alias",
+  "section": "word-truths.md#L766",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), Letter, docDefaults Calibri 11; Word embedded Dubai-Regular, Algerian and Calibri. Consecutive-line pitches come from the render twin render-cloud-face-pitch (same paragraphs): Dubai 12pt line 240 = 20.16/20.40, Algerian 18pt = 23.76, Google Sans Text 11pt (altName Calibri) = 13.44 at line 240 and 15.36/15.60 at 276, Dubai 12pt at 276 = 23.28; glyph boxes Dubai 20.26, Algerian 20.02",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Dubai",
+      "expect": 1.688,
+      "note": "hhea 1129/-559 over 1000"
+    },
+    {
+      "kind": "factor",
+      "font": "Algerian",
+      "expect": 1.3167,
+      "note": "23.7 pitch at 18pt; the glyph box is only 1.11"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 20.26,
+      "tol": 0.15,
+      "note": "Dubai 12pt single: Word alternates 20.16/20.40"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 23.76,
+      "tol": 0.1,
+      "note": "Algerian 18pt single"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 13.44,
+      "tol": 0.05,
+      "note": "Google Sans Text 11pt via fontTable altName Calibri"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 15.48,
+      "tol": 0.15,
+      "note": "same at line 276: 15.36/15.60"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 23.28,
+      "tol": 0.1,
+      "note": "Dubai 12pt at line 276 = 1.688 x 1.15 x 12; the Arabic code-page sig in its fontTable entry must not route it to Arial"
+    },
+    {
+      "kind": "runProps",
+      "block": 2,
+      "run": 0,
+      "expect": { "font": "Google Sans Text", "sizeHalfPoints": 22 }
+    }
+  ],
+  "docx": "probe.docx"
+}

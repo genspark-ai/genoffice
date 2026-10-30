@@ -450,6 +450,7 @@ export default function App() {
   const [compareName, setCompareName] = useState<string | null>(null)
   const [compareBusy, setCompareBusy] = useState(false)
   const [compareSwapped, setCompareSwapped] = useState(false)
+  const compareSidesRef = useRef<{ mine: PageText[]; theirs: PageText[] } | null>(null)
   const [sidebarW, setSidebarW] = useState(loadSidebarW)
   /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
   const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
@@ -924,7 +925,7 @@ export default function App() {
   const [pendingSign, setPendingSign] = useState<SignatureData | null>(null)
   /** A /Sig widget selected from the form layer; confirmed signatures fit this rect directly. */
   const [signatureTarget, setSignatureTarget] = useState<FormWidget | null>(null)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<'png' | 'jpg' | null>(null)
   const [formCatalog, setFormCatalog] = useState<FormCatalog | null>(null)
   const [formHasXfa, setFormHasXfa] = useState(false)
   const [documentEncrypted, setDocumentEncrypted] = useState(false)
@@ -4404,8 +4405,10 @@ export default function App() {
     if (!doc || compareBusy) return
     // Both sides must come from the same extraction engine — pdf.js and pdfium
     // break lines differently, and a cross-engine diff reports phantom changes
-    // on identical files. The open document therefore needs a file on disk.
-    if (!filePath) {
+    // on identical files. The open document therefore needs its current state
+    // on disk: no file yet, or pending edits, both mean "save first". Redaction
+    // marks stay out — a save does not apply them, so they could never unblock.
+    if (!filePath || ordinaryDirty) {
       showNotice(t('compareNeedsSaved'))
       return
     }
@@ -4416,22 +4419,25 @@ export default function App() {
         if (!('canceled' in picked)) showNotice(picked.reason)
         return
       }
-      const mine = await window.pdfApi.compareReadOpen(filePath)
+      const mine = await window.pdfApi.compareReadOpen(filePath, passwordRef.current)
       if (!mine.ok) {
         showNotice(mine.reason)
         return
       }
       const mineSide: PageText[] = mine.pages.map((text, pageIndex) => ({ pageIndex, text }))
       const theirs: PageText[] = picked.pages.map((text, pageIndex) => ({ pageIndex, text }))
-      const [oldSide, newSide] = compareSwapped ? [theirs, mineSide] : [mineSide, theirs]
+      compareSidesRef.current = { mine: mineSide, theirs }
       setCompareName(picked.name)
-      setCompareResult(compareDocuments(oldSide, newSide))
+      setCompareResult(compareSides(mineSide, theirs, compareSwapped))
     } catch (err) {
       showNotice(err instanceof Error ? err.message : String(err))
     } finally {
       setCompareBusy(false)
     }
   }
+
+  const compareSides = (mine: PageText[], theirs: PageText[], swapped: boolean): CompareResult =>
+    swapped ? compareDocuments(theirs, mine) : compareDocuments(mine, theirs)
 
   const attachmentRows = (): AttachmentRow[] => {
     const rows: AttachmentRow[] = []
@@ -5278,7 +5284,14 @@ export default function App() {
     const inserts = buildBatesInserts(
       visList.map((origIdx) => {
         const geom = pageGeom(origIdx)
-        return { width: geom.pw, height: geom.ph, rotate: geom.rot, x0: geom.x0, y0: geom.y0 }
+        return {
+          width: geom.pw,
+          height: geom.ph,
+          rotate: geom.rot,
+          x0: geom.x0,
+          y0: geom.y0,
+          userUnit: geom.userUnit,
+        }
       }),
       config,
       (text, size) => measureTextWidth(text, fontOf(size)),
@@ -6159,7 +6172,7 @@ export default function App() {
   const exportImages = (allPages: boolean, format: 'png' | 'jpg' = 'png') =>
     flushThen(async () => {
       if (!doc || exporting) return
-      setExporting(true)
+      setExporting(format)
       try {
         const targets = allPages ? visList : [curOrigIdx].filter((i) => i >= 0)
         const images: string[] = []
@@ -6206,7 +6219,7 @@ export default function App() {
       } catch (err) {
         opFailed(err instanceof Error ? err.message : String(err))
       } finally {
-        setExporting(false)
+        setExporting(null)
       }
     })
 
@@ -8248,24 +8261,24 @@ export default function App() {
                   <button
                     className="rb-big"
                     data-tip={t('exportImagesAll')}
-                    disabled={exporting}
+                    disabled={exporting !== null}
                     onClick={() => void exportImages(true)}
                   >
                     <span className="rb-big-icon">
                       <IconExportImg />
                     </span>
-                    <span>{exporting ? t('exporting') : t('exportImages')}</span>
+                    <span>{exporting === 'png' ? t('exporting') : t('exportImages')}</span>
                   </button>
                   <button
                     className="rb-big"
                     data-tip={t('exportImagesAllJpg')}
-                    disabled={exporting}
+                    disabled={exporting !== null}
                     onClick={() => void exportImages(true, 'jpg')}
                   >
                     <span className="rb-big-icon">
                       <IconExportImg />
                     </span>
-                    <span>{exporting ? t('exporting') : t('exportImagesJpg')}</span>
+                    <span>{exporting === 'jpg' ? t('exporting') : t('exportImagesJpg')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8920,7 +8933,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    disabled={readOnly || sizes.length === 0}
+                    disabled={readOnly || pageCount === 0}
                     data-tip={t('batesHint')}
                     onClick={() => setBatesDlg(true)}
                   >
@@ -9206,8 +9219,10 @@ export default function App() {
                   busy={compareBusy}
                   onPick={() => void runCompare()}
                   onSwap={() => {
-                    setCompareSwapped((v) => !v)
-                    setCompareResult(null)
+                    const swapped = !compareSwapped
+                    setCompareSwapped(swapped)
+                    const sides = compareSidesRef.current
+                    setCompareResult(sides ? compareSides(sides.mine, sides.theirs, swapped) : null)
                   }}
                   onGoToPage={(pageNo) => scrollToPage(pageNo)}
                 />
@@ -11256,7 +11271,7 @@ export default function App() {
             {batesDlg && (
               <BatesDialog
                 t={t}
-                pageCount={sizes.length}
+                pageCount={pageCount}
                 onApply={applyBates}
                 onClose={() => setBatesDlg(false)}
               />

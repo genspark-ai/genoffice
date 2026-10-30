@@ -425,6 +425,9 @@ export const de = {
     'Der Tabellenname "{name}" wird bereits von einer Tabelle in der Datei verwendet.',
   appTableOverlapsSession:
     'Der Bereich überschneidet sich mit der in dieser Sitzung erstellten Tabelle „{name}“.',
+  appTableOverlapsFile: 'Der Bereich überschneidet sich mit der Tabelle „{name}“ in der Datei.',
+  appTableAlreadyInTable:
+    'Die Auswahl liegt bereits in der Tabelle „{name}“ – ändern Sie den Stil unter Tabellenentwurf.',
   appTablesNeedFile:
     'Öffnen Sie zuerst eine XLSX-Datei — Tabellen werden in die Datei geschrieben.',
   appTableSelectRange:

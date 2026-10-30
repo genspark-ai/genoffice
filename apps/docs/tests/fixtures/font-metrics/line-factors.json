@@ -1,0 +1,5990 @@
+{
+  "0": [
+    1.172,
+    1.172
+  ],
+  "1": [
+    1.172,
+    1.172
+  ],
+  "12": [
+    1.172,
+    1.172
+  ],
+  "81": [
+    1.172,
+    1.172
+  ],
+  " ": [
+    1.172,
+    1.172
+  ],
+  " 12": [
+    1.172,
+    1.172
+  ],
+  " 2023": [
+    1.172,
+    1.172
+  ],
+  " A": [
+    1.172,
+    1.172
+  ],
+  " GO": [
+    1.172,
+    1.172
+  ],
+  "${f}": [
+    1.172,
+    1.172
+  ],
+  "${name}": [
+    1.172,
+    1.172
+  ],
+  "${target}": [
+    1.172,
+    1.172
+  ],
+  "'Aptos GO'": [
+    1.22,
+    1.22
+  ],
+  "'Arial','Times New Roman'": [
+    1.15,
+    1.15
+  ],
+  "'Berlin Sans FB GO'": [
+    1.172,
+    1.172
+  ],
+  "'Calibri'": [
+    1.22,
+    1.22
+  ],
+  "'Cambria'": [
+    1.172,
+    1.172
+  ],
+  "'Carlito GO'": [
+    1.22,
+    1.22
+  ],
+  "'DM Sans',sans-serif": [
+    1.302,
+    1.172
+  ],
+  "'David'": [
+    0.9839,
+    1.172
+  ],
+  "'Geeza Pro'": [
+    1.3617,
+    1.172
+  ],
+  "'GenOffice Batang'": [
+    1.172,
+    1.172
+  ],
+  "'GenOffice Batang','GenOffice Serif KR'": [
+    1.172,
+    1.172
+  ],
+  "'GenOffice Hiragino Sans'": [
+    1.3,
+    1.3
+  ],
+  "'GenOffice Sans KR'": [
+    1.172,
+    1.172
+  ],
+  "'KR Theme Latin GO'": [
+    1.172,
+    1.172
+  ],
+  "'MS Gothic GO'": [
+    1.3,
+    1.3
+  ],
+  "'MS Mincho GO'": [
+    1.3,
+    1.3
+  ],
+  "'MS Mincho','MS Mincho GO'": [
+    1.3,
+    1.3
+  ],
+  "'MS PGothic GO','MS PGothic JA GO'": [
+    1.3,
+    1.3
+  ],
+  "'MS PGothic'": [
+    1.3,
+    1.3
+  ],
+  "'MS PGothic','MS PGothic GO','Yu Gothic'": [
+    1.3,
+    1.3
+  ],
+  "'MS UI Gothic GO','MS UI Gothic JA GO'": [
+    1.3,
+    1.3
+  ],
+  "'Malgun Gothic'": [
+    1.7291,
+    1.172
+  ],
+  "'Meiryo GO'": [
+    1.172,
+    1.172
+  ],
+  "'Meiryo UI GO'": [
+    1.172,
+    1.172
+  ],
+  "'Microsoft YaHei'": [
+    1.7157,
+    1.172
+  ],
+  "'NanumMyeongjo'": [
+    1.4955,
+    1.172
+  ],
+  "'Naskh Digits GO'": [
+    1.1499,
+    1.172
+  ],
+  "'Noto Naskh Arabic TNR'": [
+    1.1499,
+    1.172
+  ],
+  "'Sakkal Majalla GO'": [
+    1.172,
+    1.172
+  ],
+  "'Sakkal Majalla Latin GO'": [
+    1.172,
+    1.172
+  ],
+  "'Segoe UI GO'": [
+    1.15,
+    1.15
+  ],
+  "'SimSun'": [
+    1.3,
+    1.172
+  ],
+  "'SimSun','Songti SC',serif": [
+    1.3,
+    1.172
+  ],
+  "'Times New Roman'": [
+    1.15,
+    1.15
+  ],
+  "'Times New Roman','Liberation Serif'": [
+    1.15,
+    1.15
+  ],
+  "'Times New Roman','SimSun',serif": [
+    1.15,
+    1.15
+  ],
+  "'Yu Gothic Light GO'": [
+    1.172,
+    1.172
+  ],
+  "'Yu Mincho GO'": [
+    1.3,
+    1.3
+  ],
+  "'\uff2d\uff33 \u30b4\u30b7\u30c3\u30af','MS Gothic GO'": [
+    1.3,
+    1.3
+  ],
+  "([^": [
+    1.172,
+    1.172
+  ],
+  ",": [
+    1.172,
+    1.172
+  ],
+  ", ": [
+    1.172,
+    1.172
+  ],
+  "-": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-box:1.0000": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-box:1.1074": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-box:1.1172": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-box:1.1362": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-box:initial": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-skew:0.5000": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-skew:0.6748": [
+    1.172,
+    1.172
+  ],
+  "--doc-font-skew:initial": [
+    1.172,
+    1.172
+  ],
+  "../src/renderer/editor/para-layout-spec": [
+    1.172,
+    1.172
+  ],
+  "../src/renderer/font-resolve": [
+    1.172,
+    1.172
+  ],
+  "../src/renderer/line-metrics": [
+    1.172,
+    1.172
+  ],
+  "/": [
+    1.172,
+    1.172
+  ],
+  "00": [
+    1.172,
+    1.172
+  ],
+  "00000000000000000000": [
+    1.172,
+    1.172
+  ],
+  "00000040": [
+    1.172,
+    1.172
+  ],
+  "00000041": [
+    1.172,
+    1.172
+  ],
+  "00000700000000000000": [
+    1.172,
+    1.172
+  ],
+  "02000500000000000000": [
+    1.172,
+    1.172
+  ],
+  "02020500000000000000": [
+    1.172,
+    1.172
+  ],
+  "02020603000000000000": [
+    1.172,
+    1.172
+  ],
+  "02030604000101010101": [
+    1.172,
+    1.172
+  ],
+  "020B0200000000000000": [
+    1.172,
+    1.172
+  ],
+  "020B0303000000000000": [
+    1.172,
+    1.172
+  ],
+  "020B0500000000000000": [
+    1.172,
+    1.172
+  ],
+  "020B0502040204020203": [
+    1.172,
+    1.172
+  ],
+  "020B0604000101010101": [
+    1.172,
+    1.172
+  ],
+  "020B0604020202020204": [
+    1.172,
+    1.172
+  ],
+  "020B0606030504020204": [
+    1.172,
+    1.172
+  ],
+  "1.15": [
+    1.172,
+    1.172
+  ],
+  "1.7157": [
+    1.172,
+    1.172
+  ],
+  "1.7291": [
+    1.172,
+    1.172
+  ],
+  "10-": [
+    1.172,
+    1.172
+  ],
+  "10-12": [
+    1.172,
+    1.172
+  ],
+  "10-|20": [
+    1.172,
+    1.172
+  ],
+  "12\u30da\u30f3": [
+    1.3,
+    1.172
+  ],
+  "16.0pt": [
+    1.172,
+    1.172
+  ],
+  "1\uc5d0\uc11c": [
+    1.3,
+    1.3
+  ],
+  "24/75": [
+    1.172,
+    1.172
+  ],
+  "5,000\\uc6d0)\\uc774": [
+    1.172,
+    1.172
+  ],
+  "5,000\uc6d0)": [
+    1.3,
+    1.3
+  ],
+  "6ASFC-": [
+    1.172,
+    1.172
+  ],
+  "@genoffice/docx-engine": [
+    1.172,
+    1.172
+  ],
+  "A ": [
+    1.172,
+    1.172
+  ],
+  "A B 1 2": [
+    1.172,
+    1.172
+  ],
+  "ABC": [
+    1.172,
+    1.172
+  ],
+  "ADLaM Display": [
+    1.3047,
+    1.172
+  ],
+  "Abadi": [
+    1.2812,
+    1.172
+  ],
+  "Abadi MT Condensed Extra Bold": [
+    1.1504,
+    1.172
+  ],
+  "Abadi MT Condensed Light": [
+    1.1504,
+    1.172
+  ],
+  "Abril Fatface": [
+    1.349,
+    1.172
+  ],
+  "Agency FB": [
+    1.1226,
+    1.172
+  ],
+  "Aharoni": [
+    0.9878,
+    1.172
+  ],
+  "Al Bayan": [
+    1.5,
+    1.172
+  ],
+  "Algerian": [
+    1.3167,
+    1.3167
+  ],
+  "Algerian (Office cloud face)": [
+    1.172,
+    1.172
+  ],
+  "Amasis MT Pro": [
+    1.2,
+    1.172
+  ],
+  "Amasis MT Pro Black": [
+    1.2,
+    1.172
+  ],
+  "Amasis MT Pro Medium": [
+    1.2,
+    1.172
+  ],
+  "Amatic SC": [
+    1.261,
+    1.172
+  ],
+  "Amiri": [
+    1.1499,
+    1.172
+  ],
+  "Angsana New": [
+    1.3508,
+    1.172
+  ],
+  "Anton": [
+    1.5054,
+    1.172
+  ],
+  "Aparajita": [
+    1.1816,
+    1.172
+  ],
+  "Apple SD Gothic Neo": [
+    1.172,
+    1.172
+  ],
+  "Aptos": [
+    1.22,
+    1.22
+  ],
+  "Aptos (M365 cloud face)": [
+    1.22,
+    1.22
+  ],
+  "Aptos Black": [
+    1.22,
+    1.22
+  ],
+  "Aptos Display": [
+    1.22,
+    1.22
+  ],
+  "Aptos Display GO": [
+    1.22,
+    1.22
+  ],
+  "Aptos ExtraBold": [
+    1.22,
+    1.22
+  ],
+  "Aptos GO": [
+    1.22,
+    1.22
+  ],
+  "Aptos Light": [
+    1.22,
+    1.22
+  ],
+  "Aptos Mono": [
+    1.22,
+    1.22
+  ],
+  "Aptos Narrow": [
+    1.22,
+    1.22
+  ],
+  "Aptos Narrow GO": [
+    1.22,
+    1.22
+  ],
+  "Aptos SemiBold": [
+    1.22,
+    1.22
+  ],
+  "Aptos Serif": [
+    1.22,
+    1.22
+  ],
+  "Arabic": [
+    1.1499,
+    1.172
+  ],
+  "Arabic Typesetting": [
+    1.1396,
+    1.172
+  ],
+  "Arial": [
+    1.15,
+    1.15
+  ],
+  "Arial Arabic GO": [
+    1.15,
+    1.15
+  ],
+  "Arial Black": [
+    1.15,
+    1.15
+  ],
+  "Arial Narrow": [
+    1.15,
+    1.15
+  ],
+  "Arial Nova": [
+    1.15,
+    1.15
+  ],
+  "Arial Nova Light": [
+    1.15,
+    1.15
+  ],
+  "Arial Rounded MT Bold": [
+    1.15,
+    1.15
+  ],
+  "Arial Unicode MS": [
+    1.7417,
+    1.74
+  ],
+  "Avenir Next LT Pro": [
+    1.369,
+    1.369
+  ],
+  "Avenir Next LT Pro Demi": [
+    1.369,
+    1.369
+  ],
+  "Avenir Next LT Pro Light": [
+    1.369,
+    1.369
+  ],
+  "A\u6f22B": [
+    1.3,
+    1.3
+  ],
+  "B": [
+    1.172,
+    1.172
+  ],
+  "B Mitra": [
+    1.1499,
+    1.172
+  ],
+  "B Nazanin": [
+    1.1499,
+    1.172
+  ],
+  "B Titr": [
+    1.1499,
+    1.172
+  ],
+  "B Yekan": [
+    1.1499,
+    1.172
+  ],
+  "B2": [
+    1.172,
+    1.172
+  ],
+  "BIM\\u7b4912": [
+    1.172,
+    1.172
+  ],
+  "BIZ UDGothic": [
+    1.4327,
+    1.172
+  ],
+  "BIZ UDMincho": [
+    1.4327,
+    1.3
+  ],
+  "BIZ UDPGothic": [
+    1.4327,
+    1.172
+  ],
+  "BIZ UDP\u30b4\u30b7\u30c3\u30af": [
+    1.4327,
+    1.3
+  ],
+  "BIZ UDP\u660e\u671d Medium": [
+    1.4327,
+    1.3
+  ],
+  "Bahnschrift": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift Condensed": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift Light": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift Light Condensed": [
+    1.172,
+    1.172
+  ],
+  "Bahnschrift Rounded": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift SemiBold": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift SemiBold Condensed": [
+    1.2002,
+    1.172
+  ],
+  "Bahnschrift SemiLight Condensed": [
+    1.2002,
+    1.172
+  ],
+  "Bangla Sangam MN": [
+    1.3047,
+    1.172
+  ],
+  "Barlow": [
+    1.2,
+    1.172
+  ],
+  "Barlow Black": [
+    1.2,
+    1.172
+  ],
+  "Barlow Condensed": [
+    1.2,
+    1.172
+  ],
+  "Barlow Medium": [
+    1.2,
+    1.172
+  ],
+  "Baskerville Old Face": [
+    1,
+    1.172
+  ],
+  "Batang": [
+    1.3,
+    1.172
+  ],
+  "BatangChe": [
+    1.3,
+    1.172
+  ],
+  "Bauhaus 93": [
+    1.4604,
+    1.172
+  ],
+  "Bebas Neue": [
+    1.2,
+    1.172
+  ],
+  "Bell MT": [
+    1.1118,
+    1.172
+  ],
+  "Bembo": [
+    1.1294,
+    1.172
+  ],
+  "Berlin Sans FB": [
+    1.0952,
+    1.172
+  ],
+  "Berlin Sans FB Demi": [
+    1.1226,
+    1.172
+  ],
+  "Bernard MT Condensed": [
+    1.1875,
+    1.172
+  ],
+  "Bierstadt": [
+    1.1431,
+    1.172
+  ],
+  "Bierstadt Display": [
+    1.1431,
+    1.172
+  ],
+  "Bodoni MT": [
+    1.1992,
+    1.172
+  ],
+  "Bodoni MT Black": [
+    1.168,
+    1.172
+  ],
+  "Bodoni MT Poster Compressed": [
+    1.1475,
+    1.172
+  ],
+  "Book Antiqua": [
+    1.21,
+    1.21
+  ],
+  "Bookman Old Style": [
+    1.1738,
+    1.172
+  ],
+  "Bookshelf Symbol 7": [
+    1,
+    1.172
+  ],
+  "Bradley Hand ITC": [
+    1.25,
+    1.25
+  ],
+  "Braggadocio": [
+    0.9277,
+    1.172
+  ],
+  "Britannic Bold": [
+    1,
+    1.172
+  ],
+  "Broadway": [
+    1.1323,
+    1.172
+  ],
+  "Broken": [
+    1.172,
+    1.172
+  ],
+  "CC": [
+    1.172,
+    1.172
+  ],
+  "CJK SC": [
+    1.172,
+    1.172
+  ],
+  "CJK character width \u2248 1em": [
+    1.172,
+    1.172
+  ],
+  "Caladea": [
+    1.172,
+    1.172
+  ],
+  "Calibri": [
+    1.22,
+    1.22
+  ],
+  "Calibri Arabic GO": [
+    1.22,
+    1.22
+  ],
+  "Calibri Light": [
+    1.22,
+    1.22
+  ],
+  "Calibri Light GO": [
+    1.22,
+    1.22
+  ],
+  "Californian FB": [
+    1.1357,
+    1.172
+  ],
+  "Calisto MT": [
+    1.1543,
+    1.172
+  ],
+  "Cambria": [
+    1.172,
+    1.172
+  ],
+  "Cambria Math": [
+    1.172,
+    1.172
+  ],
+  "Candara": [
+    1.2207,
+    1.172
+  ],
+  "Carlito GO": [
+    1.22,
+    1.22
+  ],
+  "Cascadia Code": [
+    1.172,
+    1.172
+  ],
+  "Castellar": [
+    1.2061,
+    1.172
+  ],
+  "Centaur": [
+    1.1299,
+    1.172
+  ],
+  "Century": [
+    1.206,
+    1.206
+  ],
+  "Century Gothic": [
+    1.226,
+    1.226
+  ],
+  "Century Schoolbook": [
+    1.206,
+    1.206
+  ],
+  "Chiller": [
+    1.1538,
+    1.172
+  ],
+  "Colonna MT": [
+    1.0571,
+    1.172
+  ],
+  "Comic Sans MS": [
+    1.3936,
+    1.3936
+  ],
+  "Congenial": [
+    0.97,
+    1.172
+  ],
+  "Consolas": [
+    1.1667,
+    1.1667
+  ],
+  "Consolas GO": [
+    1.1667,
+    1.1667
+  ],
+  "Constantia": [
+    1.2207,
+    1.172
+  ],
+  "Cooper Black": [
+    1.147,
+    1.172
+  ],
+  "Copperplate Gothic Bold": [
+    1.1123,
+    1.172
+  ],
+  "Corbel": [
+    1.2075,
+    1.172
+  ],
+  "Cordia New": [
+    1.147,
+    1.172
+  ],
+  "CordiaUPC": [
+    1.147,
+    1.172
+  ],
+  "Courier New": [
+    1.1333,
+    1.1333
+  ],
+  "Curlz MT": [
+    1.3267,
+    1.172
+  ],
+  "DDR5-|6400": [
+    1.172,
+    1.172
+  ],
+  "DFKai-SB": [
+    1.7157,
+    1.172
+  ],
+  "DM Mono": [
+    1.302,
+    1.172
+  ],
+  "DM Mono Medium": [
+    1.302,
+    1.172
+  ],
+  "DM Sans": [
+    1.302,
+    1.172
+  ],
+  "DM Sans Medium": [
+    1.302,
+    1.172
+  ],
+  "DM Serif Display": [
+    1.371,
+    1.172
+  ],
+  "David": [
+    0.9839,
+    1.172
+  ],
+  "DengXian": [
+    1.3546,
+    1.172
+  ],
+  "DengXian GO": [
+    1.172,
+    1.172
+  ],
+  "DengXian Light": [
+    1.3546,
+    1.172
+  ],
+  "Desdemona": [
+    1.1465,
+    1.172
+  ],
+  "Dosis": [
+    1.264,
+    1.172
+  ],
+  "Dosis ExtraBold": [
+    1.264,
+    1.172
+  ],
+  "Dotum": [
+    1.3,
+    1.172
+  ],
+  "DotumChe": [
+    1.3,
+    1.172
+  ],
+  "Dubai": [
+    1.688,
+    1.688
+  ],
+  "Dubai GO": [
+    1.688,
+    1.688
+  ],
+  "Dubai Light": [
+    1.688,
+    1.688
+  ],
+  "Dubai Medium": [
+    1.688,
+    1.688
+  ],
+  "EB Garamond": [
+    1.305,
+    1.172
+  ],
+  "Ebrima": [
+    1.0514,
+    1.0514
+  ],
+  "Edwardian Script ITC": [
+    1.1787,
+    1.172
+  ],
+  "Elephant": [
+    1.289,
+    1.172
+  ],
+  "English only, 123.": [
+    1.172,
+    1.172
+  ],
+  "Engravers MT": [
+    1.1646,
+    1.172
+  ],
+  "Eras Bold ITC": [
+    1.1455,
+    1.172
+  ],
+  "Eras Light ITC": [
+    1.126,
+    1.172
+  ],
+  "Eras Medium ITC": [
+    1.1313,
+    1.172
+  ],
+  "Eurostile": [
+    1.1504,
+    1.172
+  ],
+  "FZXiaoBiaoSong-B05S": [
+    1.3,
+    1.172
+  ],
+  "FangSong": [
+    1.3,
+    1.172
+  ],
+  "Felix Titling": [
+    1.1694,
+    1.172
+  ],
+  "Fira Code": [
+    1.312,
+    1.172
+  ],
+  "Fixture Beirut Naskh": [
+    1.1499,
+    1.172
+  ],
+  "Fixture Beirut Sans": [
+    1.172,
+    1.172
+  ],
+  "Fixture Kufi": [
+    1.1499,
+    1.172
+  ],
+  "Fixture Naskh Alt": [
+    1.1499,
+    1.172
+  ],
+  "Fixture Serif": [
+    1.172,
+    1.172
+  ],
+  "Fixture Uthman Naskh": [
+    1.1499,
+    1.172
+  ],
+  "Footlight MT Light": [
+    0.915,
+    1.172
+  ],
+  "Forte": [
+    1.0938,
+    1.172
+  ],
+  "FrankRuehl": [
+    0.9297,
+    1.172
+  ],
+  "Franklin Gothic Book": [
+    1.1338,
+    1.172
+  ],
+  "Franklin Gothic Demi": [
+    1.1338,
+    1.172
+  ],
+  "Franklin Gothic Demi Cond": [
+    1.1338,
+    1.172
+  ],
+  "Franklin Gothic Heavy": [
+    1.1338,
+    1.172
+  ],
+  "Franklin Gothic Medium": [
+    1.1338,
+    1.172
+  ],
+  "Franklin Gothic Medium Cond": [
+    1.1338,
+    1.172
+  ],
+  "Freestyle Script": [
+    1.1777,
+    1.172
+  ],
+  "Gabriola": [
+    1.7,
+    1.172
+  ],
+  "Gaegu": [
+    1.25,
+    1.172
+  ],
+  "Garamond": [
+    1.125,
+    1.172
+  ],
+  "Garamond GO": [
+    1.172,
+    1.172
+  ],
+  "Gautami": [
+    1.9062,
+    1.172
+  ],
+  "Geeza Pro": [
+    1.3617,
+    1.172
+  ],
+  "GenOffice Batang": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Bengali": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Box Drawing": [
+    1.172,
+    1.172
+  ],
+  "GenOffice DM Sans": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Fullwidth TC": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Gothic KR": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Heiti TC": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Hiragino Mincho": [
+    1.3,
+    1.3
+  ],
+  "GenOffice Hiragino Sans": [
+    1.3,
+    1.3
+  ],
+  "GenOffice MS Mincho": [
+    1.3,
+    1.3
+  ],
+  "GenOffice MingLiU": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Myungjo": [
+    1.172,
+    1.172
+  ],
+  "GenOffice PUA Blank": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Poppins": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Sans KR": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Serif KR": [
+    1.172,
+    1.172
+  ],
+  "GenOffice SimSun Latin": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Songti SC": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Songti TC": [
+    1.172,
+    1.172
+  ],
+  "GenOffice Tamil": [
+    1,
+    1
+  ],
+  "GenOffice YaHei Latin": [
+    1.172,
+    1.172
+  ],
+  "Georgia": [
+    1.1375,
+    1.1375
+  ],
+  "Georgia Pro": [
+    0.98,
+    0.98
+  ],
+  "Georgia, serif": [
+    1.1375,
+    1.1375
+  ],
+  "Gill Sans MT": [
+    1.1597,
+    1.172
+  ],
+  "Gill Sans MT Condensed": [
+    1.2041,
+    1.172
+  ],
+  "Gill Sans MT Ext Condensed Bold": [
+    1.1973,
+    1.172
+  ],
+  "Gill Sans Nova": [
+    1.3018,
+    1.172
+  ],
+  "Gill Sans Nova Light": [
+    1.3018,
+    1.172
+  ],
+  "Gill Sans Ultra Bold": [
+    1.2461,
+    1.172
+  ],
+  "Gisha": [
+    1.1719,
+    1.172
+  ],
+  "Gloucester MT Extra Condensed": [
+    1.1631,
+    1.172
+  ],
+  "Goudy Old Style": [
+    1.2002,
+    1.172
+  ],
+  "Grandview": [
+    1.2002,
+    1.172
+  ],
+  "Grandview Display": [
+    1.2002,
+    1.172
+  ],
+  "Grotesque": [
+    1.1812,
+    1.172
+  ],
+  "Gulim": [
+    1.3,
+    1.172
+  ],
+  "GulimChe": [
+    1.3,
+    1.172
+  ],
+  "GungSeo": [
+    1.172,
+    1.172
+  ],
+  "Gungsuh": [
+    1.3,
+    1.172
+  ],
+  "GungsuhChe": [
+    1.3,
+    1.172
+  ],
+  "HGGothicE": [
+    1.3,
+    1.172
+  ],
+  "HGMaruGothicMPRO": [
+    1.3,
+    1.172
+  ],
+  "HGMinchoE": [
+    1.3,
+    1.3
+  ],
+  "HGPGothicE": [
+    1.3,
+    1.172
+  ],
+  "HGPMinchoE": [
+    1.3,
+    1.3
+  ],
+  "HGPSoeiKakugothicUB": [
+    1.3,
+    1.172
+  ],
+  "HGP\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB": [
+    1.3,
+    1.3
+  ],
+  "HGP\u660e\u671dE": [
+    1.3,
+    1.3
+  ],
+  "HGP\uff7a\uff9e\uff7c\uff6f\uff78E": [
+    1.3,
+    1.3
+  ],
+  "HGSGothicE": [
+    1.3,
+    1.172
+  ],
+  "HGSMinchoE": [
+    1.3,
+    1.3
+  ],
+  "HGSSoeiKakugothicUB": [
+    1.3,
+    1.172
+  ],
+  "HGS\\u6559\\u79d1\\u66f8\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "HGSoeiKakugothicUB": [
+    1.3,
+    1.172
+  ],
+  "HGS\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB": [
+    1.3,
+    1.3
+  ],
+  "HGS\u660e\u671dE": [
+    1.3,
+    1.3
+  ],
+  "HGS\uff7a\uff9e\uff7c\uff6f\uff78E": [
+    1.3,
+    1.3
+  ],
+  "HG\\u6559\\u79d1\\u66f8\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "HG\\u660e\\u671dB": [
+    1.172,
+    1.172
+  ],
+  "HG\\u660e\\u671dE": [
+    1.172,
+    1.172
+  ],
+  "HG\\uff7a\\uff9e\\uff7c\\uff6f\\uff78E": [
+    1.172,
+    1.172
+  ],
+  "HG\\uff7a\\uff9e\\uff7c\\uff6f\\uff78M": [
+    1.172,
+    1.172
+  ],
+  "HG\u4e38\uff7a\uff9e\uff7c\uff6f\uff78M-PRO": [
+    1.3,
+    1.3
+  ],
+  "HG\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB": [
+    1.3,
+    1.3
+  ],
+  "HG\u660e\u671dE": [
+    1.3,
+    1.3
+  ],
+  "HG\uff7a\uff9e\uff7c\uff6f\uff78E": [
+    1.3,
+    1.3
+  ],
+  "Haettenschweiler": [
+    1.067,
+    1.172
+  ],
+  "Hammersmith One": [
+    1.25,
+    1.172
+  ],
+  "Harlow Solid Italic": [
+    1.2627,
+    1.172
+  ],
+  "Harrington": [
+    1.1758,
+    1.172
+  ],
+  "Heebo": [
+    1.4688,
+    1.172
+  ],
+  "Heebo Black": [
+    1.4688,
+    1.172
+  ],
+  "Heiti SC": [
+    1.172,
+    1.172
+  ],
+  "Hello world": [
+    1.172,
+    1.172
+  ],
+  "Helvetica": [
+    1.2,
+    1.2
+  ],
+  "Helvetica Neue": [
+    1.193,
+    1.172
+  ],
+  "HeuristicMetrics": [
+    1.172,
+    1.172
+  ],
+  "High Tower Text": [
+    1.1636,
+    1.172
+  ],
+  "Hind": [
+    1.601,
+    1.172
+  ],
+  "Hind SemiBold": [
+    1.601,
+    1.172
+  ],
+  "IBM Plex Sans": [
+    1.3,
+    1.172
+  ],
+  "IBM Plex Sans Condensed": [
+    1.3,
+    1.172
+  ],
+  "IBM Plex Sans Condensed Light": [
+    1.3,
+    1.172
+  ],
+  "IBM Plex Sans Light": [
+    1.3,
+    1.172
+  ],
+  "IBM Plex Sans Medium": [
+    1.3,
+    1.172
+  ],
+  "IBM Plex Serif": [
+    1.3,
+    1.172
+  ],
+  "IRLotus": [
+    1.1499,
+    1.172
+  ],
+  "Imprint MT Shadow": [
+    1.1782,
+    1.172
+  ],
+  "InaiMathi": [
+    1,
+    1
+  ],
+  "Inconsolata": [
+    1.049,
+    1.172
+  ],
+  "Informal Roman": [
+    1.0151,
+    1.172
+  ],
+  "InstalledCloudFont": [
+    1.172,
+    1.172
+  ],
+  "Iskoola Pota": [
+    1.1353,
+    1.172
+  ],
+  "Italianno": [
+    1.25,
+    1.172
+  ],
+  "JA GO": [
+    1.172,
+    1.172
+  ],
+  "Jokerman": [
+    1.5122,
+    1.172
+  ],
+  "Josefin Sans": [
+    1,
+    1.172
+  ],
+  "Josefin Sans Bold": [
+    1,
+    1.172
+  ],
+  "Josefin Slab": [
+    1,
+    1.172
+  ],
+  "Juice ITC": [
+    1.1343,
+    1.172
+  ],
+  "KR Theme Latin GO": [
+    1.172,
+    1.172
+  ],
+  "KaiTi": [
+    1.3,
+    1.172
+  ],
+  "Kaiti SC": [
+    1.172,
+    1.172
+  ],
+  "Kartika": [
+    1.4263,
+    1.172
+  ],
+  "Khmer UI": [
+    1.1318,
+    1.172
+  ],
+  "Kino MT": [
+    1.1323,
+    1.172
+  ],
+  "Kohinoor Bangla": [
+    1.5,
+    1.172
+  ],
+  "Kokila": [
+    1.1528,
+    1.172
+  ],
+  "Korean line metrics": [
+    1.172,
+    1.172
+  ],
+  "Kristen ITC": [
+    1.3599,
+    1.172
+  ],
+  "Kunstler Script": [
+    1.0796,
+    1.172
+  ],
+  "Latha": [
+    1.6686,
+    1.6686
+  ],
+  "Latin Sans GO": [
+    1.172,
+    1.172
+  ],
+  "Latin Serif GO": [
+    1.172,
+    1.172
+  ],
+  "Latin character width \u2248 0.52em (average)": [
+    1.172,
+    1.172
+  ],
+  "Lato": [
+    1.2,
+    1.172
+  ],
+  "Lato Black": [
+    1.2,
+    1.172
+  ],
+  "Lato Light": [
+    1.2,
+    1.172
+  ],
+  "Lato SemiBold": [
+    1.2,
+    1.172
+  ],
+  "Leelawadee": [
+    1.1958,
+    1.172
+  ],
+  "Leelawadee UI": [
+    1.3301,
+    1.172
+  ],
+  "Liberation Mono": [
+    1.172,
+    1.172
+  ],
+  "Liberation Sans": [
+    1.15,
+    1.15
+  ],
+  "Liberation Serif": [
+    1.15,
+    1.15
+  ],
+  "Libre Baskerville": [
+    1.24,
+    1.172
+  ],
+  "Libre Franklin": [
+    1.212,
+    1.172
+  ],
+  "LilyUPC": [
+    0.9529,
+    1.172
+  ],
+  "Lobster": [
+    1.25,
+    1.172
+  ],
+  "Lora": [
+    1.28,
+    1.172
+  ],
+  "Lucida Blackletter": [
+    1.2715,
+    1.172
+  ],
+  "Lucida Bright": [
+    1.1777,
+    1.172
+  ],
+  "Lucida Calligraphy": [
+    1.3613,
+    1.172
+  ],
+  "Lucida Console": [
+    1,
+    1.172
+  ],
+  "Lucida Fax": [
+    1.1777,
+    1.172
+  ],
+  "Lucida Handwriting": [
+    1.3794,
+    1.172
+  ],
+  "Lucida Handwriting GO": [
+    1.172,
+    1.172
+  ],
+  "Lucida Sans": [
+    1.179,
+    1.179
+  ],
+  "Lucida Sans Typewriter": [
+    1.179,
+    1.179
+  ],
+  "Lucida Sans Unicode": [
+    1.179,
+    1.179
+  ],
+  "MS Gothic": [
+    1.3,
+    1.3
+  ],
+  "MS Gothic GO": [
+    1.3,
+    1.3
+  ],
+  "MS Mincho": [
+    1.3,
+    1.3
+  ],
+  "MS Mincho GO": [
+    1.3,
+    1.3
+  ],
+  "MS Outlook": [
+    1.0347,
+    1.172
+  ],
+  "MS PGothic": [
+    1.3,
+    1.3
+  ],
+  "MS PGothic GO": [
+    1.3,
+    1.3
+  ],
+  "MS PGothic JA GO": [
+    1.3,
+    1.3
+  ],
+  "MS PMincho": [
+    1.3,
+    1.3
+  ],
+  "MS Reference Sans Serif": [
+    1.2167,
+    1.2167
+  ],
+  "MS Reference Sans Serif GO": [
+    1.2167,
+    1.2167
+  ],
+  "MS Reference Specialty": [
+    1.2275,
+    1.172
+  ],
+  "MS UI Gothic": [
+    1.3,
+    1.3
+  ],
+  "MT Extra": [
+    1.293,
+    1.172
+  ],
+  "MV Boli": [
+    1.6113,
+    1.172
+  ],
+  "Magneto": [
+    1.2095,
+    1.172
+  ],
+  "Maiandra GD": [
+    1.1987,
+    1.172
+  ],
+  "Malgun Gothic": [
+    1.7291,
+    1.172
+  ],
+  "Malgun Gothic Semilight": [
+    1.7291,
+    1.172
+  ],
+  "Mangal": [
+    1.6797,
+    1.172
+  ],
+  "Marlett": [
+    0.9375,
+    1.172
+  ],
+  "Matura MT Script Capitals": [
+    1.3306,
+    1.172
+  ],
+  "Meiryo": [
+    1.95,
+    1.172
+  ],
+  "Meiryo GO": [
+    1.172,
+    1.172
+  ],
+  "Meiryo UI": [
+    1.6511,
+    1.172
+  ],
+  "Meiryo UI GO": [
+    1.172,
+    1.172
+  ],
+  "Menlo": [
+    1.1641,
+    1.172
+  ],
+  "Merriweather": [
+    1.257,
+    1.172
+  ],
+  "Merriweather GO": [
+    1.172,
+    1.172
+  ],
+  "Merriweather Light": [
+    1.257,
+    1.172
+  ],
+  "Merriweather Sans": [
+    1.257,
+    1.172
+  ],
+  "Merriweather Sans ExtraBold": [
+    1.257,
+    1.172
+  ],
+  "Microsoft GothicNeo": [
+    1.5557,
+    1.172
+  ],
+  "Microsoft GothicNeo Light": [
+    1.5557,
+    1.172
+  ],
+  "Microsoft Himalaya": [
+    1,
+    1.172
+  ],
+  "Microsoft JhengHei": [
+    1.7291,
+    1.172
+  ],
+  "Microsoft JhengHei UI": [
+    1.651,
+    1.172
+  ],
+  "Microsoft JhengHei UI Light": [
+    1.651,
+    1.172
+  ],
+  "Microsoft New Tai Lue": [
+    1.31,
+    1.31
+  ],
+  "Microsoft PhagsPa": [
+    1.2793,
+    1.172
+  ],
+  "Microsoft Tai Le": [
+    1.2715,
+    1.172
+  ],
+  "Microsoft YaHei": [
+    1.7157,
+    1.172
+  ],
+  "Microsoft YaHei Light": [
+    1.7291,
+    1.172
+  ],
+  "Microsoft YaHei UI": [
+    1.651,
+    1.172
+  ],
+  "Microsoft YaHei UI Light": [
+    1.651,
+    1.172
+  ],
+  "Microsoft Yi Baiti": [
+    1.0269,
+    1.172
+  ],
+  "Microsoft \uace0\ub515Neo": [
+    1.5557,
+    1.3
+  ],
+  "Microsoft \uace0\ub515Neo Light": [
+    1.5557,
+    1.3
+  ],
+  "MingLiU": [
+    1.3,
+    1.172
+  ],
+  "MingLiU-ExtB": [
+    1.3,
+    1.172
+  ],
+  "MingLiU_HKSCS": [
+    1.3,
+    1.172
+  ],
+  "MingLiU_HKSCS-ExtB": [
+    1.3,
+    1.172
+  ],
+  "MingLiU_MSCS": [
+    1.3,
+    1.172
+  ],
+  "Mistral": [
+    1,
+    1.172
+  ],
+  "Modern No. 20": [
+    1.07,
+    1.172
+  ],
+  "Monaco": [
+    1.3335,
+    1.172
+  ],
+  "Mongolian Baiti": [
+    1.0635,
+    1.172
+  ],
+  "Monotype Corsiva": [
+    1.1221,
+    1.172
+  ],
+  "Monotype Sorts": [
+    1.002,
+    1.172
+  ],
+  "Mont": [
+    1.172,
+    1.172
+  ],
+  "Montserrat": [
+    1.219,
+    1.172
+  ],
+  "Montserrat Black": [
+    1.219,
+    1.172
+  ],
+  "Montserrat ExtraBold": [
+    1.219,
+    1.172
+  ],
+  "Montserrat ExtraLight": [
+    1.219,
+    1.172
+  ],
+  "Montserrat GO": [
+    1.172,
+    1.172
+  ],
+  "Montserrat Light": [
+    1.219,
+    1.172
+  ],
+  "Montserrat Medium": [
+    1.219,
+    1.172
+  ],
+  "Montserrat SemiBold": [
+    1.219,
+    1.172
+  ],
+  "Montserrat Thin": [
+    1.219,
+    1.172
+  ],
+  "Montserrat-Bold": [
+    1.172,
+    1.172
+  ],
+  "Myanmar Text": [
+    1.8608,
+    1.172
+  ],
+  "NFKC": [
+    1.172,
+    1.172
+  ],
+  "NSimSun": [
+    1.3,
+    1.172
+  ],
+  "Nanum Brush Script": [
+    1.495,
+    1.172
+  ],
+  "Nanum Gothic": [
+    1.495,
+    1.172
+  ],
+  "Nanum Myeongjo": [
+    1.4955,
+    1.172
+  ],
+  "Nanum Pen Script": [
+    1.495,
+    1.172
+  ],
+  "NanumBarunGothic": [
+    1.3,
+    1.172
+  ],
+  "NanumGothic": [
+    1.495,
+    1.172
+  ],
+  "NanumGothic ExtraBold": [
+    1.495,
+    1.172
+  ],
+  "NanumMyeongjo": [
+    1.4955,
+    1.172
+  ],
+  "NanumMyeongjoExtraBold": [
+    1.4955,
+    1.172
+  ],
+  "Naskh Digits GO": [
+    1.1499,
+    1.172
+  ],
+  "Neue Haas Grotesk Text Pro": [
+    1.223,
+    1.172
+  ],
+  "News Gothic MT": [
+    1.209,
+    1.172
+  ],
+  "Niagara Engraved": [
+    1.0552,
+    1.172
+  ],
+  "Niagara Solid": [
+    1.0552,
+    1.172
+  ],
+  "Nina": [
+    1.207,
+    1.172
+  ],
+  "Nirmala Text": [
+    1.8623,
+    1.172
+  ],
+  "Nirmala UI": [
+    1.3301,
+    1.172
+  ],
+  "Nirmala UI Semilight": [
+    1.3301,
+    1.172
+  ],
+  "Noto Kufi Arabic": [
+    1.1499,
+    1.172
+  ],
+  "Noto Naskh Arabic": [
+    1.1499,
+    1.172
+  ],
+  "Noto Naskh Arabic SA": [
+    1.1499,
+    1.172
+  ],
+  "Noto Naskh Arabic TA": [
+    1.1499,
+    1.172
+  ],
+  "Noto Naskh Arabic TNR": [
+    1.1499,
+    1.172
+  ],
+  "Noto Naskh Arabic W": [
+    1.1499,
+    1.172
+  ],
+  "Noto Sans Arabic": [
+    1.1499,
+    1.172
+  ],
+  "Noto Sans Arabic UI": [
+    1.1499,
+    1.172
+  ],
+  "Noto Sans CJK GO": [
+    1.172,
+    1.172
+  ],
+  "Noto Sans CJK JP": [
+    1.172,
+    1.172
+  ],
+  "Noto Sans CJK KR": [
+    1.3,
+    1.172
+  ],
+  "Noto Sans CJK SC": [
+    1.3,
+    1.3
+  ],
+  "Noto Sans CJK TC": [
+    1.3,
+    1.3
+  ],
+  "Noto Sans Devanagari": [
+    1.304,
+    1.172
+  ],
+  "Noto Sans HK": [
+    1.3,
+    1.3
+  ],
+  "Noto Sans JP": [
+    1.172,
+    1.172
+  ],
+  "Noto Sans KR": [
+    1.3,
+    1.172
+  ],
+  "Noto Sans SC": [
+    1.3,
+    1.3
+  ],
+  "Noto Sans TC": [
+    1.3,
+    1.3
+  ],
+  "Noto Sans Tamil": [
+    1,
+    1
+  ],
+  "Noto Serif": [
+    1.3618,
+    1.172
+  ],
+  "Noto Serif CJK JP": [
+    1.172,
+    1.172
+  ],
+  "Noto Serif CJK KR": [
+    1.3,
+    1.172
+  ],
+  "Noto Serif CJK SC": [
+    1.3,
+    1.3
+  ],
+  "Noto Serif JP": [
+    1.172,
+    1.172
+  ],
+  "Noto Serif KR": [
+    1.3,
+    1.172
+  ],
+  "Noto Serif SC": [
+    1.3,
+    1.3
+  ],
+  "Noto Serif TC": [
+    1.3,
+    1.3
+  ],
+  "Nunito": [
+    1.365,
+    1.365
+  ],
+  "Nunito Black": [
+    1.365,
+    1.365
+  ],
+  "Nunito ExtraBold": [
+    1.365,
+    1.365
+  ],
+  "Nunito Light": [
+    1.365,
+    1.365
+  ],
+  "Nunito Sans": [
+    1.365,
+    1.365
+  ],
+  "Nunito Sans Black": [
+    1.365,
+    1.365
+  ],
+  "Nunito Sans ExtraLight": [
+    1.365,
+    1.365
+  ],
+  "Nunito Sans Light": [
+    1.365,
+    1.365
+  ],
+  "Nunito SemiBold": [
+    1.365,
+    1.365
+  ],
+  "Nyala": [
+    1.0514,
+    1.0514
+  ],
+  "Old English Text MT": [
+    1.2188,
+    1.172
+  ],
+  "Onyx": [
+    1.0698,
+    1.172
+  ],
+  "Open Sans": [
+    1.365,
+    1.365
+  ],
+  "Open Sans ExtraBold": [
+    1.365,
+    1.365
+  ],
+  "Open Sans Light": [
+    1.365,
+    1.365
+  ],
+  "Open Sans SemiBold": [
+    1.365,
+    1.365
+  ],
+  "Oswald": [
+    1.482,
+    1.172
+  ],
+  "Oswald ExtraLight": [
+    1.482,
+    1.172
+  ],
+  "PC": [
+    1.172,
+    1.172
+  ],
+  "PMingLiU": [
+    1.3,
+    1.172
+  ],
+  "PMingLiU GO": [
+    1.172,
+    1.172
+  ],
+  "PMingLiU-ExtB": [
+    1.3,
+    1.172
+  ],
+  "PT Serif Custom": [
+    1.172,
+    1.172
+  ],
+  "Pacifico": [
+    1.756,
+    1.172
+  ],
+  "Palatino": [
+    1.105,
+    1.105
+  ],
+  "Palatino Linotype": [
+    1.35,
+    1.35
+  ],
+  "Parchment": [
+    1.0669,
+    1.172
+  ],
+  "Perpetua": [
+    1.146,
+    1.172
+  ],
+  "Perpetua Titling MT": [
+    1.1831,
+    1.172
+  ],
+  "PingFang SC": [
+    1.172,
+    1.172
+  ],
+  "PingFang TC": [
+    1.172,
+    1.172
+  ],
+  "Playbill": [
+    1.0117,
+    1.172
+  ],
+  "Playfair Display": [
+    1.333,
+    1.172
+  ],
+  "Playfair Display Black": [
+    1.333,
+    1.172
+  ],
+  "Poiret One": [
+    1.17,
+    1.172
+  ],
+  "Poor Richard": [
+    1.1245,
+    1.172
+  ],
+  "Poppins": [
+    1.5,
+    1.172
+  ],
+  "Poppins Black": [
+    1.5,
+    1.172
+  ],
+  "Poppins ExtraBold": [
+    1.5,
+    1.172
+  ],
+  "Poppins ExtraLight": [
+    1.5,
+    1.172
+  ],
+  "Poppins Light": [
+    1.5,
+    1.172
+  ],
+  "Poppins Medium": [
+    1.5,
+    1.172
+  ],
+  "Poppins SemiBold": [
+    1.5,
+    1.172
+  ],
+  "Probe Grotesk Display": [
+    1.172,
+    1.172
+  ],
+  "Probe Grotesk Mono": [
+    1.172,
+    1.172
+  ],
+  "Probe Grotesk Text": [
+    1.172,
+    1.172
+  ],
+  "Prompt": [
+    1.512,
+    1.172
+  ],
+  "Prompt Light": [
+    1.512,
+    1.172
+  ],
+  "Quattrocento": [
+    1.108,
+    1.172
+  ],
+  "Quattrocento Sans": [
+    1.108,
+    1.172
+  ],
+  "Questrial": [
+    1.03,
+    1.172
+  ],
+  "Quokka Probe B": [
+    1.172,
+    1.172
+  ],
+  "Quokka Probe C": [
+    1.172,
+    1.172
+  ],
+  "Quokka Probe D": [
+    1.172,
+    1.172
+  ],
+  "Quokka Probe E": [
+    1.172,
+    1.172
+  ],
+  "Raavi": [
+    1.6602,
+    1.172
+  ],
+  "Raleway": [
+    1.174,
+    1.172
+  ],
+  "Raleway Black": [
+    1.174,
+    1.172
+  ],
+  "Raleway Light": [
+    1.174,
+    1.172
+  ],
+  "Raleway SemiBold": [
+    1.174,
+    1.172
+  ],
+  "Ravie": [
+    1.332,
+    1.172
+  ],
+  "Roboto": [
+    1.172,
+    1.172
+  ],
+  "Roboto Black": [
+    1.172,
+    1.172
+  ],
+  "Roboto Condensed": [
+    1.172,
+    1.172
+  ],
+  "Roboto Condensed Light": [
+    1.172,
+    1.172
+  ],
+  "Roboto GO": [
+    1.172,
+    1.172
+  ],
+  "Roboto Light": [
+    1.172,
+    1.172
+  ],
+  "Roboto Medium": [
+    1.172,
+    1.172
+  ],
+  "Roboto Mono": [
+    1.172,
+    1.172
+  ],
+  "Roboto Slab": [
+    1.172,
+    1.172
+  ],
+  "Roboto Slab Light": [
+    1.172,
+    1.172
+  ],
+  "Rockwell": [
+    1.2002,
+    1.172
+  ],
+  "Rockwell Condensed": [
+    1.1758,
+    1.172
+  ],
+  "Rockwell Extra Bold": [
+    1.1743,
+    1.172
+  ],
+  "SPLC-6ASFC-26-3DH": [
+    1.172,
+    1.172
+  ],
+  "STFangsong": [
+    1.456,
+    1.172
+  ],
+  "STHeiti": [
+    1.172,
+    1.172
+  ],
+  "STHupo": [
+    1.3429,
+    1.172
+  ],
+  "STKaiti": [
+    1.172,
+    1.172
+  ],
+  "STLiti": [
+    1.3767,
+    1.172
+  ],
+  "STSong": [
+    1.3,
+    1.172
+  ],
+  "STXihei": [
+    1.79,
+    1.79
+  ],
+  "STXingkai": [
+    1.4183,
+    1.172
+  ],
+  "STXinwei": [
+    1.3468,
+    1.172
+  ],
+  "STZhongsong": [
+    1.7225,
+    1.172
+  ],
+  "Sagona": [
+    1.1968,
+    1.172
+  ],
+  "Sagona Book": [
+    1.1968,
+    1.172
+  ],
+  "Sakkal Majalla": [
+    1.3965,
+    1.172
+  ],
+  "Sakkal Majalla GO": [
+    1.172,
+    1.172
+  ],
+  "Sakkal Majalla Latin GO": [
+    1.172,
+    1.172
+  ],
+  "Scheherazade New": [
+    1.1499,
+    1.172
+  ],
+  "Script MT Bold": [
+    1.2041,
+    1.172
+  ],
+  "Segoe Print": [
+    1.15,
+    1.15
+  ],
+  "Segoe Script": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI": [
+    1.3301,
+    1.172
+  ],
+  "Segoe UI (M365 cloud face)": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI Black": [
+    1.3301,
+    1.172
+  ],
+  "Segoe UI Emoji": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI Emoji L": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI GO": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI Historic": [
+    1.15,
+    1.15
+  ],
+  "Segoe UI Light": [
+    1.3301,
+    1.172
+  ],
+  "Segoe UI Semibold": [
+    1.3301,
+    1.172
+  ],
+  "Segoe UI Semilight": [
+    1.3301,
+    1.172
+  ],
+  "Segoe UI Symbol": [
+    1.15,
+    1.15
+  ],
+  "Selawik": [
+    1.3301,
+    1.172
+  ],
+  "Selawik Semibold": [
+    1.3301,
+    1.172
+  ],
+  "Shonar Bangla": [
+    1,
+    1
+  ],
+  "Showcard Gothic": [
+    1.2378,
+    1.172
+  ],
+  "Shruti": [
+    1.6812,
+    1.172
+  ],
+  "SimHei": [
+    1.3,
+    1.172
+  ],
+  "SimSun": [
+    1.3,
+    1.172
+  ],
+  "SimSun-ExtB": [
+    1.3,
+    1.172
+  ],
+  "SimSun-substitution \u30fb/\u301c line lift": [
+    1.3,
+    1.172
+  ],
+  "Simplified Arabic": [
+    1.66,
+    1.66
+  ],
+  "Sitka": [
+    1.2502,
+    1.172
+  ],
+  "Sitka Text": [
+    1.2502,
+    1.172
+  ],
+  "Snap ITC": [
+    1.2852,
+    1.172
+  ],
+  "SomeCustomFont": [
+    1.172,
+    1.172
+  ],
+  "Songti SC": [
+    1.82,
+    1.172
+  ],
+  "Songti TC": [
+    1.82,
+    1.172
+  ],
+  "Source": [
+    1.172,
+    1.172
+  ],
+  "Source Code Pro": [
+    1.257,
+    1.172
+  ],
+  "Source Han Sans CN": [
+    1.3,
+    1.3
+  ],
+  "Source Han Sans JP": [
+    1.172,
+    1.172
+  ],
+  "Source Han Sans K": [
+    1.3,
+    1.172
+  ],
+  "Source Sans Pro": [
+    1.257,
+    1.172
+  ],
+  "Source Sans Pro Light": [
+    1.257,
+    1.172
+  ],
+  "Source Sans Pro SemiBold": [
+    1.257,
+    1.172
+  ],
+  "Source Serif Pro": [
+    1.253,
+    1.172
+  ],
+  "Squirrel Roman Probe": [
+    1.172,
+    1.172
+  ],
+  "Squirrel Serif Probe": [
+    1.172,
+    1.172
+  ],
+  "Staatliches": [
+    1.25,
+    1.172
+  ],
+  "Stencil": [
+    1,
+    1.172
+  ],
+  "Sylfaen": [
+    1.3169,
+    1.172
+  ],
+  "Symbol": [
+    1.2251,
+    1.172
+  ],
+  "TAU-Marutham": [
+    1,
+    1
+  ],
+  "TH SarabunPSK": [
+    1.31,
+    1.172
+  ],
+  "Tahoma": [
+    1.2083,
+    1.2083
+  ],
+  "Tamil MN": [
+    1,
+    1
+  ],
+  "Tamil Sangam MN": [
+    1,
+    1
+  ],
+  "Tempus Sans ITC": [
+    1.3047,
+    1.172
+  ],
+  "Times New Roman": [
+    1.15,
+    1.15
+  ],
+  "Times Punct GO": [
+    1.15,
+    1.15
+  ],
+  "Traditional Arabic": [
+    1.5,
+    1.5
+  ],
+  "Trebuchet MS": [
+    1.1615,
+    1.1615
+  ],
+  "Tunga": [
+    1.7695,
+    1.172
+  ],
+  "Tw Cen MT": [
+    1.0889,
+    1.172
+  ],
+  "Tw Cen MT Condensed": [
+    1.0684,
+    1.172
+  ],
+  "Tw Cen MT Condensed Extra Bold": [
+    1.083,
+    1.172
+  ],
+  "UD Digi Kyokasho N-B": [
+    1.5038,
+    1.172
+  ],
+  "UD Digi Kyokasho N-R": [
+    1.5038,
+    1.172
+  ],
+  "UD Digi Kyokasho NK-B": [
+    1.5038,
+    1.172
+  ],
+  "UD Digi Kyokasho NK-R": [
+    1.5038,
+    1.172
+  ],
+  "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 N-B": [
+    1.5038,
+    1.3
+  ],
+  "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 N-R": [
+    1.5038,
+    1.3
+  ],
+  "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 NK-B": [
+    1.5038,
+    1.3
+  ],
+  "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 NK-R": [
+    1.5038,
+    1.3
+  ],
+  "UU-|2M4-|20-|5V": [
+    1.172,
+    1.172
+  ],
+  "Ubuntu": [
+    1.15,
+    1.15
+  ],
+  "Ubuntu Light": [
+    1.15,
+    1.15
+  ],
+  "Ubuntu Medium": [
+    1.15,
+    1.15
+  ],
+  "Univers": [
+    1.2388,
+    1.172
+  ],
+  "Univers Condensed": [
+    1.2388,
+    1.172
+  ],
+  "Urdu Typesetting": [
+    1.7031,
+    1.172
+  ],
+  "Vani": [
+    1.6841,
+    1.172
+  ],
+  "Verdana": [
+    1.2167,
+    1.2167
+  ],
+  "Vijaya": [
+    1,
+    1
+  ],
+  "Viner Hand ITC": [
+    1.6143,
+    1.172
+  ],
+  "Vivaldi": [
+    1.1899,
+    1.172
+  ],
+  "Vladimir Script": [
+    1.2119,
+    1.172
+  ],
+  "Vrinda": [
+    1.3647,
+    1.172
+  ],
+  "Walbaum": [
+    1.333,
+    1.172
+  ],
+  "Walbaum Display SemiBold": [
+    1.333,
+    1.172
+  ],
+  "Webdings": [
+    1,
+    1.172
+  ],
+  "Wide Latin": [
+    1,
+    1.172
+  ],
+  "Wingdings": [
+    1.1099,
+    1.172
+  ],
+  "Wingdings 2": [
+    1.0542,
+    1.172
+  ],
+  "Wingdings 3": [
+    1.1387,
+    1.172
+  ],
+  "Work Sans": [
+    1.173,
+    1.172
+  ],
+  "Work Sans Light": [
+    1.173,
+    1.172
+  ],
+  "Work Sans Medium": [
+    1.173,
+    1.172
+  ],
+  "Work Sans SemiBold": [
+    1.173,
+    1.172
+  ],
+  "XB Zar": [
+    1.1499,
+    1.172
+  ],
+  "Yu Gothic": [
+    1.4327,
+    1.172
+  ],
+  "Yu Gothic GO": [
+    1.172,
+    1.172
+  ],
+  "Yu Gothic Light": [
+    1.4327,
+    1.172
+  ],
+  "Yu Gothic Medium": [
+    1.4327,
+    1.172
+  ],
+  "Yu Gothic Sans GO": [
+    1.172,
+    1.172
+  ],
+  "Yu Gothic UI": [
+    1.7291,
+    1.172
+  ],
+  "Yu Gothic UI Light": [
+    1.7291,
+    1.172
+  ],
+  "Yu Gothic UI Semibold": [
+    1.7291,
+    1.172
+  ],
+  "Yu Gothic UI Semilight": [
+    1.7291,
+    1.172
+  ],
+  "Yu Mincho": [
+    1.4327,
+    1.3
+  ],
+  "Yu Mincho Demibold": [
+    1.4327,
+    1.3
+  ],
+  "Yu Mincho GO": [
+    1.3,
+    1.3
+  ],
+  "Yu Mincho Light": [
+    1.4327,
+    1.3
+  ],
+  "Yu Mincho Serif GO": [
+    1.3,
+    1.3
+  ],
+  "[3]": [
+    1.172,
+    1.172
+  ],
+  "[3]\\uc544\\ub0b4": [
+    1.172,
+    1.172
+  ],
+  "[^": [
+    1.172,
+    1.172
+  ],
+  "\\u3042 \\u3044 \\u30a2": [
+    1.172,
+    1.172
+  ],
+  "\\u30e1\\u30a4\\u30ea\\u30aa UI": [
+    1.172,
+    1.172
+  ],
+  "\\u3131": [
+    1.172,
+    1.172
+  ],
+  "\\u4e2d\\u6587": [
+    1.172,
+    1.172
+  ],
+  "\\u4eff\\u5b8b": [
+    1.172,
+    1.172
+  ],
+  "\\u4eff\\u5b8b_GB2312": [
+    1.172,
+    1.172
+  ],
+  "\\u534e\\u5eb7\\u5a03\\u5a03\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "\\u534e\\u6587\\u4e2d\\u5b8b": [
+    1.172,
+    1.172
+  ],
+  "\\u56e2 \\u961f ": [
+    1.172,
+    1.172
+  ],
+  "\\u56e2\\u961f 123 \\u6210\\u5458": [
+    1.172,
+    1.172
+  ],
+  "\\u56e2\\u961f\\u5bb9\\u6613": [
+    1.172,
+    1.172
+  ],
+  "\\u5b8b\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "\\u5f20\\u4e09\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "\\u5fae\\u8f6f\\u96c5\\u9ed1": [
+    1.172,
+    1.172
+  ],
+  "\\u6587\\u5b57": [
+    1.172,
+    1.172
+  ],
+  "\\u65b0\\u7d30\\u660e\\u9ad4": [
+    1.172,
+    1.172
+  ],
+  "\\u65b9\\u6b63\\u5c0f\\u6807\\u5b8b_GBK": [
+    1.172,
+    1.172
+  ],
+  "\\u67d0\\u67d0\\u5b8b\\u4f53\\u63a2\\u9488": [
+    1.172,
+    1.172
+  ],
+  "\\u6977\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "\\u6977\\u4f53_GB2312": [
+    1.172,
+    1.172
+  ],
+  "\\u6a19\\u6977\\u9ad4": [
+    1.172,
+    1.172
+  ],
+  "\\u6c49\\u4eea\\u65d7\\u9ed1-50\\u7b80": [
+    1.172,
+    1.172
+  ],
+  "\\u6e38\\u30b4\\u30b7\\u30c3\\u30af Light": [
+    1.172,
+    1.172
+  ],
+  "\\u6e38\\u660e\\u671d": [
+    1.172,
+    1.172
+  ],
+  "\\u6e38\\u660e\\u671d Light": [
+    1.172,
+    1.172
+  ],
+  "\\u6f22 \\u5b57": [
+    1.172,
+    1.172
+  ],
+  "\\u6f22A1\\u6f222B": [
+    1.172,
+    1.172
+  ],
+  "\\u7b49\\u7ebf": [
+    1.172,
+    1.172
+  ],
+  "\\u7b49\\u7ebf Light": [
+    1.172,
+    1.172
+  ],
+  "\\u9677\\u5165\\u201c\\u4e8b\\u60c5": [
+    1.172,
+    1.172
+  ],
+  "\\u9ed1\\u4f53": [
+    1.172,
+    1.172
+  ],
+  "\\uAD74\\uB9BC": [
+    1.172,
+    1.172
+  ],
+  "\\uB9D1\\uC740 \\uACE0\\uB515": [
+    1.172,
+    1.172
+  ],
+  "\\uFF2D\\uFF33 \\u660E\\u671D": [
+    1.172,
+    1.172
+  ],
+  "\\uFF2D\\uFF33 \\uFF30\\u660E\\u671D": [
+    1.172,
+    1.172
+  ],
+  "\\uac00": [
+    1.172,
+    1.172
+  ],
+  "\\uac00\\u00b7\\ub098\\u00b7\\ub2e4 \\ub77c": [
+    1.172,
+    1.172
+  ],
+  "\\uac00\\uac001\\uc6d0 C\\ub97c": [
+    1.172,
+    1.172
+  ],
+  "\\uac00\\uc628\\uae00\\uaf34": [
+    1.172,
+    1.172
+  ],
+  "\\ub098\\ub214\\uba85\\uc870": [
+    1.172,
+    1.172
+  ],
+  "\\ub098\\ub798\\uae00\\uaf34": [
+    1.172,
+    1.172
+  ],
+  "\\ub2c8\\ub2e4, \\ud06c\\uae30: PC\\ub97c": [
+    1.172,
+    1.172
+  ],
+  "\\ub2e4\\ub78c\\uc950\\uc11c\\uccb4": [
+    1.172,
+    1.172
+  ],
+  "\\ub2e4\\ub78c\\uc950\\uc11c\\uccb42": [
+    1.172,
+    1.172
+  ],
+  "\\ub2e4\\uc19c\\uae00\\uaf34": [
+    1.172,
+    1.172
+  ],
+  "\\ub9d1\\uc740 \\uace0\\ub515": [
+    1.172,
+    1.172
+  ],
+  "\\ub9e4\\ud2b8(\\uc81c\\uc8fc": [
+    1.172,
+    1.172
+  ],
+  "\\ubc14\\ud0d5": [
+    1.172,
+    1.172
+  ],
+  "\\uc6d0\\uc2e0\\ud55c Light": [
+    1.172,
+    1.172
+  ],
+  "\\ucd94\\uac00 (\\uc81c\\uc8fc": [
+    1.172,
+    1.172
+  ],
+  "\\ud55c\\uad6d\\uc5b4": [
+    1.172,
+    1.172
+  ],
+  "\\ud55c\\uae00": [
+    1.172,
+    1.172
+  ],
+  "\\ud55c\\uae00\\ud504\\ub85c\\ube0c": [
+    1.172,
+    1.172
+  ],
+  "\\ud568\\ucd08\\ub86c\\ubc14\\ud0d5": [
+    1.172,
+    1.172
+  ],
+  "\\ud655\\uc778. \\ucd08\\ub85d": [
+    1.172,
+    1.172
+  ],
+  "\\uff2d\\uff33 \\u660e\\u671d": [
+    1.172,
+    1.172
+  ],
+  "aa-": [
+    1.172,
+    1.172
+  ],
+  "aa-bbbb": [
+    1.172,
+    1.172
+  ],
+  "aa/bbbb": [
+    1.172,
+    1.172
+  ],
+  "aaaa bbbb cccc dddd": [
+    1.172,
+    1.172
+  ],
+  "ab": [
+    1.172,
+    1.172
+  ],
+  "abadi": [
+    1.2812,
+    1.172
+  ],
+  "abadi mt condensed extra bold": [
+    1.1504,
+    1.172
+  ],
+  "abadi mt condensed light": [
+    1.1504,
+    1.172
+  ],
+  "abril fatface": [
+    1.349,
+    1.172
+  ],
+  "adlam display": [
+    1.3047,
+    1.172
+  ],
+  "agency fb": [
+    1.1226,
+    1.172
+  ],
+  "aharoni": [
+    0.9878,
+    1.172
+  ],
+  "algerian": [
+    1.3167,
+    1.3167
+  ],
+  "amasis mt pro": [
+    1.2,
+    1.172
+  ],
+  "amasis mt pro black": [
+    1.2,
+    1.172
+  ],
+  "amasis mt pro medium": [
+    1.2,
+    1.172
+  ],
+  "amatic sc": [
+    1.261,
+    1.172
+  ],
+  "angsana new": [
+    1.3508,
+    1.172
+  ],
+  "anton": [
+    1.5054,
+    1.172
+  ],
+  "aparajita": [
+    1.1816,
+    1.172
+  ],
+  "aptos": [
+    1.22,
+    1.22
+  ],
+  "aptos black": [
+    1.22,
+    1.22
+  ],
+  "aptos display": [
+    1.22,
+    1.22
+  ],
+  "aptos extrabold": [
+    1.22,
+    1.22
+  ],
+  "aptos light": [
+    1.22,
+    1.22
+  ],
+  "aptos narrow": [
+    1.22,
+    1.22
+  ],
+  "aptos semibold": [
+    1.22,
+    1.22
+  ],
+  "arabic typesetting": [
+    1.1396,
+    1.172
+  ],
+  "arial": [
+    1.15,
+    1.15
+  ],
+  "arial black": [
+    1.15,
+    1.15
+  ],
+  "arial narrow": [
+    1.15,
+    1.15
+  ],
+  "arial nova": [
+    1.15,
+    1.15
+  ],
+  "arial nova light": [
+    1.15,
+    1.15
+  ],
+  "arial rounded mt bold": [
+    1.15,
+    1.15
+  ],
+  "ascii-only CJK face (no eastAsia slot)": [
+    1.172,
+    1.172
+  ],
+  "atLeast": [
+    1.172,
+    1.172
+  ],
+  "auto": [
+    1.172,
+    1.172
+  ],
+  "auto mode 1.5x (360) = naturalH \u00d7 1.5": [
+    1.172,
+    1.172
+  ],
+  "auto mode 2x (480) = naturalH \u00d7 2": [
+    1.172,
+    1.172
+  ],
+  "autospaceBoundaries": [
+    1.172,
+    1.172
+  ],
+  "autospacePadBetween": [
+    1.172,
+    1.172
+  ],
+  "avenir next lt pro": [
+    1.369,
+    1.369
+  ],
+  "avenir next lt pro demi": [
+    1.369,
+    1.369
+  ],
+  "avenir next lt pro light": [
+    1.369,
+    1.369
+  ],
+  "bahnschrift": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift condensed": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift light": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift rounded": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift semibold": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift semibold condensed": [
+    1.2002,
+    1.172
+  ],
+  "bahnschrift semilight condensed": [
+    1.2002,
+    1.172
+  ],
+  "barlow": [
+    1.2,
+    1.172
+  ],
+  "barlow black": [
+    1.2,
+    1.172
+  ],
+  "barlow condensed": [
+    1.2,
+    1.172
+  ],
+  "barlow medium": [
+    1.2,
+    1.172
+  ],
+  "baskerville old face": [
+    1,
+    1.172
+  ],
+  "batang": [
+    1.3,
+    1.172
+  ],
+  "batangche": [
+    1.3,
+    1.172
+  ],
+  "bauhaus 93": [
+    1.4604,
+    1.172
+  ],
+  "bbbb": [
+    1.172,
+    1.172
+  ],
+  "bebas neue": [
+    1.2,
+    1.172
+  ],
+  "bell mt": [
+    1.1118,
+    1.172
+  ],
+  "bembo": [
+    1.1294,
+    1.172
+  ],
+  "berlin sans fb": [
+    1.0952,
+    1.172
+  ],
+  "berlin sans fb demi": [
+    1.1226,
+    1.172
+  ],
+  "bernard mt condensed": [
+    1.1875,
+    1.172
+  ],
+  "bierstadt": [
+    1.1431,
+    1.172
+  ],
+  "bierstadt display": [
+    1.1431,
+    1.172
+  ],
+  "bodoni mt": [
+    1.1992,
+    1.172
+  ],
+  "bodoni mt black": [
+    1.168,
+    1.172
+  ],
+  "bodoni mt poster compressed": [
+    1.1475,
+    1.172
+  ],
+  "bold does not widen monospace text": [
+    1.172,
+    1.172
+  ],
+  "book antiqua": [
+    1.21,
+    1.21
+  ],
+  "bookman old style": [
+    1.1738,
+    1.172
+  ],
+  "bookshelf symbol 7": [
+    1,
+    1.172
+  ],
+  "bradley hand itc": [
+    1.25,
+    1.25
+  ],
+  "braggadocio": [
+    0.9277,
+    1.172
+  ],
+  "britannic bold": [
+    1,
+    1.172
+  ],
+  "broadway": [
+    1.1323,
+    1.172
+  ],
+  "calc(var(--doc-line-factor,1.2) * 1em)": [
+    1.172,
+    1.172
+  ],
+  "calibri": [
+    1.22,
+    1.22
+  ],
+  "calibri light": [
+    1.22,
+    1.22
+  ],
+  "californian fb": [
+    1.1357,
+    1.172
+  ],
+  "calisto mt": [
+    1.1543,
+    1.172
+  ],
+  "cambria": [
+    1.172,
+    1.172
+  ],
+  "cambria math": [
+    1.172,
+    1.172
+  ],
+  "candara": [
+    1.2207,
+    1.172
+  ],
+  "castellar": [
+    1.2061,
+    1.172
+  ],
+  "centaur": [
+    1.1299,
+    1.172
+  ],
+  "century": [
+    1.206,
+    1.206
+  ],
+  "century gothic": [
+    1.226,
+    1.226
+  ],
+  "century schoolbook": [
+    1.206,
+    1.206
+  ],
+  "chiller": [
+    1.1538,
+    1.172
+  ],
+  "colonna mt": [
+    1.0571,
+    1.172
+  ],
+  "comic sans ms": [
+    1.3936,
+    1.3936
+  ],
+  "comic sans ms bold": [
+    1.3936,
+    1.3936
+  ],
+  "computeLineHeight": [
+    1.172,
+    1.172
+  ],
+  "computeLineMetrics": [
+    1.172,
+    1.172
+  ],
+  "congenial": [
+    0.97,
+    1.172
+  ],
+  "consolas": [
+    1.1667,
+    1.1667
+  ],
+  "constantia": [
+    1.2207,
+    1.172
+  ],
+  "cooper black": [
+    1.147,
+    1.172
+  ],
+  "copperplate gothic bold": [
+    1.1123,
+    1.172
+  ],
+  "corbel": [
+    1.2075,
+    1.172
+  ],
+  "cordia new": [
+    1.147,
+    1.172
+  ],
+  "cordiaupc": [
+    1.147,
+    1.172
+  ],
+  "covers Han and hangul on the CJK side": [
+    1.172,
+    1.172
+  ],
+  "cssCsFontFamily": [
+    1.172,
+    1.172
+  ],
+  "cssFontFamily": [
+    1.172,
+    1.172
+  ],
+  "cssFontFamily Arabic": [
+    1.1499,
+    1.172
+  ],
+  "cssLeadTop": [
+    1.172,
+    1.172
+  ],
+  "cssLineHeight": [
+    1.172,
+    1.172
+  ],
+  "curlz mt": [
+    1.3267,
+    1.172
+  ],
+  "david": [
+    0.9839,
+    1.172
+  ],
+  "deduplicates shared families": [
+    1.172,
+    1.172
+  ],
+  "default": [
+    1.172,
+    1.172
+  ],
+  "dengxian": [
+    1.3546,
+    1.172
+  ],
+  "dengxian light": [
+    1.3546,
+    1.172
+  ],
+  "desdemona": [
+    1.1465,
+    1.172
+  ],
+  "detects CJK vs pure Western text": [
+    1.172,
+    1.172
+  ],
+  "digits": [
+    1.172,
+    1.172
+  ],
+  "dm mono": [
+    1.302,
+    1.172
+  ],
+  "dm mono medium": [
+    1.302,
+    1.172
+  ],
+  "dm sans": [
+    1.302,
+    1.172
+  ],
+  "dm sans medium": [
+    1.302,
+    1.172
+  ],
+  "dm serif display": [
+    1.371,
+    1.172
+  ],
+  "document fontTable substitution hints": [
+    1.172,
+    1.172
+  ],
+  "does not capture CJK or Latin families": [
+    1.172,
+    1.172
+  ],
+  "does not capture the other Lucida cuts": [
+    1.172,
+    1.172
+  ],
+  "dosis": [
+    1.264,
+    1.172
+  ],
+  "dosis extrabold": [
+    1.264,
+    1.172
+  ],
+  "dotum": [
+    1.3,
+    1.172
+  ],
+  "dotumche": [
+    1.3,
+    1.172
+  ],
+  "dubai": [
+    1.688,
+    1.688
+  ],
+  "dubai light": [
+    1.688,
+    1.688
+  ],
+  "dubai medium": [
+    1.688,
+    1.688
+  ],
+  "eb garamond": [
+    1.305,
+    1.172
+  ],
+  "ebrima": [
+    1.0514,
+    1.0514
+  ],
+  "edwardian script itc": [
+    1.1787,
+    1.172
+  ],
+  "elephant": [
+    1.289,
+    1.172
+  ],
+  "em": [
+    1.172,
+    1.172
+  ],
+  "embedded face line boxes": [
+    1.172,
+    1.172
+  ],
+  "empty runs return 1 line": [
+    1.172,
+    1.172
+  ],
+  "engravers mt": [
+    1.1646,
+    1.172
+  ],
+  "eras bold itc": [
+    1.1455,
+    1.172
+  ],
+  "eras light itc": [
+    1.126,
+    1.172
+  ],
+  "eras medium itc": [
+    1.1313,
+    1.172
+  ],
+  "eurostile": [
+    1.1504,
+    1.172
+  ],
+  "exact": [
+    1.172,
+    1.172
+  ],
+  "exact \u2192 fixed pt": [
+    1.172,
+    1.172
+  ],
+  "fangsong": [
+    1.3,
+    1.172
+  ],
+  "felix titling": [
+    1.1694,
+    1.172
+  ],
+  "fira code": [
+    1.312,
+    1.172
+  ],
+  "fixture serif": [
+    1.172,
+    1.172
+  ],
+  "fontBoxCss": [
+    1.172,
+    1.172
+  ],
+  "footlight mt light": [
+    0.915,
+    1.172
+  ],
+  "forte": [
+    1.0938,
+    1.172
+  ],
+  "franklin gothic book": [
+    1.1338,
+    1.172
+  ],
+  "franklin gothic demi": [
+    1.1338,
+    1.172
+  ],
+  "franklin gothic demi cond": [
+    1.1338,
+    1.172
+  ],
+  "franklin gothic heavy": [
+    1.1338,
+    1.172
+  ],
+  "franklin gothic medium": [
+    1.1338,
+    1.172
+  ],
+  "franklin gothic medium cond": [
+    1.1338,
+    1.172
+  ],
+  "frankruehl": [
+    0.9297,
+    1.172
+  ],
+  "freestyle script": [
+    1.1777,
+    1.172
+  ],
+  "gabriola": [
+    1.7,
+    1.172
+  ],
+  "gaegu": [
+    1.25,
+    1.172
+  ],
+  "garamond": [
+    1.125,
+    1.172
+  ],
+  "gautami": [
+    1.9062,
+    1.172
+  ],
+  "georgia pro": [
+    0.98,
+    0.98
+  ],
+  "getContext": [
+    1.172,
+    1.172
+  ],
+  "gill sans mt": [
+    1.1597,
+    1.172
+  ],
+  "gill sans mt condensed": [
+    1.2041,
+    1.172
+  ],
+  "gill sans mt ext condensed bold": [
+    1.1973,
+    1.172
+  ],
+  "gill sans nova": [
+    1.3018,
+    1.172
+  ],
+  "gill sans nova light": [
+    1.3018,
+    1.172
+  ],
+  "gill sans ultra bold": [
+    1.2461,
+    1.172
+  ],
+  "gisha": [
+    1.1719,
+    1.172
+  ],
+  "gloucester mt extra condensed": [
+    1.1631,
+    1.172
+  ],
+  "goudy old style": [
+    1.2002,
+    1.172
+  ],
+  "grandview": [
+    1.2002,
+    1.172
+  ],
+  "grandview display": [
+    1.2002,
+    1.172
+  ],
+  "grotesque": [
+    1.1812,
+    1.172
+  ],
+  "gulim": [
+    1.3,
+    1.172
+  ],
+  "gulimche": [
+    1.3,
+    1.172
+  ],
+  "gungsuh": [
+    1.3,
+    1.172
+  ],
+  "gungsuhche": [
+    1.3,
+    1.172
+  ],
+  "haettenschweiler": [
+    1.067,
+    1.172
+  ],
+  "hammersmith one": [
+    1.25,
+    1.172
+  ],
+  "hangul counts as CJK (syllables + jamo)": [
+    1.172,
+    1.172
+  ],
+  "hangulSpaceOffsets": [
+    1.172,
+    1.172
+  ],
+  "harlow solid italic": [
+    1.2627,
+    1.172
+  ],
+  "harrington": [
+    1.1758,
+    1.172
+  ],
+  "heebo": [
+    1.4688,
+    1.172
+  ],
+  "heebo black": [
+    1.4688,
+    1.172
+  ],
+  "hello": [
+    1.172,
+    1.172
+  ],
+  "hello 123": [
+    1.172,
+    1.172
+  ],
+  "hggothice": [
+    1.3,
+    1.172
+  ],
+  "hgmarugothicmpro": [
+    1.3,
+    1.172
+  ],
+  "hgminchoe": [
+    1.3,
+    1.3
+  ],
+  "hgpgothice": [
+    1.3,
+    1.172
+  ],
+  "hgpminchoe": [
+    1.3,
+    1.3
+  ],
+  "hgpsoeikakugothicub": [
+    1.3,
+    1.172
+  ],
+  "hgp\u30b4\u30b7\u30c3\u30afe": [
+    1.3,
+    1.3
+  ],
+  "hgp\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": [
+    1.3,
+    1.3
+  ],
+  "hgp\u660e\u671de": [
+    1.3,
+    1.3
+  ],
+  "hgsgothice": [
+    1.3,
+    1.172
+  ],
+  "hgsminchoe": [
+    1.3,
+    1.3
+  ],
+  "hgsoeikakugothicub": [
+    1.3,
+    1.172
+  ],
+  "hgssoeikakugothicub": [
+    1.3,
+    1.172
+  ],
+  "hgs\u30b4\u30b7\u30c3\u30afe": [
+    1.3,
+    1.3
+  ],
+  "hgs\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": [
+    1.3,
+    1.3
+  ],
+  "hgs\u660e\u671de": [
+    1.3,
+    1.3
+  ],
+  "hg\u30b4\u30b7\u30c3\u30afe": [
+    1.3,
+    1.3
+  ],
+  "hg\u4e38\u30b4\u30b7\u30c3\u30afm-pro": [
+    1.3,
+    1.3
+  ],
+  "hg\u5275\u82f1\u89d2\u30b4\u30b7\u30c3\u30afub": [
+    1.3,
+    1.3
+  ],
+  "hg\u660e\u671de": [
+    1.3,
+    1.3
+  ],
+  "high tower text": [
+    1.1636,
+    1.172
+  ],
+  "hind": [
+    1.601,
+    1.172
+  ],
+  "hind semibold": [
+    1.601,
+    1.172
+  ],
+  "ibm plex sans": [
+    1.3,
+    1.172
+  ],
+  "ibm plex sans condensed": [
+    1.3,
+    1.172
+  ],
+  "ibm plex sans condensed light": [
+    1.3,
+    1.172
+  ],
+  "ibm plex sans light": [
+    1.3,
+    1.172
+  ],
+  "ibm plex sans medium": [
+    1.3,
+    1.172
+  ],
+  "ibm plex serif": [
+    1.3,
+    1.172
+  ],
+  "iiii": [
+    1.172,
+    1.172
+  ],
+  "im": [
+    1.172,
+    1.172
+  ],
+  "implausible boxes are ignored": [
+    1.172,
+    1.172
+  ],
+  "imprint mt shadow": [
+    1.1782,
+    1.172
+  ],
+  "inconsolata": [
+    1.049,
+    1.172
+  ],
+  "informal roman": [
+    1.0151,
+    1.172
+  ],
+  "initial": [
+    1.172,
+    1.172
+  ],
+  "installed fonts skip the altName rewrite": [
+    1.172,
+    1.172
+  ],
+  "is false for Latin and CJK": [
+    1.172,
+    1.172
+  ],
+  "iskoola pota": [
+    1.1353,
+    1.172
+  ],
+  "italianno": [
+    1.25,
+    1.172
+  ],
+  "jokerman": [
+    1.5122,
+    1.172
+  ],
+  "josefin sans": [
+    1,
+    1.172
+  ],
+  "josefin sans bold": [
+    1,
+    1.172
+  ],
+  "josefin slab": [
+    1,
+    1.172
+  ],
+  "juice itc": [
+    1.1343,
+    1.172
+  ],
+  "justifySymbolRanges": [
+    1.172,
+    1.172
+  ],
+  "kaiti": [
+    1.3,
+    1.172
+  ],
+  "kartika": [
+    1.4263,
+    1.172
+  ],
+  "khmer ui": [
+    1.1318,
+    1.172
+  ],
+  "kino mt": [
+    1.1323,
+    1.172
+  ],
+  "kokila": [
+    1.1528,
+    1.172
+  ],
+  "krNoBreakOffsets across run boundaries": [
+    1.172,
+    1.172
+  ],
+  "kristen itc": [
+    1.3599,
+    1.172
+  ],
+  "kunstler script": [
+    1.0796,
+    1.172
+  ],
+  "latha": [
+    1.6686,
+    1.6686
+  ],
+  "latin": [
+    1.172,
+    1.172
+  ],
+  "latinLineFactor": [
+    1.172,
+    1.172
+  ],
+  "lato": [
+    1.2,
+    1.172
+  ],
+  "lato black": [
+    1.2,
+    1.172
+  ],
+  "lato light": [
+    1.2,
+    1.172
+  ],
+  "lato semibold": [
+    1.2,
+    1.172
+  ],
+  "leelawadee": [
+    1.1958,
+    1.172
+  ],
+  "leelawadee ui": [
+    1.3301,
+    1.172
+  ],
+  "left": [
+    1.172,
+    1.172
+  ],
+  "libre baskerville": [
+    1.24,
+    1.172
+  ],
+  "libre franklin": [
+    1.212,
+    1.172
+  ],
+  "lilyupc": [
+    0.9529,
+    1.172
+  ],
+  "line one\\nline two\\nline three": [
+    1.172,
+    1.172
+  ],
+  "lineHeightFactor": [
+    1.172,
+    1.172
+  ],
+  "lineTexts": [
+    1.172,
+    1.172
+  ],
+  "lines": [
+    1.172,
+    1.172
+  ],
+  "lobster": [
+    1.25,
+    1.172
+  ],
+  "long English paragraph wraps by word": [
+    1.172,
+    1.172
+  ],
+  "lora": [
+    1.28,
+    1.172
+  ],
+  "lucida blackletter": [
+    1.2715,
+    1.172
+  ],
+  "lucida bright": [
+    1.1777,
+    1.172
+  ],
+  "lucida calligraphy": [
+    1.3613,
+    1.172
+  ],
+  "lucida console": [
+    1,
+    1.172
+  ],
+  "lucida fax": [
+    1.1777,
+    1.172
+  ],
+  "lucida handwriting": [
+    1.3794,
+    1.172
+  ],
+  "lucida sans": [
+    1.179,
+    1.179
+  ],
+  "lucida sans typewriter": [
+    1.179,
+    1.179
+  ],
+  "lucida sans unicode": [
+    1.179,
+    1.179
+  ],
+  "magneto": [
+    1.2095,
+    1.172
+  ],
+  "maiandra gd": [
+    1.1987,
+    1.172
+  ],
+  "malgun gothic": [
+    1.7291,
+    1.172
+  ],
+  "malgun gothic semilight": [
+    1.7291,
+    1.172
+  ],
+  "mangal": [
+    1.6797,
+    1.172
+  ],
+  "marlett": [
+    0.9375,
+    1.172
+  ],
+  "matura mt script capitals": [
+    1.3306,
+    1.172
+  ],
+  "maxWordWidthPx": [
+    1.172,
+    1.172
+  ],
+  "meiryo": [
+    1.95,
+    1.172
+  ],
+  "meiryo ui": [
+    1.6511,
+    1.172
+  ],
+  "merriweather": [
+    1.257,
+    1.172
+  ],
+  "merriweather light": [
+    1.257,
+    1.172
+  ],
+  "merriweather sans": [
+    1.257,
+    1.172
+  ],
+  "merriweather sans extrabold": [
+    1.257,
+    1.172
+  ],
+  "microsoft gothicneo": [
+    1.5557,
+    1.172
+  ],
+  "microsoft gothicneo light": [
+    1.5557,
+    1.172
+  ],
+  "microsoft himalaya": [
+    1,
+    1.172
+  ],
+  "microsoft jhenghei": [
+    1.7291,
+    1.172
+  ],
+  "microsoft jhenghei ui": [
+    1.651,
+    1.172
+  ],
+  "microsoft jhenghei ui light": [
+    1.651,
+    1.172
+  ],
+  "microsoft new tai lue": [
+    1.31,
+    1.31
+  ],
+  "microsoft phagspa": [
+    1.2793,
+    1.172
+  ],
+  "microsoft tai le": [
+    1.2715,
+    1.172
+  ],
+  "microsoft yahei": [
+    1.7157,
+    1.172
+  ],
+  "microsoft yahei light": [
+    1.7291,
+    1.172
+  ],
+  "microsoft yahei ui": [
+    1.651,
+    1.172
+  ],
+  "microsoft yahei ui light": [
+    1.651,
+    1.172
+  ],
+  "microsoft yi baiti": [
+    1.0269,
+    1.172
+  ],
+  "microsoft \uace0\ub515neo": [
+    1.5557,
+    1.3
+  ],
+  "microsoft \uace0\ub515neo light": [
+    1.5557,
+    1.3
+  ],
+  "mingliu": [
+    1.3,
+    1.172
+  ],
+  "mingliu-extb": [
+    1.3,
+    1.172
+  ],
+  "mingliu_hkscs": [
+    1.3,
+    1.172
+  ],
+  "mingliu_hkscs-extb": [
+    1.3,
+    1.172
+  ],
+  "mingliu_mscs": [
+    1.3,
+    1.172
+  ],
+  "mistral": [
+    1,
+    1.172
+  ],
+  "mmmm": [
+    1.172,
+    1.172
+  ],
+  "modern": [
+    1.172,
+    1.172
+  ],
+  "modern no. 20": [
+    1.07,
+    1.172
+  ],
+  "mongolian baiti": [
+    1.0635,
+    1.172
+  ],
+  "monotype corsiva": [
+    1.1221,
+    1.172
+  ],
+  "monotype sorts": [
+    1.002,
+    1.172
+  ],
+  "montserrat": [
+    1.219,
+    1.172
+  ],
+  "montserrat black": [
+    1.219,
+    1.172
+  ],
+  "montserrat extrabold": [
+    1.219,
+    1.172
+  ],
+  "montserrat extralight": [
+    1.219,
+    1.172
+  ],
+  "montserrat light": [
+    1.219,
+    1.172
+  ],
+  "montserrat medium": [
+    1.219,
+    1.172
+  ],
+  "montserrat semibold": [
+    1.219,
+    1.172
+  ],
+  "montserrat thin": [
+    1.219,
+    1.172
+  ],
+  "ms gothic": [
+    1.3,
+    1.3
+  ],
+  "ms mincho": [
+    1.3,
+    1.3
+  ],
+  "ms outlook": [
+    1.0347,
+    1.172
+  ],
+  "ms pgothic": [
+    1.3,
+    1.3
+  ],
+  "ms pmincho": [
+    1.3,
+    1.3
+  ],
+  "ms p\u30b4\u30b7\u30c3\u30af": [
+    1.3,
+    1.3
+  ],
+  "ms p\u660e\u671d": [
+    1.3,
+    1.3
+  ],
+  "ms reference sans serif": [
+    1.2167,
+    1.2167
+  ],
+  "ms reference specialty": [
+    1.2275,
+    1.172
+  ],
+  "ms ui gothic": [
+    1.3,
+    1.3
+  ],
+  "ms \u30b4\u30b7\u30c3\u30af": [
+    1.3,
+    1.3
+  ],
+  "ms \u660e\u671d": [
+    1.3,
+    1.3
+  ],
+  "mt extra": [
+    1.293,
+    1.172
+  ],
+  "mv boli": [
+    1.6113,
+    1.172
+  ],
+  "myanmar text": [
+    1.8608,
+    1.172
+  ],
+  "nanum brush script": [
+    1.495,
+    1.172
+  ],
+  "nanum gothic": [
+    1.495,
+    1.172
+  ],
+  "nanum myeongjo": [
+    1.4955,
+    1.172
+  ],
+  "nanum pen script": [
+    1.495,
+    1.172
+  ],
+  "nanumgothic": [
+    1.495,
+    1.172
+  ],
+  "nanumgothic extrabold": [
+    1.495,
+    1.172
+  ],
+  "nanummyeongjo": [
+    1.4955,
+    1.172
+  ],
+  "nanummyeongjoextrabold": [
+    1.4955,
+    1.172
+  ],
+  "neue haas grotesk text pro": [
+    1.223,
+    1.172
+  ],
+  "newline \\\\n forces a line break": [
+    1.172,
+    1.172
+  ],
+  "news gothic mt": [
+    1.209,
+    1.172
+  ],
+  "niagara engraved": [
+    1.0552,
+    1.172
+  ],
+  "niagara solid": [
+    1.0552,
+    1.172
+  ],
+  "nina": [
+    1.207,
+    1.172
+  ],
+  "nirmala text": [
+    1.8623,
+    1.172
+  ],
+  "nirmala ui": [
+    1.3301,
+    1.172
+  ],
+  "nirmala ui semilight": [
+    1.3301,
+    1.172
+  ],
+  "note": [
+    1.172,
+    1.172
+  ],
+  "noteRunStyle": [
+    1.172,
+    1.172
+  ],
+  "noto sans devanagari": [
+    1.304,
+    1.172
+  ],
+  "noto serif": [
+    1.3618,
+    1.172
+  ],
+  "nsimsun": [
+    1.3,
+    1.172
+  ],
+  "nunito": [
+    1.365,
+    1.365
+  ],
+  "nunito black": [
+    1.365,
+    1.365
+  ],
+  "nunito extrabold": [
+    1.365,
+    1.365
+  ],
+  "nunito light": [
+    1.365,
+    1.365
+  ],
+  "nunito sans": [
+    1.365,
+    1.365
+  ],
+  "nunito sans black": [
+    1.365,
+    1.365
+  ],
+  "nunito sans extralight": [
+    1.365,
+    1.365
+  ],
+  "nunito sans light": [
+    1.365,
+    1.365
+  ],
+  "nunito semibold": [
+    1.365,
+    1.365
+  ],
+  "nyala": [
+    1.0514,
+    1.0514
+  ],
+  "old english text mt": [
+    1.2188,
+    1.172
+  ],
+  "one two three": [
+    1.172,
+    1.172
+  ],
+  "onyx": [
+    1.0698,
+    1.172
+  ],
+  "open sans": [
+    1.365,
+    1.365
+  ],
+  "open sans extrabold": [
+    1.365,
+    1.365
+  ],
+  "open sans light": [
+    1.365,
+    1.365
+  ],
+  "open sans semibold": [
+    1.365,
+    1.365
+  ],
+  "oswald": [
+    1.482,
+    1.172
+  ],
+  "oswald extralight": [
+    1.482,
+    1.172
+  ],
+  "pacifico": [
+    1.756,
+    1.172
+  ],
+  "palatino linotype": [
+    1.35,
+    1.35
+  ],
+  "paraLineFactorCss routes by script": [
+    1.172,
+    1.172
+  ],
+  "parchment": [
+    1.0669,
+    1.172
+  ],
+  "perpetua": [
+    1.146,
+    1.172
+  ],
+  "perpetua titling mt": [
+    1.1831,
+    1.172
+  ],
+  "plain": [
+    1.172,
+    1.172
+  ],
+  "plain latin (text)": [
+    1.172,
+    1.172
+  ],
+  "plain text 12%": [
+    1.172,
+    1.172
+  ],
+  "playbill": [
+    1.0117,
+    1.172
+  ],
+  "playfair display": [
+    1.333,
+    1.172
+  ],
+  "playfair display black": [
+    1.333,
+    1.172
+  ],
+  "pmingliu": [
+    1.3,
+    1.172
+  ],
+  "pmingliu-extb": [
+    1.3,
+    1.172
+  ],
+  "poiret one": [
+    1.17,
+    1.172
+  ],
+  "poor richard": [
+    1.1245,
+    1.172
+  ],
+  "poppins": [
+    1.5,
+    1.172
+  ],
+  "poppins black": [
+    1.5,
+    1.172
+  ],
+  "poppins extrabold": [
+    1.5,
+    1.172
+  ],
+  "poppins extralight": [
+    1.5,
+    1.172
+  ],
+  "poppins light": [
+    1.5,
+    1.172
+  ],
+  "poppins medium": [
+    1.5,
+    1.172
+  ],
+  "poppins semibold": [
+    1.5,
+    1.172
+  ],
+  "prompt": [
+    1.512,
+    1.172
+  ],
+  "prompt light": [
+    1.512,
+    1.172
+  ],
+  "pt": [
+    1.172,
+    1.172
+  ],
+  "quattrocento": [
+    1.108,
+    1.172
+  ],
+  "quattrocento sans": [
+    1.108,
+    1.172
+  ],
+  "questrial": [
+    1.03,
+    1.172
+  ],
+  "raavi": [
+    1.6602,
+    1.172
+  ],
+  "raleway": [
+    1.174,
+    1.172
+  ],
+  "raleway black": [
+    1.174,
+    1.172
+  ],
+  "raleway light": [
+    1.174,
+    1.172
+  ],
+  "raleway semibold": [
+    1.174,
+    1.172
+  ],
+  "ravie": [
+    1.332,
+    1.172
+  ],
+  "reads the Latin face table": [
+    1.172,
+    1.172
+  ],
+  "right": [
+    1.172,
+    1.172
+  ],
+  "roboto": [
+    1.172,
+    1.172
+  ],
+  "roboto black": [
+    1.172,
+    1.172
+  ],
+  "roboto condensed": [
+    1.172,
+    1.172
+  ],
+  "roboto condensed light": [
+    1.172,
+    1.172
+  ],
+  "roboto light": [
+    1.172,
+    1.172
+  ],
+  "roboto medium": [
+    1.172,
+    1.172
+  ],
+  "roboto mono": [
+    1.172,
+    1.172
+  ],
+  "roboto slab": [
+    1.172,
+    1.172
+  ],
+  "roboto slab light": [
+    1.172,
+    1.172
+  ],
+  "rockwell": [
+    1.2002,
+    1.172
+  ],
+  "rockwell condensed": [
+    1.1758,
+    1.172
+  ],
+  "rockwell extra bold": [
+    1.1743,
+    1.172
+  ],
+  "roman": [
+    1.172,
+    1.172
+  ],
+  "runLatinFactorFaces": [
+    1.172,
+    1.172
+  ],
+  "sagona": [
+    1.1968,
+    1.172
+  ],
+  "sagona book": [
+    1.1968,
+    1.172
+  ],
+  "sakkal majalla": [
+    1.3965,
+    1.172
+  ],
+  "sans-serif": [
+    1.172,
+    1.172
+  ],
+  "script mt bold": [
+    1.2041,
+    1.172
+  ],
+  "second para": [
+    1.172,
+    1.172
+  ],
+  "segoe print": [
+    1.15,
+    1.15
+  ],
+  "segoe script": [
+    1.15,
+    1.15
+  ],
+  "segoe ui": [
+    1.3301,
+    1.172
+  ],
+  "segoe ui black": [
+    1.3301,
+    1.172
+  ],
+  "segoe ui emoji": [
+    1.15,
+    1.15
+  ],
+  "segoe ui emoji l": [
+    1.15,
+    1.15
+  ],
+  "segoe ui historic": [
+    1.15,
+    1.15
+  ],
+  "segoe ui light": [
+    1.3301,
+    1.172
+  ],
+  "segoe ui semibold": [
+    1.3301,
+    1.172
+  ],
+  "segoe ui semilight": [
+    1.3301,
+    1.172
+  ],
+  "segoe ui symbol": [
+    1.15,
+    1.15
+  ],
+  "selawik": [
+    1.3301,
+    1.172
+  ],
+  "selawik semibold": [
+    1.3301,
+    1.172
+  ],
+  "shonar bangla": [
+    1,
+    1
+  ],
+  "showcard gothic": [
+    1.2378,
+    1.172
+  ],
+  "shruti": [
+    1.6812,
+    1.172
+  ],
+  "simhei": [
+    1.3,
+    1.172
+  ],
+  "simplified arabic": [
+    1.66,
+    1.66
+  ],
+  "simsun": [
+    1.3,
+    1.172
+  ],
+  "simsun-extb": [
+    1.3,
+    1.172
+  ],
+  "simulateLines": [
+    1.172,
+    1.172
+  ],
+  "sitka": [
+    1.2502,
+    1.172
+  ],
+  "sitka text": [
+    1.2502,
+    1.172
+  ],
+  "snap itc": [
+    1.2852,
+    1.172
+  ],
+  "snapLineToPitch": [
+    1.172,
+    1.172
+  ],
+  "snapSpacingToGrid": [
+    1.172,
+    1.172
+  ],
+  "source code pro": [
+    1.257,
+    1.172
+  ],
+  "source sans pro": [
+    1.257,
+    1.172
+  ],
+  "source sans pro light": [
+    1.257,
+    1.172
+  ],
+  "source sans pro semibold": [
+    1.257,
+    1.172
+  ],
+  "source serif pro": [
+    1.253,
+    1.172
+  ],
+  "staatliches": [
+    1.25,
+    1.172
+  ],
+  "stencil": [
+    1,
+    1.172
+  ],
+  "stfangsong": [
+    1.456,
+    1.172
+  ],
+  "sthupo": [
+    1.3429,
+    1.172
+  ],
+  "stliti": [
+    1.3767,
+    1.172
+  ],
+  "stxihei": [
+    1.79,
+    1.79
+  ],
+  "stxingkai": [
+    1.4183,
+    1.172
+  ],
+  "stxinwei": [
+    1.3468,
+    1.172
+  ],
+  "stzhongsong": [
+    1.7225,
+    1.172
+  ],
+  "swiss": [
+    1.172,
+    1.172
+  ],
+  "sylfaen": [
+    1.3169,
+    1.172
+  ],
+  "symbol": [
+    1.2251,
+    1.172
+  ],
+  "symbolBulletLinePt": [
+    1.172,
+    1.172
+  ],
+  "tahoma": [
+    1.2083,
+    1.2083
+  ],
+  "tempus sans itc": [
+    1.3047,
+    1.172
+  ],
+  "test": [
+    1.172,
+    1.172
+  ],
+  "textHasCjk": [
+    1.172,
+    1.172
+  ],
+  "textHasComplexScript": [
+    1.172,
+    1.172
+  ],
+  "th sarabunpsk": [
+    1.31,
+    1.172
+  ],
+  "times new roman": [
+    1.15,
+    1.15
+  ],
+  "traditional arabic": [
+    1.5,
+    1.5
+  ],
+  "trebuchet ms": [
+    1.1615,
+    1.1615
+  ],
+  "tunga": [
+    1.7695,
+    1.172
+  ],
+  "tw cen mt": [
+    1.0889,
+    1.172
+  ],
+  "tw cen mt condensed": [
+    1.0684,
+    1.172
+  ],
+  "tw cen mt condensed extra bold": [
+    1.083,
+    1.172
+  ],
+  "type=default does no grid rounding": [
+    1.172,
+    1.172
+  ],
+  "type=default does not round": [
+    1.172,
+    1.172
+  ],
+  "ubuntu": [
+    1.15,
+    1.15
+  ],
+  "ubuntu light": [
+    1.15,
+    1.15
+  ],
+  "ubuntu medium": [
+    1.15,
+    1.15
+  ],
+  "ud digi kyokasho n-b": [
+    1.5038,
+    1.172
+  ],
+  "ud digi kyokasho n-r": [
+    1.5038,
+    1.172
+  ],
+  "ud digi kyokasho nk-b": [
+    1.5038,
+    1.172
+  ],
+  "ud digi kyokasho nk-r": [
+    1.5038,
+    1.172
+  ],
+  "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 n-b": [
+    1.5038,
+    1.3
+  ],
+  "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 n-r": [
+    1.5038,
+    1.3
+  ],
+  "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 nk-b": [
+    1.5038,
+    1.3
+  ],
+  "ud \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 nk-r": [
+    1.5038,
+    1.3
+  ],
+  "univers": [
+    1.2388,
+    1.172
+  ],
+  "univers condensed": [
+    1.2388,
+    1.172
+  ],
+  "urdu typesetting": [
+    1.7031,
+    1.172
+  ],
+  "vani": [
+    1.6841,
+    1.172
+  ],
+  "var(--doc-latin-chain": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-latin-chain,'Latin Sans GO')": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-latin-chain,'Latin Serif GO'),": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-lead-exact, 0px)": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-lead-gap, 0px)": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-line-factor-cjk,1.7)": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-line-factor-kr,1.3)": [
+    1.172,
+    1.172
+  ],
+  "var(--doc-line-factor-latin,1.2)": [
+    1.172,
+    1.172
+  ],
+  "var(--x)": [
+    1.172,
+    1.172
+  ],
+  "verdana": [
+    1.2167,
+    1.2167
+  ],
+  "vijaya": [
+    1,
+    1
+  ],
+  "viner hand itc": [
+    1.6143,
+    1.172
+  ],
+  "vitest": [
+    1.172,
+    1.172
+  ],
+  "vivaldi": [
+    1.1899,
+    1.172
+  ],
+  "vladimir script": [
+    1.2119,
+    1.172
+  ],
+  "vrinda": [
+    1.3647,
+    1.172
+  ],
+  "walbaum": [
+    1.333,
+    1.172
+  ],
+  "walbaum display semibold": [
+    1.333,
+    1.172
+  ],
+  "webdings": [
+    1,
+    1.172
+  ],
+  "wide latin": [
+    1,
+    1.172
+  ],
+  "wingdings": [
+    1.1099,
+    1.172
+  ],
+  "wingdings 2": [
+    1.0542,
+    1.172
+  ],
+  "wingdings 3": [
+    1.1387,
+    1.172
+  ],
+  "word ": [
+    1.172,
+    1.172
+  ],
+  "wordMetricAliasFace": [
+    1.172,
+    1.172
+  ],
+  "work sans": [
+    1.173,
+    1.172
+  ],
+  "work sans light": [
+    1.173,
+    1.172
+  ],
+  "work sans medium": [
+    1.173,
+    1.172
+  ],
+  "work sans semibold": [
+    1.173,
+    1.172
+  ],
+  "x": [
+    1.172,
+    1.172
+  ],
+  "yu gothic": [
+    1.4327,
+    1.172
+  ],
+  "yu gothic light": [
+    1.4327,
+    1.172
+  ],
+  "yu gothic medium": [
+    1.4327,
+    1.172
+  ],
+  "yu gothic ui": [
+    1.7291,
+    1.172
+  ],
+  "yu gothic ui light": [
+    1.7291,
+    1.172
+  ],
+  "yu gothic ui semibold": [
+    1.7291,
+    1.172
+  ],
+  "yu gothic ui semilight": [
+    1.7291,
+    1.172
+  ],
+  "yu mincho": [
+    1.4327,
+    1.3
+  ],
+  "yu mincho demibold": [
+    1.4327,
+    1.3
+  ],
+  "yu mincho light": [
+    1.4327,
+    1.3
+  ],
+  "\u00b7\ubb34\uac8c": [
+    1.3,
+    1.3
+  ],
+  "\u0437\u0430 \u2116 470-EL": [
+    1.172,
+    1.172
+  ],
+  "\u05e9\u05dc\u05d5\u05dd": [
+    1.172,
+    1.172
+  ],
+  "\u0627\u0644\u062e\u0637 \u0627\u0644\u062f\u064a\u0648\u0627\u0646\u064a": [
+    1.172,
+    1.172
+  ],
+  "\u0643\u0631\u064a\u0645 \u062d\u0633\u0646": [
+    1.172,
+    1.172
+  ],
+  "\u0645\u0631\u062d\u0628\u0627": [
+    1.172,
+    1.172
+  ],
+  "\u0939\u093f\u0928\u094d\u0926\u0940": [
+    1.172,
+    1.172
+  ],
+  "\u0ba4\u0bae\u0bbf\u0bb4\u0bcd": [
+    1.172,
+    1.172
+  ],
+  "\u0e44\u0e17\u0e22": [
+    1.172,
+    1.172
+  ],
+  "\u1100\u1161": [
+    1.3,
+    1.172
+  ],
+  "\u3002A": [
+    1.3,
+    1.172
+  ],
+  "\u3042\\u{1F600}A": [
+    1.3,
+    1.172
+  ],
+  "\u3042\u30fbA": [
+    1.3,
+    1.172
+  ],
+  "\u304b\u306a": [
+    1.3,
+    1.172
+  ],
+  "\u304b\u306a\ud55c\uae00": [
+    1.3,
+    1.3
+  ],
+  "\u3072\u3089\u304c\u306a": [
+    1.3,
+    1.172
+  ],
+  "\u30c6\u30b9\u30c817.0km": [
+    1.3,
+    1.172
+  ],
+  "\u30da\u30f3": [
+    1.3,
+    1.172
+  ],
+  "\u30da\u30f3 ": [
+    1.3,
+    1.172
+  ],
+  "\u30da\u30f3 12": [
+    1.3,
+    1.172
+  ],
+  "\u30da\u30f312": [
+    1.3,
+    1.172
+  ],
+  "\u30da\u30f3\u300112": [
+    1.3,
+    1.172
+  ],
+  "\u30e1\u30a4\u30ea\u30aa": [
+    1.95,
+    1.172
+  ],
+  "\u30e1\u30a4\u30ea\u30aa UI": [
+    1.3,
+    1.172
+  ],
+  "\u3131\u3134": [
+    1.3,
+    1.172
+  ],
+  "\u4e2d": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u4e2d\u4e2d \u4e2d\u4e2d": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u4e2d\u4e2d \u4e2d\u4e2d\u4e2d\u4e2d\u4e2d": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u534e\u4eba\u6c11\u5171\u548c\u56fd": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u56fd\u653f\u5e9c\u5de5\u4f5c\u62a5\u544a\u793a\u4f8b\u6587\u5b57": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u6587": [
+    1.3,
+    1.3
+  ],
+  "\u4e2d\u6587 abc": [
+    1.3,
+    1.3
+  ],
+  "\u4eff\u5b8b": [
+    1.3,
+    1.3
+  ],
+  "\u4eff\u5b8b_GB2312": [
+    1.3,
+    1.3
+  ],
+  "\u534e\u5eb7\u67d0\u67d0\u4f53": [
+    1.3,
+    1.3
+  ],
+  "\u534e\u6587\u4e2d\u5b8b": [
+    1.7225,
+    1.3
+  ],
+  "\u534e\u6587\u4eff\u5b8b": [
+    1.456,
+    1.3
+  ],
+  "\u534e\u6587\u65b0\u9b4f": [
+    1.3468,
+    1.3
+  ],
+  "\u534e\u6587\u7425\u73c0": [
+    1.3429,
+    1.3
+  ],
+  "\u534e\u6587\u7ec6\u9ed1": [
+    1.79,
+    1.79
+  ],
+  "\u534e\u6587\u884c\u6977": [
+    1.4183,
+    1.3
+  ],
+  "\u534e\u6587\u96b6\u4e66": [
+    1.3767,
+    1.3
+  ],
+  "\u5b57\u5185\u5bb9\u7528\u4e8e\u6d4b\u8bd5\u5927": [
+    1.3,
+    1.3
+  ],
+  "\u5b8b\u4f53": [
+    1.3,
+    1.3
+  ],
+  "\u5fae\u8edf\u6b63\u9ed1\u9ad4": [
+    1.7291,
+    1.3
+  ],
+  "\u5fae\u8f6f\u96c5\u9ed1": [
+    1.7157,
+    1.3
+  ],
+  "\u5fae\u8f6f\u96c5\u9ed1 Light": [
+    1.7291,
+    1.3
+  ],
+  "\u5fae\u8f6f\u96c5\u9ed1 light": [
+    1.7291,
+    1.3
+  ],
+  "\u65b0\u5b8b\u4f53": [
+    1.3,
+    1.3
+  ],
+  "\u65b0\u7d30\u660e\u9ad4": [
+    1.3,
+    1.3
+  ],
+  "\u65b0\u7d30\u660e\u9ad4-ExtB": [
+    1.3,
+    1.3
+  ],
+  "\u65b0\u7d30\u660e\u9ad4-extb": [
+    1.3,
+    1.3
+  ],
+  "\u65e5\u672c\u30fb\u8a9e\u672c\u6587": [
+    1.3,
+    1.3
+  ],
+  "\u65e5\u672c\u8a9e\u306e\u672c\u6587": [
+    1.3,
+    1.3
+  ],
+  "\u671f\u9593\u306f9\u6642\u301c17\u6642": [
+    1.3,
+    1.3
+  ],
+  "\u6977\u4f53": [
+    1.3,
+    1.3
+  ],
+  "\u6977\u4f53_GB2312": [
+    1.7157,
+    1.3
+  ],
+  "\u6c49\u4eea\u65d7\u9ed1-50\u7b80": [
+    1.3,
+    1.3
+  ],
+  "\u6e38\u30b4\u30b7\u30c3\u30af": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u30b4\u30b7\u30c3\u30af Light": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u30b4\u30b7\u30c3\u30af Medium": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u30b4\u30b7\u30c3\u30af light": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u30b4\u30b7\u30c3\u30af medium": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u660e\u671d": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u660e\u671d Demibold": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u660e\u671d Light": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u660e\u671d demibold": [
+    1.4327,
+    1.3
+  ],
+  "\u6e38\u660e\u671d light": [
+    1.4327,
+    1.3
+  ],
+  "\u7b49\u7ebf": [
+    1.3546,
+    1.3
+  ],
+  "\u7b49\u7ebf Light": [
+    1.3546,
+    1.3
+  ],
+  "\u7b49\u7ebf light": [
+    1.3546,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4-ExtB": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4-extb": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_HKSCS": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_HKSCS-ExtB": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_MSCS": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_hkscs": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_hkscs-extb": [
+    1.3,
+    1.3
+  ],
+  "\u7d30\u660e\u9ad4_mscs": [
+    1.3,
+    1.3
+  ],
+  "\u8fd9\u662f\u4e00\u6bb5\u5f88\u957f\u7684\u6587": [
+    1.3,
+    1.3
+  ],
+  "\u8fd9\u662f\u4e00\u6bb5\u5f88\u957f\u7684\u6587\u5b57\u5185\u5bb9\u7528\u4e8e\u6d4b\u8bd5\u5927\u6bb5\u843d\u7684\u5206\u9875\u5904\u7406\u884c\u4e3a": [
+    1.3,
+    1.3
+  ],
+  "\u8fd9\u662f\u4e00\u6bb5\u8f83\u957f\u7684\u4e2d\u6587\u5185\u5bb9\uff0c\u9700\u8981\u6362\u884c\u5904\u7406": [
+    1.3,
+    1.3
+  ],
+  "\u9805\u76ee\u30fb\u5185\u5bb9": [
+    1.3,
+    1.3
+  ],
+  "\u9ed1\u4f53": [
+    1.3,
+    1.3
+  ],
+  "\uac00\ub098\ub2e4": [
+    1.3,
+    1.3
+  ],
+  "\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14 \uc0ac\uc544\uc790": [
+    1.3,
+    1.3
+  ],
+  "\uac00\uc628\uae00\uaf34": [
+    1.3,
+    1.3
+  ],
+  "\uac1c\uad6c\uc7c1\uc774": [
+    1.3,
+    1.3
+  ],
+  "\uad74\ub9bc": [
+    1.3,
+    1.3
+  ],
+  "\uad74\ub9bc\uccb4": [
+    1.3,
+    1.3
+  ],
+  "\uad81\uc11c": [
+    1.3,
+    1.3
+  ],
+  "\uad81\uc11c\uccb4": [
+    1.3,
+    1.3
+  ],
+  "\ub098\ub214\uace0\ub515": [
+    1.495,
+    1.3
+  ],
+  "\ub098\ub214\uace0\ub515 ExtraBold": [
+    1.495,
+    1.3
+  ],
+  "\ub098\ub214\uace0\ub515 extrabold": [
+    1.495,
+    1.3
+  ],
+  "\ub098\ub214\uba85\uc870": [
+    1.4955,
+    1.3
+  ],
+  "\ub098\ub214\uba85\uc870 ExtraBold": [
+    1.4955,
+    1.3
+  ],
+  "\ub098\ub214\uba85\uc870 extrabold": [
+    1.4955,
+    1.3
+  ],
+  "\ub098\ub214\uc190\uae00\uc528 \ubd93": [
+    1.495,
+    1.3
+  ],
+  "\ub098\ub214\uc190\uae00\uc528 \ud39c": [
+    1.495,
+    1.3
+  ],
+  "\ub098\ub798\uae00\uaf34": [
+    1.3,
+    1.3
+  ],
+  "\ub2e4": [
+    1.3,
+    1.3
+  ],
+  "\ub2e4\uc74c": [
+    1.3,
+    1.3
+  ],
+  "\ub3cb\uc6c0": [
+    1.3,
+    1.3
+  ],
+  "\ub3cb\uc6c0\uccb4": [
+    1.3,
+    1.3
+  ],
+  "\ub77c\ub9c8\ubc14": [
+    1.3,
+    1.3
+  ],
+  "\ub9d1\uc740 \uace0\ub515": [
+    1.7291,
+    1.3
+  ],
+  "\ub9d1\uc740 \uace0\ub515 Semilight": [
+    1.7291,
+    1.3
+  ],
+  "\ub9d1\uc740 \uace0\ub515 semilight": [
+    1.7291,
+    1.3
+  ],
+  "\ubc14\ud0d5": [
+    1.3,
+    1.3
+  ],
+  "\ubc14\ud0d5\uccb4": [
+    1.3,
+    1.3
+  ],
+  "\ubcf4\uace0\uc11c 2026": [
+    1.3,
+    1.3
+  ],
+  "\uc0ac\uc544\uc790": [
+    1.3,
+    1.3
+  ],
+  "\uc0c9": [
+    1.3,
+    1.3
+  ],
+  "\uc544\ub0b4": [
+    1.3,
+    1.3
+  ],
+  "\uc6d0) ": [
+    1.3,
+    1.3
+  ],
+  "\uc6d0\uc2e0\ud55c Light": [
+    1.3,
+    1.3
+  ],
+  "\uc774 \ub2e4": [
+    1.3,
+    1.3
+  ],
+  "\uc774\ub2e4": [
+    1.3,
+    1.3
+  ],
+  "\ud45c 1\uc5d0\uc11c": [
+    1.3,
+    1.3
+  ],
+  "\ud55c": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uad6d\uc5b4 \ubb38\uc11c": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00 \ubb38\uc11c": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00 \ud14c\uc2a4\ud2b8": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00A": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00\u6f22\u5b57\ud55c\uae00": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00\u6f22\u5b57\ud55c\uae00 \ub2e4\uc74c": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00\ub0a0": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00\ud55c\uae00": [
+    1.3,
+    1.3
+  ],
+  "\ud55c\uae00\ud55c\uae00\ud55c\uae00": [
+    1.3,
+    1.3
+  ],
+  "\ufefb": [
+    1.172,
+    1.172
+  ],
+  "\uff21": [
+    1.172,
+    1.172
+  ],
+  "\uff2d\uff33 \u30b4\u30b7\u30c3\u30af": [
+    1.3,
+    1.3
+  ],
+  "\uff2d\uff33 \u30b4\u30b7\u30c3\u30af \u592a\u5b57": [
+    1.3,
+    1.3
+  ],
+  "\uff2d\uff33 \u660e\u671d": [
+    1.3,
+    1.3
+  ],
+  "\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af": [
+    1.3,
+    1.3
+  ],
+  "\uff2d\uff33 \uff30\u660e\u671d": [
+    1.3,
+    1.3
+  ],
+  "\uff71A": [
+    1.3,
+    1.172
+  ]
+}

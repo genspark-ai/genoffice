@@ -64,6 +64,12 @@ describe('tracked deletions in header/footer parts', () => {
     const part = Object.values(doc.hfParts ?? {})[0]
     expect(part?.images).toBeUndefined()
     expect(part?.text).toBe('Kept added')
+    // the deleted text stays in the model as a tracked deletion (markup views, round trip)
+    expect(part?.paras.at(-1)?.runs.map((r) => [r.text, !!r.del, !!r.ins])).toEqual([
+      ['Kept ', false, false],
+      ['gone', true, false],
+      ['added', false, true],
+    ])
   })
 
   it('a deleted paragraph mark (self-closing w:del) keeps the live logo', async () => {

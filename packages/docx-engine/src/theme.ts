@@ -168,7 +168,9 @@ export function resolveThemeColor(
   const s = factorOf(shade)
   const t = factorOf(tint)
   if (s === null && t === null) return baseTrimmed.toUpperCase()
-  const [h, sat, l0] = rgbToHsl([0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16) / 255))
+  const [h, sat, l0] = rgbToHsl(
+    [0, 2, 4].map((i) => parseInt(baseTrimmed.slice(i, i + 2), 16) / 255),
+  )
   let l = l0
   if (s !== null) l *= s
   if (t !== null) l = l * t + (1 - t)

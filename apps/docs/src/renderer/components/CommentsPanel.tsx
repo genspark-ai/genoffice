@@ -1,21 +1,18 @@
-import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { CommentInfo } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
-import { IconComment, IconPencil, IconTrash } from './icons'
-
-function formatDate(iso?: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+import { absoluteDate, authorInitials, authorInk } from '../editor/comment-card'
+import { revWhen } from '../editor/margin-annotations'
+import { IconCheck, IconComment } from './icons'
 
 /** anchor text quoted from the document, to orient comments whose range spans paragraphs (one DOM pass for all threads) */
 function collectAnchorTexts(): Map<string, string> {
@@ -44,9 +41,39 @@ function jumpTo(id: string) {
   }
 }
 
+/** Word's modern comment header: avatar, author, relative time; thread actions on the right */
+function CommentHead({
+  c,
+  unknownAuthor,
+  actions,
+}: {
+  c: CommentInfo
+  unknownAuthor: string
+  actions?: ReactNode
+}) {
+  const name = c.author || unknownAuthor
+  return (
+    <div className="comment-card-head">
+      <span className="comment-avatar" style={{ background: authorInk(name) }}>
+        {authorInitials(c)}
+      </span>
+      <span className="comment-meta">
+        <span className="comment-author">{name}</span>
+        {c.date && (
+          <span className="comment-when" title={absoluteDate(c.date)}>
+            {revWhen(c.date)}
+          </span>
+        )}
+      </span>
+      {actions}
+    </div>
+  )
+}
+
 /**
- * Word's comments pane: list + jump-to-anchor, a composer when New Comment was
- * clicked (composing), and per-comment delete.
+ * Word's Comments pane: modern comment cards (avatar, author, relative time,
+ * quoted anchor, text, indented replies, inline Reply box), a composer when
+ * New Comment was clicked (composing), Resolve and a "…" menu per card.
  */
 export const CommentsPanel = memo(function CommentsPanel({
   comments,
@@ -76,17 +103,19 @@ export const CommentsPanel = memo(function CommentsPanel({
   onCancelNew: () => void
   onDelete: (id: string) => void
   onClose: () => void
-  /** thread to highlight and scroll to (Review > Previous / Next); nonce re-fires for the same id */
-  focus?: { id: string; nonce: number } | null
+  /** thread to highlight and scroll to (Review > Previous / Next, body anchor click); nonce re-fires
+   * for the same id; reply additionally focuses that thread's Reply box */
+  focus?: { id: string; nonce: number; reply?: boolean } | null
 }) {
   const { t } = useI18n()
+  const paneRef = useRef<HTMLElement>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const draftRef = useRef<HTMLTextAreaElement>(null)
-  const [replyTo, setReplyTo] = useState<string | null>(null)
-  const [replyDraft, setReplyDraft] = useState('')
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [menuId, setMenuId] = useState<string | null>(null)
   // Word: resolved comments are collapsed/hidden by default
   const [showResolved, setShowResolved] = useState(false)
 
@@ -96,23 +125,22 @@ export const CommentsPanel = memo(function CommentsPanel({
   const openThreads = topLevel.filter((c) => !c.done)
   const resolvedThreads = topLevel.filter((c) => c.done)
   const repliesOf = (id: string) => comments.filter((c) => c.parentId === id)
-  const submitReply = () => {
-    const text = replyDraft.trim()
-    if (!text || !replyTo) return
-    onReply(replyTo, text)
-    setReplyDraft('')
-    setReplyTo(null)
+
+  const submitReply = (id: string) => {
+    const text = (replyDrafts[id] ?? '').trim()
+    if (!text) return
+    onReply(id, text)
+    setReplyDrafts((d) => ({ ...d, [id]: '' }))
   }
 
   const startEdit = (c: CommentInfo) => {
-    // the pencil toggles: a second click cancels instead of resetting the draft
+    // Edit toggles: a second pick cancels instead of resetting the draft
     if (editingId === c.id) {
       setEditingId(null)
       return
     }
     setEditingId(c.id)
     setEditDraft(c.text)
-    setReplyTo(null)
   }
 
   const submitEdit = () => {
@@ -141,13 +169,32 @@ export const CommentsPanel = memo(function CommentsPanel({
   }, [composing])
 
   useEffect(() => {
+    if (!menuId) return
+    const close = (e: Event) => {
+      if (!(e.target instanceof Node) || !paneRef.current?.contains(e.target)) setMenuId(null)
+      else if (!(e.target as Element).closest('.comment-menu, .comment-more')) setMenuId(null)
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuId(null)
+    }
+    document.addEventListener('pointerdown', close, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('pointerdown', close, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [menuId])
+
+  useEffect(() => {
     if (!focus) return
     setActiveId(focus.id)
     if (comments.some((c) => c.id === focus.id && c.done)) setShowResolved(true)
     requestAnimationFrame(() => {
-      document
-        .querySelector(`.comments-pane [data-comment-id="${CSS.escape(focus.id)}"]`)
-        ?.scrollIntoView({ block: 'nearest' })
+      const thread = paneRef.current?.querySelector<HTMLElement>(
+        `[data-comment-id="${CSS.escape(focus.id)}"]`,
+      )
+      thread?.scrollIntoView({ block: 'nearest' })
+      if (focus.reply) thread?.querySelector<HTMLInputElement>('.comment-reply-input')?.focus()
     })
     // comments only matter at fire time; re-running on every edit would re-scroll
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,201 +207,161 @@ export const CommentsPanel = memo(function CommentsPanel({
     setDraft('')
   }
 
-  const onActivate = (fn: () => void) => (e: KeyboardEvent<HTMLElement>) => {
+  const editBox = (
+    <div className="comment-reply-compose">
+      <textarea
+        autoFocus
+        value={editDraft}
+        onChange={(e) => setEditDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdit()
+          if (e.key === 'Escape') setEditingId(null)
+        }}
+      />
+      <div className="comment-compose-actions">
+        <button onClick={() => setEditingId(null)}>{t('appCancel')}</button>
+        <button className="primary" disabled={!editDraft.trim()} onClick={submitEdit}>
+          {t('appSave')}
+        </button>
+      </div>
+    </div>
+  )
+
+  const headActions = (c: CommentInfo, root: boolean, replies: CommentInfo[]) => {
+    const deleteIds = [c.id, ...replies.map((r) => r.id)]
+    const deleteLabel = root
+      ? replies.length > 0
+        ? t('appDeleteCommentWithReplies')
+        : t('appDeleteComment')
+      : t('appDeleteReply')
+    return (
+      <span className="comment-card-actions" onClick={(e) => e.stopPropagation()}>
+        {root && (
+          <button
+            type="button"
+            className={`comment-resolve${c.done ? ' on' : ''}`}
+            data-tip={c.done ? t('appReopen') : t('appResolve')}
+            aria-label={c.done ? t('appReopen') : t('appResolve')}
+            onClick={() => {
+              // resolving collapses the thread and would unmount an open composer: commit first
+              flushEditIn(c.id)
+              onResolve(c.id, !c.done)
+            }}
+          >
+            <IconCheck size={13} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="comment-more"
+          aria-label={t('appMoreActions')}
+          aria-haspopup="menu"
+          aria-expanded={menuId === c.id}
+          onClick={() => setMenuId((v) => (v === c.id ? null : c.id))}
+        >
+          ⋯
+        </button>
+        {menuId === c.id && (
+          <div
+            className="comment-menu"
+            role="menu"
+            ref={(el) => el?.scrollIntoView?.({ block: 'nearest' })}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="comment-card-edit"
+              onClick={() => {
+                setMenuId(null)
+                startEdit(c)
+              }}
+            >
+              {t(root ? 'appEditComment' : 'appEditReply')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="comment-card-del"
+              onClick={() => {
+                setMenuId(null)
+                cancelEditIn(deleteIds)
+                onDelete(c.id)
+              }}
+            >
+              {deleteLabel}
+            </button>
+          </div>
+        )}
+      </span>
+    )
+  }
+
+  const onCardKey = (id: string) => (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
-    e.stopPropagation()
-    fn()
+    setActiveId(id)
+    jumpTo(id)
   }
 
   const renderThread = (c: CommentInfo) => {
     const anchor = anchorTexts.get(c.id) ?? ''
     const replies = repliesOf(c.id)
-    const head = (
-      <div className="comment-card-head">
-        <span className="comment-avatar">{(c.initials || c.author || '?').slice(0, 2)}</span>
-        <span className="comment-author">{c.author || t('appUnknownAuthor')}</span>
-        <span className="comment-date">{formatDate(c.date)}</span>
-        {c.done && <span className="comment-resolved-badge">{t('appResolved')}</span>}
-        <span
-          className="comment-card-edit"
-          data-tip={t('appEditComment')}
-          role="button"
-          aria-label={t('appEditComment')}
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation()
-            startEdit(c)
-          }}
-          onKeyDown={onActivate(() => startEdit(c))}
-        >
-          <IconPencil size={13} />
-        </span>
-        <span
-          className="comment-card-del"
-          data-tip={replies.length > 0 ? t('appDeleteCommentWithReplies') : t('appDeleteComment')}
-          role="button"
-          aria-label={t('appDeleteComment')}
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation()
-            cancelEditIn([c.id, ...replies.map((r) => r.id)])
-            onDelete(c.id)
-          }}
-          onKeyDown={onActivate(() => {
-            cancelEditIn([c.id, ...replies.map((r) => r.id)])
-            onDelete(c.id)
-          })}
-        >
-          <IconTrash size={13} />
-        </span>
-      </div>
-    )
+    const editing = editingId === c.id
+    const unknown = t('appUnknownAuthor')
     return (
       <div
         key={c.id}
         data-comment-id={c.id}
-        className={`comment-thread ${c.done ? 'resolved' : ''}`}
+        className={`comment-thread${c.done ? ' resolved' : ''}${activeId === c.id ? ' active' : ''}`}
       >
-        {editingId === c.id ? (
-          // editing swaps the clickable card for a plain one: a textarea cannot live inside a button
-          <div className={`comment-card ${activeId === c.id ? 'active' : ''}`}>
-            {head}
-            {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
-            <div className="comment-reply-compose">
-              <textarea
-                autoFocus
-                value={editDraft}
-                onChange={(e) => setEditDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdit()
-                  if (e.key === 'Escape') setEditingId(null)
-                }}
-              />
-              <div className="comment-compose-actions">
-                <button onClick={() => setEditingId(null)}>{t('appCancel')}</button>
-                <button className="primary" disabled={!editDraft.trim()} onClick={submitEdit}>
-                  {t('appSave')}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <button
-            className={`comment-card ${activeId === c.id ? 'active' : ''}`}
-            onClick={() => {
-              setActiveId(c.id)
-              jumpTo(c.id)
-            }}
-          >
-            {head}
-            {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
-            <div className="comment-text">{c.text}</div>
-          </button>
-        )}
+        <div
+          className={`comment-card${activeId === c.id ? ' active' : ''}`}
+          role={editing ? undefined : 'button'}
+          tabIndex={editing ? undefined : 0}
+          onClick={
+            editing
+              ? undefined
+              : () => {
+                  setActiveId(c.id)
+                  jumpTo(c.id)
+                }
+          }
+          onKeyDown={editing ? undefined : onCardKey(c.id)}
+        >
+          <CommentHead c={c} unknownAuthor={unknown} actions={headActions(c, true, replies)} />
+          {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
+          {editing ? editBox : <div className="comment-text">{c.text}</div>}
+        </div>
         {replies.map((r) => (
           <div key={r.id} className="comment-reply">
-            <div className="comment-card-head">
-              <span className="comment-avatar">{(r.initials || r.author || '?').slice(0, 2)}</span>
-              <span className="comment-author">{r.author || t('appUnknownAuthor')}</span>
-              <span className="comment-date">{formatDate(r.date)}</span>
-              <span
-                className="comment-card-edit"
-                data-tip={t('appEditComment')}
-                aria-label={t('appEditComment')}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  startEdit(r)
-                }}
-                onKeyDown={onActivate(() => startEdit(r))}
-              >
-                <IconPencil size={12} />
-              </span>
-              <span
-                className="comment-card-del"
-                data-tip={t('appDeleteReply')}
-                aria-label={t('appDeleteReply')}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  cancelEditIn([r.id])
-                  onDelete(r.id)
-                }}
-                onKeyDown={onActivate(() => {
-                  cancelEditIn([r.id])
-                  onDelete(r.id)
-                })}
-              >
-                <IconTrash size={12} />
-              </span>
-            </div>
-            {editingId === r.id ? (
-              <div className="comment-reply-compose">
-                <textarea
-                  autoFocus
-                  value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdit()
-                    if (e.key === 'Escape') setEditingId(null)
-                  }}
-                />
-                <div className="comment-compose-actions">
-                  <button onClick={() => setEditingId(null)}>{t('appCancel')}</button>
-                  <button className="primary" disabled={!editDraft.trim()} onClick={submitEdit}>
-                    {t('appSave')}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="comment-text">{r.text}</div>
-            )}
+            <CommentHead c={r} unknownAuthor={unknown} actions={headActions(r, false, [])} />
+            {editingId === r.id ? editBox : <div className="comment-text">{r.text}</div>}
           </div>
         ))}
-        <div className="comment-thread-actions">
-          {replyTo === c.id ? (
-            <div className="comment-reply-compose">
-              <textarea
-                autoFocus
-                placeholder={t('appReplyPlaceholder')}
-                value={replyDraft}
-                onChange={(e) => setReplyDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitReply()
-                  if (e.key === 'Escape') setReplyTo(null)
-                }}
-              />
-              <div className="comment-compose-actions">
-                <button onClick={() => setReplyTo(null)}>{t('appCancel')}</button>
-                <button className="primary" disabled={!replyDraft.trim()} onClick={submitReply}>
-                  {t('appReply')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <button onClick={() => setReplyTo(c.id)}>{t('appReply')}</button>
-              <button
-                onClick={() => {
-                  // resolving collapses the thread and would unmount an open composer: commit first
-                  flushEditIn(c.id)
-                  onResolve(c.id, !c.done)
-                }}
-              >
-                {c.done ? t('appReopen') : t('appResolve')}
-              </button>
-            </>
-          )}
-        </div>
+        {!c.done && (
+          <input
+            className="comment-reply-input"
+            type="text"
+            placeholder={t('appReplyPlaceholder')}
+            aria-label={t('appReply')}
+            value={replyDrafts[c.id] ?? ''}
+            onChange={(e) => setReplyDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submitReply(c.id)
+              }
+              if (e.key === 'Escape') e.currentTarget.blur()
+            }}
+          />
+        )}
       </div>
     )
   }
 
   return (
-    <aside className="comments-pane">
+    <aside className="comments-pane" ref={paneRef}>
       <div className="comments-pane-head">
         <span className="comments-pane-title">
           <IconComment size={14} /> {t('appCommentsTitle', { n: comments.length })}

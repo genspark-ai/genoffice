@@ -1,0 +1,21 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-ctx-spacing-cells/probe.docx",
+  "tables": 6,
+  "hashes": [
+    "0d9121b206b5f511",
+    "0d9121b206b5f511",
+    "0d9121b206b5f511",
+    "0d9121b206b5f511",
+    "0d9121b206b5f511",
+    "0d9121b206b5f511"
+  ],
+  "staticTables": 6,
+  "staticHashes": [
+    "9a48cc250070c32a",
+    "9a48cc250070c32a",
+    "9a48cc250070c32a",
+    "9a48cc250070c32a",
+    "9a48cc250070c32a",
+    "9a48cc250070c32a"
+  ]
+}

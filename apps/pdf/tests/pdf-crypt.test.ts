@@ -79,6 +79,32 @@ describe('decryptDocument', () => {
     expect(await textOf(bytes)).toContain(PROBE_TEXT)
   })
 
+  it('a V4 file without a root /Length takes the key size from the crypt filter', async () => {
+    // /Length is optional; writers that omit it rely on StdCF's /Length 16 (bytes)
+    const raw = Buffer.from(fixture('enc-r4-aes128.pdf')).toString('latin1')
+    const withoutRootLength = raw.replace('/Length 128\n', '')
+    expect(withoutRootLength).not.toBe(raw)
+    const source = new Uint8Array(Buffer.from(withoutRootLength, 'latin1'))
+    const { bytes } = await decryptDocument(source, 's3cret')
+    expect(await textOf(bytes)).toContain(PROBE_TEXT)
+
+    // and an unchanged re-save does not invent a bogus /Length 0
+    const saved = await applySaveRequest(
+      source,
+      saveRequest({
+        decryption: { userPassword: 's3cret' },
+        protectionDirty: false,
+        encryption: {
+          userPassword: 's3cret',
+          ownerPassword: 's3cret',
+          permissions: ALL_PERMISSIONS,
+        },
+      }),
+    )
+    expect(Buffer.from(saved.bytes).toString('latin1')).not.toMatch(/\/Length 0\b/)
+    expect(await textOf(saved.bytes, 's3cret')).toContain(PROBE_TEXT)
+  })
+
   it('accepts literal-string /O and /U entries', async () => {
     // some producers write the password entries as (…) literals, not <…> hex
     const raw = Buffer.from(fixture('enc-r3-rc4.pdf')).toString('latin1')

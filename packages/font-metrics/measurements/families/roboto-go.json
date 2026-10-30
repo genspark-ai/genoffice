@@ -1,0 +1,152 @@
+{
+  "family": "Roboto GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-27",
+    "fonts": ["Roboto (Google files)", "LiberationSans"],
+    "probe": "word-truths 2026-10-27: per-class advances"
+  },
+  "note": "Roboto / Garamond: faces Word for Mac lays out for real (cloud or Office\ncopies) that Chromium cannot see here. Per-class size-adjusted Liberation\naliases carry their advances (word-truths 2026-10-27: Roboto from the\nGoogle files, Garamond from the macOS asset ttc).",
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 89.1
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 101.9,
+      "unicodeRange": "U+0061-007A"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 98,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 92.5,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 101,
+      "unicodeRange": "U+0030-0039"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 95.4,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 89.6,
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 94.2,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 94.5,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 92.2,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 103.2,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 92.9,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 88.2,
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 99.9,
+      "unicodeRange": "U+0061-007A",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 96,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 90.4,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 98.9,
+      "unicodeRange": "U+0030-0039",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 93.7,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 88.8,
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 92.3,
+      "unicodeRange": "U+0061-007A",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 92.6,
+      "unicodeRange": "U+00DF-00F6, U+00F8-00FF",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 90.1,
+      "unicodeRange": "U+0041-005A, U+00C0-00D6, U+00D8-00DE",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 101,
+      "unicodeRange": "U+0030-0039",
+      "weight": "bold",
+      "style": "italic"
+    },
+    {
+      "src": "url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 91.2,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

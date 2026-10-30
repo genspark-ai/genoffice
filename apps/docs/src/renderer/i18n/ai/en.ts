@@ -99,6 +99,11 @@ export const en = {
     'Track changes on: AI content edits are marked as revisions (insertions underlined, deletions struck through); accept or reject in Review',
   aiTrackOffTitle:
     'Track changes off: AI edits apply immediately (you can still roll back via snapshots)',
+  aiRevisionBarTitle: 'Revisions',
+  aiRevisionCount: '{count} pending changes',
+  aiRevisionRejectAll: 'Reject all',
+  aiRevisionAcceptAll: 'Accept all',
+  aiRevisionPara: 'Paragraph {n}',
   aiTurnLimit:
     'This task paused before every step was finished. Completed edits are preserved; select Continue to finish the remaining work.',
   aiStopped: '(Stopped)',

@@ -7,9 +7,13 @@ import type { PmNode } from './convert'
  * the supported subset). Shared by the insert dialog/gallery and the AI
  * <formula> tag; genXml carries the OMML through the save path.
  */
-/** MathML for inline flow (ommlToMathML emits display="block" for equations) */
-export function inlineMathML(omml: string): string {
-  return ommlToMathML(omml).replace(/ display="block"/g, ' display="inline"')
+/** MathML for inline flow (ommlToMathML emits display="block" for equations);
+ *  `display` keeps display math-style (large operators, stacked limits) in the flow */
+export function inlineMathML(omml: string, display = false): string {
+  return ommlToMathML(omml).replace(
+    / display="block"/g,
+    display ? ' display="inline" displaystyle="true"' : ' display="inline"',
+  )
 }
 
 /**

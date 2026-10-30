@@ -1,0 +1,488 @@
+{
+  "_about": "Line factors of knownLineFactor() (apps/docs/src/renderer/line-metrics.ts), emitted to line-factors.generated.ts by tools/build-font-aliases.mjs. Rules run in order within their stage; stages interleave with the behavioural branches of knownLineFactor: first (before the CJK-class delegations), arabic (before the Arabic altName route), latin (after it), last (after the KR/hangul/ideograph routes). match/exclude are regex sources tested against the lower-cased declared name, or a ref to a pattern of font-name-patterns.ts. A pin keeps the table value over the resolver (LINE_FACTOR_PINS).",
+  "rules": [
+    {
+      "id": "aptos",
+      "stage": "first",
+      "match": "aptos",
+      "factor": 1.22,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-22",
+        "probe": "Word probe: Aptos (M365 cloud face) paces 1.22, same as Calibri"
+      }
+    },
+    {
+      "id": "algerian",
+      "stage": "first",
+      "match": "^algerian$",
+      "factor": 1.3167,
+      "source": {
+        "kind": "corpus",
+        "date": "2026-10-28",
+        "probe": "Word paces consecutive single-spaced 18pt Algerian lines at 23.7pt"
+      },
+      "pin": {
+        "reason": "the cloud record has no hhea lineGap (word-faces 1.1118)"
+      }
+    },
+    {
+      "id": "stxihei",
+      "stage": "first",
+      "match": "stxihei|\u534e\u6587\u7ec6\u9ed1",
+      "factor": 1.79,
+      "source": {
+        "kind": "probe",
+        "date": "2026-10-22",
+        "probe": "Word lays out 17.91pt at 10pt (probes 2026-08-23, 2026-10-22)"
+      },
+      "pin": {
+        "reason": "the cloud file's hhea 1.079 does not reproduce the probes"
+      }
+    },
+    {
+      "id": "kai-latin-named",
+      "stage": "first",
+      "match": "simkai|biaukai|kaiu",
+      "factor": 1.775,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-10-22",
+        "probe": "LO-era value for Latin-lettered TC/GB kai names no face or rule places"
+      }
+    },
+    {
+      "id": "simplified-arabic",
+      "stage": "arabic",
+      "match": "simplified arabic",
+      "factor": 1.66,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-22",
+        "probe": "Word probe: M365 cloud font rendered with its real metrics"
+      }
+    },
+    {
+      "id": "traditional-arabic",
+      "stage": "arabic",
+      "match": "traditional arabic",
+      "factor": 1.5,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-22",
+        "probe": "Word probe: M365 cloud font rendered with its real metrics"
+      }
+    },
+    {
+      "id": "dubai",
+      "stage": "latin",
+      "match": "dubai",
+      "factor": 1.688,
+      "source": {
+        "kind": "hmtx",
+        "date": "2026-10-27",
+        "fonts": ["Dubai subset embedded in a Word PDF"],
+        "probe": "hhea 1129/559 over 1000"
+      }
+    },
+    {
+      "id": "times",
+      "stage": "latin",
+      "match": "times|liberation serif",
+      "factor": 1.15,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-07",
+        "probe": "LO-era hhea value of Times New Roman"
+      }
+    },
+    {
+      "id": "georgia-pro",
+      "stage": "latin",
+      "match": "georgia pro",
+      "factor": 0.98,
+      "source": {
+        "kind": "probe",
+        "date": "2026-09-17",
+        "probe": "Word probe: 9.72/10.8/11.76pt at 10/11/12pt (typo metrics of the M365 cloud face)"
+      }
+    },
+    {
+      "id": "georgia",
+      "stage": "latin",
+      "match": "georgia",
+      "factor": 1.1375,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-10",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "cambria",
+      "stage": "latin",
+      "match": "cambria|caladea",
+      "factor": 1.172,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: 1.1724 at 36pt = Cambria Win metrics 1172/1000; the unknown-name fallback substitutes to Cambria and shares this value"
+      }
+    },
+    {
+      "id": "palatino-linotype",
+      "stage": "latin",
+      "match": "palatino linotype",
+      "factor": 1.35,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Office Palatino Linotype renders real, 1.35 = its Win metrics"
+      }
+    },
+    {
+      "id": "palatino",
+      "stage": "latin",
+      "match": "palatino",
+      "factor": 1.105,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: macOS Palatino, same design with compact metrics"
+      }
+    },
+    {
+      "id": "nunito",
+      "stage": "latin",
+      "match": "nunito",
+      "factor": 1.365,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Office cloud font renders real, 1.365 = its Win metrics"
+      }
+    },
+    {
+      "id": "new-tai-lue",
+      "stage": "latin",
+      "match": "new tai lue",
+      "factor": 1.31,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Microsoft New Tai Lue ships with Office, 1.31 = Win metrics"
+      }
+    },
+    {
+      "id": "helvetica",
+      "stage": "latin",
+      "match": "helvetica",
+      "factor": 1.2,
+      "source": {
+        "kind": "corpus",
+        "date": "2026-09-24",
+        "probe": "Word for Mac embeds Helvetica: 12.6pt at 10.5pt single spacing, not its macOS hhea total 1.0"
+      },
+      "exclude": "helvetica neue"
+    },
+    {
+      "id": "arial-unicode",
+      "stage": "latin",
+      "match": "arial unicode",
+      "factor": 1.74,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-22",
+        "probe": "Word probe: Arial Unicode MS carries CJK glyphs with tall metrics"
+      }
+    },
+    {
+      "id": "arial",
+      "stage": "latin",
+      "match": "^arial( |$)|liberation sans",
+      "factor": 1.15,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-10",
+        "probe": "LO-era hhea value of Arial"
+      }
+    },
+    {
+      "id": "calibri",
+      "stage": "latin",
+      "match": "calibri|carlito",
+      "factor": 1.22,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-07",
+        "probe": "LO-era hhea value of Calibri (1536+512+452 over 2048)"
+      }
+    },
+    {
+      "id": "tahoma",
+      "stage": "latin",
+      "match": "tahoma",
+      "factor": 1.2083,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-10",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "verdana",
+      "stage": "latin",
+      "match": "verdana|dejavu|reference sans",
+      "factor": 1.2167,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: DejaVu substitutes to Verdana; MS Reference Sans Serif is Verdana with another name, identical hhea/hmtx (prod corpus 2026-10-20)"
+      }
+    },
+    {
+      "id": "consolas",
+      "stage": "latin",
+      "match": "consolas",
+      "factor": 1.1667,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-10",
+        "probe": "uncited; ordered before courier because the mono chain carries Courier New"
+      }
+    },
+    {
+      "id": "courier",
+      "stage": "latin",
+      "match": "courier",
+      "factor": 1.1333,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-12",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "century-gothic",
+      "stage": "latin",
+      "match": "century gothic",
+      "factor": 1.226,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Office Century Gothic renders real"
+      }
+    },
+    {
+      "id": "century",
+      "stage": "latin",
+      "match": "century",
+      "factor": 1.206,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Office Century renders real"
+      },
+      "exclude": "gothic"
+    },
+    {
+      "id": "book-antiqua",
+      "stage": "latin",
+      "match": "book antiqua",
+      "factor": 1.21,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: Office Book Antiqua renders real (the old 1.1 was LO-era)"
+      }
+    },
+    {
+      "id": "segoe-other",
+      "stage": "latin",
+      "match": "segoe",
+      "factor": 1.15,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-10-22",
+        "probe": "unprobed value for the Segoe symbol/emoji/script cuts; the text cuts resolve from the cloud store"
+      },
+      "exclude": {
+        "ref": "SEGOE_UI_TEXT_RE"
+      }
+    },
+    {
+      "id": "ethiopic",
+      "stage": "latin",
+      "match": "nyala|ebrima|abyssinica|ethiopic",
+      "factor": 1.0514,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-13",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "latha",
+      "stage": "latin",
+      "match": "latha",
+      "factor": 1.6686,
+      "source": {
+        "kind": "probe",
+        "date": "2026-09-30",
+        "probe": "Word probe: only Latha lays out with its own box"
+      }
+    },
+    {
+      "id": "tamil",
+      "stage": "latin",
+      "match": {
+        "ref": "TAMIL_FONT_RE"
+      },
+      "factor": 1,
+      "source": {
+        "kind": "probe",
+        "date": "2026-09-30",
+        "probe": "Word probe: Vijaya and every missing Tamil name render as cloud-font Vijaya at 1.00 (9.12/10.56/12.0pt at 9/10.5/12pt)"
+      }
+    },
+    {
+      "id": "trebuchet",
+      "stage": "latin",
+      "match": "trebuchet",
+      "factor": 1.1615,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe and prod-corpus sweep: macOS-installed face keeps its own metrics"
+      }
+    },
+    {
+      "id": "comic-sans",
+      "stage": "latin",
+      "match": "comic sans",
+      "factor": 1.3936,
+      "source": {
+        "kind": "hmtx",
+        "date": "2026-09-12",
+        "fonts": ["Comic Sans MS (macOS Supplemental / Office)"],
+        "probe": "hhea 2257/597/0 over 2048"
+      }
+    },
+    {
+      "id": "inter",
+      "stage": "latin",
+      "match": "^inter( |$)",
+      "factor": 1.21,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "ubuntu",
+      "stage": "latin",
+      "match": "ubuntu",
+      "factor": 1.15,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "avenir",
+      "stage": "latin",
+      "match": "avenir",
+      "factor": 1.369,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "lucida-sans",
+      "stage": "latin",
+      "match": "lucida sans",
+      "factor": 1.179,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "bradley-hand",
+      "stage": "latin",
+      "match": "bradley hand",
+      "factor": 1.25,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "open-sans",
+      "stage": "latin",
+      "match": "open sans",
+      "factor": 1.365,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "roboto",
+      "stage": "latin",
+      "match": "roboto",
+      "factor": 1.172,
+      "source": {
+        "kind": "probe",
+        "date": "2026-09-17",
+        "probe": "Word probe: M365 cloud face renders real at its hhea total, 11.76/12.96/14.16pt at 10/11/12pt"
+      }
+    },
+    {
+      "id": "shonar-bangla",
+      "stage": "latin",
+      "match": "shonar bangla",
+      "factor": 1,
+      "source": {
+        "kind": "legacy",
+        "date": "2026-08-24",
+        "probe": "uncited"
+      }
+    },
+    {
+      "id": "iranyekan",
+      "stage": "latin",
+      "match": "iranyekan",
+      "factor": 1.15,
+      "source": {
+        "kind": "probe",
+        "date": "2026-08-23",
+        "probe": "Word probe: IRANYekan substitutes to Arial like the Iranian B/XB faces"
+      }
+    },
+    {
+      "id": "noto-han-regional-latin",
+      "stage": "last",
+      "match": {
+        "ref": "NOTO_HAN_REGIONAL_RE"
+      },
+      "factor": 1.172,
+      "source": {
+        "kind": "probe",
+        "date": "2026-10-19",
+        "probe": "word-truths 2026-10-19: Latin under a missing Noto/Source Han JP name is Cambria whatever the fontTable says; CJK text goes through cjkDeclaredLineFactor"
+      },
+      "pin": {
+        "match": "^(?:noto|source han) (?:sans|serif)(?: cjk)? ?jp\\b",
+        "reason": "a missing JP name lays Latin out in Cambria while its CJK text goes SimSun"
+      }
+    }
+  ]
+}

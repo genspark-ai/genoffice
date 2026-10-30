@@ -12,7 +12,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -87,31 +87,23 @@ function electronCompatArgs(): string[] {
 
 /**
  * API key for Genspark LLM proxy / tool_cli auth; '' when not logged in.
- * Priority: GSK_API_KEY env → GenOffice's own key (bills to us via its
- * key_name) → shared gsk CLI login (bills to the Claw bucket).
+ * Priority: explicit GSK_API_KEY env → GenOffice's own login.
+ * Never borrow the shared CLI login: it can belong to another app or account,
+ * and must not silently undo GenOffice sign-out.
  */
 export function gskApiKey(): string {
   const env = process.env.GSK_API_KEY
   if (env && !rejectedKeys.has(env)) return env
   const own = genofficeApiKey()
-  if (own && !rejectedKeys.has(own)) return own
-  try {
-    const configPath = join(homedir(), '.genspark-tool-cli', 'config.json')
-    if (!existsSync(configPath)) return ''
-    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as { api_key?: string }
-    const shared = config.api_key ?? ''
-    return rejectedKeys.has(shared) ? '' : shared
-  } catch {
-    return ''
-  }
+  return own && !rejectedKeys.has(own) ? own : ''
 }
 
 // ── Rejected keys (401) ─────────────────────────────────────────────
 
 /**
  * Keys the server answered 401 for (expired / revoked). GenOffice's own key
- * is also deleted from disk; env and shared gsk CLI keys belong to someone
- * else, so they are only skipped for the rest of this process.
+ * is also deleted from disk; env keys are only skipped for the rest of this
+ * process because GenOffice does not own their source.
  */
 const rejectedKeys = new Set<string>()
 
@@ -196,7 +188,7 @@ export function watchGskApiKey(onChange: (key: string) => void, intervalMs = 200
     last = key
     onChange(key)
   }
-  const files = [genofficeAuthPath(), join(homedir(), '.genspark-tool-cli', 'config.json')]
+  const files = [genofficeAuthPath()]
   for (const f of files) watchFile(f, { persistent: false, interval: intervalMs }, check)
   return () => {
     for (const f of files) unwatchFile(f, check)
@@ -385,6 +377,8 @@ function runGskOnce(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  // With no injected key the CLI would independently load its shared login.
+  if (!key) return Promise.reject(new GskAuthError('Sign in to GenOffice to use Genspark'))
   // inject the resolved key so the CLI bills the same identity as our direct HTTP calls
   return new Promise((resolve, reject) => {
     execFile(
@@ -395,7 +389,7 @@ function runGskOnce(
         maxBuffer: MAX_BUFFER,
         env: {
           ...gskChildEnv(),
-          ...(key ? { GSK_API_KEY: key } : {}),
+          GSK_API_KEY: key,
         },
         ...(signal ? { signal } : {}),
       },

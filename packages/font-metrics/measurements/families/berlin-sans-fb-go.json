@@ -1,0 +1,20 @@
+{
+  "family": "Berlin Sans FB GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-17",
+    "probe": "Berlin Sans FB Demi over Arial Bold 0.953x at 15pt"
+  },
+  "note": "Berlin Sans FB Demi (Office display face): Word renders the real bold cut;\nArial Bold rescaled to its advances (probe 2026-09-17: 0.953x at 15pt), and the\ndemi weight is bold at every requested weight",
+  "faces": [
+    {
+      "src": "local('Arial-BoldMT'), local('Arial Bold'), url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 95.3
+    },
+    {
+      "src": "local('Arial-BoldMT'), local('Arial Bold'), url('./LiberationSans-Bold.ttf') format('truetype')",
+      "sizeAdjust": 95.3,
+      "weight": "bold"
+    }
+  ]
+}

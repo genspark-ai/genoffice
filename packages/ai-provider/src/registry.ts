@@ -15,7 +15,8 @@ export { normalizeBaseUrl } from './url-compose'
 export { modelEchoesReasoning, modelHasFixedSampling, modelLacksVision } from './model-heuristics'
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
-export type AiProtocol = 'anthropic' | 'gemini' | 'openai-compatible' | 'codex-app-server'
+export type AiProtocol =
+  'anthropic' | 'gemini' | 'openai-compatible' | 'openai-responses' | 'codex-app-server'
 
 export interface ProviderCapabilities {
   /** How the provider authenticates: app login, user key, or the Codex CLI's existing login. */
@@ -53,6 +54,8 @@ export interface ProviderAdapter {
   /** pick the wire protocol and base URL for one request (may depend on the configured model) */
   resolveEndpoint(config: AiProviderConfig): ResolvedEndpoint
 }
+
+const OPENAI_BASE_URL = 'https://api.openai.com/v1'
 
 function metaOf(id: AiProviderId): AiProviderMeta {
   return AI_PROVIDERS.find((m) => m.id === id)!
@@ -100,6 +103,18 @@ function opencodeEndpoint(
 }
 
 /** a stored baseUrl overrides the default endpoint (regional mirrors, e.g. api.moonshot.cn vs .ai) */
+/**
+ * GPT-5.4+ and GPT-6 call tools only through the Responses API: Chat
+ * Completions answers "Function tools with reasoning_effort are not supported
+ * ... use /v1/responses or set reasoning_effort to 'none'" (live-verified
+ * 2026-10-27), and Astra / 6.1 Sol refuse `none` outright. Older ids and the
+ * o-series stay on Chat Completions, which is also what every other vendor
+ * speaks.
+ */
+export function modelUsesResponsesApi(model: string): boolean {
+  return /^gpt-(5\.[4-9]|6(\.\d+)?)(-|$)/i.test(model)
+}
+
 function fixedEndpoint(
   protocol: AiProtocol,
   baseUrl: string,
@@ -171,11 +186,17 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   openai: {
     meta: metaOf('openai'),
     capabilities: { auth: 'api-key', vision: true },
-    // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
-    // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.openai.com/v1', {
-      useMaxCompletionTokens: true,
-    }),
+    resolveEndpoint(config) {
+      const baseUrl = config.baseUrl
+        ? normalizeBaseUrl(config.baseUrl, OPENAI_BASE_URL)
+        : OPENAI_BASE_URL
+      if (modelUsesResponsesApi(config.model)) return { protocol: 'openai-responses', baseUrl }
+      // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
+      // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
+      return fixedEndpoint('openai-compatible', OPENAI_BASE_URL, { useMaxCompletionTokens: true })(
+        config,
+      )
+    },
   },
   kimi: {
     meta: metaOf('kimi'),

@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-hf-blank-header-push/probe.docx",
+  "tables": 0,
+  "hashes": [],
+  "staticTables": 0,
+  "staticHashes": []
+}

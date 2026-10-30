@@ -17,6 +17,13 @@ describe('extractTags', () => {
   it('skips pure numbers after the hash (they are rarely tags)', () => {
     expect(extractTags('issue #123 fixed')).toEqual([])
   })
+  it('skips link fragments and URL hashes, which are anchors, not tags', () => {
+    const text = [
+      'see [intro](#heading) and [deep](Other.md#section) then #real\n',
+      'https://example.com/#top and <https://a.b/#frag> and www.x.y/#nope #also\n',
+    ].join('')
+    expect(extractTags(text)).toEqual(['real', 'also'])
+  })
 })
 
 const memFs = (files: Record<string, string>): VaultFs => ({

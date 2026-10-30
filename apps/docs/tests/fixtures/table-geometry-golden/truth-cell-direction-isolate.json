@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/cell-direction-isolate/probe.docx",
+  "tables": 1,
+  "hashes": ["4b190fb0f850ac24"],
+  "staticTables": 1,
+  "staticHashes": ["7f4a642be6d66322"]
+}

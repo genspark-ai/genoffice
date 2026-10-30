@@ -1,0 +1,38 @@
+{
+  "id": "render-hf-numeric-style-size",
+  "title": "A header run without its own w:sz under a numeric-styleId paragraph style (rPr Malgun Gothic sz 20) is 10pt Malgun, not the strip's Normal 12pt: the body starts 53.4pt down",
+  "section": "word-truths.md#L734",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: margins 720, header 720, docDefaults Calibri 12; page 1 header span MalgunGothic 10.08 (baseline 48.96), body glyph top 53.38 = 36 + 10 x 1.7371 strip + the Calibri 12 line's leading; page 2 (run with its own sz 20 and Malgun face) identical",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 53.38,
+      "tol": 0.6,
+      "note": "style-sourced 10pt Malgun strip; gen 57.61pt on both pages: the size rule holds (delta 0) but the 10pt Malgun strip is 4.2pt taller than Word's 17.37",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 53.38,
+      "tol": 0.6,
+      "note": "control: the same size and face declared on the run; gen 57.61pt (see page 1)",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 1,
+      "control": 2,
+      "expect": 0,
+      "tol": 0.3
+    }
+  ],
+  "docx": "probe.docx"
+}

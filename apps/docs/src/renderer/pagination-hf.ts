@@ -1,7 +1,7 @@
 // Header/footer variant resolution and page-number sequences / formats.
 import type { HeaderFooter, HfImage, HfPartInfo, SectionInfo } from '@genoffice/docx-engine'
 
-import type { PageSlice } from './pagination-types'
+import type { PageSlice, SectionHfHeights } from './pagination-types'
 
 export type HfVariant = 'default' | 'first' | 'even'
 
@@ -29,6 +29,9 @@ export interface PageHf {
   footer: HeaderFooter | null
   headerImages?: HfImage[]
   footerImages?: HfImage[]
+  /** column width (px) of an inherited part laid out in another section's width (hfPartWidthPx) */
+  headerColumnPx?: number
+  footerColumnPx?: number
 }
 
 export type HfResolve = (kind: 'header' | 'footer') => {
@@ -82,6 +85,28 @@ export function effectiveHfRefs(sections: SectionInfo[]): SectionHfRefs[] {
   return out
 }
 
+/**
+ * Column width (px) a section's header/footer part is laid out at. Word lays a
+ * part out in the section that declares it and pages of later sections that
+ * inherit it reuse that layout: a header table of a portrait section keeps its
+ * portrait width (and line wraps) on a linked landscape page.
+ */
+export function hfPartWidthPx(
+  sections: SectionInfo[],
+  i: number,
+  kind: 'header' | 'footer',
+  variant: HfVariant,
+  /** section resolveHf picked the strip from (live Link to Previous / pending
+   *  edits); without it the parsed refs decide */
+  owner?: number,
+): number {
+  const refsKey = kind === 'header' ? 'headerRefs' : 'footerRefs'
+  let j = Math.min(owner ?? i, sections.length - 1)
+  if (owner === undefined) while (j > 0 && sections[j]?.[refsKey]?.[variant] === undefined) j--
+  const set = (sections[j] ?? sections[i]).settings
+  return ((set.pageWidth - set.marginLeft - set.marginRight) / 1440) * 96
+}
+
 function hfHasContent(hf: HeaderFooter | HfPartInfo | null | undefined): boolean {
   if (!hf) return false
   if ((hf as HeaderFooter).pageNumber || (hf as HfPartInfo).hasPageNumber) return true
@@ -129,6 +154,25 @@ export function hfVariantOf(
   if (titlePg && firstOfSection) return 'first'
   if (evenOddHf && pageNo % 2 === 0) return 'even'
   return 'default'
+}
+
+/** whether the probe measured separate strips for the variant (titlePg / evenAndOddHeaders on) */
+export function hfHasVariant(h: SectionHfHeights, variant: 'first' | 'even'): boolean {
+  return variant === 'first'
+    ? h.firstHeaderPx !== undefined || h.firstFooterPx !== undefined
+    : h.evenHeaderPx !== undefined || h.evenFooterPx !== undefined
+}
+
+/** Reserved heights of the strips a page draws: the variant's own when probed, else the default's */
+export function hfVariantReservedPx(
+  h: SectionHfHeights,
+  variant: HfVariant,
+): { headerPx: number; footerPx: number } {
+  if (variant === 'first' && hfHasVariant(h, 'first'))
+    return { headerPx: h.firstHeaderPx ?? h.headerPx, footerPx: h.firstFooterPx ?? h.footerPx }
+  if (variant === 'even' && hfHasVariant(h, 'even'))
+    return { headerPx: h.evenHeaderPx ?? h.headerPx, footerPx: h.evenFooterPx ?? h.footerPx }
+  return { headerPx: h.headerPx, footerPx: h.footerPx }
 }
 
 /** Displayed page number per page: restart at the section's pgNumType w:start, otherwise continue;

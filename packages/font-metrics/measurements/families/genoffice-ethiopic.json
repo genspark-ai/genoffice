@@ -1,0 +1,16 @@
+{
+  "family": "GenOffice Ethiopic",
+  "source": {
+    "kind": "corpus",
+    "date": "2026-08-13",
+    "probe": "regression sample 39: line breaks match Word at 72%; the residual page-4 spill is line-height, not width"
+  },
+  "note": "Ethiopic faces (Nyala/Ebrima/Abyssinica) are missing on macOS and fall back\nto Kefa, 1.35-1.4x wider than Word's Nyala. Only routed when an Ethiopic\nface is declared, so no unicode-range needed; on Windows the declared name\nitself resolves ahead of this alias.\nChromium local() matches PostScript/full names, not family names.",
+  "faces": [
+    {
+      "src": "local('Kefa-Regular'), local('Kefa Regular'), local('Kefa')",
+      "sizeAdjust": 72,
+      "display": null
+    }
+  ]
+}

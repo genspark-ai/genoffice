@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
@@ -43,6 +43,12 @@ function makeCtx(comments: CommentInfo[]): {
 Object.assign(window, { desktop: { onLanguageChanged: () => () => undefined } })
 
 setModuleLang('en')
+
+/** Edit lives in the card's "…" menu */
+function openEdit(container: HTMLElement, scope = ''): void {
+  act(() => container.querySelector<HTMLElement>(`${scope} .comment-more`.trim())!.click())
+  act(() => container.querySelector<HTMLElement>(`${scope} .comment-card-edit`.trim())!.click())
+}
 
 describe('editComment', () => {
   const comments = (): CommentInfo[] => [
@@ -115,8 +121,7 @@ describe('CommentsPanel editing', () => {
       }),
     )
 
-    const pencil = container.querySelector<HTMLElement>('.comment-card-edit')!
-    act(() => pencil.click())
+    openEdit(container)
 
     const textarea = container.querySelector<HTMLTextAreaElement>(
       '.comment-reply-compose textarea',
@@ -170,17 +175,16 @@ describe('CommentsPanel editing', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  it('second pencil click cancels the edit instead of resetting the draft', () => {
+  it('a second Edit from the menu cancels the edit instead of resetting the draft', () => {
     const onEdit = vi.fn()
     const { editor, root, container } = mountOne({ onEdit })
-    const pencil = () => container.querySelector<HTMLElement>('.comment-card-edit')!
-    act(() => pencil().click())
+    openEdit(container)
     const textarea = container.querySelector<HTMLTextAreaElement>(
       '.comment-reply-compose textarea',
     )!
     act(() => typeInto(textarea, 'half-typed'))
 
-    act(() => pencil().click())
+    openEdit(container)
     // the composer is gone, nothing was submitted
     expect(container.querySelector('.comment-reply-compose')).toBeNull()
     expect(onEdit).not.toHaveBeenCalled()
@@ -194,20 +198,87 @@ describe('CommentsPanel editing', () => {
     const onEdit = vi.fn()
     const onResolve = vi.fn()
     const { editor, root, container } = mountOne({ onEdit, onResolve })
-    act(() => container.querySelector<HTMLElement>('.comment-card-edit')!.click())
+    openEdit(container)
     const textarea = container.querySelector<HTMLTextAreaElement>(
       '.comment-reply-compose textarea',
     )!
     act(() => typeInto(textarea, 'typed but not saved'))
 
-    const resolveBtn = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => b.textContent === 'Resolve',
-    )!
+    const resolveBtn = container.querySelector<HTMLButtonElement>('[aria-label="Resolve"]')!
     act(() => resolveBtn.click())
 
     expect(onEdit).toHaveBeenCalledWith('c1', 'typed but not saved')
     expect(onResolve).toHaveBeenCalledWith('c1', true)
 
+    act(() => root.unmount())
+    container.remove()
+    editor.destroy()
+  })
+})
+
+describe('CommentsPanel focus with reply', () => {
+  // the focus effect scrolls the card into view on the next frame; jsdom has neither API
+  beforeAll(() => {
+    Element.prototype.scrollIntoView = vi.fn()
+    if (typeof globalThis.CSS === 'undefined') {
+      Object.assign(globalThis, { CSS: { escape: (s: string) => s.replace(/"/g, '\\"') } })
+    }
+  })
+
+  it('focuses the Reply box of the focused thread; Enter submits through onReply', () => {
+    const editor = makeEditor()
+    const onReply = vi.fn()
+    const { root, container } = mount(
+      createElement(CommentsPanel, {
+        comments: [{ id: 'c1', author: 'A', text: 'root', done: false }] as CommentInfo[],
+        docNode: editor.state.doc,
+        composing: false,
+        onSubmitNew: noop,
+        onReply,
+        onEdit: noop,
+        onResolve: noop,
+        onCancelNew: noop,
+        onDelete: noop,
+        onClose: noop,
+        focus: { id: 'c1', nonce: 1, reply: true },
+      }),
+    )
+
+    const input = container.querySelector<HTMLInputElement>('.comment-reply-input')!
+    expect(input).toBeTruthy()
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'a reply')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(onReply).toHaveBeenCalledWith('c1', 'a reply')
+
+    act(() => root.unmount())
+    container.remove()
+    editor.destroy()
+  })
+
+  it('a resolved thread has no Reply box', () => {
+    const editor = makeEditor()
+    const { root, container } = mount(
+      createElement(CommentsPanel, {
+        comments: [{ id: 'c1', author: 'A', text: 'root', done: true }] as CommentInfo[],
+        docNode: editor.state.doc,
+        composing: false,
+        onSubmitNew: noop,
+        onReply: noop,
+        onEdit: noop,
+        onResolve: noop,
+        onCancelNew: noop,
+        onDelete: noop,
+        onClose: noop,
+        focus: { id: 'c1', nonce: 1, reply: true },
+      }),
+    )
+    expect(container.querySelector('.comment-reply-input')).toBeNull()
     act(() => root.unmount())
     container.remove()
     editor.destroy()

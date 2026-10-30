@@ -73,13 +73,38 @@ describe('provider registry', () => {
   })
 
   it('marks the GPT-5/GPT-6 families as fixed-sampling (reject any non-default temperature)', () => {
-    for (const model of ['gpt-6-astra', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.5', 'gpt-5.4-mini']) {
+    for (const model of ['gpt-5.2', 'gpt-5.1', 'gpt-5']) {
       expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model))).toEqual({
         protocol: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
         omitTemperature: true,
         useMaxCompletionTokens: true,
       })
+    }
+  })
+
+  it('routes GPT-5.4+ and GPT-6 to the Responses API and older ids to Chat Completions', () => {
+    for (const model of [
+      'gpt-6.1-terra',
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-6-luna',
+      'gpt-5.6-terra',
+      'gpt-5.5',
+      'gpt-5.4-mini',
+    ]) {
+      expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model))).toEqual({
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+      })
+    }
+    expect(
+      AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config('gpt-6-sol', 'https://proxy.example/v1/')),
+    ).toEqual({ protocol: 'openai-responses', baseUrl: 'https://proxy.example/v1/' })
+    for (const model of ['gpt-5.2', 'gpt-4.1-mini', 'o3', 'gpt-5.3-codex']) {
+      expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model)).protocol).toBe(
+        'openai-compatible',
+      )
     }
   })
 
@@ -563,6 +588,7 @@ describe('modelHasFixedSampling case handling', () => {
     expect(modelHasFixedSampling('GPT-5.6-sol')).toBe(true)
     expect(modelHasFixedSampling('KIMI-K3')).toBe(true)
     expect(modelHasFixedSampling('Gemini-3.7-flash')).toBe(true)
+    expect(modelHasFixedSampling('gemini-4-argon')).toBe(true)
     expect(modelHasFixedSampling('O1-mini')).toBe(true)
     expect(modelHasFixedSampling('gpt-4o-mini')).toBe(false)
   })

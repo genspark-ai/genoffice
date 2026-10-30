@@ -1,0 +1,21 @@
+{
+  "family": "Symbol Bullet GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["Symbol (Word DFonts)", "LiberationSans-Regular.ttf"],
+    "probe": "Word glyph ink 0.357em over Liberation Sans U+25CF 0.43em; box = Word face total 1.2251em split at the 0.36em baseline"
+  },
+  "note": "Word's Symbol / Wingdings bullets when the face is missing (macOS Symbol.ttf has\nno F0xx cmap): Liberation Sans' U+25CF (0.43em) scaled to the Word glyph's ink\n(Symbol bullet 0.357em, Wingdings circle 0.579em). The overrides keep the Word\nface's total (Symbol 1.2251em, Wingdings 1.1098em) and split it so the glyph\nbaseline sits 0.36em above the bottom of the bullet box, where Chromium puts the\nCalibri/Carlito text baseline (0.25em descent + half of the 0.22em leading);\nChromium applies the overrides after size-adjust, hence the rescaled values.",
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 83,
+      "ascentOverride": 107.2,
+      "descentOverride": 40.4,
+      "lineGapOverride": 0,
+      "weight": null,
+      "style": null
+    }
+  ]
+}

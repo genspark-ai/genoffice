@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::archive::{
-    EntryContent, archive_manifest, read_entries_to_dir, save_archive, scan_entries_for_text,
+    EntryContent, StreamPatchEntry, archive_manifest, read_entries_to_dir, save_archive,
+    scan_entries_for_text,
 };
 use crate::find::FindCellsRequest;
 use crate::recalc::{RecalcCache, RecalcEdit, RecalcRead, recalc_cells};
@@ -96,6 +97,9 @@ pub enum Command {
         replacements: Vec<EntryContent>,
         removals: Vec<String>,
         additions: Vec<EntryContent>,
+        /// Oversized entries rewritten by the streaming cell-upsert pass.
+        #[serde(default)]
+        stream_patches: Vec<StreamPatchEntry>,
     },
     #[serde(rename_all = "camelCase")]
     RecalcCells {
@@ -593,6 +597,7 @@ pub fn handle_request(
             replacements,
             removals,
             additions,
+            stream_patches,
         } => {
             // The saved bytes supersede any resident formula model for the
             // target. The source is only read, so its warm model stays valid;
@@ -607,6 +612,7 @@ pub fn handle_request(
                 &replacements,
                 &removals,
                 &additions,
+                &stream_patches,
             )
             .and_then(to_json_value)
         }

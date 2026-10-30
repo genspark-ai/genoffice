@@ -399,6 +399,26 @@ describe('grouped and sibling pictures', () => {
     expect(doc.blocks[0].strayRuns).toBeUndefined()
   })
 
+  it('a photo box keeps the preset geometry of its pic:spPr (Word clips the picture to it)', async () => {
+    const textbox = anchorParagraph(
+      `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
+        `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm>` +
+        `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `</wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>card</w:t></w:r></w:p>` +
+        `</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>`,
+      SHAPE_URI,
+    ).replace(/<\/w:p>$/, '')
+    const shaped = anchorParagraph(
+      `<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>` +
+        `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="476250" cy="238125"/></a:xfrm>` +
+        `<a:prstGeom prst="flowChartDocument"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`,
+      'http://schemas.openxmlformats.org/drawingml/2006/picture',
+    ).replace('<w:p>', '')
+    const doc = await parseDocx(await buildDocx({ bodyXml: textbox + shaped, withImage: true }))
+    const photo = doc.blocks[0].textboxes?.find((b) => b.fillImageDataUrl)
+    expect(photo?.prst).toBe('flowChartDocument')
+  })
+
   it('a drawing inside mc:AlternateContent/mc:Choice still yields a run image', async () => {
     const body =
       `<w:p><w:r><w:t xml:space="preserve">before </w:t></w:r>` +

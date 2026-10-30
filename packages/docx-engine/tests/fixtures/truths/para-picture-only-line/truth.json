@@ -1,0 +1,52 @@
+{
+  "id": "para-picture-only-line",
+  "title": "A paragraph of inline pictures only is the tallest picture's extent whether it holds one, two or three pictures; a text run beside them adds its descent; a line multiple adds (m - 1) x the mark's single line",
+  "section": "word-truths.md#L818",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf control baselines (pitch 73.44 = 60 + 13.44) and image bboxes, Letter, Calibri 11 docDefaults after 0 line 240: one, two, three 60 pt pictures and a 60 + 40 pt pair all make a 60.00 pt paragraph; two pictures + text and one picture + text 62.88 (60 + Calibri descent); two pictures at line 276 62.16, one picture 61.92 (60 + 0.15 x 13.44); effectExtent b = 8 pt on both pictures 67.92; after 160 line 259 two pictures 69.12 = 60 + 8 + 1.12. gen before the fix: 62.68 for every multi-picture row (the inline-block picture wrapper's baseline is its bottom edge, so the trailing break's descent hung under the row)",
+  "cases": [
+    {
+      "kind": "bodyParaDom",
+      "block": 3,
+      "expect": { "classes": ["doc-p-pic"] },
+      "note": "two inline pictures: the picture-only line box, no strut or descent (Word 60.00)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 5,
+      "expect": { "classes": ["doc-p-pic"] },
+      "note": "three inline pictures in one row (Word 60.00)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 7,
+      "expect": { "classes": ["doc-p-pic"] },
+      "note": "60 + 40 pt pictures: the tallest extent (Word 60.00)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 9,
+      "expect": { "notClasses": ["doc-p-pic"] },
+      "note": "two pictures + a text run: the text descent joins the line (Word 62.88)"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 13,
+      "expect": { "classes": ["doc-p-pic"], "notStyles": ["line-height"] },
+      "note": "line 276: the multiple's extra is the .doc-p-pic padding, not a line-height (Word 62.16)"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-page .doc-p-pic .doc-inline-pic",
+      "expect": "vertical-align: bottom",
+      "note": "the editable picture wrapper sits on the line bottom like the picture itself; baseline alignment hung the trailing break's 3.5px descent under every row of two or more pictures"
+    },
+    {
+      "kind": "stylesheetRule",
+      "selector": ".doc-page .doc-p-pic:not(.doc-lh-fixed)",
+      "expect": "line-height: 0"
+    }
+  ],
+  "docx": "probe.docx"
+}

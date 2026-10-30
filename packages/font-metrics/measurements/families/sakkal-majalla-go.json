@@ -1,0 +1,65 @@
+{
+  "family": "Sakkal Majalla GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": [
+      "Sakkal Majalla (M365 cloud)",
+      "NotoNaskhArabic-Regular-subset.woff2",
+      "LiberationSans-Regular.ttf"
+    ],
+    "probe": "hb-shape widths of a 64k-character Arabic report per class; box = Word hhea 1810/1050 over 2048"
+  },
+  "note": "Sakkal Majalla (M365 cloud face Word renders real) is a compact naskh\nwith a narrow Latin. Class scales are shaped widths of a 64k-char Arabic\nreport in the cloud cuts vs the stand-in (harfbuzz over the real files,\n2026-09-30): Arabic letters 0.8055 of the Noto Naskh subset (bold cut\n0.841; registered weight-normal so Blink synthesizes bold), Arabic-Indic\ndigits 0.9396, and vs Liberation Sans/Helvetica: ASCII digits 0.7287,\nspace 0.545, punctuation 0.6667, letters 0.67, dashes 0.9113, other Latin-1\nand general punctuation symbols 0.66 (they would otherwise fall to Al Bayan,\nwhose 1.5 em box stretches the line). Weight-normal only: Blink\nserves one weight group per family, so a bold group without the Arabic\nranges would send bold Arabic past the alias to Geeza Pro; bold runs are\nsynthesized and keep the regular ratios (bold cuts run 4-12% wider).\nLetters sit in a second family so a run's own ascii face still wins them\n(chain splice in line-metrics.ts). Every face pins the Word hhea box\n1810/1050 over 2048.",
+  "faces": [
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 80.55,
+      "unicodeRange": "U+0600-065F, U+066A-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 93.96,
+      "unicodeRange": "U+0660-0669, U+06F0-06F9",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 72.87,
+      "unicodeRange": "U+0030-0039",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 54.5,
+      "unicodeRange": "U+0020, U+00A0",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 66.67,
+      "unicodeRange": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 91.13,
+      "unicodeRange": "U+2010-2015",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    },
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 66,
+      "unicodeRange": "U+00A1-00BF, U+00D7, U+00F7, U+2016-2027, U+2212, U+2248, U+2260-2265",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    }
+  ]
+}

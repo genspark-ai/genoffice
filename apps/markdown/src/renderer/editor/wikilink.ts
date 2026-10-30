@@ -1,5 +1,6 @@
 import { Mark, Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Selection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Node as PmNode } from '@tiptap/pm/model'
@@ -434,10 +435,18 @@ export const WikiLink = Mark.create({
 })
 
 interface WikiAliasState {
+  /** hidden ranges per aliased link, recomputed on every document change */
+  links: HiddenLink[]
   decorations: DecorationSet
 }
 
-const aliasEmpty: WikiAliasState = { decorations: DecorationSet.empty }
+interface HiddenLink {
+  from: number
+  to: number
+  hidden: [number, number][]
+}
+
+const aliasEmpty: WikiAliasState = { links: [], decorations: DecorationSet.empty }
 
 /** exported for tests: the alias display pass owns this slice of plugin state */
 export const wikiAliasDisplayKey = new PluginKey<WikiAliasState>('wikiAliasDisplay')
@@ -448,8 +457,8 @@ export const wikiAliasDisplayKey = new PluginKey<WikiAliasState>('wikiAliasDispl
  * mark inside the brackets) is left visible — no segment spans the whole
  * literal, so hiding part of one segment could clip text the next one carries.
  */
-function aliasDecorations(doc: PmNode): Decoration[] {
-  const out: Decoration[] = []
+function hiddenLinks(doc: PmNode): HiddenLink[] {
+  const out: HiddenLink[] = []
   for (const span of wikiSpans(doc)) {
     // positions come from the literal match, so a mark the edit grew past its
     // brackets contributes nothing
@@ -458,18 +467,39 @@ function aliasDecorations(doc: PmNode): Decoration[] {
     if (pipe < 0) continue
     // `[[Note|]]` never matches the link regex, so a matched pipe always has
     // alias text after it
-    out.push(Decoration.inline(span.from, span.from + pipe + 1, { class: 'wiki-alias-hidden' }))
-    out.push(Decoration.inline(span.to - 2, span.to, { class: 'wiki-alias-hidden' }))
+    out.push({
+      from: span.from,
+      to: span.to,
+      hidden: [
+        [span.from, span.from + pipe + 1],
+        [span.to - 2, span.to],
+      ],
+    })
   }
   return out
+}
+
+/**
+ * A link the selection touches shows its whole literal, as Obsidian's live
+ * preview does: hidden text is otherwise still caret-reachable, and arrow keys
+ * or Backspace would edit syntax the user cannot see.
+ */
+function aliasDecorations(doc: PmNode, links: HiddenLink[], sel: Selection): DecorationSet {
+  const out: Decoration[] = []
+  for (const link of links) {
+    if (sel.from <= link.to && sel.to >= link.from) continue
+    for (const [from, to] of link.hidden)
+      out.push(Decoration.inline(from, to, { class: 'wiki-alias-hidden' }))
+  }
+  return DecorationSet.create(doc, out)
 }
 
 /**
  * Obsidian shows `[[Note|Alias]]` as `Alias`. This pass hides the syntax of an
  * aliased link in the view only: the document text keeps the whole literal, so
  * the save, the block source map and the resolver all read what was written.
- * It waits on nothing async — what to hide follows from the document alone,
- * recomputed whole on every change to it.
+ * It waits on nothing async — what to hide follows from the document and the
+ * selection alone.
  */
 export const WikiAliasDisplay = Extension.create({
   name: 'wikiAliasDisplay',
@@ -479,13 +509,15 @@ export const WikiAliasDisplay = Extension.create({
       new Plugin<WikiAliasState>({
         key: wikiAliasDisplayKey,
         state: {
-          init: (_config, state) => ({
-            decorations: DecorationSet.create(state.doc, aliasDecorations(state.doc)),
-          }),
-          apply: (tr, old) =>
-            tr.docChanged
-              ? { decorations: DecorationSet.create(tr.doc, aliasDecorations(tr.doc)) }
-              : old,
+          init: (_config, state) => {
+            const links = hiddenLinks(state.doc)
+            return { links, decorations: aliasDecorations(state.doc, links, state.selection) }
+          },
+          apply: (tr, old) => {
+            if (!tr.docChanged && !tr.selectionSet) return old
+            const links = tr.docChanged ? hiddenLinks(tr.doc) : old.links
+            return { links, decorations: aliasDecorations(tr.doc, links, tr.selection) }
+          },
         },
         props: {
           decorations: (state) => (wikiAliasDisplayKey.getState(state) ?? aliasEmpty).decorations,

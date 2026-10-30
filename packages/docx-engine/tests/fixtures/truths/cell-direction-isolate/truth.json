@@ -1,0 +1,42 @@
+{
+  "id": "cell-direction-isolate",
+  "title": "A bidiVisual row mirrors column order but the LTR cell keeps reading order; an RTL cell paragraph and an Arabic text-box paragraph lay out right-to-left, isolated from the table's dir",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf: bidiVisual 6000-twip table laid from the right margin (239.28 .. 539.28), LTR cell 'abc 123' in reading order, Arabic cell RTL; inline text box at 72 with 7.2 pt insets: the Arabic w:bidi paragraph ends at 280.56 (right inset), the Latin paragraph starts at 79.44",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "cell": 0,
+      "expect": { "styles": ["direction:ltr"], "notStyles": ["unicode-bidi"] },
+      "note": "the LTR cell declares its own direction so the table's dir=rtl never reorders it"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "cell": 1,
+      "expect": { "styles": ["direction:rtl", "unicode-bidi:isolate"] },
+      "note": "RTL cell paragraph: same isolate as the editor's blockAttrs"
+    },
+    {
+      "kind": "boxLineBox",
+      "block": 3,
+      "box": 0,
+      "para": 0,
+      "expect": { "styles": ["direction:rtl", "unicode-bidi:isolate"] },
+      "note": "w:bidi text-box paragraph ends at the right inset in Word"
+    },
+    {
+      "kind": "boxLineBox",
+      "block": 3,
+      "box": 0,
+      "para": 1,
+      "expect": { "styles": ["direction:ltr"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

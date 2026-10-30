@@ -59,12 +59,13 @@ describe('direct w:contextualSpacing on unstyled list items', () => {
     join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
     'utf8',
   )
-  it('covers .doc-li blocks, not only <p>', () => {
-    expect(css).toContain(
-      '.doc-page :is(p, .doc-li).ctx-sp:not([data-style]):has(+ :is(p, .doc-li):not([data-style]))',
+  it('covers .doc-li blocks and outline-only headings, not only <p>', () => {
+    const flat = css.replace(/\s+/g, ' ')
+    expect(flat).toContain(
+      '.doc-page :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style]):has( + :is(p, .doc-li, .doc-outline-only):not([data-style]) )',
     )
-    expect(css).toContain(
-      '.doc-page :is(p, .doc-li):not([data-style]) + :is(p, .doc-li).ctx-sp:not([data-style])',
+    expect(flat).toContain(
+      '.doc-page :is(p, .doc-li, .doc-outline-only):not([data-style]) + :is(p, .doc-li, .doc-outline-only).ctx-sp:not([data-style])',
     )
   })
 })

@@ -418,6 +418,9 @@ export const es = {
   appTableNameUsed: 'El nombre de tabla "{name}" ya se usó en esta sesión.',
   appTableNameInFile: 'El nombre de tabla "{name}" ya lo usa una tabla del archivo.',
   appTableOverlapsSession: 'El rango se superpone con la tabla "{name}" creada en esta sesión.',
+  appTableOverlapsFile: 'El rango se superpone con la tabla "{name}" del archivo.',
+  appTableAlreadyInTable:
+    'La selección ya está en la tabla "{name}": cambie el estilo desde Diseño de tabla.',
   appTablesNeedFile: 'Abra primero un archivo XLSX — las tablas se escriben en el archivo.',
   appTableSelectRange:
     'Seleccione primero el rango de datos — con los encabezados en su primera fila.',

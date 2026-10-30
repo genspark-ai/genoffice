@@ -17,6 +17,17 @@ export interface RevisionXmlFilter {
   type?: RevisionXmlType
   /** ISO date: only changes recorded strictly before it */
   before?: string
+  /** exact w:date match */
+  date?: string
+  /** w:id of the wrapper / record */
+  ids?: string[]
+}
+
+/** one accept / reject the editor applied to a part it holds as a display model */
+export interface RevisionResolution {
+  mode: RevisionXmlMode
+  /** absent = every tracked change in the part */
+  filter?: RevisionXmlFilter
 }
 
 export interface RevisionXmlResult {
@@ -112,6 +123,7 @@ function typeOf(el: El): RevisionXmlType | undefined {
     case 'w:moveTo':
       return 'move'
     case 'w:numberingChange':
+    case 'w:cellMerge':
       return 'formatting'
     default:
       if (PROP_CHANGE[el.name]) return 'formatting'
@@ -130,6 +142,8 @@ function matches(el: El, filter: RevisionXmlFilter | undefined, type: RevisionXm
     const date = attrOf(el, 'w:date')
     if (!date || Date.parse(date) >= Date.parse(filter.before)) return false
   }
+  if (filter.date !== undefined && (attrOf(el, 'w:date') ?? '') !== filter.date) return false
+  if (filter.ids !== undefined && !filter.ids.includes(attrOf(el, 'w:id') ?? '')) return false
   return true
 }
 
@@ -236,7 +250,8 @@ function revertPropChange(els: El[], xml: string, change: El): Edit[] {
   // the holder's own tracked markers (paragraph-mark / row ins, del, move) are
   // separate revisions: edit around them so their own removal in the same pass
   // is not swallowed by a whole-holder replacement
-  const isMarker = (c: El) => c.selfClosing && /^w:(?:ins|del|moveFrom|moveTo)$/.test(c.name)
+  const isMarker = (c: El) =>
+    c.selfClosing && /^w:(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge)$/.test(c.name)
   const kids = children(els, holder)
   if (kids.some(isMarker)) {
     return [
@@ -321,6 +336,7 @@ function planEdits(
       case 'w:cellIns':
       case 'w:cellDel':
       case 'w:numberingChange':
+      case 'w:cellMerge':
         edits.push(remove(el))
         break
       default:
@@ -348,9 +364,13 @@ function applyEdits(xml: string, edits: Edit[]): string {
   return out
 }
 
-/** pending tracked changes in a part (range markers and cell merges not counted) */
+/** pending tracked changes in a part (range markers not counted) */
 export function countTrackedChangesXml(xml: string): number {
-  if (!/<w:(?:ins|del|moveFrom|moveTo|cellIns|cellDel|numberingChange|\w+Change)[\s/>]/.test(xml))
+  if (
+    !/<w:(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|\w+Change)[\s/>]/.test(
+      xml,
+    )
+  )
     return 0
   const els = scan(xml)
   let n = 0
@@ -369,4 +389,75 @@ export function applyTrackedChangesXml(
   // a property holder emptied by independent edits (markers and record both resolved) goes
   const out = edits.length ? applyEdits(xml, edits).replace(/<w:(rPr|trPr)><\/w:\1>/g, '') : xml
   return { xml: out, applied, remaining: countTrackedChangesXml(out) }
+}
+
+/** the editor's accept / reject decisions replayed on the part's original bytes */
+export function applyRevisionResolutions(
+  xml: string,
+  resolutions: readonly RevisionResolution[] | undefined,
+): string {
+  let out = xml
+  for (const r of resolutions ?? []) out = applyTrackedChangesXml(out, r.mode, r.filter).xml
+  return out
+}
+
+export interface PropChangeRecord {
+  author: string
+  date?: string
+  dateUtc?: string
+  id?: string
+  /** inner XML of the recorded previous properties (empty for records without one) */
+  oldXml: string
+  /** w:cellMerge only: the merge state after / before the revision */
+  vMerge?: string
+  vMergeOrig?: string
+}
+
+/**
+ * The first `changeName` record (w:tblPrChange, w:trPrChange, w:tcPrChange, w:tblGridChange,
+ * w:tblPrExChange, w:sectPrChange, w:numberingChange, w:cellMerge) in a property fragment.
+ */
+export function readPropChangeXml(xml: string, changeName: string): PropChangeRecord | undefined {
+  if (!xml.includes(`<${changeName}`)) return undefined
+  const els = scan(xml)
+  const change = els.find((el) => el.name === changeName)
+  if (!change) return undefined
+  const holderName = PROP_CHANGE[changeName]
+  const old = holderName ? children(els, change).find((c) => c.name === holderName) : undefined
+  const date = attrOf(change, 'w:date')
+  const dateUtc = attrOf(change, 'w16du:dateUtc')
+  const id = attrOf(change, 'w:id')
+  const vMerge = attrOf(change, 'w:vMerge')
+  const vMergeOrig = attrOf(change, 'w:vMergeOrig')
+  return {
+    author: attrOf(change, 'w:author') ?? '',
+    ...(date ? { date } : {}),
+    ...(dateUtc ? { dateUtc } : {}),
+    ...(id ? { id } : {}),
+    oldXml: old ? xml.slice(old.innerStart, old.innerEnd) : '',
+    ...(vMerge ? { vMerge } : {}),
+    ...(vMergeOrig ? { vMergeOrig } : {}),
+  }
+}
+
+/**
+ * Resolve one property-change record inside a property fragment (a raw tblPr / trPr /
+ * tcPr / tblGrid / tblPrEx / pPr-with-sectPr slice): accept drops the record, reject
+ * puts the recorded previous properties back. Records without a previous-properties
+ * payload (numberingChange, cellMerge) just drop.
+ */
+export function resolvePropChangeXml(
+  xml: string,
+  changeName: string,
+  mode: RevisionXmlMode,
+): string {
+  if (!xml.includes(`<${changeName}`)) return xml
+  const els = scan(xml)
+  const change = els.find((el) => el.name === changeName)
+  if (!change) return xml
+  const edits =
+    mode === 'accept' || !PROP_CHANGE[changeName]
+      ? [remove(change)]
+      : revertPropChange(els, xml, change)
+  return applyEdits(xml, edits).replace(/<w:(rPr|trPr|tcPr|tblPrEx)><\/w:\1>/g, '')
 }

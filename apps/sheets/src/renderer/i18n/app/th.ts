@@ -374,6 +374,8 @@ export const th = {
   appTableNameUsed: 'ชื่อตาราง "{name}" ถูกใช้ไปแล้วในเซสชันนี้',
   appTableNameInFile: 'ชื่อตาราง "{name}" ถูกใช้โดยตารางในไฟล์แล้ว',
   appTableOverlapsSession: 'ช่วงนี้ทับซ้อนกับตาราง "{name}" ที่สร้างในเซสชันนี้',
+  appTableOverlapsFile: 'ช่วงนี้ทับซ้อนกับตาราง "{name}" ในไฟล์',
+  appTableAlreadyInTable: 'ส่วนที่เลือกอยู่ในตาราง "{name}" แล้ว — เปลี่ยนสไตล์ได้จากออกแบบตาราง',
   appTablesNeedFile: 'เปิดไฟล์ XLSX ก่อน — ตารางจะถูกเขียนลงไฟล์',
   appTableSelectRange: 'เลือกช่วงข้อมูลก่อน — แถวแรกเป็นหัวเรื่อง',
   appTableCreated: 'สร้างตารางแล้ว — บันทึกด้วย ⌘S',

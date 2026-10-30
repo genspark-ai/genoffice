@@ -52,11 +52,13 @@ describe('page-relative anchor horizontal offsets', () => {
     expect(image.relH).toBe('page')
   })
 
-  it('keeps column-relative offsets and page wp:align unflagged', async () => {
+  it('keeps column-relative offsets unflagged and flags a page wp:align', async () => {
     const column = await open(`<w:p>${anchor(COLUMN_H, '<wp:wrapTopAndBottom/>')}</w:p>`)
     expect(column.blocks[0].imageRelH).toBeUndefined()
     const aligned = await open(`<w:p>${anchor(PAGE_ALIGN_H, '<wp:wrapTopAndBottom/>')}</w:p>`)
     expect(aligned.blocks[0].imageOffsetXEmu).toBeUndefined()
-    expect(aligned.blocks[0].imageRelH).toBeUndefined()
+    // a page-band keyword is a page position too (probe 2026-10-29)
+    expect(aligned.blocks[0].imageRelH).toBe('page')
+    expect(aligned.blocks[0].imagePosH).toBe('left')
   })
 })

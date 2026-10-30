@@ -179,12 +179,17 @@ describe('applyLiftTops', () => {
   })
 
   it('opens the clip for a page-anchored float whose applied shift hangs above the page start', () => {
-    const el = document.createElement('table')
-    el.dataset.tblpDy = '-80'
     const blocks: BlockBox[] = [
       { top: 0, height: 20 },
       { top: 900, height: 20, emptyPara: true },
-      { top: 920, height: 300, el, floated: true, pageRelVyPx: 0, pageRelVAnchor: 'page' },
+      {
+        top: 920,
+        height: 300,
+        floated: true,
+        pageRelVyPx: 0,
+        pageRelVAnchor: 'page',
+        floatShiftPx: -80,
+      },
     ]
     const slices: PageSlice[] = [
       { start: 0, end: 900, section: 0 },

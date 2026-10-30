@@ -2,6 +2,7 @@ import { scriptFontHtml } from './editor/script-fonts'
 import { carryDocSeen } from './ai/tools'
 import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
+import { tabReflowMeta } from './editor/decoration-extensions'
 import {
   useCallback,
   useEffect,
@@ -26,7 +27,7 @@ import {
   useAutoSavePref,
   useAiSidebarEnabled,
 } from '@genoffice/ui'
-import { wordRangeAtCaret } from './editor/comments'
+import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
 import { linkTarget } from './editor/link-actions'
 import { FieldDialog } from './components/FieldDialog'
@@ -78,6 +79,7 @@ import {
   type HeaderFooter,
   type HfImage,
   type NoteInfo,
+  type TextboxDisplay,
   type ParsedDocFull,
   type SectionInfo,
   type SectionSettings,
@@ -107,7 +109,7 @@ import {
   type MailMergeResponse,
 } from './mail-merge/output'
 import { ZoteroDocumentController } from './zotero/controller'
-import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
+import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
 import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from './ai/page-setup'
@@ -122,10 +124,17 @@ import {
   type HfEditorHandle,
 } from './editor/hf-editor'
 import type { HfAction, HfEditingInfo } from './components/ribbon-hf-tab'
-import { hfCommitTarget, hfLinked, resolveHf, withHfLink, type HfSectionState } from './hf-sections'
+import {
+  hfCommitTarget,
+  hfLinked,
+  ownHf,
+  resolveHf,
+  withHfLink,
+  type HfSectionState,
+} from './hf-sections'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
-import { textColorValue } from './editor/text-color'
-import { textOutlineCssValue } from './editor/text-outline'
+import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
+import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
 import { AiAskPopover } from './components/AiAskPopover'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type DocsEditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/ai-queue-anchors'
@@ -140,11 +149,21 @@ import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
-import { noteMarkText, type NoteKind } from './note-format'
+import type { NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
+import {
+  comparePlanToBlocks,
+  planByElement,
+  planDiffHistogram,
+  planPropsOf,
+  type PlanOf,
+  type PlanDiff,
+} from './pagination-plan'
 import { PrintDialog } from './components/PrintDialog'
 import {
+  hfVariantOf,
+  hfVariantReservedPx,
   appendEndnotesBlock,
   appendFloatSpillBlock,
   assignSections,
@@ -159,7 +178,13 @@ import {
   measureBlocks,
   docGridPitchPt,
   type LineAnchor,
-  hfVariantOf,
+  hfPartWidthPx,
+  buildPageCuts,
+  headingPagesOf,
+  pageCutSignature,
+  LEAD_ROW_TOL_PX,
+  outerTableRows,
+  type PageCut,
   pageNumbers,
   sliceWithLineSplit,
   type SliceOutputs,
@@ -168,6 +193,7 @@ import {
   type BlockMeta,
   type PageNoteItem,
   pageAt,
+  pageOfY,
   singleCutCell,
   columnLayoutSpecs,
   widthPassGate,
@@ -177,6 +203,8 @@ import {
   verticalTextSpecs,
   blockInlineExtraPx,
   sectionVertical,
+  sectionPageStartSpecs,
+  wrapWidthSig,
   sectionTopMarginSpecs,
   sectionWidthSpecs,
   mirrorMarginSpecs,
@@ -191,12 +219,12 @@ import {
   sectionBidi,
   sectionColGeom,
   sectionColumns,
-  sectionFirstPages,
   sectionGeoms,
   sectionPageBox,
   canvasContentTopPx,
   effectiveTopPx,
   effectiveBottomPx,
+  singleVariantGeomOf,
   formatPageNumber,
   visiblePageCount,
   type SectionGeom,
@@ -209,11 +237,12 @@ import {
   GAP_BAND,
   alignGapHfStrips,
   alignTableGapFills,
-  leadDropsSpaceBefore,
   clearFloatShifts,
   floatFlowChangedMeta,
   insideFloatTable,
   setFloatVShifts,
+  floatCarriesOf,
+  floatShiftsOf,
   setOversizeClips,
   setPageGaps,
   canvasZoomOf,
@@ -236,13 +265,14 @@ import {
   type PageFrame,
 } from './editor/pagination-gaps'
 import { syncWrapObstacles } from './editor/wrap-obstacles'
+import { newObstacleShadow, obstaclePlanDiffs } from './editor/obstacle-plan'
 import { MultipageGrid, snapshotCanvas, type CanvasSnapshot } from './components/MultipageGrid'
 import { layoutMultipage, multipageColumns, multipageZoomForColumns } from './multipage'
 import { setColumnLayout } from './editor/column-layout'
 import { pageMargins } from './page-margins'
 import { syncLineNumbers } from './editor/line-numbers'
 import {
-  MARKUP_AREA_W,
+  COMMENT_AREA_W,
   clearMarginAnnotations,
   syncMarginAnnotations,
   type MarginHandlers,
@@ -251,7 +281,6 @@ import {
   bumpHfProbeFontEpoch,
   hfHasPageField,
   hfHasVisibleContent,
-  hfReservedHeightPx,
   hfWithoutPageMarks,
   hfStripGeom,
   makeGapHfEl,
@@ -260,13 +289,10 @@ import {
   type HfFloatBox,
 } from './editor/hf-dom'
 import {
-  cssFontFamily,
   estimateFootnoteHeight,
   resolveNoteStyle,
   noteRunStyle,
-  hfHeaderGeom,
   footnoteLineHeightPx,
-  noteLineHeightPx,
   FOOTNOTE_SEPARATOR_H,
   takeSettledMetricFaces,
   textHasCjk,
@@ -277,6 +303,15 @@ import { cachedByDoc } from './doc-cache'
 import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
 import { ZoomDialog } from './components/ZoomDialog'
+import { TrackChangesOptionsDialog } from './components/TrackChangesOptionsDialog'
+import {
+  loadTrackChangesOptions,
+  movesByAuthor,
+  saveTrackChangesOptions,
+  trackChangesOptionsCss,
+  trackChangesOptionsState,
+  type TrackChangesOptions,
+} from './editor/track-changes-options'
 import type { PageLayout } from './editor/goto'
 import { Ribbon, type ConvertFormat } from './components/Ribbon'
 import {
@@ -375,7 +410,6 @@ import {
   resolvedCommentsPluginKey,
   revisionDisplayState,
 } from './editor/extensions'
-import { setDkColor } from './editor/dark-page'
 import { resolveDarkPage, writeDarkPagePref } from './dark-page-pref'
 import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
@@ -383,12 +417,54 @@ import { InkOverlay } from './components/InkOverlay'
 import {
   TRACK_IGNORE,
   collectRevisions,
-  nextRevision,
   selectRevision,
+  type RevisionRange,
   type TrackChangesStorage,
 } from './editor/revisions'
-import { initialMarkupMode, revisionHiddenIn } from './editor/revision-view'
+import {
+  DEFAULT_REVISION_FILTER,
+  authorInkIndex,
+  buildReviewEntries,
+  filterRevisions,
+  revisionAuthorCss,
+  revisionAuthors,
+  revisionsInSelection,
+  type ReviewEntry,
+  type RevisionFilter,
+  type RevisionScope,
+} from './editor/revision-filters'
+import { ReviewingPane } from './components/ReviewingPane'
+import {
+  collectHfRevisions,
+  collectNoteRevisions,
+  collectTextboxRevisions,
+  liveStoryRevision,
+  ownHfSlots,
+  resolveHfValue,
+  resolveNotes,
+  resolveTextboxes,
+  type StoryRevision,
+} from './editor/story-revisions'
+import {
+  BALLOON_MODE_KEY,
+  balloonKindOf,
+  balloonRevKinds,
+  loadBalloonMode,
+  markupPrintsIn,
+  noteRunsInView,
+  revisionHiddenIn,
+  type BalloonMode,
+} from './editor/revision-view'
+import { setInlineComments } from './editor/balloon-markers'
 import { NavPane } from './components/NavPane'
+import { loadLeftPane, saveLeftPane, type LeftPane } from './components/pane-width'
+import {
+  commentsView,
+  iconClickTarget,
+  loadCommentsMode,
+  saveCommentsMode,
+  type CommentsMode,
+} from './components/comments-mode'
 import { StylesPane } from './components/StylesPane'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
@@ -429,6 +505,8 @@ import {
   type FastPassBlock,
 } from './editor/pagination-fast-path'
 import { FollowUpChain } from './pagination-loop'
+import { tabLayoutDiag } from './editor/decoration-extensions'
+import { layoutHealth } from './editor/layout-health'
 
 /** min gap between whole-document pagination passes while a phased open streams its tail */
 const STREAMING_PASS_GAP_MS = 1500
@@ -481,6 +559,7 @@ import {
   editComment as editCommentImpl,
   gotoComment as gotoCommentImpl,
   handleRevision as handleRevisionImpl,
+  handleRevisionRange as handleRevisionRangeImpl,
   removeInks as removeInksImpl,
   replyToComment as replyToCommentImpl,
   resolveComment as resolveCommentImpl,
@@ -508,7 +587,7 @@ const EMPTY_BLOCKS: Block[] = []
 // O(doc) derivations cached by PM doc reference: caret moves and unrelated
 // state updates reuse the last result instead of re-walking the whole document
 const wordCountOfDoc = cachedByDoc((d) => countWords(documentTextForWordCount(d)))
-const revisionCountOfDoc = cachedByDoc((d) => collectRevisions(d).length)
+const revisionsOfDoc = cachedByDoc((d) => collectRevisions(d))
 
 /**
  * Document position of a measured line-start DOM anchor. posAtDOM works from the DOM
@@ -626,123 +705,6 @@ function blockNoteScanRuns(b: Block): NonNullable<Block['runs']> {
   return out
 }
 
-/** Note entry content: superscript number + styled runs (shared by the canvas gap area and the hidden height measurer) */
-function appendNoteRuns(
-  row: HTMLElement,
-  it: Omit<PageNoteItem, 'height' | 'id'>,
-  kind: NoteKind,
-): void {
-  if (!it.noRefMark) {
-    const sup = document.createElement('sup')
-    sup.textContent = noteMarkText(kind, it.no)
-    row.append(sup)
-  }
-  if (it.richParas) {
-    it.richParas.forEach((para, pi) => {
-      if (pi > 0) row.append(document.createElement('br'))
-      for (const run of para) {
-        const span = document.createElement('span')
-        span.textContent = run.text
-        if (run.bold) span.style.fontWeight = '600'
-        if (run.italic) span.style.fontStyle = 'italic'
-        const deco = [run.underline && 'underline', run.strike && 'line-through'].filter(Boolean)
-        if (deco.length > 0) span.style.textDecoration = deco.join(' ')
-        if (run.color) {
-          span.style.color = textColorValue(run.color)
-          // dark-page twin; the authored color stays the declaration
-          if (run.color !== 'auto') setDkColor(span, run.color)
-        }
-        if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
-        if (run.fontAscii) span.style.fontFamily = cssFontFamily(run.fontAscii)
-        if (run.textOutline) span.style.webkitTextStroke = textOutlineCssValue(run.textOutline)
-        if (run.caps === 'all') span.style.textTransform = 'uppercase'
-        else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
-        row.append(span)
-      }
-    })
-  } else {
-    const span = document.createElement('span')
-    span.textContent = it.text
-    row.append(span)
-  }
-}
-
-/**
- * Hidden DOM measurement of one note entry at the renderers' exact styles: the
- * char-width estimate undercounts complex scripts (prod100r4/022 Arabic notes
- * overprinted each other), so reservation and drawing share the DOM wrap truth.
- */
-let noteMeasureHost: HTMLDivElement | null = null
-function measureNoteHeightDom(
-  entry: Pick<PageNoteItem, 'no' | 'text' | 'richParas' | 'noRefMark'>,
-  kind: NoteKind,
-  widthPx: number,
-  lineHeightPx: number,
-  fontSizePt: number,
-  fontFamily?: string,
-): number | null {
-  if (typeof document === 'undefined' || !document.body || widthPx <= 0) return null
-  if (!noteMeasureHost || !noteMeasureHost.isConnected) {
-    noteMeasureHost = document.createElement('div')
-    noteMeasureHost.style.cssText =
-      'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;text-align:left;text-indent:0;'
-    document.body.appendChild(noteMeasureHost)
-  }
-  noteMeasureHost.style.fontFamily =
-    fontFamily ?? "Calibri, 'DengXian', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
-  noteMeasureHost.style.width = `${widthPx}px`
-  noteMeasureHost.style.fontSize = `${fontSizePt}pt`
-  noteMeasureHost.style.lineHeight = `${lineHeightPx}px`
-  const row = document.createElement('div')
-  appendNoteRuns(row, entry, kind)
-  // the renderers' sup style (CSS classes don't reach the detached host)
-  const sup = row.querySelector('sup')
-  if (sup) {
-    sup.style.fontSize = '0.65em'
-    sup.style.marginRight = '4px'
-  }
-  noteMeasureHost.replaceChildren(row)
-  const h = row.getBoundingClientRect().height
-  noteMeasureHost.replaceChildren()
-  return h > 0 ? h : null
-}
-
-/** Footnote area at the top of a page gap (previous page's bottom): absolutely positioned in the content area, double-click an entry to edit */
-function makeGapNotesEl(
-  items: PageNoteItem[],
-  leftPx: number,
-  widthPx: number,
-  heightPx: number,
-  lineHeightPx: number,
-  onEdit: (id: string) => void,
-): HTMLElement {
-  const wrap = document.createElement('div')
-  wrap.className = 'page-gap-notes'
-  wrap.style.left = `${leftPx}px`
-  // paper x: block gaps start at the paper edge, mid-paragraph gaps at their page's
-  // edge — alignGapHfStrips re-anchors from the actual gap origin
-  wrap.dataset.paperX = leftPx.toFixed(1)
-  wrap.style.width = `${widthPx}px`
-  wrap.style.height = `${heightPx}px`
-  // same line height as the reservation model; min-height keeps rows at the
-  // reserved size while letting long entries overflow instead of clipping
-  wrap.style.lineHeight = `${lineHeightPx}px`
-  for (const it of items) {
-    const row = document.createElement('div')
-    row.className = 'page-gap-note'
-    row.title = t('appDblclickEditFootnote')
-    row.style.minHeight = `${it.height}px`
-    // per-note resolved style: the entry's line boxes must match its reservation
-    if (it.lineHeightPx) row.style.lineHeight = `${it.lineHeightPx}px`
-    if (it.fontSizePt) row.style.fontSize = `${it.fontSizePt}pt`
-    if (it.fontFamily) row.style.fontFamily = it.fontFamily
-    appendNoteRuns(row, it, 'footnote')
-    row.addEventListener('dblclick', () => onEdit(it.id))
-    wrap.appendChild(row)
-  }
-  return wrap
-}
-
 const DEFAULT_SETTINGS: AiSettings = {
   provider: 'anthropic',
   providers: Object.fromEntries(
@@ -781,6 +743,25 @@ const TABLE_MENU_COMMANDS: Partial<Record<MenuCommand, (widthPx: number) => Comm
  *  password never saves or discards the document that is still open. */
 function replacesDocument(result: NonNullable<OpenDocxResult>): boolean {
   return !('needsPassword' in result)
+}
+
+const warnedPlanClasses = new Set<string>()
+
+/** I9 shadow: plan vs scrape for the measured blocks; disagreements are reported, never applied */
+function shadowPlanDiff(
+  planOf: PlanOf,
+  blocks: BlockBox[],
+  metaOf: (docxIndex: number) => BlockMeta | undefined,
+): PlanDiff[] {
+  const diffs = comparePlanToBlocks(blocks, planOf, metaOf)
+  if (import.meta.env.DEV) {
+    for (const d of diffs) {
+      if (warnedPlanClasses.has(d.cls)) continue
+      warnedPlanClasses.add(d.cls)
+      console.warn(`[pagination] plan/scrape disagree on ${d.cls}`, d)
+    }
+  }
+  return diffs
 }
 
 export function App() {
@@ -957,8 +938,12 @@ export function App() {
   }
   const [showMarks, setShowMarks] = useState(false)
   const [showRuler, setShowRuler] = useState(false)
-  const [showNav, setShowNav] = useState(() => localStorage.getItem('aidocs.showNav') === '1')
-  const closeNav = useCallback(() => setShowNav(false), [])
+  const [leftPane, setLeftPane] = useState<LeftPane>(loadLeftPane)
+  const showNav = leftPane === 'nav'
+  const setShowNav = useCallback((on: boolean) => setLeftPane(on ? 'nav' : null), [])
+  const closeNav = useCallback(() => setLeftPane(null), [])
+  // Review → Reviewing Pane: the outermost right-edge panel (Word's vertical pane)
+  const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
@@ -972,6 +957,14 @@ export function App() {
   const [findFocusGoTo, setFindFocusGoTo] = useState(0)
   // last pagination pass, read by the Go To tab (page / section / line targets)
   const pageLayoutRef = useRef<PageLayout | null>(null)
+  /** runs the debounced pagination pass now (set by the scheduler effect) */
+  const flushPaginationRef = useRef<() => void>(() => {})
+  /** the current pass's layout, after any pending pass: readers that need
+   *  the document as it stands (TOC numbers, the preview snapshot) */
+  const layoutNow = useCallback((): PageLayout | null => {
+    flushPaginationRef.current()
+    return pageLayoutRef.current
+  }, [])
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showAutoCorrect, setShowAutoCorrect] = useState(false)
   const [showPreferences, setShowPreferences] = useState(false)
@@ -979,9 +972,24 @@ export function App() {
     stepFontSize?: (dir: 1 | -1) => void
     nudgeFontSize?: (dir: 1 | -1) => void
   }>({})
-  const [showComments, setShowComments] = useState(false)
+  // Show Comments (Word's top-right toggle): Contextual cards beside the page or the List panel
+  const [showComments, setShowComments] = useState(true)
+  const [commentsMode, setCommentsModeState] = useState<CommentsMode>(loadCommentsMode)
+  const setCommentsMode = useCallback((mode: CommentsMode) => {
+    saveCommentsMode(mode)
+    setCommentsModeState(mode)
+    setShowComments(true)
+  }, [])
+  // thread popped up from its anchor icon while Show Comments is off
+  const [commentPopup, setCommentPopup] = useState<string | null>(null)
+  // Contextual mode opens the panel for a composer or a focus the margin cannot host; it stays until closed
+  const [commentPanelOpen, setCommentPanelOpen] = useState(false)
   const [showStylesPane, setShowStylesPane] = useState(false)
-  const [commentFocus, setCommentFocus] = useState<{ id: string; nonce: number } | null>(null)
+  const [commentFocus, setCommentFocus] = useState<{
+    id: string
+    nonce: number
+    reply?: boolean
+  } | null>(null)
   /** Style definitions pending write-back (key = styleId), saved via SaveOptions.styleUpserts */
   const [defaultFonts, setDefaultFonts] = useState<DefaultFonts>()
   const fontSettingsVersionRef = useRef(0)
@@ -1045,17 +1053,55 @@ export function App() {
   const [themeColorsDirty, setThemeColorsDirty] = useState(false)
   const [commentComposing, setCommentComposing] = useState(false)
   const [trackChanges, setTrackChanges] = useState(false)
+  // only the document toggle (ribbon / status bar / shortcut) maps to w:trackRevisions
+  const [trackRevisionsDirty, setTrackRevisionsDirty] = useState(false)
+  const setTrackChangesByUser = useCallback((on: boolean) => {
+    setTrackChanges(on)
+    setTrackRevisionsDirty(true)
+  }, [])
+  const toggleTrackChangesByUser = useCallback(() => {
+    setTrackChanges((v) => !v)
+    setTrackRevisionsDirty(true)
+  }, [])
   const [revisionDisplay, setRevisionDisplay] = useState<RevisionDisplayMode>('all')
   /** the user picked a Markup view this session: opening another document keeps it */
-  const markupPickedRef = useRef(false)
   const revisionDisplayRef = useRef(revisionDisplay)
   revisionDisplayRef.current = revisionDisplay
+  const [revisionFilter, setRevisionFilter] = useState<RevisionFilter>(DEFAULT_REVISION_FILTER)
+  const revisionFilterRef = useRef(revisionFilter)
+  revisionFilterRef.current = revisionFilter
+  /** Show Markup → Balloons; an application preference like Word's */
+  const [balloonMode, setBalloonMode] = useState<BalloonMode>(loadBalloonMode)
+  useEffect(() => {
+    localStorage.setItem(BALLOON_MODE_KEY, balloonMode)
+  }, [balloonMode])
+  /** Track Changes Options (Word's Advanced Options): screen markup styling + recorder switches */
+  const [tcOptions, setTcOptions] = useState<TrackChangesOptions>(loadTrackChangesOptions)
+  const [showTcOptions, setShowTcOptions] = useState(false)
+  const tcOptionsStyle = useMemo(() => trackChangesOptionsCss(tcOptions), [tcOptions])
   // the original view restores old formatting via decorations: sync the mode and trigger one repaint
+  const balloonsActive = markupPrintsIn(revisionDisplay, viewMode)
+  const commentCardsPossible =
+    balloonsActive && balloonMode !== 'inline' && revisionDisplay !== 'simple'
+  const commentsUi = commentsView(
+    showComments,
+    commentsMode,
+    commentCardsPossible,
+    commentPanelOpen,
+  )
+  useEffect(() => {
+    if (commentComposing) setCommentPanelOpen(true)
+  }, [commentComposing])
+  useEffect(() => {
+    if (commentFocus && !commentCardsPossible) setCommentPanelOpen(true)
+  }, [commentFocus, commentCardsPossible])
   useEffect(() => {
     revisionDisplayState.mode = revisionDisplay
+    revisionDisplayState.balloons = balloonMode
+    revisionDisplayState.balloonsActive = balloonsActive
     if (editor) editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revisionDisplay])
+  }, [revisionDisplay, balloonMode, balloonsActive])
   // section breaks on tracked-deleted paragraph marks don't break in Word's
   // markup views (only the Original view restores them)
   const delSectBreaks = useMemo(
@@ -1121,7 +1167,7 @@ export function App() {
     // measurement views that read computed alignment/spacing re-run once the
     // stylesheet is in the DOM (setContent measured against the previous one)
     document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
-  }, [docCss, liveLineFactor, themeFonts, themeColors])
+  }, [docCss, liveLineFactor, themeFonts, themeColors, revisionDisplay])
   const [stats, setStats] = useState<DocStats | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [fieldEdit, setFieldEdit] = useState<FieldRange | null>(null)
@@ -1447,6 +1493,15 @@ export function App() {
       forceRender()
     },
   })
+  useEffect(() => {
+    saveTrackChangesOptions(tcOptions)
+    trackChangesOptionsState.current = tcOptions
+    if (!editor) return
+    editor.storage.trackChanges.trackMoves = tcOptions.trackMoves
+    editor.storage.trackChanges.trackFormatting = tcOptions.trackFormatting
+    editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tcOptions, editor])
 
   // every header/footer consumer (strips, gaps, heights, preview, AI, save) reads
   // through one resolver, so pending edits, Link to Previous and inheritance agree
@@ -1526,6 +1581,122 @@ export function App() {
     setSectionHfEdits((m) => ({ ...m, [target.key]: next }))
     return true
   }
+  /** pending changes outside the body, refreshed with the revision badge (see storyRevisions memo) */
+  const storyRevisionsRef = useRef<StoryRevision[]>([])
+  const hfStateRef = useRef(hfState)
+  hfStateRef.current = hfState
+  // live mirrors: an AI turn applies several decisions between renders
+  const footnotesLiveRef = useRef(footnotes)
+  footnotesLiveRef.current = footnotes
+  const endnotesLiveRef = useRef(endnotes)
+  endnotesLiveRef.current = endnotes
+  /** accept / reject changes in notes, header / footer parts and textboxes; the count applied */
+  const applyStoryRevisions = (
+    targets: StoryRevision[],
+    mode: 'accept' | 'reject',
+    all = false,
+  ): number => {
+    const live = storyRevisionsRef.current
+    const picked = targets
+      .map((t) => liveStoryRevision(live, t))
+      .filter((r): r is StoryRevision => !!r)
+    if (picked.length === 0 && !all) return 0
+    const locs = (kind: StoryRevision['story']['kind']) =>
+      picked.filter((r) => r.story.kind === kind).map((r) => r.story)
+    const nextNotes = { footnote: footnotesLiveRef.current, endnote: endnotesLiveRef.current }
+    for (const kind of ['footnote', 'endnote'] as const) {
+      const mine = locs(kind)
+      if (mine.length === 0 && !all) continue
+      // Accept All also clears what the models do not show (paragraph marks): every entry replays
+      nextNotes[kind] = all
+        ? resolveNotes(nextNotes[kind], mine, mode, true).map((n) =>
+            n.revisionsResolved?.some((r) => !r.filter)
+              ? n
+              : { ...n, revisionsResolved: [...(n.revisionsResolved ?? []), { mode }] },
+          )
+        : resolveNotes(nextNotes[kind], mine, mode)
+      ;(kind === 'footnote' ? setFootnotes : setEndnotes)(nextNotes[kind])
+      ;(kind === 'footnote' ? footnotesLiveRef : endnotesLiveRef).current = nextNotes[kind]
+      setNotesDirty(true)
+    }
+    let state = hfStateRef.current
+    const slots = new Map<string, StoryRevision[]>()
+    for (const r of picked) {
+      if (!r.story.hf) continue
+      const key = `${r.story.hf.section}:${r.story.hf.kind}:${r.story.hf.variant}`
+      slots.set(key, [...(slots.get(key) ?? []), r])
+    }
+    const hfTargets = all
+      ? ownHfSlots(state).map((slot) => ({
+          ...slot,
+          revs: slots.get(`${slot.si}:${slot.kind}:${slot.variant}`) ?? [],
+        }))
+      : [...slots.values()].map((revs) => {
+          const { section: si, kind, variant } = revs[0].story.hf!
+          return { si, kind, variant, value: ownHf(state, si, kind, variant)?.value, revs }
+        })
+    for (const slot of hfTargets) {
+      const { si, kind, variant, revs } = slot
+      let value = slot.value
+      if (!value) continue
+      let pending = Object.values(state.edits).includes(value)
+      // a strip editor open on this part would commit its pre-resolution runs on
+      // exit: drain what was typed into the value first, then drop the editor
+      const open = hfEditingRef.current
+      const handle = hfEditorRef.current
+      if (handle && open && open.kind === kind && open.owner === si) {
+        const typed = handle.changed()
+        handle.discard()
+        if (typed) {
+          value = typed
+          pending = true
+        }
+      }
+      const next = resolveHfValue(
+        value,
+        revs.map((r) => r.story),
+        mode,
+        pending,
+        all,
+      )
+      const target = hfCommitTarget(state, si, kind, variant)
+      if (!target) continue
+      commitHfAt(si, kind, variant, next)
+      state = { ...state, edits: { ...state.edits, [target.key]: next } }
+      hfStateRef.current = state
+    }
+    if (editor) {
+      const tr = editor.state.tr.setMeta(TRACK_IGNORE, true)
+      const byPos = new Map<number, StoryRevision[]>()
+      for (const r of picked) {
+        if (r.story.textbox)
+          byPos.set(r.story.textbox.pos, [...(byPos.get(r.story.textbox.pos) ?? []), r])
+      }
+      for (const [pos, revs] of byPos) {
+        const node = tr.doc.nodeAt(pos)
+        const boxes = node?.attrs?.textboxes as TextboxDisplay[] | null | undefined
+        if (!node || !boxes) continue
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          textboxes: resolveTextboxes(
+            boxes,
+            revs.map((r) => r.story),
+            mode,
+          ),
+        })
+      }
+      if (tr.docChanged) editor.view.dispatch(tr)
+      // the list a follow-up in the same turn reads must already show the outcome
+      storyRevisionsRef.current = [
+        ...collectHfRevisions(state),
+        ...collectTextboxRevisions(editor.state.doc),
+        ...collectNoteRevisions(editor.state.doc, 'footnote', nextNotes.footnote),
+        ...collectNoteRevisions(editor.state.doc, 'endnote', nextNotes.endnote),
+      ]
+    }
+    dirtyRef.current = true
+    return picked.length
+  }
   const setHfLink = (si: number, kind: 'header' | 'footer', variant: HfView, on: boolean) => {
     if (
       on &&
@@ -1578,8 +1749,8 @@ export function App() {
   }, [showAi])
 
   useEffect(() => {
-    localStorage.setItem('aidocs.showNav', showNav ? '1' : '0')
-  }, [showNav])
+    saveLeftPane(leftPane)
+  }, [leftPane])
 
   const spellcheckWasOn = useRef(spellcheckActive)
   const respellKickBusy = useRef(false)
@@ -2077,6 +2248,8 @@ export function App() {
     setComments,
     setCommentsDirty,
     setShowComments,
+    setCommentPanelOpen,
+    setCommentPopup,
     setCommentComposing,
     watermark,
     watermarkDirty,
@@ -2113,7 +2286,10 @@ export function App() {
     setThemeFontsDirty,
     setThemeColors,
     setThemeColorsDirty,
+    trackChanges,
     setTrackChanges,
+    trackRevisionsDirty,
+    setTrackRevisionsDirty,
     protection,
     protectionDirty,
     setProtection,
@@ -2130,8 +2306,6 @@ export function App() {
       setModifyUnlocked(!wp?.hash)
       setModifyPwdPrompt(wp?.hash ? { value: '', errorKey: '' } : null)
     },
-    onRevisionsLoaded: (has) =>
-      setRevisionDisplay((prev) => initialMarkupMode(prev, markupPickedRef.current, has)),
     setCompareResult,
     promptDocxPassword: (info) =>
       setDocPwdPrompt({ path: info.path, name: info.name, value: '', errorKey: '', busy: false }),
@@ -2835,6 +3009,9 @@ export function App() {
     ;(window as unknown as Record<string, unknown>).__exportImages = exportImages
     ;(window as unknown as Record<string, unknown>).__openPagePreview = () =>
       setShowPagePreview(true)
+    ;(window as unknown as Record<string, unknown>).__setRevisionDisplay = (
+      mode: RevisionDisplayMode,
+    ) => setRevisionDisplay(mode)
   }, [exportPdf, exportImages])
 
   // Headless export mode (--headless-export): this renderer lives in a hidden
@@ -2951,6 +3128,14 @@ export function App() {
     setInkAnnotations,
     setInksDirty,
     setCompareResult,
+    get revisionFilter() {
+      return revisionFilterRef.current
+    },
+    showRevision: (target) => showRevision(target),
+    storyRevisions: () => storyRevisionsRef.current,
+    applyStoryRevisions: (targets, mode, all) => applyStoryRevisions(targets, mode, all),
+    currentStoryRevision: () =>
+      storyRevisionsRef.current.find((r) => r.story.id === lastStoryRef.current) ?? null,
   }
 
   const insertNote = useCallback((kind: 'footnote' | 'endnote') => {
@@ -3025,10 +3210,86 @@ export function App() {
   )
   const deleteComment = useCallback((id: string) => deleteCommentImpl(reviewCtxRef.current, id), [])
   const handleRevision = useCallback(
-    (action: 'accept' | 'reject', all: boolean) =>
-      handleRevisionImpl(reviewCtxRef.current, action, all),
+    (action: 'accept' | 'reject', scope: RevisionScope) =>
+      handleRevisionImpl(reviewCtxRef.current, action, scope),
     [],
   )
+  const handleRevisionRange = useCallback(
+    (action: 'accept' | 'reject', target: RevisionRange) =>
+      handleRevisionRangeImpl(reviewCtxRef.current, action, target),
+    [],
+  )
+  // Word: navigating onto a change hidden by the current view shows All
+  // Markup; the view switch must commit before the scroll can find the text
+  const showRevision = useCallback(
+    (target: RevisionRange) => {
+      if (!editor) return
+      const show = target.story
+        ? () => showStoryRevisionRef.current(target as StoryRevision)
+        : () => {
+            setActiveStoryId(null)
+            selectRevision(editor, target)
+          }
+      if (revisionHiddenIn(revisionDisplayRef.current, target)) {
+        setRevisionDisplay('all')
+        window.setTimeout(show, 0)
+      } else show()
+    },
+    [editor],
+  )
+  /** the change outside the body Next / Previous last opened: the pane highlights it, Accept Next takes it */
+  const [activeStoryId, setActiveStoryIdState] = useState<string | null>(null)
+  const lastStoryRef = useRef<string | null>(null)
+  const setActiveStoryId = (id: string | null) => {
+    lastStoryRef.current = id
+    setActiveStoryIdState(id)
+  }
+  // Word opens the story the change lives in: the note's reference is selected and
+  // its entry flashed, the header / footer strip opens for editing, a textbox's
+  // anchor paragraph is selected (the box is drawn beside it)
+  const showStoryRevision = (target: StoryRevision) => {
+    if (!editor) return
+    const { story } = target
+    if (story.hf) {
+      const { section: si, kind } = story.hf
+      // the edge areas are the first section's first-page header and the last
+      // section's last-page footer; any other strip sits in a page gap
+      const last = Math.max(0, hfStateRef.current.sections.length - 1)
+      const edge = kind === 'header' ? si === 0 : si === last
+      const strip = edge
+        ? null
+        : document.querySelector<HTMLElement>(
+            `.page-gap-hf.page-hf-${kind}[data-hf-section="${si}"]`,
+          )
+      if (strip) startGapHfEditRef.current(strip)
+      else if (edge) openHfEditorRef.current(kind)
+      setActiveStoryId(story.id)
+      return
+    }
+    if (target.from >= 0 && target.from <= editor.state.doc.content.size) {
+      const tr = editor.state.tr
+      tr.setSelection(TextSelection.near(tr.doc.resolve(target.from), 1))
+      tr.scrollIntoView()
+      tr.setMeta(TRACK_IGNORE, true)
+      editor.view.dispatch(tr)
+      editor.view.focus()
+    }
+    // after the dispatch: the selection listener clears the cursor on body moves
+    setActiveStoryId(story.id)
+    if (story.noteId) {
+      window.setTimeout(() => {
+        const row = document.querySelector<HTMLElement>(
+          `.page-gap-note[data-note-id="${CSS.escape(story.noteId!)}"]`,
+        )
+        if (!row) return
+        row.scrollIntoView({ block: 'nearest' })
+        row.classList.add('rev-target')
+        window.setTimeout(() => row.classList.remove('rev-target'), 1500)
+      }, 50)
+    }
+  }
+  const showStoryRevisionRef = useRef(showStoryRevision)
+  showStoryRevisionRef.current = showStoryRevision
   const addInk = useCallback(
     (annotation: InkAnnotation) => addInkImpl(reviewCtxRef.current, annotation),
     [],
@@ -3037,16 +3298,39 @@ export function App() {
   const clearInks = useCallback(() => clearInksImpl(reviewCtxRef.current), [])
   const compareWithFile = useCallback(() => compareWithFileImpl(reviewCtxRef.current), [])
 
+  // the ribbon's revision badge walks every block: paced with the word count below
+  const [revisionRanges, setRevisionRanges] = useState<RevisionRange[]>([])
   // open comment threads add the markup column right of the paper: width-fit
   // zoom must count it or the canvas overflows the pane
   // (Simple Markup collapses threads to glyphs inside the page margin: no column)
-  const markupExtra = useMemo(
-    () =>
-      revisionDisplay !== 'simple' && comments.some((c) => !c.parentId && !c.done)
-        ? MARKUP_AREA_W
-        : 0,
-    [comments, revisionDisplay],
-  )
+  // body revision balloons keep the column even while the Comments panel hosts the threads
+  const markupExtra = useMemo(() => {
+    if (revisionDisplay === 'simple') return 0
+    const commentCards = commentsUi.cards && comments.some((c) => !c.parentId && !c.done)
+    const revKinds = balloonsActive ? balloonRevKinds(balloonMode) : null
+    const revBalloons =
+      !!revKinds &&
+      revisionRanges.some((r) => {
+        const k = balloonKindOf(r.kind)
+        return k != null && revKinds.has(k)
+      })
+    return (revBalloons ? tcOptions.balloonWidth : 0) + (commentCards ? COMMENT_AREA_W : 0)
+  }, [
+    comments,
+    revisionRanges,
+    commentsUi.cards,
+    revisionDisplay,
+    balloonMode,
+    balloonsActive,
+    tcOptions.balloonWidth,
+  ])
+  // inline comment tags ([initials N]) read the thread list through the decoration state
+  useEffect(() => {
+    setInlineComments(comments)
+    if (editor && balloonMode === 'inline')
+      editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comments])
 
   /** Uncapped width-fit ratio (%) from the scroller's measured size */
   const rawFitWidth = useCallback(() => {
@@ -3209,19 +3493,18 @@ export function App() {
       kind: NoteKind,
     ): { height: number; lineHeightPx: number; fontSizePt: number; fontFamily?: string } => {
       const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
-      const key = `${kind}|${fn?.id ?? ''}|${no}|${Math.round(contentW)}|${fn?.styleId ?? ''}|${fn?.text ?? ''}`
+      const key = `${kind}|${fn?.id ?? ''}|${no}|${Math.round(contentW)}|${fn?.styleId ?? ''}|${fn?.text ?? ''}|${revisionDisplay}`
       let v = cache.get(key)
       if (!v) {
         const style = noteStyleOf(fn)
-        const lineHeightPx = noteLineHeightPx(sec.docGrid, style)
-        const fontSizePt = style.sizeHalfPoints ? style.sizeHalfPoints / 2 : 10
-        const fontFamily = style.fontFamily ? cssFontFamily(style.fontFamily) : undefined
+        const { lineHeightPx, fontSizePt, fontFamily } = noteRowMetrics(style, sec.docGrid)
+        const richParas = noteRunsInView(revisionDisplay, fn?.richParas)
         const height =
           measureNoteHeightDom(
             {
               no,
               text: fn?.text ?? '',
-              ...(fn?.richParas ? { richParas: fn.richParas } : {}),
+              ...(richParas ? { richParas } : {}),
               ...(fn?.noRefMark ? { noRefMark: true as const } : {}),
             },
             kind,
@@ -3230,14 +3513,7 @@ export function App() {
             fontSizePt,
             fontFamily,
           ) ??
-          estimateFootnoteHeight(
-            fn?.text ?? '',
-            contentW,
-            sec.docGrid,
-            undefined,
-            style,
-            fn?.richParas,
-          )
+          estimateFootnoteHeight(fn?.text ?? '', contentW, sec.docGrid, undefined, style, richParas)
         v = { height, lineHeightPx, fontSizePt, ...(fontFamily ? { fontFamily } : {}) }
         cache.set(key, v)
       }
@@ -3246,7 +3522,7 @@ export function App() {
     // note-list deps only reset the cache (keys carry the note text, but
     // formatting-only edits keep it — a fresh map re-measures them)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [footnotes, endnotes, noteStyleOf])
+  }, [footnotes, endnotes, noteStyleOf, revisionDisplay])
 
   // the numbers the body shows right now: inserting or deleting a note renumbers
   // its in-text marks in document order, and the note areas must say the same
@@ -3327,103 +3603,62 @@ export function App() {
   const singleHfPx = useMemo((): SectionHfHeights => {
     if (!section) return { headerPx: 0, footerPx: 0 }
     const contentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
-    const h = hfLayoutResolved('header', hfResolveAt(0, 'header', 'default'), hfPhantom)
-    const f = hfLayoutResolved('footer', hfResolveAt(0, 'footer', 'default'), hfPhantom)
-    const hFirst = hfLayoutResolved('header', hfResolveAt(0, 'header', 'first'), hfPhantom)
-    const fFirst = hfLayoutResolved('footer', hfResolveAt(0, 'footer', 'first'), hfPhantom)
-    return {
-      headerPx: hfReservedHeightPx('header', h.value, contentW, h.images, hfHeaderGeom(section)),
-      footerPx: hfReservedHeightPx('footer', f.value, contentW, f.images),
-      // live titlePg: the first page draws the live first-page variant (pageHfOf),
-      // so its reserved heights track the live state, not the parsed parts
-      ...(titlePg
-        ? {
-            firstHeaderPx: hfReservedHeightPx(
-              'header',
-              hFirst.value,
-              contentW,
-              hFirst.images,
-              hfHeaderGeom(section),
-            ),
-            firstFooterPx: hfReservedHeightPx('footer', fFirst.value, contentW, fFirst.images),
-          }
-        : {}),
-    }
+    // live titlePg: the first page draws the live first-page variant (pageHfOf),
+    // so its reserved heights track the live state, not the parsed parts
+    return hfVariantHeightsPx(
+      (kind, variant) => hfLayoutResolved(kind, hfResolveAt(0, kind, variant), hfPhantom),
+      () => contentW,
+      hfStripGeom(section),
+      titlePg,
+      evenOddHf,
+    )
     // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section, hfResolveAt, hfPhantom, titlePg, hfMeasureEpoch])
+  }, [section, hfResolveAt, hfPhantom, titlePg, evenOddHf, hfMeasureEpoch])
   const effTopSingle = section ? effectiveTopPx(section, singleHfPx.headerPx) : 0
   const effBottomSingle = section ? effectiveBottomPx(section, singleHfPx.footerPx) : 0
   const canvasSection = sections[0]?.settings ?? section
   const canvasBox = canvasSection ? sectionPageBox(canvasSection) : null
-  // the canvas's first page draws the titlePg first-page header: its body
+  // the canvas's first page draws the variant pageHfOf picks for it (titlePg
+  // first page, else the even variant when its number is even): its body
   // starts under that strip, as the preview slicer already assumes
-  const canvasTop = section
-    ? canvasContentTopPx(sections, section, singleHfPx.firstHeaderPx ?? singleHfPx.headerPx)
-    : 0
+  const firstPageHeaderPx = useMemo(
+    (): number =>
+      hfVariantReservedPx(
+        singleHfPx,
+        hfVariantOf(titlePg, true, evenOddHf, sections[0]?.pageNumberStart ?? 1),
+      ).headerPx,
+    [singleHfPx, titlePg, evenOddHf, sections],
+  )
+  const canvasTop = section ? canvasContentTopPx(sections, section, firstPageHeaderPx) : 0
+  // trailing paper padding belongs to the last page, which draws the default footer
   const canvasBottom = canvasSection ? effectiveBottomPx(canvasSection, singleHfPx.footerPx) : 0
 
-  // titlePg: the document's first page renders the first-page header/footer
-  // variant (pageHfOf), so single-section slicing gives it its own capacity
-  const singleFirstContentH = useMemo(() => {
-    if (!section || singleHfPx.firstHeaderPx === undefined) return undefined
-    return (
-      twipsToPx(section.pageHeight) -
-      effectiveTopPx(section, singleHfPx.firstHeaderPx) -
-      effectiveBottomPx(section, singleHfPx.firstFooterPx ?? 0)
-    )
-  }, [section, singleHfPx])
+  const singleVariantGeom = useMemo(
+    () => ({
+      ...(section ? singleVariantGeomOf(section, singleHfPx) : {}),
+      ...(sections[0]?.pageNumberStart !== undefined
+        ? { pageNumberStart: sections[0].pageNumberStart }
+        : {}),
+    }),
+    [section, singleHfPx, sections],
+  )
 
-  // multi-section: estimated heights of each section's default-variant header/footer (capacity per section, variant differences ignored)
+  // multi-section: estimated heights of each section's header/footer variants (capacity per section)
   const hfHeightsOf = useCallback(
     (secs: SectionInfo[]): SectionHfHeights[] => {
       // pending section breaks make `secs` differ from the saved list: resolve against them
       const liveState: HfSectionState = { ...hfState, sections: secs }
-      return secs.map((s, i) => {
-        const set = s.settings
-        const contentW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
-        const strip = (kind: 'header' | 'footer', variant: HfView) =>
-          hfLayoutResolved(kind, resolveHf(liveState, i, kind, variant), hfPhantom)
-        const pick = (kind: 'header' | 'footer') => strip(kind, 'default').value
-        const imagesOf = (kind: 'header' | 'footer') => strip(kind, 'default').images
-        // titlePg first-page variant: the section's first page renders these
-        // strips (pageHfOf), so its slice capacity must match. A lone section
-        // draws the live first-page state, so its capacity tracks the toggle too.
-        const firstOn = secs.length === 1 ? titlePg : s.titlePg
-        const firstPart = (kind: 'header' | 'footer') => strip(kind, 'first').value
-        const firstImagesOf = (kind: 'header' | 'footer') => strip(kind, 'first').images
-        return {
-          headerPx: hfReservedHeightPx(
-            'header',
-            pick('header'),
-            contentW,
-            imagesOf('header'),
-            hfHeaderGeom(set),
-          ),
-          footerPx: hfReservedHeightPx('footer', pick('footer'), contentW, imagesOf('footer')),
-          ...(firstOn
-            ? {
-                firstHeaderPx: hfReservedHeightPx(
-                  'header',
-                  firstPart('header'),
-                  contentW,
-                  firstImagesOf('header'),
-                  hfHeaderGeom(set),
-                ),
-                firstFooterPx: hfReservedHeightPx(
-                  'footer',
-                  firstPart('footer'),
-                  contentW,
-                  firstImagesOf('footer'),
-                ),
-              }
-            : {}),
-        }
-      })
+      return sectionHfHeights(
+        secs,
+        (i, kind, variant) =>
+          hfLayoutResolved(kind, resolveHf(liveState, i, kind, variant), hfPhantom),
+        { titlePg, evenOddHf },
+      )
     },
     // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hfState, hfPhantom, titlePg, hfMeasureEpoch],
+    [hfState, hfPhantom, titlePg, evenOddHf, hfMeasureEpoch],
   )
 
   // paragraphs without w:pStyle take the default paragraph style's constraints (widowControl off in Normal)
@@ -3487,6 +3722,20 @@ export function App() {
     },
     [doc, blockByDocxIndex, defaultParaStyle, footnoteBandsOf],
   )
+  // shadow BlockPlan inputs (I9): the model-side twin of the measureBlocks scrape
+  const planProps = useMemo(
+    () => (doc ? planPropsOf(doc.parsed, sections, revisionDisplay === 'original') : null),
+    [doc, sections, revisionDisplay],
+  )
+  // the BlockPlan of the current editor state keyed by rendered element; built
+  // per measure so a transaction between passes cannot leave it stale
+  const blockPlans = useCallback(
+    (): PlanOf | undefined =>
+      editor && planProps
+        ? planByElement(editor.state.doc, editor.view, planProps, floatShiftsOf(editor.state))
+        : undefined,
+    [editor, planProps],
+  )
 
   // per-page footnote collection: the page of the referencing block → that page's footnote entries (number/text/estimated height)
   const pageFootnotesOf = useCallback(
@@ -3502,7 +3751,7 @@ export function App() {
           .filter((r) => r.noteRef?.kind === 'footnote')
           .map((r) => r.noteRef!.id)
         if (ids.length === 0) continue
-        const blockPage = pageAt(slices, b.top + 0.5) - 1
+        const blockPage = pageOfY(slices, b.top)
         const sec = sections.find((s) => b.docxIndex! <= s.lastBlockIndex)?.settings ?? section
         for (let ri = 0; ri < ids.length; ri++) {
           const id = ids[ri]
@@ -3513,14 +3762,15 @@ export function App() {
           // resolved into noteBands (run order) by applyBlockMeta
           const band = b.noteBands?.length === ids.length ? b.noteBands[ri] : undefined
           const page = band
-            ? pageAt(slices, b.top + (b.spaceBeforePx ?? 0) + band.offset + 0.5) - 1
+            ? pageOfY(slices, b.top + (b.spaceBeforePx ?? 0) + band.offset)
             : blockPage
           const info = noteRenderInfoOf(fn, noOf.get(id) ?? 0, sec, 'footnote')
+          const richParas = noteRunsInView(revisionDisplay, fn.richParas)
           out[page]?.push({
             no: noOf.get(id) ?? 0,
             id,
             text: fn.text,
-            ...(fn.richParas ? { richParas: fn.richParas } : {}),
+            ...(richParas ? { richParas } : {}),
             ...(fn.noRefMark ? { noRefMark: true as const } : {}),
             height: info.height,
             lineHeightPx: info.lineHeightPx,
@@ -3531,7 +3781,16 @@ export function App() {
       }
       return out
     },
-    [doc, blockByDocxIndex, footnotes, sections, section, noteRenderInfoOf, noteNo],
+    [
+      doc,
+      blockByDocxIndex,
+      footnotes,
+      sections,
+      section,
+      noteRenderInfoOf,
+      noteNo,
+      revisionDisplay,
+    ],
   )
 
   // endnote-area entries (placed together at the document end, shared by pagination preview and page slicing): height measured with the final section's content width
@@ -3541,11 +3800,12 @@ export function App() {
     return endnotes.map((n, i) => {
       const no = noteNo('endnote', n.id, i)
       const info = noteRenderInfoOf(n, no, sec, 'endnote')
+      const richParas = noteRunsInView(revisionDisplay, n.richParas)
       return {
         no,
         id: n.id,
         text: n.text,
-        ...(n.richParas ? { richParas: n.richParas } : {}),
+        ...(richParas ? { richParas } : {}),
         ...(n.noRefMark ? { noRefMark: true as const } : {}),
         height: info.height,
         lineHeightPx: info.lineHeightPx,
@@ -3553,7 +3813,7 @@ export function App() {
         ...(info.fontFamily ? { fontFamily: info.fontFamily } : {}),
       }
     })
-  }, [endnotes, sections, section, noteRenderInfoOf, noteNo])
+  }, [endnotes, sections, section, noteRenderInfoOf, noteNo, revisionDisplay])
 
   // canvas column mode:
   //  - 'uniform': every section shares one equal-width multi-column spec (and is LTR) —
@@ -3634,78 +3894,24 @@ export function App() {
     [colMode, viewMode],
   )
 
-  // real TOC page-number backfill: compute each heading's (docHeading) page from the current real page slicing.
-  // Returns page numbers matching docHeadings in document order 1:1; returns null when not computable (page numbers left blank).
+  // real TOC page-number backfill: each heading's (docHeading) page from the
+  // current pass's PageCut list. Returns page numbers matching docHeadings in
+  // document order 1:1; null when not computable (page numbers left blank).
   const headingPages = useCallback((): number[] | null => {
     if (!editor || !section) return null
-    const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
-    if (!pm) return null
-    const factor = zoom / 100
-    const { mBlocks, slices, secs } = measureSingleFlow(pm, () => {
-      const origin = pm.getBoundingClientRect().top + canvasTop * factor
-      const { blocks, totalHeight, sectBreaks } = measureBlocks(pm, origin, factor)
-      const live = liveSections(sections, blocks, sectBreaks, delSectBreaks)
-      let s: PageSlice[]
-      // same row-split mode as the canvas pass, or TOC page numbers drift
-      const splitOut: SliceOutputs = { rowSplits: [] }
-      if (live.length > 0) {
-        assignSections(blocks, live)
-        s = sliceWithLineSplit(
-          blocks,
-          colGeomsFor(sectionGeoms(live, hfHeightsOf(live), evenOddHf)),
-          totalHeight,
-          factor,
-          blockMetaOf,
-          splitOut,
-        )
-      } else {
-        const contentH = twipsToPx(section.pageHeight) - effTopSingle - effBottomSingle
-        s = sliceWithLineSplit(
-          blocks,
-          [
-            {
-              contentHeight: contentH,
-              forceBreak: false,
-              ...(singleFirstContentH !== undefined
-                ? { firstContentHeight: singleFirstContentH }
-                : {}),
-            },
-          ],
-          totalHeight,
-          factor,
-          blockMetaOf,
-          splitOut,
-        )
-      }
-      return { mBlocks: blocks, slices: s, secs: live }
-    })
-    // same page-number algorithm as the footer path (w:pgNumType start offsets apply to single-section docs too)
-    const nums = secs.length > 0 ? pageNumbers(slices, secs) : slices.map((_, i) => i + 1)
-    const byEl = new Map(mBlocks.filter((b) => b.el).map((b) => [b.el as HTMLElement, b.top]))
-    const pages: number[] = []
-    for (const h of collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles)) {
-      const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
-      const top = dom ? byEl.get(dom) : undefined
-      const idx = top === undefined ? 1 : pageAt(slices, top + 1)
-      pages.push(nums[Math.min(Math.max(idx, 1), nums.length) - 1] ?? idx)
-    }
+    const layout = layoutNow()
+    if (!layout || layout.cuts.length === 0) return null
+    const { pages, misses } = headingPagesOf(
+      layout.blocks,
+      layout.cuts,
+      collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles).map(
+        (h) => editor.view.nodeDOM(h.pos) as HTMLElement | null,
+      ),
+    )
+    const dbg = (window as unknown as { __pageDebug?: Record<string, unknown> }).__pageDebug
+    if (dbg) dbg.headingPageMisses = ((dbg.headingPageMisses as number) ?? 0) + misses
     return pages
-  }, [
-    editor,
-    section,
-    sections,
-    delSectBreaks,
-    zoom,
-    blockMetaOf,
-    canvasTop,
-    effTopSingle,
-    effBottomSingle,
-    singleFirstContentH,
-    hfHeightsOf,
-    measureSingleFlow,
-    colGeomsFor,
-    evenOddHf,
-  ])
+  }, [editor, section, layoutNow])
 
   // status-bar page number: real page slicing (same algorithm as the pagination preview). Edits remeasure with debounce; scrolling only relocates
   useEffect(() => {
@@ -3825,6 +4031,11 @@ export function App() {
     let fastPasses = 0
     let fastReject = ''
     let gapBoundaryMismatch = 0
+    // I11 shadow: PageCut facts vs what the gap builder re-derives from the DOM
+    let pageCutMismatch = 0
+    const pageCutDiag: string[] = []
+    let pageCuts: PageCut[] = []
+    let planDiff: PlanDiff[] = []
     const sameBox = (a: BlockBox, b: BlockBox) =>
       a.el === b.el &&
       Math.abs(a.top - b.top) < 0.01 &&
@@ -3895,7 +4106,7 @@ export function App() {
       }
       if (d <= 0) return reject('top')
       if (d >= blocks.length) d = blocks.length - 1
-      const dirtyPage = pageAt(lastPre, blocks[d].top + 0.5) - 1
+      const dirtyPage = pageOfY(lastPre, blocks[d].top)
       for (let p = dirtyPage - 1; p > 0; p--) {
         if (!isResumePage(lastPre, p)) continue
         const page = lastPre[p]
@@ -4002,6 +4213,7 @@ export function App() {
       if (!pm) return
       if (selfScheduled) chain.beginPass()
       else chain.reset()
+      layoutHealth.beginPass(!selfScheduled)
       selfScheduled = false
       retrigger = []
       const tStart = performance.now()
@@ -4014,7 +4226,9 @@ export function App() {
       syncAnchorBands(pm, factor, (doc?.parsed.compatibilityMode ?? 0) >= 15)
       // later blocks were read before this pass's writes landed: one more
       // pass settles the chain (FollowUpChain refuses a repeating cause)
-      const obstaclesChanged = syncWrapObstacles(pm, factor, editor.view)
+      const planOf = blockPlans()
+      const obstacleShadow = newObstacleShadow()
+      const obstaclesChanged = syncWrapObstacles(pm, factor, editor.view, planOf, obstacleShadow)
       // natural-flow measuring state: in-paragraph gap widgets force a line break
       // at the PREVIOUS pass's cut, so measuring with them in layout re-confirms
       // that cut even after decoration-only reflows (justify space-shrink) moved
@@ -4030,9 +4244,22 @@ export function App() {
       const measured = measureSingleFlow(pm, () => {
         const t0 = performance.now()
         const origin = pm.getBoundingClientRect().top + mTopPx * factor
-        const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
+        const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(
+          pm,
+          origin,
+          factor,
+          planOf,
+          true,
+          floatCarriesOf(editor.state),
+        )
         if (hasVertical)
           for (const b of blocks) if (b.el && !b.floated) b.inlineExtraPx = blockInlineExtraPx(b.el)
+        planDiff = planOf
+          ? [
+              ...shadowPlanDiff(planOf, blocks, blockMetaOf),
+              ...obstaclePlanDiffs(obstacleShadow.diffs, blocks, planOf),
+            ]
+          : []
         carriedSamples += carryStreamedSamples(blocks, lastBlocks, {
           pending: isPhasedContentPending(),
           dirty,
@@ -4081,34 +4308,31 @@ export function App() {
           floatSplits: [],
           oversizeClips: [],
         }
-        const s = secList
-          ? sliceWithLineSplit(
-              blocks,
-              colGeomsFor(sectionGeoms(secList, hfHs!, evenOddHf)),
-              flowH,
-              factor,
-              blockMetaOf,
-              sliceOut,
-              resume ?? undefined,
-            )
-          : sliceWithLineSplit(
-              blocks,
-              [
-                {
-                  contentHeight: contentH,
-                  forceBreak: false,
-                  ...(singleFirstContentH !== undefined
-                    ? { firstContentHeight: singleFirstContentH }
-                    : {}),
-                },
-              ],
-              flowH,
-              factor,
-              blockMetaOf,
-              sliceOut,
-              resume ?? undefined,
-            )
+        const geoms: SectionGeom[] = secList
+          ? colGeomsFor(sectionGeoms(secList, hfHs!, evenOddHf))
+          : [{ contentHeight: contentH, forceBreak: false, ...singleVariantGeom }]
+        const s = sliceWithLineSplit(
+          blocks,
+          geoms,
+          flowH,
+          factor,
+          blockMetaOf,
+          sliceOut,
+          resume ?? undefined,
+        )
         tSlice = performance.now() - t1
+        const cuts = buildPageCuts(blocks, s, geoms, hfHs ?? [singleHfPx], {
+          evenOddHf,
+          // a lone section follows the live Different First Page toggle (pageHfOf, hfHeightsOf)
+          titlePgOf:
+            secList && secList.length > 1
+              ? (si) => secList[Math.min(si, secList.length - 1)].titlePg
+              : () => titlePg,
+          pageNumberFmtOf: secList
+            ? (si) => secList[Math.min(si, secList.length - 1)]?.pageNumberFmt
+            : undefined,
+          floatSplits: sliceOut.floatSplits,
+        })
         lastPre = sliceOut.preParity ?? []
         lastOut = sliceOut
         lastSecSig = secSig
@@ -4119,7 +4343,10 @@ export function App() {
           secList,
           hfHs,
           s,
+          cuts,
+          geoms,
           floats,
+          rowSplits: sliceOut.rowSplits ?? [],
           rowFills: sliceOut.rowFills ?? [],
           floatVShifts: sliceOut.floatVShifts ?? [],
           floatFlows: sliceOut.floatFlows ?? [],
@@ -4137,11 +4364,21 @@ export function App() {
         floatFlows,
         floatSplits,
         oversizeClips,
+        cuts,
       } = measured
       slices = measured.s
+      pageCuts = cuts
       lastBlocks = blocks
       lastPassChildCount = editor?.state.doc.childCount ?? lastPassChildCount
-      pageLayoutRef.current = { blocks, slices, sections: secList ?? [] }
+      pageLayoutRef.current = {
+        blocks,
+        slices,
+        sections: secList ?? [],
+        cuts,
+        geoms: measured.geoms,
+        hfHeights: hfHs ?? [singleHfPx],
+        rowSplits: measured.rowSplits,
+      }
       if (mirrorMargins) locateCaretPageRef.current()
       const blockIndex = new BlockIndex(blocks)
       // document-end footer shows the last page's displayed number, not the physical count
@@ -4171,7 +4408,7 @@ export function App() {
           const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
           const top = dom ? byEl.get(dom) : undefined
           if (top === undefined) return undefined
-          const idx = Math.min(Math.max(pageAt(slices, top + 1), 1), nums.length)
+          const idx = Math.min(Math.max(pageOfY(slices, top) + 1, 1), nums.length)
           const fmt =
             secList?.[Math.min(slices[idx - 1].section, secList.length - 1)]?.pageNumberFmt
           return formatPageNumber(nums[idx - 1] ?? idx, fmt)
@@ -4207,8 +4444,6 @@ export function App() {
           // per-page header/footer for the gaps (previous page's footer + next page's
           // header), variant-selected like the pagination preview (first page / odd-even /
           // per-section references), with real page numbers for the '#' marker
-          const nums = secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1)
-          const firsts = sectionFirstPages(slices)
           const parsed = doc.parsed
           // floating shapes (watermarks) must not stack into the strip (mirrors
           // PaginationPreview); they render separately as per-page behind-text images
@@ -4229,8 +4464,8 @@ export function App() {
             floats: HfImage[]
             section: number
             variant: HfView
+            owner: number
           } => {
-            const pageNo = nums[pageIdx]
             // row-anchored logos render inside the strip (off their anchor row), not on the float layer
             const split = (imgs?: HfImage[] | null) => ({
               images: imgs?.filter((img) => !img.floating || hfImageHangsOnPara(img)),
@@ -4244,19 +4479,24 @@ export function App() {
                 ) ?? []),
               ],
             })
-            const pageSlice = slices[pageIdx]
-            const si = secList ? Math.min(pageSlice.section, secList.length - 1) : 0
-            const variant: HfView =
-              !secList || secList.length <= 1
-                ? titlePg && pageIdx === 0
-                  ? 'first'
-                  : evenOddHf && pageNo % 2 === 0
-                    ? 'even'
-                    : 'default'
-                : hfVariantOf(secList[si].titlePg, firsts[pageIdx], evenOddHf, pageNo)
+            const si = secList ? Math.min(slices[pageIdx].section, secList.length - 1) : 0
+            const variant: HfView = cuts[pageIdx].hf.variant
             const resolved = resolveLive(si, kind, variant)
-            return { value: resolved.value, ...split(resolved.images), section: si, variant }
+            return {
+              value: resolved.value,
+              ...split(resolved.images),
+              section: si,
+              variant,
+              owner: resolved.owner,
+            }
           }
+          /** reserved strip heights of the variant a page shows (capacity and gap band agree) */
+          const hfOfPage = (idx: number): { headerPx: number; footerPx: number } => cuts[idx].hf
+          /** width a strip is laid out at: the declaring section's column (hfPartWidthPx) */
+          const stripColumnW = (hf: ReturnType<typeof pageHfOf>, kind: 'header' | 'footer') =>
+            secList
+              ? { columnW: hfPartWidthPx(secList, hf.section, kind, hf.variant, hf.owner) }
+              : {}
           // Like Word there is no variant switcher: a header/footer part is edited on a
           // page that shows it. The edge areas cover page 1's header and the last page's
           // footer; a gap strip for any other (section, variant) pair is kept even while
@@ -4274,8 +4514,8 @@ export function App() {
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
-            const hfH = hfHs?.[slices[pageIdx].section] ?? singleHfPx
-            const side = pageMargins(s, nums[pageIdx], mirrorMargins)
+            const hfH = hfOfPage(pageIdx)
+            const side = pageMargins(s, cuts[pageIdx].pageNo, mirrorMargins)
             return {
               pageW: twipsToPx(s.pageWidth),
               pageH: twipsToPx(s.pageHeight),
@@ -4290,11 +4530,7 @@ export function App() {
               hostLeft: twipsToPx(s.marginLeft),
             }
           }
-          const pageNoTextOf = (pageIdx: number) =>
-            formatPageNumber(
-              nums[pageIdx],
-              secList?.[Math.min(slices[pageIdx].section, secList.length - 1)]?.pageNumberFmt,
-            )
+          const pageNoTextOf = (pageIdx: number) => cuts[pageIdx].display
           const hfSig = (v: HeaderFooter | null | undefined) =>
             v ? `${v.text}·${v.pageNumber ? 1 : 0}·${v.paras?.length ?? 0}` : ''
           // identity + placement of floating header images: widget keys must change
@@ -4347,12 +4583,12 @@ export function App() {
             pageIdx: number,
           ) =>
             mixedWidths
-              ? twipsToPx(pageMargins(set, nums[pageIdx], mirrorMargins).left)
+              ? twipsToPx(pageMargins(set, cuts[pageIdx].pageNo, mirrorMargins).left)
               : (canvasPaperW - Math.min(box.contentWidth, canvasPaperW)) / 2
           // paper x of a page's body left edge: its section's page offset plus the
           // page's own (mirrored) left margin
           const bodyLeftOf = (set: SectionSettings, pageIdx: number) =>
-            pageLeftOf(set) + twipsToPx(pageMargins(set, nums[pageIdx], mirrorMargins).left)
+            pageLeftOf(set) + twipsToPx(pageMargins(set, cuts[pageIdx].pageNo, mirrorMargins).left)
           // strip geometry baked in at creation (sizeGapHf, --hf-ml): the gap key's
           // mKey carries the NEXT section's side margins only, while the footer strip
           // is sized and inset by the PREVIOUS section — a left-margin edit on that
@@ -4376,15 +4612,6 @@ export function App() {
             // effective margins after header/footer push-down (an over-tall header pushes
             // the body down); a titlePg section's first page uses the first-page variant's
             // heights so the gap band matches the slice capacity (firstContentHeight)
-            const hfOfPage = (idx: number): { headerPx: number; footerPx: number } => {
-              const h = hfHs?.[slices[idx].section] ?? singleHfPx
-              return firsts[idx]
-                ? {
-                    headerPx: h.firstHeaderPx ?? h.headerPx,
-                    footerPx: h.firstFooterPx ?? h.footerPx,
-                  }
-                : h
-            }
             const nextHf = hfOfPage(k + 1)
             const prevHf = hfOfPage(k)
             const metrics = {
@@ -4403,25 +4630,18 @@ export function App() {
                 : {}),
             }
             // a page ended early (explicit break / section break / keepNext) leaves unused
-            // content height; pad the gap so the canvas paints the full paper height and the
-            // footer stays at the paper bottom. Uniform multi-column pages span columns ×
-            // height with the browser compressing the flow, skip; mixed-column pages use the
-            // engine's physical height and pull the gap up over the vacated stacked space.
-            const prevContentH =
-              twipsToPx(prevSec.pageHeight) -
-              effectiveTopPx(prevSec, prevHf.headerPx) -
-              metrics.marginBottom
-            const used = slices[k].end - slices[k].start + (slices[k].repeatHeader?.height ?? 0)
+            // content height (PageCut.padPx); pad the gap so the canvas paints the full paper
+            // height and the footer stays at the paper bottom. Uniform multi-column pages span
+            // columns × height with the browser compressing the flow, skip; mixed-column pages
+            // use the engine's physical height and pull the gap up over the vacated stacked space.
+            const prevCut = cuts[k]
+            const cut = cuts[k + 1]
+            const stacked = !slices[k].regions || colMode === 'mixed'
             const items = pageNotes[k] ?? []
             const fnH =
               items.length > 0 ? items.reduce((s, n) => s + n.height, 0) + FOOTNOTE_SEPARATOR_H : 0
-            const physUsed = slices[k].regions
-              ? colMode === 'mixed'
-                ? (slices[k].physHeight ?? used)
-                : null
-              : used
-            const remaining = physUsed === null ? 0 : Math.max(0, prevContentH - physUsed)
-            const pullUp = physUsed === null ? 0 : Math.max(0, used - physUsed)
+            const remaining = stacked ? prevCut.padPx : 0
+            const pullUp = stacked ? Math.max(0, prevCut.usedPx - prevCut.physUsedPx) : 0
             // used excludes the reserved footnote height (footnoteExtraPx inflates capacity
             // bookkeeping, not DOM coordinates), and the notes area already extends the gap
             // by fnH: pad covers only the rest of the shortfall
@@ -4439,7 +4659,11 @@ export function App() {
                 images: gapFooter.images,
                 pageNo: pageNoTextOf(k),
                 pageTotal: visiblePages,
-                geom: { ...hfStripGeom(prevSec), stripLeft: gapStripLeft(prevSec, box, k) },
+                geom: {
+                  ...hfStripGeom(prevSec),
+                  stripLeft: gapStripLeft(prevSec, box, k),
+                  ...stripColumnW(gapFooter, 'footer'),
+                },
               })
               Object.assign(el.dataset, {
                 hfKind: 'footer',
@@ -4459,8 +4683,6 @@ export function App() {
             }
             if (gapStripNeeded(gapHeader, edgeHeaderHf)) {
               const box = sectionPageBox(nextSec)
-              // the strip cannot start below the body top: a top margin under headerDist pins it higher
-              const headerStripTop = Math.min(box.headerDist, metrics.marginTop)
               const el = makeGapHfEl({
                 kind: 'header',
                 value: gapHeader.value ?? { text: '' },
@@ -4469,8 +4691,8 @@ export function App() {
                 pageTotal: visiblePages,
                 geom: {
                   ...hfStripGeom(nextSec),
-                  headerStripTop,
                   stripLeft: gapStripLeft(nextSec, box, k + 1),
+                  ...stripColumnW(gapHeader, 'header'),
                 },
               })
               Object.assign(el.dataset, {
@@ -4482,7 +4704,9 @@ export function App() {
                 hfTotal: String(visiblePages),
               })
               el.style.bottom = 'auto'
-              el.style.top = `calc(100% - ${metrics.marginTop - headerStripTop}px)`
+              // the strip sits at w:headerDist even under a fixed top margin above it: Word lets
+              // the body overprint the header there (probe 2026-10-30), as the first page draws it
+              el.style.top = `calc(100% + ${box.headerDist - metrics.marginTop}px)`
               sizeGapHf(el, box)
               el.style.setProperty('--hf-ml', `${bodyLeftOf(nextSec, k + 1)}px`)
               hfEls.push(el)
@@ -4528,41 +4752,38 @@ export function App() {
               notesMetrics = { ...metrics, marginBottom: metrics.marginBottom + fnH }
             }
             const markShown = () => items.forEach((n) => gapIds.add(n.id))
-            // split floating table: the boundary is one of its row cuts, so the
-            // page turn is an in-table gap of the float; the anchor paragraph
-            // below it shares that top and must not take a block gap
-            const fsplit = floatSplits.find((f) =>
-              f.cutYs.some((y) => Math.abs(y - slice.start) < 0.5),
-            )
-            const fsBlock = fsplit
-              ? blocks[blockIndex.firstAtTop(fsplit.blockTop, (bb) => !!bb.el && !!bb.floatTable)]
-              : undefined
-            const i = fsBlock ? -1 : blockIndex.firstAtTop(slice.start)
-            if (i >= 0 && blocks[i].el) {
+            // the page lead comes from the PageCut (I11); the DOM only resolves the
+            // ProseMirror position / element behind it. A lead the DOM cannot honour
+            // counts as a pageCutMismatch (and the dropped gap as a boundary mismatch)
+            const lead = cut.lead
+            const missCut = (why: string) => {
+              pageCutMismatch++
+              if (pageCutDiag.length < 20) pageCutDiag.push(`page ${k + 2}: ${why}`)
+            }
+            if (lead.kind === 'block') {
+              const el = blocks[lead.block]?.el
+              if (!el) {
+                missCut('block lead without element')
+                return
+              }
               // footnotes sit at the paper bottom (Word): shift past the padding
               if (notes && pad > 0) notes.style.top = `${5 + pad}px`
               gaps.push({
-                el: blocks[i].el!,
+                el,
                 boundaryY: slice.start,
                 metrics:
                   pad > 0
                     ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
                     : notesMetrics,
                 ...(pullUp > 0.5 ? { pullUp } : {}),
-                ...(blocks[i].breakBefore ||
-                (i > 0 && blocks[i - 1].breakAfter) ||
-                leadDropsSpaceBefore(blocks, i)
-                  ? { suppressLeadMt: true }
-                  : {}),
+                ...(cut.leadDropsSpaceBefore ? { suppressLeadMt: true } : {}),
                 ...(notes ? { notes, notesKey } : {}),
                 ...hfProps,
               })
               markShown()
               return
             }
-            // mid-paragraph page break (line-level cut point): insert an inline gap at the broken line. In-table cut points are not decorated yet
-            const b = fsBlock ?? blockIndex.containing(slice.start, (bb) => !!bb.el)
-            if (!b?.el) {
+            if (lead.kind === 'tail') {
               // deliberate trailing blank page (document ends with a page break): no
               // anchor block exists — hang the gap at the document end so the blank
               // sheet paints (min-height extension below covers its paper height)
@@ -4582,167 +4803,177 @@ export function App() {
               }
               return
             }
-            // block-relative Y of the cut (a shifted float's rows start at its --tblp-dy)
-            const cutOff =
-              slice.start - b.top - (b.spaceBeforePx ?? 0) - (fsBlock ? fsplit!.dyPx : 0)
-            if (b.el.querySelector('tr')) {
-              // in-table cut point: insert an in-table gap row (display:table-row widget)
-              // before the broken row (next page's first row). Positioning must subtract the
-              // gap's own height: a tr's DOM offset includes in-table gaps above it, so
-              // subtract them before comparing with the slice's gapless virtual coordinates
-              const gapRects = Array.from(b.el.querySelectorAll('.page-gap-inline')).map((g) =>
-                g.getBoundingClientRect(),
-              )
-              const elTop = b.el.getBoundingClientRect().top
-              let matched = false
-              let cutRow: Element | null = null
-              // the previous pass's gap rows sit exactly at their cut: matching one
-              // resolves to the table, not a row, and the boundary is silently lost
-              for (const tr of Array.from(b.el.querySelectorAll('tr')).filter(
-                (r) =>
-                  !r.closest('.doc-nested-table') &&
-                  !r.classList.contains('page-repeat-header') &&
-                  !r.classList.contains('page-gap'),
-              )) {
+            const b = blocks[lead.block]
+            if (!b?.el) {
+              missCut(`${lead.kind} lead without element`)
+              return
+            }
+            const cutOff = lead.lineOffset ?? 0
+            if (lead.kind === 'row' || lead.kind === 'cell') {
+              // the previous pass's gap rows and repeated headers are not rows of the
+              // measured table (domTableRows): index the same list
+              const realRows = outerTableRows(b.el)
+              if (lead.kind === 'row') {
+                const tr = realRows[lead.row ?? -1]
+                if (!tr) {
+                  missCut(`row ${lead.row} beyond ${realRows.length} DOM rows`)
+                  return
+                }
+                // the I11 shadow of the row sampler: the measured row top must still be
+                // where the DOM row sits (a tr's offset includes in-table gaps above it)
+                const gapRects = Array.from(b.el.querySelectorAll('.page-gap-inline')).map((g) =>
+                  g.getBoundingClientRect(),
+                )
                 const trTop = tr.getBoundingClientRect().top
                 const gapsAbove = gapRects.reduce((s, g) => (g.top <= trTop ? s + g.height : s), 0)
-                const off = (trTop - elTop - gapsAbove) / factor
-                // last real row starting at/above the cut = the row the cut falls inside
-                if (off <= cutOff + 0.5) cutRow = tr
-                if (Math.abs(off - cutOff) < 1.5) {
-                  matched = true
-                  try {
-                    const $pos = editor.view.state.doc.resolve(editor.view.posAtDOM(tr, 0))
-                    // w:tblHeader repetition: the engine reserved slice.repeatHeader.height
-                    // at the top of this page's column, so cloning the source header rows
-                    // below the gap fills exactly that space. Clones are decorations —
-                    // page-gap-inline keeps them out of the virtual coordinates.
-                    let repeatHeaderEls: HTMLElement[] | undefined
-                    if (slice.repeatHeader) {
-                      const tableEl = tr.closest('table')
-                      const srcRows = tableEl
-                        ? (Array.from(tableEl.querySelectorAll(':scope > tbody > tr')).filter(
-                            (r) =>
-                              !r.classList.contains('page-gap') &&
-                              !r.classList.contains('page-repeat-header'),
-                          ) as HTMLElement[])
-                        : []
-                      const els: HTMLElement[] = []
-                      let acc = 0
-                      for (const row of srcRows) {
-                        if (acc >= slice.repeatHeader.height - 1.5) break
-                        const clone = row.cloneNode(true) as HTMLElement
-                        clone.classList.add('page-gap-inline', 'page-repeat-header')
-                        clone.setAttribute('contenteditable', 'false')
-                        els.push(clone)
-                        acc += row.getBoundingClientRect().height / factor
-                      }
-                      if (els.length > 0) repeatHeaderEls = els
-                    }
-                    // the spanning gap cell must cover exactly the table's column
-                    // grid: a wider colSpan adds phantom columns, which collapses
-                    // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
-                    const gridCols = Math.max(
-                      1,
-                      ...Array.from(
-                        tr
-                          .closest('table')
-                          ?.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr') ?? [],
-                      )
-                        .filter(
+                const off = (trTop - b.el.getBoundingClientRect().top - gapsAbove) / factor
+                const rowTop = (b.tableRows ?? [])
+                  .slice(0, lead.row)
+                  .reduce((s, r) => s + r.height, 0)
+                if (Math.abs(off - rowTop) >= LEAD_ROW_TOL_PX)
+                  missCut(`row ${lead.row} DOM offset ${off.toFixed(1)} vs ${rowTop.toFixed(1)}`)
+                // split floating table: the boundary is one of its row cuts, so the
+                // page turn is an in-table gap of the float; the anchor paragraph
+                // below it skips the same distance (carryGaps)
+                const fsplit = floatSplits.find((f) =>
+                  f.cutYs.some((y) => Math.abs(y - slice.start) < 0.5),
+                )
+                try {
+                  const $pos = editor.view.state.doc.resolve(editor.view.posAtDOM(tr, 0))
+                  // w:tblHeader repetition: the engine reserved slice.repeatHeader.height
+                  // at the top of this page's column, so cloning the source header rows
+                  // below the gap fills exactly that space. Clones are decorations —
+                  // page-gap-inline keeps them out of the virtual coordinates.
+                  let repeatHeaderEls: HTMLElement[] | undefined
+                  if (slice.repeatHeader) {
+                    const tableEl = tr.closest('table')
+                    const srcRows = tableEl
+                      ? (Array.from(tableEl.querySelectorAll(':scope > tbody > tr')).filter(
                           (r) =>
                             !r.classList.contains('page-gap') &&
                             !r.classList.contains('page-repeat-header'),
-                        )
-                        .map((r) => Array.from(r.cells).reduce((s, c) => s + c.colSpan, 0)),
-                    )
-                    for (let d = $pos.depth; d > 0; d--) {
-                      if ($pos.node(d).type.name === 'docTableRow') {
-                        // no notes area in table gaps: pad the full remainder
-                        const tablePad = Math.round(remaining)
-                        gaps.push({
-                          pos: $pos.before(d),
-                          kind: 'table',
-                          cols: gridCols,
-                          boundaryY: slice.start,
-                          metrics:
-                            tablePad > 0
-                              ? { ...metrics, marginBottom: metrics.marginBottom + tablePad }
-                              : metrics,
-                          ...hfProps,
-                          ...(repeatHeaderEls
-                            ? {
-                                repeatHeaderEls,
-                                // content signature: header edits with unchanged height
-                                // must still rebuild the widgets (same rule as hfKey)
-                                repeatHeaderKey: `${repeatHeaderEls.length}-${Math.round(slice.repeatHeader!.height)}-${hashStr(repeatHeaderEls.map((e) => e.innerHTML).join('§'))}`,
-                              }
-                            : {}),
-                        })
-                        if (fsplit) {
-                          const gapH =
-                            metrics.marginBottom + tablePad + GAP_BAND + metrics.marginTop
-                          carryGaps.set(
-                            fsplit.blockTop,
-                            (carryGaps.get(fsplit.blockTop) ?? 0) + gapH,
-                          )
-                        }
-                        break
-                      }
+                        ) as HTMLElement[])
+                      : []
+                    const els: HTMLElement[] = []
+                    let acc = 0
+                    for (const row of srcRows) {
+                      if (acc >= slice.repeatHeader.height - 1.5) break
+                      const clone = row.cloneNode(true) as HTMLElement
+                      clone.classList.add('page-gap-inline', 'page-repeat-header')
+                      clone.setAttribute('contenteditable', 'false')
+                      els.push(clone)
+                      acc += row.getBoundingClientRect().height / factor
                     }
-                  } catch {
-                    /* if posAtDOM fails, skip decorating this round */
+                    if (els.length > 0) repeatHeaderEls = els
                   }
-                  break
+                  // the spanning gap cell must cover exactly the table's column
+                  // grid: a wider colSpan adds phantom columns, which collapses
+                  // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
+                  const gridCols = Math.max(
+                    1,
+                    ...Array.from(
+                      tr
+                        .closest('table')
+                        ?.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr') ?? [],
+                    )
+                      .filter(
+                        (r) =>
+                          !r.classList.contains('page-gap') &&
+                          !r.classList.contains('page-repeat-header'),
+                      )
+                      .map((r) => Array.from(r.cells).reduce((s, c) => s + c.colSpan, 0)),
+                  )
+                  for (let d = $pos.depth; d > 0; d--) {
+                    if ($pos.node(d).type.name === 'docTableRow') {
+                      // no notes area in table gaps: pad the full remainder
+                      const tablePad = Math.round(remaining)
+                      gaps.push({
+                        pos: $pos.before(d),
+                        kind: 'table',
+                        cols: gridCols,
+                        boundaryY: slice.start,
+                        metrics:
+                          tablePad > 0
+                            ? { ...metrics, marginBottom: metrics.marginBottom + tablePad }
+                            : metrics,
+                        ...hfProps,
+                        ...(repeatHeaderEls
+                          ? {
+                              repeatHeaderEls,
+                              // content signature: header edits with unchanged height
+                              // must still rebuild the widgets (same rule as hfKey)
+                              repeatHeaderKey: `${repeatHeaderEls.length}-${Math.round(slice.repeatHeader!.height)}-${hashStr(repeatHeaderEls.map((e) => e.innerHTML).join('§'))}`,
+                            }
+                          : {}),
+                      })
+                      if (fsplit) {
+                        const gapH = metrics.marginBottom + tablePad + GAP_BAND + metrics.marginTop
+                        carryGaps.set(fsplit.blockTop, (carryGaps.get(fsplit.blockTop) ?? 0) + gapH)
+                      }
+                      break
+                    }
+                  }
+                } catch {
+                  // posAtDOM failed: skip decorating this round
+                  missCut(`row ${lead.row} has no ProseMirror position`)
                 }
+                return
               }
-              if (!matched) {
-                // in-row cut point (page break between a cell's lines): anchor at the first line after it
-                const anchor = nextLineAnchor(b.el, cutOff, factor, lineRectsOf)
-                if (anchor == null) return
-                // anchors inside the read-only nested-table NodeView have no distinct PM
-                // position (posAtDOM collapses them all to the node start): overlay markers
-                if (anchorElement(anchor)?.closest('.doc-nested-table')) {
-                  overlayCutAnchors.push(anchor)
-                  return
-                }
-                const pos = posFromAnchor(editor.view, anchor)
-                if (pos == null) return
-                const cutCell = singleCutCell(cutRow, anchor)
-                if (cutCell) {
-                  // single-column row: insert a real inline gap band; bleed to the paper
-                  // edges from the anchor's block (the widget's containing block)
-                  const r = (
-                    anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
-                  ).getBoundingClientRect()
-                  gaps.push({
-                    pos,
-                    kind: 'cell',
-                    boundaryY: slice.start,
-                    metrics: {
-                      ...metrics,
-                      // rect offsets from the paper edge already include the page margins
-                      marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
-                      marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
-                    },
-                    ...(pullUp > 0.5 ? { pullUp } : {}),
-                    ...hfProps,
-                  })
-                } else {
-                  // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
-                  gaps.push({ pos, kind: 'cut', metrics })
-                }
+              // in-row cut point (page break between a cell's lines): anchor at the first line after it
+              const cutRow =
+                lead.row !== undefined && lead.row >= 0 ? (realRows[lead.row] ?? null) : null
+              const anchor = nextLineAnchor(b.el, cutOff, factor, lineRectsOf)
+              if (anchor == null) {
+                missCut(`no line anchor after the cut in row ${lead.row}`)
+                return
+              }
+              // anchors inside the read-only nested-table NodeView have no distinct PM
+              // position (posAtDOM collapses them all to the node start): overlay markers
+              if (anchorElement(anchor)?.closest('.doc-nested-table')) {
+                overlayCutAnchors.push(anchor)
+                return
+              }
+              const pos = posFromAnchor(editor.view, anchor)
+              if (pos == null) {
+                missCut(`cell lead has no ProseMirror position`)
+                return
+              }
+              const cutCell = singleCutCell(cutRow, anchor)
+              if (cutCell) {
+                // single-column row: insert a real inline gap band; bleed to the paper
+                // edges from the anchor's block (the widget's containing block)
+                const r = (
+                  anchorElement(anchor)?.closest('td > *, th > *') ?? cutCell
+                ).getBoundingClientRect()
+                gaps.push({
+                  pos,
+                  kind: 'cell',
+                  boundaryY: slice.start,
+                  metrics: {
+                    ...metrics,
+                    // rect offsets from the paper edge already include the page margins
+                    marginLeft: (r.left - pmRect.left) / factor - pageLeftOf(nextSec),
+                    marginRight: (pmRect.right - r.right) / factor - pageLeftOf(nextSec),
+                  },
+                  ...(pullUp > 0.5 ? { pullUp } : {}),
+                  ...hfProps,
+                })
+              } else {
+                // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
+                gaps.push({ pos, kind: 'cut', metrics })
               }
               return
             }
-            // fallback: font-load reflow can leave lineStartAnchor's exact-offset match
-            // just outside tolerance; the first line after the cut still gets the gap
+            // mid-paragraph page break (line-level cut point): insert an inline gap at the
+            // broken line. Fallback: font-load reflow can leave lineStartAnchor's exact-offset
+            // match just outside tolerance; the first line after the cut still gets the gap
             const anchor =
               lineStartAnchor(b.el, cutOff, factor, lineRectsOf) ??
               nextLineAnchor(b.el, cutOff, factor, lineRectsOf)
             const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
             if (pos == null) {
               console.warn('[pagination] no line anchor at page boundary', slice.start)
+              missCut('no line anchor at the cut')
               return
             }
             // fold the block's offset from the paper edge (page margin + indent) into negative margins so the gap spans exactly the paper width
@@ -4801,9 +5032,7 @@ export function App() {
                 const top = idx === undefined ? undefined : topByIdx.get(idx)
                 if (top === undefined) return undefined
                 // pageAt is 1-based; pageNoTextOf indexes nums/slices 0-based
-                return pageNoTextOf(
-                  Math.max(0, Math.min(pageAt(slices, top + 1) - 1, slices.length - 1)),
-                )
+                return pageNoTextOf(Math.max(0, Math.min(pageOfY(slices, top), slices.length - 1)))
               },
               dirtyRef.current,
             )
@@ -4939,6 +5168,9 @@ export function App() {
         // sections disagreeing on the top margin: per-block --doc-margin-top for page-relative anchors
         const topSpecs =
           viewMode === 'print' && !readMode && secList ? sectionTopMarginSpecs(blocks, secList) : []
+        // page-opening sections clear the previous section's page-bottom floats
+        const sectStartSpecs =
+          viewMode === 'print' && !readMode && secList ? sectionPageStartSpecs(blocks, secList) : []
         // w:mirrorMargins: even pages translate onto the swapped text column
         const mirrorSpecs =
           viewMode === 'print' && !readMode && mirrorMargins
@@ -4960,6 +5192,7 @@ export function App() {
           gridSpecs,
           charSpecs,
           topSpecs,
+          sectStartSpecs,
           secWSpecs,
           mirrorSpecs,
           colSpecs,
@@ -5008,7 +5241,11 @@ export function App() {
         clampCellImageTops(pm, factor)
         pinCellBoxesToPage(pm, factor)
         pinPageRelXPictures(pm, factor)
-        pinParagraphRelVPictures(pm)
+        pinParagraphRelVPictures(
+          pm,
+          planOf,
+          new Set(gaps.flatMap((g) => ('el' in g && g.suppressLeadMt ? [g.el] : []))),
+        )
         stage('clampCells')
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
         stage('cutOverlays')
@@ -5052,9 +5289,7 @@ export function App() {
         }
         // freshly applied wrap widths (section widths, unequal column widths,
         // vertical-text line lengths) change line breaks: one follow-up remeasure with them in the DOM
-        const wSig = [...secWSpecs, ...colSpecs, ...vertSpecs]
-          .map((s) => `${Math.round(s.widthPx ?? -1)}:${Math.round(s.contentWPx ?? -1)}`)
-          .join(',')
+        const wSig = wrapWidthSig([...secWSpecs, ...colSpecs, ...vertSpecs, ...sectStartSpecs])
         let wrapWidthsChanged = false
         if (wSig !== secWidthSig) {
           secWidthSig = wSig
@@ -5118,6 +5353,14 @@ export function App() {
           fastPasses,
           fastReject,
           gapBoundaryMismatch,
+          pageCutMismatch,
+          pageCutDiag,
+          pageCuts,
+          pageCutSig: pageCutSignature(pageCuts),
+          planDiff,
+          planDiffHistogram: planDiffHistogram(planDiff),
+          obstacleShadow: { wrappers: obstacleShadow.wrappers, boxes: obstacleShadow.boxes },
+          layoutHealth: layoutHealth.snapshot(),
           carriedSamples,
           resumePasses,
           resumeReject,
@@ -5131,6 +5374,12 @@ export function App() {
           get loopStops() {
             return chain.stops
           },
+          get tabFreezes() {
+            return tabLayoutDiag.freezes
+          },
+          sliceIterationsCapped: lastOut?.iterationsCapped ?? false,
+          sliceRunaway: lastOut?.runaway ?? false,
+          rowSplitOverflows: lastOut?.rowSplitOverflows ?? 0,
           colSpecs: colSpecs.map((s) => ({
             w: s.widthPx === undefined ? null : Math.round(s.widthPx),
             dx: Math.round(s.dx),
@@ -5229,6 +5478,11 @@ export function App() {
     // state fills in: a synchronous whole-document pass per run made a long
     // open quadratic, so the paced scheduler takes it (the last chunk's update
     // still lands a full pass once the tail has settled)
+    flushPaginationRef.current = () => {
+      if (timer === null) return
+      window.clearTimeout(timer)
+      remeasure()
+    }
     if (isPhasedContentPending()) onUpdate()
     else remeasure()
     // async @font-face loading triggers a full reflow (line-break points change); pagination
@@ -5293,10 +5547,16 @@ export function App() {
         return
       }
       if (props.transaction.getMeta(floatFlowChangedMeta)) followUp('float-flow')
+      const tabFrom = props.transaction.getMeta(tabReflowMeta) as number | undefined
+      if (tabFrom !== undefined && editor) {
+        const { doc: pmDoc } = editor.state
+        followUpAt('tab-wrap', pmDoc.resolve(Math.min(tabFrom, pmDoc.content.size)).index(0))
+      }
     }
     editor?.on('transaction', onShrinkTr)
     return () => {
       disposed = true
+      flushPaginationRef.current = () => {}
       if (timer) window.clearTimeout(timer)
       if (hfTimer) window.clearTimeout(hfTimer)
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
@@ -5313,13 +5573,14 @@ export function App() {
     viewMode,
     readMode,
     blockMetaOf,
+    blockPlans,
     pageFootnotesOf,
     endnoteItems,
     editNote,
     canvasTop,
     effTopSingle,
     effBottomSingle,
-    singleFirstContentH,
+    singleVariantGeom,
     singleHfPx,
     hfHeightsOf,
     measureSingleFlow,
@@ -5334,6 +5595,8 @@ export function App() {
     hfSections,
     hfResolveAt,
     comments,
+    commentsUi.cards,
+    commentsUi.panel,
     // display-mode toggles reflow the text (No Markup hides deletions) and gate
     // the change bars, but dispatch no doc change: remeasure must follow them
     revisionDisplay,
@@ -5366,7 +5629,7 @@ export function App() {
       setCaretPageNo(
         block && layout
           ? (pageNumbers(layout.slices, layout.sections as SectionInfo[])[
-              pageAt(layout.slices, block.top + 1) - 1
+              pageOfY(layout.slices, block.top)
             ] ?? 1)
           : 1,
       )
@@ -5387,12 +5650,67 @@ export function App() {
   // to the plain total. Cheap enough (a text range, not a document walk) to
   // follow the selection directly rather than ride the throttle above.
   const [selectionWordCount, setSelectionWordCount] = useState(0)
-  // the ribbon's revision badge walks every block too: same pacing
-  const [revisionCount, setRevisionCount] = useState(0)
+  const [selectionHead, setSelectionHead] = useState(0)
+  // changes outside the body: notes and header / footer parts follow their models,
+  // textboxes and note anchors the document (revisionRanges refreshes with it)
+  const storyRevisions = useMemo<StoryRevision[]>(() => {
+    if (!editor || !doc) return []
+    const pmDoc = editor.state.doc
+    return [
+      ...collectHfRevisions(hfState),
+      ...collectTextboxRevisions(pmDoc),
+      ...collectNoteRevisions(pmDoc, 'footnote', footnotes),
+      ...collectNoteRevisions(pmDoc, 'endnote', endnotes),
+    ]
+    // revisionRanges: the throttled document-change trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, doc, hfState, footnotes, endnotes, revisionRanges])
+  storyRevisionsRef.current = storyRevisions
+  const allRevisions = useMemo(
+    () => (storyRevisions.length ? [...revisionRanges, ...storyRevisions] : revisionRanges),
+    [revisionRanges, storyRevisions],
+  )
+  const revisionCount = allRevisions.length
+  const shownRevisions = useMemo(
+    () => filterRevisions(allRevisions, revisionFilter),
+    [allRevisions, revisionFilter],
+  )
+  const reviewAuthors = useMemo(() => revisionAuthors(allRevisions), [allRevisions])
+  const reviewEntries = useMemo(
+    () => (editor ? buildReviewEntries(editor.state.doc, shownRevisions, reviewAuthors) : []),
+    [editor, shownRevisions, reviewAuthors],
+  )
+  const revisionAuthorStyle = useMemo(
+    () => revisionAuthorCss(reviewAuthors, revisionFilter.hiddenAuthors, movesByAuthor(tcOptions)),
+    [reviewAuthors, revisionFilter.hiddenAuthors, tcOptions],
+  )
+  const isActiveEntry = (e: ReviewEntry) =>
+    e.rev.story
+      ? e.rev.story.id === activeStoryId
+      : activeStoryId === null && selectionHead >= e.rev.from && selectionHead <= e.rev.to
+  const activeReviewIndex = useMemo(
+    () => reviewEntries.findIndex(isActiveEntry),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reviewEntries, selectionHead, activeStoryId],
+  )
+  // the AI panel list counts every pending change, untouched by the Show Markup filters
+  const allReviewEntries = useMemo(
+    () => (editor ? buildReviewEntries(editor.state.doc, allRevisions, reviewAuthors) : []),
+    [editor, allRevisions, reviewAuthors],
+  )
+  const activeAllReviewIndex = useMemo(
+    () => allReviewEntries.findIndex(isActiveEntry),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allReviewEntries, selectionHead, activeStoryId],
+  )
   useEffect(() => {
     if (!editor) return
-    const refreshSelection = () =>
+    const refreshSelection = () => {
       setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionHead(editor.state.selection.head)
+      // a caret move in the body ends the stop on a change outside it
+      if (lastStoryRef.current !== null) setActiveStoryId(null)
+    }
     refreshSelection()
     editor.on('selectionUpdate', refreshSelection)
     return () => {
@@ -5405,7 +5723,7 @@ export function App() {
     const refresh = () => {
       timer = 0
       setWordCount(wordCountOfDoc(editor.state.doc))
-      setRevisionCount(doc ? revisionCountOfDoc(editor.state.doc) : 0)
+      setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
       setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
     }
     const onUpdate = () => {
@@ -5739,7 +6057,7 @@ export function App() {
       // Track changes ⇧⌘E; forced by an editing restriction it cannot be turned off
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyE' && doc) {
         e.preventDefault()
-        if (!trackChangesForced) setTrackChanges((v) => !v)
+        if (!isProtected && !trackChangesForced) toggleTrackChangesByUser()
       }
       // Word count ⇧⌘G
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyG' && doc) {
@@ -5791,6 +6109,8 @@ export function App() {
     insertField,
     runAiProofread,
     trackChangesForced,
+    isProtected,
+    toggleTrackChangesByUser,
   ])
 
   // double-click an inline equation / click an equation block's edit button (ones with LaTeX source) → reopen the equation dialog for editing
@@ -6065,10 +6385,20 @@ export function App() {
   // places the caret.
   const onDocClick = useCallback(
     (e: ReactMouseEvent) => {
+      const tag = (e.target as HTMLElement).closest('.doc-comment-marker') as HTMLElement | null
+      if (tag?.dataset.commentId) {
+        setShowComments(true)
+        setCommentFocus({ id: tag.dataset.commentId, nonce: Date.now() })
+        return
+      }
       const commentSpan = (e.target as HTMLElement).closest('.doc-comment') as HTMLElement | null
       if (commentSpan) {
         const ids = (commentSpan.dataset.commentIds ?? '').split(' ')
-        if (comments.some((c) => !c.done && ids.includes(c.id))) setShowComments(true)
+        const hit = comments.find((c) => !c.done && !c.parentId && ids.includes(c.id))
+        if (hit) {
+          setShowComments(true)
+          setCommentFocus({ id: hit.id, nonce: Date.now() })
+        }
       }
       const mod = e.metaKey || e.ctrlKey
       // read-only display anchors are outside contenteditable and would navigate
@@ -6089,8 +6419,11 @@ export function App() {
   /** Editor right-click menu, only inside the document body */
   const onDocContextMenu = useCallback(
     (e: ReactMouseEvent) => {
-      if (readMode || isProtected) return
-      if (!(e.target as HTMLElement).closest('.doc-page')) return
+      if (readMode || (isProtected && !commentsAllowed)) return
+      const bubble = (e.target as HTMLElement).closest(
+        '.comment-bubble, .comment-balloon, .doc-del-marker',
+      ) as HTMLElement | null
+      if (!bubble && !(e.target as HTMLElement).closest('.doc-page')) return
       // no preventDefault: Blink must still request a context menu so the main
       // process receives the misspelling data it relays to this menu
       const seq = ++ctxSeq.current
@@ -6107,6 +6440,30 @@ export function App() {
         y = c.bottom
       }
       let imageSrc: string | null = null
+      if (bubble && editor) {
+        // a balloon stands for its anchor: the menu acts on that change or thread
+        const commentId = bubble.dataset.commentId ?? null
+        const at = commentId
+          ? commentAnchors(editor.state.doc).find((a) => a.id === commentId)?.from
+          : bubble.classList.contains('doc-del-marker')
+            ? editor.view.posAtDOM(bubble, 0)
+            : Number(bubble.dataset.pos)
+        if (at != null && Number.isFinite(at)) {
+          const size = editor.state.doc.content.size
+          pos = Math.min(at, size)
+          // Word selects the whole change so New Comment anchors on it
+          const end = Math.min(Number(bubble.dataset.end), size)
+          const doc = editor.state.doc
+          // between() snaps ends that fall outside a textblock (deleted paragraph marks, tables)
+          const sel =
+            Number.isFinite(end) && end > pos
+              ? TextSelection.between(doc.resolve(pos), doc.resolve(end))
+              : TextSelection.near(doc.resolve(pos), 1)
+          editor.view.dispatch(editor.state.tr.setSelection(sel))
+        }
+        setCtxMenu({ x, y, seq, pos, imageSrc, link: null, commentId, balloon: true })
+        return
+      }
       // Word behavior: right-clicking outside the selection moves the cursor there first (menu items act on the clicked block)
       if (editor) {
         // Right-clicking directly on an image / floating object selects it as a
@@ -6163,7 +6520,7 @@ export function App() {
           : null
       setCtxMenu({ x, y, seq, pos, imageSrc, link })
     },
-    [readMode, isProtected, editor],
+    [readMode, isProtected, commentsAllowed, editor],
   )
 
   /** double-click on a page-gap strip: edit that page's header/footer in place */
@@ -6225,6 +6582,8 @@ export function App() {
   }
   const startGapHfEditRef = useRef(startGapHfEdit)
   startGapHfEditRef.current = startGapHfEdit
+  const applyStoryRevisionsRef = useRef(applyStoryRevisions)
+  applyStoryRevisionsRef.current = applyStoryRevisions
   const commitHfAtRef = useRef(commitHfAt)
   commitHfAtRef.current = commitHfAt
   const firstPageNoText = formatPageNumber(
@@ -6246,6 +6605,8 @@ export function App() {
     if (el) startGapHfEdit(el)
     else setHfAreaEditRequest({ kind, nonce: Date.now() })
   }
+  const openHfEditorRef = useRef(openHfEditor)
+  openHfEditorRef.current = openHfEditor
   const toggleEvenOddHf = (on: boolean) => {
     hfEditorRef.current?.exit()
     setEvenOddHf(on)
@@ -6480,7 +6841,7 @@ export function App() {
     () => ({
       list: () => reviewCtxRef.current.comments,
       reply: (parentId, text) =>
-        replyToCommentImpl(reviewCtxRef.current, parentId, text, AI_REVISION_AUTHOR),
+        replyToCommentImpl(reviewCtxRef.current, parentId, text, aiRevisionAuthor()),
       resolve: (id) => {
         const ctx = reviewCtxRef.current
         if (!ctx.comments.some((c) => c.id === id)) return false
@@ -6492,7 +6853,7 @@ export function App() {
           reviewCtxRef.current,
           range,
           text,
-          meta.author ?? AI_REVISION_AUTHOR,
+          meta.author ?? aiRevisionAuthor(),
           meta.initials,
         ),
       remove: (id) => {
@@ -6677,8 +7038,13 @@ export function App() {
           return null
         },
       },
+      revisionsLocked: isProtected || trackChangesForced,
+      storyRevisions: {
+        list: () => storyRevisionsRef.current,
+        apply: (targets, mode, all) => applyStoryRevisionsRef.current(targets, mode, all),
+      },
     }),
-    [upsertStyleDef],
+    [upsertStyleDef, isProtected, trackChangesForced],
   )
 
   const aiHfAccess = useMemo<AiHeaderFooterAccess>(
@@ -6971,33 +7337,42 @@ export function App() {
     onShowMarks: setShowMarks,
     onShowRuler: setShowRuler,
     onShowNav: setShowNav,
-    onShowComments: () => setShowComments(true),
+    onShowComments: () => toggleShowComments(),
+    onToggleComments: () => toggleShowComments(),
     onNewComment: startNewComment,
     onDeleteComment: () => deleteCommentAtCaretImpl(reviewCtxRef.current),
     onDeleteAllComments: (resolvedOnly: boolean) =>
       deleteAllCommentsImpl(reviewCtxRef.current, resolvedOnly),
     onGotoComment: (dir: 1 | -1) => gotoCommentImpl(reviewCtxRef.current, dir),
-    onTrackChanges: setTrackChanges,
+    onTrackChanges: setTrackChangesByUser,
     onSpellcheck: (on: boolean) => {
       if (largeDocSpellOff) setLargeDocSpellOff(false)
       setSpellcheck(on)
     },
-    onRevisionDisplay: (mode: RevisionDisplayMode) => {
-      markupPickedRef.current = true
-      setRevisionDisplay(mode)
-    },
-    onAcceptRevision: (all: boolean) => handleRevision('accept', all),
-    onRejectRevision: (all: boolean) => handleRevision('reject', all),
+    onRevisionDisplay: (mode: RevisionDisplayMode) => setRevisionDisplay(mode),
+    onAcceptRevision: (scope: RevisionScope) => handleRevision('accept', scope),
+    onRejectRevision: (scope: RevisionScope) => handleRevision('reject', scope),
+    onRevisionFilter: setRevisionFilter,
+    onToggleReviewPane: () => setShowReviewPane((v) => !v),
     onGotoRevision: (dir: 1 | -1) => {
       if (!editor) return
-      const target = nextRevision(editor, dir)
-      if (!target) return
-      // Word: navigating onto a change hidden by the current view shows All
-      // Markup; the view switch must commit before the scroll can find the text
-      if (revisionHiddenIn(revisionDisplayRef.current, target.kind)) {
-        setRevisionDisplay('all')
-        window.setTimeout(() => selectRevision(editor, target), 0)
-      } else selectRevision(editor, target)
+      const body = filterRevisions(collectRevisions(editor.state.doc), revisionFilterRef.current)
+      const stories = filterRevisions(storyRevisionsRef.current, revisionFilterRef.current)
+      const ranges: RevisionRange[] = [...body, ...stories]
+      if (ranges.length === 0) return
+      // after a stop outside the body the walk continues from that entry
+      const at = ranges.findIndex((r) => r.story && r.story.id === lastStoryRef.current)
+      setActiveStoryId(null)
+      let target: RevisionRange | undefined
+      if (at >= 0) target = ranges[(at + dir + ranges.length) % ranges.length]
+      else {
+        const anchor = editor.state.selection.from
+        target =
+          dir === 1
+            ? (body.find((r) => r.from > anchor) ?? stories[0] ?? body[0])
+            : ([...body].reverse().find((r) => r.from < anchor) ?? ranges[ranges.length - 1])
+      }
+      if (target) showRevision(target)
     },
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
@@ -7008,10 +7383,62 @@ export function App() {
     onPagePreview: () => setShowPagePreview(true),
   })
 
+  // the panel closes; Contextual cards stay unless the panel was the List view itself
   const closeCommentsPanel = useCallback(() => {
-    setShowComments(false)
+    setCommentPanelOpen(false)
+    setCommentFocus(null)
     cancelNewComment()
-  }, [cancelNewComment])
+    if (commentsMode === 'list') setShowComments(false)
+  }, [cancelNewComment, commentsMode])
+  const toggleShowComments = useCallback(() => {
+    if (showComments) {
+      setCommentPanelOpen(false)
+      setCommentFocus(null)
+      setCommentPopup(null)
+      cancelNewComment()
+    }
+    setShowComments(!showComments)
+  }, [showComments, cancelNewComment])
+
+  // the popped-up thread closes on Escape or a click outside it and its icon
+  useEffect(() => {
+    if (!commentPopup) return
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null
+      if (!el?.closest('.comment-bubble.comment-popup, .comment-balloon')) setCommentPopup(null)
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setCommentPopup(null)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [commentPopup])
+  useEffect(() => {
+    setCommentPopup(null)
+  }, [commentsUi.cards, commentsUi.panel])
+
+  // selection / popup changes only restyle the margin layer: redraw it without a pagination pass
+  useEffect(() => {
+    if (!editor || !doc) return
+    const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+    const wrap = pm?.closest('.page-wrap') as HTMLElement | null
+    if (!pm || !wrap) return
+    syncMarginAnnotations(
+      wrap,
+      pm,
+      comments,
+      zoom / 100,
+      doc.parsed.blocks,
+      editor.view,
+      marginHandlersRef.current,
+    )
+    // only the flags on the root matter here; the pagination pass owns every other input
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentFocus?.id, commentPopup])
 
   // Simple Markup overlay callbacks (the overlay is rebuilt per pagination
   // frame; a stable object keeps the DOM listeners on the current editor)
@@ -7027,12 +7454,40 @@ export function App() {
       editor.view.dispatch(tr.setSelection(TextSelection.near($pos, 1)).setMeta(TRACK_IGNORE, true))
     },
     onCommentBalloon: (id) => {
-      setShowComments(true)
-      setCommentFocus({ id, nonce: Date.now() })
+      if (iconClickTarget(commentsUi) === 'focus') setCommentFocus({ id, nonce: Date.now() })
+      else setCommentPopup(id)
     },
+    onCommentSelect: (id) => setCommentFocus({ id, nonce: Date.now() }),
+    onCommentReply: (id, text) => replyToComment(id, text),
+    onCommentResolve: resolveComment,
+    onCommentEdit: editComment,
+    onCommentDelete: deleteComment,
   }
 
   const hasDoc = !!doc
+  // a balloon names the change starting at its anchor; a caret may sit on a boundary shared by two
+  const revisionsAtCtx = (all: RevisionRange[], pos: number, balloon: boolean) => {
+    const hits = revisionsInSelection(all, pos, pos)
+    if (!balloon) return hits
+    const own = hits.filter((r) => r.from <= pos && pos < r.to)
+    return own.length ? own : hits
+  }
+  const ctxCommentId = useMemo(() => {
+    if (!ctxMenu || !editor) return null
+    const ids = ctxMenu.commentId
+      ? [ctxMenu.commentId]
+      : commentIdsAt(editor.state, ctxMenu.pos ?? editor.state.selection.from)
+    const open = ids
+      .map((id) => comments.find((c) => c.id === id))
+      .filter((c): c is CommentInfo => !!c && !c.done)
+    const root = open.find((c) => !c.parentId) ?? open[0]
+    return root ? (root.parentId ?? root.id) : null
+  }, [ctxMenu, editor, comments])
+  // the context menu acts on the document as it is now, not the throttled pane snapshot
+  const liveRevisions = useMemo(
+    () => (ctxMenu && editor ? collectRevisions(editor.state.doc) : []),
+    [ctxMenu, editor],
+  )
   // Undo/redo availability: refreshed on every transaction so the QAT buttons grey out when empty
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   useEffect(() => {
@@ -7427,10 +7882,16 @@ export function App() {
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${revisionDisplay === 'all' && viewMode === 'print' ? ' rev-balloon' : ''}`}
+      className={`app ${readMode ? 'read-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
+      data-balloons={balloonsActive ? balloonMode : undefined}
+      data-comment-cards={commentsUi.cards ? '' : undefined}
+      data-comment-focus={commentFocus?.id}
+      data-comment-popup={commentPopup ?? undefined}
     >
       <ToastHost />
       {docCss && <style data-doc-css="">{docCss}</style>}
+      {revisionAuthorStyle && <style data-rev-authors="">{revisionAuthorStyle}</style>}
+      {tcOptionsStyle && <style data-rev-options="">{tcOptionsStyle}</style>}
       {liveLineFactor != null && (
         <style data-doc-css="">{`.doc-page { --doc-line-factor:${liveLineFactor} }`}</style>
       )}
@@ -7519,6 +7980,9 @@ export function App() {
         showStylesPane={showStylesPane}
         onShowStylesPane={setShowStylesPane}
         commentCount={comments.length}
+        showComments={showComments}
+        commentsMode={commentsMode}
+        onCommentsMode={setCommentsMode}
         openCommentCount={comments.filter((c) => !c.parentId && c.done !== true).length}
         resolvedCommentCount={comments.filter((c) => !c.parentId && c.done === true).length}
         commentAtCaret={commentThreadAtCaretImpl(reviewCtxRef.current) !== null}
@@ -7526,7 +7990,13 @@ export function App() {
         trackChanges={trackChanges}
         spellcheck={spellcheckActive}
         revisionDisplay={revisionDisplay}
+        balloonMode={balloonMode}
+        onBalloonMode={setBalloonMode}
+        onTrackChangesOptions={() => setShowTcOptions(true)}
         revisionCount={revisionCount}
+        revisionFilter={revisionFilter}
+        revisionAuthors={reviewAuthors}
+        showReviewPane={showReviewPane}
         isProtected={isProtected}
         commentsAllowed={commentsAllowed}
         trackChangesForced={trackChangesForced}
@@ -7575,6 +8045,19 @@ export function App() {
               pageSetupAccess={aiPageSetupAccess}
               docExtras={aiDocExtras}
               notesAccess={aiNotesAccess}
+              trackChanges={trackChanges}
+              trackChangesLocked={isProtected || trackChangesForced}
+              onTrackChangesToggle={() => setTrackChanges((v) => !v)}
+              revisionCount={revisionCount}
+              onRevisions={(action) => {
+                if (!isProtected && !trackChangesForced) handleRevision(action, 'all')
+              }}
+              reviewEntries={allReviewEntries}
+              activeReviewIndex={activeAllReviewIndex}
+              onRevisionSelect={showRevision}
+              onRevisionRange={(action, rev) => {
+                if (!isProtected && !trackChangesForced) handleRevisionRange(action, rev)
+              }}
             />
           </div>
         )}
@@ -7896,7 +8379,7 @@ export function App() {
                 {t('appExitReadMode')}
               </button>
             )}
-            {doc && showComments && (
+            {doc && commentsUi.panel && (
               <CommentsPanel
                 comments={comments}
                 docNode={editor.state.doc}
@@ -7929,6 +8412,23 @@ export function App() {
                 otherName={compareResult.otherName}
                 entries={compareResult.entries}
                 onClose={() => setCompareResult(null)}
+              />
+            )}
+            {doc && showReviewPane && (
+              <ReviewingPane
+                entries={reviewEntries}
+                hiddenCount={allRevisions.length - shownRevisions.length}
+                authors={reviewAuthors.map((name) => ({
+                  name,
+                  inkIndex: authorInkIndex(reviewAuthors, name),
+                }))}
+                openComments={comments.filter((c) => !c.parentId && !c.done).length}
+                activeIndex={activeReviewIndex}
+                canEdit={!isProtected && !trackChangesForced}
+                onSelect={showRevision}
+                onAccept={(rev) => handleRevisionRange('accept', rev)}
+                onReject={(rev) => handleRevisionRange('reject', rev)}
+                onClose={() => setShowReviewPane(false)}
               />
             )}
           </div>
@@ -7964,7 +8464,7 @@ export function App() {
                     data-tip={t('ribbonTrackChangesTip')}
                     aria-pressed={trackChanges}
                     disabled={isProtected || trackChangesForced}
-                    onClick={() => setTrackChanges((v) => !v)}
+                    onClick={toggleTrackChangesByUser}
                   >
                     {t(trackChanges ? 'appTrackChangesOn' : 'appTrackChangesOff')}
                   </button>
@@ -8065,6 +8565,13 @@ export function App() {
           onClose={() => setShowZoomDialog(false)}
         />
       )}
+      {showTcOptions && (
+        <TrackChangesOptionsDialog
+          options={tcOptions}
+          onApply={setTcOptions}
+          onClose={() => setShowTcOptions(false)}
+        />
+      )}
       {showEquationModal && editor && (
         <EquationModal editor={editor} onClose={() => setShowEquationModal(false)} />
       )}
@@ -8104,6 +8611,34 @@ export function App() {
           onRespell={() => requestAnimationFrame(() => setRespellNonce((n) => n + 1))}
           onTableDialog={ribbonActions.onTableDialog}
           sectionContentWidthPx={tableSectionWidthPx}
+          revisions={
+            isProtected || trackChangesForced
+              ? null
+              : {
+                  at: revisionsAtCtx(
+                    liveRevisions,
+                    ctxMenu.pos ?? editor.state.selection.from,
+                    !!ctxMenu.balloon,
+                  ),
+                  any: liveRevisions.length > 0,
+                  onRange: handleRevisionRange,
+                  onAll: (action) => handleRevision(action, 'all'),
+                }
+          }
+          comment={{
+            id: ctxCommentId,
+            onReply: (id) => {
+              setShowComments(true)
+              setCommentFocus({ id, nonce: Date.now(), reply: true })
+            },
+            onDelete: deleteComment,
+            onResolve: (id) => resolveComment(id, true),
+          }}
+          trackChanges={
+            isProtected || trackChangesForced
+              ? null
+              : { on: trackChanges, onToggle: toggleTrackChangesByUser }
+          }
         />
       )}
       {viewImage && (
@@ -8268,6 +8803,8 @@ export function App() {
         <PaginationPreview
           section={section}
           canvasTop={canvasTop}
+          layout={layoutNow}
+          blockPlans={blockPlans}
           sections={sections}
           mirrorMargins={mirrorMargins}
           delSectBreaks={delSectBreaks}
@@ -8319,9 +8856,10 @@ export function App() {
               hfPhantom,
             )
           }
-          comments={comments}
+          comments={commentsUi.cards ? comments : []}
           anchorBlocks={doc.parsed.blocks}
-          revisionView={revisionDisplay === 'all' && viewMode === 'print' ? editor?.view : null}
+          revisionView={balloonsActive && balloonMode !== 'inline' ? editor?.view : null}
+          balloonKinds={balloonRevKinds(balloonMode)}
           clearPageGaps={() => {
             // column-layout decorations stay: the preview measures with the block widths
             // (line boxes must keep column wrapping); transforms are neutralized by its

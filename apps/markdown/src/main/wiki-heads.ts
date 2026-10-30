@@ -41,14 +41,20 @@ export function parseWikiHeads(raw: string): WikiHeadEntry[] {
   for (; at < lines.length; at++) {
     const line = lines[at]!
     const open = FENCE_RE.exec(line)
+    if (fence !== null) {
+      // the closing fence is the same character, at least as long, with no info string
+      const run = open?.[1]
+      if (run && run[0] === fence[0] && run.length >= fence.length && line.trim() === run) {
+        fence = null
+        previous = ''
+      }
+      continue
+    }
     if (open) {
-      if (fence === null) fence = open[1]![0]!
-      // the closing fence is the same character, at least as long
-      else if (line.trim().startsWith(fence)) fence = null
+      fence = open[1]!
       previous = ''
       continue
     }
-    if (fence !== null) continue
     if (line.trim() === '') continue
     const lone = LONE_ID_RE.exec(line)
     if (lone) {

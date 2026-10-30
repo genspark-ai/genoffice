@@ -390,6 +390,9 @@ export const id = {
   appTableNameInFile: 'Nama tabel "{name}" sudah digunakan oleh tabel di dalam file.',
   appTableOverlapsSession:
     'Rentang tumpang-tindih dengan tabel "{name}" yang dibuat pada sesi ini.',
+  appTableOverlapsFile: 'Rentang tumpang tindih dengan tabel "{name}" di file.',
+  appTableAlreadyInTable:
+    'Pilihan sudah berada di tabel "{name}" — ubah gayanya dari Desain Tabel.',
   appTablesNeedFile: 'Buka file XLSX dahulu — tabel ditulis ke file.',
   appTableSelectRange: 'Pilih rentang data dahulu — header di baris pertamanya.',
   appTableCreated: 'Tabel dibuat — simpan dengan ⌘S.',

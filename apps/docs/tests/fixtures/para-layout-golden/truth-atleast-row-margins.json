@@ -1,0 +1,46 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/atleast-row-margins/probe.docx",
+  "paragraphs": 12,
+  "hashes": [
+    "7fb90b66308a0d76",
+    "c1a17d15a045398f",
+    "a46e08ea13899d4c",
+    "4658729bd1de6170",
+    "758933cd5653a1e2",
+    "d32f10894de07c0d",
+    "29326be90546c6cf",
+    "d59f70de6d1f3841",
+    "56ab9886cd44e7fe",
+    "78fad776f0feb16a",
+    "1a5dc6df72afcd46",
+    "e7c564098649b68d"
+  ],
+  "cellParagraphs": 9,
+  "cellHashes": [
+    "9ab88d50603dd3c5",
+    "071e18b30e363d39",
+    "a160c41bb6ffd966",
+    "be617c565ae2c6a6",
+    "71e1d43eee6ffb33",
+    "ff9f0e587e484dc6",
+    "d2e0783ae8d34b0d",
+    "c22a6cad435538b1",
+    "965fa148c5dc10f2"
+  ],
+  "boxParagraphs": 9,
+  "boxHashes": [
+    "28a2105c260ff888",
+    "0dfefdf7e121945e",
+    "d8da395b2665594c",
+    "c86615b743bb932c",
+    "ef1e25802370b0b4",
+    "8874f6a3b1074819",
+    "6a07d27725c27df4",
+    "aff25be417ecef78",
+    "6185b42c150df298"
+  ],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

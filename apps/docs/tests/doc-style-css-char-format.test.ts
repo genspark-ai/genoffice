@@ -88,7 +88,9 @@ describe('docStyleCss character formatting from styles.xml', () => {
     const css = docStyleCss(parsedWith({ styleId: 'Calendar2', type: 'table', tableDisplay }))
     const headerTr = 'tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr)'
     const rule = css.split('\n').find((line) => line.includes('tr:first-child td'))
-    expect(rule).toContain(`table[data-tbl-style="Calendar2"] ${headerTr} td`)
+    const headed = 'table[data-tbl-style="Calendar2"]:not([data-tbl-nofirstrow])'
+    expect(rule).toContain(`${headed} tr:first-child td`)
+    expect(rule).toContain(`${headed} ${headerTr} td`)
     expect(rule).toContain('text-transform:uppercase')
     expect(rule).toContain('letter-spacing:1pt')
     expect(rule).toMatch(/font-family:[^;]*Cambria/)

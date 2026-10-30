@@ -217,6 +217,7 @@ export async function parseStyles(
       if (kern !== undefined) dd.kernHalfPoints = parseInt(kern, 10) || 0
       const lang = attrsOf(findChild(rPr, 'w:lang') ?? {})['w:val']
       if (lang) dd.lang = lang
+      if (onOffOf(rPr, 'w:rtl')) dd.rtl = true
     }
     const pPrDefault = findChild(defaultsNode, 'w:pPrDefault')
     if (!pPrDefault) Object.assign(dd, BUILT_IN_PARA_DEFAULTS)
@@ -246,9 +247,19 @@ export async function parseStyles(
       dd.spaceAfterAuto =
         spacingAttrs['w:afterAutospacing'] === '1' || spacingAttrs['w:afterAutospacing'] === 'true'
     if (pPr && onOffOf(pPr, 'w:suppressAutoHyphens')) dd.suppressAutoHyphens = true
+    if (pPr && onOffOf(pPr, 'w:bidi')) dd.bidi = true
     if (pPr && onOffOf(pPr, 'w:widowControl') === false) dd.widowControl = false
     const ddBorders = pPr ? paraBorderSidesOf(pPr, theme) : undefined
     if (ddBorders) dd.borderSides = ddBorders
+    const ddInd = pPr ? findChild(pPr, 'w:ind') : undefined
+    if (ddInd) {
+      const { left, right, firstLine } = indentTwipsOf(ddInd)
+      if (left !== undefined) dd.indentLeftTwips = left
+      if (right !== undefined) dd.indentRightTwips = right
+      if (firstLine !== undefined) dd.indentFirstLineTwips = firstLine
+      const chars = charIndentsOf(ddInd)
+      if (chars) dd.indentChars = chars
+    }
     if (Object.keys(dd).length > 0) docDefaults = dd
   }
   const linkedTemplate = await linksNormalTemplate(zip)
@@ -410,6 +421,32 @@ export async function parseStyles(
     return info
   }
   for (const styleId of styles.keys()) resolve(styleId, new Set())
+  // pPrDefault w:ind is the root of every paragraph style's indent chain (Word
+  // probe 2026-10-29: Normal, a Normal-based style and a style without
+  // w:basedOn all take it; a style's own w:ind overrides per attribute)
+  if (
+    docDefaults &&
+    (docDefaults.indentLeftTwips !== undefined ||
+      docDefaults.indentRightTwips !== undefined ||
+      docDefaults.indentFirstLineTwips !== undefined ||
+      docDefaults.indentChars)
+  ) {
+    for (const info of styles.values()) {
+      if (info.type !== 'paragraph') continue
+      const d: StyleDisplay = { ...info.display }
+      if (d.indentLeftTwips === undefined && docDefaults.indentLeftTwips !== undefined)
+        d.indentLeftTwips = docDefaults.indentLeftTwips
+      if (d.indentRightTwips === undefined && docDefaults.indentRightTwips !== undefined)
+        d.indentRightTwips = docDefaults.indentRightTwips
+      if (d.indentFirstLineTwips === undefined && docDefaults.indentFirstLineTwips !== undefined)
+        d.indentFirstLineTwips = docDefaults.indentFirstLineTwips
+      if (docDefaults.indentChars)
+        d.indentChars = d.indentChars
+          ? mergeCharIndents(docDefaults.indentChars, d.indentChars)
+          : docDefaults.indentChars
+      info.display = d
+    }
+  }
   if (docDefaults?.borderSides) {
     for (const info of styles.values()) {
       if (info.type !== 'paragraph') continue
@@ -421,9 +458,10 @@ export async function parseStyles(
   }
 
   // linkedStyle (w:link): a paragraph style and a character style form one unit (Word
-  // "linked styles"). Fill in run-level display properties in both directions (never
-  // overriding a style's own) — the common gap is a character-style shell with no rPr,
-  // where all run properties live on the linked paragraph style.
+  // "linked styles"). A character-style shell with no rPr of its own takes the run
+  // properties of its linked paragraph style. The reverse never happens: Word lays a
+  // paragraph out from the paragraph style chain alone, even when the Char twin
+  // carries properties (theme fonts, size) the paragraph style lacks.
   const RUN_KEYS = [
     'sizeHalfPoints',
     'color',
@@ -456,7 +494,7 @@ export async function parseStyles(
       [a, b],
       [b, a],
     ] as const) {
-      if (self.type !== 'character' && self.type !== 'paragraph') continue
+      if (self.type !== 'character' || other.type !== 'paragraph') continue
       const fill: Partial<StyleDisplay> = {}
       for (const key of RUN_KEYS) {
         if (self.display?.[key] === undefined && other.display?.[key] !== undefined) {

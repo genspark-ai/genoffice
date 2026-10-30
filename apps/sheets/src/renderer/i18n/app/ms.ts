@@ -393,6 +393,9 @@ export const ms = {
   appTableNameUsed: 'Nama jadual "{name}" telah digunakan dalam sesi ini.',
   appTableNameInFile: 'Nama jadual "{name}" sudah digunakan oleh jadual dalam fail.',
   appTableOverlapsSession: 'Julat bertindih dengan jadual "{name}" yang dicipta dalam sesi ini.',
+  appTableOverlapsFile: 'Julat bertindih dengan jadual "{name}" dalam fail.',
+  appTableAlreadyInTable:
+    'Pilihan sudah berada dalam jadual "{name}" — tukar gaya daripada Reka Bentuk Jadual.',
   appTablesNeedFile: 'Buka fail XLSX dahulu — jadual ditulis ke dalam fail.',
   appTableSelectRange: 'Pilih julat data dahulu — pengepala pada baris pertamanya.',
   appTableCreated: 'Jadual dicipta — simpan dengan ⌘S.',

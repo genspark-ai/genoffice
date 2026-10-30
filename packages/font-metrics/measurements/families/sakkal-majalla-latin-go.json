@@ -1,0 +1,18 @@
+{
+  "family": "Sakkal Majalla Latin GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["Sakkal Majalla (M365 cloud)", "LiberationSans-Regular.ttf"],
+    "probe": "hb-shape widths of a 64k-character Arabic report, Latin letters 0.67"
+  },
+  "faces": [
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 67,
+      "unicodeRange": "U+0041-005A, U+0061-007A",
+      "ascentOverride": 88.38,
+      "descentOverride": 51.27
+    }
+  ]
+}

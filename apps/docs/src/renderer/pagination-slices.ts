@@ -1,7 +1,7 @@
 // The slicing engine: greedy page breaking of measured blocks into page slices
 // (F2 model with table-row and line-level placement), plus page lookups.
+import { alignedOffset } from './editor/anchor-geometry'
 import { FOOTNOTE_SEPARATOR_H } from './line-metrics'
-import { BlockIndex } from './pagination-index'
 import type {
   BlockBox,
   PageSlice,
@@ -48,6 +48,41 @@ export function anchorBoxLift(
  *  to the previous one when a page ends on a table's bottom edge */
 export const TABLE_SEAM_PX = 1
 
+/** tolerance (px) for a page cut sitting on a table row boundary: row tops are
+ *  running sums of the same measured heights the slicer cut at, so a real seam
+ *  agrees up to float noise, while a wider band aliases hairline rows */
+export const ROW_SEAM_TOL_PX = 0.5
+
+export interface SeamDecision {
+  row: number
+  offset: number
+}
+
+/** nearest boundary of `rowTops` the cut sits on (offset = cut minus boundary), null inside a row */
+export function seamDecision(rowTops: readonly number[], cutY: number): SeamDecision | null {
+  let best: SeamDecision | null = null
+  for (let i = 0; i < rowTops.length; i++) {
+    const offset = cutY - rowTops[i]
+    if (Math.abs(offset) <= ROW_SEAM_TOL_PX && (!best || Math.abs(offset) < Math.abs(best.offset)))
+      best = { row: i, offset }
+  }
+  return best
+}
+
+/** top of every measured row (index 0 = the table top) */
+export function tableRowTops(table: {
+  top: number
+  tableRows?: ReadonlyArray<{ height: number }>
+}): number[] {
+  const tops: number[] = []
+  let y = table.top
+  for (const row of table.tableRows ?? []) {
+    tops.push(y)
+    y += row.height
+  }
+  return tops
+}
+
 /** preview window adjustments at table seams (px): `lift` opens this page's
  *  window above its start (negative: below it), `extend` grows its bottom */
 export function seamWindow(
@@ -91,8 +126,8 @@ export function applyLiftTops(slices: PageSlice[], blocks: BlockBox[]): void {
  *  table above its flow position (0 otherwise): the part above the page start
  *  hangs into the top margin like a lifted table */
 export function pageRelHang(b: BlockBox): number {
-  if (b.pageRelVyPx === undefined || !b.el) return 0
-  const dy = parseFloat(b.el.dataset.tblpDy ?? '') || 0
+  if (b.pageRelVyPx === undefined) return 0
+  const dy = b.floatShiftPx ?? 0
   return dy < 0 ? dy : 0
 }
 
@@ -170,22 +205,31 @@ export function markTableSeamSlices(slices: PageSlice[], blocks: BlockBox[]): vo
   for (let i = 1; i < slices.length; i++) {
     const s = slices[i]
     if (s.regions) continue
-    while (bi < blocks.length && blocks[bi].top < s.start - 0.5) bi++
+    while (bi < blocks.length && blocks[bi].top < s.start - ROW_SEAM_TOL_PX) bi++
     const lead = blocks[bi]
-    if (lead?.el?.tagName === 'TABLE' && Math.abs(lead.top - s.start) < 0.5) {
+    if (lead?.el?.tagName === 'TABLE' && seamDecision([lead.top], s.start)) {
       s.leadTable = true
       continue
     }
     const prev = blocks[bi - 1]
     if (prev?.el?.tagName !== 'TABLE') continue
-    if (prev.top + prev.height > s.start + 0.5) {
-      s.cutTable = true
+    if (prev.top + prev.height > s.start + ROW_SEAM_TOL_PX) {
+      // a cut through a row's cell text has no border on the seam: the window
+      // lift would show the previous page's last-line descenders at the top
+      if (cutOnRowSeam(prev, s.start)) s.cutTable = true
       continue
     }
     // the inter-block gap was folded into the table's height as spaceAfterPx
     const boxBottom = prev.top + prev.height - (prev.spaceAfterPx ?? 0)
-    if (Math.abs(boxBottom - s.start) <= 0.5) s.tailTable = true
+    if (seamDecision([boxBottom], s.start)) s.tailTable = true
   }
+}
+
+/** the page break lands on a row boundary of the table (rows without
+ *  measured geometry count as seams, the legacy behaviour) */
+function cutOnRowSeam(table: BlockBox, y: number): boolean {
+  if (!table.tableRows?.length) return true
+  return seamDecision(tableRowTops(table), y) !== null
 }
 
 /** minimum room a bandKeep block needs on the page (its anchor line, px):
@@ -340,6 +384,37 @@ export interface SliceResume {
   firstOfSection: boolean
   /** the section began mid-page earlier (continuous break) */
   continued: boolean
+  /** displayed number of the resumed page (even-page capacity) */
+  pageNo?: number
+}
+
+let rowSplitOverflows = 0
+
+/** capacity of one page of a section: the titlePg first page, then the
+ *  even-page variant, in hfVariantOf's order */
+export function pageCapacityPx(g: SectionGeom, firstOfSection: boolean, pageNo: number): number {
+  if (firstOfSection && g.firstContentHeight !== undefined) return g.firstContentHeight
+  if (g.evenContentHeight !== undefined && pageNo % 2 === 0) return g.evenContentHeight
+  return g.contentHeight
+}
+
+/** displayed number of the page after one numbered `prevNo` in `prevSection`
+ *  (-1 = none), as pageNumbers() derives it from the section geometry */
+export function pageNoAfterOf(
+  geomOf: (s: number) => SectionGeom,
+  prevNo: number,
+  prevSection: number,
+  section: number,
+): number {
+  if (prevSection === section) return prevNo + 1
+  const g = geomOf(section)
+  if (g.pageNumberStart !== undefined) return g.pageNumberStart
+  let n = prevNo + 1
+  if (prevSection !== -1) {
+    if (g.startType === 'evenPage' && n % 2 === 1) n += 1
+    if (g.startType === 'oddPage' && n % 2 === 0) n += 1
+  }
+  return n
 }
 
 export function computeSectionedSlicesF2(
@@ -356,6 +431,7 @@ export function computeSectionedSlicesF2(
   if (out?.floatSplits) out.floatSplits.length = 0
   if (out?.oversizeClips) out.oversizeClips.length = 0
   if (out?.colWrapRequests) out.colWrapRequests.length = 0
+  rowSplitOverflows = 0
   const total = Math.max(totalHeight, 0)
   // sections whose every block collapsed to a zero-height chip (lone sectPr
   // paragraphs) never appear in the measured blocks; they still claim their
@@ -395,6 +471,12 @@ export function computeSectionedSlicesF2(
   let pageStart = 0 // starting Y of the current page (absolute)
   let curSection = initSection
   let contentH = Math.max(geomOf(curSection).contentHeight, 1)
+  // displayed page numbers as pageNumbers() derives them: the even-page
+  // header/footer variant gives even pages their own capacity
+  let curPageNo = 0
+  let prevPageNo = 0
+  const pageNoAfter = (prevNo: number, prevSection: number, section: number) =>
+    pageNoAfterOf(geomOf, prevNo, prevSection, section)
   let regionTop = 0 // current region top (relative to page content-area top)
   let colCount = 1 // column count of the current region
   let colH = contentH // column height of the current region
@@ -534,7 +616,13 @@ export function computeSectionedSlicesF2(
         ? (resume?.firstOfSection ?? true)
         : pages[pages.length - 1].section !== section)
     const g = geomOf(section)
-    contentH = Math.max((firstOfSection ? g.firstContentHeight : undefined) ?? g.contentHeight, 1)
+    const lastPage = pages[pages.length - 1]
+    prevPageNo = curPageNo
+    curPageNo =
+      !lastPage && resume?.pageNo !== undefined
+        ? resume.pageNo
+        : pageNoAfter(curPageNo, lastPage?.section ?? -1, section)
+    contentH = Math.max(pageCapacityPx(g, firstOfSection, curPageNo), 1)
     pages.push({ section, regions: [], ...(continued ? { continued: true } : {}) })
     openRegion(y, section, headerH, headerTop)
     pageNoteSepPx = curBlockNotes ? FOOTNOTE_SEPARATOR_H : 0
@@ -780,10 +868,14 @@ export function computeSectionedSlicesF2(
   const freshColH = () => {
     const g = geomOf(curSection)
     const continued = (midPageStart.get(curSection) ?? Infinity) < blocks[curBi].top - 0.5
+    const last = pages[pages.length - 1]
     const fresh =
-      pages[pages.length - 1]?.section === curSection
+      last?.section === curSection
         ? colH
-        : Math.max((continued ? undefined : g.firstContentHeight) ?? g.contentHeight, 1)
+        : Math.max(
+            pageCapacityPx(g, !continued, pageNoAfter(curPageNo, last?.section ?? -1, curSection)),
+            1,
+          )
     return fresh - (curBlockNotes ? FOOTNOTE_SEPARATOR_H : 0)
   }
   // whether height h fits in the current column (runaway degrade: everything fits)
@@ -867,7 +959,8 @@ export function computeSectionedSlicesF2(
         page.section = bSection
         delete page.continued
         page.regions.pop()
-        contentH = Math.max(g.firstContentHeight ?? g.contentHeight, 1)
+        curPageNo = pageNoAfter(prevPageNo, pages[pages.length - 2]?.section ?? -1, bSection)
+        contentH = Math.max(pageCapacityPx(g, true, curPageNo), 1)
         openRegion(block.top, bSection)
       } else if (newCols !== colCount || (colCount > 1 && !g.colBreakStart && !g.forceBreak)) {
         // continuous section closing a multi-column region (a column-count change,
@@ -1000,6 +1093,30 @@ export function computeSectionedSlicesF2(
       if (flowing) out.floatFlows.push({ blockTop: block.top })
     }
 
+    // page/margin-anchored w:tblpY: shift the float to its target Y on the
+    // page it lands on. Never up past content already placed (flow position
+    // is the floor, like the X clamp keeping floats on the page) — except at
+    // a page top, where the table may hang into the top margin like Word's
+    // page-anchored cover blocks; empty paragraphs above it hold nothing it
+    // could overprint, so they count as a page top too (Word pins the table
+    // at its page Y with the blank lines under it). A table about to flow
+    // gets no shift: the flowed pass could not strip it and would not re-run.
+    const pageRelShift = (): number => {
+      const topPx = geomOf(curSection).topPx ?? 0
+      const pageRel = block.pageRelVAnchor === 'page'
+      const spanH = pageRel ? (geomOf(curSection).pageHeightPx ?? topPx + contentH) : contentH
+      const spec = block.pageRelVSpec
+      const alignY = spec ? alignedOffset(spec, spanH, block.height) : block.pageRelVyPx!
+      const target = pageRel ? alignY - topPx : alignY
+      // single-column pages: the float's measured top is where CSS puts it
+      // (below an earlier float it stacked under); the virtual flow position
+      // stands in where columns make the DOM column-agnostic
+      const flowY = colCount === 1 ? block.top - pageStart : regionTop + usedInCol
+      const dy = target - flowY
+      if (dy >= 0) return dy
+      return pageBlank() || pageInkless() ? Math.max(dy, pageRel ? -topPx - flowY : -flowY) : 0
+    }
+
     if (block.floated) {
       // whole-row cuts only: an in-row cut would leave the continuation where
       // it is in the DOM, and the wrapping text follows the real box
@@ -1025,36 +1142,6 @@ export function computeSectionedSlicesF2(
         block.lifted && colCount === 1
           ? Math.max(0, block.top - pageStart + leadH - usedInCol)
           : leadH
-      // page/margin-anchored w:tblpY: shift the float to its target Y on the
-      // page it lands on. Never up past content already placed (flow position
-      // is the floor, like the X clamp keeping floats on the page) — except at
-      // a page top, where the table may hang into the top margin like Word's
-      // page-anchored cover blocks; empty paragraphs above it hold nothing it
-      // could overprint, so they count as a page top too (Word pins the table
-      // at its page Y with the blank lines under it). A table about to flow
-      // gets no shift: the flowed pass could not strip it and would not re-run.
-      const pageRelShift = (): number => {
-        const topPx = geomOf(curSection).topPx ?? 0
-        const pageRel = block.pageRelVAnchor === 'page'
-        const spanH = pageRel ? (geomOf(curSection).pageHeightPx ?? topPx + contentH) : contentH
-        const spec = block.pageRelVSpec
-        const alignY =
-          spec === 'bottom'
-            ? spanH - block.height
-            : spec === 'center'
-              ? (spanH - block.height) / 2
-              : spec === 'top'
-                ? 0
-                : block.pageRelVyPx!
-        const target = pageRel ? alignY - topPx : alignY
-        // single-column pages: the float's measured top is where CSS puts it
-        // (below an earlier float it stacked under); the virtual flow position
-        // stands in where columns make the DOM column-agnostic
-        const flowY = colCount === 1 ? block.top - pageStart : regionTop + usedInCol
-        const dy = target - flowY
-        if (dy >= 0) return dy
-        return pageBlank() || pageInkless() ? Math.max(dy, pageRel ? -topPx - flowY : -flowY) : 0
-      }
       const pageRelShifts = block.pageRelVyPx !== undefined && !flowing
       // a lifted float turns the page at its flow position, not at its lifted
       // visual top; a page-anchored float that lifts over blank lines fits
@@ -1115,6 +1202,16 @@ export function computeSectionedSlicesF2(
       queueBreakAfter(block)
       if (block.colBreakAfter) pendingColBreak = true
       continue
+    }
+
+    // in-flow wrapTopAndBottom band with a page/margin Y (wp:posOffset or
+    // wp:align): the same target as a float, applied as the band's top margin,
+    // so the shift is flow height (probe 2026-10-29: the band at the margin
+    // top, the paragraphs above the anchor flow below it)
+    if (block.pageRelVyPx !== undefined && !block.floated) {
+      const dy = pageRelShift()
+      out?.floatVShifts?.push({ blockTop: block.top, dyPx: dy })
+      usedInCol += dy - (block.pageRelVApplied ?? 0)
     }
 
     // column-spanning wrap band (anchored box): Word keeps the box on its
@@ -1364,50 +1461,15 @@ export function computeSectionedSlicesF2(
           anchorNeedH = anchorBlock.height // no line data yet (first pass): conservative
         }
       }
-      const chainPlusAnchorH = chainH + anchorNeedH
-      // whichever line ends the kept stack (anchor demand, else the chain tail)
-      // may spill its leading; every guard below measures the stack that way
-      const anchorLead =
-        anchorNeedH > 0 &&
-        !anchorBlock?.tableRows?.length &&
-        anchorBlock?.oversizeLineH === undefined
-          ? (anchorBlock?.lineLeadPx ?? 0)
-          : 0
-      const tailLead = blocks[effectiveChainEnd].lineLeadPx ?? 0
-      const stackLead = anchorNeedH > 0 ? anchorLead : tailLead
 
-      if (chainH - tailLead <= freshColH()) {
-        // whole chain (keepNext blocks) fits on a page: the chain + anchor demand
-        // must share a page (keepNext semantics); if it doesn't fit, push the whole chain
-        // to the next page (Word behavior; corpus 04 evidence: section 3.2 chain pushed).
-        // Only abandon the constraint when chain + anchor demand can't fit even an
-        // empty page (no solution; avoids infinite loops).
-        if (
-          !fits(chainPlusAnchorH - stackLead) &&
-          !colEmpty() &&
-          chainPlusAnchorH - stackLead <= freshColH()
-        ) {
-          advancePastPad()
-        } else if (!fits(chainH - tailLead) && !colEmpty()) {
-          // no page can hold chain + anchor demand: the constraint is dropped,
-          // but the chain blocks still place whole (a heading must not be cut)
-          advancePastPad()
-        }
-        // place chain head through chain tail (the keepNext blocks)
-        for (let k = bi; k <= effectiveChainEnd; k++) place(blocks[k].height)
-        bi = effectiveChainEnd
-        queueBreakAfter(blocks[effectiveChainEnd])
-        if (blocks[effectiveChainEnd].colBreakAfter) pendingColBreak = true
-        continue
-      }
-
-      // chain exceeds one page (Word probe 2026-10-14): every block still keeps
-      // with the next one's first lines. A block that cannot pulls the chain
-      // blocks sharing its column along to a fresh column; once that run opens
-      // the column the keep is dropped there and the chain fills the page.
-      // A paragraph the widow rules let split keeps by splitting instead. A block
-      // opening a column heads the rest of the chain itself (same state as a
-      // pass resumed at that page).
+      // Word probes 2026-10-14 / corpus 2026-10-27: keepNext binds only a
+      // block's last line to the next block's first lines, whatever the chain's
+      // total height. A block that cannot keep pulls the chain blocks sharing
+      // its column along to a fresh column; once that run opens the column the
+      // keep is dropped there and the chain fills the page. A paragraph the
+      // widow rules let split keeps by splitting instead of moving (even when
+      // the whole chain would fit a fresh page). A block opening a column heads
+      // the rest of the chain itself (same state as a pass resumed at that page).
       const openColumnAt = (k: number) => {
         chainColStarts.add(k)
         reheadChain(k)
@@ -1422,16 +1484,37 @@ export function computeSectionedSlicesF2(
         for (let li = 0; li < need; li++) h += ls[li].height
         return h
       }
+      // line data is sampled only for page-edge blocks; a chain block whose
+      // natural position straddles the bottom never lies on a page edge once
+      // the chain moves, so ask for its lines and decide on the next pass
+      const requestLines = (b: BlockBox) => {
+        if (!b.lineBoxes && b.el && !b.tableRows && !b.keepLines && b.oversizeLineH === undefined)
+          out?.lineRequests?.add(b)
+      }
       const splitHead = (b: BlockBox, room: number): number | undefined => {
         const ls = b.lineBoxes
         const minL = b.widowControl !== false ? 2 : 1
-        if (b.keepLines || b.footnoteExtraPx || !ls || ls.length < 2 * minL) return undefined
+        if (b.keepLines || b.footnoteExtraPx || b.oversizeLineH !== undefined) return undefined
+        requestLines(b)
+        if (!ls || ls.length < 2 * minL) return undefined
         let h = b.spaceBeforePx ?? 0
         let n = 0
         for (; n < ls.length - minL && h + ls[n].height - (b.lineLeadPx ?? 0) <= room + 0.01; n++)
           h += ls[n].height
         if (n < minL || b.height - h > freshColH()) return undefined
         return h
+      }
+      // height of a block's head when only its last widow-minimum lines leave
+      // with the block after it; undefined when it may not split that way
+      const splitTail = (b: BlockBox): number | undefined => {
+        const ls = b.lineBoxes
+        const minL = b.widowControl !== false ? 2 : 1
+        if (b.keepLines || b.footnoteExtraPx || b.oversizeLineH !== undefined) return undefined
+        requestLines(b)
+        if (!ls || ls.length < 2 * minL) return undefined
+        let h = b.spaceBeforePx ?? 0
+        for (let n = 0; n < ls.length - minL; n++) h += ls[n].height
+        return b.height - h > freshColH() ? undefined : h
       }
       let avail = capColH() - usedInCol
       let used = 0
@@ -1447,6 +1530,9 @@ export function computeSectionedSlicesF2(
             used += b.height
             continue chain
           }
+          // a line-less next block demands its whole height: its real first
+          // lines may fit, so sample it too
+          if (next) requestLines(next)
           const head = splitHead(b, avail - used)
           if (head !== undefined) {
             chainSplits.set(k, head)
@@ -1457,6 +1543,24 @@ export function computeSectionedSlicesF2(
             continue chain
           }
           if (colTop) break
+          // keepNext binds the previous block's last line to this one: before
+          // the run moves, the nearest earlier block the widow rules let split
+          // gives up its last lines instead (Word: a 4-line paragraph splits
+          // 2 + 2 ahead of a 3-line one that cannot split, corpus 2026-10-28)
+          let tailed = false
+          for (let j = k - 1; j >= segStart; j--) {
+            const head = splitTail(blocks[j])
+            if (head === undefined) continue
+            chainSplits.set(j, head)
+            avail = freshColH()
+            used = blocks[j].height - head
+            for (let i = j + 1; i < k; i++) used += blocks[i].height
+            colTop = true
+            segStart = j + 1
+            tailed = true
+            break
+          }
+          if (tailed) continue
           // the run sharing this column moves to a fresh one and tries again
           if (segStart > bi) {
             openColumnAt(segStart)
@@ -1598,6 +1702,10 @@ export function computeSectionedSlicesF2(
   const flowEnd = Math.max(total, pageStart)
   const endOf = new Map<ColEntry, number>()
   flat.forEach((e, i) => endOf.set(e, i + 1 < flat.length ? flat[i + 1].y : flowEnd))
+  if (out) {
+    out.runaway = runaway
+    out.rowSplitOverflows = rowSplitOverflows
+  }
 
   return pages.map((p) => {
     const entries = p.regions.flatMap((r) => r.entries)
@@ -2115,6 +2223,7 @@ function _placeTable(
           turnedForMinH = true
           plan = planRowSplit(row, remain() - notes, contentH, turn, widow)
         }
+        if (plan === null) rowSplitOverflows++
         if (plan && plan !== 'nofit') {
           place(plan.lastFragment + (firstFragment ? notes : 0))
           const naturalH = row.height - (row.splitExtra ?? 0)
@@ -2560,6 +2669,14 @@ function _placeBrokenPara(
       footnoteExtraPx: segNotes || undefined,
     }
     if (!first && !pageEmpty()) forcePage(seg.top, curSection)
+    // a leading break's own line never pushes the paragraph: Word ends the
+    // page right there even when the line does not fit the remainder (probe
+    // 2026-10-27: 6.8pt left, the text starts the next page, no blank sheet)
+    if (first && block.leadingBreakCut && !pageEmpty()) {
+      place(0)
+      segStart = segEnd
+      return
+    }
     _placeParaBlock(
       seg,
       seg.lineBoxes ?? null,
@@ -2663,6 +2780,12 @@ export function pageAt(slices: PageSlice[], y: number): number {
   return page
 }
 
+/** 0-based page a block or line top belongs to: a top sitting on a page
+ *  boundary (within `tol`) opens that page rather than closing the previous one */
+export function pageOfY(slices: PageSlice[], top: number, tol = 0.5): number {
+  return pageAt(slices, top + tol) - 1
+}
+
 /**
  * Pages the user can see: an even/odd-section parity blank shares its start with the
  * neighbouring slice and draws no page, so NUMPAGES, the status bar, and the gap
@@ -2681,20 +2804,6 @@ export function visiblePageCount(slices: PageSlice[], upTo = slices.length): num
       n++
   }
   return n
-}
-
-/**
- * Index of each non-first-page page-leading block (a page gap should be inserted before it).
- * Hard pixel-cut boundaries (inside over-page big blocks, with no matching block) are skipped.
- */
-export function pageStartBlocks(blocks: BlockBox[], slices: PageSlice[]): number[] {
-  const starts: number[] = []
-  const index = new BlockIndex(blocks)
-  for (const slice of slices.slice(1)) {
-    const i = index.firstAtTop(slice.start)
-    if (i >= 0) starts.push(i)
-  }
-  return starts
 }
 
 /**

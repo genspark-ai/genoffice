@@ -409,6 +409,9 @@ export const pl = {
   appTableNameUsed: 'Nazwa tabeli „{name}” została już użyta w tej sesji.',
   appTableNameInFile: 'Nazwa tabeli "{name}" jest już używana przez tabelę w pliku.',
   appTableOverlapsSession: 'Zakres nakłada się na tabelę „{name}” utworzoną w tej sesji.',
+  appTableOverlapsFile: 'Zakres nakłada się na tabelę „{name}” w pliku.',
+  appTableAlreadyInTable:
+    'Zaznaczenie znajduje się już w tabeli „{name}” — zmień styl w Projektowaniu tabeli.',
   appTablesNeedFile: 'Najpierw otwórz plik XLSX — tabele są zapisywane w pliku.',
   appTableSelectRange: 'Najpierw zaznacz zakres danych — nagłówki w pierwszym wierszu.',
   appTableCreated: 'Utworzono tabelę — zapisz za pomocą ⌘S.',

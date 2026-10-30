@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/atleast-row-margins/probe.docx",
+  "tables": 3,
+  "hashes": ["9974c944376ca646", "65b96117c6089b0e", "9974c944376ca646"],
+  "staticTables": 3,
+  "staticHashes": ["53b744ba0378be4a", "8d315c2e8cf729be", "53b744ba0378be4a"]
+}

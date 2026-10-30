@@ -3,12 +3,14 @@ import { buildNamingInstruction, excerptForNaming, sanitizeFileStem } from '../s
 
 describe('sanitizeFileStem', () => {
   it('keeps a plain name unchanged', () => {
-    expect(sanitizeFileStem('季度营收总结')).toBe('季度营收总结')
+    expect(sanitizeFileStem('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3')).toBe(
+      '\u5b63\u5ea6\u8425\u6536\u603b\u7ed3',
+    )
     expect(sanitizeFileStem('Q3 Revenue Review')).toBe('Q3 Revenue Review')
   })
 
   it('drops a path, keeping the last segment', () => {
-    expect(sanitizeFileStem('reports/2026/Q3 营收')).toBe('Q3 营收')
+    expect(sanitizeFileStem('reports/2026/Q3 \u8425\u6536')).toBe('Q3 \u8425\u6536')
     expect(sanitizeFileStem('C:\\Users\\me\\notes')).toBe('notes')
   })
 
@@ -94,9 +96,9 @@ describe('sanitizeFileStem', () => {
 
 describe('buildNamingInstruction', () => {
   it('asks for a bare name and names the language', () => {
-    const out = buildNamingInstruction('some text', '简体中文')
+    const out = buildNamingInstruction('some text', '\u7b80\u4f53\u4e2d\u6587')
     expect(out).toContain('file name')
-    expect(out).toContain('简体中文')
+    expect(out).toContain('\u7b80\u4f53\u4e2d\u6587')
     expect(out).toContain('some text')
     expect(out).toContain('no extension')
   })

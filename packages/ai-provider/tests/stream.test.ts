@@ -246,7 +246,7 @@ describe('streamForProvider: temperature policy', () => {
     vi.stubGlobal('fetch', fetchMock)
     await streamForProvider(
       'openai',
-      { apiKey: 'k', model: 'gpt-5.6-luna' },
+      { apiKey: 'k', model: 'gpt-5.2' },
       'sys',
       [],
       [],

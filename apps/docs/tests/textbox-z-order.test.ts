@@ -73,3 +73,13 @@ describe('renderTextboxSpec paragraph line sizing', () => {
     expect(marked.style.fontSize).toBe('4pt')
   })
 })
+
+describe('renderTextboxSpec RTL paragraphs', () => {
+  it('a w:bidi paragraph is RTL and isolates its Latin runs LTR like the editor', () => {
+    const box: TextboxDisplay = { paras: [{ runs: [{ text: 'abc 123' }], bidi: true }] }
+    const { dom } = DOMSerializer.renderSpec(document, renderTextboxSpec(box) as never)
+    const p = (dom as HTMLElement).querySelector('.doc-textbox-para') as HTMLElement
+    expect(p.getAttribute('style')).toMatch(/direction:\s*rtl.*unicode-bidi:\s*isolate/)
+    expect(p.querySelector(':scope > span.doc-ltr-runs')).not.toBeNull()
+  })
+})

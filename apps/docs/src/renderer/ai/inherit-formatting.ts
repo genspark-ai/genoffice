@@ -300,11 +300,10 @@ function inheritCell(
 ): PmNode {
   const attrs: Record<string, unknown> =
     mode === 'full' ? { ...oldJson.attrs } : { ...(next.attrs ?? {}) }
+  // the old cell's look wins outright, null included: the parser's own defaults
+  // (new-table vAlign, synthetic header fill) must not restyle a rewritten table
   if (mode === 'style') {
-    for (const key of CELL_STYLE_ATTRS) {
-      const value = oldJson.attrs?.[key]
-      if (value != null) attrs[key] = value
-    }
+    for (const key of CELL_STYLE_ATTRS) attrs[key] = oldJson.attrs?.[key] ?? null
   }
   return { type: oldJson.type, attrs, content: inheritCellContent(old, oldJson, next) }
 }

@@ -1,0 +1,31 @@
+{
+  "id": "cell-cs-mixed-line",
+  "title": "A cell line mixing Calibri Latin runs and a cs Arial Arabic run at one size is the Calibri line (1.22): the cs span gives up its own box and the strut paces the line",
+  "section": "word-truths.md#L788",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf rules: mixed row 15.12 (14.64 + gridline), the Arabic-only cs Arial row beside it 14.40, Latin control 15.12; same as the 2026-10-13 body probe (mixed 14.64, Arabic-only 13.80)",
+  "cases": [
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 0,
+      "expect": {
+        "classes": ["doc-cs-mixed"],
+        "styles": ["--doc-line-factor:1.22"]
+      },
+      "note": "styles.css .doc-cs-mixed span[data-cs] { line-height:0 }: without it Chromium unions the centred Arial box under the Calibri strut to 1.31"
+    },
+    {
+      "kind": "cellLineBox",
+      "block": 1,
+      "row": 1,
+      "expect": {
+        "notClasses": ["doc-cs-mixed"],
+        "styles": ["--doc-line-factor:1.15"]
+      },
+      "note": "Arabic-only: the cs face is the strut, nothing to collapse"
+    }
+  ],
+  "docx": "probe.docx"
+}

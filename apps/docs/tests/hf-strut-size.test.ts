@@ -5,48 +5,54 @@
  * a strip-wide max gave 8pt letterhead lines an 11pt title's strut.
  */
 import { describe, expect, it } from 'vitest'
+import { hfTabSegments, makeGapHfEl } from '../src/renderer/editor/hf-dom'
 import {
-  hfParaLineFactorStyle,
+  fromHfParagraph,
+  hfLineFactorNumber,
   hfParaLineHeightCss,
-  hfParaStrutFontSize,
-  hfRunsFaceFactor,
-  hfRunsStrutPt,
-  hfTabSegments,
-  makeGapHfEl,
-} from '../src/renderer/editor/hf-dom'
-import { runsLineFactor } from '../src/renderer/line-metrics'
+  layoutParaOfRuns,
+  paraLineFactor,
+  toStyleRecord,
+} from '../src/renderer/editor/para-layout-spec'
 
 const p = (runs: object[]) => ({ runs }) as never
+/** inline style of a strip paragraph made of these runs */
+const strip = (para: object) => toStyleRecord(fromHfParagraph(para as never))
+const strut = (pt: number) => ({ '--doc-strut': `${pt}pt`, fontSize: 'var(--doc-strut)' })
 
-describe('hfRunsStrutPt', () => {
-  it('largest declared size when every text run declares one', () => {
-    expect(hfRunsStrutPt([{ text: '\u5b66\u4f1a\u8a8c', sizeHalfPoints: 16 }] as never)).toBe(8)
+describe('strip paragraph strut size', () => {
+  it('smallest declared size carries the strut; larger runs lay their own boxes', () => {
+    // Word probe 2026-10-29: 8pt br-lines under an 11pt first line pitch 8 x 1.15
+    expect(strip(p([{ text: '\u5b66\u4f1a\u8a8c', sizeHalfPoints: 16 }]))).toMatchObject(strut(8))
     expect(
-      hfRunsStrutPt([
-        { text: 'a', sizeHalfPoints: 16 },
-        { text: 'b', sizeHalfPoints: 18 },
-      ] as never),
-    ).toBe(9)
+      strip(
+        p([
+          { text: 'a', sizeHalfPoints: 16 },
+          { text: 'b', sizeHalfPoints: 18 },
+        ]),
+      ),
+    ).toMatchObject(strut(8))
   })
 
-  it('a text run without a size inherits the strip base (null)', () => {
-    expect(hfRunsStrutPt([{ text: 'a', sizeHalfPoints: 16 }, { text: 'b' }] as never)).toBe(null)
+  it('a text run without a size inherits the strip base through .doc-strut-mixed', () => {
+    const box = fromHfParagraph(p([{ text: 'a', sizeHalfPoints: 16 }, { text: 'b' }]))
+    expect(box.classes).toContain('doc-strut-mixed')
+    expect(toStyleRecord(box)['--doc-strut']).toBe('min(8pt,var(--doc-base-fs,8pt))')
   })
 
-  it('whitespace-only runs never veto and only size empty paragraphs', () => {
-    expect(hfRunsStrutPt([{ text: ' ' }, { text: 'x', sizeHalfPoints: 16 }] as never)).toBe(8)
-    expect(hfRunsStrutPt([{ text: ' ', sizeHalfPoints: 24 }] as never)).toBe(12)
+  it('whitespace-only runs never size a line; a space-only paragraph is sized by its mark', () => {
+    expect(strip(p([{ text: ' ' }, { text: 'x', sizeHalfPoints: 16 }]))).toMatchObject(strut(8))
     expect(
-      hfRunsStrutPt([
-        { text: ' ', sizeHalfPoints: 24 },
-        { text: 'x', sizeHalfPoints: 16 },
-      ] as never),
-    ).toBe(8)
+      strip({ runs: [{ text: ' ', sizeHalfPoints: 24 }], emptyRunSizeHalfPoints: 16 }),
+    ).toMatchObject({ fontSize: '8pt' })
   })
 
-  it('empty runs yield null', () => {
-    expect(hfRunsStrutPt([])).toBe(null)
-    expect(hfParaStrutFontSize([])).toBe(null)
+  it('an empty paragraph lays a Latin line at the strip size', () => {
+    expect(strip(p([]))).toEqual({
+      direction: 'ltr',
+      '--doc-line-factor': 'var(--doc-line-factor-latin,1.2)',
+      lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    })
   })
 })
 
@@ -67,8 +73,8 @@ describe('makeGapHfEl per-paragraph strut', () => {
     })
     expect(el.style.fontSize).toBe('')
     const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
-    expect(paras[0].style.fontSize).toBe('min(11pt, var(--hf-default-fs, 10.5pt))')
-    expect(paras[1].style.fontSize).toBe('min(8pt, var(--hf-default-fs, 10.5pt))')
+    expect(paras[0].style.getPropertyValue('--doc-strut')).toBe('11pt')
+    expect(paras[1].style.getPropertyValue('--doc-strut')).toBe('8pt')
     expect(paras[2].style.fontSize).toBe('')
   })
 
@@ -90,8 +96,8 @@ describe('makeGapHfEl per-paragraph strut', () => {
       pageTotal: 1,
     })
     const cellParas = el.querySelectorAll<HTMLElement>('.page-hf-cell-para')
-    expect(cellParas[0].style.fontSize).toBe('min(8pt, var(--hf-default-fs, 10.5pt))')
-    expect(cellParas[1].style.fontSize).toBe('min(10pt, var(--hf-default-fs, 10.5pt))')
+    expect(cellParas[0].style.getPropertyValue('--doc-strut')).toBe('8pt')
+    expect(cellParas[1].style.getPropertyValue('--doc-strut')).toBe('10pt')
   })
 })
 
@@ -127,7 +133,9 @@ describe('strip paragraph line spacing', () => {
     })
     const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
     expect(paras[0].style.lineHeight).toBe('calc(var(--doc-line-factor,1.2) * 1)')
-    expect(paras[1].style.lineHeight).toBe('')
+    expect(paras[1].style.lineHeight).toBe(
+      'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    )
   })
 })
 
@@ -151,11 +159,13 @@ describe('makeGapHfEl blank paragraph size', () => {
 describe('strip paragraph line factor follows the runs’ face', () => {
   it('a Times New Roman 8pt line is 8 x 1.15, not the body font factor', () => {
     const runs = [{ text: 'NPSN : 2056', sizeHalfPoints: 16, fontAscii: 'Times New Roman' }]
-    expect(hfParaLineFactorStyle(runs as never)).toEqual({
+    expect(strip(p(runs))).toMatchObject({
       '--doc-line-factor': '1.15',
       lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+      ...strut(8),
     })
-    expect(hfRunsFaceFactor(runs as never)).toBe(1.15)
+    expect(strip(p(runs)).fontFamily).toMatch(/^'Times New Roman'/)
+    expect(hfLineFactorNumber(runs as never)).toBe(1.15)
   })
 
   it('a footer table line keeps the inherited document multiple (docDefaults line=276)', () => {
@@ -185,10 +195,16 @@ describe('strip paragraph line factor follows the runs’ face', () => {
     )
   })
 
-  it('runs without a declared face keep the inherited strip factor', () => {
-    expect(hfParaLineFactorStyle([{ text: 'plain', sizeHalfPoints: 16 }] as never)).toEqual({})
+  it('runs without a declared face take the inherited face factor at their size', () => {
+    // Word probe 2026-10-29: an inherited-face 8pt strip line pitches 8 x 1.22
+    expect(strip(p([{ text: 'plain', sizeHalfPoints: 16 }]))).toEqual({
+      direction: 'ltr',
+      '--doc-line-factor': 'var(--doc-line-factor-latin,1.2)',
+      lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+      ...strut(8),
+    })
     expect(
-      hfRunsFaceFactor([{ text: 'a', fontAscii: 'Times New Roman' }, { text: 'b' }] as never),
+      hfLineFactorNumber([{ text: 'a', fontAscii: 'Times New Roman' }, { text: 'b' }] as never),
     ).toBe(null)
   })
 
@@ -218,8 +234,12 @@ describe('strip paragraph line factor follows the runs’ face', () => {
     )
     expect(paras[1].style.getPropertyValue('--doc-line-factor')).toBe('1.172')
     expect(paras[1].style.lineHeight).toBe('calc(var(--doc-line-factor,1.2) * 1.5)')
-    expect(paras[2].style.getPropertyValue('--doc-line-factor')).toBe('')
-    expect(paras[2].style.lineHeight).toBe('')
+    expect(paras[2].style.getPropertyValue('--doc-line-factor')).toBe(
+      'var(--doc-line-factor-latin,1.2)',
+    )
+    expect(paras[2].style.lineHeight).toBe(
+      'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    )
   })
 
   it('a tabbed line floors at run size x face factor instead of the 1.3 guess', () => {
@@ -253,19 +273,23 @@ describe('strip paragraph line factor follows the runs’ face', () => {
       runs: [{ text: '\t', sizeHalfPoints: 16, fontAscii: 'Times New Roman' }, cjk],
       tabStops: [{ pos: 9000, align: 'right' }],
     } as never)
-    const ea = runsLineFactor([cjk] as never, cjk.text)
+    const ea = paraLineFactor(layoutParaOfRuns([cjk] as never, cjk.text, null))
     expect(Number(ea)).toBeGreaterThan(1.15)
     expect(tabbed?.minHeightPt).toBeCloseTo(8 * Number(ea), 5)
-    expect(hfRunsFaceFactor([cjk] as never)).toBe(Number(ea))
+    expect(hfLineFactorNumber([cjk] as never)).toBe(Number(ea))
     expect(
-      hfRunsFaceFactor([{ ...cjk, font: undefined, fontAscii: 'Times New Roman' }] as never),
+      hfLineFactorNumber([{ ...cjk, font: undefined, fontAscii: 'Times New Roman' }] as never),
     ).toBe(null)
   })
 
   it('a mixed-script run with an East Asian face but no Latin face keeps the EA factor', () => {
     const run = { text: '\u7b2c\u4e00\u7ae0 Chapter', sizeHalfPoints: 16, font: 'Microsoft YaHei' }
-    const ea = Number(runsLineFactor([{ ...run, text: '\u7b2c\u4e00\u7ae0' }] as never, '\u7b2c'))
+    const ea = Number(
+      paraLineFactor(
+        layoutParaOfRuns([{ ...run, text: '\u7b2c\u4e00\u7ae0' }] as never, '\u7b2c', null),
+      ),
+    )
     expect(ea).toBeGreaterThan(1.3)
-    expect(hfRunsFaceFactor([run] as never)).toBe(ea)
+    expect(hfLineFactorNumber([run] as never)).toBe(ea)
   })
 })

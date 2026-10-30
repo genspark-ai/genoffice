@@ -396,6 +396,9 @@ export const ko = {
   appTableNameUsed: '표 이름 "{name}"은(는) 이번 세션에서 이미 사용되었습니다.',
   appTableNameInFile: '테이블 이름 "{name}"은(는) 파일의 테이블에서 이미 사용 중입니다.',
   appTableOverlapsSession: '이 범위는 이번 세션에서 만든 표 "{name}"과(와) 겹칩니다.',
+  appTableOverlapsFile: '이 범위는 파일의 표 "{name}"과(와) 겹칩니다.',
+  appTableAlreadyInTable:
+    '선택 영역이 이미 표 "{name}" 안에 있습니다. 스타일은 표 디자인에서 변경하세요.',
   appTablesNeedFile: '먼저 XLSX 파일을 여십시오. 표는 파일에 기록됩니다.',
   appTableSelectRange: '먼저 데이터 범위를 선택하십시오. 첫 행이 머리글이 됩니다.',
   appTableCreated: '표를 만들었습니다 — ⌘S로 저장합니다.',

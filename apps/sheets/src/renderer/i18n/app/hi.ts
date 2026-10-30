@@ -394,6 +394,9 @@ export const hi = {
   appTableNameUsed: 'तालिका नाम "{name}" इस सत्र में पहले से उपयोग हो चुका है।',
   appTableNameInFile: 'तालिका नाम "{name}" फ़ाइल की किसी तालिका द्वारा पहले से उपयोग में है।',
   appTableOverlapsSession: 'यह श्रेणी इस सत्र में बनाई गई तालिका "{name}" से अतिव्याप्त होती है।',
+  appTableOverlapsFile: 'यह श्रेणी फ़ाइल की तालिका "{name}" से अतिव्याप्त होती है।',
+  appTableAlreadyInTable:
+    'चयन पहले से तालिका "{name}" में है — शैली बदलने के लिए तालिका डिज़ाइन का उपयोग करें।',
   appTablesNeedFile: 'पहले एक XLSX फ़ाइल खोलें — तालिकाएँ फ़ाइल में लिखी जाती हैं।',
   appTableSelectRange: 'पहले डेटा श्रेणी चुनें — पहली पंक्ति में शीर्ष।',
   appTableCreated: 'तालिका बनाई गई — ⌘S से सहेजें।',

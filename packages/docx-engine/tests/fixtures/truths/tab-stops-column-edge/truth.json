@@ -1,0 +1,102 @@
+{
+  "id": "tab-stops-column-edge",
+  "title": "Right tab stops are measured from the column edge (the indent only moves the text start); a left default stop past the edge wraps the tab instead of pinning it",
+  "section": "word-truths.md#L371",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28): A4 1080 margins (column 9746 twips), Arial 11, right dot-leader stop at 9746 under w:ind left 0/240/480: titles start 54.0/66.0/78.0, every page number's ink ends at 541.32 = 54 + 487.3 - bearing; control paragraph 54.0. Trailing-tab probe (render-tab-trailing-wrap): a left default stop past the edge wraps whether or not text follows the tab",
+  "cases": [
+    {
+      "kind": "tabTargetPt",
+      "xPt": 60,
+      "segWidthPt": 12.24,
+      "paraWPt": 487.3,
+      "stopsPt": [{ "pos": 487.3, "val": "right" }],
+      "expect": 475.06,
+      "tol": 0.8,
+      "note": "indent 0: the number's left edge is the stop minus its width (gen lands 1px short: the flush-right pin guard against Chromium's round-up)"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 72,
+      "segWidthPt": 12.24,
+      "paraWPt": 487.3,
+      "stopsPt": [{ "pos": 487.3, "val": "right" }],
+      "expect": 475.06,
+      "tol": 0.8,
+      "note": "indent 240: same landing, the indent moved only the title"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 84,
+      "segWidthPt": 12.24,
+      "paraWPt": 487.3,
+      "stopsPt": [{ "pos": 487.3, "val": "right" }],
+      "expect": 475.06,
+      "tol": 0.8,
+      "note": "indent 480"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 84,
+      "segWidthPt": 12.24,
+      "paraWPt": 487.3,
+      "stopsPt": [{ "pos": 400, "val": "right" }],
+      "expect": 387.76,
+      "tol": 0.05,
+      "note": "a right stop inside the column lands exactly"
+    },
+    {
+      "kind": "format",
+      "block": 2,
+      "expect": {
+        "indentLeft": 480,
+        "tabStops": [{ "pos": 9746, "val": "right", "leader": "dot" }]
+      },
+      "note": "the stop is parsed in column (twip) space next to the indent"
+    },
+    {
+      "kind": "tabTargetPt",
+      "xPt": 432,
+      "gridPt": 36,
+      "paraWPt": 499.5,
+      "segWidthPt": 0,
+      "restBlank": true,
+      "expect": 468,
+      "tol": 0.05,
+      "note": "L749 probe: the tenth trailing tab lands on 9360 twips, inside the 9990 column"
+    },
+    {
+      "kind": "tabWrap",
+      "xPt": 432,
+      "gridPt": 36,
+      "paraWPt": 499.5,
+      "segWidthPt": 0,
+      "restBlank": true,
+      "expect": false,
+      "note": "a stop inside the column never wraps"
+    },
+    {
+      "kind": "tabWrap",
+      "xPt": 468,
+      "gridPt": 36,
+      "paraWPt": 499.5,
+      "segWidthPt": 0,
+      "restBlank": true,
+      "expect": true,
+      "note": "L749: the eleventh tab's stop (10080) lies past the edge, only spaces follow: Word opens a blank line"
+    },
+    {
+      "kind": "tabWrap",
+      "xPt": 468,
+      "gridPt": 36,
+      "paraWPt": 499.5,
+      "segWidthPt": 18.4,
+      "restBlank": false,
+      "expect": true,
+      "status": "failing",
+      "note": "probe 2026-10-28: with 'end' behind the tab Word still wraps (the word lands on the first stop of the next line, x 36); gen pins it flush right"
+    }
+  ],
+  "docx": "probe.docx"
+}

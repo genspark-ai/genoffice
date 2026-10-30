@@ -65,6 +65,15 @@ function find(editor: Editor, query: string, o: Partial<FindOptions> = {}) {
 const texts = (editor: Editor, query: string, o: Partial<FindOptions> = {}) =>
   find(editor, query, o).map((m) => editor.state.doc.textBetween(m.from, m.to))
 
+/** a pass layout with only the fields these helpers read */
+const layoutOf = (l: Pick<PageLayout, 'blocks' | 'slices' | 'sections'>): PageLayout => ({
+  cuts: [],
+  geoms: [],
+  hfHeights: [],
+  rowSplits: [],
+  ...l,
+})
+
 describe('wildcardToRegExp', () => {
   const src = (p: string) => {
     const t = wildcardToRegExp(p)
@@ -339,7 +348,7 @@ describe('go to', () => {
       { start: 200, end: 200, section: 0 },
       { start: 200, end: 400, section: 0 },
     ]
-    expect(visiblePageStartBlocks({ blocks, slices, sections: [] })).toEqual([0, 2])
+    expect(visiblePageStartBlocks(layoutOf({ blocks, slices, sections: [] }))).toEqual([0, 2])
   })
 
   it('resolves the caret line inside its block, not the block start', () => {
@@ -359,14 +368,14 @@ describe('go to', () => {
     root.append(first, second)
     // half zoom: 60 layout px render as 30 css px
     second.getBoundingClientRect = () => ({ top: 200, height: 30 }) as DOMRect
-    const layout: PageLayout = {
+    const layout = layoutOf({
       blocks: [
         { top: 0, height: 60, el: first, lineBoxes: boxes },
         { top: 60, height: 60, el: second, lineBoxes: boxes },
       ],
       slices: [],
       sections: [],
-    }
+    })
     const view = {
       dom: root,
       domAtPos: () => ({ node: second, offset: 0 }),

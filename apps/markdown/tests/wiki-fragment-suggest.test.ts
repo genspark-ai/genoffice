@@ -3,7 +3,7 @@
  * `^block` ids once the fragment starts with a caret; `[[#` reads this
  * document instead of going through main. The main-side parser is what a
  * plain file yields, so it is tested against raw text — the same shapes the
- * resolver and #2257/#2268 read.
+ * resolver and the id writer read.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
@@ -203,6 +203,40 @@ describe('the suggester in fragment mode', () => {
     await tick()
     await tick()
     expect(asked).toHaveLength(1)
+  })
+
+  it('an empty fragment list lets Enter and the arrows reach the document', async () => {
+    const keys: string[] = []
+    const editor = new Editor({
+      extensions: buildExtensions({
+        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+        slashItems: () => [],
+        wikiSuggestController: {
+          onOpen() {},
+          onUpdate() {},
+          onKeyDown: (event) => {
+            keys.push(event.key)
+            return true
+          },
+          onClose() {},
+        },
+        wikiLink: { getDocumentPath: () => '/vault/Note.md' },
+      }),
+      content: '',
+    })
+    editors.push(editor)
+    ;(window as unknown as { markdownApi: Record<string, unknown> }).markdownApi.wikiHeads =
+      async () => []
+    editor.commands.setContent('Body.', { contentType: 'markdown' })
+    editor.commands.focus('end')
+    editor.commands.insertContent(' [[Nope')
+    await tick()
+    editor.commands.insertContent('#zz')
+    await tick()
+    await tick()
+    const enter = new KeyboardEvent('keydown', { key: 'Enter' })
+    editor.view.someProp('handleKeyDown', (f) => f(editor.view, enter))
+    expect(keys).toEqual([])
   })
 
   it('a typed alias narrows the fragment on the head and rides along on completion', async () => {

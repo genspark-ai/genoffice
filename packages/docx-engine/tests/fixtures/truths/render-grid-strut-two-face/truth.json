@@ -1,0 +1,67 @@
+{
+  "id": "render-grid-strut-two-face",
+  "title": "A CJK run declaring two faces (Calibri + Microsoft YaHei) at 8.5pt pitches 18.24 in the body and 18.72 per bordered row, like the single-face control",
+  "section": "word-truths.md#L725",
+  "probe_date": "2026-10-28",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28), pymupdf baselines + drawings: Letter, docDefaults Calibri 11 + eastAsia Microsoft YaHei (the strut CSS is only emitted for a document that declares its East Asian default), line 300, compat 14; two-face 8.5pt baselines 82.80/101.04/119.28 (18.24 = 8.5 x 1.7143 x 1.25), 10.5pt 139.92/162.48/184.80 (22.56/22.32), single-face YaHei 8.5pt 204.96/223.20/241.44; 1-column sz-4 tables with zero top/bottom cell margins: rules 265.92/284.64/303.36/322.08 (18.72 per row), 10.5pt 339.36/362.40/385.44/408.48 (23.04), single-face 425.76/444.48/463.20/481.92 (18.72)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 1,
+      "expect": 18.24,
+      "tol": 0.3,
+      "note": "8.5pt two-face body lines"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 1,
+      "to": 2,
+      "expect": 18.24,
+      "tol": 0.3
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 5,
+      "expect": 44.88,
+      "tol": 0.3,
+      "note": "10.5pt two-face: 22.56 + 22.32"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 6,
+      "to": 7,
+      "expect": 18.24,
+      "tol": 0.3,
+      "note": "single-face control"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 10,
+      "expect": 56.66,
+      "tol": 1.5,
+      "note": "8.5pt two-face rows: 3 x (18.24 + the 0.5pt gridline) + outer border halves; gen was +1pt per row before the strut fix"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 12,
+      "expect": 69.62,
+      "tol": 1.5,
+      "note": "10.5pt two-face rows: 3 x 23.04"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 14,
+      "expect": 56.66,
+      "tol": 1.5,
+      "note": "single-face control rows"
+    }
+  ],
+  "docx": "probe.docx"
+}

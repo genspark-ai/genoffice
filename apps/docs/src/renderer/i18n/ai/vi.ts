@@ -99,6 +99,11 @@ export const vi = {
     'Bật theo dõi thay đổi: Các nội dung AI chỉnh sửa được đánh dấu là bản sửa đổi (chèn có gạch chân, xóa có gạch ngang); chấp nhận hoặc từ chối trong mục Xem lại',
   aiTrackOffTitle:
     'Tắt theo dõi thay đổi: Các chỉnh sửa của AI được áp dụng ngay lập tức (bạn vẫn có thể khôi phục qua bản chụp nhanh)',
+  aiRevisionBarTitle: 'Sửa đổi',
+  aiRevisionCount: '{count} thay đổi đang chờ',
+  aiRevisionRejectAll: 'Từ chối tất cả',
+  aiRevisionAcceptAll: 'Chấp nhận tất cả',
+  aiRevisionPara: 'Đoạn {n}',
   aiTurnLimit:
     'Tác vụ này đã tạm dừng trước khi hoàn tất tất cả các bước. Các chỉnh sửa đã hoàn thành được giữ nguyên; chọn Tiếp tục để hoàn thành công việc còn lại.',
   aiStopped: '(Đã dừng)',

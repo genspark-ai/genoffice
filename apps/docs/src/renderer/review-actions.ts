@@ -34,10 +34,19 @@ import { renumber } from './ai/note-ops'
 import {
   TRACK_IGNORE,
   acceptAllRevisions,
-  acceptCurrentRevision,
+  applyRevisions,
+  collectRevisions,
   rejectAllRevisions,
-  rejectCurrentRevision,
+  type RevisionRange,
+  revisionCount,
 } from './editor/revisions'
+import {
+  filterRevisions,
+  revisionsInSelection,
+  type RevisionFilter,
+  type RevisionScope,
+} from './editor/revision-filters'
+import type { StoryRevision } from './editor/story-revisions'
 import { t } from './i18n/locale'
 
 /** open the note text dialog; id set = editing an existing note */
@@ -69,6 +78,20 @@ export interface ReviewContext {
   setInkAnnotations: Dispatch<SetStateAction<InkAnnotation[]>>
   setInksDirty: (dirty: boolean) => void
   setCompareResult: (value: { otherName: string; entries: CompareEntry[] } | null) => void
+  /** Show Markup filters: "shown" scopes and the current-change pick honour them */
+  revisionFilter: RevisionFilter
+  /** a change hidden by the Markup view needs All Markup before it can be shown */
+  showRevision: (target: RevisionRange) => void
+  /** pending changes in notes, header / footer parts and textboxes (document order after the body) */
+  storyRevisions: () => StoryRevision[]
+  /** the change outside the body Next / Previous last landed on, while it is still pending */
+  currentStoryRevision: () => StoryRevision | null
+  /** accept / reject those; `all` also clears what the models do not show (paragraph marks); the count applied */
+  applyStoryRevisions: (
+    targets: StoryRevision[],
+    mode: 'accept' | 'reject',
+    all?: boolean,
+  ) => number
 }
 
 // ---- References: footnotes / endnotes ----
@@ -309,18 +332,100 @@ export function gotoComment(ctx: ReviewContext, dir: 1 | -1): boolean {
 export function handleRevision(
   ctx: ReviewContext,
   action: 'accept' | 'reject',
-  all: boolean,
+  scope: RevisionScope,
 ): void {
-  if (!ctx.editor) return
-  if (all) {
-    if (action === 'accept') acceptAllRevisions(ctx.editor)
-    else rejectAllRevisions(ctx.editor)
+  const editor = ctx.editor
+  if (!editor) return
+  const done = (n: number) =>
+    ctx.setStatus(t(action === 'accept' ? 'appRevisionsAcceptedN' : 'appRevisionsRejectedN', { n }))
+  const stories = ctx.storyRevisions()
+  // stories first: textbox entries address their anchor node by position, which body edits shift
+  if (scope === 'all') {
+    ctx.applyStoryRevisions(stories, action, true)
+    if (action === 'accept') acceptAllRevisions(editor)
+    else rejectAllRevisions(editor)
     ctx.setStatus(action === 'accept' ? t('appAllRevisionsAccepted') : t('appAllRevisionsRejected'))
+  } else if (scope === 'next') {
+    const shown = filterRevisions(collectRevisions(editor.state.doc), ctx.revisionFilter)
+    const head = editor.state.selection.head
+    // a story change Next / Previous opened is the current one, as the caret is for the body
+    const shownStories = filterRevisions(stories, ctx.revisionFilter)
+    const current: RevisionRange | undefined =
+      ctx.currentStoryRevision() ??
+      shown.find((r) => head >= r.from && head <= r.to) ??
+      shown.find((r) => r.from > head) ??
+      shown[0] ??
+      shownStories[0]
+    if (!current) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
+    if (current.story) ctx.applyStoryRevisions([current as StoryRevision], action)
+    else applyRevisions(editor, [current], action)
+    const rest = filterRevisions(collectRevisions(editor.state.doc), ctx.revisionFilter)
+    const anchor = editor.state.selection.from
+    const restStories = filterRevisions(ctx.storyRevisions(), ctx.revisionFilter)
+    // the resolved story entry left the list: the one now at its index follows it
+    const at = shownStories.findIndex((r) => r.story.id === current.story?.id)
+    const next = current.story
+      ? (restStories[Math.max(0, at)] ?? rest[0] ?? restStories[0])
+      : (rest.find((r) => r.from >= anchor) ?? rest[0] ?? restStories[0])
+    if (next) ctx.showRevision(next)
   } else {
-    const ok =
-      action === 'accept' ? acceptCurrentRevision(ctx.editor) : rejectCurrentRevision(ctx.editor)
-    if (!ok) ctx.setStatus(t('appNoRevisionsToHandle'))
+    const all = collectRevisions(editor.state.doc)
+    let targets: RevisionRange[]
+    let storyTargets: StoryRevision[] = []
+    if (scope === 'shown') {
+      targets = filterRevisions(all, ctx.revisionFilter)
+      storyTargets = filterRevisions(stories, ctx.revisionFilter)
+    } else if (scope === 'selection') {
+      const { from, to } = editor.state.selection
+      targets = revisionsInSelection(all, from, to)
+    } else {
+      targets = all.filter((r) => r.author === scope.author)
+      storyTargets = stories.filter((r) => r.author === scope.author)
+    }
+    if (targets.length === 0 && storyTargets.length === 0) {
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+      return
+    }
+    const applied = ctx.applyStoryRevisions(storyTargets, action)
+    applyRevisions(editor, targets, action)
+    done(revisionCount(targets) + applied)
   }
+  ctx.dirtyRef.current = true
+}
+
+/**
+ * Reviewing Pane / context menu: one specific change. The caller holds a
+ * throttled snapshot, so the range is re-resolved against the live document
+ * (same kind and reviewer, overlapping positions) before it is applied.
+ */
+export function handleRevisionRange(
+  ctx: ReviewContext,
+  action: 'accept' | 'reject',
+  target: RevisionRange,
+): void {
+  const editor = ctx.editor
+  if (!editor) return
+  if (target.story) {
+    if (ctx.applyStoryRevisions([target as StoryRevision], action) === 0)
+      ctx.setStatus(t('appNoRevisionsToHandle'))
+    else ctx.dirtyRef.current = true
+    return
+  }
+  const live = collectRevisions(editor.state.doc).find(
+    (r) =>
+      r.kind === target.kind &&
+      r.author === target.author &&
+      r.from < target.to &&
+      r.to > target.from,
+  )
+  if (!live) {
+    ctx.setStatus(t('appNoRevisionsToHandle'))
+    return
+  }
+  applyRevisions(editor, [live], action)
   ctx.dirtyRef.current = true
 }
 

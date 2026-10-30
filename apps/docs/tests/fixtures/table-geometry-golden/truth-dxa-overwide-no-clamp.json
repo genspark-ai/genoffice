@@ -1,0 +1,20 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/dxa-overwide-no-clamp/probe.docx",
+  "tables": 5,
+  "hashes": [
+    "ebefc2f6f2b99cd5",
+    "1b5b432aef8ee173",
+    "f6367ef4d126f247",
+    "c0028bc76b013577",
+    "771037d4fcbc91de"
+  ],
+  "staticTables": 6,
+  "staticHashes": [
+    "a1bcff3df9c8b30a",
+    "d5e3b31f729b5938",
+    "f0d073ab3f7b0358",
+    "487ad7db182a8504",
+    "e81d056494852254",
+    "a6947f111a4474ff"
+  ]
+}

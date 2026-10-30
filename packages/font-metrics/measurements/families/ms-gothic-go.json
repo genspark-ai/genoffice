@@ -1,0 +1,25 @@
+{
+  "family": "MS Gothic GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-03",
+    "probe": "advances from Word msgothic.ttc confirmed by a Word probe: Latin monospaced 0.5em"
+  },
+  "note": "MS Gothic family (Word-private on macOS, so the JA chain lands on Hiragino\nSans whose Latin is proportional and kana fullwidth). Advances measured from\nWord's msgothic.ttc and confirmed by a Word probe (2026-09-03): MS Gothic\nLatin is monospaced 0.5em; MS PGothic / MS UI Gothic have proportional kana\n(frequency-weighted hiragana 0.900/0.776em, katakana 0.869/0.744em, long\nvowel mark 0.961/0.816em), half-width brackets/colons, 0.664em ideographic\nspace/comma/period and Arial-class Latin at 0.9137x (space 1.0967x). Only\nthe ranges that differ from the Hiragino stand-in are claimed; kanji and the\nfullwidth marks that stay 1em fall through to the chain. Latin-1 symbols the\nreal faces draw fullwidth (section/degree/plus-minus/multiply/divide...) come\nfrom the bundled CJK subset where it has 1em glyphs and from the mono face\nscaled up otherwise, since the chain's JA faces expose no Latin-1. The kana\nand punctuation ranges live in separate \"JA GO\" families so a dual-slot run\nkeeps only the Latin alias in its ascii head and its eastAsia face still owns\nthe kana. Real faces (Windows) precede these aliases in the chain.",
+  "faces": [
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 83.333,
+      "unicodeRange": "U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6, U+00F8-00FF"
+    },
+    {
+      "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
+      "unicodeRange": "U+00A7, U+00B1, U+00B6, U+00D7, U+00F7"
+    },
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 166.667,
+      "unicodeRange": "U+00A8, U+00B0, U+00B4"
+    }
+  ]
+}

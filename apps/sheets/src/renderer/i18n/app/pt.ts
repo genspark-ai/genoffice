@@ -420,6 +420,9 @@ export const pt = {
   appTableNameUsed: 'O nome de tabela "{name}" já foi usado nesta sessão.',
   appTableNameInFile: 'O nome de tabela "{name}" já é usado por uma tabela no arquivo.',
   appTableOverlapsSession: 'O intervalo sobrepõe a tabela "{name}" criada nesta sessão.',
+  appTableOverlapsFile: 'O intervalo sobrepõe a tabela "{name}" do arquivo.',
+  appTableAlreadyInTable:
+    'A seleção já está na tabela "{name}" — altere o estilo em Design da Tabela.',
   appTablesNeedFile: 'Abra primeiro um arquivo XLSX — as tabelas são gravadas no arquivo.',
   appTableSelectRange: 'Selecione primeiro o intervalo de dados — cabeçalhos na primeira linha.',
   appTableCreated: 'Tabela criada — salve com ⌘S.',

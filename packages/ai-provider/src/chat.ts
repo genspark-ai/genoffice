@@ -1,6 +1,7 @@
 import { chatAnthropic } from './protocols/anthropic'
 import { chatGemini } from './protocols/gemini'
 import { chatOpenAiCompatible } from './protocols/openai-compatible'
+import { chatOpenAiResponses } from './protocols/openai-responses'
 import { ResponseBodyTooLargeError } from './protocols/shared'
 import { chatCodexAppServer } from './codex-app-server'
 import { getProviderAdapter, type ResolvedEndpoint } from './registry'
@@ -45,6 +46,11 @@ export async function chatForProvider(
       case 'openai-compatible':
         return chatOpenAiCompatible(wd, endpoint.baseUrl, config, system, user, {
           omitTemperature: endpoint.omitTemperature,
+          bodyExtras: endpoint.bodyExtras,
+          headers: endpoint.headers,
+        })
+      case 'openai-responses':
+        return chatOpenAiResponses(wd, endpoint.baseUrl, config, system, user, {
           bodyExtras: endpoint.bodyExtras,
           headers: endpoint.headers,
         })

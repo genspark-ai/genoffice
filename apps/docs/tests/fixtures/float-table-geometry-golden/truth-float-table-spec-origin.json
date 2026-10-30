@@ -1,0 +1,41 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/float-table-spec-origin/probe.docx",
+  "editor": [
+    "964009fea9271764",
+    "59cf7b70510dc5dd",
+    "dee91e07d0150b7a",
+    "27fe9446e3a9c691",
+    "4505486b946f14a9",
+    "3fd5ce5d1bc0f9df",
+    "58f17018393e4742",
+    "4efc132abff1cec7",
+    "f389fb5079ce414b",
+    "e2db97fdbe98a924",
+    "a62d860fc7791863",
+    "9970f8672b912f49",
+    "a6cf1746000150ff",
+    "920fe6135a71def6",
+    "763403b8646f38d6"
+  ],
+  "nested": [
+    "8032fabbe952ed08",
+    "1e48d52e1899a0fb",
+    "cd89c74c5ac66f17",
+    "604f1e7db136fcd3",
+    "5eac13a3b43dc904",
+    "0f2e9753b52795a3",
+    "e928d5ed813227a6",
+    "1e33af26e3397754",
+    "31f7808e0ebf4425",
+    "285a2ce830e28fd7",
+    "f8a40631c83f4bb2",
+    "19f83a21544a1d61",
+    "02e582952d24f7c7",
+    "84207ef1a997c2d7",
+    "74e5c658b13dc03d",
+    "83cb8655b05e6548",
+    "ba7898f29397d7d6",
+    "a4e006ce61b893a7"
+  ],
+  "hf": ["c7d0773ef938b5b1", "7353604878a366fe", "f831bf81e37fd0aa"]
+}

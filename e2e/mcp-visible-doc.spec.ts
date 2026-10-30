@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
+import { launchShell, closeAndSaveVideo, waitForPageWithUrl, freeMcpPort } from './helpers'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import http, { createServer } from 'node:http'
+import http from 'node:http'
 
 /**
  * MCP visible-editing path, end to end against the real built app.
@@ -15,18 +15,6 @@ import http, { createServer } from 'node:http'
  * → save_session (writes the file). Asserts both the on-disk docx and that a
  * docs tab actually appeared in the shell UI.
  */
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 interface RpcResponse {
   status: number
@@ -103,7 +91,7 @@ async function waitForHealth(port: number, timeoutMs = 20_000): Promise<void> {
 
 test.describe('MCP visible document session', () => {
   test('creates, formats and saves a docx through a visible tab', async () => {
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-mcp-e2e-'))
     const outFile = join(outDir, 'mcp-visible.docx')
     // seed an app-settings.json that both skips onboarding and turns MCP on;

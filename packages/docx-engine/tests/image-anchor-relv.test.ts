@@ -58,12 +58,14 @@ describe('page-relative anchor vertical offsets', () => {
     expect(image.relV).toBe('page')
   })
 
-  it('ignores page-relative wp:align center (needs the landing page height)', async () => {
+  it('carries page-relative wp:align center as a band keyword (the renderer resolves it)', async () => {
     const doc = await open(
       `<w:p>${anchor(PAGE_ALIGN_V.replace('top', 'center'))}<w:r><w:t>School name</w:t></w:r></w:p>`,
     )
     const image = doc.blocks[0].runs!.find((r) => r.image)!.image!
-    expect(image.relV).toBeUndefined()
+    expect(image.relV).toBe('page')
+    expect(image.posV).toBe('center')
+    expect(image.offsetYEmu).toBeUndefined()
   })
 
   it('margin-top aligned square wrap with a horizontal offset pins to the margin top', async () => {
