@@ -191,6 +191,7 @@ export const he = {
   aiMindMapJump: 'מעבר לקטע המצוטט',
   aiMindMapExport: 'ייצוא PNG',
   aiMindMapExportSvg: 'ייצוא SVG',
+  aiMindMapInsert: 'הוספה למסמך',
   aiMindMapReset: 'איפוס תצוגה',
   aiMindMapExpand: 'הרחב ענף',
   aiMindMapCollapse: 'כווץ ענף',

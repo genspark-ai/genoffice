@@ -197,6 +197,7 @@ export const hi = {
   aiMindMapJump: 'उद्धृत अनुच्छेद पर जाएँ',
   aiMindMapExport: 'PNG निर्यात करें',
   aiMindMapExportSvg: 'SVG निर्यात करें',
+  aiMindMapInsert: 'दस्तावेज़ में डालें',
   aiMindMapReset: 'दृश्य रीसेट करें',
   aiMindMapExpand: 'शाखा खोलें',
   aiMindMapCollapse: 'शाखा समेटें',

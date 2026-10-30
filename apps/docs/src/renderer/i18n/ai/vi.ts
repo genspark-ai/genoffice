@@ -198,6 +198,7 @@ export const vi = {
   aiMindMapJump: 'Đến đoạn được trích dẫn',
   aiMindMapExport: 'Xuất PNG',
   aiMindMapExportSvg: 'Xuất SVG',
+  aiMindMapInsert: 'Chèn vào tài liệu',
   aiMindMapReset: 'Đặt lại khung nhìn',
   aiMindMapExpand: 'Mở rộng nhánh',
   aiMindMapCollapse: 'Thu gọn nhánh',

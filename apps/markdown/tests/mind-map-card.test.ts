@@ -15,13 +15,18 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function renderCard(): { viewport: HTMLDivElement; canvas: HTMLDivElement } {
+function renderCard(onInsert?: (svg: string, size: { width: number; height: number }) => void): {
+  viewport: HTMLDivElement
+  canvas: HTMLDivElement
+} {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   roots.push(root)
   act(() => {
-    root.render(createElement(MindMapCard, { tree, onAsk: () => {}, onJumpBlock: () => {} }))
+    root.render(
+      createElement(MindMapCard, { tree, onAsk: () => {}, onJumpBlock: () => {}, onInsert }),
+    )
   })
   const viewport = container.querySelector('.ai-mindmap-viewport')
   const canvas = container.querySelector('.ai-mindmap-canvas')
@@ -79,7 +84,7 @@ describe('MindMapCard wheel gestures', () => {
 
 describe('MindMapCard exports', () => {
   it('the SVG button downloads the baked standalone SVG', () => {
-    renderCard()
+    renderCard(() => {})
     const serializer = vi.spyOn(XMLSerializer.prototype, 'serializeToString')
     const created: Blob[] = []
     const downloads: string[] = []
@@ -102,7 +107,7 @@ describe('MindMapCard exports', () => {
     })
     try {
       const buttons = document.querySelectorAll('.ai-mindmap-actions button')
-      expect(buttons.length).toBe(3)
+      expect(buttons.length).toBe(4)
       act(() => {
         ;(buttons[2] as HTMLButtonElement).click()
       })
@@ -125,5 +130,23 @@ describe('MindMapCard exports', () => {
       if (!hadCreate) delete URLRecord.createObjectURL
       if (!hadRevoke) delete URLRecord.revokeObjectURL
     }
+  })
+
+  it('the insert button hands over the baked SVG and its layout size', () => {
+    const onInsert = vi.fn()
+    renderCard(onInsert)
+    const buttons = document.querySelectorAll('.ai-mindmap-actions button')
+    expect(buttons.length).toBe(4)
+    act(() => {
+      ;(buttons[3] as HTMLButtonElement).click()
+    })
+
+    expect(onInsert).toHaveBeenCalledTimes(1)
+    const [svg, size] = onInsert.mock.calls[0]
+    // the receiver gets the same palette-baked file the exports build from
+    expect(String(svg)).toContain('<svg')
+    expect(String(svg)).toContain('fill="#ffffff"')
+    expect(size.width).toBeGreaterThan(0)
+    expect(size.height).toBeGreaterThan(0)
   })
 })

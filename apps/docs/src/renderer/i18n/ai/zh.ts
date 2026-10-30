@@ -186,6 +186,7 @@ export const zh = {
   aiMindMapJump: '跳转到对应段落',
   aiMindMapExport: '导出 PNG',
   aiMindMapExportSvg: '导出 SVG',
+  aiMindMapInsert: '插入文档',
   aiMindMapReset: '重置视图',
   aiMindMapExpand: '展开分支',
   aiMindMapCollapse: '折叠分支',

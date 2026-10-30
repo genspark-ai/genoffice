@@ -201,6 +201,7 @@ export const nl = {
   aiMindMapJump: 'Ga naar het geciteerde fragment',
   aiMindMapExport: 'PNG exporteren',
   aiMindMapExportSvg: 'SVG exporteren',
+  aiMindMapInsert: 'In document invoegen',
   aiMindMapReset: 'Weergave opnieuw instellen',
   aiMindMapExpand: 'Tak uitklappen',
   aiMindMapCollapse: 'Tak inklappen',

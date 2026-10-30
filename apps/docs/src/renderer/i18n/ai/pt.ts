@@ -202,6 +202,7 @@ export const pt = {
   aiMindMapJump: 'Ir para o trecho citado',
   aiMindMapExport: 'Exportar PNG',
   aiMindMapExportSvg: 'Exportar SVG',
+  aiMindMapInsert: 'Inserir no documento',
   aiMindMapReset: 'Redefinir visualização',
   aiMindMapExpand: 'Expandir ramo',
   aiMindMapCollapse: 'Recolher ramo',

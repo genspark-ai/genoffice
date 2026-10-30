@@ -195,6 +195,7 @@ export const th = {
   aiMindMapJump: 'ไปยังย่อหน้าที่อ้างอิง',
   aiMindMapExport: 'ส่งออก PNG',
   aiMindMapExportSvg: 'ส่งออก SVG',
+  aiMindMapInsert: 'แทรกลงในเอกสาร',
   aiMindMapReset: 'รีเซ็ตมุมมอง',
   aiMindMapExpand: 'ขยายสาขา',
   aiMindMapCollapse: 'ย่อสาขา',

@@ -195,6 +195,7 @@ export const ko = {
   aiMindMapJump: '해당 단락으로 이동',
   aiMindMapExport: 'PNG 내보내기',
   aiMindMapExportSvg: 'SVG 내보내기',
+  aiMindMapInsert: '문서에 삽입',
   aiMindMapReset: '보기 초기화',
   aiMindMapExpand: '가지 펼치기',
   aiMindMapCollapse: '가지 접기',

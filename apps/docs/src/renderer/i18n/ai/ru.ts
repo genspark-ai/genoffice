@@ -199,6 +199,7 @@ export const ru = {
   aiMindMapJump: 'Перейти к цитируемому фрагменту',
   aiMindMapExport: 'Экспорт PNG',
   aiMindMapExportSvg: 'Экспорт SVG',
+  aiMindMapInsert: 'Вставить в документ',
   aiMindMapReset: 'Сбросить вид',
   aiMindMapExpand: 'Развернуть ветку',
   aiMindMapCollapse: 'Свернуть ветку',

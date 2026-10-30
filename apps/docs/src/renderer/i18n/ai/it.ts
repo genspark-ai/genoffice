@@ -203,6 +203,7 @@ export const it = {
   aiMindMapJump: 'Vai al passaggio citato',
   aiMindMapExport: 'Esporta PNG',
   aiMindMapExportSvg: 'Esporta SVG',
+  aiMindMapInsert: 'Inserisci nel documento',
   aiMindMapReset: 'Reimposta vista',
   aiMindMapExpand: 'Espandi ramo',
   aiMindMapCollapse: 'Comprimi ramo',

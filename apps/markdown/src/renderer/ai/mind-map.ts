@@ -184,6 +184,28 @@ export function countMindMapNodes(root: MindMapTreeNode): number {
   return n
 }
 
+/**
+ * Serialize the tree as a mermaid `mindmap` diagram: one indented line per
+ * node, root first. Mermaid reads `()[]{}` as node shapes, so they are
+ * stripped from labels — a bare line is always a valid text node.
+ */
+export function mindMapToMermaid(root: MindMapTreeNode): string {
+  const clean = (label: string): string => {
+    const text = label
+      .replace(/[[\]{}()"]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return text || 'Topic'
+  }
+  const lines: string[] = ['mindmap']
+  const walk = (node: MindMapTreeNode, depth: number): void => {
+    lines.push(`${'  '.repeat(depth + 1)}${clean(node.label)}`)
+    for (const child of node.children ?? []) walk(child, depth + 1)
+  }
+  walk(root, 0)
+  return lines.join('\n')
+}
+
 // ---- label wrapping (pure; CJK counts double width) ----
 
 const CJK_RE = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF\u3040-\u30FF]/

@@ -28,9 +28,12 @@ interface MindMapCardProps {
   onAsk: (label: string) => void
   /** click a node's block badge: jump to the cited document block */
   onJumpBlock: (index: number) => void
+  /** insert button: hands over the palette-baked export SVG and its layout
+   *  size; the receiver writes it into the document */
+  onInsert?: (svg: string, size: { width: number; height: number }) => void
 }
 
-export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
+export function MindMapCard({ tree, onAsk, onJumpBlock, onInsert }: MindMapCardProps) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [zoom, setZoom] = useState(1)
@@ -271,6 +274,35 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
               <path d="M13 5H9a4 4 0 0 0-4 4v4" />
             </svg>
           </button>
+          {onInsert && (
+            <button
+              type="button"
+              className="ai-mindmap-btn"
+              onClick={() => {
+                const svg = svgRef.current
+                if (svg)
+                  onInsert(serializeExportSvg(svg), { width: layout.width, height: layout.height })
+              }}
+              data-tip={t('aiMindMapInsert')}
+              aria-label={t('aiMindMapInsert')}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M11 3H6.5A1.5 1.5 0 0 0 5 4.5v11A1.5 1.5 0 0 0 6.5 17h7a1.5 1.5 0 0 0 1.5-1.5V7L11 3z" />
+                <path d="M11 3v4h4" />
+                <path d="M10 10v4M8 12h4" />
+              </svg>
+            </button>
+          )}
         </span>
       </div>
       <div

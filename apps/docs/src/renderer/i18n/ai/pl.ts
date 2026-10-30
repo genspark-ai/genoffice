@@ -200,6 +200,7 @@ export const pl = {
   aiMindMapJump: 'Przejdź do cytowanego fragmentu',
   aiMindMapExport: 'Eksportuj PNG',
   aiMindMapExportSvg: 'Eksportuj SVG',
+  aiMindMapInsert: 'Wstaw do dokumentu',
   aiMindMapReset: 'Resetuj widok',
   aiMindMapExpand: 'Rozwiń gałąź',
   aiMindMapCollapse: 'Zwiń gałąź',

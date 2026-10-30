@@ -199,6 +199,7 @@ export const cs = {
   aiMindMapJump: 'Přejít na citovanou pasáž',
   aiMindMapExport: 'Exportovat PNG',
   aiMindMapExportSvg: 'Exportovat SVG',
+  aiMindMapInsert: 'Vložit do dokumentu',
   aiMindMapReset: 'Obnovit zobrazení',
   aiMindMapExpand: 'Rozbalit větev',
   aiMindMapCollapse: 'Sbalit větev',
