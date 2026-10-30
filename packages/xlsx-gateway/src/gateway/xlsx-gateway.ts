@@ -1065,6 +1065,8 @@ export async function planCellEditsToXlsx(
 
   const sheetNames = new Set([
     ...edits.map((edit) => edit.sheetName),
+    // a cached-value-only save (no cell edits) still patches its sheets
+    ...formulaValues.map((sheet) => sheet.sheetName),
     ...bulkConstantFills.map((fill) => fill.sheetName),
     ...structuralOps.map((sheet) => sheet.sheetName),
     ...filterStates.map((state) => state.sheetName),
