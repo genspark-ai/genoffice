@@ -2628,6 +2628,47 @@ export type WorkbookRangeResult = z.infer<typeof workbookRangeResultSchema>
 /// The sheet's saved print settings as parsed from the file.
 export type WorkbookPagePrintSettings = NonNullable<WorkbookRangeResult['pageSetup']>
 export type WorkbookRecalcRequest = z.infer<typeof workbookRecalcRequestSchema>
+
+export const externalLinksRequestSchema = z.object({ path: z.string().min(1) }).strict()
+export type ExternalLinksRequest = z.infer<typeof externalLinksRequestSchema>
+
+export const externalLinkStatusSchema = z
+  .object({
+    index: z.number().int().positive(),
+    rawTarget: z.string(),
+    source: z.string().nullable(),
+    reachable: z.boolean(),
+    sheetNames: z.array(z.string()),
+  })
+  .strict()
+export type ExternalLinkStatus = z.infer<typeof externalLinkStatusSchema>
+
+export const externalLinksResultSchema = z
+  .object({ links: z.array(externalLinkStatusSchema) })
+  .strict()
+export type ExternalLinksResult = z.infer<typeof externalLinksResultSchema>
+
+// One external-formula cell of an update report. `row` and `column` are
+// 0-based in the report; IronCalc, which computed the value, addresses the
+// same cells 1-based.
+export const externalLinkCellSchema = z
+  .object({
+    sheet: z.string(),
+    row: z.number().int().nonnegative(),
+    column: z.number().int().nonnegative(),
+    formatted: z.string(),
+    number: z.number().nullable().optional(),
+    formula: z.string(),
+  })
+  .strict()
+
+export const externalLinksUpdateResultSchema = z
+  .object({
+    links: z.array(externalLinkStatusSchema),
+    cells: z.array(externalLinkCellSchema),
+  })
+  .strict()
+export type ExternalLinksUpdateResult = z.infer<typeof externalLinksUpdateResultSchema>
 export type WorkbookRecalcResult = z.infer<typeof workbookRecalcResultSchema>
 export type WorkbookMediaRequest = z.infer<typeof workbookMediaRequestSchema>
 export type WorkbookMediaResult = z.infer<typeof workbookMediaResultSchema>
