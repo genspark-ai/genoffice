@@ -159,7 +159,11 @@ jobs:
       # so build the sidecar up front or CI's pass proves nothing about the
       # audit. The cargo cache above holds the target dir, so this is cheap.
       - name: Build xlsx-sidecar (the CLI audit tests run against it)
-        run: npm run native:build -w @genoffice/sheets
+        run: |
+          npm run native:build -w @genoffice/sheets
+          # the sidecar-gated CLI tests read the generated compatibility fixture
+          # (gitignored, normally produced by the sheets gate below)
+          npm run fixtures -w @genoffice/sheets
 
       - name: Test
         run: npm test
