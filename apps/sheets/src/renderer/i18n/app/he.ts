@@ -1119,6 +1119,8 @@ export const he = {
   appRefreshAll: 'רענן הכל',
   appWorkbookNoPivot: 'אין טבלאות ציר בחוברת זו.',
   appRefreshAllTitle: 'רענון כל טבלאות הציר',
+  appQueriesConnections: 'שאילתות וחיבורים',
+  appQueriesConnectionsTitle: 'הצגת השאילתות וחיבורי הנתונים של חוברת העבודה',
   appErrorCheckingDetail: 'סריקת הגיליון לערכי שגיאה',
   appErrorsFound: '{count} שגיאות — ב-{cell}: {value}',
   appCheckingErrors: 'סורקים את הגיליון כולו לאיתור שגיאות…',

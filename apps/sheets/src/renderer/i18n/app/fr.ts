@@ -1244,6 +1244,8 @@ export const fr = {
   appRefreshAll: 'Actualiser tout',
   appWorkbookNoPivot: 'Aucun tableau croisé dans ce classeur.',
   appRefreshAllTitle: 'Actualiser tous les tableaux croisés',
+  appQueriesConnections: 'Requêtes et connexions',
+  appQueriesConnectionsTitle: 'Lister les requêtes et connexions de données du classeur',
   appErrorCheckingDetail: 'Rechercher les valeurs d’erreur de la feuille',
   appErrorsFound: '{count} erreurs — à {cell} : {value}',
   appCheckingErrors: 'Recherche d’erreurs dans toute la feuille…',

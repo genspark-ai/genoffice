@@ -1141,6 +1141,8 @@ export const th = {
   appRefreshAll: 'รีเฟรชทั้งหมด',
   appWorkbookNoPivot: 'ไม่มี PivotTable ในเวิร์กบุ๊กนี้',
   appRefreshAllTitle: 'รีเฟรช PivotTable ทั้งหมด',
+  appQueriesConnections: 'คิวรีและการเชื่อมต่อ',
+  appQueriesConnectionsTitle: 'แสดงคิวรีและการเชื่อมต่อข้อมูลของเวิร์กบุ๊ก',
   appErrorCheckingDetail: 'สแกนหาค่าผิดพลาดในชีต',
   appErrorsFound: 'พบข้อผิดพลาด {count} รายการ — ที่ {cell}: {value}',
   appCheckingErrors: 'กำลังสแกนหาข้อผิดพลาดทั่วทั้งชีต…',

@@ -1177,6 +1177,8 @@ export const hi = {
   appRefreshAll: 'सभी ताज़ा करें',
   appWorkbookNoPivot: 'इस वर्कबुक में कोई पिवट टेबल नहीं।',
   appRefreshAllTitle: 'सभी पिवट टेबल रीफ़्रेश करें',
+  appQueriesConnections: 'क्वेरी और कनेक्शन',
+  appQueriesConnectionsTitle: 'वर्कबुक की क्वेरी और डेटा कनेक्शन दिखाएँ',
   appErrorCheckingDetail: 'शीट में त्रुटि मान खोजें',
   appErrorsFound: '{count} त्रुटियाँ — {cell} पर: {value}',
   appCheckingErrors: 'पूरी शीट में त्रुटियों के लिए स्कैन हो रहा है…',

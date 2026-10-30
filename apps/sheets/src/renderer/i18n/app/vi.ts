@@ -1168,6 +1168,8 @@ export const vi = {
   appRefreshAll: 'Làm mới tất cả',
   appWorkbookNoPivot: 'Không có bảng PivotTable nào trong sổ làm việc này.',
   appRefreshAllTitle: 'Làm mới mọi bảng PivotTable',
+  appQueriesConnections: 'Truy vấn & Kết nối',
+  appQueriesConnectionsTitle: 'Liệt kê các truy vấn và kết nối dữ liệu của sổ làm việc',
   appErrorCheckingDetail: 'Quét trang tính để tìm các giá trị lỗi',
   appErrorsFound: '{count} lỗi — tại {cell}: {value}',
   appCheckingErrors: 'Đang quét toàn bộ trang tính để tìm lỗi…',

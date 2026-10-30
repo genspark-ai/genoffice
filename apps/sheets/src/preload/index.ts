@@ -40,6 +40,7 @@ import type {
   WorkbookRecalcRequest,
   WorkbookRecalcResult,
   WorkbookRedactionsResult,
+  WorkbookQueriesResult,
   WorkbookRichRun,
   WorkbookSaveRequest,
   WorkbookSaveResult,
@@ -305,6 +306,24 @@ const desktopApi: DesktopApi = {
       sessionId: request.sessionId,
     })
     return parseWorkbookRedactionsResult(result)
+  },
+  async readWorkbookQueries(request) {
+    if (!isRecord(request) || !isUuid(request.sessionId)) {
+      throw new Error('Invalid queries request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readWorkbookQueries, {
+      sessionId: request.sessionId,
+    })
+    // structural check; the main process zod-validates the full shape
+    if (!Array.isArray(result) || result.length > 1_000) {
+      throw new Error('Invalid queries response.')
+    }
+    for (const query of result) {
+      if (!isRecord(query) || typeof query.name !== 'string' || typeof query.kind !== 'string') {
+        throw new Error('Invalid queries response.')
+      }
+    }
+    return result as WorkbookQueriesResult
   },
   async saveWorkbookEdits(request) {
     const validatedRequest = parseSaveRequest(request)

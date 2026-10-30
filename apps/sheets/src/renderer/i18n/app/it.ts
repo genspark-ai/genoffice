@@ -1217,6 +1217,8 @@ export const it = {
   appRefreshAll: 'Aggiorna tutti',
   appWorkbookNoPivot: 'Nessuna tabella pivot in questa cartella.',
   appRefreshAllTitle: 'Aggiorna tutte le tabelle pivot',
+  appQueriesConnections: 'Query e connessioni',
+  appQueriesConnectionsTitle: 'Elenca le query e le connessioni dati della cartella di lavoro',
   appErrorCheckingDetail: 'Cerca valori di errore nel foglio',
   appErrorsFound: '{count} errori — in {cell}: {value}',
   appCheckingErrors: 'Ricerca errori in corso su tutto il foglio…',

@@ -1217,6 +1217,8 @@ export const pt = {
   appRefreshAll: 'Atualizar Tudo',
   appWorkbookNoPivot: 'Nenhuma tabela dinâmica nesta pasta de trabalho.',
   appRefreshAllTitle: 'Atualizar todas as tabelas dinâmicas',
+  appQueriesConnections: 'Consultas e conexões',
+  appQueriesConnectionsTitle: 'Listar as consultas e conexões de dados da pasta de trabalho',
   appErrorCheckingDetail: 'Verificar valores de erro na planilha',
   appErrorsFound: '{count} erros — em {cell}: {value}',
   appCheckingErrors: 'Procurando erros na planilha inteira…',

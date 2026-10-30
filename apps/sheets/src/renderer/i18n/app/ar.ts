@@ -1142,6 +1142,8 @@ export const ar = {
   appRefreshAll: 'تحديث الكل',
   appWorkbookNoPivot: 'لا توجد جداول محورية في هذا المصنف.',
   appRefreshAllTitle: 'تحديث كل الجداول المحورية',
+  appQueriesConnections: 'الاستعلامات والاتصالات',
+  appQueriesConnectionsTitle: 'عرض استعلامات المصنف واتصالات البيانات',
   appErrorCheckingDetail: 'فحص الورقة بحثًا عن قيم الخطأ',
   appErrorsFound: '{count} من الأخطاء — في {cell}: {value}',
   appCheckingErrors: 'جارٍ فحص الورقة بالكامل بحثًا عن أخطاء…',
