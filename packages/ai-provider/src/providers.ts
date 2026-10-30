@@ -392,6 +392,18 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'rc_live_...',
   },
   {
+    id: 'cloudgpu',
+    label: 'CloudGPU',
+    // Bare model ids exactly as GET https://cloudgpu.app/v1/models lists them
+    // (2026-10-29, public endpoint, no key needed); the rest of the catalog
+    // works as-is when typed in. Docs: https://cloudgpu.app/api/docs.
+    // The catalog does not report input modalities, so vision follows the
+    // existing modelLacksVision() rules.
+    models: ['deepseek-v4.1-flash', 'deepseek-v4-pro', 'glm-5.3-flash', 'kimi-k2.6', 'minimax-m3'],
+    defaultModel: 'deepseek-v4.1-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

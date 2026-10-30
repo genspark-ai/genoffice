@@ -196,6 +196,8 @@ export const id = {
   aiMindMapAskPrompt: 'Jelaskan tentang "{label}" dalam dokumen ini',
   aiMindMapJump: 'Lompat ke bagian yang dikutip',
   aiMindMapExport: 'Ekspor PNG',
+  aiMindMapExportSvg: 'Ekspor SVG',
+  aiMindMapInsert: 'Sisipkan ke dokumen',
   aiMindMapReset: 'Setel ulang tampilan',
   aiMindMapExpand: 'Bentangkan cabang',
   aiMindMapCollapse: 'Lipat cabang',

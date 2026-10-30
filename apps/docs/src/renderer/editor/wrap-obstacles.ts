@@ -217,7 +217,9 @@ function collectWrapper(
   writes: Write[],
   factor: number,
 ): void {
-  const all = Array.from(el.querySelectorAll<HTMLElement>(':scope > .doc-textbox'))
+  const all = Array.from(
+    el.querySelectorAll<HTMLElement>(':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox'),
+  )
   const sides = all.filter((b) => b.dataset.wrapSide === '1')
   const data: Write['data'] = {}
   const wr = rel(el.getBoundingClientRect())

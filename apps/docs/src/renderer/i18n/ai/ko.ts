@@ -194,6 +194,8 @@ export const ko = {
   aiMindMapAskPrompt: '이 문서에서 「{label}」에 대해 설명해 주세요',
   aiMindMapJump: '해당 단락으로 이동',
   aiMindMapExport: 'PNG 내보내기',
+  aiMindMapExportSvg: 'SVG 내보내기',
+  aiMindMapInsert: '문서에 삽입',
   aiMindMapReset: '보기 초기화',
   aiMindMapExpand: '가지 펼치기',
   aiMindMapCollapse: '가지 접기',

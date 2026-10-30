@@ -805,6 +805,12 @@ export interface HfTextBox extends Pick<
   /** index (in the part's paras) of the paragraph the box shares with other
    *  runs; paragraph-relative offsets measure from that paragraph's top */
   anchorPara?: number
+  /** a:xfrm@rot of the shape (degrees clockwise); VML `rotation:` style */
+  rotDeg?: number
+  /** a:ln@w / VML `strokeweight` of the shape outline (px) */
+  borderWidthPx?: number
+  /** a:ln solid fill / VML `strokecolor` of the shape outline (RGB hex, no #) */
+  borderColor?: string
 }
 
 /** one cell of a header/footer layout-table row */

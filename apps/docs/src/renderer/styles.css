@@ -5631,14 +5631,36 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
-.doc-protected-textboxes:hover > .box-resize-handle,
-.ProseMirror-focused .doc-protected-textboxes.ProseMirror-selectednode > .box-resize-handle,
+/* chrome layer of a single shape: mirrors the box rect and carries the
+   rotation transform, so the frame and handles turn with the shape (Word);
+   the rotation lives here in the editor — the box renders unturned under it.
+   Shrink-wrap the layer to the box: a plain block would stretch to the
+   wrapper (an anchor line sharing the paragraph widens it), and the turn
+   would pivot around the wrapper instead of the shape's centre. Floating
+   boxes override both: their slot is inline and keeps the declared extent. */
+.box-rotator {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.doc-protected-textboxes:hover > .box-rotator > .box-resize-handle,
+.ProseMirror-focused
+  .doc-protected-textboxes.ProseMirror-selectednode
+  > .box-rotator
+  > .box-resize-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* charts have no rotator layer: their handle is still a direct wrapper child */
 .doc-protected-chart:hover > .box-resize-handle,
 .ProseMirror-focused .doc-protected-chart.ProseMirror-selectednode > .box-resize-handle {
   opacity: 1;
   pointer-events: auto;
 }
 
+.doc-content-editing > .box-rotator > .box-resize-handle,
 .doc-content-editing > .box-resize-handle {
   opacity: 0;
   pointer-events: none;
@@ -5662,17 +5684,39 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
-.doc-protected-textboxes:hover > .box-rotate-handle,
-.ProseMirror-focused .doc-protected-textboxes.ProseMirror-selectednode > .box-rotate-handle,
-.doc-protected-chart:hover > .box-rotate-handle,
-.ProseMirror-focused .doc-protected-chart.ProseMirror-selectednode > .box-rotate-handle {
+.doc-protected-textboxes:hover > .box-rotator > .box-rotate-handle,
+.ProseMirror-focused
+  .doc-protected-textboxes.ProseMirror-selectednode
+  > .box-rotator
+  > .box-rotate-handle {
   opacity: 1;
   pointer-events: auto;
 }
 
-.doc-content-editing > .box-rotate-handle {
+.doc-content-editing > .box-rotator > .box-rotate-handle {
   opacity: 0;
   pointer-events: none;
+}
+
+/* a turned box draws its own selection frame: the wrapper's border stays
+   axis-aligned around the rotator's turned contents, so it hides and the box
+   outlines itself (the outline turns with the transform, like Word) */
+.doc-protected-textboxes.has-turned-box,
+.doc-protected-textboxes.has-turned-box:hover,
+.ProseMirror-focused
+  .doc-protected.doc-protected-textboxes.has-turned-box.ProseMirror-selectednode {
+  border-color: transparent;
+}
+
+.doc-protected-textboxes.has-turned-box:hover > .box-rotator > .doc-textbox {
+  outline: 1px dashed var(--border);
+}
+
+.ProseMirror-focused
+  .doc-protected.doc-protected-textboxes.has-turned-box.ProseMirror-selectednode
+  > .box-rotator
+  > .doc-textbox {
+  outline: 1px dashed var(--word-blue);
 }
 
 /* Native ProseMirror tables: no vertical gap of their own (Word) */
@@ -6250,12 +6294,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
    own offset, overlapping body text exactly like Word */
 /* canvas-only page-gap compensation for floating boxes (syncFloatShifts);
    the pagination preview clones per-page flow with no gaps, so it neutralizes it */
-.doc-protected-floating > .doc-textbox {
+.doc-protected-floating > .doc-textbox,
+.doc-protected-floating > .box-rotator {
   translate: 0 var(--page-float-dy, 0px);
   /* anchored shapes keep their declared extent past the column (Word) */
   max-width: none;
 }
-.pv-clip .doc-protected-floating > .doc-textbox {
+.doc-protected-floating > .box-rotator > .doc-textbox {
+  /* the rotator already mirrors the float slot and carries the shift; the box
+     stays unturned and in place inside it */
+  max-width: none;
+}
+.pv-clip .doc-protected-floating > .doc-textbox,
+.pv-clip .doc-protected-floating > .box-rotator {
   translate: none;
 }
 
@@ -6370,8 +6421,10 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 
 /* preview: an anchor-shifted box reaching above its page top rides --pv-anchor-lift
-   (stamped before cloning) back onto the anchor's page */
-.pv-clip [data-anchor-dy] > .doc-textbox {
+   (stamped before cloning) back onto the anchor's page. A single shape's float
+   slot is carried by its chrome rotator, so the lift goes there. */
+.pv-clip [data-anchor-dy] > .doc-textbox,
+.pv-clip [data-anchor-dy] > .box-rotator {
   translate: 0 var(--pv-anchor-lift, 0px);
 }
 
@@ -6385,12 +6438,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   position: static;
 }
 .pv-page [data-pv-pagerel='1'] > .doc-textbox[data-page-rel-v='1'],
+.pv-page [data-pv-pagerel='1'] > .box-rotator:has(> .doc-textbox[data-page-rel-v='1']),
 .pv-page [data-pv-pagerel='1'] > .doc-img-wrap[data-page-rel-v='1'],
 .pv-page [data-pv-pagerel='1'] .doc-inline-img-anchor > img[data-page-rel-v='1'] {
   translate: var(--pv-ml, 0px) var(--pv-mt, 0px);
 }
 /* page-edge V anchors keep their page Y under a header push; margin ones ride the body top (Word) */
 .pv-page [data-pv-pagerel='1'] > .doc-textbox[data-page-rel-from='page'],
+.pv-page [data-pv-pagerel='1'] > .box-rotator:has(> .doc-textbox[data-page-rel-from='page']),
 .pv-page [data-pv-pagerel='1'] > .doc-img-wrap[data-page-rel-from='page'],
 .pv-page [data-pv-pagerel='1'] .doc-inline-img-anchor > img[data-page-rel-from='page'] {
   translate: var(--pv-ml, 0px) var(--pv-mt-page, var(--pv-mt, 0px));
@@ -6405,17 +6460,20 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   position: static;
 }
 .pv-page [data-pv-hoist='1'] > .doc-textbox,
+.pv-page [data-pv-hoist='1'] > .box-rotator,
 .pv-page [data-pv-hoist='1'] > .doc-img-wrap {
   translate: var(--pv-ml, 0px) calc(var(--pv-mt, 0px) + var(--pv-hoist-dy, 0px));
 }
 /* centred / right-slot boxes (left:50% / right:0) now resolve against the page
    box instead of the column: shift by the column's own offset within it */
 .pv-page [data-pv-hoist-slot='center'] > .doc-textbox,
+.pv-page [data-pv-hoist-slot='center'] > .box-rotator,
 .pv-page [data-pv-hoist-slot='center'] > .doc-img-wrap {
   translate: calc((var(--pv-ml, 0px) - var(--pv-mr, 0px)) / 2)
     calc(var(--pv-mt, 0px) + var(--pv-hoist-dy, 0px));
 }
 .pv-page [data-pv-hoist-slot='right'] > .doc-textbox,
+.pv-page [data-pv-hoist-slot='right'] > .box-rotator,
 .pv-page [data-pv-hoist-slot='right'] > .doc-img-wrap {
   translate: calc(-1 * var(--pv-mr, 0px)) calc(var(--pv-mt, 0px) + var(--pv-hoist-dy, 0px));
 }

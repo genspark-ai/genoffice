@@ -7,6 +7,7 @@ export type { PrintDuplex, PrintJobOptions, PrinterInfo }
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
+  decryptPdf: 'pdf:decrypt',
   save: 'pdf:save',
   pickAttachmentFile: 'pdf:pick-attachment-file',
   exportAttachment: 'pdf:export-attachment',
@@ -713,6 +714,23 @@ export interface BlankPageInput {
   height: number
 }
 
+/** What a reader may do with a protected document (§7.6.3.2 Table 24, grouped) */
+export interface PdfPermissions {
+  printing: boolean
+  modifying: boolean
+  annotating: boolean
+  copying: boolean
+}
+
+/** Password protection carried on a save: the source is opened with the user
+    password and the output is written back under the same configuration. */
+export interface PdfEncryptionInput {
+  userPassword: string
+  /** who may lift the limits; defaults to the user password in the UI */
+  ownerPassword: string
+  permissions: PdfPermissions
+}
+
 /** An embedded file to add on the next save */
 export interface PdfAttachmentAdd {
   name: string
@@ -734,6 +752,20 @@ export interface SavePdfRequest {
    * Must match the target granted to the view by the main process (save dialog pick).
    */
   targetPath?: string
+  /** Present while the session works on a password-protected document: the source
+      bytes are opened with the user password and the output is re-protected. */
+  encryption?: PdfEncryptionInput
+  /**
+   * true when this save writes the protection in `encryption` (a dialog change),
+   * false when the source file's own /Encrypt entries are kept: the session
+   * usually holds only one of the two passwords, and re-deriving the key would
+   * replace both. Omitted by callers that always write `encryption`.
+   */
+  protectionDirty?: boolean
+  /** Password of the file currently on disk, when it is protected — needed even when
+      this save writes plain (protection removed): a password change makes it differ
+      from `encryption.userPassword`. */
+  decryption?: { userPassword: string }
   markups: MarkupInput[]
   /** Saved markup annotations to remove (applied before every other stage) */
   annotDeletes?: AnnotDeleteInput[]
@@ -931,13 +963,15 @@ export interface CropPagesRequest {
 
 export type CropPagesResult = { ok: true } | { ok: false; error: string }
 
-/** Export pages as PNG: renderer rasterizes the bitmaps, main process shows a dialog and writes to disk */
+/** Export pages as PNG or JPEG: renderer rasterizes the bitmaps, main process shows a dialog and writes to disk */
 export interface ExportImagesRequest {
-  /** base64 PNGs (without the data: prefix), in page order */
+  /** base64 PNGs or JPEGs (without the data: prefix), in page order, matching format */
   images: string[]
   /** 1-based page numbers, same length as images, used for file names */
   pageNumbers: number[]
   baseName: string
+  /** Image encoding; anything other than 'jpg' falls back to png */
+  format: 'png' | 'jpg'
 }
 
 export type ExportImagesResult =
@@ -990,6 +1024,22 @@ export interface PdfApi {
   openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
+  /** Open a password-protected document for editing: plain bytes, the /P the file
+      carried, whether a password was needed at all (false: owner-only file) and
+      which password opened it (the owner's ignores the /P limits) */
+  decryptPdf(
+    bytes: Uint8Array,
+    password: string,
+  ): Promise<
+    | {
+        ok: true
+        bytes: Uint8Array
+        permissions: PdfPermissions
+        neededPassword: boolean
+        unlockedAs: 'user' | 'owner'
+      }
+    | { ok: false; reason: 'wrong-password' | string }
+  >
   /** Pick a second document for Compare and read its per-page text (the pick is
       main-side; no grant and no bytes travel to the render side) */
   compareReadPdf(): Promise<

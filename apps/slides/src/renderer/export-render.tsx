@@ -26,6 +26,21 @@ export async function renderSlidesToPngBase64(
   images: Map<string, HTMLImageElement>,
   pixelRatio: number = EXPORT_PIXEL_RATIO,
 ): Promise<string[]> {
+  return renderSlidesToImageBase64(slides, images, { format: 'png', pixelRatio })
+}
+
+/**
+ * Render each page to base64 (without the data: prefix), in the requested format.
+ * 'jpg' flattens onto white first: Chromium's canvas encodes transparent pixels as
+ * BLACK in JPEG, so a slide without an explicit background would export black.
+ */
+export async function renderSlidesToImageBase64(
+  slides: RenderSlide[],
+  images: Map<string, HTMLImageElement>,
+  opts: { format?: 'png' | 'jpg'; pixelRatio?: number } = {},
+): Promise<string[]> {
+  const format = opts.format ?? 'png'
+  const pixelRatio = opts.pixelRatio ?? EXPORT_PIXEL_RATIO
   // Offscreen container: mounted outside the body viewport (display:none would give the Konva canvas zero size, unusable)
   const container = document.createElement('div')
   container.style.cssText = 'position:fixed;left:-100000px;top:0;pointer-events:none;'
@@ -46,8 +61,22 @@ export async function renderSlidesToPngBase64(
       })
       // Wait one frame for Konva to finish batchDraw, then capture
       await new Promise((r) => requestAnimationFrame(r))
-      const dataUrl = stage.toDataURL({ mimeType: 'image/png', pixelRatio })
-      out.push(dataUrl.replace(/^data:image\/png;base64,/, ''))
+      if (format === 'jpg') {
+        // Same pixel size as toDataURL with the same pixelRatio
+        const src = stage.toCanvas({ pixelRatio })
+        const flat = document.createElement('canvas')
+        flat.width = src.width
+        flat.height = src.height
+        const ctx = flat.getContext('2d')
+        if (!ctx) throw new Error('JPEG export: no 2d context')
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(0, 0, flat.width, flat.height)
+        ctx.drawImage(src, 0, 0)
+        out.push(flat.toDataURL('image/jpeg', 0.92).replace(/^data:image\/jpeg;base64,/, ''))
+      } else {
+        const dataUrl = stage.toDataURL({ mimeType: 'image/png', pixelRatio })
+        out.push(dataUrl.replace(/^data:image\/png;base64,/, ''))
+      }
     }
   } finally {
     root.unmount()

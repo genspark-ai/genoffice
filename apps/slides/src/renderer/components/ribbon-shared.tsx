@@ -299,6 +299,8 @@ export interface Props {
   onPrint: () => void
   /** Export as images (one PNG per page, hidden slides skipped) */
   onExportImages: () => void
+  /** Export as images (one JPG per page, hidden slides skipped) */
+  onExportImagesJpg: () => void
   onFormat: (cmd: FormatCmd) => void
   zoom: number
   onZoom: (z: number | ((current: number) => number)) => void

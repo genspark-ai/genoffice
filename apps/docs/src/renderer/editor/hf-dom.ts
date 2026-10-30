@@ -1397,7 +1397,19 @@ export function hfTextBoxStyle(
     // Word clips a fixed-size box's overflow (a wrapped tail past the declared height is not drawn)
     if (!box.autofit) style.overflow = 'hidden'
   }
-  if (tx || ty) style.transform = `translate(${tx}%, ${ty}%)`
+  // the anchor-point translate composes ahead of the rotation: centering
+  // shifts stay axis-aligned while the box itself turns about its centre
+  const transforms = [
+    tx || ty ? `translate(${tx}%, ${ty}%)` : '',
+    box.rotDeg ? `rotate(${box.rotDeg}deg)` : '',
+  ].filter(Boolean)
+  if (transforms.length > 0) style.transform = transforms.join(' ')
+  // the shape's own outline (a:ln / VML stroke): Word draws header shapes
+  // with their authored stroke, not as bare text rectangles
+  if (box.borderColor) {
+    style.border = `${box.borderWidthPx ?? 1}px solid #${box.borderColor}`
+    style.boxSizing = 'border-box'
+  }
   if (box.vAlign === 'center') style.justifyContent = 'center'
   else if (box.vAlign === 'bottom') style.justifyContent = 'flex-end'
   // behindDoc: under the body text (a strip hosting boxes forms no stacking context)

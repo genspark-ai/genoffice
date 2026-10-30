@@ -20,6 +20,12 @@ import {
 } from 'pdf-lib'
 import type { PDFPage } from 'pdf-lib'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
+import {
+  decryptDocument,
+  encryptDocument,
+  encryptDocumentWithOriginalProtection,
+  type OriginalProtection,
+} from './pdf-crypt'
 import { applyAttachments } from './pdf-attachments'
 import type {
   BlankPageInput,
@@ -32,6 +38,7 @@ import type {
   MarkupInput,
   MetadataInput,
   NoteReplyTarget,
+  PdfEncryptionInput,
   SavePdfRequest,
   StaticFormFillRecord,
   TextEditFailure,
@@ -1437,6 +1444,14 @@ function finalPageIndex(request: SavePdfRequest, p: number): number | null {
   return p - del.filter((d) => d < p).length
 }
 
+/** password the saved output accepts, for the read-back verification of content edits */
+function savedOutputPassword(request: SavePdfRequest): string | undefined {
+  // an unchanged protection keeps the password the source file already had; a
+  // protection change writes the new user password; a plain save has none
+  if (request.protectionDirty === false) return request.decryption?.userPassword
+  return request.encryption?.userPassword
+}
+
 /**
  * Read-back verification of applied content-stream edits against the final bytes.
  * Anything that fails here would have been silent data loss; the caller aborts the
@@ -1458,7 +1473,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: e.newText }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, savedOutputPassword(request))))
   }
   const appliedInserts = (request.textInserts ?? []).filter(
     (_insert, editIndex) =>
@@ -1470,7 +1485,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, insert.pageIndex)
       return pageIndex === null ? [] : [{ pageIndex, newText: insert.text }]
     })
-    failures.push(...(await verifyTextEdits(bytes, remapped)))
+    failures.push(...(await verifyTextEdits(bytes, remapped, savedOutputPassword(request))))
   }
   const appliedImages = (request.imageEdits ?? []).filter(
     (e, i) => e.kind !== 'deleteImage' && !skips.skippedImageEdits.some((s) => s.editIndex === i),
@@ -1535,6 +1550,29 @@ export async function applySaveRequest(
   bytes: Uint8Array,
   request: SavePdfRequest,
 ): Promise<AppliedSaveRequest> {
+  // A protected session works on the document's plain form: the bytes on disk are
+  // the protected output of the previous save, and the session's edits only make
+  // sense against the plaintext (a failure here means the file changed underneath
+  // the session — surfaced to the user as a save error).
+  const sourcePassword = request.decryption?.userPassword ?? request.encryption?.userPassword
+  let originalProtection: OriginalProtection | null = null
+  if (sourcePassword !== undefined) {
+    const opened = await decryptDocument(bytes, sourcePassword)
+    bytes = opened.bytes
+    originalProtection = opened.protection ?? null
+  }
+  // A save that does not change protection re-protects under the source's own
+  // entries and file key: deriving fresh entries would replace both passwords
+  // with the one password this session knows. Only a dialog save sets
+  // protectionDirty, and only that one may write new entries.
+  const preserved = request.protectionDirty === false ? originalProtection : null
+  const protection: { preserved: OriginalProtection } | { fresh: PdfEncryptionInput } | null =
+    preserved !== null ? { preserved } : request.encryption ? { fresh: request.encryption } : null
+  const protect = (doc: PDFDocument): void => {
+    if (protection === null) return
+    if ('preserved' in protection) encryptDocumentWithOriginalProtection(doc, protection.preserved)
+    else encryptDocument(doc, protection.fresh)
+  }
   let skippedTextEdits: TextEditFailure[] = []
   let skippedTextInserts: TextInsertFailure[] = []
   let skippedImageEdits: ImageEditFailure[] = []
@@ -1682,10 +1720,31 @@ export async function applySaveRequest(
   }
   if (request.attachments) applyAttachments(pdfDoc, request.attachments)
   refreshFieldAppearances(pdfDoc)
+  // Protection serializes with the document: strings and streams are encrypted in
+  // place, so no object/xref stream may be created after this point (all saves here
+  // already run with useObjectStreams off). Redaction below re-serializes a cleaned
+  // graph, which would drop the trailer entry — protect that output instead.
+  // Redaction is a PDFium pass and cannot read an encrypted file, so with
+  // redactions the protection is written after the reload below instead.
+  if (protection !== null && !request.redactions?.length) {
+    // flush first: pdf-lib embeds fonts and images only at save/flush time, and
+    // a payload created after this pass would land in the file as plaintext
+    // inside a document declared encrypted
+    await pdfDoc.flush()
+    protect(pdfDoc)
+  }
   let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
   // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
   // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
-  if (request.redactions?.length) saved = await redactPdf(saved, request.redactions)
+  if (request.redactions?.length) {
+    saved = await redactPdf(saved, request.redactions)
+    if (protection !== null) {
+      const cleaned = await PDFDocument.load(saved, { updateMetadata: false })
+      await cleaned.flush()
+      protect(cleaned)
+      saved = await cleaned.save({ useObjectStreams: false })
+    }
+  }
   return {
     bytes: saved,
     skippedTextEdits,
