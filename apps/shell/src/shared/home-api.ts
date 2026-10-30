@@ -384,7 +384,7 @@ export interface DeepLinkPayload {
   path?: string
 }
 
-/** the system-presence prefs (login item + global hotkey), persisted in app-settings.json */
+/** the system-presence prefs (login item + global hotkey + close-to-tray), persisted in app-settings.json */
 export interface SystemPresenceSettings {
   /** launch GenOffice at login (macOS/Windows; unsupported on Linux) */
   loginItem: boolean
@@ -397,6 +397,10 @@ export interface SystemPresenceSettings {
   hotkeyActive: boolean
   /** false on platforms where the login item cannot be driven (Linux) */
   loginItemSupported: boolean
+  /** keep running after the last window closes; the tray/hotkey reopen it */
+  closeToTray: boolean
+  /** false on macOS: the app already outlives its windows, so the toggle stays hidden */
+  closeToTraySupported: boolean
 }
 
 export interface HomeApi {
@@ -500,10 +504,12 @@ export interface HomeApi {
   onDeepLink(handler: (payload: DeepLinkPayload) => void): () => void
   /** the desktop prefs were changed outside this renderer (CLI / MCP desktop domain) */
   onDesktopPrefsChanged(handler: (prefs: DesktopPrefs) => void): () => void
-  /** the system-presence prefs: login item and global hotkey */
+  /** the system-presence prefs: login item, global hotkey and close-to-tray */
   getSystemPresence(): Promise<SystemPresenceSettings>
   /** toggle launch-at-login; resolves to the effective settings */
   setLoginItemEnabled(enabled: boolean): Promise<SystemPresenceSettings>
+  /** keep running after the last window closes (tray/hotkey reopen); resolves to the effective settings */
+  setCloseToTray(enabled: boolean): Promise<SystemPresenceSettings>
   /** the Ask AI corpus scope (app-settings.json `kbScope`) */
   getKbScope(): Promise<KbScope>
   /** switch the Ask AI corpus scope; resolves to the effective scope */
@@ -941,6 +947,7 @@ export const HOME_CHANNELS = {
   deepLink: 'home:deep-link',
   systemPresenceGet: 'home:system-presence-get',
   systemPresenceSetLoginItem: 'home:system-presence-set-login-item',
+  systemPresenceSetCloseToTray: 'home:system-presence-set-close-to-tray',
   systemPresenceSetHotkey: 'home:system-presence-set-hotkey',
   kbGetScope: 'kb:get-scope',
   kbSetScope: 'kb:set-scope',

@@ -2460,6 +2460,32 @@ export function SettingsModal({
                         }}
                       />
                     </div>
+                    {/* macOS outlives its windows by convention, so the toggle
+                        would change nothing there — the field stays hidden */}
+                    {presence.closeToTraySupported && (
+                      <div className="set-field">
+                        <div className="set-field-text">
+                          <div className="set-field-stack">
+                            <div className="set-field-label">{t('setCloseToTray')}</div>
+                            <div className="set-field-desc">{t('setCloseToTrayDesc')}</div>
+                          </div>
+                        </div>
+                        <button
+                          className="set-switch"
+                          role="switch"
+                          aria-checked={presence.closeToTray}
+                          aria-label={t('setCloseToTray')}
+                          onClick={() => {
+                            void window.aiOffice
+                              .setCloseToTray?.(!presence.closeToTray)
+                              .then((sp) => {
+                                if (sp) setPresence(sp)
+                              })
+                              .catch(() => {})
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="set-field">
                       <div className="set-field-text">
                         <div className="set-field-stack">

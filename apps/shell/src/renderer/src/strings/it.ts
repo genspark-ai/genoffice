@@ -242,6 +242,9 @@ export const it: Dict = {
   setLoginItem: 'Avvia all’accesso',
   setLoginItemDesc:
     'Esegue GenOffice all’accesso, mantenendo disponibili l’icona nella barra delle applicazioni e la scorciatoia globale. Non supportato su Linux; l’interruttore resta disattivo.',
+  setCloseToTray: 'Restare in esecuzione dopo la chiusura',
+  setCloseToTrayDesc:
+    'Chiusa l’ultima finestra l’app resta in esecuzione; il menu della barra applicazioni o la scorciatoia globale la richiamano. Per uscire del tutto usa «Esci» nel menu della barra.',
   setGlobalHotkey: 'Scorciatoia globale',
   setGlobalHotkeyDesc: 'Richiama la tavolozza dei comandi della Home da ovunque.',
   setGlobalHotkeyAccelerator: 'Tasti della scorciatoia',

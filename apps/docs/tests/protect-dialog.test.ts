@@ -105,10 +105,11 @@ describe('ProtectDialog', () => {
     await d.cleanup()
   })
 
-  // hashing runs the full-strength KDF; give it headroom under suite-parallel load
+  // hashing runs the full-strength KDF; give it headroom under suite-parallel
+  // load — the windows runners alone have pushed this past 60s in CI
   it(
     'setting a modify password produces verifiable writeProtection credentials',
-    { timeout: 60_000 },
+    { timeout: 180_000 },
     async () => {
       const d = await mount({})
       const [, , modify, modifyConfirm] = d.passwordInputs()

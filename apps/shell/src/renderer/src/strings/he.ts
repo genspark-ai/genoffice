@@ -234,6 +234,9 @@ export const he: Dict = {
   setLoginItem: 'הפעלה בעת הכניסה',
   setLoginItemDesc:
     'מפעיל את GenOffice בעת הכניסה למערכת, כך שסמל מגש המערכת וקיצור המקלדת הגלובלי זמינים. לא נתמך ב-Linux; המתג נשאר כבוי.',
+  setCloseToTray: 'המשך לפעול לאחר הסגירה',
+  setCloseToTrayDesc:
+    'לאחר סגירת החלון האחרון האפליקציה ממשיכה לרוץ; מחזירים אותה מתפריט המגש או מהקיצור הגלובלי. ליציאה סופית השתמשו ב«יציאה» בתפריט המגש.',
   setGlobalHotkey: 'קיצור גלובלי',
   setGlobalHotkeyDesc: 'מזמן את לוח הפקודות של מסך הבית מכל מקום.',
   setGlobalHotkeyAccelerator: 'מקשי הקיצור',

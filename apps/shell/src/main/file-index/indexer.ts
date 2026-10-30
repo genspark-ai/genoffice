@@ -22,6 +22,13 @@ export interface IndexerSources {
 
 const RESCAN_DEBOUNCE_MS = 1500
 /**
+ * how long a query waits for the pipeline to catch up with the disk: long
+ * enough to cover a watcher-triggered incremental scan and its extractions
+ * (the just-saved file a Ctrl+K is looking for), short enough that a big
+ * first-run scan cannot hold a search box hostage
+ */
+const SETTLE_MAX_WAIT_MS = 2_000
+/**
  * a worker request left unanswered this long means a wedged parse or a stalled
  * walk: the request fails as an extraction error and the worker is recycled,
  * so one bad file cannot stall indexing (and search with it) for good
@@ -67,6 +74,8 @@ export class FileIndexer {
   private idleTimer: NodeJS.Timeout | null = null
   private lastScanAt = 0
   private stopped = false
+  /** settle() callers waiting for the pipeline to go quiet */
+  private readonly settleWaiters = new Set<() => void>()
 
   constructor(
     private readonly store: IndexStore,
@@ -105,6 +114,66 @@ export class FileIndexer {
     if (Date.now() - this.lastScanAt >= maxAgeMs) void this.scan()
   }
 
+  /** the pipeline is quiet: nothing scanning, nothing queued, no debounced
+   *  scan still to run — the index answers for everything the disk showed us */
+  private quiet(): boolean {
+    return (
+      !this.scanning &&
+      !this.scanRequested &&
+      !this.draining &&
+      this.queue.length === 0 &&
+      this.rescanTimer === null
+    )
+  }
+
+  /**
+   * A query's freshness hook: resolves once the pipeline catches up with the
+   * disk — an in-flight scan and the extraction queue both drain — so a query
+   * that raced a save does not answer from the pre-save index. Capped: a slow
+   * scan (a big first run) answers with the progress made and the next query
+   * sees the rest. Waiting never starts work; refreshing stays the caller's
+   * call.
+   */
+  async settle(maxWaitMs: number = SETTLE_MAX_WAIT_MS): Promise<void> {
+    if (this.quiet()) return
+    await new Promise<void>((resolve) => {
+      let done = false
+      const finish = (): void => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        this.settleWaiters.delete(finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, maxWaitMs)
+      timer.unref?.()
+      this.settleWaiters.add(finish)
+    })
+  }
+
+  /**
+   * Bring specific files into the index now: the star and open paths touch one
+   * file each, and waiting for the next scan leaves a just-starred file
+   * invisible to Ask for minutes. Only files the index does not already carry
+   * are extracted (a changed file is the scan's business — this is the
+   * first-sight path); unsupported or missing files are skipped silently.
+   */
+  async indexNow(paths: readonly string[]): Promise<void> {
+    if (this.stopped) return
+    for (const path of paths) {
+      if (!isSupportedTreeFile(path)) continue
+      try {
+        if (await this.store.has(path)) continue
+      } catch {
+        // an unanswerable store: the next scan is the fallback, not a reason
+        // to extract blindly
+        continue
+      }
+      const st = statOrNull(path)
+      if (st) this.enqueue(st)
+    }
+  }
+
   async scan(): Promise<void> {
     if (this.stopped) return
     if (this.scanning) {
@@ -132,6 +201,7 @@ export class FileIndexer {
     } finally {
       this.scanning = false
       this.scheduleIdleRecycle()
+      this.notifySettlers()
     }
     // a refresh that arrived mid-scan runs now, whether or not the walk succeeded
     if (this.scanRequested) {
@@ -181,7 +251,15 @@ export class FileIndexer {
     } finally {
       this.draining = false
       this.scheduleIdleRecycle()
+      this.notifySettlers()
     }
+  }
+
+  /** release every settle() waiter whose quiet state has arrived */
+  private notifySettlers(): void {
+    if (!this.quiet()) return
+    for (const w of [...this.settleWaiters]) w()
+    this.settleWaiters.clear()
   }
 
   private scheduleIdleRecycle(): void {
@@ -292,6 +370,9 @@ export class FileIndexer {
     if (this.idleTimer) clearTimeout(this.idleTimer)
     this.queue.length = 0
     this.queued.clear()
+    // a settle() caller must not wait out its cap while the app shuts down
+    for (const w of [...this.settleWaiters]) w()
+    this.settleWaiters.clear()
     void this.worker?.terminate()
     this.worker = null
   }

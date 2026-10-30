@@ -252,6 +252,9 @@ export const de: Dict = {
   setLoginItem: 'Beim Anmelden starten',
   setLoginItemDesc:
     'Startet GenOffice bei der Anmeldung, damit Tray-Symbol und globaler Kurzbefehl bereitstehen. Unter Linux nicht unterstützt; der Schalter bleibt aus.',
+  setCloseToTray: 'Nach dem Schließen weiterlaufen',
+  setCloseToTrayDesc:
+    'Nach dem Schließen des letzten Fensters läuft die App weiter; das Tray-Menü oder der globale Shortcut ruft sie zurück. Zum vollständigen Beenden den Punkt „Beenden“ im Tray-Menü verwenden.',
   setGlobalHotkey: 'Globaler Kurzbefehl',
   setGlobalHotkeyDesc: 'Ruft von überall die Befehlspalette der Startseite auf.',
   setGlobalHotkeyAccelerator: 'Tastenkombination',

@@ -230,6 +230,9 @@ export const zhTW: Dict = {
   setLoginItem: '登入時自動啟動',
   setLoginItemDesc:
     '登入系統後自動執行 GenOffice，常駐圖示與全域快捷鍵保持可用。Linux 暫不支援，開關不可用。',
+  setCloseToTray: '關閉後駐留系統匣',
+  setCloseToTrayDesc:
+    '最後一個視窗關閉後應用程式繼續在背景執行，系統匣或全域快速鍵隨時喚回；要徹底結束請使用系統匣選單的「結束」。',
   setGlobalHotkey: '全域快捷鍵',
   setGlobalHotkeyDesc: '按下後回到首頁並開啟命令選板。',
   setGlobalHotkeyAccelerator: '快捷鍵組合',

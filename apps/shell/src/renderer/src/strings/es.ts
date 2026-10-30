@@ -252,6 +252,9 @@ export const es: Dict = {
   setLoginItem: 'Iniciar al iniciar sesión',
   setLoginItemDesc:
     'Ejecuta GenOffice al iniciar sesión, con el icono de bandeja y el atajo global disponibles. No compatible con Linux; el interruptor permanece desactivado.',
+  setCloseToTray: 'Seguir en ejecución al cerrar',
+  setCloseToTrayDesc:
+    'Al cerrar la última ventana la aplicación sigue en ejecución; el menú de la bandeja o el atajo global la recuperan. Para salir del todo usa «Salir» en el menú de la bandeja.',
   setGlobalHotkey: 'Atajo global',
   setGlobalHotkeyDesc: 'Invoca la paleta de comandos de Inicio desde cualquier lugar.',
   setGlobalHotkeyAccelerator: 'Teclas del atajo',

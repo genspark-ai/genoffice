@@ -238,6 +238,9 @@ export const pl: Dict = {
   setLoginItem: 'Uruchamiaj przy logowaniu',
   setLoginItemDesc:
     'Uruchamia GenOffice przy logowaniu, utrzymując ikonę w zasobniku i globalny skrót. Nieobsługiwane w systemie Linux — przełącznik pozostaje wyłączony.',
+  setCloseToTray: 'Działać po zamknięciu',
+  setCloseToTrayDesc:
+    'Po zamknięciu ostatniego okna aplikacja nadal działa; przywołasz ją z menu zasobnika lub skrótem globalnym. Aby całkowicie zakończyć, użyj „Zakończ” w menu zasobnika.',
   setGlobalHotkey: 'Globalny skrót',
   setGlobalHotkeyDesc: 'Przywołuje paletę poleceń strony głównej z dowolnego miejsca.',
   setGlobalHotkeyAccelerator: 'Klawisze skrótu',

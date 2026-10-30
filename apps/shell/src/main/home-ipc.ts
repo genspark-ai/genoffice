@@ -131,6 +131,8 @@ export interface HomeFileIpcHost {
   ensureFileIndexer: () => FileIndexer | null
   indexStore: () => IndexStore | null
   refreshIndexer: () => void
+  /** bring specific first-sight files into the index now (star/open paths) */
+  indexNow: (paths: readonly string[]) => Promise<void>
   readFileSearchSettings: () => FileSearchSettings
   ensureSearchReranker: () => SearchReranker | null
   // routing and new-file creation stay owned by index.ts
@@ -202,6 +204,11 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
       }
       // an open search box is the moment a stale index shows; rescan at most once a minute
       indexer.refreshIfStale(60_000)
+      // the query rides out an in-flight incremental scan (a save the watcher
+      // just reported) so a just-saved file is findable on the first try; the
+      // cap must outlive the watcher's rescan debounce (1.5s) or the wait
+      // resolves before the scan even starts
+      await indexer.settle(2_000)
       const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
       const filter = typeof query.ext === 'string' ? query.ext : ''
       const exts = filter && filter !== 'all' ? (SEARCH_EXT_FAMILY[filter] ?? [filter]) : undefined
@@ -251,6 +258,9 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
     const store = host.indexStore()
     if (!q.trim() || !store) return []
     host.ensureFileIndexer()?.refreshIfStale(60_000)
+    // an answer is worth a real wait: let an in-flight scan and its
+    // extractions land so a question about a just-saved file cites it
+    await host.ensureFileIndexer()?.settle(2_000)
     const starred = readStarredFiles()
     return searchKnowledgeBase(
       async (qq, pool) =>
@@ -418,13 +428,21 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
   )
 
   ipcMain.handle(HOME_CHANNELS.toggleStar, (_event, path: unknown) => {
-    if (typeof path === 'string') toggleStarredFile(path)
+    if (typeof path !== 'string') return
+    toggleStarredFile(path)
+    // a just-starred file joins the corpus immediately — extraPaths only
+    // catches it at the next scan, and a star is exactly the moment the user
+    // expects Ask to see the file
+    void host.indexNow([path])
   })
 
   ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
     host.openDocumentPath(path)
-    host.refreshIndexer()
+    // the opened file enters the index now (a first sight outside the roots
+    // would wait for the next scan); edits the app makes land through the
+    // watcher like any other change
+    void host.indexNow([path])
   })
 
   ipcMain.handle(HOME_CHANNELS.browse, async (event) => {
