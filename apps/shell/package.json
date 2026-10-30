@@ -54,7 +54,7 @@
   },
   "author": "GenOffice",
   "dependencies": {
-    "@earendil-works/pi-agent-core": "file:../../../pi-fork/packages/agent",
-    "@earendil-works/pi-ai": "file:../../../pi-fork/packages/ai"
+    "@earendil-works/pi-agent-core": "^1.4.0",
+    "@earendil-works/pi-ai": "^1.4.0"
   }
 }
