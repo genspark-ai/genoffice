@@ -69,6 +69,8 @@ export const IPC_CHANNELS = {
   recalcWorkbook: 'workbook:recalc',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
+  /** Slicer/timeline controls the file carries (xl/slicers, xl/timelines) */
+  readSlicerState: 'workbook:read-slicer-state',
   /** The cells the reader withheld from the model (xl/gxRedactions.json) */
   readWorkbookRedactions: 'workbook:read-redactions',
   readLocalImage: 'shell:read-local-image',

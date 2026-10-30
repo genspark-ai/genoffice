@@ -7,9 +7,9 @@ import { useI18n } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
 
 /// Timeline: a month-granularity date-range filter bound to one pivot date
-/// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer)
-/// and exists only within the session; the filtered output area persists
-/// through the pivot refresh write-back path.
+/// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer),
+/// but timelines are session-only for now: this PR persists slicers only, a
+/// file's own timeline parts ride a save untouched, and there is no restore.
 
 export interface TimelineUiState {
   readonly id: string
