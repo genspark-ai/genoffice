@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 
-import type { ExternalLinksUpdateResult } from '../shared/desktop-api'
+import type { ExternalLinksResult, ExternalLinksUpdateResult } from '../shared/desktop-api'
 
 const PROTOCOL_VERSION = 1
 const REQUEST_TIMEOUT_MS = 30_000
@@ -200,6 +200,17 @@ export class XlsxSidecarClient {
   /** The link list only: no source is opened, nothing is evaluated. */
   async readExternalLinks(input: { readonly path: string }): Promise<unknown> {
     return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
+  /**
+   * The link list only: no source is opened, nothing is evaluated, and the
+   * targets are not probed (the listing carries no reachability).
+   */
+  async listExternalLinks(input: { readonly path: string }): Promise<ExternalLinksResult> {
+    return this.request<ExternalLinksResult>(
+      { command: 'list_external_links', ...input },
+      ARCHIVE_TIMEOUT_MS,
+    )
   }
 
   /**

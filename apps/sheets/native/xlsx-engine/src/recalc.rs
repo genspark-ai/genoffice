@@ -1118,7 +1118,9 @@ mod tests {
     #[test]
     fn an_external_reference_with_a_spaced_or_cjk_sheet_name_is_recognised() {
         assert!(references_an_external_workbook("'[1]Sheet Name'!A1"));
-        assert!(references_an_external_workbook("SUM('[1]Sheet Name'!A1:B2)"));
+        assert!(references_an_external_workbook(
+            "SUM('[1]Sheet Name'!A1:B2)"
+        ));
         // a CJK name needs no quotes
         assert!(references_an_external_workbook("[1]数据!A1"));
         // an R1C1 offset is still not an external workbook, quoted or not

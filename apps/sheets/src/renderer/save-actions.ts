@@ -93,6 +93,42 @@ export interface SaveContext {
 /// "Continue as CSV" — asked once per file, like modern Excel's banner.
 const confirmedCsvSaves = new Set<string>()
 
+/// One formula cell's value the recalc overlay contributes to a save request.
+export type RecalculatedFormulaValue = {
+  sheetId: string
+  row: number
+  column: number
+  value: string | number | boolean | null | { error: string }
+}
+
+/// Recalculated formula results: the engine's values are on screen but
+/// deliberately kept out of the journal (they must not become literals). A save
+/// sends them separately so it refreshes each formula cell's cached `<v>`,
+/// keeping its `<f>`.
+///
+/// A journaled formula is excluded: the overlay may still hold the previous
+/// formula's result when the user saves immediately after entering a
+/// replacement. A sheet whose run kept any cached value is excluded wholesale:
+/// the engine evaluated an incomplete model there, so a dependent of the gap may
+/// carry a clean wrong value (IFERROR over an unsupported precedent collapses to
+/// its literal); the file's own cached results stay, and fullCalcOnLoad already
+/// asks Excel to recalculate the session's edits on open.
+export function recalculatedFormulaValues(state: LazyWorkbookState): RecalculatedFormulaValue[] {
+  return [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
+    isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)
+      ? []
+      : [...cells].flatMap(([key, cell]) => {
+          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
+          if (cell.v === undefined || cell.v === '#ERROR!') return []
+          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
+          const [row, column] = key.split(':').map(Number)
+          if (row === undefined || column === undefined) return []
+          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
+          return [{ sheetId, row, column, value }]
+        }),
+  )
+}
+
 /** What a save actually did — the MCP bridge needs the outcome, fire-and-forget callers ignore it. */
 export interface SaveOutcome {
   ok: boolean
@@ -227,33 +263,11 @@ export async function handleSave(
             ? {}
             : { fonts: state.editJournal.theme.fonts }),
         }
-  // Recalculated formula results: the engine's values are on screen but
-  // deliberately kept out of the journal (they must not become literals). Send them
-  // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
-  // A journaled formula is excluded: the overlay may still hold the previous
-  // formula's result when the user saves immediately after entering a replacement.
-  // A sheet whose run kept any cached value is excluded wholesale: the engine
-  // evaluated an incomplete model there, so a dependent of the gap may carry a
-  // clean wrong value (IFERROR over an unsupported precedent collapses to its
-  // literal); the file's own cached results stay, and fullCalcOnLoad already
-  // asks Excel to recalculate the session's edits on open.
-  const overlayValues = [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
-    isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)
-      ? []
-      : [...cells].flatMap(([key, cell]) => {
-          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
-          if (cell.v === undefined || cell.v === '#ERROR!') return []
-          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
-          const [row, column] = key.split(':').map(Number)
-          if (row === undefined || column === undefined) return []
-          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
-          return [{ sheetId, row, column, value }]
-        }),
-  )
   // Journaled formulas an MCP batch saw settle (see formula-values.ts) were left
-  // out above because the overlay could be stale; their values are read live here.
+  // out of the overlay above because it could be stale; their values are read
+  // live here.
   const journaledValues = ctx.readCells ? verifiedFormulaValues(ctx.readCells) : []
-  const formulaValues = [...overlayValues, ...journaledValues]
+  const formulaValues = [...recalculatedFormulaValues(state), ...journaledValues]
   // Withheld cells travel in a package part of their own, so they ride with
   // this save rather than in the journal. Copied into the request's own shape
   // so the renderer never hands main a readonly view of its state.
