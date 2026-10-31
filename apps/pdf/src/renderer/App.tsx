@@ -6710,6 +6710,14 @@ export default function App() {
       await flushThen(async () => {
         setPrinting(true)
         try {
+          if (job && IS_MAC) {
+            // macOS named printer: lp spools the flushed file itself — the
+            // vector original reaches the driver untouched, instead of a
+            // 150-200 DPI raster pass (genoffice#2347's route, quality half)
+            const r = await window.pdfApi.printFile({ ...job, pages })
+            if (!r.ok && r.error) opFailed(r.error)
+            return
+          }
           const data = await window.pdfApi.readFile(filePath)
           const pdoc = await getDocument({ data: new Uint8Array(data), ...DOC_OPTS }).promise
           try {

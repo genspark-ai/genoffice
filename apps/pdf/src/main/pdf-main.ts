@@ -31,7 +31,23 @@ import {
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
-import { printJobOptions } from '@genoffice/electron-utils/print-job'
+import { printJobOptions, printOutcome } from '@genoffice/electron-utils/print-job'
+import {
+  printFileViaCups,
+  printPdfViaCups,
+  printToPdfOptionsFor,
+} from '@genoffice/electron-utils/print-cups'
+
+/** 1-based file page positions for the lp `-p` selection: integers within a
+ * real document's reach, undefined = the whole document. Anything else is
+ * dropped wholesale — a half-valid list would silently print the wrong
+ * subset. */
+function validPrintPages(pages: unknown): number[] | undefined {
+  if (pages === undefined) return undefined
+  if (!Array.isArray(pages) || pages.length === 0 || pages.length > 100_000) return undefined
+  const clean = pages.filter((n) => typeof n === 'number' && Number.isInteger(n) && n >= 1)
+  return clean.length === pages.length ? clean : undefined
+}
 import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
@@ -1213,17 +1229,44 @@ function registerPdfIpc(): void {
     return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
   })
 
-  ipcMain.handle(PDF_CHANNELS.print, (e, job: unknown) => {
+  ipcMain.handle(PDF_CHANNELS.print, async (e, job: unknown) => {
     const opts = printJobOptions(job)
     // the renderer's print stylesheet already lays one rasterized page per sheet
+    if (process.platform === 'darwin' && opts.silent) {
+      // Chromium's silent print on macOS can drop the job outright — no queue
+      // entry, no callback error (genoffice#2347). Route through CUPS:
+      // printToPDF bakes the sheets at the document's own paper size (the
+      // renderer measured it), and lp spools a real, diagnosable job.
+      const printed = await e.sender.printToPDF(
+        printToPdfOptionsFor({
+          marginsIn: { top: 0, bottom: 0, left: 0, right: 0 },
+          ...(opts.pageSizeIn
+            ? { widthIn: opts.pageSizeIn.width, heightIn: opts.pageSizeIn.height }
+            : {}),
+        }),
+      )
+      return printPdfViaCups(printed, opts)
+    }
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       e.sender.print({ margins: { marginType: 'none' }, ...opts }, (success, failureReason) => {
-        resolve({
-          ok: success,
-          ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
-        })
+        resolve(printOutcome(success, failureReason, opts.silent))
       })
     })
+  })
+
+  ipcMain.handle(PDF_CHANNELS.printFile, async (e, request: unknown) => {
+    if (typeof request !== 'object' || request === null) {
+      throw new Error('pdf: malformed print-file request')
+    }
+    const req = request as Record<string, unknown>
+    if (typeof req.path !== 'string' || !allowedByWc.get(e.sender.id)?.has(req.path)) {
+      throw new Error('pdf: path not granted to this view')
+    }
+    const opts = printJobOptions(req)
+    // the pages travel beside the job: 1-based file positions the renderer
+    // validated against the opened document, spooled as lp's -p selection
+    const pages = validPrintPages(req.pages)
+    return printFileViaCups(req.path, opts, pages)
   })
 
   ipcMain.handle(PDF_CHANNELS.readFile, async (e, path: unknown) => {
