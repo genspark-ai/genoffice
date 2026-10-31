@@ -138,6 +138,9 @@ export interface AnthropicRequestOptions {
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
   idleTimeoutMs?: number | undefined
+  /** adaptive-thinking record for the families that take an effort
+   * (4.6+); absent = no thinking block, the vendor's own default */
+  thinking?: { type: 'adaptive'; effort: string } | undefined
 }
 
 export async function streamAnthropic(
@@ -192,6 +195,7 @@ async function anthropicTurn(
       body: JSON.stringify({
         model: config.model,
         max_tokens: maxTokens,
+        ...(options.thinking ? { thinking: options.thinking } : {}),
         system,
         messages: anthropicMessages(messages),
         ...(tools.length > 0

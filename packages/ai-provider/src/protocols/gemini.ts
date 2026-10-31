@@ -166,6 +166,9 @@ export interface GeminiRequestOptions {
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
   idleTimeoutMs?: number | undefined
+  /** thinkingLevel for the 3/4.x families (their docs reject the 2.5-era
+   * thinkingBudget); absent = the model's dynamic default */
+  thinkingLevel?: string | undefined
 }
 
 export async function streamGemini(
@@ -233,6 +236,7 @@ async function geminiTurn(
       // so omit our hard-coded 0.3 for those models via omitTemperature.
       generationConfig: {
         ...(options.omitTemperature ? {} : { temperature: 0.3 }),
+        ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
         maxOutputTokens: maxTokens,
       },
     }),
@@ -330,7 +334,10 @@ export async function chatGemini(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { ...(options.omitTemperature ? {} : { temperature: 0.3 }) },
+      generationConfig: {
+        ...(options.omitTemperature ? {} : { temperature: 0.3 }),
+        ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
+      },
     }),
   })
   wd.touch()

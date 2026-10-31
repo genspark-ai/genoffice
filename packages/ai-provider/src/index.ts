@@ -104,6 +104,14 @@ export type {
   ResolvedEndpoint,
 } from './registry'
 export { sanitizeAiSettings, sanitizeCliPath, validCliPath } from './ai-settings-guard'
+export {
+  isThinkingEffort,
+  resolveThinkingEffort,
+  thinkingShapeFor,
+  THINKING_LEVELS,
+  type ThinkingEffort,
+  type ThinkingShape,
+} from './thinking-effort'
 export { chatForProvider } from './chat'
 export { setAiUserAgent, setRescueFetch } from './fetch'
 export { isAiNetworkError } from './network-error'
