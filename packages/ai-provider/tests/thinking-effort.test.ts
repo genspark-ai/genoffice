@@ -75,11 +75,7 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('glm-5.3-flash').levels).not.toContain('none')
   })
 
-  it('the on/off families: doubao, qwen', () => {
-    expect(thinkingShapeFor('doubao-seed-2-1-pro-260628')).toEqual({
-      kind: 'toggle',
-      levels: ['none', 'medium'],
-    })
+  it('the on/off family: qwen', () => {
     expect(thinkingShapeFor('qwen3.8-max')).toEqual({
       kind: 'qwen-toggle',
       levels: ['none', 'medium'],
@@ -91,17 +87,28 @@ describe('thinkingShapeFor', () => {
       kind: 'openai-effort',
       levels: ['none', 'low', 'medium', 'high'],
     })
-    for (const model of [
-      'MiniMax-M3.1-Flash',
-      'mistral-medium-latest',
-      'Ling-3.0-flash',
-      'spark-x2.5',
-      'LongCat-2.0',
-      'mimo-v2.6-pro',
-      'hy4-preview',
-    ]) {
+    for (const model of ['MiniMax-M3.1-Flash', 'Ling-3.0-flash', 'LongCat-2.0', 'mimo-v2.6-pro']) {
       expect(thinkingShapeFor(model).levels, model).toEqual([])
     }
+  })
+
+  it('doubao, hunyuan, spark and mistral-medium carry their documented surfaces', () => {
+    expect(thinkingShapeFor('doubao-seed-2-1-pro-260628').levels).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(thinkingShapeFor('hy4-preview')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'high'],
+    })
+    expect(thinkingShapeFor('hy3').levels).toEqual(['low', 'high'])
+    expect(thinkingShapeFor('spark-x2.5')).toEqual({ kind: 'toggle', levels: ['none', 'medium'] })
+    expect(thinkingShapeFor('mistral-medium-latest').levels).toEqual(['low', 'medium', 'high'])
+    expect(thinkingShapeFor('mistral-large-latest').levels).toEqual([])
   })
 })
 
@@ -182,22 +189,13 @@ describe('per-protocol translators', () => {
     ).toBeUndefined()
   })
 
-  it('toggles: doubao switches thinking, qwen flips enable_thinking', () => {
-    expect(
-      toggleThinkingBodyFor({ model: 'glm-5.3', thinking: { 'glm-5.3': 'low' } }),
-    ).toBeUndefined()
-    expect(
-      toggleThinkingBodyFor({
-        model: 'doubao-seed-2-1-pro-260628',
-        thinking: { doubao: 'medium' },
-      }),
-    ).toBeUndefined()
+  it('toggles: qwen flips enable_thinking, doubao rides effort now', () => {
     expect(
       toggleThinkingBodyFor({
         model: 'doubao-seed-2-1-pro-260628',
         thinking: { 'doubao-seed-2-1-pro-260628': 'medium' },
       }),
-    ).toEqual({ thinking: { type: 'enabled' } })
+    ).toBeUndefined()
     expect(
       toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'none' } }),
     ).toEqual({

@@ -83,12 +83,24 @@ export function thinkingShapeFor(model: string): ThinkingShape {
     return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
   if (/(^|\/)glm-/.test(id))
     return { kind: 'openai-effort', levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
-  // Doubao Seed takes a thinking on/off switch, not levels
-  if (/(^|\/)doubao-/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
+  // Doubao Seed 2.1: the Ark gateway accepts the full effort ladder and maps
+  // internally (none/minimal stop thinking, xhigh/max fold to high on 2.1);
+  // the hard on/off stays available through thinking{type} which we do not
+  // need once effort carries the choice.
+  if (/(^|\/)doubao-seed-2-1/.test(id)) return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
+  // Hunyuan Hy: reasoning_effort with low/high documented (default high) and
+  // a thinking{type} switch on top; hy4-preview also thinks by default.
+  if (/(^|\/)hy[34](-|$)/.test(id)) return { kind: 'openai-effort', levels: ['low', 'high'] }
+  // iFlytek Spark X2+ controls its thinking mode through a thinking parameter
+  if (/(^|\/)spark-x/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
   // DashScope Qwen 3.x commercial tiers: enable_thinking
   if (/(^|\/)qwen\d/.test(id)) return { kind: 'qwen-toggle', levels: ['none', 'medium'] }
   // xAI's grok takes the OpenAI-style effort field on the current lineup
   if (/(^|\/)grok-/.test(id)) return { kind: 'openai-effort', levels: OPENAI_FIVE_LEVELS }
+  // Mistral documents reasoning_effort for medium 3.5 (three rungs); the other
+  // mistral ids have no documented knob
+  if (/(^|\/)mistral-medium/.test(id))
+    return { kind: 'openai-effort', levels: ['low', 'medium', 'high'] }
   return { kind: 'openai-effort', levels: [] }
 }
 
