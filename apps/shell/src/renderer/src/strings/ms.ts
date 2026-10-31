@@ -15,6 +15,9 @@ export const ms: Dict = {
   askEmptyCorpusHint:
     'Tiada fail kegemaran lagi — tanda beberapa fail dahulu supaya AI boleh membacanya.',
   askCorpusCount: 'Pangkalan pengetahuan: {n} fail kegemaran',
+  askScopeChip: 'Korpus: {n} fail dipilih',
+  askScopeNotIndexed: '{n} tidak diindeks',
+  askScopeClear: 'Kosongkan pilihan',
   askIntro: 'Tanya tentang fail kegemaran anda. Jawapan memetik sumbernya — klik untuk membuka.',
   askToolSearch: 'Mencari pangkalan pengetahuan',
   askToolRead: 'Membaca fail',

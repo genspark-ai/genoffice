@@ -15,6 +15,9 @@ export const cs: Dict = {
   askEmptyCorpusHint:
     'Zatím nejsou žádné oblíbené soubory — nejprve je označte hvězdičkou, aby je AI mohla číst.',
   askCorpusCount: 'Znalostní databáze: {n} oblíbených souborů',
+  askScopeChip: 'Korpus: {n} vybraných souborů',
+  askScopeNotIndexed: '{n} neindexováno',
+  askScopeClear: 'Zrušit vybraný korpus',
   askIntro: 'Ptejte se na své oblíbené soubory. Odpovědi uvádějí zdroje — kliknutím otevřete.',
   askToolSearch: 'Prohledávání databáze',
   askToolRead: 'Čtení souboru',

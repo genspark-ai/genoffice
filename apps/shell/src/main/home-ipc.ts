@@ -44,9 +44,12 @@ import { createDefaultAppService, execFileRunner } from './default-app'
 import {
   createKnowledgeDocument,
   KB_LIST_CAP,
+  kbReadAllows,
   listIndexedKnowledgeFiles,
   listKnowledgeFiles,
   normalizeKbScope,
+  notIndexedPaths,
+  parseKbOnlyPaths,
   parseKbCreateRequest,
   readKnowledgeFilePage,
   searchKnowledgeBase,
@@ -154,6 +157,8 @@ export interface HomeFileIpcHost {
   extraFolderRoots: () => string[]
   insideAnyRoot: (path: string) => boolean
   isAnyRoot: (path: string) => boolean
+  /** the desktop's stored alias paths (desktop-layout.json), for the kb read gate's location whitelist */
+  desktopAliases: () => readonly string[]
   ensureFolderWatchers: () => void
   droppedFilesDeps: () => DroppedFilesDeps
   /** the bundled genoffice CLI runner (index's lazy singleton) */
@@ -236,7 +241,15 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
   // app-settings `kbScope`: 'indexed' (default) is every file the local index
   // covers, 'starred' the original hand-picked set. Path arguments are
   // validated against the scope — a corpus file is the only thing a knowledge
-  // tool may read.
+  // tool may read. A request carrying `onlyPaths` (the round scope: an
+  // explicit desktop selection) replaces the kbScope for that call: search
+  // intersects with the selection and reports the paths the index missed as
+  // `notIndexed`; read narrows the same way — a corpus file outside the
+  // selection is refused, and a selected one the index missed still reads
+  // when it sits at a location a desktop selection can genuinely hold
+  // (inside a folder root, on the stored alias list, or among the
+  // recents/stars). The answer keeps the bare-array shape for unscoped calls
+  // so a renderer that predates onlyPaths (docs' panel) reads it unchanged.
   const kbScope = () => normalizeKbScope(readAppSettings(host.appSettingsPath()).kbScope)
 
   ipcMain.handle('kb:list', async (): Promise<unknown> => {
@@ -251,18 +264,29 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
   })
 
   ipcMain.handle('kb:search', async (_event, raw: unknown): Promise<unknown> => {
-    const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; limit?: unknown }
+    const query = (raw && typeof raw === 'object' ? raw : {}) as {
+      q?: unknown
+      limit?: unknown
+      onlyPaths?: unknown
+    }
     const q = typeof query.q === 'string' ? query.q : ''
     const limitRaw = Number(query.limit)
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.floor(limitRaw)) : 8
+    // invalid scope payloads are refused outright, before anything runs
+    const onlyPaths = parseKbOnlyPaths(query.onlyPaths)
     const store = host.indexStore()
-    if (!q.trim() || !store) return []
+    if (!q.trim() || !store) {
+      return onlyPaths ? { hits: [], notIndexed: await notIndexedPaths(store, onlyPaths) } : []
+    }
     host.ensureFileIndexer()?.refreshIfStale(60_000)
     // an answer is worth a real wait: let an in-flight scan and its
     // extractions land so a question about a just-saved file cites it
     await host.ensureFileIndexer()?.settle(2_000)
     const starred = readStarredFiles()
-    return searchKnowledgeBase(
+    // the round scope replaces the kbScope: the selection is the corpus for
+    // this call, whatever the settings say
+    const scope = onlyPaths ?? (kbScope() === 'starred' ? starred : null)
+    const hits = await searchKnowledgeBase(
       async (qq, pool) =>
         store
           .search(qq, { limit: pool })
@@ -276,23 +300,26 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
           )
           .catch(() => []),
       q,
-      kbScope() === 'starred' ? starred : null,
+      scope,
       Math.min(limit, 20),
     )
+    return onlyPaths ? { hits, notIndexed: await notIndexedPaths(store, onlyPaths) } : hits
   })
 
   ipcMain.handle('kb:read', async (_event, raw: unknown): Promise<unknown> => {
     const req = (raw && typeof raw === 'object' ? raw : {}) as {
       path?: unknown
       offset?: unknown
+      onlyPaths?: unknown
     }
     const path = typeof req.path === 'string' ? req.path : ''
     const offsetRaw = Number(req.offset)
     const offset = Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0
+    const onlyPaths = parseKbOnlyPaths(req.onlyPaths)
     // a starred file stays readable in every scope (even with the index
     // momentarily unavailable); the indexed scope adds "in the index"
     const starred = readStarredFiles().includes(path)
-    const inScope =
+    const inCorpus =
       kbScope() === 'starred'
         ? starred
         : starred ||
@@ -301,7 +328,26 @@ export function registerHomeFileIpc(host: HomeFileIpcHost): void {
             ?.has(path)
             .catch(() => false)) ??
             false)
-    if (!path || !inScope) {
+    // the round-scope branch's location whitelist, computed only when it can
+    // matter (a scope is attached and the corpus does not already cover the
+    // path): a selected file is readable off-corpus only where a desktop
+    // selection can genuinely come from — inside a folder root, on the stored
+    // alias list, or a tracked recent/starred file. An office-named file
+    // anywhere else on disk is refused, whatever the scope says.
+    const locationAllowed =
+      onlyPaths !== null && !inCorpus
+        ? host.insideAnyRoot(path) ||
+          host.desktopAliases().includes(path) ||
+          readRecentFiles().includes(path) ||
+          starred
+        : false
+    const readable = kbReadAllows(path, {
+      inCorpus,
+      scopePaths: onlyPaths,
+      locationAllowed,
+      statFile: host.statMaybeFile,
+    })
+    if (!path || !readable) {
       throw new Error('path is not in the knowledge base')
     }
     return readKnowledgeFilePage(path, offset)

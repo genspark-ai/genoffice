@@ -15,6 +15,9 @@ export const pl: Dict = {
   askEmptyCorpusHint:
     'Nie ma jeszcze ulubionych plików — najpierw oznacz je gwiazdką, aby AI mogło je czytać.',
   askCorpusCount: 'Baza wiedzy: {n} ulubionych plików',
+  askScopeChip: 'Korpus: {n} wybranych plików',
+  askScopeNotIndexed: '{n} niezaindeksowanych',
+  askScopeClear: 'Wyczyść wybór',
   askIntro: 'Zadawaj pytania o swoje pliki. Odpowiedzi podają źródła — kliknij, aby otworzyć.',
   askToolSearch: 'Wyszukiwanie w bazie',
   askToolRead: 'Czytanie pliku',

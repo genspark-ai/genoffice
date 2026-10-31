@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   normalizeAskDeepLink,
+  normalizeScopePaths,
   planPendingAskQuery,
   type AskQueryOrigin,
   type PendingAskQuery,
@@ -13,6 +14,11 @@ import {
  * panel consumes each handoff exactly once (seq-guarded). The origin decides
  * the submit policy: the palette's user-typed text submits itself, a deep
  * link's web-supplied text only ever parks in the composer.
+ *
+ * A handoff may carry scopePaths (the desktop's multi-select): the round
+ * scope rides the plan — a question plus a selection submits scoped, a
+ * selection with no text parks the scope alone (the panel opens, the chip
+ * attaches, nothing sends itself).
  */
 
 const pending = (text: string, seq = 1, origin: AskQueryOrigin = 'palette'): PendingAskQuery => ({
@@ -20,6 +26,13 @@ const pending = (text: string, seq = 1, origin: AskQueryOrigin = 'palette'): Pen
   seq,
   origin,
 })
+
+const scoped = (
+  text: string,
+  scopePaths: readonly string[],
+  seq = 1,
+  origin: AskQueryOrigin = 'palette',
+): PendingAskQuery => ({ text, seq, origin, scopePaths })
 
 describe('planPendingAskQuery', () => {
   it('does nothing without a pending query or for an already-consumed seq', () => {
@@ -86,6 +99,84 @@ describe('planPendingAskQuery', () => {
     const second = planPendingAskQuery(pending('again', 2), 1, false)
     expect(first.consume && first.action).toBe('submit')
     expect(second.consume && second.action).toBe('submit')
+  })
+})
+
+describe('planPendingAskQuery with a round scope', () => {
+  const paths = ['/desk/a.docx', '/desk/b.xlsx']
+
+  it('a question plus a selection submits scoped while the panel is idle', () => {
+    expect(planPendingAskQuery(scoped('summarize these', paths), 0, false)).toEqual({
+      consume: true,
+      seq: 1,
+      action: 'submit',
+      text: 'summarize these',
+      scopePaths: paths,
+    })
+  })
+
+  it('a busy panel parks the question and keeps the scope for the send that follows', () => {
+    expect(planPendingAskQuery(scoped('summarize these', paths), 0, true)).toEqual({
+      consume: true,
+      seq: 1,
+      action: 'park',
+      text: 'summarize these',
+      scopePaths: paths,
+    })
+  })
+
+  it('blank text with a selection parks instead of dropping: the chip alone is the handoff', () => {
+    expect(planPendingAskQuery(scoped('', paths), 0, false)).toEqual({
+      consume: true,
+      seq: 1,
+      action: 'park',
+      text: '',
+      scopePaths: paths,
+    })
+    // web-supplied text never sends itself, with or without a scope
+    expect(planPendingAskQuery(scoped('', paths, 2, 'deep-link'), 1, false)).toEqual({
+      consume: true,
+      seq: 2,
+      action: 'park',
+      text: '',
+      scopePaths: paths,
+    })
+  })
+
+  it('a handoff whose scope sanitizes to nothing behaves like a plain query', () => {
+    expect(planPendingAskQuery(scoped('', ['', 42, null]), 0, false)).toEqual({
+      consume: true,
+      seq: 1,
+      action: 'drop',
+      text: '',
+    })
+    expect(planPendingAskQuery(scoped('hello', [42]), 0, false)).toEqual({
+      consume: true,
+      seq: 1,
+      action: 'submit',
+      text: 'hello',
+    })
+  })
+})
+
+describe('normalizeScopePaths', () => {
+  it('keeps the non-empty strings, deduplicated in order', () => {
+    expect(normalizeScopePaths(['/a.docx', '/a.docx', '/b.xlsx'])).toEqual(['/a.docx', '/b.xlsx'])
+  })
+
+  it('drops non-strings and empty strings rather than throwing', () => {
+    expect(normalizeScopePaths([undefined, '/a.docx', '', 42, null])).toEqual(['/a.docx'])
+  })
+
+  it('a non-array answers empty, whatever junk it carries', () => {
+    expect(normalizeScopePaths(undefined)).toEqual([])
+    expect(normalizeScopePaths('/a.docx')).toEqual([])
+    expect(normalizeScopePaths({ 0: '/a.docx' })).toEqual([])
+  })
+
+  it('caps at 50 paths, mirroring the main-side onlyPaths cap', () => {
+    const many = Array.from({ length: 80 }, (_, i) => `/desk/${i}.docx`)
+    expect(normalizeScopePaths(many)).toEqual(many.slice(0, 50))
   })
 })
 

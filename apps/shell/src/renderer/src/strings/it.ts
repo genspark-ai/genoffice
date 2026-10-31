@@ -15,6 +15,9 @@ export const it: Dict = {
   askEmptyCorpusHint:
     'Ancora nessun file preferito — contrassegnane prima alcuni perché l’IA possa leggerli.',
   askCorpusCount: 'Base di conoscenza: {n} file preferiti',
+  askScopeChip: 'Corpus: {n} file selezionati',
+  askScopeNotIndexed: '{n} non indicizzati',
+  askScopeClear: 'Annulla selezione',
   askIntro:
     'Chiedi informazioni sui tuoi file preferiti. Le risposte citano la fonte — clicca per aprire.',
   askToolSearch: 'Ricerca nella base',

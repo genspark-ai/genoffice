@@ -15,6 +15,9 @@ export const vi: Dict = {
   askEmptyCorpusHint:
     'Chưa có tệp nào được đánh dấu — hãy đánh dấu tệp trước để AI có thể đọc chúng.',
   askCorpusCount: 'Cơ sở tri thức: {n} tệp đã đánh dấu',
+  askScopeChip: 'Ngữ liệu: {n} tệp đã chọn',
+  askScopeNotIndexed: '{n} chưa được đánh chỉ mục',
+  askScopeClear: 'Xóa lựa chọn',
   askIntro: 'Hỏi về các tệp bạn đã đánh dấu. Câu trả lời dẫn nguồn — nhấp để mở.',
   askToolSearch: 'Đang tìm cơ sở tri thức',
   askToolRead: 'Đang đọc tệp',

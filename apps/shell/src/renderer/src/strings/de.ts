@@ -16,6 +16,9 @@ export const de: Dict = {
   askEmptyCorpusHint:
     'Noch keine Favoriten — markieren Sie zuerst Dateien, damit die KI sie lesen kann.',
   askCorpusCount: 'Wissensbasis: {n} favorisierte Dateien',
+  askScopeChip: 'Korpus: {n} ausgewählte Dateien',
+  askScopeNotIndexed: '{n} nicht indiziert',
+  askScopeClear: 'Auswahl aufheben',
   askIntro:
     'Fragen Sie zu Ihren Favoriten. Antworten nennen ihre Quellen — Klick öffnet die Datei.',
   askToolSearch: 'Wissensbasis durchsuchen',

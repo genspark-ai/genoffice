@@ -168,6 +168,126 @@
   z-index: 60;
 }
 
+/* ── the selection layer ──────────────────────────────── */
+
+/* the rubber band a left drag on empty surface draws: accent fill at the
+ * soft strength, a 1px accent edge, 2px corners — pure scenery, it never
+ * intercepts the pointer the gesture still owns. No transition anywhere:
+ * the band tracks the pointer exactly, and a reduced-motion setup gets the
+ * same instant rectangle as everyone else. */
+.desktop-marquee {
+  position: absolute;
+  z-index: 35;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* a multi-selection menu row that cannot act (a mixed selection's Remove):
+ * flat ink, no cursor — with the caveat row underneath saying why */
+.desktop-menu-multi button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.desktop-menu-multi button:disabled:hover {
+  background: none;
+}
+
+/* the caveat under a disabled row: quiet, tertiary, non-interactive */
+.desktop-menu-hint {
+  padding: 2px 9px 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  white-space: normal;
+}
+
+/* ── the alias-removal confirm ────────────────────────── */
+
+/* Home's modal skeleton in desktop.css's own names, so the view stands
+ * alone wherever Home's sheet is not loaded */
+.desktop-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.desktop-confirm {
+  min-width: min(var(--modal-width-sm), 90vw);
+  max-width: 440px;
+  padding: 24px;
+  background: var(--surface);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow-modal-strong);
+}
+
+.desktop-confirm h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.desktop-confirm p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.desktop-confirm-list {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-8);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.desktop-confirm-list li {
+  margin: 2px 0;
+}
+
+.desktop-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.desktop-confirm-buttons button {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.desktop-confirm-buttons button:hover {
+  background: var(--bg-hover);
+}
+
+.desktop-confirm-buttons button.danger {
+  /* the error pair's fixed light ink (the .btn-danger convention) */
+  --desktop-confirm-danger-ink: #ffffff;
+  border: none;
+  background: var(--color-error);
+  color: var(--desktop-confirm-danger-ink);
+}
+
+.desktop-confirm-buttons button.danger:hover {
+  background: var(--color-error-hover);
+}
+
 /* ── the Home-root backdrop (the wallpaper lift) ───────── */
 
 /* Home mounts this node at its root while the desktop view is active; the

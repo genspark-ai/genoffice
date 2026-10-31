@@ -80,6 +80,7 @@ import { registerTodosIpc } from './todos-ipc'
 import {
   registerDesktopIpc,
   defaultWallpapersDir,
+  readDesktopLayout,
   readDesktopPins,
   writeDesktopPins,
 } from './desktop-ipc'
@@ -4346,6 +4347,9 @@ function registerHomeIpc(): void {
     extraFolderRoots,
     insideAnyRoot,
     isAnyRoot,
+    // the kb read gate's round-scope whitelist reads the same store the
+    // desktop's alias channels own (desktop-ipc's layout file), fresh per call
+    desktopAliases: () => readDesktopLayout(app.getPath('userData')).aliases,
     ensureFolderWatchers,
     droppedFilesDeps,
     cliRunner: bundledCliRunner,

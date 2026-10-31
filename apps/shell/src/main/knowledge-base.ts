@@ -12,6 +12,21 @@
 /// recently touched indexed files); search and read are what reach the whole
 /// corpus.
 ///
+/// On top of that sits the round scope: an explicit file selection (the
+/// desktop's multi-select → Ask AI) handed over as one conversation's corpus.
+/// While a request carries `onlyPaths`, search intersects the index with that
+/// list and reports the paths the index does not cover (`notIndexed`), and
+/// read narrows the same way — a selected path is the only thing readable
+/// that call, corpus or not. A selected file the index missed still reads
+/// when its location is one a desktop selection can genuinely come from
+/// (inside a folder root, on the stored alias list, or a recent/starred
+/// file — the caller's verdict) and it exists as a readable office type: an
+/// office-named file anywhere else on disk is refused, so the scope cannot
+/// turn the read channel into an arbitrary-file reader. No ad-hoc indexing
+/// happens for the selection (v1 boundary: an unindexed selected file that
+/// fails the location gate is simply not answerable, and the panel's chip
+/// says so).
+///
 /// Why the starred search still filters in JS rather than in SQLite: the FTS
 /// index's path column stores tokenized FOLDER names (see store.ts upsert),
 /// not real paths, so a `path IN (...)` cannot express "within the starred
@@ -20,8 +35,9 @@
 /// post-filter at all, so it takes the store's own ranked page directly.
 
 import { statSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { basename, dirname, isAbsolute } from 'node:path'
 import { parseFileToText } from '@genoffice/file-parse'
+import { isSupportedTreeFile } from './folder-tree'
 import type { IndexedFile } from './file-index/store'
 
 /** characters of parsed text one read_knowledge_file page returns (aligned
@@ -53,6 +69,109 @@ export type KbScope = 'indexed' | 'starred'
 
 export function normalizeKbScope(raw: unknown): KbScope {
   return raw === 'starred' ? 'starred' : 'indexed'
+}
+
+// ── the round scope: an explicit file selection as one conversation's corpus ──
+
+/** how many paths one scoped kb request may carry; a desktop multi-select is a handful, the cap keeps a hostile payload bounded */
+export const KB_ONLY_PATHS_MAX = 50
+
+/** per-path length cap, same as the open-path channel */
+const KB_PATH_MAX_CHARS = 4096
+
+/**
+ * Validate an `onlyPaths` payload (kb:search / kb:read): null when the field
+ * is absent or empty — the default kbScope corpus applies — and a deduped
+ * path list otherwise. Throws a plain message on a non-array, a non-string
+ * entry, a relative path, an over-long path, or too many paths: a renderer
+ * cannot widen the round scope into an unbounded read surface.
+ */
+export function parseKbOnlyPaths(raw: unknown): readonly string[] | null {
+  if (raw === undefined || raw === null) return null
+  if (!Array.isArray(raw)) throw new Error('onlyPaths must be an array of absolute paths')
+  if (raw.length > KB_ONLY_PATHS_MAX) {
+    throw new Error(`onlyPaths accepts at most ${KB_ONLY_PATHS_MAX} paths`)
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'string') throw new Error('onlyPaths entries must be strings')
+    if (!isAbsolute(entry)) throw new Error(`onlyPaths entries must be absolute: ${entry}`)
+    if (entry.length > KB_PATH_MAX_CHARS) {
+      throw new Error(`onlyPaths entry is too long (${entry.length} > ${KB_PATH_MAX_CHARS})`)
+    }
+    if (seen.has(entry)) continue
+    seen.add(entry)
+    out.push(entry)
+  }
+  return out.length > 0 ? out : null
+}
+
+/**
+ * A round-scope path the index missed stays readable when its location is
+ * one the caller whitelists — inside a folder root, on the desktop's stored
+ * alias list, or a tracked recent/starred file (the locations a desktop
+ * selection can genuinely hold) — and it exists, is a regular file, and
+ * carries one of the tree's supported office extensions. Location plus type
+ * keeps the scope from turning the read channel into an arbitrary-file
+ * reader: an office-named file anywhere on disk is not enough on its own.
+ */
+export function isReadableScopePath(
+  path: string,
+  opts: {
+    /** the location verdict (root / alias / recent / starred), computed by the caller */
+    locationAllowed: boolean
+    statFile: (path: string) => { isFile: () => boolean } | null
+  },
+): boolean {
+  if (!opts.locationAllowed) return false
+  if (!isSupportedTreeFile(basename(path))) return false
+  return opts.statFile(path)?.isFile() ?? false
+}
+
+/**
+ * The kb:read gate, pure so it is unit-testable. Without a round scope the
+ * kbScope corpus verdict is the whole gate (starred, or in the index) — the
+ * read surface the channel always had. With a round scope attached the scope
+ * narrows instead of widening: only a selected path is readable that call
+ * (search already intersects with the selection; read must too, or a corpus
+ * file outside the chip would still leak through), and a selected path the
+ * corpus does not cover reads when its location is whitelisted and it is a
+ * readable office type.
+ */
+export function kbReadAllows(
+  path: string,
+  opts: {
+    /** the kbScope-side verdict (starred / index membership), computed by the caller */
+    inCorpus: boolean
+    /** this request's validated onlyPaths; null = no round scope */
+    scopePaths: readonly string[] | null
+    /** the round-scope location verdict (root / alias / recent / starred), computed by the caller */
+    locationAllowed: boolean
+    statFile: (path: string) => { isFile: () => boolean } | null
+  },
+): boolean {
+  if (opts.scopePaths === null) return opts.inCorpus
+  if (!opts.scopePaths.includes(path)) return false
+  if (opts.inCorpus) return true
+  return isReadableScopePath(path, {
+    locationAllowed: opts.locationAllowed,
+    statFile: opts.statFile,
+  })
+}
+
+/**
+ * Which requested scope paths the index does not cover — the answer's
+ * `notIndexed` list and the chip's "not indexed" hint. A path without the
+ * store is unanswerable, so the whole selection reports as not indexed.
+ */
+export async function notIndexedPaths(
+  store: { has(path: string): Promise<boolean> } | null,
+  paths: readonly string[],
+): Promise<string[]> {
+  if (!store) return [...paths]
+  const indexed = await Promise.all(paths.map((p) => store.has(p).catch(() => false)))
+  return paths.filter((_, i) => !indexed[i])
 }
 
 /** one corpus entry as the AI (and the panel) sees it */

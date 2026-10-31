@@ -16,6 +16,9 @@ export const ja: Dict = {
   askEmptyCorpusHint:
     'スター付きファイルがまだありません。先にファイルをスターすると、AI が読めます。',
   askCorpusCount: 'ナレッジベース:スター付き {n} 件',
+  askScopeChip: 'コーパス:選択 {n} 件',
+  askScopeNotIndexed: '{n} 件未インデックス',
+  askScopeClear: '選択を解除',
   askIntro: 'スター付きファイルについて質問できます。回答には出典が付き、クリックで開けます。',
   askToolSearch: 'ナレッジベースを検索中',
   askToolRead: 'ファイルを読み込み中',

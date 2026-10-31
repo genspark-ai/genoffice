@@ -40,6 +40,9 @@ export interface DesktopItem {
   readonly mtimeMs?: number
   /** a user-placed alias: removable from the desktop, opened by the OS when unknown */
   readonly alias: boolean
+  /** whether the file behind a file item is starred (drives the batch
+   * favorite label); absent for apps, folders and widgets */
+  readonly starred?: boolean
   /** the grid drag applies; widgets are placed by their window, not the grid */
   readonly draggable: boolean
   /** run the item: a tab, a parent surface, or the OS default */
@@ -216,6 +219,7 @@ function createRecentsProvider(): DesktopItemProvider {
           ext: entry.ext,
           path: entry.path,
           mtimeMs: entry.mtimeMs,
+          starred: entry.starred,
           alias: false,
           draggable: true,
           open: () => void ctx.api.openPath?.(entry.path),
@@ -247,6 +251,7 @@ function createDesktopFilesProvider(): DesktopItemProvider {
         ext: entry.ext,
         path: entry.path,
         mtimeMs: entry.mtimeMs,
+        starred: entry.starred,
         alias: true,
         draggable: true,
         open: () => {

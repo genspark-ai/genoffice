@@ -232,15 +232,33 @@ here so they stay visible without masquerading as done:
   from the moment they start, with no row for one still waiting in the queue.
   Wiring a production surface to submit into the queue — and to show or drop
   what is queued — is the missing half.
-- **The kbScope renderer bridge.** The settings-center toggle group, the
-  `kb:get-scope` / `kb:set-scope` main handlers and their tests landed
-  2026-10-30, but the group stays hidden until `HomeApi` and the preload
-  grow the `getKbScope` / `setKbScope` pair — a ~10-line change in two files
-  that were owned by a concurrent batch that day, so it was left for the next
-  one rather than risking a mid-flight conflict.
+- **The kbScope renderer bridge** — DONE 2026-10-30 (`getKbScope` /
+  `setKbScope` on `HomeApi` + preload; the settings-center group is live).
 - **kbScope as an agent-visible tool.** The corpus scope is user-configurable
   now, but no `desktop.*` / MCP verb reads or writes it; principle 1 ("every
   desktop capability is also an agent tool") says the scope should be.
+
+## Desktop interaction gap audit (2026-10-30)
+
+What an OS desktop does vs what this desktop does. Done = shipped and verified
+live; the rest are explicit choices or follow-ups.
+
+**Done**: icon grid with free placement and drag-to-arrange; rubber-band
+marquee with Finder semantics (4px threshold, intersection hit-test, Shift
+adds, Cmd toggles, Esc rolls back, window-blur cancels); click / Cmd-click /
+Shift-range / Cmd-A / arrow-key navigation; multi-select context menu (open,
+star, reveal, remove-alias, ask-AI); Enter opens; Delete removes aliases with
+confirmation; drag files in as aliases; dragging one icon of a multi-selection
+moves the whole group as one (Finder parity — from the 2026-10-30 red-team
+round); the selection becomes an Ask AI corpus ("ask about these").
+
+**Chosen differently, on purpose**: Enter opens (Windows semantics) rather
+than starting a rename (macOS semantics) — rename stays in the properties
+dialog; desktop Delete never touches the file on disk, it only drops aliases.
+
+**Follow-ups (not this round)**: QuickLook-style spacebar preview; drag-out
+from the desktop into Finder (Electron file-drag outbound);
+multi-display/multi-space surfaces (out of architecture).
 
 ## Non-goals
 

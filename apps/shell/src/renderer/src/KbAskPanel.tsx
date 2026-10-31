@@ -18,6 +18,7 @@ import {
   type CliContext,
   type CreateDocumentFormat,
   type KbFileInfo,
+  type KbSearchHit,
   type ProxiedAppManifest,
 } from '@genoffice/agent-core'
 import {
@@ -46,7 +47,7 @@ import { activeProvider } from '@genoffice/ai-provider/browser'
 import type { ChatMessage, ChatMeta, ProjectApi, RunSummary } from '@genoffice/project-store'
 import { useI18n } from './locale'
 import { aiSetupNeeded } from './ai-setup-state'
-import type { AttachmentAddResult } from '../../shared/home-api'
+import type { AttachmentAddResult, KbScopedSearchResult } from '../../shared/home-api'
 import { AskAttachments } from './AskAttachments'
 import { planPendingAskQuery, type PendingAskQuery } from './ask-intent'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
@@ -77,6 +78,17 @@ import sendStop from './assets/send-stop.png'
  * list, no name, and nothing to start a second conversation. A reader with two
  * questions on two days gets one long thread — a list, per-conversation ids
  * and a name are the next layer, not this one.
+ *
+ * Round scope: a pending query may carry `scopePaths` (the desktop's
+ * multi-select → Ask AI) — an explicit file selection as this conversation's
+ * corpus. While the selection is attached (a chip above the composer), every
+ * ask searches, reads and cites within it only: the skill carries the scope on
+ * its tool calls, the system prompt replaces the whole-index language with
+ * the selection, and the main process enforces the intersection (reporting
+ * the selected paths the index does not cover, which the chip surfaces as a
+ * "not indexed" hint — v1 does not index them on the spot). Clearing the chip
+ * drops back to the default kbScope; a new thread or a view switch leaves the
+ * selection behind.
  */
 
 /** The one transcript the panel keeps. Stable across launches by design. */
@@ -222,6 +234,76 @@ export function restoreAskMessages(stored: ChatMessage[]): AskMessage[] {
   return stored
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => ({ role: message.role, text: message.text, toolNotes: [], artifacts: [] }))
+}
+
+/**
+ * Narrow the `kb:search` answer into the shape the skill's search dep needs.
+ * The answer is one of two shapes: a bare hit array (no round scope in the
+ * request — or a preload/main that predates onlyPaths) or the scoped
+ * `{ hits, notIndexed }` object. An unreadable payload answers empty rather
+ * than throwing: a stale bridge must not take an answer down with it.
+ */
+export function kbSearchResultOf(raw: unknown): { hits: KbSearchHit[]; notIndexed: string[] } {
+  if (Array.isArray(raw)) return { hits: raw as KbSearchHit[], notIndexed: [] }
+  if (raw && typeof raw === 'object') {
+    const result = raw as { hits?: unknown; notIndexed?: unknown }
+    const hits = Array.isArray(result.hits) ? (result.hits as KbSearchHit[]) : []
+    const notIndexed = Array.isArray(result.notIndexed)
+      ? result.notIndexed.filter((p): p is string => typeof p === 'string')
+      : []
+    return { hits, notIndexed }
+  }
+  return { hits: [], notIndexed: [] }
+}
+
+/**
+ * The knowledge-base skill's search dep over the kbSearch bridge: a round
+ * scope rides the request as `onlyPaths`, and a scoped answer's `notIndexed`
+ * feeds the chip's hint through `onNotIndexed` — but only while the same
+ * scope is still attached, so a response that outlives its selection (cleared
+ * or replaced mid-run) cannot fake a count onto the next chip. An unscoped
+ * call never reports one.
+ */
+export function createKbSearchDep(
+  kbSearch: (query: {
+    q: string
+    limit?: number
+    onlyPaths?: readonly string[]
+  }) => Promise<KbSearchHit[] | KbScopedSearchResult>,
+  onNotIndexed: (paths: readonly string[]) => void,
+  scopeOf: () => readonly string[],
+): (
+  query: string,
+  limit: number,
+  opts?: { scopePaths?: readonly string[] },
+) => Promise<KbSearchHit[]> {
+  return async (query, limit, opts) => {
+    const scopePaths = opts?.scopePaths ?? []
+    const raw = await kbSearch(
+      scopePaths.length > 0 ? { q: query, limit, onlyPaths: scopePaths } : { q: query, limit },
+    )
+    const result = kbSearchResultOf(raw)
+    const current = scopeOf()
+    if (
+      scopePaths.length > 0 &&
+      current.length === scopePaths.length &&
+      current.every((p) => scopePaths.includes(p))
+    ) {
+      onNotIndexed(result.notIndexed)
+    }
+    return result.hits
+  }
+}
+
+/**
+ * The headbar's corpus count: a round scope replaces the index count while it
+ * is attached — the number the reader should trust is the selection's.
+ */
+export function shownCorpusCount(
+  scopePaths: readonly string[],
+  corpusCount: number | null,
+): number | null {
+  return scopePaths.length > 0 ? scopePaths.length : corpusCount
 }
 
 /**
@@ -555,6 +637,28 @@ export function KbAskPanel({
    * next Ask view entry.
    */
   const [kbScope, setKbScope] = useState<KbScopeValue>('indexed')
+  /**
+   * The round scope: an explicit file selection (desktop multi-select → Ask
+   * AI) handed over by a pending query, as this conversation's corpus. The ref
+   * is written first and the state second (like the thread), so an ask
+   * submitted in the same tick as the scope already searches within it; the
+   * skill reads it live, so attaching and clearing need no loop rebuild.
+   */
+  const [scopePaths, setScopePaths] = useState<readonly string[]>([])
+  const scopeRef = useRef<readonly string[]>([])
+  /** scope paths the index does not cover, as the latest scoped search reported (the chip's hint) */
+  const [scopeNotIndexed, setScopeNotIndexed] = useState<readonly string[] | null>(null)
+  const applyScope = (paths: readonly string[]): void => {
+    scopeRef.current = paths
+    setScopePaths(paths)
+    setScopeNotIndexed(null)
+  }
+  /** the chip's ×: back to the default kbScope corpus for every later ask */
+  const clearScope = (): void => {
+    scopeRef.current = []
+    setScopePaths([])
+    setScopeNotIndexed(null)
+  }
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
   /** the thread id the CLI tools key their work directory on */
   const activeChatRef = useRef<string>(CHAT_ID)
@@ -693,6 +797,8 @@ export function KbAskPanel({
 
   // The model's history and the stored ids belong to the thread being left;
   // a question typed before the next claim resolves queues in pendingRef.
+  // The round scope belongs to the conversation it was attached in: a new
+  // thread or a switch must not carry the old selection's corpus along.
   const leaveThread = (): void => {
     loopRef.current?.reset()
     confirm.clear()
@@ -700,6 +806,7 @@ export function KbAskPanel({
     pendingRef.current = []
     mutateMessages(() => [])
     setAttachedSkills([])
+    clearScope()
     // staged files belong to the thread they were dropped into
     setAttachments([])
     sentAttachmentsRef.current = []
@@ -880,8 +987,18 @@ export function KbAskPanel({
       skill: composeSkills('home-ask', '', [
         createKnowledgeBaseSkill({
           listFiles: () => corpusRef.current,
-          search: (query, limit) => window.aiOffice.kbSearch({ q: query, limit }),
-          read: (path, offset) => window.aiOffice.kbRead(path, offset),
+          // the search dep adapts the kb:search answer (bare array or the
+          // scoped {hits, notIndexed} object) and feeds the chip's hint; the
+          // round scope rides each call the skill attaches
+          search: createKbSearchDep(
+            (query) => window.aiOffice.kbSearch(query),
+            (paths) => setScopeNotIndexed(paths),
+            () => scopeRef.current,
+          ),
+          read: (path, offset, opts) => window.aiOffice.kbRead(path, offset, opts?.scopePaths),
+          // the round scope, live: the loop re-reads the prompt and tools
+          // before every model request, so the chip governs without a rebuild
+          scopePaths: () => scopeRef.current,
           alsoCitable: () => [
             ...docSkill.createdPaths(),
             ...cliSkill.createdPaths(),
@@ -1121,8 +1238,15 @@ export function KbAskPanel({
       // keep the mount snapshot
     }
     if (askSeqRef.current !== seq) return
-    // a question about an attached file needs no starred corpus
-    if (corpusRef.current.length === 0 && availableAttachments().length === 0) {
+    // a question about an attached file needs no starred corpus; a scoped ask
+    // runs even against an empty listing — the selection is the corpus, and
+    // the model's own search (plus the chip's not-indexed hint) is what tells
+    // the reader which of the selected files the index actually covers
+    if (
+      corpusRef.current.length === 0 &&
+      availableAttachments().length === 0 &&
+      scopeRef.current.length === 0
+    ) {
       // the scope says which empty this is: nothing starred yet, or an index
       // that has not scanned anything yet
       const guidance = t(kbScope === 'starred' ? 'askEmptyCorpus' : 'askEmptyCorpusHint')
@@ -1181,14 +1305,28 @@ export function KbAskPanel({
   // the seq ref consumes each handoff once even though this effect re-runs on
   // every render, and while an answer streams a palette question parks in the
   // composer instead of being dropped (see planPendingAskQuery).
+  //
+  // A handoff carrying scopePaths (the desktop's multi-select) attaches the
+  // round scope before anything else: a submit in the same tick then already
+  // asks within the selection, and blank text + a selection parks the chip
+  // alone — the panel opens, nothing sends itself, and a draft the user is
+  // mid-typing survives the parking (the composer gets the focus).
   const consumedQuerySeqRef = useRef(0)
   useEffect(() => {
     const plan = planPendingAskQuery(pendingQuery ?? null, consumedQuerySeqRef.current, busy)
     if (!plan.consume) return
     consumedQuerySeqRef.current = plan.seq
     onPendingQueryConsumed?.()
+    if (plan.scopePaths) applyScope(plan.scopePaths)
     if (plan.action === 'submit') void askWith(plan.text)
-    else if (plan.action === 'park') setDraft(plan.text)
+    else if (plan.action === 'park') {
+      // a scope parking never clobbers a draft the user is already typing:
+      // the selection parks as the chip, the half-written question stays
+      // theirs, and the composer takes the focus so the next keystroke
+      // continues it (an empty draft still takes the parked text itself)
+      if (plan.scopePaths && draft.trim() !== '') composerRef.current?.focus()
+      else setDraft(plan.text)
+    }
   })
 
   // the deterministic half of "keep this answer": the question becomes the
@@ -1269,12 +1407,21 @@ export function KbAskPanel({
           {t('askDropFiles')}
         </div>
       )}
-      {corpusCount !== null && corpusCount > 0 && (
-        <div className="kb-ask-headbar">
-          <b>{t('askTitle')}</b>
-          <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
-        </div>
-      )}
+      {(() => {
+        // the headbar's count follows the round scope: the selection's size,
+        // not the index window's, is the number to trust while it is attached
+        const count = shownCorpusCount(scopePaths, corpusCount)
+        return count !== null && count > 0 ? (
+          <div className="kb-ask-headbar">
+            <b>{t('askTitle')}</b>
+            <span>
+              {scopePaths.length > 0
+                ? t('askScopeChip', { n: String(count) })
+                : t('askCorpusCount', { n: String(count) })}
+            </span>
+          </div>
+        ) : null
+      })()}
       {threads.length > 0 && (
         <div className="kb-ask-threads" role="tablist" aria-label={t('askThreadsTitle')}>
           {threads.map((thread) => (
@@ -1464,6 +1611,29 @@ export function KbAskPanel({
         textareaRef={composerRef}
         header={
           <>
+            {/* the round scope: while attached, every ask searches, reads and
+                cites within the selection; × drops back to the default corpus */}
+            {scopePaths.length > 0 && (
+              <div className="kb-ask-scope" role="status">
+                <span className="kb-ask-scope-label">
+                  {t('askScopeChip', { n: String(scopePaths.length) })}
+                </span>
+                {scopeNotIndexed && scopeNotIndexed.length > 0 && (
+                  <span className="kb-ask-scope-miss" title={scopeNotIndexed.join('\n')}>
+                    {t('askScopeNotIndexed', { n: String(scopeNotIndexed.length) })}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="kb-ask-scope-clear"
+                  aria-label={t('askScopeClear')}
+                  title={t('askScopeClear')}
+                  onClick={clearScope}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <AskAttachments
               items={attachments}
               onRemove={removeAttachment}

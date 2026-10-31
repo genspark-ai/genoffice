@@ -29,8 +29,25 @@ import {
   widgetReservedCellKeys,
   type DesktopItem,
 } from './desktop-items'
+import {
+  EMPTY_SELECTION,
+  askPathsOf,
+  geometryOrderOf,
+  marqueeHits,
+  marqueeRect,
+  mergeMarqueeSelection,
+  moveGridFocus,
+  rangeSelection,
+  toggleSelectionMember,
+  type FocusDirection,
+  type GridCell,
+  type MarqueeMergeMode,
+  type SelectionRect,
+  type SelectionTarget,
+} from './desktop-selection'
 import { desktopStrings } from './desktop-strings'
 import type { DesktopStrings } from './desktop-strings'
+import { MAX_SCOPE_PATHS } from './ask-intent'
 import './desktop.css'
 
 // ── grid geometry ───────────────────────────────────────
@@ -60,6 +77,8 @@ const NOTICE_MS = 4000
 const MAX_ALIASES = 100
 /** pointer travel before a press becomes a drag */
 const DRAG_THRESHOLD = 4
+/** pointer travel before a blank-surface press becomes a rubber band */
+const MARQUEE_THRESHOLD = 4
 /** rows assumed before the surface is measured (one paint, then the real count) */
 const UNMEASURED_ROWS = 5
 /** pointer id a synthetic (test) mouse event carries */
@@ -148,6 +167,14 @@ interface IconPos {
   y: number
 }
 
+/** the view ▸ submenu rows key off these directions */
+const ARROW_DIRECTIONS: Record<string, FocusDirection> = {
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+}
+
 export interface DesktopViewProps {
   /** the UI language, from the locale context the parent holds */
   readonly lang: Lang
@@ -155,6 +182,8 @@ export interface DesktopViewProps {
   readonly roots: readonly FolderRoot[]
   /** switch Home to the AI ask view */
   readonly onOpenAsk: () => void
+  /** hand the selected desktop paths to the ask view as its corpus (the Ask AI action) */
+  readonly onAskAboutPaths: (paths: readonly string[]) => void
   /** open the template gallery overlay */
   readonly onOpenTemplates: () => void
   /** open Home's settings modal on a section */
@@ -171,6 +200,9 @@ const pointerIdOf = (event: PointerEvent | ReactPointerEvent): number =>
 
 const clampInt = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), Math.max(min, max))
+
+/** the file/folder name of a path, for the removal confirm dialog's list */
+const baseNameOf = (path: string): string => path.split(/[\\/]/).pop() ?? path
 
 /** case-insensitive codepoint order: deterministic across machines and ICU builds */
 const compareText = (a: string, b: string): number => {
@@ -335,11 +367,24 @@ const EMPTY_POSITIONS: Readonly<Record<string, IconPos>> = {}
  * parent's callbacks (ask view, template gallery, settings modal, folder
  * view) — the desktop owns only its own layout. The look lives in
  * desktop.css; the context menu reuses Home's `.folder-menu` conventions.
+ *
+ * On top of the layout sits the OS-grade selection layer (the pure rules
+ * in desktop-selection.ts): a render-state set of icon ids with an anchor,
+ * a left press on empty surface arming a rubber-band marquee whose hits
+ * merge under the press's modifier (replace / Shift-union / Cmd-toggle,
+ * Escape or a blur rolling back), icon clicks with the same modifier
+ * semantics plus Shift's range over the grid's visible-geometry order
+ * (rows first — saved positions, not the provider order), arrows walking
+ * the grid geometry, Cmd/Ctrl+A toggling all — and, off a 2+ selection, a
+ * batch context menu (open, star, reveal, remove aliases, the Ask AI
+ * action). Nothing of it persists: switching views or unmounting drops the
+ * selection whole.
  */
 export function DesktopView({
   lang,
   roots,
   onOpenAsk,
+  onAskAboutPaths,
   onOpenTemplates,
   onOpenSettings,
   onOpenFolder,
@@ -363,7 +408,20 @@ export function DesktopView({
   /** saved positions only: what the file holds, what a drag or reset edits */
   const [positions, setPositions] = useState<Readonly<Record<string, IconPos>>>({})
   const [loaded, setLoaded] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
+
+  // ── the selection layer (render state only — nothing persists) ──
+  // The OS-grade model: a set of icon ids plus the anchor the range
+  // modifiers measure from. A left press on empty surface additionally arms
+  // the rubber-band marquee; the band itself and the whole selection live in
+  // this layer and never reach the layout file.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(EMPTY_SELECTION)
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+  /** the armed rubber-band gesture (stable for its whole lifetime) */
+  const [marquee, setMarquee] = useState<MarqueeGesture | null>(null)
+  /** the band currently showing, surface-local; null until the threshold crossing */
+  const [marqueeBand, setMarqueeBand] = useState<SelectionRect | null>(null)
+  /** alias paths queued for removal, awaiting the confirm dialog */
+  const [confirmRemove, setConfirmRemove] = useState<readonly string[] | null>(null)
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   /** an OS file drag is over the surface: the drop-zone affordance shows */
@@ -934,6 +992,48 @@ export function DesktopView({
     return out
   }, [orderedIcons, layoutPositions, rows, cols, cellW, cellH, reservedCells])
 
+  /**
+   * Every icon's grid cell, straight off the resolved geometry — the same
+   * numbers the arrow keys walk (moveGridFocus) and the Shift range orders
+   * (geometryOrderOf). Refs, not state: both read it mid-gesture, when the
+   * last committed render is the truth a press or a keypress should see.
+   */
+  const cellsOf = useCallback((): GridCell[] => {
+    const { w: cellW, h: cellH } = cellRef.current
+    const cells: GridCell[] = []
+    for (const icon of iconsRef.current) {
+      const pos = effectiveRef.current.get(icon.id)
+      cells.push({
+        id: icon.id,
+        col: Math.round(((pos?.x ?? DESKTOP_PAD_X) - DESKTOP_PAD_X) / cellW),
+        row: Math.round(((pos?.y ?? DESKTOP_PAD_Y) - DESKTOP_PAD_Y) / cellH),
+      })
+    }
+    return cells
+  }, [])
+
+  // The icon set is async (a recents push, an alias add or removal, a roots
+  // change) while the selection is render state: an id whose icon left the
+  // surface leaves the selection with it, or the batch menu and the keyboard
+  // shortcuts would act on a ghost. The updater returns the same set when
+  // nothing changed, so this never re-renders on its own.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const alive = new Set(icons.map((icon) => icon.id))
+      let changed = false
+      for (const id of prev) {
+        if (!alive.has(id)) changed = true
+      }
+      if (!changed) return prev
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (alive.has(id)) next.add(id)
+      }
+      return next
+    })
+  }, [icons])
+
   // ── dragging (pointer events): the icon follows the pointer, drops snap ──
   // A press on an icon arms one effect-scoped set of window listeners for the
   // whole gesture, so every handler closes over the press it serves and no
@@ -946,37 +1046,76 @@ export function DesktopView({
     grabY: number
     startX: number
     startY: number
+    /**
+     * The ids a group drop moves as one: the selection this press started
+     * inside (2+ members including the pressed icon), else null — a plain
+     * single-icon drag. Captured at press time, before the press's own
+     * click semantics can replace the selection, so the gesture keeps the
+     * multi-set it started with even though the click collapses it.
+     */
+    group: readonly string[] | null
   }
   const [press, setPress] = useState<PressState | null>(null)
   /** last drag end; a double-click fired this soon after is not an open */
   const dropGuardRef = useRef(0)
 
-  /** commit a drop: the dragged icon claims the snapped cell, an occupant swaps out */
-  const commitDrop = useCallback((id: string, x: number, y: number) => {
-    const { w: pitchW, h: pitchH } = cellRef.current
-    const col = clampInt(Math.round((x - DESKTOP_PAD_X) / pitchW), 0, colsRef.current - 1)
-    const row = clampInt(Math.round((y - DESKTOP_PAD_Y) / pitchH), 0, rowsRef.current - 1)
-    const target = {
-      x: DESKTOP_PAD_X + col * pitchW,
-      y: DESKTOP_PAD_Y + row * pitchH,
-    }
-    const from = effectiveRef.current.get(id)
-    if (!from || (from.x === target.x && from.y === target.y)) return
-    // whoever sits at the target cell takes the dragged icon's old cell
-    let occupant: string | null = null
-    for (const [otherId, pos] of effectiveRef.current) {
-      if (otherId !== id && pos.x === target.x && pos.y === target.y) {
-        occupant = otherId
-        break
+  /**
+   * Commit a drop. A plain drag claims the snapped cell and swaps whoever
+   * sits there into the dragged icon's old cell. A group drag (the pressed
+   * icon was one of a 2+ selection) translates the whole group by the same
+   * displacement instead — every member keeps its relative arrangement, each
+   * position is clamped into the grid, and one `setPositions` carries them
+   * all so the debounced write-through saves them as one map. Group members
+   * cannot collide with each other (uniform translation); a member landing
+   * on an outsider's cell is resolved by the layout's pin-first-wins rule,
+   * the loser flowing into a free cell.
+   */
+  const commitDrop = useCallback(
+    (id: string, x: number, y: number, group: readonly string[] | null) => {
+      const { w: pitchW, h: pitchH } = cellRef.current
+      const col = clampInt(Math.round((x - DESKTOP_PAD_X) / pitchW), 0, colsRef.current - 1)
+      const row = clampInt(Math.round((y - DESKTOP_PAD_Y) / pitchH), 0, rowsRef.current - 1)
+      const target = {
+        x: DESKTOP_PAD_X + col * pitchW,
+        y: DESKTOP_PAD_Y + row * pitchH,
       }
-    }
-    setPositions((prev) => {
-      const next: Record<string, IconPos> = { ...prev }
-      next[id] = target
-      if (occupant !== null) next[occupant] = from
-      return next
-    })
-  }, [])
+      const from = effectiveRef.current.get(id)
+      if (!from || (from.x === target.x && from.y === target.y)) return
+      if (group === null || group.length < 2) {
+        // whoever sits at the target cell takes the dragged icon's old cell
+        let occupant: string | null = null
+        for (const [otherId, pos] of effectiveRef.current) {
+          if (otherId !== id && pos.x === target.x && pos.y === target.y) {
+            occupant = otherId
+            break
+          }
+        }
+        setPositions((prev) => {
+          const next: Record<string, IconPos> = { ...prev }
+          next[id] = target
+          if (occupant !== null) next[occupant] = from
+          return next
+        })
+        return
+      }
+      const dx = target.x - from.x
+      const dy = target.y - from.y
+      const snapped = (x: number, y: number): IconPos => {
+        const mcol = clampInt(Math.round((x - DESKTOP_PAD_X) / pitchW), 0, colsRef.current - 1)
+        const mrow = clampInt(Math.round((y - DESKTOP_PAD_Y) / pitchH), 0, rowsRef.current - 1)
+        return { x: DESKTOP_PAD_X + mcol * pitchW, y: DESKTOP_PAD_Y + mrow * pitchH }
+      }
+      setPositions((prev) => {
+        const next: Record<string, IconPos> = { ...prev }
+        for (const member of group) {
+          const memberFrom = effectiveRef.current.get(member)
+          if (memberFrom) next[member] = snapped(memberFrom.x + dx, memberFrom.y + dy)
+        }
+        return next
+      })
+    },
+    [],
+  )
 
   useEffect(() => {
     if (press === null) return
@@ -1001,7 +1140,7 @@ export function DesktopView({
     const finish = (commit: boolean) => {
       if (commit && moved && last) {
         dropGuardRef.current = Date.now() + DROP_DBLCLICK_GUARD_MS
-        commitDrop(d.id, last.x, last.y)
+        commitDrop(d.id, last.x, last.y, d.group)
       }
       setPress(null)
       setDrag(null)
@@ -1024,17 +1163,126 @@ export function DesktopView({
     }
   }, [press, commitDrop])
 
-  const onIconPointerDown = useCallback(
-    (event: ReactPointerEvent, icon: DesktopItem, pos: IconPos) => {
-      if (event.button !== 0 || press !== null) return
+  // ── the rubber-band marquee (pointer events) ───────────
+  // A left press on empty surface arms one gesture; ~4px of travel decides
+  // between a plain click (which clears the selection on release) and the
+  // band. The modifier the press carried freezes the merge mode for the
+  // whole gesture: Shift unions the hits onto the pre-gesture selection,
+  // Cmd/Ctrl toggles them, a plain band replaces it. Escape, a pointer
+  // cancel and a window blur roll the selection back to `base`; the release
+  // commits whatever the band last showed and parks the anchor on the last
+  // hit. Icons intersect the band by cell rectangle (their grid footprint),
+  // never containment.
+
+  interface MarqueeGesture {
+    pointerId: number
+    startX: number
+    startY: number
+    mode: MarqueeMergeMode
+    /** the selection the gesture started from — the rollback target */
+    base: ReadonlySet<string>
+  }
+
+  /** the marquee's live cancellation, so Escape can end the gesture */
+  const marqueeCancelRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (marquee === null) return
+    const m = marquee
+    let armed = false
+    /** the hits the band last showed; a commit makes the last one the anchor */
+    let lastHits: string[] = []
+    const onMove = (event: PointerEvent) => {
+      if (pointerIdOf(event) !== m.pointerId) return
       const surface = surfaceRef.current
       if (!surface) return
-      setSelected(icon.id)
+      const rect = surface.getBoundingClientRect()
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      if (!armed) {
+        if (Math.hypot(x - m.startX, y - m.startY) < MARQUEE_THRESHOLD) return
+        armed = true
+      }
+      const band = marqueeRect(m.startX, m.startY, x, y)
+      setMarqueeBand(band)
+      const { w: cellW, h: cellH } = cellRef.current
+      const targets: SelectionTarget[] = []
+      for (const icon of iconsRef.current) {
+        const pos = effectiveRef.current.get(icon.id)
+        if (pos) targets.push({ id: icon.id, x: pos.x, y: pos.y, w: cellW, h: cellH })
+      }
+      lastHits = marqueeHits(band, targets)
+      setSelectedIds(mergeMarqueeSelection(m.base, lastHits, m.mode))
+    }
+    const finish = (commit: boolean) => {
+      if (!commit) {
+        // Escape / a cancel / the window losing focus: the band never happened
+        setSelectedIds(m.base)
+      } else if (!armed) {
+        // a press that stayed a click on empty surface: plain clears the
+        // selection, a modifier press keeps what it started from
+        if (m.mode === 'replace') {
+          setSelectedIds(EMPTY_SELECTION)
+          setAnchorId(null)
+        }
+      } else if (lastHits.length > 0) {
+        // a committed band leaves the anchor where the gesture ended: the
+        // band's last hit, so a following Shift+click ranges from it the
+        // way it would after a plain click on that icon
+        setAnchorId(lastHits[lastHits.length - 1]!)
+      }
+      setMarquee(null)
+      setMarqueeBand(null)
+    }
+    const onUp = (event: PointerEvent) => {
+      if (pointerIdOf(event) !== m.pointerId) return
+      finish(true)
+    }
+    const cancel = () => finish(false)
+    marqueeCancelRef.current = cancel
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
+    return () => {
+      marqueeCancelRef.current = null
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cancel)
+    }
+  }, [marquee])
+
+  const onIconPointerDown = useCallback(
+    (event: ReactPointerEvent, icon: DesktopItem, pos: IconPos) => {
+      if (event.button !== 0 || press !== null || marquee !== null) return
+      // a press on one member of a 2+ selection drags the whole group: the
+      // capture happens before the press's own click semantics below, which
+      // replace the selection with the one icon (a plain press) — the move
+      // still belongs to the set the gesture started inside
+      const group = selectedIds.size >= 2 && selectedIds.has(icon.id) ? [...selectedIds] : null
+      // the press's selection semantics: plain replaces with this icon,
+      // Cmd/Ctrl toggles it, Shift ranges the grid's visible-geometry order
+      // from the anchor (rows first, the same cells the arrow keys walk —
+      // saved positions, not the provider order). The anchor survives a
+      // Shift press so a later one re-ranges from the same origin; every
+      // other press moves it.
+      if (event.shiftKey && anchorId !== null) {
+        setSelectedIds(rangeSelection(geometryOrderOf(cellsOf()), anchorId, icon.id))
+      } else if (event.metaKey || event.ctrlKey) {
+        setSelectedIds(toggleSelectionMember(selectedIds, icon.id))
+        setAnchorId(icon.id)
+      } else {
+        setSelectedIds(new Set([icon.id]))
+        setAnchorId(icon.id)
+      }
       setMenu(null)
       setSurfaceMenu(null)
       // the read-only sort flows are look-don't-touch: a press selects, but
       // never arms the drag machinery (Custom is the only draggable mode)
       if (!freeLayout) return
+      const surface = surfaceRef.current
+      if (!surface) return
       const rect = surface.getBoundingClientRect()
       setPress({
         id: icon.id,
@@ -1043,13 +1291,104 @@ export function DesktopView({
         grabY: event.clientY - rect.top - pos.y,
         startX: event.clientX,
         startY: event.clientY,
+        group,
       })
     },
-    [press, freeLayout],
+    [press, marquee, anchorId, selectedIds, freeLayout, cellsOf],
   )
 
   const openIcon = useCallback((id: string) => {
     iconsRef.current.find((icon) => icon.id === id)?.open()
+  }, [])
+
+  /** the selection's open action (Enter, the multi-menu): every icon, in grid order */
+  const openSelection = useCallback(() => {
+    if (selectedIds.size === 0) return
+    for (const icon of orderedIcons) {
+      if (selectedIds.has(icon.id)) icon.open()
+    }
+  }, [selectedIds, orderedIcons])
+
+  // ── the selection's batch actions ──
+
+  /**
+   * Star or unstar the selected files through the existing starred IPC:
+   * starring toggles each unstarred path (the toggle flips), unstarring is
+   * the bulk channel. Both file sources re-pull afterwards so the icons'
+   * star flags and the Starred view agree.
+   */
+  const applyStar = useCallback(
+    (star: boolean) => {
+      setMenu(null)
+      const api = window.aiOffice as Partial<HomeApi>
+      const files = orderedIcons
+        .filter((icon) => selectedIds.has(icon.id) && icon.kind === 'file' && icon.path !== null)
+        .map((icon) => ({ path: icon.path!, starred: icon.starred === true }))
+      if (files.length === 0) return
+      const jobs: Promise<unknown>[] = []
+      if (star) {
+        for (const file of files) {
+          if (!file.starred) jobs.push(api.toggleStar?.(file.path) ?? Promise.resolve())
+        }
+      } else {
+        jobs.push(api.unstarPaths?.(files.map((file) => file.path)) ?? Promise.resolve())
+      }
+      void Promise.all(jobs).then(
+        () => {
+          reloadRecents()
+          statAliases(aliasListRef.current)
+        },
+        () => undefined,
+      )
+    },
+    [selectedIds, orderedIcons, reloadRecents, statAliases],
+  )
+
+  /**
+   * Remove the given aliases from the desktop: each path goes through the
+   * main process's remove channel (one refusal does not cost the rest),
+   * the stored list, the stat-resolved set and the saved positions all drop
+   * them, and the selection prunes icons that no longer exist. The files on
+   * disk are never touched.
+   */
+  const removeAliases = useCallback((paths: readonly string[]) => {
+    setMenu(null)
+    if (paths.length === 0) return
+    const remove = (window.aiOffice as Partial<HomeApi>).desktopRemoveAlias
+    const ids = new Set(paths.map((path) => `alias:${path}`))
+    void (async () => {
+      let latest: readonly string[] | null = null
+      for (const path of paths) {
+        try {
+          latest = (await remove?.(path)) ?? null
+        } catch {
+          // one refused removal must not cost the rest
+        }
+      }
+      if (latest !== null) {
+        setAliasList(latest)
+        setAliases((prev) => prev.filter((entry) => !paths.includes(entry.path)))
+      }
+      setPositions((prev) => {
+        let changed = false
+        const next: Record<string, IconPos> = { ...prev }
+        for (const id of ids) {
+          if (id in next) {
+            delete next[id]
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+      setSelectedIds((prev) => {
+        let changed = false
+        const next = new Set(prev)
+        for (const id of ids) {
+          if (next.delete(id)) changed = true
+        }
+        return changed ? next : prev
+      })
+    })()
   }, [])
 
   // ── context menus (Home's .folder-menu conventions) ──
@@ -1109,6 +1448,27 @@ export function DesktopView({
   const menuPath = menuIcon && (menuIcon.kind === 'file' || menuIcon.alias) ? menuIcon.path : null
   /** file and folder icons get a Properties dialog; app icons do not */
   const menuPropsIcon = menuIcon && menuIcon.kind !== 'app' ? menuIcon : null
+
+  // ── the multi-selection menu: right-click inside a 2+ selection ──
+  // The menu acts on the whole selection, in grid order. Every row decides
+  // from the selection's own contents: the star row needs real file paths,
+  // the remove row needs every item to be a dragged-in alias (a mixed
+  // selection disables it and says why), and the Ask AI action harvests the
+  // real paths — refusing with a hint past the scope cap rather than handing
+  // over a selection the ask side would silently truncate.
+  const menuMulti = menu !== null && selectedIds.has(menu.id) && selectedIds.size > 1
+  const menuSelection = useMemo(
+    () => (menuMulti ? orderedIcons.filter((icon) => selectedIds.has(icon.id)) : []),
+    [menuMulti, orderedIcons, selectedIds, menu],
+  )
+  const menuFiles = menuSelection.filter((icon) => icon.kind === 'file' && icon.path !== null)
+  const menuAllStarred = menuFiles.length > 0 && menuFiles.every((icon) => icon.starred === true)
+  const menuPaths = menuSelection.filter((icon) => icon.path !== null).map((icon) => icon.path!)
+  const menuAllAliases = menuSelection.length > 0 && menuSelection.every((icon) => icon.alias)
+  const menuAliasPaths = menuSelection
+    .filter((icon) => icon.alias && icon.path !== null)
+    .map((icon) => icon.path!)
+  const menuAskPaths = useMemo(() => askPathsOf(menuSelection), [menuSelection])
 
   const resetPosition = useCallback((id: string) => {
     setMenu(null)
@@ -1218,6 +1578,12 @@ export function DesktopView({
       delete next[icon.id]
       return next
     })
+    setSelectedIds((prev) => {
+      if (!prev.has(icon.id)) return prev
+      const next = new Set(prev)
+      next.delete(icon.id)
+      return next
+    })
   }, [])
 
   // an OS file drag over the surface: allow the drop and show the affordance.
@@ -1305,8 +1671,10 @@ export function DesktopView({
     [applyPrefs],
   )
 
-  // ── keyboard: Enter opens the selection, Escape closes menu/selection,
-  // arrows move it across the grid, typing jumps to a matching label ──
+  // ── keyboard: Enter opens the selection, Backspace/Delete removes the
+  // selected aliases behind a confirm, Cmd/Ctrl+A selects all (or clears,
+  // when everything is), Escape closes the marquee/menus/dialog/selection,
+  // arrows walk the grid geometry, typing jumps to a matching label ──
   // (a dialog, while open, owns Escape itself)
 
   const dialogOpen = propsTarget !== null || desktopPropsOpen || wpCenterOpen
@@ -1318,56 +1686,79 @@ export function DesktopView({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (dialogOpen) return
-        if (surfaceMenu !== null) setSurfaceMenu(null)
+        // a live marquee rolls back first — the gesture, not the selection, goes
+        if (marqueeCancelRef.current) {
+          marqueeCancelRef.current()
+          return
+        }
+        if (confirmRemove !== null) setConfirmRemove(null)
+        else if (surfaceMenu !== null) setSurfaceMenu(null)
         else if (menu !== null) setMenu(null)
-        else if (selected !== null) setSelected(null)
+        else if (selectedIds.size > 0 || anchorId !== null) {
+          setSelectedIds(EMPTY_SELECTION)
+          setAnchorId(null)
+        }
+        return
+      }
+      // the desktop owns the keyboard only while nothing else does: an icon,
+      // the surface or nothing is focused — never an input elsewhere
+      const ownsKeyboard =
+        !(event.target instanceof Element) ||
+        event.target === document.body ||
+        (surfaceRef.current?.contains(event.target) ?? false)
+      if (dialogOpen || confirmRemove !== null) return
+      // Cmd/Ctrl+A selects every icon in the desktop's own scope, and only
+      // there: with everything already selected it clears, the Finder toggle
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === 'a' || event.key === 'A')
+      ) {
+        if (!ownsKeyboard) return
+        if (icons.length === 0) return
+        event.preventDefault()
+        setSelectedIds((prev) =>
+          // exact membership, not a size guess: a stale id in the set (trimmed
+          // by the icons effect, but this runs before that lands) must not
+          // read as "everything already selected" and clear instead of fill
+          icons.every((icon) => prev.has(icon.id))
+            ? EMPTY_SELECTION
+            : new Set(icons.map((icon) => icon.id)),
+        )
         return
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (dialogOpen) return
-      // only when the desktop owns the keyboard: an icon, the surface, or nothing focused
-      const target = event.target
-      const owns =
-        !(target instanceof Element) ||
-        target === document.body ||
-        (surfaceRef.current?.contains(target) ?? false)
-      if (!owns) return
+      if (!ownsKeyboard) return
 
-      // grid navigation follows the visible column-major flow: down/up step
-      // inside a column, right/left jump by a whole column
-      const move = (delta: number) => {
-        const list = orderedIcons
-        if (list.length === 0) return
-        const at = selected === null ? -1 : list.findIndex((i) => i.id === selected)
-        const next =
-          at === -1 ? (delta > 0 ? 0 : list.length - 1) : (at + delta + list.length) % list.length
-        setSelected(list[next]!.id)
-      }
-      if (event.key === 'ArrowDown') {
+      // grid navigation walks the geometry: the nearest icon in a strictly
+      // different column (left/right) or row (up/down), ties by the other axis
+      const direction = ARROW_DIRECTIONS[event.key]
+      if (direction !== undefined) {
         event.preventDefault()
-        move(1)
-        return
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        move(-1)
-        return
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        move(rowsRef.current)
-        return
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault()
-        move(-rowsRef.current)
+        const next = moveGridFocus(cellsOf(), anchorId, direction)
+        if (next === null) return
+        setAnchorId(next)
+        setSelectedIds(new Set([next]))
         return
       }
 
       if (event.key === 'Enter') {
-        if (event.shiftKey || selected === null) return
+        if (event.shiftKey || selectedIds.size === 0) return
         event.preventDefault()
-        openIcon(selected)
+        openSelection()
+        return
+      }
+
+      // removal of the selected aliases, guarded by the confirm dialog
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        if (selectedIds.size === 0) return
+        const aliasPaths = orderedIcons
+          .filter((icon) => selectedIds.has(icon.id) && icon.alias && icon.path !== null)
+          .map((icon) => icon.path!)
+        if (aliasPaths.length === 0) return
+        event.preventDefault()
+        setConfirmRemove(aliasPaths)
         return
       }
 
@@ -1380,13 +1771,25 @@ export function DesktopView({
         const hit = orderedIcons.find((i) => i.title.toLowerCase().startsWith(next))
         if (hit) {
           event.preventDefault()
-          setSelected(hit.id)
+          setSelectedIds(new Set([hit.id]))
+          setAnchorId(hit.id)
         }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [menu, surfaceMenu, selected, openIcon, dialogOpen, orderedIcons])
+  }, [
+    menu,
+    surfaceMenu,
+    selectedIds,
+    anchorId,
+    icons,
+    orderedIcons,
+    dialogOpen,
+    confirmRemove,
+    openSelection,
+    cellsOf,
+  ])
 
   // the dialogs' own Escape: the topmost one closes
   useEffect(() => {
@@ -1487,16 +1890,39 @@ export function DesktopView({
         ref={surfaceRef}
         onPointerDown={(event) => {
           if (event.target !== event.currentTarget) return
-          setSelected(null)
           setMenu(null)
           setSurfaceMenu(null)
           setSurfaceSub(null)
+          // only a left press on the empty surface arms the rubber band — a
+          // press on an icon is the icon's own drag; the modifier the press
+          // carries freezes the band's merge mode for its whole gesture
+          if (event.button !== 0 || press !== null || marquee !== null) return
+          const surface = surfaceRef.current
+          if (!surface) return
+          const rect = surface.getBoundingClientRect()
+          const mode: MarqueeMergeMode = event.shiftKey
+            ? 'add'
+            : event.metaKey || event.ctrlKey
+              ? 'toggle'
+              : 'replace'
+          setMarquee({
+            pointerId: pointerIdOf(event),
+            startX: event.clientX - rect.left,
+            startY: event.clientY - rect.top,
+            mode,
+            base: selectedIds,
+          })
         }}
         onContextMenu={(event) => {
           // only empty surface: an icon's own menu wins on the icon itself
           if (event.target !== event.currentTarget) return
           event.preventDefault()
-          setSelected(null)
+          // a live rubber band owns the surface: the right-click finds a
+          // gesture in progress, not a menu — nothing opens, nothing clears
+          // (the band still commits on its own release)
+          if (marqueeBand !== null) return
+          setSelectedIds(EMPTY_SELECTION)
+          setAnchorId(null)
           setMenu(null)
           setSurfaceMenu({ x: event.clientX + 2, y: event.clientY + 2 })
           setSurfaceSub(null)
@@ -1515,14 +1941,14 @@ export function DesktopView({
             return (
               <li
                 key={icon.id}
-                className={`desktop-icon${dragging ? ' dragging' : ''}${selected === icon.id ? ' selected' : ''}`}
+                className={`desktop-icon${dragging ? ' dragging' : ''}${selectedIds.has(icon.id) ? ' selected' : ''}`}
                 style={{ ...style, animationDelay: `${Math.min(index, 24) * 60}ms` }}
                 role="presentation"
               >
                 <div
                   className="desktop-icon-item"
                   role="option"
-                  aria-selected={selected === icon.id}
+                  aria-selected={selectedIds.has(icon.id)}
                   tabIndex={0}
                   aria-label={icon.title}
                   title={icon.kind === 'folder' ? (icon.path ?? icon.title) : icon.title}
@@ -1533,7 +1959,12 @@ export function DesktopView({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault()
-                    setSelected(icon.id)
+                    // a right-click inside the selection keeps it (the menu
+                    // acts on the whole set); one outside replaces it
+                    if (!(selectedIds.has(icon.id) && selectedIds.size > 1)) {
+                      setSelectedIds(new Set([icon.id]))
+                      setAnchorId(icon.id)
+                    }
                     setSurfaceMenu(null)
                     setMenu({ id: icon.id, x: event.clientX + 2, y: event.clientY + 2 })
                   }}
@@ -1545,12 +1976,24 @@ export function DesktopView({
             )
           })}
         </ul>
+        {marqueeBand !== null && (
+          <div
+            className="desktop-marquee"
+            aria-hidden="true"
+            style={{
+              left: marqueeBand.x,
+              top: marqueeBand.y,
+              width: marqueeBand.w,
+              height: marqueeBand.h,
+            }}
+          />
+        )}
         {notice !== null && (
           <div className="desktop-notice" role="status">
             {notice}
           </div>
         )}
-        {menu && (
+        {menu && !menuMulti && (
           <div
             className="folder-menu"
             role="menu"
@@ -1594,6 +2037,73 @@ export function DesktopView({
             <button role="menuitem" onClick={() => resetPosition(menu.id)}>
               {s.menuReset}
             </button>
+          </div>
+        )}
+        {menu && menuMulti && (
+          <div
+            className="folder-menu desktop-menu desktop-menu-multi"
+            role="menu"
+            ref={(el) => {
+              menuRef.current = el
+            }}
+          >
+            <button
+              role="menuitem"
+              onClick={() => {
+                setMenu(null)
+                for (const icon of menuSelection) icon.open()
+              }}
+            >
+              {s.menuOpen}
+            </button>
+            {menuFiles.length > 0 && (
+              <button role="menuitem" onClick={() => applyStar(!menuAllStarred)}>
+                {menuAllStarred ? s.menuUnstar : s.menuStar}
+              </button>
+            )}
+            {menuPaths.length > 0 && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null)
+                  const api = window.aiOffice as Partial<HomeApi>
+                  for (const path of menuPaths) void api.revealPath?.(path)
+                }}
+              >
+                {s.menuReveal}
+              </button>
+            )}
+            <button
+              role="menuitem"
+              disabled={!menuAllAliases}
+              aria-disabled={!menuAllAliases}
+              onClick={() => {
+                setMenu(null)
+                setConfirmRemove(menuAliasPaths)
+              }}
+            >
+              {s.menuRemove}
+            </button>
+            {!menuAllAliases && <div className="desktop-menu-hint">{s.menuRemoveAliasOnly}</div>}
+            {menuAskPaths.length > 0 && (
+              <button
+                role="menuitem"
+                disabled={menuAskPaths.length > MAX_SCOPE_PATHS}
+                aria-disabled={menuAskPaths.length > MAX_SCOPE_PATHS}
+                onClick={() => {
+                  if (menuAskPaths.length > MAX_SCOPE_PATHS) return
+                  setMenu(null)
+                  onAskAboutPaths(menuAskPaths)
+                }}
+              >
+                {s.menuAskAi}
+              </button>
+            )}
+            {menuAskPaths.length > MAX_SCOPE_PATHS && (
+              <div className="desktop-menu-hint">
+                {s.menuAskAiLimit.replace('{n}', String(MAX_SCOPE_PATHS))}
+              </div>
+            )}
           </div>
         )}
         {surfaceMenu && (
@@ -1723,6 +2233,54 @@ export function DesktopView({
           fitApplies={fitApplies}
           onClose={() => setWpCenterOpen(false)}
         />
+      )}
+      {confirmRemove !== null && (
+        <div
+          className="desktop-confirm-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setConfirmRemove(null)
+          }}
+        >
+          <div
+            className="desktop-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={s.confirmRemoveTitle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3>{s.confirmRemoveTitle}</h3>
+            <p>
+              {confirmRemove.length === 1
+                ? s.confirmRemoveOne.replace('{name}', baseNameOf(confirmRemove[0]!))
+                : s.confirmRemoveMany.replace('{n}', String(confirmRemove.length))}
+            </p>
+            {confirmRemove.length > 1 && (
+              <ul className="desktop-confirm-list">
+                {confirmRemove.slice(0, 6).map((path) => (
+                  <li key={path}>{baseNameOf(path)}</li>
+                ))}
+                {confirmRemove.length > 6 && (
+                  <li>{s.confirmRemoveMore.replace('{n}', String(confirmRemove.length - 6))}</li>
+                )}
+              </ul>
+            )}
+            <div className="desktop-confirm-buttons">
+              <button autoFocus onClick={() => setConfirmRemove(null)}>
+                {s.dialogCancel}
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  const paths = confirmRemove
+                  setConfirmRemove(null)
+                  removeAliases(paths)
+                }}
+              >
+                {s.dialogRemove}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )

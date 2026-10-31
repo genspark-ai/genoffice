@@ -261,8 +261,10 @@ const homeApi: HomeApi = {
   async kbSearch(query) {
     return ipcRenderer.invoke('kb:search', query)
   },
-  async kbRead(path, offset) {
-    return ipcRenderer.invoke('kb:read', { path, offset })
+  // onlyPaths (the round scope) rides the read request: the main-side gate
+  // admits a selected file the index missed
+  async kbRead(path, offset, onlyPaths) {
+    return ipcRenderer.invoke('kb:read', { path, offset, onlyPaths })
   },
   async kbCreateDocument(request) {
     return ipcRenderer.invoke('kb:create-document', request)

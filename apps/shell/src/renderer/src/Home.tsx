@@ -687,6 +687,25 @@ export function Home() {
     (query: string) => handAskQuery(query, 'palette'),
     [handAskQuery],
   )
+  /**
+   * The desktop's Ask AI action: switch to the ask view with the selected
+   * paths parked as the question's corpus — a blank palette-origin query
+   * carrying `scopePaths`, the shape the panel consumes as its round scope.
+   * No text is injected; the person asks in their own words.
+   */
+  const askAboutPaths = useCallback(
+    (paths: readonly string[]) => {
+      if (paths.length === 0) return
+      setPendingAskQuery((prev) => ({
+        text: '',
+        seq: (prev?.seq ?? 0) + 1,
+        origin: 'palette',
+        scopePaths: [...paths],
+      }))
+      openAskView()
+    },
+    [openAskView],
+  )
   // genoffice://ask?q=… and friends: the main process forwards deep links over
   // the home:deep-link channel. Softened because a preload from before the
   // contract shipped simply has no onDeepLink — the palette path above works
@@ -1949,6 +1968,7 @@ export function Home() {
           lang={lang}
           roots={roots}
           onOpenAsk={openAskView}
+          onAskAboutPaths={askAboutPaths}
           onOpenTemplates={openTemplates}
           onOpenSettings={openSettings}
           onOpenFolder={openFolderView}

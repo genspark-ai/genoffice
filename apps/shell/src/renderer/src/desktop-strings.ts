@@ -106,6 +106,23 @@ export interface DesktopStrings {
   noticeAliasLimit: string
   /** transient surface notice: an alias the OS-open gate refused */
   noticeOpenFailed: string
+  /** the multi-selection menu: star the selected files (the existing starred IPC) */
+  menuStar: string
+  /** the multi-selection menu: unstar the selected files */
+  menuUnstar: string
+  /** the multi-selection menu: hand the selected paths to the Ask AI panel */
+  menuAskAi: string
+  /** the multi-selection menu's Ask AI note while a too-large selection disables it ({n} interpolates) */
+  menuAskAiLimit: string
+  /** the multi-selection menu's Remove note while a mixed selection disables it */
+  menuRemoveAliasOnly: string
+  /** the alias-removal confirm dialog ({name} / {n} interpolate) */
+  confirmRemoveTitle: string
+  confirmRemoveOne: string
+  confirmRemoveMany: string
+  confirmRemoveMore: string
+  dialogCancel: string
+  dialogRemove: string
 }
 
 export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
@@ -186,6 +203,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: '深青海浪',
     noticeAliasLimit: '桌面最多放置 100 个文件；请先移除一些，再拖入新的。',
     noticeOpenFailed: '无法打开这个文件：它可能已被移动或删除。',
+    menuStar: '收藏',
+    menuUnstar: '取消收藏',
+    menuAskAi: '问 AI',
+    menuAskAiLimit: '问 AI 最多支持 {n} 个文件',
+    menuRemoveAliasOnly: '仅可移除拖入桌面的文件',
+    confirmRemoveTitle: '从桌面移除',
+    confirmRemoveOne: '从桌面移除“{name}”？磁盘上的文件不受影响。',
+    confirmRemoveMany: '从桌面移除 {n} 个项目？磁盘上的文件不受影响。',
+    confirmRemoveMore: '……以及另外 {n} 个',
+    dialogCancel: '取消',
+    dialogRemove: '移除',
   },
   en: {
     navDesktop: 'Desktop',
@@ -264,6 +292,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'Deep teal',
     noticeAliasLimit: 'The desktop holds at most 100 files; remove a few before dropping more.',
     noticeOpenFailed: 'Could not open this file — it may have been moved or deleted.',
+    menuStar: 'Star',
+    menuUnstar: 'Unstar',
+    menuAskAi: 'Ask AI',
+    menuAskAiLimit: 'Ask AI accepts at most {n} files',
+    menuRemoveAliasOnly: 'Only files dragged onto the desktop can be removed',
+    confirmRemoveTitle: 'Remove from desktop',
+    confirmRemoveOne: 'Remove {name} from the desktop? The file on disk is not touched.',
+    confirmRemoveMany: 'Remove {n} items from the desktop? The files on disk are not touched.',
+    confirmRemoveMore: '…and {n} more',
+    dialogCancel: 'Cancel',
+    dialogRemove: 'Remove',
   },
   ja: {
     navDesktop: 'デスクトップ',
@@ -343,6 +382,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'デスクトップに置けるファイルは最大 100 個です。いくつか削除してから改めてドロップしてください。',
     noticeOpenFailed: 'このファイルは開けませんでした。移動または削除された可能性があります。',
+    menuStar: 'お気に入りに追加',
+    menuUnstar: 'お気に入りから削除',
+    menuAskAi: 'AI に質問',
+    menuAskAiLimit: 'AI への質問は最大 {n} ファイルまでです',
+    menuRemoveAliasOnly: '削除できるのはデスクトップにドラッグしたファイルのみです',
+    confirmRemoveTitle: 'デスクトップから削除',
+    confirmRemoveOne:
+      '「{name}」をデスクトップから削除しますか？ディスク上のファイルは変更されません。',
+    confirmRemoveMany:
+      '{n} 個の項目をデスクトップから削除しますか？ディスク上のファイルは変更されません。',
+    confirmRemoveMore: '… ほか {n} 個',
+    dialogCancel: 'キャンセル',
+    dialogRemove: '削除',
   },
   ko: {
     navDesktop: '데스크톱',
@@ -422,6 +474,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       '데스크톱에는 최대 100개의 파일만 놓을 수 있습니다. 몇 개를 제거한 후 다시 놓아 주세요.',
     noticeOpenFailed: '이 파일을 열 수 없습니다. 파일이 이동되었거나 삭제되었을 수 있습니다.',
+    menuStar: '즐겨찾기에 추가',
+    menuUnstar: '즐겨찾기에서 제거',
+    menuAskAi: 'AI에게 질문',
+    menuAskAiLimit: 'AI에게 질문은 최대 {n}개의 파일까지 가능합니다',
+    menuRemoveAliasOnly: '데스크톱으로 드래그한 파일만 제거할 수 있습니다',
+    confirmRemoveTitle: '데스크톱에서 제거',
+    confirmRemoveOne: '"{name}"을(를) 데스크톱에서 제거하시겠습니까? 디스크의 파일은 그대로입니다.',
+    confirmRemoveMany: '{n}개 항목을 데스크톱에서 제거하시겠습니까? 디스크의 파일은 그대로입니다.',
+    confirmRemoveMore: '… 외 {n}개',
+    dialogCancel: '취소',
+    dialogRemove: '제거',
   },
   fr: {
     navDesktop: 'Bureau',
@@ -501,6 +564,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'Le bureau contient au plus 100 fichiers ; retirez-en quelques-uns avant d’en déposer d’autres.',
     noticeOpenFailed: 'Impossible d’ouvrir ce fichier — il a peut-être été déplacé ou supprimé.',
+    menuStar: 'Ajouter aux favoris',
+    menuUnstar: 'Retirer des favoris',
+    menuAskAi: 'Demander à l’IA',
+    menuAskAiLimit: 'Demander à l’IA accepte au maximum {n} fichiers',
+    menuRemoveAliasOnly: 'Seuls les fichiers déposés sur le bureau peuvent être retirés',
+    confirmRemoveTitle: 'Retirer du bureau',
+    confirmRemoveOne:
+      'Retirer « {name} » du bureau ? Les fichiers sur le disque ne sont pas modifiés.',
+    confirmRemoveMany:
+      'Retirer ces {n} éléments du bureau ? Les fichiers sur le disque ne sont pas modifiés.',
+    confirmRemoveMore: '… et {n} autres',
+    dialogCancel: 'Annuler',
+    dialogRemove: 'Retirer',
   },
   de: {
     navDesktop: 'Desktop',
@@ -581,6 +657,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
       'Der Desktop fasst höchstens 100 Dateien; entferne einige, bevor du weitere ablegst.',
     noticeOpenFailed:
       'Diese Datei ließ sich nicht öffnen — sie wurde vielleicht verschoben oder gelöscht.',
+    menuStar: 'Zu Favoriten hinzufügen',
+    menuUnstar: 'Aus Favoriten entfernen',
+    menuAskAi: 'KI fragen',
+    menuAskAiLimit: 'KI fragen akzeptiert höchstens {n} Dateien',
+    menuRemoveAliasOnly: 'Nur auf den Desktop gezogene Dateien lassen sich entfernen',
+    confirmRemoveTitle: 'Vom Desktop entfernen',
+    confirmRemoveOne:
+      '„{name}“ vom Desktop entfernen? Die Dateien auf der Festplatte werden nicht angetastet.',
+    confirmRemoveMany:
+      'Diese {n} Elemente vom Desktop entfernen? Die Dateien auf der Festplatte werden nicht angetastet.',
+    confirmRemoveMore: '… und {n} weitere',
+    dialogCancel: 'Abbrechen',
+    dialogRemove: 'Entfernen',
   },
   es: {
     navDesktop: 'Escritorio',
@@ -660,6 +749,18 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'El escritorio admite como máximo 100 archivos; quita algunos antes de soltar más.',
     noticeOpenFailed: 'No se pudo abrir este archivo: puede que se haya movido o borrado.',
+    menuStar: 'Añadir a destacados',
+    menuUnstar: 'Quitar de destacados',
+    menuAskAi: 'Preguntar a la IA',
+    menuAskAiLimit: 'Preguntar a la IA acepta como máximo {n} archivos',
+    menuRemoveAliasOnly: 'Solo se pueden quitar los archivos arrastrados al escritorio',
+    confirmRemoveTitle: 'Quitar del escritorio',
+    confirmRemoveOne: '¿Quitar "{name}" del escritorio? Los archivos del disco no se tocan.',
+    confirmRemoveMany:
+      '¿Quitar estos {n} elementos del escritorio? Los archivos del disco no se tocan.',
+    confirmRemoveMore: '… y {n} más',
+    dialogCancel: 'Cancelar',
+    dialogRemove: 'Quitar',
   },
   th: {
     navDesktop: 'เดสก์ท็อป',
@@ -738,6 +839,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'เขียวน้ำเงินเข้ม',
     noticeAliasLimit: 'เดสก์ท็อปใส่ไฟล์ได้สูงสุด 100 รายการ โปรดลบบางรายการออกก่อนวางเพิ่ม',
     noticeOpenFailed: 'เปิดไฟล์นี้ไม่ได้ อาจถูกย้ายหรือลบไปแล้ว',
+    menuStar: 'เพิ่มในรายการโปรด',
+    menuUnstar: 'นำออกจากรายการโปรด',
+    menuAskAi: 'ถาม AI',
+    menuAskAiLimit: 'ถาม AI รับได้สูงสุด {n} ไฟล์',
+    menuRemoveAliasOnly: 'ลบได้เฉพาะไฟล์ที่ลากมาวางบนเดสก์ท็อปเท่านั้น',
+    confirmRemoveTitle: 'ลบออกจากเดสก์ท็อป',
+    confirmRemoveOne: 'ลบ "{name}" ออกจากเดสก์ท็อปหรือไม่ ไฟล์ในดิสก์จะไม่ถูกแตะต้อง',
+    confirmRemoveMany: 'ลบ {n} รายการออกจากเดสก์ท็อปหรือไม่ ไฟล์ในดิสก์จะไม่ถูกแตะต้อง',
+    confirmRemoveMore: '… และอีก {n} รายการ',
+    dialogCancel: 'ยกเลิก',
+    dialogRemove: 'ลบ',
   },
   id: {
     navDesktop: 'Desktop',
@@ -817,6 +929,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'Desktop menampung paling banyak 100 berkas; hapus beberapa sebelum menambah lagi.',
     noticeOpenFailed: 'Berkas ini tidak bisa dibuka — mungkin sudah dipindahkan atau dihapus.',
+    menuStar: 'Beri bintang',
+    menuUnstar: 'Hapus bintang',
+    menuAskAi: 'Tanya AI',
+    menuAskAiLimit: 'Tanya AI menerima maksimal {n} file',
+    menuRemoveAliasOnly: 'Hanya file yang diseret ke desktop yang dapat dihapus',
+    confirmRemoveTitle: 'Hapus dari desktop',
+    confirmRemoveOne: 'Hapus "{name}" dari desktop? File di disk tidak diubah.',
+    confirmRemoveMany: 'Hapus {n} item dari desktop? File di disk tidak diubah.',
+    confirmRemoveMore: '… dan {n} lainnya',
+    dialogCancel: 'Batal',
+    dialogRemove: 'Hapus',
   },
   ru: {
     navDesktop: 'Рабочий стол',
@@ -896,6 +1019,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'На рабочем столе может быть не более 100 файлов; удалите часть, прежде чем добавлять новые.',
     noticeOpenFailed: 'Не удалось открыть этот файл — возможно, он был перемещён или удалён.',
+    menuStar: 'Добавить в избранное',
+    menuUnstar: 'Убрать из избранного',
+    menuAskAi: 'Спросить ИИ',
+    menuAskAiLimit: 'Спросить ИИ допускает не более {n} файлов',
+    menuRemoveAliasOnly: 'Убрать с рабочего стола можно только перетащенные туда файлы',
+    confirmRemoveTitle: 'Убрать с рабочего стола',
+    confirmRemoveOne: 'Убрать «{name}» с рабочего стола? Файлы на диске не трогаются.',
+    confirmRemoveMany: 'Убрать эти элементы ({n}) с рабочего стола? Файлы на диске не трогаются.',
+    confirmRemoveMore: '… и ещё {n}',
+    dialogCancel: 'Отмена',
+    dialogRemove: 'Убрать',
   },
   ar: {
     navDesktop: 'سطح المكتب',
@@ -974,6 +1108,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'أزرق مخضر عميق',
     noticeAliasLimit: 'يستوعب سطح المكتب 100 ملفًا كحد أقصى؛ أزل بعضها قبل إضافة المزيد.',
     noticeOpenFailed: 'تعذّر فتح هذا الملف — ربما نُقل أو حُذف.',
+    menuStar: 'إضافة إلى المفضلة',
+    menuUnstar: 'إزالة من المفضلة',
+    menuAskAi: 'اسأل الذكاء الاصطناعي',
+    menuAskAiLimit: 'يقبل «اسأل الذكاء الاصطناعي» {n} ملفًا كحد أقصى',
+    menuRemoveAliasOnly: 'لا يمكن إزالة إلا الملفات المسحوبة إلى سطح المكتب',
+    confirmRemoveTitle: 'إزالة من سطح المكتب',
+    confirmRemoveOne: 'إزالة "{name}" من سطح المكتب؟ لن تتأثر الملفات على القرص.',
+    confirmRemoveMany: 'إزالة هذه العناصر ({n}) من سطح المكتب؟ لن تتأثر الملفات على القرص.',
+    confirmRemoveMore: '… و{n} أخرى',
+    dialogCancel: 'إلغاء',
+    dialogRemove: 'إزالة',
   },
   pt: {
     navDesktop: 'Área de trabalho',
@@ -1053,6 +1198,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'A área de trabalho comporta no máximo 100 ficheiros; remova alguns antes de largar mais.',
     noticeOpenFailed: 'Não foi possível abrir este ficheiro — pode ter sido movido ou apagado.',
+    menuStar: 'Adicionar aos favoritos',
+    menuUnstar: 'Remover dos favoritos',
+    menuAskAi: 'Perguntar à IA',
+    menuAskAiLimit: 'Perguntar à IA aceita no máximo {n} ficheiros',
+    menuRemoveAliasOnly: 'Só os ficheiros arrastados para a área de trabalho podem ser removidos',
+    confirmRemoveTitle: 'Remover da área de trabalho',
+    confirmRemoveOne:
+      'Remover "{name}" da área de trabalho? Os ficheiros no disco não são afetados.',
+    confirmRemoveMany:
+      'Remover estes {n} itens da área de trabalho? Os ficheiros no disco não são afetados.',
+    confirmRemoveMore: '… e mais {n}',
+    dialogCancel: 'Cancelar',
+    dialogRemove: 'Remover',
   },
   it: {
     navDesktop: 'Desktop',
@@ -1132,6 +1290,18 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'Il desktop contiene al massimo 100 file; rimuovine qualcuno prima di aggiungerne altri.',
     noticeOpenFailed: 'Impossibile aprire questo file: potrebbe essere stato spostato o eliminato.',
+    menuStar: 'Aggiungi ai preferiti',
+    menuUnstar: 'Rimuovi dai preferiti',
+    menuAskAi: "Chiedi all'IA",
+    menuAskAiLimit: "Chiedi all'IA accetta al massimo {n} file",
+    menuRemoveAliasOnly: 'Si possono rimuovere solo i file trascinati sul desktop',
+    confirmRemoveTitle: 'Rimuovi dal desktop',
+    confirmRemoveOne: 'Rimuovere "{name}" dal desktop? I file sul disco non vengono toccati.',
+    confirmRemoveMany:
+      'Rimuovere questi {n} elementi dal desktop? I file sul disco non vengono toccati.',
+    confirmRemoveMore: '… e altri {n}',
+    dialogCancel: 'Annulla',
+    dialogRemove: 'Rimuovi',
   },
   pl: {
     navDesktop: 'Pulpit',
@@ -1211,6 +1381,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'Pulpit pomieści co najwyżej 100 plików; usuń kilka przed dodaniem kolejnych.',
     noticeOpenFailed: 'Nie udało się otworzyć tego pliku — mógł zostać przeniesiony lub usunięty.',
+    menuStar: 'Dodaj do ulubionych',
+    menuUnstar: 'Usuń z ulubionych',
+    menuAskAi: 'Zapytaj AI',
+    menuAskAiLimit: 'Zapytaj AI akceptuje maksymalnie {n} plików',
+    menuRemoveAliasOnly: 'Usunąć można tylko pliki przeciągnięte na pulpit',
+    confirmRemoveTitle: 'Usuń z pulpitu',
+    confirmRemoveOne: 'Usunąć „{name}” z pulpitu? Pliki na dysku pozostaną bez zmian.',
+    confirmRemoveMany: 'Usunąć te elementy ({n}) z pulpitu? Pliki na dysku pozostaną bez zmian.',
+    confirmRemoveMore: '… i jeszcze {n}',
+    dialogCancel: 'Anuluj',
+    dialogRemove: 'Usuń',
   },
   cs: {
     navDesktop: 'Plocha',
@@ -1289,6 +1470,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'Hluboká tyrkysová',
     noticeAliasLimit: 'Plocha pojme nejvýše 100 souborů; před přidáním dalších některé odeberte.',
     noticeOpenFailed: 'Tento soubor se nepodařilo otevřít — možná byl přesunut nebo odstraněn.',
+    menuStar: 'Přidat do oblíbených',
+    menuUnstar: 'Odebrat z oblíbených',
+    menuAskAi: 'Zeptat se AI',
+    menuAskAiLimit: 'Zeptat se AI přijme nejvýše {n} souborů',
+    menuRemoveAliasOnly: 'Odebrat lze pouze soubory přetažené na plochu',
+    confirmRemoveTitle: 'Odebrat z plochy',
+    confirmRemoveOne: 'Odebrat „{name}“ z plochy? Soubory na disku zůstanou beze změn.',
+    confirmRemoveMany: 'Odebrat těchto {n} položek z plochy? Soubory na disku zůstanou beze změn.',
+    confirmRemoveMore: '… a dalších {n}',
+    dialogCancel: 'Zrušit',
+    dialogRemove: 'Odebrat',
   },
   nl: {
     navDesktop: 'Bureaublad',
@@ -1369,6 +1561,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
       'Het bureaublad biedt plaats aan maximaal 100 bestanden; verwijder er enkele voor je meer neerzet.',
     noticeOpenFailed:
       'Dit bestand kon niet geopend worden — het is misschien verplaatst of verwijderd.',
+    menuStar: 'Aan favorieten toevoegen',
+    menuUnstar: 'Uit favorieten verwijderen',
+    menuAskAi: 'AI vragen',
+    menuAskAiLimit: 'AI vragen accepteert maximaal {n} bestanden',
+    menuRemoveAliasOnly: 'Alleen naar het bureaublad gesleepte bestanden kunnen worden verwijderd',
+    confirmRemoveTitle: 'Van bureaublad verwijderen',
+    confirmRemoveOne:
+      '"{name}" van het bureaublad verwijderen? De bestanden op schijf worden niet aangeraakt.',
+    confirmRemoveMany:
+      'Deze {n} items van het bureaublad verwijderen? De bestanden op schijf worden niet aangeraakt.',
+    confirmRemoveMore: '… en nog {n}',
+    dialogCancel: 'Annuleren',
+    dialogRemove: 'Verwijderen',
   },
   ms: {
     navDesktop: 'Desktop',
@@ -1448,6 +1653,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'Desktop menampung paling banyak 100 fail; buang beberapa sebelum meletakkan lagi.',
     noticeOpenFailed: 'Fail ini tidak dapat dibuka — mungkin telah dipindahkan atau dipadam.',
+    menuStar: 'Beri bintang',
+    menuUnstar: 'Buang bintang',
+    menuAskAi: 'Tanya AI',
+    menuAskAiLimit: 'Tanya AI menerima sehingga {n} fail',
+    menuRemoveAliasOnly: 'Hanya fail yang diseret ke desktop boleh dibuang',
+    confirmRemoveTitle: 'Buang dari desktop',
+    confirmRemoveOne: 'Buang "{name}" dari desktop? Fail pada cakera tidak diubah.',
+    confirmRemoveMany: 'Buang {n} item ini dari desktop? Fail pada cakera tidak diubah.',
+    confirmRemoveMore: '… dan {n} lagi',
+    dialogCancel: 'Batal',
+    dialogRemove: 'Buang',
   },
   he: {
     navDesktop: 'שולחן עבודה',
@@ -1526,6 +1742,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'טורקיז עמוק',
     noticeAliasLimit: 'שולחן העבודה מכיל לכל היותר 100 קבצים; הסר כמה לפני שתוסיף חדשים.',
     noticeOpenFailed: 'לא ניתן לפתוח את הקובץ — ייתכן שהועבר או נמחק.',
+    menuStar: 'הוספה למועדפים',
+    menuUnstar: 'הסרה מהמועדפים',
+    menuAskAi: 'שאל את ה-AI',
+    menuAskAiLimit: '«שאל את ה-AI» מקבל עד {n} קבצים',
+    menuRemoveAliasOnly: 'ניתן להסיר רק קבצים שנגררו אל שולחן העבודה',
+    confirmRemoveTitle: 'הסרה משולחן העבודה',
+    confirmRemoveOne: 'להסיר את "{name}" משולחן העבודה? הקבצים בדיסק לא ייפגעו.',
+    confirmRemoveMany: 'להסיר {n} פריטים אלה משולחן העבודה? הקבצים בדיסק לא ייפגעו.',
+    confirmRemoveMore: '… ועוד {n}',
+    dialogCancel: 'ביטול',
+    dialogRemove: 'הסרה',
   },
   hi: {
     navDesktop: 'डेस्कटॉप',
@@ -1605,6 +1832,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     noticeAliasLimit:
       'डेस्कटॉप पर अधिकतम 100 फ़ाइलें रखी जा सकती हैं; और छोड़ने से पहले कुछ हटा दें।',
     noticeOpenFailed: 'यह फ़ाइल नहीं खुल सकी — हो सकता है इसे हटा दिया गया हो या मिटा दिया गया हो।',
+    menuStar: 'तारांकित करें',
+    menuUnstar: 'तारांकन हटाएँ',
+    menuAskAi: 'AI से पूछें',
+    menuAskAiLimit: 'AI से पूछें अधिकतम {n} फ़ाइलें स्वीकार करता है',
+    menuRemoveAliasOnly: 'केवल डेस्कटॉप पर खींची गई फ़ाइलें हटाई जा सकती हैं',
+    confirmRemoveTitle: 'डेस्कटॉप से हटाएँ',
+    confirmRemoveOne: '"{name}" को डेस्कटॉप से हटाएँ? डिस्क पर की फ़ाइलें नहीं बदलेंगी।',
+    confirmRemoveMany: 'इन {n} आइटम को डेस्कटॉप से हटाएँ? डिस्क पर की फ़ाइलें नहीं बदलेंगी।',
+    confirmRemoveMore: '… और {n} और',
+    dialogCancel: 'रद्द करें',
+    dialogRemove: 'हटाएँ',
   },
   'zh-TW': {
     navDesktop: '桌面',
@@ -1681,9 +1919,19 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameDots: '暗色點陣',
     wpNameMinimal: '極簡淺色',
     wpNameTeal: '深青海浪',
-    noticeAliasLimit:
-      'डेस्कटॉप पर अधिकतम 100 फ़ाइलें रखी जा सकती हैं; और छोड़ने से पहले कुछ हटा दें।',
-    noticeOpenFailed: 'यह फ़ाइल नहीं खुल सकी — हो सकता है इसे हटा दिया गया हो या मिटा दिया गया हो।',
+    noticeAliasLimit: '桌面最多放置 100 個檔案；請先移除一些，再拖入新的。',
+    noticeOpenFailed: '無法開啟這個檔案：它可能已被移動或刪除。',
+    menuStar: '收藏',
+    menuUnstar: '取消收藏',
+    menuAskAi: '問 AI',
+    menuAskAiLimit: '問 AI 最多支援 {n} 個檔案',
+    menuRemoveAliasOnly: '僅可移除拖入桌面的檔案',
+    confirmRemoveTitle: '從桌面移除',
+    confirmRemoveOne: '從桌面移除「{name}」？磁碟上的檔案不受影響。',
+    confirmRemoveMany: '從桌面移除 {n} 個項目？磁碟上的檔案不受影響。',
+    confirmRemoveMore: '……以及另外 {n} 個',
+    dialogCancel: '取消',
+    dialogRemove: '移除',
   },
   vi: {
     navDesktop: 'Màn hình chính',
@@ -1762,6 +2010,17 @@ export const DESKTOP_STRINGS: Record<Lang, DesktopStrings> = {
     wpNameTeal: 'Xanh mòng két sâu',
     noticeAliasLimit: 'Màn hình nền chứa tối đa 100 tệp; hãy xóa bớt trước khi thêm mới.',
     noticeOpenFailed: 'Không thể mở tệp này — tệp có thể đã bị di chuyển hoặc xóa.',
+    menuStar: 'Gắn sao',
+    menuUnstar: 'Bỏ gắn sao',
+    menuAskAi: 'Hỏi AI',
+    menuAskAiLimit: 'Hỏi AI chấp nhận tối đa {n} tệp',
+    menuRemoveAliasOnly: 'Chỉ có thể xóa các tệp đã kéo vào màn hình chính',
+    confirmRemoveTitle: 'Xóa khỏi màn hình chính',
+    confirmRemoveOne: 'Xóa "{name}" khỏi màn hình chính? Các tệp trên đĩa không bị ảnh hưởng.',
+    confirmRemoveMany: 'Xóa {n} mục này khỏi màn hình chính? Các tệp trên đĩa không bị ảnh hưởng.',
+    confirmRemoveMore: '… và {n} mục nữa',
+    dialogCancel: 'Hủy',
+    dialogRemove: 'Xóa',
   },
 }
 

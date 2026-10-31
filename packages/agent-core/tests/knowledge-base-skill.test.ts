@@ -23,19 +23,19 @@ const CORPUS = [
 ]
 
 function makeDeps(overrides: Partial<KnowledgeBaseDeps> = {}): KnowledgeBaseDeps & {
-  searches: Array<[string, number]>
-  reads: Array<[string, number]>
+  searches: Array<[string, number, unknown]>
+  reads: Array<[string, number, unknown]>
 } {
-  const searches: Array<[string, number]> = []
-  const reads: Array<[string, number]> = []
+  const searches: Array<[string, number, unknown]> = []
+  const reads: Array<[string, number, unknown]> = []
   return {
     searches,
     reads,
     listFiles: () => CORPUS,
-    search: async (query, limit) => {
-      searches.push([query, limit])
+    search: async (query, limit, opts) => {
+      searches.push([query, limit, opts])
       return overrides.search
-        ? overrides.search(query, limit)
+        ? overrides.search(query, limit, opts)
         : [
             {
               path: CORPUS[0]!.path,
@@ -46,10 +46,10 @@ function makeDeps(overrides: Partial<KnowledgeBaseDeps> = {}): KnowledgeBaseDeps
             },
           ]
     },
-    read: async (path, offset) => {
-      reads.push([path, offset])
+    read: async (path, offset, opts) => {
+      reads.push([path, offset, opts])
       return overrides.read
-        ? overrides.read(path, offset)
+        ? overrides.read(path, offset, opts)
         : { text: '\u6b63\u6587', totalChars: 100, offset }
     },
   }
@@ -110,7 +110,7 @@ describe('createKnowledgeBaseSkill', () => {
       name: 'search_knowledge_base',
       input: { query: '\u8bd5\u7528\u671f', limit: 5 },
     })
-    expect(deps.searches).toEqual([['\u8bd5\u7528\u671f', 5]])
+    expect(deps.searches).toEqual([['\u8bd5\u7528\u671f', 5, undefined]])
     expect(result.isError).toBeFalsy()
     expect(result.output).toContain('\u5408\u540c/\u79df\u8d41\u5408\u540c.docx')
     expect(result.output).toContain('path: /Users/me/\u5408\u540c/\u79df\u8d41\u5408\u540c.docx')
@@ -137,7 +137,9 @@ describe('createKnowledgeBaseSkill', () => {
       name: 'read_knowledge_file',
       input: { index: 0, offset: 40 },
     })
-    expect(deps.reads).toEqual([['/Users/me/\u5408\u540c/\u79df\u8d41\u5408\u540c.docx', 40]])
+    expect(deps.reads).toEqual([
+      ['/Users/me/\u5408\u540c/\u79df\u8d41\u5408\u540c.docx', 40, undefined],
+    ])
     expect(result.output).toContain('characters 40..42 of 100')
     expect(result.output).toContain('(continue with offset)')
   })
@@ -195,7 +197,7 @@ describe('createKnowledgeBaseSkill', () => {
       input: { path: '/Users/me/work/notes.docx', offset: 0 },
     })
     expect(result.isError).toBeFalsy()
-    expect(deps.reads).toEqual([['/Users/me/work/notes.docx', 0]])
+    expect(deps.reads).toEqual([['/Users/me/work/notes.docx', 0, undefined]])
     expect(result.output).toContain('characters 0..2 of 100')
   })
 
@@ -255,5 +257,147 @@ describe('createKnowledgeBaseSkill with no starred files', () => {
     expect(read.output).toContain('empty')
     expect(deps.searches).toEqual([])
     expect(deps.reads).toEqual([])
+  })
+})
+
+describe('createKnowledgeBaseSkill with a round scope', () => {
+  const SCOPED = [CORPUS[0]!.path, '/Users/me/work/notes.docx']
+  const makeScoped = (
+    overrides: Partial<KnowledgeBaseDeps> = {},
+    scope: readonly string[] = SCOPED,
+  ) => {
+    const calls = {
+      searches: [] as Array<[string, number, { scopePaths?: readonly string[] } | undefined]>,
+      reads: [] as Array<[string, number, { scopePaths?: readonly string[] } | undefined]>,
+    }
+    const deps: KnowledgeBaseDeps = {
+      listFiles: overrides.listFiles ?? (() => CORPUS),
+      search: async (query, limit, opts) => {
+        calls.searches.push([query, limit, opts])
+        return (
+          overrides.search?.(query, limit, opts) ?? [
+            {
+              path: CORPUS[0]!.path,
+              name: CORPUS[0]!.name,
+              ext: 'docx',
+              folder: '\u5408\u540c',
+              snippet: '\u8bd5\u7528\u671f\u8003\u6838\u529e\u6cd5',
+            },
+          ]
+        )
+      },
+      read: async (path, offset, opts) => {
+        calls.reads.push([path, offset, opts])
+        return (
+          overrides.read?.(path, offset, opts) ?? { text: '\u6b63\u6587', totalChars: 100, offset }
+        )
+      },
+      scopePaths: () => scope,
+      ...(overrides.alsoCitable ? { alsoCitable: overrides.alsoCitable } : {}),
+    }
+    return { deps, calls }
+  }
+
+  it('the system prompt replaces the whole-index language with the selected list', () => {
+    const skill = createKnowledgeBaseSkill(makeScoped().deps)
+    expect(skill.systemPrompt).toContain('## Knowledge base')
+    expect(skill.systemPrompt).toContain('Corpus scope for this conversation')
+    expect(skill.systemPrompt).toContain('selected 2 files')
+    expect(skill.systemPrompt).toContain(CORPUS[0]!.path)
+    expect(skill.systemPrompt).toContain('/Users/me/work/notes.docx')
+    // without a scope the prompt is exactly the unscoped one
+    const unscoped = createKnowledgeBaseSkill(makeDeps())
+    expect(unscoped.systemPrompt).not.toContain('Corpus scope')
+  })
+
+  it('the context listing only shows the selected files', () => {
+    const skill = createKnowledgeBaseSkill(makeScoped().deps)
+    const context = skill.buildContext!()
+    // the scoped file keeps its listing; the out-of-scope one drops out
+    expect(context).toContain(CORPUS[0]!.name)
+    expect(context).not.toContain('employee handbook.pdf')
+  })
+
+  it('an empty scope behaves exactly like no scope at all', () => {
+    const { deps } = makeScoped({}, [])
+    const skill = createKnowledgeBaseSkill(deps)
+    expect(skill.systemPrompt).not.toContain('Corpus scope')
+    const context = skill.buildContext!()
+    expect(context).toContain('employee handbook.pdf')
+  })
+
+  it('a scope keeps the tools mounted even when the listing window is empty', () => {
+    const { deps } = makeScoped({ listFiles: () => [] })
+    const skill = createKnowledgeBaseSkill(deps)
+    expect(skill.tools.map((t) => t.name)).toEqual(['read_knowledge_file', 'search_knowledge_base'])
+    // and the tools answer rather than refusing with "empty"
+    expect(skill.systemPrompt).toContain('## Knowledge base')
+  })
+
+  it('search and read carry the scope on their calls, and drop it when none is attached', async () => {
+    const { deps, calls } = makeScoped()
+    const skill = createKnowledgeBaseSkill(deps)
+    await skill.executeTool!({ id: 's1', name: 'search_knowledge_base', input: { query: '合同' } })
+    await skill.executeTool!({
+      id: 'r1',
+      name: 'read_knowledge_file',
+      input: { path: '/Users/me/work/notes.docx', offset: 0 },
+    })
+    await skill.executeTool!({ id: 'r2', name: 'read_knowledge_file', input: { index: 0 } })
+    expect(calls.searches[0]![2]).toEqual({ scopePaths: SCOPED })
+    expect(calls.reads[0]![2]).toEqual({ scopePaths: SCOPED })
+    expect(calls.reads[1]![2]).toEqual({ scopePaths: SCOPED })
+
+    const plain = makeDeps()
+    const unscoped = createKnowledgeBaseSkill(plain)
+    await unscoped.executeTool!({
+      id: 's2',
+      name: 'search_knowledge_base',
+      input: { query: '合同' },
+    })
+    await unscoped.executeTool!({ id: 'r3', name: 'read_knowledge_file', input: { index: 0 } })
+    expect(plain.searches[0]![2]).toBeUndefined()
+  })
+
+  it('verifyResponse still accepts an in-scope citation and refuses out-of-scope ones', () => {
+    const { deps } = makeScoped()
+    const skill = createKnowledgeBaseSkill(deps)
+    // in scope (listed window ∩ scope)
+    const inScope =
+      '\u89c1 [\u79df\u8d41\u5408\u540c.docx](filenav:///Users/me/%E5%90%88%E5%90%8C/%E7%A7%9F%E8%B5%81%E5%90%88%E5%90%8C.docx)'
+    expect(skill.verifyResponse!(inScope, [])).toBeNull()
+    // listed in the corpus window but outside the selection: still refused
+    const outOfScope =
+      'cited [employee handbook.pdf](filenav:///Users/me/%E5%B7%A5%E4%BD%9C/employee%20handbook.pdf)'
+    expect(skill.verifyResponse!(outOfScope, [])).toContain('not knowledge-base paths')
+    // invented path, as ever
+    const invented = 'cited [fake.docx](filenav:///tmp/fake.docx)'
+    expect(skill.verifyResponse!(invented, [])).toContain('not knowledge-base paths')
+  })
+
+  it('verifyResponse refuses a search-result path from before the scope was attached', async () => {
+    // a session that searched unscoped first, then had a selection attached
+    const { deps } = makeScoped({
+      search: async () => [
+        {
+          path: '/Users/me/work/other.docx',
+          name: 'other.docx',
+          ext: 'docx',
+          folder: 'work',
+          snippet: 'hit',
+        },
+      ],
+    })
+    const skill = createKnowledgeBaseSkill(deps)
+    await skill.executeTool!({ id: 's1', name: 'search_knowledge_base', input: { query: 'other' } })
+    const stale = 'see [other.docx](filenav:///Users/me/work/other.docx)'
+    expect(skill.verifyResponse!(stale, [])).toContain('not knowledge-base paths')
+  })
+
+  it('verifyResponse keeps this session’s artifacts citable under a scope', () => {
+    const { deps } = makeScoped({ alsoCitable: () => ['/save/built-report.docx'] })
+    const skill = createKnowledgeBaseSkill(deps)
+    const created = 'built [report](filenav:///save/built-report.docx)'
+    expect(skill.verifyResponse!(created, [])).toBeNull()
   })
 })

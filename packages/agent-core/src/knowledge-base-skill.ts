@@ -21,6 +21,15 @@ import type { AgentSkill } from './skill'
  * listed window, paths this skill's own search tool returned this session are
  * whitelisted too — the prompt already tells the model to cite only links from
  * the list or a search result.
+ *
+ * Round scope: the panel can hand the skill an explicit file selection (the
+ * desktop's multi-select → "Ask AI") as this conversation's corpus. While it
+ * is attached, search and read carry it (the main process enforces the
+ * intersection), the system prompt replaces "the whole index" with the
+ * selected list, and the citation whitelist intersects with it — a corpus
+ * file outside the selection is out of scope and its citations are refused
+ * exactly like an invented one. `alsoCitable` paths (files a sibling skill
+ * wrote, chat attachments) are not corpus and stay citable.
  */
 
 /** characters of corpus listing injected before it degrades to names only */
@@ -55,11 +64,26 @@ export interface KbReadPage {
 export interface KnowledgeBaseDeps {
   /** the prompt's listing window as of this turn (a synchronous snapshot; the panel refreshes it on the corpus IPC) */
   listFiles(): KbFileInfo[]
-  search(query: string, limit: number): Promise<KbSearchHit[]>
+  search(query: string, limit: number, opts?: KbScopeOpts): Promise<KbSearchHit[]>
   /** one page of parsed text; path must belong to the corpus (the main process checks index membership) */
-  read(path: string, offset: number): Promise<KbReadPage>
+  read(path: string, offset: number, opts?: KbScopeOpts): Promise<KbReadPage>
   /** paths outside the corpus an answer may still cite (files a sibling skill wrote this session) */
   alsoCitable?(): readonly string[]
+  /**
+   * This conversation's explicit corpus: the file set the user selected
+   * (desktop multi-select → Ask AI). Empty or absent means the whole index.
+   * Read live — the panel attaches and clears the selection mid-session, and
+   * the loop re-reads the prompt and tools before every model request.
+   */
+  scopePaths?(): readonly string[]
+}
+
+/** what a knowledge tool call carries when a round scope is attached: the
+ *  main process intersects search results with it and widens the read gate
+ *  to the selected-but-unindexed files */
+export interface KbScopeOpts {
+  /** restrict the call to these paths; undefined = the whole corpus */
+  scopePaths?: readonly string[]
 }
 
 /** keep in sync with FILE_NAV_SCHEME in @genoffice/ui (this package must not
@@ -94,6 +118,23 @@ absolute path) — the list is not the whole corpus, search reaches all of it.
 - Say so plainly when the knowledge base does not contain the answer.`
 
 /**
+ * The round scope's prompt section: the whole-index language above is replaced
+ * by the selected list while a scope is attached. Paths are spelled out (not
+ * just counted) so the model can search them by name without a listing.
+ */
+function kbScopePrompt(paths: readonly string[]): string {
+  return [
+    `## Corpus scope for this conversation
+The user selected ${paths.length} files as this conversation's corpus — the knowledge
+base is ONLY these files, everything else is out of scope:`,
+    ...paths.map((path) => `- ${path}`),
+    `Search and read only within this list, and cite only files from it. A
+selected file the search does not return is not answerable from the corpus (it
+may not be indexed); say so rather than guessing or citing beyond the list.`,
+  ].join('\n')
+}
+
+/**
  * Same encoding as @genoffice/ui file-nav (agent-core must not depend on the
  * renderer package): everything the inline-link grammar rejects — spaces, %,
  * CJK, parens, Windows backslashes — is percent-encoded, slashes stay.
@@ -117,6 +158,16 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
   // the model was actually shown — search reaches the whole index, far beyond
   // the listed window, so listFiles alone cannot vouch for a valid citation.
   const citableSearchPaths = new Set<string>()
+  /** the round scope as a live set; null when no selection is attached */
+  const scope = (): Set<string> | null => {
+    const paths = deps.scopePaths?.() ?? []
+    return paths.length > 0 ? new Set(paths) : null
+  }
+  /** the opts a tool call carries: the scope when one is attached, else none */
+  const scopeOpts = (): KbScopeOpts | undefined => {
+    const scoped = scope()
+    return scoped ? { scopePaths: [...scoped] } : undefined
+  }
   const readTool: AgentToolDef = {
     name: 'read_knowledge_file',
     description:
@@ -155,19 +206,26 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       required: ['query'],
     },
   }
-  const empty = () => deps.listFiles().length === 0
+  // nothing listed AND no round scope: no prompt section and no tools, so a
+  // model that searches on reflex (BYOK/local endpoints did, repeatedly) has
+  // nothing to call — a round scope keeps the tools up even when the listing
+  // window is empty, because its files may sit in the index past the window
+  const empty = () => deps.listFiles().length === 0 && (deps.scopePaths?.().length ?? 0) === 0
   return {
     id: 'knowledge-base',
-    // nothing starred: no prompt section and no tools, so a model that searches
-    // on reflex (BYOK/local endpoints did, repeatedly) has nothing to call
     get systemPrompt() {
-      return empty() ? '' : KB_SYSTEM_PROMPT
+      if (empty()) return ''
+      const scoped = scope()
+      return scoped ? `${KB_SYSTEM_PROMPT}\n\n${kbScopePrompt([...scoped])}` : KB_SYSTEM_PROMPT
     },
     get tools() {
       return empty() ? [] : [readTool, searchTool]
     },
     buildContext: () => {
-      const files = deps.listFiles()
+      // under a round scope the window only shows the selected files: the
+      // unscoped window would advertise corpus the scope has ruled out
+      const scoped = scope()
+      const files = scoped ? deps.listFiles().filter((f) => scoped.has(f.path)) : deps.listFiles()
       if (files.length === 0) return ''
       const plain = files.map(
         (f, i) => `${i} | ${f.folder} | ${f.name} | .${f.ext} | ${formatKbSize(f.sizeBytes)}`,
@@ -183,7 +241,7 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       return `Knowledge base — a window of the user's indexed files (index | folder | file | type | size):\n${body}`
     },
     executeTool: async (call) => {
-      if (deps.listFiles().length === 0) {
+      if (empty()) {
         return { output: KB_EMPTY, isError: true, summary: 'knowledge base empty' }
       }
       if (call.name === 'search_knowledge_base') {
@@ -195,7 +253,9 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         const limit = Number.isFinite(limitRaw)
           ? Math.min(Math.max(1, Math.floor(limitRaw)), 20)
           : 8
-        const hits = await deps.search(query, limit)
+        // the round scope rides the call: the main process intersects the
+        // result with it, so the model only ever sees the selection
+        const hits = await deps.search(query, limit, scopeOpts())
         if (hits.length === 0)
           return { output: 'no match. Retry with synonyms or the other language.', summary: query }
         // whitelist these paths for citations: the model is allowed to cite
@@ -217,10 +277,13 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         const path = typeof call.input.path === 'string' ? call.input.path.trim() : ''
         const offsetRaw = Number(call.input.offset)
         const offset = Number.isFinite(offsetRaw) ? offsetRaw : 0
+        // the round scope rides the call the same way: the main-side kb:read
+        // gate widens to the selected files the index missed
+        const opts = scopeOpts()
         // a search hit outside the listed window reads by path; the main-side
         // kb:read gate (index membership) is what confines this to the corpus
         if (path) {
-          const page = await deps.read(path, offset)
+          const page = await deps.read(path, offset, opts)
           const more = page.offset + page.text.length < page.totalChars
           return {
             output:
@@ -240,7 +303,7 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
             summary: `read #${call.input.index}`,
           }
         }
-        const page = await deps.read(file.path, offset)
+        const page = await deps.read(file.path, offset, opts)
         const more = page.offset + page.text.length < page.totalChars
         return {
           output:
@@ -257,9 +320,20 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       if (cited.length === 0) return null
       // hrefs arrive percent-encoded (the renderer's own generator encodes
       // spaces/CJK); compare decoded forms so a hand-written raw href passes too
+      //
+      // A round scope intersects the corpus-side whitelist: the listed window
+      // and earlier search results are only citable inside the selection.
+      // alsoCitable (files a sibling skill wrote, chat attachments) is not
+      // corpus, so the selection does not touch it.
+      const scoped = scope()
       const known = new Set([
-        ...deps.listFiles().map((f) => f.path),
-        ...citableSearchPaths,
+        ...deps
+          .listFiles()
+          .filter((f) => !scoped || scoped.has(f.path))
+          .map((f) => f.path),
+        ...(scoped
+          ? [...citableSearchPaths].filter((p) => scoped.has(p))
+          : [...citableSearchPaths]),
         ...(deps.alsoCitable?.() ?? []),
       ])
       const unknown = cited.filter((href) => {

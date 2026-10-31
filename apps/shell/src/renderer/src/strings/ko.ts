@@ -16,6 +16,9 @@ export const ko: Dict = {
   askEmptyCorpusHint:
     '즐겨찾기한 파일이 아직 없습니다. 먼저 파일을 즐겨찾기하면 AI가 읽을 수 있습니다.',
   askCorpusCount: '지식 베이스: 즐겨찾기 {n}개',
+  askScopeChip: '말뭉치: 선택한 파일 {n}개',
+  askScopeNotIndexed: '{n}개 미인덱싱',
+  askScopeClear: '선택 해제',
   askIntro: '즐겨찾기한 파일에 대해 질문하세요. 답변에는 출처가 표시되며 클릭하면 열립니다.',
   askToolSearch: '지식 베이스 검색 중',
   askToolRead: '파일 읽는 중',

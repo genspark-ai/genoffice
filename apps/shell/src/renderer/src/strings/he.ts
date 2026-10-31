@@ -15,6 +15,9 @@ export const he: Dict = {
   askEmptyCorpusHint:
     'אין עדיין קבצים מסומנים — סמן קבצים בכוכבית תחילה כדי שה-AI יוכל לקרוא אותם.',
   askCorpusCount: 'בסיס ידע: {n} קבצים מסומנים',
+  askScopeChip: 'גוף ידע: {n} קבצים נבחרים',
+  askScopeNotIndexed: '{n} לא נכללו באינדקס',
+  askScopeClear: 'ניקוי הבחירה',
   askIntro: 'שאל על הקבצים המסומנים שלך. תשובות מציינות את המקור — לחיצה פותחת אותו.',
   askToolSearch: 'מחפש בבסיס הידע',
   askToolRead: 'קורא קובץ',

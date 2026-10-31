@@ -2685,6 +2685,49 @@ html[dir='rtl'] .quick-title-row {
   gap: 6px;
   padding: 8px 8px 0;
 }
+
+/* the round-scope chip: the file selection that scopes every ask while it is
+   attached (desktop multi-select → Ask AI); × drops back to the default corpus */
+.kb-ask-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 360px;
+  margin: 8px 8px 0;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+.kb-ask-scope-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-ask-scope-miss {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.kb-ask-scope-clear {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 7px 3px 2px;
+  border-radius: var(--radius-6);
+  cursor: pointer;
+}
+.kb-ask-scope-clear:hover {
+  background: var(--hover);
+  color: var(--danger);
+}
 .kb-ask-attachments-sent {
   padding: 0 0 6px;
 }

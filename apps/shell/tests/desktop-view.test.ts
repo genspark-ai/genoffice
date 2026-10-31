@@ -19,8 +19,10 @@ import { DESKTOP_STRINGS } from '../src/renderer/src/desktop-strings'
 /**
  * The Home desktop against a mocked bridge: the icon set it renders, the
  * open paths of every icon kind, drag-to-rearrange with grid snap and the
- * debounced write-through, the context menu, and how unsaved icons flow into
- * free cells around saved ones.
+ * debounced write-through (one icon or a whole selected group), the context
+ * menu, how unsaved icons flow into free cells around saved ones, and the
+ * OS-grade selection layer — the marquee, the modifier clicks, the
+ * Shift range over the visible-geometry order, and the batch menu.
  */
 
 const DEBOUNCE_MS = 300
@@ -39,6 +41,8 @@ let aliasAdds: string[]
 let aliasRemoves: string[]
 let openPath: ReturnType<typeof vi.fn>
 let revealPath: ReturnType<typeof vi.fn>
+let toggleStar: ReturnType<typeof vi.fn>
+let unstarPaths: ReturnType<typeof vi.fn>
 let newDoc: ReturnType<typeof vi.fn>
 let newSheet: ReturnType<typeof vi.fn>
 let newSlide: ReturnType<typeof vi.fn>
@@ -104,6 +108,7 @@ const props = {
   lang: 'en' as Lang,
   roots: [rootFolder, extraFolder] as FolderRoot[],
   onOpenAsk: vi.fn(),
+  onAskAboutPaths: vi.fn(),
   onOpenTemplates: vi.fn(),
   onOpenSettings: vi.fn(),
   onOpenFolder: vi.fn(),
@@ -129,6 +134,8 @@ beforeEach(() => {
   prefSaves = []
   openPath = vi.fn(async () => undefined)
   revealPath = vi.fn(async () => undefined)
+  toggleStar = vi.fn(async () => undefined)
+  unstarPaths = vi.fn(async () => undefined)
   newDoc = vi.fn(async () => undefined)
   newSheet = vi.fn(async () => undefined)
   newSlide = vi.fn(async () => undefined)
@@ -155,6 +162,7 @@ beforeEach(() => {
   setDesktopPinsVisible = vi.fn(async () => undefined)
   pinsChanged = undefined
   props.onOpenAsk.mockClear()
+  props.onAskAboutPaths.mockClear()
   props.onOpenTemplates.mockClear()
   props.onOpenSettings.mockClear()
   props.onOpenFolder.mockClear()
@@ -206,6 +214,8 @@ beforeEach(() => {
     })),
     openPath,
     revealPath,
+    toggleStar,
+    unstarPaths,
     newDoc,
     newSheet,
     newSlide,
@@ -331,9 +341,119 @@ async function contextMenu(label: string): Promise<void> {
   })
 }
 
-async function pressKey(key: string): Promise<void> {
+async function pressKey(key: string, modifiers: KeyboardEventInit = {}): Promise<void> {
   await act(async () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...modifiers }))
+    await Promise.resolve()
+  })
+}
+
+/** the selected icons' labels, in the grid's flow order */
+const selectedLabels = () =>
+  [...host.querySelectorAll<HTMLElement>('.desktop-icon.selected .desktop-icon-label')].map(
+    (l) => l.textContent,
+  )
+
+/** the marquee band element, if one is showing */
+const marqueeEl = (): HTMLElement | null => host.querySelector<HTMLElement>('.desktop-marquee')
+
+/** press on empty surface and drag to (x1, y1): the rubber band's live state */
+async function bandFromTo(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  modifiers: { shift?: boolean; meta?: boolean; ctrl?: boolean } = {},
+): Promise<void> {
+  const surface = host.querySelector<HTMLElement>('.desktop-surface')!
+  await act(async () => {
+    surface.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: x0,
+        clientY: y0,
+        shiftKey: modifiers.shift,
+        metaKey: modifiers.meta,
+        ctrlKey: modifiers.ctrl,
+      }),
+    )
+    await Promise.resolve()
+  })
+  await act(async () => {
+    window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: x1, clientY: y1 }))
+    await Promise.resolve()
+  })
+}
+
+/** release the armed band gesture at (x, y): the commit */
+async function releaseBand(x: number, y: number): Promise<void> {
+  await act(async () => {
+    window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: x, clientY: y }))
+    await Promise.resolve()
+  })
+}
+
+/** a click on an icon with Cmd/Ctrl held: the toggle member semantics */
+async function cmdClick(label: string): Promise<void> {
+  const at = posXY(label)
+  await act(async () => {
+    iconOf(label).dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: at.x,
+        clientY: at.y,
+        metaKey: true,
+      }),
+    )
+    await Promise.resolve()
+  })
+  await act(async () => {
+    window.dispatchEvent(
+      new MouseEvent('pointerup', { bubbles: true, clientX: at.x, clientY: at.y }),
+    )
+    await Promise.resolve()
+  })
+}
+
+/** a click on an icon with Shift held: the range from the anchor */
+async function shiftClick(label: string): Promise<void> {
+  const at = posXY(label)
+  await act(async () => {
+    iconOf(label).dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: at.x,
+        clientY: at.y,
+        shiftKey: true,
+      }),
+    )
+    await Promise.resolve()
+  })
+  await act(async () => {
+    window.dispatchEvent(
+      new MouseEvent('pointerup', { bubbles: true, clientX: at.x, clientY: at.y }),
+    )
+    await Promise.resolve()
+  })
+}
+
+/** a plain press-release on an icon: the single select */
+async function clickIcon(label: string): Promise<void> {
+  const at = posXY(label)
+  await act(async () => {
+    iconOf(label).dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: at.x, clientY: at.y }),
+    )
+    await Promise.resolve()
+  })
+  await act(async () => {
+    window.dispatchEvent(
+      new MouseEvent('pointerup', { bubbles: true, clientX: at.x, clientY: at.y }),
+    )
     await Promise.resolve()
   })
 }
@@ -615,20 +735,12 @@ describe('DesktopView — opening icons', () => {
 
   it('a press on the empty backdrop clears the selection', async () => {
     await render()
-    await act(async () => {
-      iconOf('alpha.docx').dispatchEvent(
-        new MouseEvent('pointerdown', { bubbles: true, clientX: 12, clientY: 116, button: 0 }),
-      )
-      await Promise.resolve()
-    })
+    await clickIcon('alpha.docx')
     expect(iconOf('alpha.docx').closest('li')!.className).toContain('selected')
-    const surface = host.querySelector<HTMLElement>('.desktop-surface')!
-    await act(async () => {
-      surface.dispatchEvent(
-        new MouseEvent('pointerdown', { bubbles: true, clientX: 700, clientY: 700, button: 0 }),
-      )
-      await Promise.resolve()
-    })
+    // a press that never becomes a band is a plain blank click: cleared on release
+    await bandFromTo(700, 700, 701, 701)
+    expect(marqueeEl()).toBeNull()
+    await releaseBand(701, 701)
     expect(iconOf('alpha.docx').closest('li')!.className).not.toContain('selected')
   })
 })
@@ -683,6 +795,51 @@ describe('DesktopView — drag to rearrange', () => {
     await tick()
     expect(saves).toHaveLength(1)
     expect(saves[0]).toEqual({ positions: { 'app:docs': cellPos(5, 2) } })
+  })
+
+  it('dragging one icon of a multi-selection moves the whole group by the same displacement', async () => {
+    stored = {
+      positions: {
+        'app:docs': cellPos(0, 0),
+        'app:sheets': cellPos(1, 0),
+        'app:slides': cellPos(2, 0),
+      },
+    }
+    await render()
+    await cmdClick('Docs')
+    await cmdClick('Sheets')
+    await cmdClick('Slides')
+    // grab Docs (a plain press inside the 3-selection) and drop it onto
+    // Slides' cell: the group translates, no member left behind
+    await dragTo('Docs', cellPos(2, 0).x, cellPos(2, 0).y)
+    expect(posOf('Docs')).toEqual({ x: `${cellPos(2, 0).x}px`, y: `${cellPos(2, 0).y}px` })
+    expect(posOf('Sheets')).toEqual({ x: `${cellPos(3, 0).x}px`, y: `${cellPos(3, 0).y}px` })
+    expect(posOf('Slides')).toEqual({ x: `${cellPos(4, 0).x}px`, y: `${cellPos(4, 0).y}px` })
+    // one write-through carries the whole group as one map
+    await tick()
+    expect(saves).toHaveLength(1)
+    expect(saves[0]).toEqual({
+      positions: {
+        'app:docs': cellPos(2, 0),
+        'app:sheets': cellPos(3, 0),
+        'app:slides': cellPos(4, 0),
+      },
+    })
+  })
+
+  it('a press on a lone selection drags single: the occupant still swaps', async () => {
+    stored = { positions: { 'app:docs': cellPos(0, 0), 'app:sheets': cellPos(1, 0) } }
+    await render()
+    await cmdClick('Docs')
+    // Docs is selected but alone (a 1-selection): dragging it swaps with the
+    // occupant of the target cell, exactly like before
+    await dragTo('Docs', cellPos(1, 0).x, cellPos(1, 0).y)
+    expect(posOf('Docs')).toEqual({ x: `${cellPos(1, 0).x}px`, y: `${cellPos(1, 0).y}px` })
+    expect(posOf('Sheets')).toEqual({ x: `${cellPos(0, 0).x}px`, y: `${cellPos(0, 0).y}px` })
+    await tick()
+    expect(saves[0]).toEqual({
+      positions: { 'app:docs': cellPos(1, 0), 'app:sheets': cellPos(0, 0) },
+    })
   })
 
   it('saved positions are restored on load, and unsaved icons flow around them', async () => {
@@ -1698,5 +1855,500 @@ describe('DesktopView — pinned widgets', () => {
     )
     // two widgets double the reserve: nothing renders as an icon either way
     expect(icons()).toHaveLength(15)
+  })
+})
+
+// ── the OS-grade selection layer ────────────────────────
+
+/** click one of the multi-selection menu's rows by its exact label */
+async function clickMultiMenuButton(label: string): Promise<void> {
+  const el = [...host.querySelectorAll<HTMLButtonElement>('.desktop-menu-multi button')].find(
+    (b) => b.textContent === label,
+  )
+  await click(el)
+}
+
+describe('DesktopView — the rubber-band marquee', () => {
+  it('a blank-surface drag draws the band and live-selects the icons it intersects', async () => {
+    await render()
+    await bandFromTo(100, 100, 150, 250)
+    const band = marqueeEl()
+    expect(band).toBeTruthy()
+    expect(band!.style.left).toBe('100px')
+    expect(band!.style.top).toBe('100px')
+    expect(band!.style.width).toBe('50px')
+    expect(band!.style.height).toBe('150px')
+    // intersection, not containment: a cell the band only grazes still joins
+    expect(selectedLabels()).toEqual([
+      'Docs',
+      'Sheets',
+      'Slides',
+      'Templates',
+      'Plugins',
+      'Settings',
+    ])
+    // release commits the band's selection and unmounts the band
+    await releaseBand(150, 250)
+    expect(marqueeEl()).toBeNull()
+    expect(selectedLabels()).toEqual([
+      'Docs',
+      'Sheets',
+      'Slides',
+      'Templates',
+      'Plugins',
+      'Settings',
+    ])
+  })
+
+  it('a drag that starts on an icon is the icon drag: no band, the layout still moves', async () => {
+    await render()
+    await dragTo('Docs', cellPos(6, 4).x, cellPos(6, 4).y)
+    expect(marqueeEl()).toBeNull()
+    expect(posOf('Docs')).toEqual({ x: `${cellPos(6, 4).x}px`, y: `${cellPos(6, 4).y}px` })
+  })
+
+  it('under the ~4px threshold the press stays a click: no band ever shows', async () => {
+    await render()
+    await clickIcon('gamma.pdf')
+    expect(selectedLabels()).toEqual(['gamma.pdf'])
+    await bandFromTo(700, 700, 702, 702)
+    expect(marqueeEl()).toBeNull()
+    expect(selectedLabels()).toEqual(['gamma.pdf'])
+    await releaseBand(702, 702)
+    expect(selectedLabels()).toEqual([])
+  })
+
+  it('Escape mid-band rolls the selection back and drops the band', async () => {
+    await render()
+    await clickIcon('gamma.pdf')
+    await bandFromTo(100, 100, 150, 250)
+    expect(selectedLabels()).toContain('Docs')
+    await pressKey('Escape')
+    expect(marqueeEl()).toBeNull()
+    expect(selectedLabels()).toEqual(['gamma.pdf'])
+  })
+
+  it('the window losing focus mid-band cancels the gesture the same way', async () => {
+    await render()
+    await clickIcon('gamma.pdf')
+    await bandFromTo(100, 100, 150, 250)
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'))
+      await Promise.resolve()
+    })
+    expect(marqueeEl()).toBeNull()
+    expect(selectedLabels()).toEqual(['gamma.pdf'])
+  })
+
+  it('Shift unions the band onto the existing selection', async () => {
+    await render()
+    await clickIcon('gamma.pdf')
+    await bandFromTo(100, 100, 150, 250, { shift: true })
+    expect(selectedLabels()).toEqual([
+      'Docs',
+      'Sheets',
+      'Slides',
+      'Templates',
+      'Plugins',
+      'Settings',
+      'gamma.pdf',
+    ])
+    await releaseBand(150, 250)
+    expect(selectedLabels()).toHaveLength(7)
+  })
+
+  it('Cmd/Ctrl toggles: the already-selected leave, the unselected join', async () => {
+    await render()
+    await clickIcon('Docs')
+    await bandFromTo(100, 100, 150, 250, { meta: true })
+    expect(selectedLabels()).toEqual(['Sheets', 'Slides', 'Templates', 'Plugins', 'Settings'])
+    await releaseBand(150, 250)
+    expect(selectedLabels()).toEqual(['Sheets', 'Slides', 'Templates', 'Plugins', 'Settings'])
+  })
+
+  it('the band and the surface menu never fight: the press closes the menu, the band still works', async () => {
+    await render()
+    await surfaceContextMenu()
+    expect(host.querySelector('.desktop-menu')).toBeTruthy()
+    await bandFromTo(100, 100, 150, 250)
+    expect(host.querySelector('.desktop-menu')).toBeNull()
+    expect(selectedLabels()).toHaveLength(6)
+    await releaseBand(150, 250)
+    // a double-click still opens: the selection layer never steals it
+    await doubleClick('alpha.docx')
+    expect(openPath).toHaveBeenCalledWith('/docs/alpha.docx')
+  })
+
+  it('a committed band parks the anchor on its last hit, so the next Shift ranges from it', async () => {
+    await render()
+    await bandFromTo(100, 100, 150, 250)
+    await releaseBand(150, 250)
+    expect(selectedLabels()).toHaveLength(6)
+    // the band's last hit is Settings (1,2): the range from it to gamma (2,0)
+    // spans exactly the visible-geometry order between those two cells
+    await shiftClick('gamma.pdf')
+    expect(selectedLabels()).toEqual(['Sheets', 'Slides', 'Plugins', 'Settings', 'gamma.pdf'])
+  })
+
+  it('a right-click while the band is live opens no menu and clears nothing', async () => {
+    await render()
+    await clickIcon('gamma.pdf')
+    await bandFromTo(100, 100, 150, 250)
+    expect(selectedLabels()).toHaveLength(6)
+    await surfaceContextMenu()
+    // the gesture owns the surface: no menu, and the live selection survives
+    expect(host.querySelector('.desktop-menu')).toBeNull()
+    expect(host.querySelector('.desktop-menu-multi')).toBeNull()
+    expect(selectedLabels()).toHaveLength(6)
+    await releaseBand(150, 250)
+    expect(selectedLabels()).toHaveLength(6)
+  })
+})
+
+describe('DesktopView — the selection model', () => {
+  it('a plain click replaces the selection with the one icon', async () => {
+    await render()
+    await clickIcon('Sheets')
+    await clickIcon('Docs')
+    expect(selectedLabels()).toEqual(['Docs'])
+  })
+
+  it('Cmd/Ctrl+click toggles members without losing the rest', async () => {
+    await render()
+    await clickIcon('Docs')
+    await cmdClick('Sheets')
+    expect(selectedLabels()).toEqual(['Docs', 'Sheets'])
+    await cmdClick('Docs')
+    expect(selectedLabels()).toEqual(['Sheets'])
+    await cmdClick('Docs')
+    expect(selectedLabels()).toEqual(['Docs', 'Sheets'])
+  })
+
+  it('Shift+click ranges the visible-geometry order from the anchor, and the anchor survives', async () => {
+    await render()
+    await clickIcon('Docs')
+    await shiftClick('AI Chat')
+    // rows first: the span from (0,0) to (0,6) walks rows 0..6 of the
+    // reading order — everything but beta, which sits past AI Chat in row 6
+    expect(selectedLabels()).toEqual([
+      'Docs',
+      'Sheets',
+      'Slides',
+      'PDF',
+      'Markdown',
+      'Web Page',
+      'AI Chat',
+      'Templates',
+      'Plugins',
+      'Settings',
+      'Work',
+      'Archive',
+      'alpha.docx',
+      'gamma.pdf',
+    ])
+    // a new plain click moves the anchor; Shift ranges from it in either direction
+    await clickIcon('PDF')
+    await shiftClick('Templates')
+    expect(selectedLabels()).toEqual([
+      'Sheets',
+      'Slides',
+      'PDF',
+      'Templates',
+      'Plugins',
+      'Settings',
+      'gamma.pdf',
+    ])
+    // the anchor is still PDF: the second Shift re-ranges 7..12, not 1..12
+    await shiftClick('alpha.docx')
+    expect(selectedLabels()).toEqual([
+      'PDF',
+      'Markdown',
+      'Web Page',
+      'Work',
+      'Archive',
+      'alpha.docx',
+    ])
+  })
+
+  it('Shift+click ranges the visible geometry under a custom placement, not the provider order', async () => {
+    // gamma is the last icon in provider order; a saved spot beside Docs
+    // pins it visually next to Docs — the range must follow the screen
+    stored = { positions: { 'app:docs': cellPos(0, 0), 'file:/docs/gamma.pdf': cellPos(1, 0) } }
+    await render()
+    await clickIcon('Docs')
+    await shiftClick('gamma.pdf')
+    // row 0 holds exactly Docs and gamma: the visually contiguous pair,
+    // where the provider-order span would have claimed every icon
+    expect(selectedLabels()).toEqual(['Docs', 'gamma.pdf'])
+  })
+
+  it('Cmd/Ctrl+A selects every icon in the desktop scope, and toggles back to none', async () => {
+    await render()
+    await pressKey('a', { metaKey: true })
+    expect(selectedLabels()).toHaveLength(15)
+    expect(selectedLabels()).toContain('gamma.pdf')
+    await pressKey('a', { metaKey: true })
+    expect(selectedLabels()).toEqual([])
+  })
+
+  it('the selection sheds ids whose icons left the surface (a recents push without them)', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    expect(selectedLabels()).toEqual(['alpha.docx', 'beta.xlsx'])
+    // a save elsewhere rewrites the recents list without alpha: its icon
+    // goes, and the selection must shrink with it — not keep a ghost id the
+    // batch menu and the shortcuts would still act on
+    recentFiles = [fileB, fileC]
+    await act(async () => {
+      recentsChanged!()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(labels()).not.toContain('alpha.docx')
+    expect(selectedLabels()).toEqual(['beta.xlsx'])
+    // the shrunk selection is partial: the Finder toggle fills, then clears
+    await pressKey('a', { metaKey: true })
+    expect(selectedLabels()).toHaveLength(14)
+    await pressKey('a', { metaKey: true })
+    expect(selectedLabels()).toEqual([])
+  })
+
+  it('Cmd/Ctrl+A never steals an input that owns the keyboard', async () => {
+    await render()
+    const outside = document.createElement('input')
+    document.body.append(outside)
+    await act(async () => {
+      outside.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'a', bubbles: true, metaKey: true }),
+      )
+      await Promise.resolve()
+    })
+    expect(selectedLabels()).toEqual([])
+    outside.remove()
+  })
+
+  it('arrows walk the grid geometry, not the provider order', async () => {
+    stored = { positions: { 'app:docs': cellPos(5, 5) } }
+    await render()
+    // with Docs pinned far away, Sheets flows into (0,0): the walk follows cells
+    await pressKey('ArrowDown')
+    expect(selectedLabels()).toEqual(['Sheets'])
+    await pressKey('ArrowRight')
+    expect(selectedLabels()).toEqual(['Plugins'])
+    await pressKey('ArrowDown')
+    expect(selectedLabels()).toEqual(['Settings'])
+    await pressKey('ArrowUp')
+    expect(selectedLabels()).toEqual(['Plugins'])
+    // from the pinned Docs (5,5), Up lands on the nearest cell above: alpha (1,4)
+    await clickIcon('Docs')
+    await pressKey('ArrowUp')
+    expect(selectedLabels()).toEqual(['alpha.docx'])
+  })
+})
+
+describe('DesktopView — the multi-selection menu', () => {
+  it('right-click inside a 2+ selection opens the batch menu; outside it, the single menu', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('beta.xlsx')
+    const multi = host.querySelector<HTMLElement>('.desktop-menu-multi')
+    expect(multi).toBeTruthy()
+    expect(menuButtons()).toEqual([
+      'Open',
+      'Star',
+      'Reveal in folder',
+      'Remove from desktop',
+      'Ask AI',
+    ])
+    // recents are not aliases: Remove is disabled and says why
+    const remove = [...multi!.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent === 'Remove from desktop',
+    )!
+    expect(remove.disabled).toBe(true)
+    expect(multi!.querySelector('.desktop-menu-hint')!.textContent).toBe(
+      DESKTOP_STRINGS.en.menuRemoveAliasOnly,
+    )
+    // a right-click on an icon outside the selection replaces it with the single menu
+    await contextMenu('gamma.pdf')
+    expect(host.querySelector('.desktop-menu-multi')).toBeNull()
+    expect(menuButtons()).toEqual(['Open', 'Reveal in folder', 'Properties', 'Reset position'])
+    expect(selectedLabels()).toEqual(['gamma.pdf'])
+  })
+
+  it('Open runs every selected icon', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('alpha.docx')
+    await clickMultiMenuButton('Open')
+    expect(openPath).toHaveBeenCalledWith('/docs/alpha.docx')
+    expect(openPath).toHaveBeenCalledWith('/docs/beta.xlsx')
+    expect(host.querySelector('.desktop-menu-multi')).toBeNull()
+  })
+
+  it('Star calls toggleStar for every unstarred selected file', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('alpha.docx')
+    await clickMultiMenuButton('Star')
+    expect(toggleStar).toHaveBeenCalledTimes(2)
+    expect(toggleStar).toHaveBeenCalledWith('/docs/alpha.docx')
+    expect(toggleStar).toHaveBeenCalledWith('/docs/beta.xlsx')
+    expect(unstarPaths).not.toHaveBeenCalled()
+    expect(host.querySelector('.desktop-menu-multi')).toBeNull()
+    expect(selectedLabels()).toEqual(['alpha.docx', 'beta.xlsx'])
+  })
+
+  it('Unstar shows when every selected file is starred and unstars them in bulk', async () => {
+    recentFiles = [{ ...fileA, starred: true }, { ...fileB, starred: true }, fileC]
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('alpha.docx')
+    expect(menuButtons()).toContain('Unstar')
+    await clickMultiMenuButton('Unstar')
+    expect(unstarPaths).toHaveBeenCalledTimes(1)
+    expect(unstarPaths).toHaveBeenCalledWith(['/docs/alpha.docx', '/docs/beta.xlsx'])
+    expect(toggleStar).not.toHaveBeenCalled()
+  })
+
+  it('Reveal runs revealPath for every selected path', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('beta.xlsx')
+    await clickMultiMenuButton('Reveal in folder')
+    expect(revealPath).toHaveBeenCalledWith('/docs/alpha.docx')
+    expect(revealPath).toHaveBeenCalledWith('/docs/beta.xlsx')
+  })
+
+  it('问 AI hands the selected real paths to the parent, in grid order', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await contextMenu('alpha.docx')
+    await clickMultiMenuButton('Ask AI')
+    expect(props.onAskAboutPaths).toHaveBeenCalledTimes(1)
+    expect(props.onAskAboutPaths).toHaveBeenCalledWith(['/docs/alpha.docx', '/docs/beta.xlsx'])
+  })
+
+  it('Ask AI is disabled with the cap hint while the selection carries more paths than the scope allows', async () => {
+    // 51 dragged-in aliases: selecting everything hands 56 paths (aliases,
+    // recents, folder roots) — past the 50 the handoff accepts
+    stored = { positions: {}, aliases: Array.from({ length: 51 }, (_v, i) => `/docs/f${i}.docx`) }
+    await render()
+    await flushAsync()
+    await pressKey('a', { metaKey: true })
+    await contextMenu('f0.docx')
+    const multi = host.querySelector<HTMLElement>('.desktop-menu-multi')!
+    const ask = [...multi.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent === 'Ask AI',
+    )!
+    // refused up front with the reason, not a silent truncation to 50
+    expect(ask.disabled).toBe(true)
+    expect(ask.getAttribute('aria-disabled')).toBe('true')
+    const hints = [...multi.querySelectorAll<HTMLElement>('.desktop-menu-hint')].map(
+      (h) => h.textContent,
+    )
+    expect(hints).toContain(DESKTOP_STRINGS.en.menuAskAiLimit.replace('{n}', '50'))
+    expect(props.onAskAboutPaths).not.toHaveBeenCalled()
+  })
+
+  it('an apps-only selection offers no Star, Reveal or Ask AI rows', async () => {
+    await render()
+    await cmdClick('Docs')
+    await cmdClick('Sheets')
+    await contextMenu('Docs')
+    expect(menuButtons()).toEqual(['Open', 'Remove from desktop'])
+    expect(host.querySelector('.desktop-menu-hint')).toBeTruthy()
+  })
+
+  it('Remove on an all-alias selection confirms, then removes them all', async () => {
+    stored = {
+      positions: { 'alias:/docs/report.docx': cellPos(2, 2) },
+      aliases: ['/docs/report.docx', '/docs/photo.png'],
+    }
+    await render()
+    await flushAsync()
+    await cmdClick('report.docx')
+    await cmdClick('photo.png')
+    await contextMenu('report.docx')
+    const multi = host.querySelector<HTMLElement>('.desktop-menu-multi')!
+    const remove = [...multi.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent === 'Remove from desktop',
+    )!
+    expect(remove.disabled).toBe(false)
+    expect(multi.querySelector('.desktop-menu-hint')).toBeNull()
+    await clickMultiMenuButton('Remove from desktop')
+    const dialog = host.querySelector<HTMLElement>('.desktop-confirm')
+    expect(dialog).toBeTruthy()
+    expect(dialog!.textContent).toContain('Remove 2 items from the desktop')
+    await click(host.querySelector('.desktop-confirm-buttons button.danger'))
+    await flushAsync()
+    expect(aliasRemoves).toEqual(['/docs/report.docx', '/docs/photo.png'])
+    expect(labels()).not.toContain('report.docx')
+    expect(labels()).not.toContain('photo.png')
+    expect(selectedLabels()).toEqual([])
+    await tick()
+    expect(saves.at(-1)).toEqual({ positions: {} })
+  })
+})
+
+describe('DesktopView — selection keyboard', () => {
+  it('Enter opens every selected icon', async () => {
+    await render()
+    await cmdClick('alpha.docx')
+    await cmdClick('beta.xlsx')
+    await pressKey('Enter')
+    expect(openPath).toHaveBeenCalledWith('/docs/alpha.docx')
+    expect(openPath).toHaveBeenCalledWith('/docs/beta.xlsx')
+  })
+
+  it('Backspace removes the selected aliases behind the confirm dialog', async () => {
+    stored = { positions: {}, aliases: ['/docs/report.docx', '/docs/photo.png'] }
+    await render()
+    await flushAsync()
+    await cmdClick('report.docx')
+    await cmdClick('photo.png')
+    await pressKey('Backspace')
+    const dialog = host.querySelector<HTMLElement>('.desktop-confirm')
+    expect(dialog).toBeTruthy()
+    expect(dialog!.textContent).toContain('Remove 2 items from the desktop')
+    await click(host.querySelector('.desktop-confirm-buttons button.danger'))
+    await flushAsync()
+    expect(aliasRemoves).toEqual(['/docs/report.docx', '/docs/photo.png'])
+    expect(labels()).not.toContain('report.docx')
+  })
+
+  it('a mixed selection removes only its aliases; with none, the key does nothing', async () => {
+    stored = { positions: {}, aliases: ['/docs/report.docx'] }
+    await render()
+    await flushAsync()
+    await clickIcon('Docs')
+    await cmdClick('report.docx')
+    await pressKey('Delete')
+    const dialog = host.querySelector<HTMLElement>('.desktop-confirm')
+    expect(dialog).toBeTruthy()
+    expect(dialog!.textContent).toContain('Remove report.docx from the desktop')
+    // Escape dismisses the dialog without removing anything
+    await pressKey('Escape')
+    expect(host.querySelector('.desktop-confirm')).toBeNull()
+    expect(aliasRemoves).toEqual([])
+    expect(labels()).toContain('report.docx')
+    // again, and confirmed: only the alias goes — the app tile stays, selected
+    await pressKey('Delete')
+    await click(host.querySelector('.desktop-confirm-buttons button.danger'))
+    await flushAsync()
+    expect(aliasRemoves).toEqual(['/docs/report.docx'])
+    expect(labels()).toContain('Docs')
+    expect(selectedLabels()).toEqual(['Docs'])
+    // no aliases left in the selection: the key is a no-op
+    await cmdClick('alpha.docx')
+    await pressKey('Delete')
+    expect(host.querySelector('.desktop-confirm')).toBeNull()
+    expect(aliasRemoves).toEqual(['/docs/report.docx'])
   })
 })

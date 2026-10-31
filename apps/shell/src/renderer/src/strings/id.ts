@@ -16,6 +16,9 @@ export const id: Dict = {
   askEmptyCorpusHint:
     'Belum ada file berbintang — tandai beberapa file dahulu agar AI bisa membacanya.',
   askCorpusCount: 'Basis pengetahuan: {n} file berbintang',
+  askScopeChip: 'Korpus: {n} file terpilih',
+  askScopeNotIndexed: '{n} tidak terindeks',
+  askScopeClear: 'Hapus pilihan',
   askIntro:
     'Bertanyalah tentang file berbintang anda. Jawaban menyebut sumbernya — klik untuk membuka.',
   askToolSearch: 'Mencari basis pengetahuan',

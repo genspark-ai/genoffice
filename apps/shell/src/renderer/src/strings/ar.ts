@@ -16,6 +16,9 @@ export const ar: Dict = {
   askEmptyCorpusHint:
     'لا توجد ملفات مفضلة بعد — ضع نجمة على بعض الملفات أولاً ليتمكن الذكاء الاصطناعي من قراءتها.',
   askCorpusCount: 'قاعدة المعارف: {n} ملف مفضل',
+  askScopeChip: 'المدونة: {n} ملفات محددة',
+  askScopeNotIndexed: '{n} غير مفهرس',
+  askScopeClear: 'إزالة التحديد',
   askIntro: 'اسأل عن ملفاتك المفضلة. تذكر الإجابات مصادرها — انقر لفتحها.',
   askToolSearch: 'جارٍ البحث في القاعدة',
   askToolRead: 'جارٍ قراءة ملف',
