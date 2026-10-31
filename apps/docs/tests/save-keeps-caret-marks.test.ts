@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { restoreMarksAfterDocRewrite } from '../src/renderer/file-actions'
@@ -20,12 +20,22 @@ const para = (t: string) => ({
   content: [{ type: 'text', text: t }],
 })
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 function makeEditor(): Editor {
-  return new Editor({
+  const editor = new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
     content: { type: 'doc', content: [para('hello world')] },
   })
+  liveEditors.push(editor)
+  return editor
 }
 
 /** the mark set Tiptap would apply to text typed at the caret right now */

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
@@ -12,6 +12,14 @@ setModuleLang('en')
 
 const noop = () => {}
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 function mount(onDelete = noop): { root: Root; container: HTMLElement } {
   const editor = new Editor({
     element: document.createElement('div'),
@@ -21,6 +29,7 @@ function mount(onDelete = noop): { root: Root; container: HTMLElement } {
       content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'hello' }] }],
     },
   })
+  liveEditors.push(editor)
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)

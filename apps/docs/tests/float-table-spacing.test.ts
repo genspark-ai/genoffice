@@ -1,9 +1,25 @@
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { floatTableSpacingDecorations } from '../src/renderer/editor/float-table-spacing'
 
-const editor = new Editor({ element: document.createElement('div'), extensions: editorExtensions })
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+function makeEditor(): Editor {
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+  })
+  liveEditors.push(editor)
+  return editor
+}
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 const cell = { type: 'docTableCell', content: [{ type: 'docParagraph' }] }
 const table = (attrs: Record<string, unknown>) => ({
   type: 'docTable',
@@ -17,6 +33,7 @@ const para = (attrs: Record<string, unknown>, text = 'x') => ({
 })
 
 function decorate(content: unknown[]) {
+  const editor = makeEditor()
   const doc = editor.schema.nodeFromJSON({ type: 'doc', content })
   return floatTableSpacingDecorations(doc)
     .find()
@@ -61,6 +78,7 @@ describe('paragraph spacing across a floating table', () => {
   })
 
   it('the editor renders the class and the sum variable on the anchor paragraph', () => {
+    const editor = makeEditor()
     editor.commands.setContent({
       type: 'doc',
       content: [
