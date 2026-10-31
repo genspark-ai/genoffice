@@ -388,10 +388,8 @@ export function resolveAnchorPagePos(
   if (relH !== 'page' && relH !== 'margin') return null
   if (meta.pctH === undefined && meta.alignH === undefined) return null
   const pageW = sect.pageWidth * EMU_PER_TWIP
-  const pageH = sect.pageHeight * EMU_PER_TWIP
   const marL = sect.marginLeft * EMU_PER_TWIP
   const marR = sect.marginRight * EMU_PER_TWIP
-  const marT = sect.marginTop * EMU_PER_TWIP
   const w = meta.extentXEmu ?? 0
   const refW = relH === 'page' ? pageW : pageW - marL - marR
   const relX =
@@ -407,24 +405,37 @@ export function resolveAnchorPagePos(
     xEmu: pageX - marL,
     outsideColumn: pageX + w <= marL || pageX >= pageW - marR,
   }
-  if (
-    (meta.relV === 'page' || meta.relV === 'margin') &&
-    (meta.pctV !== undefined || meta.alignV !== undefined)
-  ) {
-    const marB = sect.marginBottom * EMU_PER_TWIP
-    const h = meta.extentYEmu ?? 0
-    const refH = meta.relV === 'page' ? pageH : pageH - marT - marB
-    const relY =
-      meta.pctV !== undefined
-        ? Math.round((refH * meta.pctV) / 100000)
-        : meta.alignV === 'center'
-          ? Math.round((refH - h) / 2)
-          : meta.alignV === 'bottom' || meta.alignV === 'outside'
-            ? refH - h
-            : 0
-    pos.yEmu = (meta.relV === 'page' ? relY : marT + relY) - marT
-  }
+  const yEmu = resolveAnchorPageYEmu(meta, sect)
+  if (yEmu !== undefined) pos.yEmu = yEmu
   return pos
+}
+
+/**
+ * Page/margin-relative V placement (wp14:pctPosVOffset or wp:align) as an EMU
+ * offset from the body top, independent of how X is anchored. Undefined for
+ * plain posOffset or paragraph/line-relative anchors.
+ */
+export function resolveAnchorPageYEmu(
+  meta: DrawingAnchorMeta,
+  sect: SectionSettings | undefined,
+): number | undefined {
+  if (!sect) return undefined
+  if (meta.relV !== 'page' && meta.relV !== 'margin') return undefined
+  if (meta.pctV === undefined && meta.alignV === undefined) return undefined
+  const pageH = sect.pageHeight * EMU_PER_TWIP
+  const marT = sect.marginTop * EMU_PER_TWIP
+  const marB = sect.marginBottom * EMU_PER_TWIP
+  const h = meta.extentYEmu ?? 0
+  const refH = meta.relV === 'page' ? pageH : pageH - marT - marB
+  const relY =
+    meta.pctV !== undefined
+      ? Math.round((refH * meta.pctV) / 100000)
+      : meta.alignV === 'center'
+        ? Math.round((refH - h) / 2)
+        : meta.alignV === 'bottom' || meta.alignV === 'outside'
+          ? refH - h
+          : 0
+  return (meta.relV === 'page' ? relY : marT + relY) - marT
 }
 
 /**

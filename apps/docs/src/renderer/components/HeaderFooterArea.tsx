@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   PAGE_MARK,
+  SECTION_PAGES_MARK,
   TOTAL_PAGES_MARK,
   type HfImage,
   type HfParagraph,
@@ -132,6 +133,7 @@ export function HeaderFooterArea({
   onCommit,
   pageNo,
   pageTotal,
+  sectionPages,
   style,
   boxGeom,
   linked,
@@ -157,6 +159,8 @@ export function HeaderFooterArea({
   pageNo?: number | string
   /** Total page count shown for TOTAL_PAGES_MARK (NUMPAGES field), defaults to 1 */
   pageTotal?: number
+  /** Page count of this page's section shown for SECTION_PAGES_MARK (SECTIONPAGES field), defaults to pageTotal */
+  sectionPages?: number
   /** geometry override: on differing-width sections the strip is pinned to its own section's box */
   style?: React.CSSProperties
   /** page geometry: floating textboxes render at their anchor position (absent: stacked) */
@@ -175,17 +179,18 @@ export function HeaderFooterArea({
   // The editor host is a standalone element React never populates: the nested
   // editor owns its children and the whole element unmounts on exit, so no
   // stale DOM survives section/variant switches
-  const latest = useRef({ value, onCommit, onEditingChange, pageNo, pageTotal })
-  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal }
+  const latest = useRef({ value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages })
+  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages }
   useEffect(() => {
     if (!editing) return
     const el = editRef.current
     if (!el) return
-    const { value: v, pageNo: pn, pageTotal: pt } = latest.current
+    const { value: v, pageNo: pn, pageTotal: pt, sectionPages: sp } = latest.current
     const handle = mountHfEditor(el, {
       value: v,
       pageNo: String(pn ?? 1),
       pageTotal: String(pt ?? 1),
+      sectionPages: String(sp ?? pt ?? 1),
       spellcheck: spellcheckEnabled(),
       onCommit: (next) => latest.current.onCommit(next),
       onExit: () => {
@@ -200,6 +205,7 @@ export function HeaderFooterArea({
   const display = (text: string) => {
     const t = text
       .replaceAll(TOTAL_PAGES_MARK, String(pageTotal ?? 1))
+      .replaceAll(SECTION_PAGES_MARK, String(sectionPages ?? pageTotal ?? 1))
       .replaceAll(PAGE_MARK, String(pageNo ?? 1))
     return hfUsesLegacyHash(value) ? t.replace('#', String(pageNo ?? 1)) : t
   }

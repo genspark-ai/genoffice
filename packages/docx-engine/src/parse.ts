@@ -26,7 +26,7 @@ import { emptyDocumentProperties, readDocumentProperties } from './doc-propertie
 import { computeListMarkerInfos, type ListItemRef } from './list-markers'
 import { FONT_TABLE_PART_PATH, parseFontTable, readEmbeddedFonts } from './font-table'
 import { DEFAULT_THEME_COLORS, THEME_PART_PATH, readThemeColors, readThemeFonts } from './theme'
-import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, SECTION_PAGES_MARK, TOTAL_PAGES_MARK } from './types'
 import { assertZipWithinLimits, loadDocxZip } from './zip-load'
 import { altChunkToDocx, hasAltChunkHtmlConverter } from './alt-chunk'
 import type {
@@ -145,6 +145,7 @@ import {
   gradFillApproxHex,
   lineBoxOf,
   resolveAnchorPagePos,
+  resolveAnchorPageYEmu,
   topLevelDrawings,
   w14GlowOf,
   w14TextFillHex,
@@ -3121,6 +3122,55 @@ function extractTextboxes(
       if (relXAbsolute) box.pageRelX = true
       if (meta.relH === 'page') box.pageRelXFrom = 'page'
     }
+    // page/margin-relative V places the box on its anchor's page in Word
+    // whatever the wrap kind (wrap only decides how body text flows around
+    // it). A wrapped one floats at that position instead of stacking into the
+    // flow at the anchor paragraph (cover bands drawn margin-shifted) — but
+    // only where floating cannot lay body text over it: the box lies wholly
+    // outside the body area, spans the column (text only above/below), or is
+    // a topAndBottom band covering the body top (its band is exact). A narrow
+    // in-column wrapped box keeps the flow placement: text cannot wrap around
+    // an absolute box, and its band would be relative to an unknown anchor.
+    const pageAbsV = opts?.section !== undefined && (meta.relV === 'page' || meta.relV === 'margin')
+    const alignedYEmu =
+      pageAbsV && meta.offsetYEmu === undefined
+        ? resolveAnchorPageYEmu(meta, opts?.section)
+        : undefined
+    let pageVFloat = false
+    // band only inside the body area: a box clear of it excludes no text
+    let pageVBand = false
+    if (pageAbsV && !meta.noWrap && opts?.section) {
+      const s = opts.section
+      // column / body-top space: page-relative X/Y are exact here (only the
+      // anchor paragraph's own position is unknown)
+      const x =
+        (box.offsetXEmu ?? 0) +
+        (pagePos !== null && !pagePos.outsideColumn && meta.offsetXEmu === undefined
+          ? pagePos.xEmu
+          : 0)
+      const y = (box.offsetYEmu ?? 0) + (meta.offsetYEmu ?? alignedYEmu ?? 0)
+      const w = box.widthPx !== undefined ? box.widthPx * EMU_PER_PX : meta.extentXEmu
+      const h =
+        box.heightPx !== undefined
+          ? box.heightPx * EMU_PER_PX
+          : !grouped
+            ? meta.extentYEmu
+            : undefined
+      const colW = (s.pageWidth - s.marginLeft - s.marginRight) * EMU_PER_TWIP
+      const bodyH = (s.pageHeight - s.marginTop - s.marginBottom) * EMU_PER_TWIP
+      if (w !== undefined && w > 0 && h !== undefined && h > 0) {
+        const outsideBody =
+          y + h <= 0 || y >= bodyH || (s.columns <= 1 && (x + w <= 0 || x >= colW))
+        const spans =
+          s.columns <= 1 &&
+          !grouped &&
+          x < MIN_WRAP_SLIVER_EMU &&
+          colW - x - w < MIN_WRAP_SLIVER_EMU
+        const exactBand = meta.topBottom === true && y <= 0 && y + h > 0
+        pageVFloat = outsideBody || spans || exactBand
+        pageVBand = pageVFloat && !outsideBody
+      }
+    }
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the
     // legacy flow placement
@@ -3128,12 +3178,20 @@ function extractTextboxes(
       pagePos !== null &&
       !pagePos.outsideColumn &&
       meta.offsetXEmu === undefined &&
-      (meta.topBottom || meta.noWrap || multiDrawing)
+      (meta.topBottom || meta.noWrap || multiDrawing || pageVFloat)
     ) {
       box.offsetXEmu = (box.offsetXEmu ?? 0) + pagePos.xEmu
       if (relXAbsolute) box.pageRelX = true
     }
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
+    // wp:align / pctPosVOffset against the page or margin box on a floating
+    // box: the resolved body-top offset, re-pinned onto the anchor's page like
+    // a posOffset (in-flow boxes keep ignoring it)
+    if (alignedYEmu !== undefined && (meta.noWrap || multiDrawing || pageVFloat)) {
+      box.offsetYEmu = (box.offsetYEmu ?? 0) + alignedYEmu
+      box.pageRelV = true
+      box.pageRelVFrom = meta.relV === 'page' ? 'page' : 'margin'
+    }
     // page/margin-relative posOffset V is absolute on the anchor's page in
     // Word; rendered from the anchor paragraph it needs the canvas re-pin
     if (
@@ -3170,7 +3228,7 @@ function extractTextboxes(
     // reserves flow height down to the box bottom (union over its boxes).
     if (
       (meta.topBottom || squareSpansColumn) &&
-      (meta.relV === 'paragraph' || meta.relV === 'line')
+      (meta.relV === 'paragraph' || meta.relV === 'line' || pageVBand)
     ) {
       // wp:extent cy covers the whole drawing: a usable height fallback only
       // for an ungrouped shape (each group child would claim the group height)
@@ -3181,7 +3239,11 @@ function extractTextboxes(
           : undefined)
       if (h !== undefined) {
         const top = Math.round((box.offsetYEmu ?? 0) / EMU_PER_PX)
-        if (top + h > 0) {
+        // a page-relative top counts from the body top (anchor paragraph
+        // assumed there): only a box covering that origin (a band hanging
+        // from the page top) bands exactly; reserving down to a box lower on
+        // the page would blank all the flow above it
+        if (top + h > 0 && (!pageAbsV || top <= 0)) {
           box.bandTopPx = top
           box.bandBottomPx = top + h
           // only a box that spans the column BY ITSELF may overflow the page
@@ -3192,7 +3254,7 @@ function extractTextboxes(
       }
       box.floating = true
     }
-    if (meta.noWrap || multiDrawing) box.floating = true
+    if (meta.noWrap || multiDrawing || pageVFloat) box.floating = true
     if (!meta.noWrap && !meta.topBottom) {
       box.wrapSides = true
       if (box.floating) {
@@ -3316,7 +3378,9 @@ function extractTextboxes(
         aligned !== null
           ? aligned.xEmu + marL
           : (meta.relH === 'margin' ? marL : 0) + (meta.offsetXEmu ?? 0)
-      meta.pageYEmu = aligned?.yEmu !== undefined ? aligned.yEmu + marT : (meta.offsetYEmu ?? 0)
+      // aligned V resolves on its own: a posOffset X leaves `aligned` null
+      const alignedYEmu = resolveAnchorPageYEmu(meta, opts.section)
+      meta.pageYEmu = alignedYEmu !== undefined ? alignedYEmu + marT : (meta.offsetYEmu ?? 0)
     }
     const pagePos = meta.pageXEmu === undefined ? resolveAnchorPagePos(meta, opts?.section) : null
     let wspCount = 0
@@ -6817,6 +6881,11 @@ function hfContentFromXml(
       // the replacement closes/reopens the enclosing w:r to stay balanced
       // (the leftover edge runs end up empty and are dropped later)
       const emit = (inner: string) => `</w:r>${inner}<w:r>`
+      // before PAGE/NUMPAGES: neither word boundary matches inside SECTIONPAGES,
+      // so it used to fall through to the cached result (often dropped, else a stale "1")
+      if (/\bSECTIONPAGES\b/.test(instr)) {
+        return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
+      }
       if (/\bNUMPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
       }
@@ -6837,6 +6906,7 @@ function hfContentFromXml(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
+      if (/\bSECTIONPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
       if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
       if (/\bPAGE\b/.test(instr)) {
         hasPageNumber = true

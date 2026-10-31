@@ -990,6 +990,8 @@ export interface HeaderFooter {
 export const TOTAL_PAGES_MARK = '\uE000'
 /** Placeholder for PAGE fields in headers/footers; a private-use character so literal '#' text in the part can never be mistaken for the field position */
 export const PAGE_MARK = '\uE001'
+/** Placeholder for SECTIONPAGES fields in headers/footers: the renderer substitutes the page count of the page's section, saving writes the field back */
+export const SECTION_PAGES_MARK = '\uE002'
 
 /** display-only image in a header/footer part (logos etc.; saving preserves the part's bytes) */
 export interface HfImage {
@@ -1043,7 +1045,7 @@ export interface HfImage {
 
 /** Parsed content of one header/footer part (any w:type variant). */
 export interface HfPartInfo {
-  /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK */
+  /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK, SECTIONPAGES as SECTION_PAGES_MARK */
   text: string
   hasPageNumber: boolean
   paras: HfParagraph[]
