@@ -26,7 +26,7 @@ import { emptyDocumentProperties, readDocumentProperties } from './doc-propertie
 import { computeListMarkerInfos, type ListItemRef } from './list-markers'
 import { FONT_TABLE_PART_PATH, parseFontTable, readEmbeddedFonts } from './font-table'
 import { DEFAULT_THEME_COLORS, THEME_PART_PATH, readThemeColors, readThemeFonts } from './theme'
-import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, SECTION_PAGES_MARK, TOTAL_PAGES_MARK } from './types'
 import { assertZipWithinLimits, loadDocxZip } from './zip-load'
 import { altChunkToDocx, hasAltChunkHtmlConverter } from './alt-chunk'
 import type {
@@ -6817,6 +6817,11 @@ function hfContentFromXml(
       // the replacement closes/reopens the enclosing w:r to stay balanced
       // (the leftover edge runs end up empty and are dropped later)
       const emit = (inner: string) => `</w:r>${inner}<w:r>`
+      // before PAGE/NUMPAGES: neither word boundary matches inside SECTIONPAGES,
+      // so it used to fall through to the cached result (often dropped, else a stale "1")
+      if (/\bSECTIONPAGES\b/.test(instr)) {
+        return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
+      }
       if (/\bNUMPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
       }
@@ -6837,6 +6842,7 @@ function hfContentFromXml(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
+      if (/\bSECTIONPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
       if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
       if (/\bPAGE\b/.test(instr)) {
         hasPageNumber = true

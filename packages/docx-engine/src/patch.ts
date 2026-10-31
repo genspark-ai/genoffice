@@ -84,7 +84,7 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from './types'
-import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, SECTION_PAGES_MARK, TOTAL_PAGES_MARK } from './types'
 import { patchParagraphTexts } from './text-patch'
 import { balanceFieldChars } from './field-balance'
 import {
@@ -2387,6 +2387,13 @@ function headerFooterPartXml(
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
     `<w:r><w:t>${Math.max(1, Math.round(pageCount))}</w:t></w:r>` +
     '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  const sectionPagesField =
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> SECTIONPAGES </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    '<w:r><w:t>1</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  const totalMarksRe = new RegExp(`([${TOTAL_PAGES_MARK}${SECTION_PAGES_MARK}])`)
   let content: string
   /** edited layout-table cells of the n-th top-level w:tbl (in part order), to patch into its bytes */
   let cellPatches: (tblIndex: number) => Array<Array<CellParaPatch[] | null> | null> | null = () =>
@@ -2407,11 +2414,16 @@ function headerFooterPartXml(
       for (const run of paraRuns) {
         if (
           run.text.includes(TOTAL_PAGES_MARK) ||
+          run.text.includes(SECTION_PAGES_MARK) ||
           run.text.includes(PAGE_MARK) ||
           (!pageEmitted && run.text.includes('#'))
         ) {
-          run.text.split(TOTAL_PAGES_MARK).forEach((seg, k) => {
-            if (k > 0) runs += numPagesField
+          // SECTIONPAGES and NUMPAGES split alike: a mark between two segments is its field
+          run.text.split(totalMarksRe).forEach((seg, k) => {
+            if (k % 2 === 1) {
+              runs += seg === SECTION_PAGES_MARK ? sectionPagesField : numPagesField
+              return
+            }
             if (seg.includes(PAGE_MARK)) {
               seg.split(PAGE_MARK).forEach((piece, j) => {
                 if (j > 0) runs += pageField
@@ -2476,7 +2488,11 @@ function headerFooterPartXml(
       return grid.length > 0 ? grid : null
     }
   } else {
-    const textWithTotal = (t: string) => t.split(TOTAL_PAGES_MARK).map(textRun).join(numPagesField)
+    const textWithTotal = (t: string) =>
+      t
+        .split(SECTION_PAGES_MARK)
+        .map((s) => s.split(TOTAL_PAGES_MARK).map(textRun).join(numPagesField))
+        .join(sectionPagesField)
     const runs: string[] = []
     if (hf.text.includes(PAGE_MARK)) {
       runs.push(hf.text.split(PAGE_MARK).map(textWithTotal).join(pageField))
