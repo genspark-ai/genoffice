@@ -19,6 +19,8 @@ export interface RefreshTarget {
   readonly height: number
 }
 
+import { resolveRelTarget } from './xlsx-drawing-add'
+
 export interface RefreshedTable {
   readonly headers: readonly string[]
   readonly rows: readonly (readonly string[])[]
@@ -86,6 +88,100 @@ export function queryTableBinding(queryTableXml: string): QueryTableBinding | nu
   const ref = /\bref="([^"]+)"/.exec(open)?.[1]
   if (!connectionId || !ref) return null
   return { connectionId, ref }
+}
+
+/// A query table bound to a sheet: where its rows land.
+export interface BoundConnection {
+  readonly connection: RefreshableConnection
+  readonly sheetName: string
+  readonly range: string
+}
+
+/// The package parts the connection walk needs.
+export interface ConnectionPackageParts {
+  readonly connectionsXml: string
+  readonly workbookXml: string
+  readonly workbookRelsXml: string
+  /// The `xl/worksheets/_rels/sheetN.xml.rels` parts, with the sheet part they
+  /// belong to (`xl/worksheets/sheetN.xml`) — a relationship target is relative
+  /// to that part, not to the rels file.
+  readonly sheetRels: readonly { readonly partPath: string; readonly xml: string }[]
+  /// The `xl/queryTables/queryTableN.xml` parts, with their part path.
+  readonly queryTables: readonly { readonly path: string; readonly xml: string }[]
+}
+
+const QUERY_TABLE_REL = 'relationships/queryTable'
+
+/** The sheet a `xl/worksheets/sheetN.xml` belongs to, by its name. */
+function sheetNamesByPart(workbookXml: string, workbookRelsXml: string): Map<string, string> {
+  const relTargets = new Map<string, string>()
+  for (const match of workbookRelsXml.matchAll(/<Relationship\b[^>]*>/g)) {
+    const open = match[0]
+    const id = /\bId="([^"]+)"/.exec(open)?.[1]
+    const target = /\bTarget="([^"]+)"/.exec(open)?.[1]
+    if (!id || !target) continue
+    try {
+      relTargets.set(id, resolveRelTarget('xl/workbook.xml', target))
+    } catch {
+      /* an unresolvable target names no sheet */
+    }
+  }
+  const names = new Map<string, string>()
+  for (const match of workbookXml.matchAll(/<sheet\b[^>]*\/>/g)) {
+    const open = match[0]
+    const name = /\bname="([^"]*)"/.exec(open)?.[1]
+    const relId = /\br:id="([^"]+)"/.exec(open)?.[1]
+    if (!name || !relId) continue
+    const target = relTargets.get(relId)
+    if (!target) continue
+    names.set(target, name.replace(/&amp;/g, '&'))
+  }
+  return names
+}
+
+/** The query table part a sheet's relationships point at. */
+function queryTableTargetsOf(sheetPartPath: string, sheetRelsXml: string): string[] {
+  const targets: string[] = []
+  for (const match of sheetRelsXml.matchAll(/<Relationship\b[^>]*>/g)) {
+    const open = match[0]
+    if (!open.includes(QUERY_TABLE_REL)) continue
+    const target = /\bTarget="([^"]+)"/.exec(open)?.[1]
+    if (!target) continue
+    try {
+      targets.push(resolveRelTarget(sheetPartPath, target))
+    } catch {
+      /* an unresolvable target names no query table */
+    }
+  }
+  return targets
+}
+
+/**
+ * The queries this workbook can refresh, with the sheet and range each one
+ * fills. A connection with no query table is a connection-only query: it has
+ * no rows of its own, so there is nowhere to write the answer and it is left
+ * out.
+ */
+export function boundConnections(parts: ConnectionPackageParts): BoundConnection[] {
+  const connections = refreshableConnections(parts.connectionsXml)
+  if (connections.length === 0) return []
+  const sheetNames = sheetNamesByPart(parts.workbookXml, parts.workbookRelsXml)
+  const queryTables = new Map(parts.queryTables.map((q) => [q.path, q.xml]))
+  const out: BoundConnection[] = []
+  for (const sheetRels of parts.sheetRels) {
+    const sheetName = sheetNames.get(sheetRels.partPath)
+    if (!sheetName) continue
+    for (const target of queryTableTargetsOf(sheetRels.partPath, sheetRels.xml)) {
+      const xml = queryTables.get(target)
+      if (!xml) continue
+      const binding = queryTableBinding(xml)
+      if (!binding) continue
+      const connection = connections.find((c) => c.id === binding.connectionId)
+      if (!connection) continue
+      out.push({ connection, sheetName, range: binding.ref })
+    }
+  }
+  return out
 }
 
 /// A cell edit the save path understands.

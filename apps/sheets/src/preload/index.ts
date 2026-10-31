@@ -50,6 +50,12 @@ import type {
   UserSkillEntry,
 } from '../shared/desktop-api'
 import {
+  workbookConnectionsRequestSchema,
+  workbookConnectionsResultSchema,
+  workbookRefreshRequestSchema,
+  workbookRefreshResultSchema,
+} from '../shared/desktop-api'
+import {
   HEADER_FOOTER_PICTURE_POSITION,
   IPC_CHANNELS,
   MAX_CREATE_DOCUMENT_CONTENT_CHARS,
@@ -215,6 +221,22 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parseFindCellsResult(result)
+  },
+  async listWorkbookConnections(request) {
+    const validatedRequest = workbookConnectionsRequestSchema.parse(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listWorkbookConnections,
+      validatedRequest,
+    )
+    return workbookConnectionsResultSchema.parse(result)
+  },
+  async refreshWorkbookConnection(request) {
+    const validatedRequest = workbookRefreshRequestSchema.parse(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.refreshWorkbookConnection,
+      validatedRequest,
+    )
+    return workbookRefreshResultSchema.parse(result)
   },
   async readWorkbookRowOutline(request) {
     const validatedRequest = parseFormulaCellsRequest(request)

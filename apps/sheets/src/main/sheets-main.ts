@@ -78,6 +78,7 @@ import {
   configuredAuthorName,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
+import { fetchRemoteTable } from '@genoffice/electron-utils/remote-table'
 import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 
@@ -124,9 +125,11 @@ import {
 import { parseFileToText } from '@genoffice/file-parse'
 import type { CellEdit, SheetStructuralOps } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
+  readArchiveEntriesText,
   readArchiveEntryText,
   saveWorkbookViaSidecar,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
+import { boundConnections } from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { readWorkbookRedactionPart } from './workbook-redactions'
@@ -152,7 +155,11 @@ import {
   workbookRecalcResultSchema,
   workbookMediaRequestSchema,
   workbookMediaResultSchema,
+  workbookConnectionsRequestSchema,
+  workbookConnectionsResultSchema,
   workbookPivotRequestSchema,
+  workbookRefreshRequestSchema,
+  workbookRefreshResultSchema,
   workbookRedactionsRequestSchema,
   workbookRedactionsResultSchema,
   localImageRequestSchema,
@@ -3410,6 +3417,72 @@ export function registerSheetsIpc(): void {
       readArchiveEntryText(entry.client, session.snapshotPath, request.cachePath),
     ])
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
+  })
+
+  // The workbook's refreshable data connections: a web or text query names a
+  // place to read from and a range to fill. Read from the session snapshot so
+  // the list matches what the renderer shows.
+  ipcMain.handle(IPC_CHANNELS.listWorkbookConnections, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookConnectionsRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    const manifest = z
+      .object({ entries: z.array(z.object({ name: z.string() })) })
+      .parse(await entry.client.archiveManifest(session.snapshotPath))
+    const names = manifest.entries.map((e) => e.name)
+    // The sidecar fails the whole request for a missing entry, so ask only for
+    // parts the manifest says are there.
+    const wanted = names.filter(
+      (name) =>
+        name === 'xl/connections.xml' ||
+        name === 'xl/workbook.xml' ||
+        name === 'xl/_rels/workbook.xml.rels' ||
+        name.startsWith('xl/queryTables/') ||
+        /^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(name),
+    )
+    if (!wanted.includes('xl/connections.xml')) {
+      return workbookConnectionsResultSchema.parse({ connections: [] })
+    }
+    const texts = await readArchiveEntriesText(entry.client, session.snapshotPath, wanted)
+    const bound = boundConnections({
+      connectionsXml: texts.get('xl/connections.xml') ?? '',
+      workbookXml: texts.get('xl/workbook.xml') ?? '',
+      workbookRelsXml: texts.get('xl/_rels/workbook.xml.rels') ?? '',
+      sheetRels: wanted
+        .filter((name) => name.startsWith('xl/worksheets/_rels/'))
+        .map((name) => ({
+          partPath: name.replace('/_rels/', '/').replace(/\.rels$/, ''),
+          xml: texts.get(name) ?? '',
+        })),
+      queryTables: wanted
+        .filter((name) => name.startsWith('xl/queryTables/'))
+        .map((name) => ({ path: name, xml: texts.get(name) ?? '' })),
+    })
+    return workbookConnectionsResultSchema.parse({
+      connections: bound.map((b) => ({
+        id: b.connection.id,
+        name: b.connection.name,
+        kind: b.connection.kind,
+        source: b.connection.source,
+        sheetName: b.sheetName,
+        range: b.range,
+      })),
+    })
+  })
+
+  // Fetching a connection's table: the address comes out of the workbook, so it
+  // goes through the SSRF gate (a workbook could name loopback, a cloud
+  // metadata endpoint or a UNC share).
+  ipcMain.handle(IPC_CHANNELS.refreshWorkbookConnection, async (event, input: unknown) => {
+    sessionFor(event)
+    const request = workbookRefreshRequestSchema.parse(input)
+    const table = await fetchRemoteTable(request.url)
+    if (!table) throw new Error('Could not read a table from that address.')
+    return workbookRefreshResultSchema.parse({
+      headers: [...table.headers],
+      rows: table.rows.map((row) => [...row]),
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.readWorkbookRedactions, async (event, input: unknown) => {

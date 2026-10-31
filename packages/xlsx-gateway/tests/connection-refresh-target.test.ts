@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   a1RangeToTarget,
+  boundConnections,
   queryTableBinding,
   refreshableConnections,
   tableToCellEdits,
@@ -57,6 +58,75 @@ describe('queryTableBinding', () => {
   it('returns null when the part names neither a connection nor a range', () => {
     expect(queryTableBinding('<queryTable name="Rates"/>')).toBeNull()
     expect(queryTableBinding('<not-a-query-table/>')).toBeNull()
+  })
+})
+
+const WORKBOOK_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Rates" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`
+
+const WORKBOOK_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`
+
+const SHEET_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/>
+</Relationships>`
+
+const QUERY_TABLE_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="Rates" connectionId="1" ref="A1:D21"/>`
+
+describe('boundConnections', () => {
+  const parts = {
+    connectionsXml: CONNECTIONS_XML,
+    workbookXml: WORKBOOK_XML,
+    workbookRelsXml: WORKBOOK_RELS_XML,
+    sheetRels: [{ partPath: 'xl/worksheets/sheet1.xml', xml: SHEET_RELS_XML }],
+    queryTables: [{ path: 'xl/queryTables/queryTable1.xml', xml: QUERY_TABLE_XML }],
+  }
+
+  it('binds a refreshable query to the sheet and range it fills', () => {
+    expect(boundConnections(parts)).toEqual([
+      {
+        connection: {
+          id: '1',
+          name: 'Rates',
+          kind: 'web',
+          source: 'https://example.com/rates.html',
+        },
+        sheetName: 'Rates',
+        range: 'A1:D21',
+      },
+    ])
+  })
+
+  it('leaves out a connection that has no query table to write into', () => {
+    const result = boundConnections({
+      ...parts,
+      queryTables: [],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('leaves out a query table whose connection is not refreshable', () => {
+    const result = boundConnections({
+      ...parts,
+      queryTables: [
+        {
+          path: 'xl/queryTables/queryTable1.xml',
+          xml: QUERY_TABLE_XML.replace('connectionId="1"', 'connectionId="3"'),
+        },
+      ],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('finds nothing in a package without connections', () => {
+    expect(boundConnections({ ...parts, connectionsXml: '<connections/>' })).toEqual([])
   })
 })
 

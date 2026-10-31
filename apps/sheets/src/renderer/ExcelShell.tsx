@@ -76,7 +76,7 @@ import { stepFontSize } from './font-size-ladder'
 
 import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
-import type { AttachmentMeta } from '../shared/desktop-api'
+import type { AttachmentMeta, WorkbookConnection as QueryConnection } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
 import type { SelectionAskAnchor } from './ai/selection-ask'
@@ -416,6 +416,8 @@ interface ExcelShellProps {
   readonly pageLayout: PageLayoutEcho
   /// Manual-recalc mode echo for the Calculation Options menu.
   readonly calcManual: boolean
+  /// The workbook's refreshable queries (web / text queries).
+  readonly queryConnections: readonly QueryConnection[]
   /// Goal Seek solve; rejects with a user-facing Error message.
   readonly onGoalSeek: (setCell: string, toValue: number, byCell: string) => Promise<GoalSeekResult>
   /// Data Table (What-If) run; rejects with a user-facing Error message.
@@ -566,6 +568,7 @@ export function ExcelShell({
   onGetCreateTableRange,
   pageLayout,
   calcManual,
+  queryConnections,
   onGoalSeek,
   onDataTable,
   onGetDataTableRange,
@@ -991,6 +994,7 @@ export function ExcelShell({
               .map((entry) => entry.name)
           }}
           calcManual={calcManual}
+          queryConnections={queryConnections}
           onRefreshPivot={onRefreshPivot}
           onIsSelectionInPivot={onIsSelectionInPivot}
           onCommand={dispatchCommand}
@@ -1956,6 +1960,7 @@ function Ribbon({
   onAiToggle,
   onListNames,
   calcManual,
+  queryConnections,
   onRefreshPivot,
   onIsSelectionInPivot,
 }: {
@@ -1979,8 +1984,10 @@ function Ribbon({
   readonly onCommand: (command: string) => void
   /** Defined names for the Use in Formula menu. */
   readonly onListNames: () => readonly string[]
-  /** Manual-recalc mode echo for the Calculation Options menu. */
+  /** Manual-recalc mode lower for the Calculation Options menu. */
   readonly calcManual: boolean
+  /** The workbook's refreshable queries, listed under Data ▸ Get data. */
+  readonly queryConnections: readonly QueryConnection[]
   /** Open the AI panel and immediately send the given prompt */
   readonly onAiRun: (prompt: string) => void
   /** AI side panel visibility (docs/slides parity: the entry button toggles it) */
@@ -3073,6 +3080,17 @@ function Ribbon({
               <ToolSymbol symbol="⟳" />
               {t('appRefreshAll')}
             </button>
+            {queryConnections.length > 0
+              ? largeMenu(
+                  t('appQueryConnections'),
+                  '⇄',
+                  t('appQueryConnectionsTitle'),
+                  queryConnections.map((c) => ({
+                    value: `query-refresh:${c.id}`,
+                    label: `${c.name} — ${queryConnectionHost(c.source)}`,
+                  })),
+                )
+              : null}
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupSortFilter')}>
@@ -4543,4 +4561,14 @@ function RibbonButton({
 
 function fillSeriesDefaultType(numberFormat: string | undefined): FillSeriesType {
   return numberFormat && numberFormatLabel(numberFormat) === 'Date' ? 'date' : 'linear'
+}
+
+/// The host a query reads from, shown next to its name so the reader can see
+/// where a refresh would go before they ask for one.
+function queryConnectionHost(source: string): string {
+  try {
+    return new URL(source).host
+  } catch {
+    return source
+  }
 }
