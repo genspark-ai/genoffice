@@ -93,6 +93,12 @@ export function thinkingShapeFor(model: string): ThinkingShape {
   if (/(^|\/)hy[34](-|$)/.test(id)) return { kind: 'openai-effort', levels: ['low', 'high'] }
   // iFlytek Spark X2+ controls its thinking mode through a thinking parameter
   if (/(^|\/)spark-x/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
+  // MiniMax M3/M3.1: reasoning_effort low..max on the compatible route —
+  // thinking is always on (a disabled/none attempt answers 400), so no none.
+  if (/(^|\/)minimax-m/.test(id))
+    return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
+  // MiMo V2.6: thinking.type enabled/disabled, on by default
+  if (/(^|\/)mimo-/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
   // DashScope Qwen 3.x commercial tiers: enable_thinking
   if (/(^|\/)qwen\d/.test(id)) return { kind: 'qwen-toggle', levels: ['none', 'medium'] }
   // xAI's grok takes the OpenAI-style effort field on the current lineup

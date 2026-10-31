@@ -87,9 +87,30 @@ describe('thinkingShapeFor', () => {
       kind: 'openai-effort',
       levels: ['none', 'low', 'medium', 'high'],
     })
-    for (const model of ['MiniMax-M3.1-Flash', 'Ling-3.0-flash', 'LongCat-2.0', 'mimo-v2.6-pro']) {
+    for (const model of ['Ling-3.0-flash', 'LongCat-2.0']) {
       expect(thinkingShapeFor(model).levels, model).toEqual([])
     }
+  })
+
+  it('minimax carries the five effort rungs without none; mimo is a switch', () => {
+    expect(thinkingShapeFor('MiniMax-M3.1-Flash').levels).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(thinkingShapeFor('MiniMax-M3').levels).not.toContain('none')
+    expect(
+      openAiEffortFor({ model: 'MiniMax-M3.1-Flash', thinking: { MiniMax: 'xhigh' } }),
+    ).toBeUndefined()
+    expect(
+      openAiEffortFor({ model: 'MiniMax-M3.1-Flash', thinking: { 'MiniMax-M3.1-Flash': 'xhigh' } }),
+    ).toBe('xhigh')
+    expect(thinkingShapeFor('mimo-v2.6-pro')).toEqual({
+      kind: 'toggle',
+      levels: ['none', 'medium'],
+    })
   })
 
   it('doubao, hunyuan, spark and mistral-medium carry their documented surfaces', () => {
