@@ -13,6 +13,22 @@
 /** Long enough to be searchable, short enough to survive a file dialog. */
 const MAX_NAME_LENGTH = 60
 
+/**
+ * The output budget a naming request carries.
+ *
+ * The name itself is a few words, but a reasoning model spends tokens thinking
+ * before it answers, and the thinking counts against the same budget: with 64
+ * tokens, deepseek-flash returned `finish_reason: "length"` with every token in
+ * `reasoning_content` and not one content token (measured 2026-10-31; the same
+ * prompt with 200 tokens thought for ~130 and then named the document). A starved
+ * call "succeeds" with an empty answer, which the callers treat as "keep the name
+ * the document had" — so the button silently did nothing. 2048 leaves room for a
+ * thinking preamble plus the name while staying a trivially cheap one-shot call;
+ * a non-thinking model still stops after a dozen tokens, because the budget is a
+ * ceiling, not a target.
+ */
+export const NAMING_MAX_TOKENS = 2048
+
 /** Windows device names, lowercased, with or without an extension. */
 const RESERVED_STEMS = new Set([
   'con',
