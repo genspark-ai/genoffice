@@ -1197,6 +1197,57 @@ describe('TOC entries without TOC styles (PAGEREF behind a right tab)', () => {
     expect(reparsed.blocks[2].type).toBe('passthrough')
   })
 
+  // #2331: a TOC whose entry style is not named "toc N" ("Contents 1", a localized
+  // name) and whose right dot-leader stop lives only in that style
+  const CUSTOM_TOC_STYLES =
+    '<w:style w:type="paragraph" w:styleId="Mokcha1"><w:name w:val="Contents 1"/>' +
+    '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9016"/></w:tabs></w:pPr></w:style>'
+  const customEntry = (n: number, page: string, extra = '') =>
+    `<w:p><w:pPr><w:pStyle w:val="Mokcha1"/></w:pPr>${extra}${PAGEREF_ENTRY(n, page)}`
+  const CUSTOM_TOC =
+    customEntry(
+      1,
+      '1',
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>',
+    ) +
+    '</w:p>' +
+    customEntry(2, '4') +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+
+  it('an entry whose right tab stop comes only from a custom style is still a toc line (#2331)', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: CUSTOM_TOC, extraStylesXml: CUSTOM_TOC_STYLES }),
+    )
+    const [head, tail] = doc.blocks
+    expect(head.type).toBe('passthrough')
+    expect(head.fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'Chapter 1',
+      right: '1',
+      leader: 'dot',
+    })
+    expect(tail.fieldDisplay).toMatchObject({ kind: 'tocLine', left: 'Chapter 2', right: '4' })
+  })
+
+  it('a PAGEREF cross-reference without a run tab stays plain text under a right-tab style', async () => {
+    const xref =
+      '<w:p><w:pPr><w:pStyle w:val="Mokcha1"/></w:pPr><w:r><w:t xml:space="preserve">See page </w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGEREF _Ref1 \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> DATE </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>today</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: xref, extraStylesXml: CUSTOM_TOC_STYLES }),
+    )
+    expect(doc.blocks[0].fieldDisplay?.kind).not.toBe('tocLine')
+  })
+
   it('a fldSimple PAGEREF keeps the enclosing bookmark link and saves inside it', async () => {
     const simple =
       '<w:p><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9746"/></w:tabs></w:pPr>' +
