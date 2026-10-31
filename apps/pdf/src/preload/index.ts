@@ -80,6 +80,8 @@ const api: PdfApi = {
     return () => ipcRenderer.removeListener(PDF_CHANNELS.saveAsFlow, listener)
   },
   print: (job) => ipcRenderer.invoke(PDF_CHANNELS.print, job),
+  printFile: (job) => ipcRenderer.invoke(PDF_CHANNELS.printFile, job),
+  printerOptions: (queue: string) => ipcRenderer.invoke(PDF_CHANNELS.printerOptions, queue),
   listPrinters: () => ipcRenderer.invoke(PDF_CHANNELS.printers),
   onPrintRequest: (handler) => {
     const listener = () => handler()

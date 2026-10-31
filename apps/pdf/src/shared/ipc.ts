@@ -2,7 +2,9 @@ import type { AiPanelPrefs } from '@genoffice/ui'
 import type { Lang } from '@genoffice/i18n'
 import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
 import type { PrintDuplex, PrintJobOptions, PrinterInfo } from '@genoffice/electron-utils/print-job'
+import type { PrinterOption } from '@genoffice/electron-utils/printer-options'
 export type { PrintDuplex, PrintJobOptions, PrinterInfo }
+export type { PrinterOption }
 
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
@@ -57,6 +59,8 @@ export const PDF_CHANNELS = {
   saveAsFlow: 'pdf:save-as-flow',
   printRequest: 'pdf:print-request',
   print: 'pdf:print',
+  printFile: 'pdf:print-file',
+  printerOptions: 'pdf:printer-options',
   printers: 'pdf:printers',
   fileRenamed: 'pdf:file-renamed',
   getLanguage: 'app:get-language',
@@ -1188,8 +1192,16 @@ export interface PdfApi {
   /** print this window's print stylesheet output on a named printer ('' = OS default)
    *  without the system dialog; ok=false without error = canceled */
   print(job: PrintJobOptions): Promise<{ ok: boolean; error?: string }>
+  /** macOS CUPS route: spool the flushed file itself through lp — the vector
+   *  original reaches the driver untouched (no rasterization pass). pages are
+   *  1-based file pages; undefined = the whole document. ok=false without
+   *  error = canceled (never happens on this route; both sides report). */
+  printFile(job: PrintJobOptions & { pages?: number[] }): Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */
   listPrinters(): Promise<PrinterInfo[]>
+  /** the driver option groups a queue advertises (quality, color, media type),
+   *  for the print dialog's driver-options dropdowns; empty when none */
+  printerOptions(queue: string): Promise<PrinterOption[]>
   /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */
   onFileRenamed(handler: (newPath: string) => void): () => void
   getLanguage(): Promise<Lang>

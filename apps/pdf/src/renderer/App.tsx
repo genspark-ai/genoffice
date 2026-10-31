@@ -137,7 +137,13 @@ import {
   remapOutlineTree,
 } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
-import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
+import type {
+  PdfEncryptionInput,
+  PdfPermissions,
+  PrintDuplex,
+  PrinterInfo,
+  PrinterOption,
+} from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
@@ -1102,6 +1108,11 @@ export default function App() {
   const [printCopies, setPrintCopies] = useState(1)
   const [printCollate, setPrintCollate] = useState(true)
   const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
+  // the chosen printer's driver option groups (quality, color, media type) and
+  // what the user picked from them; empty for the system dialog and on
+  // platforms where the CUPS route does not run
+  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
+  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   /** Page-crop dialog: rendered page bitmap + which page it shows */
   const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
   const [cropAllPages, setCropAllPages] = useState(false)
@@ -6705,11 +6716,25 @@ export default function App() {
             copies: printCopies,
             collate: printCollate,
             duplex: printDuplex,
+            driverOptions: driverOptions
+              .filter(
+                (g) =>
+                  driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
+              )
+              .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
           }
     try {
       await flushThen(async () => {
         setPrinting(true)
         try {
+          if (job && IS_MAC) {
+            // macOS named printer: lp spools the flushed file itself — the
+            // vector original reaches the driver untouched, instead of a
+            // 150-200 DPI raster pass (genoffice#2347's route, quality half)
+            const r = await window.pdfApi.printFile({ ...job, pages })
+            if (!r.ok && r.error) opFailed(r.error)
+            return
+          }
           const data = await window.pdfApi.readFile(filePath)
           const pdoc = await getDocument({ data: new Uint8Array(data), ...DOC_OPTS }).promise
           try {
@@ -11509,7 +11534,16 @@ export default function App() {
                     <select
                       className="pdf-modal-input"
                       value={printDevice}
-                      onChange={(e) => setPrintDevice(e.target.value)}
+                      onChange={(e) => {
+                        setPrintDevice(e.target.value)
+                        setDriverChoices({})
+                        setDriverOptions([])
+                        if (e.target.value && IS_MAC)
+                          void window.pdfApi
+                            .printerOptions(e.target.value)
+                            .then(setDriverOptions)
+                            .catch(() => setDriverOptions([]))
+                      }}
                     >
                       <option value="">{t('printDefaultPrinter')}</option>
                       {printers.map((p) => (
@@ -11568,6 +11602,24 @@ export default function App() {
                       ))}
                     </select>
                   </label>
+                  {driverOptions.map((group) => (
+                    <label key={group.name} className="pdf-modal-row pdf-print-field">
+                      <span>{group.translation}</span>
+                      <select
+                        className="pdf-modal-input"
+                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
+                        onChange={(e) =>
+                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
+                        }
+                      >
+                        {group.values.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
                   <div className="pdf-print-divider" />
                   <label className="pdf-modal-row">
                     <input
