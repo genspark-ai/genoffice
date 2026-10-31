@@ -392,8 +392,12 @@ export interface SaveOptions {
   /**
    * Block-level content controls (w:sdt) for the saved body. `wrap` puts the
    * listed body blocks into one new control (the blocks stay individually
-   * editable), `unwrap` removes the wrapper of the control with that tag and
-   * leaves its blocks as plain body children.
+   * editable). `unwrap` removes the wrapper of every control with that tag and
+   * leaves its blocks as plain body children; nested controls are unwrapped
+   * level by level (unwrapping an inner tag keeps the outer shell, unwrapping
+   * the outer tag keeps inner controls as their blocks' own shells) and a tag
+   * that appears more than once is unwrapped everywhere. Inline (run-level)
+   * controls are reported read-only and are not unwrapped by this option.
    */
   contentControls?: {
     wrap?: Array<{ docxIndexes: number[]; spec: ContentControlSpec }>
@@ -1615,19 +1619,71 @@ export async function saveDocx(
   }
 
   // Block-level content controls: a new control wraps the blocks of one range,
-  // an unwrap drops the wrapper of the control with that tag. Both work on the
-  // emitted bytes, so the blocks inside stay individually editable.
+  // an unwrap drops the wrapper of every control carrying that tag. Both work
+  // on the emitted bytes, so the blocks inside stay individually editable.
+  // Nested controls unwrap level by level (matching an inner tag keeps the
+  // outer shell; matching the outermost keeps inner controls as the blocks'
+  // own shells) and a tag that appears more than once is unwrapped everywhere.
   const unwrapTags = new Set((options.contentControls?.unwrap ?? []).map((u) => u.tag))
+  // A split control keeps its open bytes on one block and its close bytes on
+  // another, so strip by the owning block + offset: the closing bytes of
+  // nested controls are identical strings and content matching would remove
+  // the wrong level.
+  interface UnwrapSlice {
+    offset: number
+    length: number
+    xml: string
+  }
+  const unwrapSlicesByIndex = new Map<number, UnwrapSlice[]>()
+  // fragments saved without a docxIndex (self-contained editor xml) are
+  // stripped by content: prefix first, then suffix, like the shell contract
+  const unwrapShellBytes: string[] = []
+  const addUnwrapSlice = (
+    docxIndex: number | undefined,
+    offset: number | undefined,
+    xml: string,
+  ): void => {
+    if (!xml) return
+    if (!unwrapShellBytes.includes(xml)) unwrapShellBytes.push(xml)
+    if (docxIndex === undefined || offset === undefined) return
+    const slices = unwrapSlicesByIndex.get(docxIndex) ?? []
+    if (slices.some((slice) => slice.offset === offset && slice.length === xml.length)) return
+    slices.push({ offset, length: xml.length, xml })
+    unwrapSlicesByIndex.set(docxIndex, slices)
+  }
+  for (const block of parsed.blocks) {
+    const chain = block.sdtShells ?? (block.sdtShell ? [block.sdtShell] : [])
+    for (const shell of chain) {
+      if (!unwrapTags.has(shell.tag)) continue
+      addUnwrapSlice(shell.openBlock, shell.openOffset, shell.openXml)
+      addUnwrapSlice(shell.closeBlock, shell.closeOffset, shell.closeXml)
+    }
+  }
+  const stripUnwrappedBytes = (xml: string): string => {
+    for (const bytes of unwrapShellBytes) {
+      if (xml.startsWith(bytes)) xml = xml.slice(bytes.length)
+      else if (xml.endsWith(bytes)) xml = xml.slice(0, xml.length - bytes.length)
+    }
+    return xml
+  }
   // an edited block saves as its original xml (shell bytes included), so the
-  // shell is stripped by content, whichever block kind carries it
-  const unwrapShells = parsed.blocks
-    .map((b) => b.sdtShell)
-    .filter((shell): shell is NonNullable<typeof shell> => !!shell && unwrapTags.has(shell.tag))
-  const stripUnwrappedShell = (xml: string): string => {
-    for (const shell of unwrapShells) {
-      if (shell.openXml && xml.startsWith(shell.openXml)) xml = xml.slice(shell.openXml.length)
-      if (shell.closeXml && xml.endsWith(shell.closeXml))
-        xml = xml.slice(0, xml.length - shell.closeXml.length)
+  // shell is stripped from whichever block kind carries it
+  const stripUnwrappedShell = (xml: string, docxIndex: number | undefined): string => {
+    // a fragment without a docxIndex carries its own shell bytes: strip by
+    // content. A known block only owns the slices recorded for it (a block
+    // outside the unwrapped control must stay byte-identical).
+    if (docxIndex === undefined) return stripUnwrappedBytes(xml)
+    const slices = unwrapSlicesByIndex.get(docxIndex)
+    if (!slices || slices.length === 0) return xml
+    for (const slice of [...slices].sort((a, b) => b.offset - a.offset)) {
+      if (xml.slice(slice.offset, slice.offset + slice.length) === slice.xml) {
+        xml = xml.slice(0, slice.offset) + xml.slice(slice.offset + slice.length)
+        continue
+      }
+      // the emitted xml no longer matches the original slice (edited block):
+      // fall back to the first exact occurrence
+      const at = xml.indexOf(slice.xml)
+      if (at !== -1) xml = xml.slice(0, at) + xml.slice(at + slice.xml.length)
     }
     return xml
   }
@@ -1660,17 +1716,20 @@ export async function saveDocx(
       if (!el) throw new Error(`invalid docxIndex ${fb.docxIndex}`)
       xml = documentXml.slice(el.start, el.end)
       fbDocxIndex = fb.docxIndex
-      if (unwrapShells.length > 0) xml = stripUnwrappedShell(xml)
+      if (unwrapSlicesByIndex.size > 0) xml = stripUnwrappedShell(xml, fb.docxIndex)
     } else if (fb.kind === 'generated') {
       if (fb.docxIndex !== undefined) fbDocxIndex = fb.docxIndex
       xml = generateParagraphXml(fb.block, genCtx)
-      // If the original paragraph was inside a w:sdt shell, re-wrap it
+      // If the original paragraph was inside a w:sdt shell, re-wrap it. The
+      // chain is flattened here to the outermost shell (nested regenerated
+      // paragraphs inside several controls are not re-wrapped; an untouched
+      // block keeps its chain byte-identically through the original path).
       const shell = fb.block.sdtShell
       if (shell && !unwrapTags.has(shell.tag)) {
         xml = shell.openXml + xml + shell.closeXml
       }
     } else if (fb.kind === 'xml') {
-      xml = unwrapShells.length > 0 ? stripUnwrappedShell(fb.xml) : fb.xml
+      xml = unwrapSlicesByIndex.size > 0 ? stripUnwrappedShell(fb.xml, fb.docxIndex) : fb.xml
       fbDocxIndex = fb.docxIndex
       if (fb.replaceImage) xml = retargetImageBlip(xml, embedImageMedia(fb.replaceImage))
     } else if (fb.kind === 'chart') {

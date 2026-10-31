@@ -38,6 +38,7 @@ import type {
   DocDefaults,
   FieldRun,
   InkInfo,
+  InlineContentControl,
   NoteInfo,
   NoteRun,
   NoteProps,
@@ -238,7 +239,7 @@ import {
   resolveMainDocumentPath,
   resolveRelationshipTargetPath,
 } from './parse-package'
-import { parseSdtBlock, sdtMeta, sdtTableXml, splitSdtParts } from './parse-sdt'
+import { parseSdtBlock, sdtMeta, sdtRanges, sdtTableXml, splitSdtParts } from './parse-sdt'
 import { sdtCheckboxControl } from './checkbox-control'
 import { paraCsFormat, parseStyles } from './parse-styles'
 import {
@@ -489,6 +490,7 @@ export async function parseDocx(
     referenceOnlyComments,
     sectionAt,
     docDefaults,
+    sdtGroupSeq: 0,
     ...(defaultParaStyle ? { defaultParaStyle } : {}),
     xmlSpacePreserve: partXmlSpacePreserve(documentXml, 'w:document'),
     ...(documentXml.includes('<v:shapetype')
@@ -508,13 +510,13 @@ export async function parseDocx(
       return cands.length > 0 ? Math.min(...cands) : undefined
     })(),
   }
-  let sdtGroupSeq = 0
   for (const el of scan.elements) {
     const xml = documentXml.slice(el.start, el.end)
     const sdtParts = el.name === 'w:sdt' ? splitSdtParts(xml) : null
     if (sdtParts) {
       const meta = sdtMeta(xml)
-      const group = sdtGroupSeq++
+      const group = buildCtx.sdtGroupSeq++
+      const firstPartIndex = elements.length
       for (const part of sdtParts) {
         const i = elements.length
         elements.push({ name: part.name, start: el.start + part.start, end: el.start + part.end })
@@ -527,12 +529,42 @@ export async function parseDocx(
           buildCtx,
         )
         block.originalXml = xml.slice(part.start, part.end)
+        // The control chain may be nested (an inner control around this child)
+        // and a split control's bytes live on several parts: record the owning
+        // block and offset per level so a specific level can be unwrapped later.
+        const ownerIndex = (offset: number): number => {
+          for (let k = 0; k < sdtParts.length; k++) {
+            const candidate = sdtParts[k]!
+            if (offset >= candidate.start && offset < candidate.end) return firstPartIndex + k
+          }
+          return i
+        }
+        const chain = part.chain.map((level, depth) => {
+          const openBlock = ownerIndex(level.openStart)
+          const closeBlock = ownerIndex(level.closeStart)
+          return {
+            ...level.shell,
+            level: depth,
+            group,
+            openBlock,
+            openOffset: level.openStart - sdtParts[openBlock - firstPartIndex]!.start,
+            closeBlock,
+            closeOffset: level.closeStart - sdtParts[closeBlock - firstPartIndex]!.start,
+          }
+        })
+        // compatibility: the legacy shell slices are the bytes each part owns
+        // around its child. A split control's outer open sits on the first part
+        // and its outer close on the last; middle parts whose child is nested in
+        // an inner control keep that inner control's wrapper fragments here
+        // (the editor's group rebalance relies on them).
         block.sdtShell = {
           ...meta,
           openXml: xml.slice(part.start, part.childStart),
           closeXml: xml.slice(part.childEnd, part.end),
           group,
         }
+        block.sdtShells = chain
+        if (part.name === 'w:p') attachInlineContentControls(block, childXml)
         if (!block.label) block.label = meta.alias || meta.tag || 'Content control'
         blocks.push(block)
         buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
@@ -555,6 +587,7 @@ export async function parseDocx(
     const i = elements.length
     elements.push(el)
     const block = await buildBlock(el, i, xml, buildCtx, zoteroFieldParagraphs.get(el.start))
+    if (el.name === 'w:p') attachInlineContentControls(block, xml)
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
   }
@@ -736,6 +769,9 @@ interface BuildContext {
   /** column span (twips) of a w:tblpPr table built just before the current block:
    *  it anchors to that block and shares its horizontal space */
   floatTableAhead?: { leftTwips: number; rightTwips: number }
+  /** next block-level control chain id: one id per w:sdt instance, shared by
+   *  every level and every block of a split control */
+  sdtGroupSeq: number
   /** settings.xml compatibilityMode (0 = legacy layout) */
   compatibilityMode?: number
   /** settings.xml compat flags the property resolver applies */
@@ -875,6 +911,37 @@ async function expandAltChunk(
   }
 }
 
+/**
+ * Run-level (inline) content controls inside a paragraph, read-only: their
+ * tag/title/lock/id and inner text are reported, while the paragraph's bytes
+ * (and therefore the run text/model) stay exactly as parsed.
+ */
+function inlineContentControlsOf(xml: string): InlineContentControl[] {
+  const out: InlineContentControl[] = []
+  for (const range of sdtRanges(xml)) {
+    const content = xml.slice(range.openEnd, range.closeStart)
+    // a w:sdt holding a paragraph or a table is a block container, not a
+    // run-level control; the body/split paths already report those
+    if (/<w:p[\s/>]|<w:tbl[\s>]/.test(content)) continue
+    const meta = sdtMeta(xml.slice(range.openStart, range.closeEnd))
+    out.push({
+      tag: meta.tag,
+      title: meta.alias,
+      lock: meta.lock,
+      id: meta.id,
+      text: plainText(content),
+    })
+  }
+  return out
+}
+
+/** attach the inline controls of a paragraph block, when it has any */
+function attachInlineContentControls(block: Block, xml: string): void {
+  if (block.inlineContentControls || !/^<w:p[\s/>]/.test(xml)) return
+  const inline = inlineContentControlsOf(xml)
+  if (inline.length > 0) block.inlineContentControls = inline
+}
+
 async function buildBlock(
   el: BodyElement,
   index: number,
@@ -953,7 +1020,7 @@ async function buildBlock(
     }
     const sdtResult = parseSdtBlock(xml)
     if (sdtResult) {
-      const { shell, pXml } = sdtResult
+      const { shell, pXml, chain } = sdtResult
       // Build a synthetic BodyElement for the inner w:p; the sdt's own document
       // offsets keep sectionAt on the right section
       const syntheticEl: BodyElement = { name: 'w:p', start: el.start, end: el.end }
@@ -962,6 +1029,19 @@ async function buildBlock(
       // Attach the sdt shell and preserve the full sdt XML as the original
       innerBlock.originalXml = xml
       innerBlock.sdtShell = shell
+      // A single-child control can still hold nested controls around its
+      // paragraph: keep the whole chain with the bytes it owns (this block owns
+      // the whole sdt xml in this path). No group id: a single block is not a
+      // multi-block split and the editor's group logic must not treat it as one.
+      innerBlock.sdtShells = chain.map((level, depth) => ({
+        ...level.shell,
+        level: depth,
+        openBlock: index,
+        openOffset: level.openStart,
+        closeBlock: index,
+        closeOffset: level.closeStart,
+      }))
+      attachInlineContentControls(innerBlock, pXml)
       // Label the block with the alias for UI affordance
       if (!innerBlock.label) {
         const aliasLabel = shell.alias || shell.tag || 'Content control'

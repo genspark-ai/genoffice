@@ -145,3 +145,144 @@ describe('content control unwrapping', () => {
     expect(textsOf(reparsed)).toEqual(['Before', 'Caption text', 'Signature block', 'After'])
   })
 })
+
+// ---- Nested block-level controls and inline (run-level) controls ----
+
+// outer wraps two paragraphs around an inner control, and a run-level control
+// sits inside the third paragraph (matches the genoffice#2062 nested fixture)
+const NESTED_SDT =
+  '<w:sdt><w:sdtPr><w:tag w:val="outer"/><w:alias w:val="Outer"/><w:id w:val="10"/>' +
+  '<w:lock w:val="sdtLocked"/><w:richText/></w:sdtPr><w:sdtContent>' +
+  PLAIN_P('outer para') +
+  '<w:sdt><w:sdtPr><w:tag w:val="inner"/><w:alias w:val="Inner"/><w:id w:val="11"/>' +
+  '<w:lock w:val="contentLocked"/><w:richText/></w:sdtPr><w:sdtContent>' +
+  PLAIN_P('inner para') +
+  '</w:sdtContent></w:sdt>' +
+  '<w:p><w:r><w:t>inline </w:t></w:r>' +
+  '<w:sdt><w:sdtPr><w:tag w:val="run"/><w:id w:val="12"/><w:text/></w:sdtPr>' +
+  '<w:sdtContent><w:r><w:t>INLINE</w:t></w:r></w:sdtContent></w:sdt>' +
+  '<w:r><w:t> tail</w:t></w:r></w:p>' +
+  '</w:sdtContent></w:sdt>'
+
+const NESTED_BODY = PLAIN_P('Before') + NESTED_SDT + PLAIN_P('After')
+
+const tagsOf = (doc: Awaited<ReturnType<typeof parseDocx>>): string[][] =>
+  doc.blocks
+    .filter((b) => !b.hidden)
+    .map((b) => (b.sdtShells ?? (b.sdtShell ? [b.sdtShell] : [])).map((shell) => shell.tag))
+
+const saveAllOriginal = (doc: Awaited<ReturnType<typeof parseDocx>>) =>
+  doc.blocks
+    .filter((b) => !b.hidden)
+    .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! }))
+
+describe('nested content controls', () => {
+  it('captures the control chain of every block (outer -> inner)', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_BODY }))
+    expect(textsOf(doc)).toEqual([
+      'Before',
+      'outer para',
+      'inner para',
+      'inlineINLINEtail',
+      'After',
+    ])
+    expect(tagsOf(doc)).toEqual([[], ['outer'], ['outer', 'inner'], ['outer'], []])
+    const inner = doc.blocks[2]!.sdtShells!
+    expect(inner[1]!.level).toBe(1)
+    expect(inner[1]!.alias).toBe('Inner')
+    expect(inner[1]!.lock).toBe('contentLocked')
+    expect(inner[1]!.id).toBe('11')
+    // sdtShell stays the outermost control for existing consumers
+    expect(doc.blocks[1]!.sdtShell!.tag).toBe('outer')
+    expect(doc.blocks[2]!.sdtShell!.tag).toBe('outer')
+    expect(doc.blocks[1]!.sdtShell!.group).toBe(doc.blocks[2]!.sdtShell!.group)
+  })
+
+  it('reports a run-level control without changing the run text', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_BODY }))
+    expect(doc.blocks[3]!.inlineContentControls).toEqual([
+      { tag: 'run', title: '', lock: '', id: '12', text: 'INLINE' },
+    ])
+    expect(doc.blocks[3]!.runs?.map((r) => r.text).join('')).toBe('inlineINLINEtail')
+    expect(doc.blocks[1]!.inlineContentControls).toBeUndefined()
+  })
+
+  it('captures an inner control wrapped around the single child paragraph', async () => {
+    const single =
+      '<w:sdt><w:sdtPr><w:tag w:val="outer"/></w:sdtPr><w:sdtContent>' +
+      '<w:sdt><w:sdtPr><w:tag w:val="inner"/></w:sdtPr><w:sdtContent>' +
+      PLAIN_P('only para') +
+      '</w:sdtContent></w:sdt>' +
+      '</w:sdtContent></w:sdt>'
+    const bytes = await buildDocx({ bodyXml: single })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0]!.sdtShells!.map((shell) => shell.tag)).toEqual(['outer', 'inner'])
+    const saved = await saveDocx(doc, saveAllOriginal(doc))
+    expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+
+  it('an untouched nested document saves byte-identical', async () => {
+    const bytes = await buildDocx({ bodyXml: NESTED_BODY })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(doc, saveAllOriginal(doc))
+    expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+
+  it('unwraps an inner tag and keeps the outer shell around the content', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_BODY }))
+    const saved = await saveDocx(doc, saveAllOriginal(doc), {
+      contentControls: { unwrap: [{ tag: 'inner' }] },
+    })
+    const reparsed = await parseDocx(saved)
+    const xml = reparsed.internal.documentXml
+    expect(xml).toContain('w:val="outer"')
+    expect(xml).not.toContain('w:val="inner"')
+    expect(textsOf(reparsed)).toEqual([
+      'Before',
+      'outer para',
+      'inner para',
+      'inlineINLINEtail',
+      'After',
+    ])
+    expect(tagsOf(reparsed)).toEqual([[], ['outer'], ['outer'], ['outer'], []])
+  })
+
+  it('unwraps the outermost tag and leaves the inner control as its own shell', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_BODY }))
+    const saved = await saveDocx(doc, saveAllOriginal(doc), {
+      contentControls: { unwrap: [{ tag: 'outer' }] },
+    })
+    const reparsed = await parseDocx(saved)
+    const xml = reparsed.internal.documentXml
+    expect(xml).not.toContain('w:val="outer"')
+    expect(xml).toContain('w:val="inner"')
+    expect(textsOf(reparsed)).toEqual([
+      'Before',
+      'outer para',
+      'inner para',
+      'inlineINLINEtail',
+      'After',
+    ])
+    expect(tagsOf(reparsed)).toEqual([[], [], ['inner'], [], []])
+  })
+
+  it('keeps the nested controls byte-identical when a block outside them is edited', async () => {
+    const bytes = await buildDocx({ bodyXml: NESTED_BODY })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(doc, [
+      { kind: 'original' as const, docxIndex: 0 },
+      { kind: 'original' as const, docxIndex: 1 },
+      { kind: 'original' as const, docxIndex: 2 },
+      { kind: 'original' as const, docxIndex: 3 },
+      {
+        kind: 'generated' as const,
+        block: { type: 'paragraph', runs: [{ text: 'After edited' }] },
+      },
+    ])
+    const original = Buffer.from(bytes).toString('latin1')
+    const nested = original.slice(original.indexOf('<w:sdt>'), original.indexOf('</w:sdt>') + 7)
+    const savedXml = (await parseDocx(saved)).internal.documentXml
+    expect(savedXml).toContain('After edited')
+    expect(savedXml).toContain(nested)
+  })
+})
