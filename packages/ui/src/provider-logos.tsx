@@ -263,6 +263,12 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM8 9.2a1.2 1.2 0 0 1 1.2-1.2h5.6a1.2 1.2 0 0 1 1.2 1.2v5.6a1.2 1.2 0 0 1-1.2 1.2H9.2A1.2 1.2 0 0 1 8 14.8ZM5.5 9.25h2.5v1.5H5.5Zm0 4h2.5v1.5H5.5ZM16 9.25h2.5v1.5H16Zm0 4h2.5v1.5H16ZM9.25 5.5h1.5V8h-1.5Zm4 0h1.5V8h-1.5ZM9.25 16h1.5v2.5h-1.5Zm4 0h1.5v2.5h-1.5ZM10.75 10.75h2.5v2.5h-2.5Z" />
     </svg>
   ),
+  // AtmoRouter's mark (atmorouter.dev favicon): a lightning bolt in a rounded square, 24-unit frame
+  atmorouter: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM13.5 3.75 5.625 13.65h5.4l-.825 6.6L18 10.35h-5.4Z" />
+    </svg>
+  ),
   'opencode-zen': opencodeLogo,
   'opencode-go': opencodeLogo,
   mimo: (

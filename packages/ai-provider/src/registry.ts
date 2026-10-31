@@ -313,6 +313,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every model; the bare model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://cloudgpu.app/v1'),
   },
+  atmorouter: {
+    meta: metaOf('atmorouter'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the prefixed model id picks the upstream
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://atmorouter.dev/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },
