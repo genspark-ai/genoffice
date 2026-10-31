@@ -97,6 +97,7 @@ describe('op catalogs', () => {
       'block',
       'content',
       'content-controls',
+      'package',
     ])
     const byName = new Map(detail.ops.map((e: { op: string }) => [e.op, e]))
     expect(byName.get('findReplace')).toMatchObject({ group: 'block', target: 'optional' })
@@ -108,6 +109,8 @@ describe('op catalogs', () => {
     })
     expect(byName.get('wrap_content_control')).toMatchObject({ group: 'content-controls' })
     expect(byName.get('unwrap_content_control')).toMatchObject({ group: 'content-controls' })
+    expect(byName.get('remove_parts')).toMatchObject({ group: 'package' })
+    expect((byName.get('remove_parts') as { signature: string }).signature).toContain('dataBinding')
     expect(
       (byName.get('insert_content') as { schema: any }).schema.properties.afterBlockIndex
         .description,
@@ -119,6 +122,9 @@ describe('op catalogs', () => {
     expect(text.stdout).toContain('insert_chart {kind: bar|line|pie')
     expect(text.stdout).toContain('Only these tags are allowed')
     expect(text.stdout).not.toContain('setFont')
+    const packageGuide = await run(['guide', 'docs', 'package'])
+    expect(packageGuide.stdout).toContain('remove_parts')
+    expect(packageGuide.stdout).toContain('customXml|webExtensions')
   })
 
   it('prints fingerprints for all domains', async () => {

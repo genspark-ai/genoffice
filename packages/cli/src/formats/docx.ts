@@ -16,8 +16,10 @@ import {
   patchChartPartXml,
   patchChartWorkbookXlsxBase64,
   pendingHeadingLevel,
+  planRemoveParts,
   readDocxPartBase64,
   readSections,
+  removePartsRefusalMessage,
   saveDocx,
   type CommentInfo,
   type CompareGranularity,
@@ -28,6 +30,9 @@ import {
   type HfPartInfo,
   type NoteInfo,
   type PropertyChanges,
+  type RemovePartsOptions,
+  type RemovedPartBinding,
+  type RemovePartsPlan,
   type RevisionXmlFilter,
   type SaveOptions,
   type StyleUpsert,
@@ -147,6 +152,8 @@ interface SideState {
   revisionPartsDirty: Set<string>
   /** set_properties changes; written into the docProps parts on save */
   properties?: PropertyChanges
+  /** remove_parts package scrub applied in the final save pass */
+  removeParts?: RemovePartsOptions
   /** block-level content controls to write on save: wrap a range of body blocks in one new control, or unwrap the control with a tag */
   contentControls?: SaveOptions['contentControls']
 }
@@ -251,6 +258,7 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
     footnotes: side.notesDirty ? side.footnotes : undefined,
     endnotes: side.notesDirty ? side.endnotes : undefined,
     properties: side.properties,
+    removeParts: side.removeParts,
     contentControls: side.contentControls,
     ...(await chartPartPatches(doc, plan.chartPatches)),
   }
@@ -720,6 +728,43 @@ const CONTENT_CONTROL_NOTES: Record<(typeof CONTENT_CONTROL_OPS)[number], string
     'remove the content control with that tag and leave its blocks as plain body blocks',
 }
 
+/**
+ * Package-level scrubs (remove_parts). CLI-only like the content controls: the
+ * app has no AI tool for them, so the catalog carries their schema here.
+ */
+const PACKAGE_OPS = ['remove_parts'] as const
+
+const PACKAGE_SCHEMAS: Record<(typeof PACKAGE_OPS)[number], JsonSchema> = {
+  remove_parts: {
+    type: 'object',
+    properties: {
+      kinds: {
+        type: 'array',
+        items: { type: 'string', enum: ['customXml', 'webExtensions'] },
+        description:
+          'part families to remove: customXml (template/DMS data stores: customXml/item*.xml + itemProps*.xml) or webExtensions (task panes/add-ins under word/webextensions/)',
+      },
+      paths: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'explicit part paths relative to the package root (no leading slash), e.g. "word/activeX/activeX1.bin"; unknown paths are ignored and listed',
+      },
+      dataBinding: {
+        type: 'string',
+        enum: ['refuse', 'strip'],
+        description:
+          'a removed customXml store can back content controls through w:dataBinding: refuse (default) fails the batch and names the controls, strip removes the binding and keeps the control and its text',
+      },
+    },
+  },
+}
+
+const PACKAGE_NOTES: Record<(typeof PACKAGE_OPS)[number], string> = {
+  remove_parts:
+    'drop metadata-carrying package parts for a pre-filing scrub (customXml stores, web-extension/add-in parts, or explicit package paths); their relationships, [Content_Types].xml entries and empty folders go with them and every other part keeps its bytes; content controls bound to a removed customXml store refuse the batch unless dataBinding: "strip" unbinds them',
+}
+
 export interface ApplyOptions {
   ctx?: PathContext
   /** folder of the ops file, for relative image paths */
@@ -779,6 +824,10 @@ export async function applyDocOps(
       else results.push({ index, op: name, output: r.output! })
     } else if (name === 'set_properties') {
       const r = setDocumentProperties(doc, op)
+      if (r.error) failed = rejected(r.error)
+      else results.push({ index, op: name, output: r.output! })
+    } else if (name === 'remove_parts') {
+      const r = await setRemoveParts(doc, op)
       if (r.error) failed = rejected(r.error)
       else results.push({ index, op: name, output: r.output! })
     } else if (name === 'wrap_content_control' || name === 'unwrap_content_control') {
@@ -863,6 +912,112 @@ function describePropertyChanges(changes: PropertyChanges): string {
     }
   }
   return parts.join(', ')
+}
+
+const REMOVE_PARTS_KINDS = ['customXml', 'webExtensions'] as const
+
+/** Validate a remove_parts op; kinds are de-duplicated and at least one selector is required. */
+function parseRemovePartsOp(op: Record<string, unknown>): {
+  options?: RemovePartsOptions
+  error?: string
+} {
+  const kinds: NonNullable<RemovePartsOptions['kinds']> = []
+  if (op.kinds !== undefined) {
+    if (!Array.isArray(op.kinds))
+      return { error: 'remove_parts needs kinds as an array of customXml | webExtensions' }
+    for (const kind of op.kinds) {
+      if (!REMOVE_PARTS_KINDS.includes(kind as (typeof REMOVE_PARTS_KINDS)[number]))
+        return {
+          error: `remove_parts: unknown kind ${JSON.stringify(kind)} (customXml | webExtensions)`,
+        }
+      const known = kind as (typeof REMOVE_PARTS_KINDS)[number]
+      if (!kinds.includes(known)) kinds.push(known)
+    }
+  }
+  const paths: string[] = []
+  if (op.paths !== undefined) {
+    if (!Array.isArray(op.paths))
+      return { error: 'remove_parts needs paths as an array of package paths' }
+    for (const path of op.paths) {
+      if (typeof path !== 'string' || !path.trim())
+        return { error: 'remove_parts: every paths entry must be a non-empty package path' }
+      const trimmed = path.trim()
+      if (!paths.includes(trimmed)) paths.push(trimmed)
+    }
+  }
+  if (kinds.length === 0 && paths.length === 0)
+    return {
+      error:
+        'remove_parts needs kinds (customXml | webExtensions) or paths (package-relative part paths)',
+    }
+  if (op.dataBinding !== undefined && op.dataBinding !== 'refuse' && op.dataBinding !== 'strip')
+    return { error: 'remove_parts: dataBinding must be "refuse" or "strip"' }
+  const options: RemovePartsOptions = {}
+  if (kinds.length > 0) options.kinds = kinds
+  if (paths.length > 0) options.paths = paths
+  if (op.dataBinding === 'refuse' || op.dataBinding === 'strip')
+    options.dataBinding = op.dataBinding
+  return { options }
+}
+
+/** two remove_parts ops in one batch compose: union of kinds/paths, the later explicit dataBinding wins */
+function mergeRemoveParts(
+  current: RemovePartsOptions | undefined,
+  next: RemovePartsOptions,
+): RemovePartsOptions {
+  const kinds = [...(current?.kinds ?? [])]
+  for (const kind of next.kinds ?? []) if (!kinds.includes(kind)) kinds.push(kind)
+  const paths = [...(current?.paths ?? [])]
+  for (const path of next.paths ?? []) if (!paths.includes(path)) paths.push(path)
+  const merged: RemovePartsOptions = {}
+  if (kinds.length > 0) merged.kinds = kinds
+  if (paths.length > 0) merged.paths = paths
+  const dataBinding = next.dataBinding ?? current?.dataBinding
+  if (dataBinding) merged.dataBinding = dataBinding
+  return merged
+}
+
+function describeControlBinding(binding: RemovedPartBinding): string {
+  const label = binding.tag ? `"${binding.tag}"` : 'untagged control'
+  const id = binding.controlId ? ` w:id ${binding.controlId}` : ''
+  return `${label}${id} in ${binding.part}`
+}
+
+/** One-line plan/report for remove_parts (the dry-run plan keeps the first line). */
+function describeRemovePartsPlan(plan: RemovePartsPlan, options: RemovePartsOptions): string {
+  const families = options.kinds?.length ? ` [${options.kinds.join(', ')}]` : ''
+  const paths =
+    plan.removedPaths.length > 0 ? plan.removedPaths.join(', ') : 'nothing (already absent)'
+  const action = options.dataBinding ?? 'refuse'
+  const binding =
+    plan.dataBindings.length > 0
+      ? `; dataBinding: ${action} would unbind ${plan.dataBindings.length} control(s) (${plan.dataBindings.map(describeControlBinding).join(', ')})`
+      : `; dataBinding: ${action} (no bound controls)`
+  const unknown = plan.unknownPaths.length
+    ? `; ignored unknown paths: ${plan.unknownPaths.join(', ')}`
+    : ''
+  return `remove ${plan.removedPaths.length} package part(s)${families}: ${paths}${binding}${unknown}`
+}
+
+/**
+ * remove_parts: the parts are dropped in the final package pass on save, so the
+ * op only records the change; the package is planned against the source bytes
+ * here so the dry run lists the parts and a dataBinding refusal fails the batch
+ * (nothing is written either way).
+ */
+async function setRemoveParts(
+  doc: OpenDocument,
+  op: Record<string, unknown>,
+): Promise<{ output?: string; error?: string }> {
+  const parsed = parseRemovePartsOp(op)
+  if (!parsed.options) return { error: parsed.error! }
+  const merged = mergeRemoveParts(doc.side.removeParts, parsed.options)
+  const plan = await planRemoveParts(doc.parsed.internal.originalBytes, merged)
+  const strip = merged.dataBinding === 'strip'
+  if (plan.dataBindings.length > 0 && !strip)
+    return { error: removePartsRefusalMessage(plan.dataBindings) }
+  doc.side.removeParts = merged
+  return { output: describeRemovePartsPlan(plan, merged) }
 }
 
 /** the document properties (core, extended/app, custom) of the open document */
@@ -1647,6 +1802,13 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
     note: CONTENT_CONTROL_NOTES[op],
     schema: CONTENT_CONTROL_SCHEMAS[op],
   }))
+  const packages: OpEntry[] = PACKAGE_OPS.map((op) => ({
+    op,
+    group: 'package',
+    signature: signatureFromSchema(PACKAGE_SCHEMAS[op]),
+    note: PACKAGE_NOTES[op],
+    schema: PACKAGE_SCHEMAS[op],
+  }))
   const groups = [
     {
       name: 'block',
@@ -1664,9 +1826,19 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
       summary: 'block-level content controls (w:sdt): wrap blocks in one, or unwrap it',
       ops: [...CONTENT_CONTROL_OPS],
     },
+    {
+      name: 'package',
+      summary:
+        'package parts: remove metadata-carrying custom XML / web-extension parts (pre-filing scrubs)',
+      ops: [...PACKAGE_OPS],
+    },
   ]
   return {
-    catalog: withFingerprint({ domain: 'docs', groups, ops: [...block, ...content, ...controls] }),
+    catalog: withFingerprint({
+      domain: 'docs',
+      groups,
+      ops: [...block, ...content, ...controls, ...packages],
+    }),
     htmlRules: mods.protocol.HTML_RULES,
   }
 }

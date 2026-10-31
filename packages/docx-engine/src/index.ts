@@ -83,6 +83,16 @@ export {
   type ParsedDocFull,
 } from './patch'
 export {
+  REMOVE_PARTS_KINDS,
+  applyRemoveParts,
+  planRemoveParts,
+  removePartsRefusalMessage,
+  type RemovePartsKind,
+  type RemovePartsOptions,
+  type RemovePartsPlan,
+  type RemovedPartBinding,
+} from './remove-parts'
+export {
   TABLE_HEADER_FILL,
   applyImageWrap,
   applyImageZOrder,

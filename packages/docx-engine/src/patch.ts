@@ -27,6 +27,7 @@ import {
   stripInkRuns,
 } from './ink'
 import { resolveRelationshipTargetPath } from './parse-package'
+import { applyRemoveParts, planRemoveParts, type RemovePartsOptions } from './remove-parts'
 import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
 import { cleanupDocxOwnedResources } from './resource-cleanup'
 import { loadDocxZip } from './zip-load'
@@ -552,6 +553,14 @@ export interface SaveOptions {
    * keeps every property as it is.
    */
   properties?: PropertyChanges
+  /**
+   * Remove metadata-carrying package parts (customXml stores, web-extension
+   * parts, explicit paths) in the final package pass, together with their
+   * relationships, content-type entries and empty folders. Content controls
+   * bound to a removed customXml store refuse the save by default; pass
+   * dataBinding: 'strip' to unbind them and keep their text.
+   */
+  removeParts?: RemovePartsOptions
 }
 
 const HYPERLINK_REL_TYPE =
@@ -777,10 +786,17 @@ export async function saveDocx(
     options.themeFonts === undefined &&
     options.themeColors === undefined &&
     options.properties === undefined &&
+    options.removeParts === undefined &&
     options.contentControls === undefined &&
     (options.partXml === undefined || Object.keys(options.partXml).length === 0) &&
     (options.partBinary === undefined || Object.keys(options.partBinary).length === 0)
-  if (isUnchanged && !scrubPersonalInfo) return originalBytes
+  if (isUnchanged && !scrubPersonalInfo) {
+    // remove_parts may be the only requested change: when nothing matches, the
+    // package is already scrubbed and the original bytes are the right answer
+    if (options.removeParts === undefined) return originalBytes
+    const plan = await planRemoveParts(originalBytes, options.removeParts)
+    if (plan.removedPaths.length === 0) return originalBytes
+  }
 
   const zip = await loadDocxZip(originalBytes)
   assertZipWithinLimits(zip)
@@ -2218,6 +2234,9 @@ export async function saveDocx(
   }
   await cleanupDocxOwnedResources(out, docPath)
   if (scrubPersonalInfo) await scrubPersonalMetadata(out)
+  // metadata scrubs come after every generated/copied part is in place, so a
+  // customXml store the save itself created (bibliography sources) is covered too
+  if (options.removeParts) await applyRemoveParts(out, options.removeParts)
   // the property write comes last: what the caller asked for wins over the scrub
   if (options.properties) await applyPropertyChanges(out, options.properties)
   return out.generateAsync({
