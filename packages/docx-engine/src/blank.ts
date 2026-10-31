@@ -1,4 +1,14 @@
 import JSZip from 'jszip'
+import {
+  APP_PROPERTIES_CONTENT_TYPE,
+  APP_PROPERTIES_PATH,
+  APP_PROPERTIES_REL_TYPE,
+  CORE_PROPERTIES_CONTENT_TYPE,
+  CORE_PROPERTIES_PATH,
+  CORE_PROPERTIES_REL_TYPE,
+  newDocumentAppPropertiesXml,
+  newDocumentCorePropertiesXml,
+} from './doc-properties'
 import { PPR_CHILD_ORDER } from './generate'
 import type { NumberingLevel } from './types'
 
@@ -531,6 +541,14 @@ export interface BlankDocxOptions {
   eastAsiaFont?: string
   /** Page size of the single section; defaults to A4. */
   paperSize?: BlankPaperSize
+  /** Creation stamp of docProps/core.xml; defaults to now (tests pin a fixed date). */
+  createdAt?: Date
+  /** docProps/app.xml Application; defaults to "GenOffice". */
+  application?: string
+  /** docProps/app.xml AppVersion; defaults to the docx-engine package version. */
+  appVersion?: string
+  /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
+  template?: string
 }
 
 /** Build a minimal valid .docx: one empty paragraph, portrait page, standard styles. */
@@ -545,6 +563,8 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
       '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
       '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
       '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' +
+      `<Override PartName="/${CORE_PROPERTIES_PATH}" ContentType="${CORE_PROPERTIES_CONTENT_TYPE}"/>` +
+      `<Override PartName="/${APP_PROPERTIES_PATH}" ContentType="${APP_PROPERTIES_CONTENT_TYPE}"/>` +
       '</Types>',
   )
 
@@ -552,6 +572,8 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
     '_rels/.rels',
     `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      `<Relationship Id="rId2" Type="${CORE_PROPERTIES_REL_TYPE}" Target="${CORE_PROPERTIES_PATH}"/>` +
+      `<Relationship Id="rId3" Type="${APP_PROPERTIES_REL_TYPE}" Target="${APP_PROPERTIES_PATH}"/>` +
       '</Relationships>',
   )
 
@@ -565,6 +587,19 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
 
   zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont))
   zip.file('word/numbering.xml', NUMBERING_XML)
+
+  // Word always writes both parts; a document created here carries minimal
+  // Word-like ones so later property sets have a home (and DMS tools see the
+  // expected metadata instead of nothing)
+  zip.file(CORE_PROPERTIES_PATH, newDocumentCorePropertiesXml(options?.createdAt))
+  zip.file(
+    APP_PROPERTIES_PATH,
+    newDocumentAppPropertiesXml({
+      application: options?.application,
+      appVersion: options?.appVersion,
+      template: options?.template,
+    }),
+  )
 
   const paper = PAPER_TWIPS[options?.paperSize ?? 'A4']
   const sectPr =

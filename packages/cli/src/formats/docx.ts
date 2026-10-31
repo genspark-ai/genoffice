@@ -846,11 +846,9 @@ function mergePropertyChanges(
 ): PropertyChanges {
   if (!current || next.clear) return next
   const merged: PropertyChanges = { ...current }
-  for (const section of ['core', 'app', 'custom'] as const) {
-    const values = next[section]
-    if (!values) continue
-    merged[section] = { ...(current[section] ?? {}), ...values }
-  }
+  if (next.core) merged.core = { ...(current.core ?? {}), ...next.core }
+  if (next.app) merged.app = { ...(current.app ?? {}), ...next.app }
+  if (next.custom) merged.custom = { ...(current.custom ?? {}), ...next.custom }
   return merged
 }
 
@@ -1532,7 +1530,7 @@ const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
   delete_comment:
     'removes the comment and its anchor; a thread root with replies needs withReplies: true, a reply id removes just that reply',
   set_properties:
-    'the document properties of the file: core (title, subject, creator, keywords, description, lastModifiedBy, revision, created, modified, category, contentStatus, identifier, language, version), app (template, totalTime, pages, words, characters, application, docSecurity, lines, paragraphs, scaleCrop, company, linksUpToDate, charactersWithSpaces, sharedDoc, hyperlinksChanged, appVersion, manager) and custom (by name); a string sets the value, null removes the property, clear: "all" empties all three parts; `genoffice docs read --properties` lists the current ones',
+    'the document properties of the file: core (title, subject, creator, keywords, description, lastModifiedBy, revision, created, modified, category, contentStatus, identifier, language, version), app (template, totalTime, pages, words, characters, application, docSecurity, lines, paragraphs, scaleCrop, company, linksUpToDate, charactersWithSpaces, sharedDoc, hyperlinksChanged, appVersion, manager) and custom (by name); a string sets a value, a number or boolean gives a typed custom value (i4/bool; an existing i4/i8/r8/bool/filetime/date property keeps its vt type when the value fits), null removes the property, clear: "all" empties all three parts; `genoffice docs read --properties` lists the current ones with their customTypes',
 }
 
 const AFTER_BLOCK_INDEX =
@@ -1548,10 +1546,16 @@ const INSERT_IMAGE_SCHEMA: JsonSchema = {
   required: ['url'],
 }
 
-/** set_properties: the values of a property part, by key (a string sets, null removes) */
+/** set_properties: the text values of a core/app property, by key (a string sets, null removes) */
 const PROPERTY_VALUES: JsonSchema = {
   type: 'object',
   additionalProperties: { type: ['string', 'null'] },
+}
+
+/** set_properties.custom: text stays lpwstr, a number/boolean keeps or takes a typed vt value */
+const CUSTOM_PROPERTY_VALUES: JsonSchema = {
+  type: 'object',
+  additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
 }
 
 const SET_PROPERTIES_SCHEMA: JsonSchema = {
@@ -1568,9 +1572,9 @@ const SET_PROPERTIES_SCHEMA: JsonSchema = {
         'extended (app) properties by friendly key (company, template, application, manager, …); a string sets the value, null removes the element',
     },
     custom: {
-      ...PROPERTY_VALUES,
+      ...CUSTOM_PROPERTY_VALUES,
       description:
-        'custom properties by name (MatterId, Reviewer, …); a string sets the value, null removes the property',
+        'custom properties by name (MatterId, Reviewer, …): a string stores vt:lpwstr, a number vt:i4 (or i8/r8 when out of int32), a boolean vt:bool; an existing typed property keeps its vt type when the value fits it (i4/i8/r8/ui*/bool/filetime/date); null removes the property',
     },
     clear: {
       type: 'string',
