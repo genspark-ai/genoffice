@@ -831,6 +831,44 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     expect(after.json().detail.revisionsElsewhere).toBeUndefined()
   })
 
+  it('accept_changes all: cross-paragraph move range ends go with their starts (genoffice#2337)', async () => {
+    const { buildDocx } = await import(HELPERS)
+    const dir = tempDir()
+    const path = join(dir, 'tracked.docx')
+    const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+    const R = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
+    // Word writes a whole-paragraph move with the range start on the moved
+    // paragraph and the range end in the following one; both end markers must
+    // leave with the accepted move instead of surviving the save
+    writeFileSync(
+      path,
+      await buildDocx({
+        bodyXml:
+          `<w:p>${R('P0 intro')}</w:p>` +
+          `<w:p><w:moveFromRangeStart w:id="1" ${AT} w:name="move1"/><w:moveFrom w:id="2" ${AT}>${R('P1 moved paragraph')}</w:moveFrom></w:p>` +
+          `<w:p><w:moveFromRangeEnd w:id="1"/>${R('P2 stays')}</w:p>` +
+          `<w:p><w:moveToRangeStart w:id="3" ${AT} w:name="move1"/><w:moveTo w:id="4" ${AT}>${R('P1 moved paragraph')}</w:moveTo></w:p>` +
+          `<w:p><w:moveToRangeEnd w:id="3"/>${R('P4 tail')}</w:p>`,
+      }),
+    )
+    const opsFile = join(dir, 'ops.json')
+    writeFileSync(opsFile, JSON.stringify([{ op: 'accept_changes', all: true }]))
+    const applied = await run(['docs', 'apply', path, '--ops', opsFile, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.results[0].output).toBe(
+      'Accepted 2 tracked change(s) (r1, r2). No tracked changes remain.',
+    )
+    const zip = await JSZip.loadAsync(readFileSync(path))
+    const body = await zip.file('word/document.xml')!.async('string')
+    expect(body).not.toMatch(/<w:move(?:From|To)Range(?:Start|End)\b/)
+    const texts = [...body.matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)].map((m) =>
+      [...m[0].matchAll(/<w:t[^>]*>([^<]*)</g)].map((t) => t[1]).join(''),
+    )
+    // the destination copy stays, the source copy is gone, untouched paragraphs ride through
+    expect(texts.filter((t) => t.includes('P1 moved paragraph'))).toHaveLength(1)
+    for (const kept of ['P0 intro', 'P2 stays', 'P4 tail']) expect(texts).toContain(kept)
+  })
+
   it('replies to and resolves comment threads, saving comments.xml', async () => {
     const dir = tempDir()
     const path = await reviewFixture(dir)

@@ -364,6 +364,41 @@ function applyEdits(xml: string, edits: Edit[]): string {
   return out
 }
 
+/**
+ * An orphaned move-range marker has no live meaning: Word writes a range start
+ * and end as a pair (same tag side, same w:id), and accepting or rejecting a
+ * move removes them together. When a save regenerates one paragraph of the
+ * range — the moved paragraph itself, or the paragraph an unrelated edit
+ * touched — the fresh bytes re-mint the range id and the partner marker in the
+ * untouched paragraph is stranded. Word's Accept All takes the markers out
+ * with the range, so a save that rewrote the body drops them instead of
+ * shipping markup Word never resolves.
+ */
+export function stripOrphanMoveRangeMarkers(xml: string): string {
+  if (!/<w:move(?:From|To)Range(?:Start|End)[\s/>]/.test(xml)) return xml
+  const els = scan(xml)
+  const dropped: El[] = []
+  const open = new Map<string, El[]>()
+  for (const el of els) {
+    if (!/^w:move(?:From|To)Range(?:Start|End)$/.test(el.name)) continue
+    if (el.name.endsWith('Start')) {
+      const key = `${el.name}|${attrOf(el, 'w:id') ?? ''}`
+      const stack = open.get(key)
+      if (stack) stack.push(el)
+      else open.set(key, [el])
+    } else {
+      // an end pairs with the nearest still-open start carrying its id, the
+      // way the parser closes ranges it reads (openMoves' lastIndexOf)
+      const key = `${el.name.slice(0, -3)}Start|${attrOf(el, 'w:id') ?? ''}`
+      const start = open.get(key)?.pop()
+      if (!start) dropped.push(el)
+    }
+  }
+  for (const stack of open.values()) dropped.push(...stack)
+  if (!dropped.length) return xml
+  return applyEdits(xml, dropped.map(remove))
+}
+
 /** pending tracked changes in a part (range markers not counted) */
 export function countTrackedChangesXml(xml: string): number {
   if (
@@ -383,12 +418,16 @@ export function applyTrackedChangesXml(
   mode: RevisionXmlMode,
   filter?: RevisionXmlFilter,
 ): RevisionXmlResult {
-  if (countTrackedChangesXml(xml) === 0) return { xml, applied: 0, remaining: 0 }
+  if (countTrackedChangesXml(xml) === 0)
+    // nothing to apply, but a part whose move markers lost their partners
+    // (the moves were resolved earlier) still gets its orphan markers back
+    return { xml: stripOrphanMoveRangeMarkers(xml), applied: 0, remaining: 0 }
   const els = scan(xml)
   const { edits, applied } = planEdits(els, xml, mode, filter)
   // a property holder emptied by independent edits (markers and record both resolved) goes
   const out = edits.length ? applyEdits(xml, edits).replace(/<w:(rPr|trPr)><\/w:\1>/g, '') : xml
-  return { xml: out, applied, remaining: countTrackedChangesXml(out) }
+  const clean = stripOrphanMoveRangeMarkers(out)
+  return { xml: clean, applied, remaining: countTrackedChangesXml(clean) }
 }
 
 /** the editor's accept / reject decisions replayed on the part's original bytes */

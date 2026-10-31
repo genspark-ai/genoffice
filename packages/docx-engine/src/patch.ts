@@ -1,5 +1,9 @@
 import JSZip from 'jszip'
-import { applyRevisionResolutions, resolvePropChangeXml } from './revision-xml'
+import {
+  applyRevisionResolutions,
+  resolvePropChangeXml,
+  stripOrphanMoveRangeMarkers,
+} from './revision-xml'
 import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
@@ -1767,7 +1771,7 @@ export async function saveDocx(
 
   let newDocumentXml =
     documentXml.slice(0, bodyContentStart) +
-    balanceFieldChars(parts.join('')) +
+    stripOrphanMoveRangeMarkers(balanceFieldChars(parts.join(''))) +
     documentXml.slice(bodyContentEnd)
 
   // every ref-less body sectPr picks up the new header/footer references

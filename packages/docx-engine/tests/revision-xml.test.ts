@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyTrackedChangesXml, countTrackedChangesXml } from '../src/revision-xml'
+import {
+  applyTrackedChangesXml,
+  countTrackedChangesXml,
+  stripOrphanMoveRangeMarkers,
+} from '../src/revision-xml'
 
 const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
 const r = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
@@ -200,5 +204,67 @@ describe('applyTrackedChangesXml move pairs', () => {
     expect(out.remaining).toBe(1)
     expect(out.xml).not.toMatch(/moveFrom|moveTo/)
     expect(texts(out.xml)).toEqual(['MOVEDkeep', ''])
+  })
+})
+
+describe('stripOrphanMoveRangeMarkers', () => {
+  it('drops an end marker whose start is gone and keeps the text around it', () => {
+    // genoffice#2337: the move lived in the previous paragraph and was resolved
+    // there; the end marker in the following paragraph is stranded
+    const xml =
+      p(r('P0 intro')) +
+      p(`<w:moveFromRangeEnd w:id="1"/>${r('P2 stays')}`) +
+      p(`<w:moveToRangeEnd w:id="3"/>${r('P4 tail')}`)
+    const out = stripOrphanMoveRangeMarkers(xml)
+    expect(out).not.toMatch(/<w:move(?:From|To)Range(?:Start|End)\b/)
+    expect(texts(out)).toEqual(['P0 intro', 'P2 stays', 'P4 tail'])
+  })
+
+  it('drops a start marker whose end is gone', () => {
+    const xml = p(`<w:moveToRangeStart w:id="3" ${AT} w:name="m"/>${r('pending')}`)
+    expect(stripOrphanMoveRangeMarkers(xml)).toBe(p(r('pending')))
+  })
+
+  it('keeps a pending move: start and end pair by side and id', () => {
+    const xml =
+      p(`<w:moveFromRangeStart w:id="1" ${AT} w:name="m"/>${r('a ')}`) +
+      p(`${r('b')}<w:moveFromRangeEnd w:id="1"/>`)
+    expect(stripOrphanMoveRangeMarkers(xml)).toBe(xml)
+  })
+
+  it('pairs sides independently: a shared id across moveFrom and moveTo is two broken ranges', () => {
+    const xml =
+      p(`<w:moveFromRangeStart w:id="1" ${AT} w:name="m"/>${r('a')}`) +
+      p(`<w:moveToRangeEnd w:id="1"/>${r('b')}`)
+    const out = stripOrphanMoveRangeMarkers(xml)
+    expect(out).not.toMatch(/<w:move(?:From|To)Range(?:Start|End)\b/)
+    expect(texts(out)).toEqual(['a', 'b'])
+  })
+
+  it('resolves interleaved ranges, keeping only the complete pair', () => {
+    const xml =
+      p(
+        `<w:moveFromRangeStart w:id="1" ${AT} w:name="m1"/>` +
+          `<w:moveToRangeStart w:id="2" ${AT} w:name="m2"/>${r('a')}`,
+      ) + p(`<w:moveFromRangeEnd w:id="1"/>${r('b')}<w:moveToRangeEnd w:id="9"/>`)
+    const out = stripOrphanMoveRangeMarkers(xml)
+    expect(out).toContain('<w:moveFromRangeStart ')
+    expect(out).toContain('<w:moveFromRangeEnd ')
+    expect(out).not.toContain('<w:moveToRangeStart ')
+    expect(out).not.toContain('<w:moveToRangeEnd ')
+  })
+
+  it('leaves XML without move markers untouched', () => {
+    const xml = p(`${r('plain')}<w:bookmarkStart w:id="1" w:name="x"/>`)
+    expect(stripOrphanMoveRangeMarkers(xml)).toBe(xml)
+  })
+
+  it('a part whose only move markup is an orphan end is cleaned even with no revisions to apply', () => {
+    const xml = hdr(p(`<w:moveFromRangeEnd w:id="1"/>${r('H stays')}`))
+    const out = applyTrackedChangesXml(xml, 'accept')
+    expect(out.applied).toBe(0)
+    expect(out.remaining).toBe(0)
+    expect(out.xml).not.toMatch(/<w:move(?:From|To)Range(?:Start|End)\b/)
+    expect(texts(out.xml)).toEqual(['H stays'])
   })
 })
