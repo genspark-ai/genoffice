@@ -319,9 +319,10 @@ function setContentControl(
   if (name === 'unwrap_content_control') {
     const tag = typeof op.tag === 'string' ? op.tag.trim() : ''
     if (!tag) return { error: 'unwrap_content_control needs a tag' }
-    if (!doc.parsed.blocks.some((b) => b.sdtShell?.tag === tag)) {
-      return { error: `no content control is tagged ${tag}` }
-    }
+    const anyShell = doc.parsed.blocks.some((b) =>
+      (b.sdtShells ?? (b.sdtShell ? [b.sdtShell] : [])).some((shell) => shell.tag === tag),
+    )
+    if (!anyShell) return { error: `no content control is tagged ${tag}` }
     side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
     return { output: `unwrap the content control tagged ${tag}` }
   }
@@ -478,8 +479,26 @@ export interface BlockSummary {
   table?: ReturnType<Modules['tableOps']['describeTable']>
   /** the block-level content control this block sits in (w:sdt), when it is in one */
   contentControl?: ContentControlSummary
+  /**
+   * every block-level control wrapping this block, outermost first; set
+   * whenever the block sits in at least one control (so a single-control block
+   * carries a one-element array, and contentControl keeps the outermost)
+   */
+  contentControls?: ContentControlSummary[]
+  /** run-level (inline) controls inside this paragraph, read-only (their bytes stay in place) */
+  inlineContentControls?: InlineContentControlSummary[]
   /** the text was clipped to the preview length; `--full` or `--max-chars` returns the rest */
   truncated?: true
+}
+
+/** a run-level (inline) w:sdt inside a paragraph */
+export interface InlineContentControlSummary {
+  tag: string
+  title: string
+  lock: string
+  id: string
+  /** the plain text inside the control */
+  text: string
 }
 
 /** what a block-level content control (w:sdt) carries */
@@ -515,6 +534,12 @@ export function describeDocument(
       ...(node.type.name === 'docProtected' ? { kind: protectedKind(node.attrs) } : {}),
       ...(node.type.name === 'docTable' ? { table: doc.mods.tableOps.describeTable(node) } : {}),
       ...(contentControlOf(doc, node) ? { contentControl: contentControlOf(doc, node)! } : {}),
+      ...(contentControlsOf(doc, node).length > 0
+        ? { contentControls: contentControlsOf(doc, node) }
+        : {}),
+      ...(inlineControlsOf(doc, node).length > 0
+        ? { inlineContentControls: inlineControlsOf(doc, node) }
+        : {}),
       text,
       ...(truncated ? { truncated } : {}),
     })
@@ -529,16 +554,44 @@ export function listTableStyles(doc: OpenDocument): Array<{ id: string; name: st
     .map((s) => ({ id: s.styleId, name: s.name }))
 }
 
+/** the parsed block behind an editor block (the editor block keeps the body index of its original) */
+function parsedBlockOf(doc: OpenDocument, block: Editor['state']['doc']) {
+  const docxIndex = block.attrs.docxIndex
+  if (typeof docxIndex !== 'number') return null
+  return doc.parsed.blocks[docxIndex] ?? null
+}
+
 /** the content control (w:sdt) a block sits in: the editor block keeps the body index of its original, and the shell rides on it */
 function contentControlOf(
   doc: OpenDocument,
   block: Editor['state']['doc'],
 ): ContentControlSummary | null {
-  const docxIndex = block.attrs.docxIndex
-  if (typeof docxIndex !== 'number') return null
-  const shell = doc.parsed.blocks[docxIndex]?.sdtShell
+  const shell = parsedBlockOf(doc, block)?.sdtShell
   if (!shell) return null
   return { tag: shell.tag, title: shell.alias, lock: shell.lock, id: shell.id }
+}
+
+/** every block-level control the block sits in, outermost first (a single control gives a one-element array) */
+function contentControlsOf(
+  doc: OpenDocument,
+  block: Editor['state']['doc'],
+): ContentControlSummary[] {
+  const parsed = parsedBlockOf(doc, block)
+  const chain = parsed?.sdtShells ?? (parsed?.sdtShell ? [parsed.sdtShell] : [])
+  return chain.map((shell) => ({
+    tag: shell.tag,
+    title: shell.alias,
+    lock: shell.lock,
+    id: shell.id,
+  }))
+}
+
+/** run-level controls inside the paragraph (read-only reporting) */
+function inlineControlsOf(
+  doc: OpenDocument,
+  block: Editor['state']['doc'],
+): InlineContentControlSummary[] {
+  return parsedBlockOf(doc, block)?.inlineContentControls ?? []
 }
 
 /** native docx charts are passthrough blocks carrying chartDisplay; edit_chart targets them like AI-made ones */
@@ -707,7 +760,11 @@ const CONTENT_CONTROL_SCHEMAS: Record<(typeof CONTENT_CONTROL_OPS)[number], Json
   unwrap_content_control: {
     type: 'object',
     properties: {
-      tag: { type: 'string', description: 'the tag of the control to unwrap' },
+      tag: {
+        type: 'string',
+        description:
+          'the tag of the control to unwrap (outermost or a nested inner control; the tag may repeat)',
+      },
     },
     required: ['tag'],
   },
@@ -715,9 +772,9 @@ const CONTENT_CONTROL_SCHEMAS: Record<(typeof CONTENT_CONTROL_OPS)[number], Json
 
 const CONTENT_CONTROL_NOTES: Record<(typeof CONTENT_CONTROL_OPS)[number], string> = {
   wrap_content_control:
-    'put a block range into one block-level content control (w:sdt); the blocks stay editable and the control carries the tag/title/lock; `genoffice docs read` shows the control on every block in it',
+    'put a block range into one block-level content control (w:sdt); the blocks stay editable and the control carries the tag/title/lock; `genoffice docs read` shows the control chain on every block in it (contentControls, outermost first) and run-level controls as inlineContentControls',
   unwrap_content_control:
-    'remove the content control with that tag and leave its blocks as plain body blocks',
+    'remove every content control carrying that tag and leave its blocks as plain body blocks; nested controls unwrap level by level (unwrapping an inner tag keeps the outer shell around the content), inline/run-level controls are reported but not unwrapped',
 }
 
 export interface ApplyOptions {
