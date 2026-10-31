@@ -4,7 +4,13 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import type { spawn } from 'node:child_process'
 
-import { lpArgumentsFor, printPdfViaCups, printToPdfOptionsFor } from '../src/print-cups'
+import {
+  lpArgumentsFor,
+  lpPageRange,
+  printFileViaCups,
+  printPdfViaCups,
+  printToPdfOptionsFor,
+} from '../src/print-cups'
 import { printOutcome } from '../src/print-job'
 
 /** A stand-in for the lp child process: records the spawn arguments and lets
@@ -135,6 +141,48 @@ describe('printPdfViaCups', () => {
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     calls[0]!.fake.close(3)
     await expect(pending).resolves.toEqual({ ok: false, error: 'lp exited with code 3' })
+  })
+})
+
+describe('lpPageRange', () => {
+  it('collapses consecutive runs and drops noise', () => {
+    expect(lpPageRange([1, 2, 3, 7])).toBe('1-3,7')
+    expect(lpPageRange([5])).toBe('5')
+    expect(lpPageRange([10, 2, 2, 1])).toBe('1-2,10')
+    // beyond any document: filtered to nothing rather than printed as garbage
+    expect(lpPageRange([0, -3, 1.5])).toBeUndefined()
+    expect(lpPageRange([])).toBeUndefined()
+  })
+})
+
+describe('printFileViaCups', () => {
+  it('spools the file operand after the flags, with the -p selection', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    const pending = printFileViaCups(
+      '/docs/report.pdf',
+      { deviceName: 'HP', copies: 2 },
+      [4, 1, 2, 3],
+      spawnFn as unknown as typeof spawn,
+    )
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]!.args).toEqual(['-d', 'HP', '-n', '2', '-p', '1-4', '--', '/docs/report.pdf'])
+    calls[0]!.fake.close(0)
+    await expect(pending).resolves.toEqual({ ok: true })
+  })
+
+  it('prints the whole document without a -p flag when no pages are given', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    const pending = printFileViaCups(
+      '/docs/report.pdf',
+      {},
+      undefined,
+      spawnFn as unknown as typeof spawn,
+    )
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]!.args).toEqual(['--', '/docs/report.pdf'])
+    calls[0]!.fake.stderr.write('lp: printer refused the job\n')
+    calls[0]!.fake.close(1)
+    await expect(pending).resolves.toEqual({ ok: false, error: 'lp: printer refused the job' })
   })
 })
 

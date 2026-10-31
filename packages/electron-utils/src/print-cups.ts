@@ -110,3 +110,69 @@ export async function printPdfViaCups(
     child.stdin.end(Buffer.from(pdf))
   })
 }
+
+/** One 1-based page selection as lp's `-p` spelling: consecutive runs
+ * collapse (`1,2,3,7` → `1-3,7`). Empty or invalid input → undefined, not an
+ * empty range (lp would print nothing). */
+export function lpPageRange(pages: readonly number[]): string | undefined {
+  const sorted = [...new Set(pages)]
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 1_000_000)
+    .sort((a, b) => a - b)
+  if (sorted.length === 0) return undefined
+  const runs: string[] = []
+  let start = sorted[0]!
+  let prev = start
+  for (const n of sorted.slice(1)) {
+    if (n === prev + 1) {
+      prev = n
+      continue
+    }
+    runs.push(start === prev ? `${start}` : `${start}-${prev}`)
+    start = n
+    prev = n
+  }
+  runs.push(start === prev ? `${start}` : `${start}-${prev}`)
+  return runs.join(',')
+}
+
+/** Spools an existing PDF file: the vector original goes to the driver
+ * untouched (no rasterization pass), with an optional `-p` page selection.
+ * The caller owns the path's authorization — this only builds the argv. */
+export async function printFileViaCups(
+  path: string,
+  job: CupsPrintJob,
+  pages?: readonly number[],
+  spawnFn: typeof spawn = spawn,
+): Promise<{ ok: boolean; error?: string }> {
+  const range = pages === undefined ? undefined : lpPageRange(pages)
+  const args = [...lpArgumentsFor(job), ...(range ? ['-p', range] : []), '--', path]
+  return new Promise((resolve) => {
+    const child = spawnFn('/usr/bin/lp', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    let stderr = ''
+    let stdout = ''
+    let settled = false
+    const settle = (result: { ok: boolean; error?: string }) => {
+      if (!settled) {
+        settled = true
+        resolve(result)
+      }
+    }
+    child.on('error', (err) => settle({ ok: false, error: err.message }))
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    child.on('close', (code) => {
+      if (code === 0) settle({ ok: true })
+      else
+        settle({
+          ok: false,
+          error: stderr.trim() || stdout.trim() || `lp exited with code ${code}`,
+        })
+    })
+    child.stdin.on('error', () => undefined)
+    child.stdin.end()
+  })
+}
