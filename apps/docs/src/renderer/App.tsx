@@ -226,6 +226,7 @@ import {
   effectiveBottomPx,
   singleVariantGeomOf,
   formatPageNumber,
+  sectionPageCounts,
   visiblePageCount,
   type SectionGeom,
   type SectionHfHeights,
@@ -870,6 +871,10 @@ export function App() {
   // last page's number for the document-end footer: text for the page marker, num for
   // even/odd parity (section restarts / pageNumberFmt make both differ from the physical count)
   const [lastPageNo, setLastPageNo] = useState<{ text: string; num: number } | null>(null)
+  /** SECTIONPAGES of the first and last pages (the canvas's own header and footer strips) */
+  const [edgeSectionPages, setEdgeSectionPages] = useState<{ first: number; last: number } | null>(
+    null,
+  )
   /** Page-number-format dialog + pending final-section pgNumType write (non-final sections rewrite sectPr via pgNumDirtySections) */
   const [pgNumModal, setPgNumModal] = useState<{ fmt: string; start: string } | null>(null)
   const [pgNumEdit, setPgNumEdit] = useState<{ fmt?: string; start?: number } | null>(null)
@@ -3918,6 +3923,7 @@ export function App() {
     if (!doc || !section) {
       setPageInfo({ current: 1, total: 1 })
       setLastPageNo(null)
+      setEdgeSectionPages(null)
       pageLayoutRef.current = null
       return
     }
@@ -4394,6 +4400,12 @@ export function App() {
               )
             : String(num),
         })
+        const counts = sectionPageCounts(slices)
+        const first = counts[0]
+        const last = counts[lastIdx]
+        setEdgeSectionPages((prev) =>
+          prev?.first === first && prev.last === last ? prev : { first, last },
+        )
       }
       // Auto-refresh TOC page numbers from the fresh slicing, like Word's field
       // update. Gated on dirtyRef — our pagination approximates Word's, so a
@@ -4545,6 +4557,7 @@ export function App() {
               )
               .join('|')
           const visiblePages = visiblePageCount(slices)
+          const sectionPages = sectionPageCounts(slices)
           const canvasPaperW = pmRect.width / factor
           const canvasSet = secList?.[0]?.settings ?? section
           const canvasContentWPx = canvasSet
@@ -4659,6 +4672,7 @@ export function App() {
                 images: gapFooter.images,
                 pageNo: pageNoTextOf(k),
                 pageTotal: visiblePages,
+                sectionPages: sectionPages[k],
                 geom: {
                   ...hfStripGeom(prevSec),
                   stripLeft: gapStripLeft(prevSec, box, k),
@@ -4672,6 +4686,7 @@ export function App() {
                 hfPageIdx: String(k),
                 hfPage: pageNoTextOf(k),
                 hfTotal: String(visiblePages),
+                hfSectionPages: String(sectionPages[k]),
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
@@ -4689,6 +4704,7 @@ export function App() {
                 images: gapHeader.images,
                 pageNo: pageNoTextOf(k + 1),
                 pageTotal: visiblePages,
+                sectionPages: sectionPages[k + 1],
                 geom: {
                   ...hfStripGeom(nextSec),
                   stripLeft: gapStripLeft(nextSec, box, k + 1),
@@ -4702,6 +4718,7 @@ export function App() {
                 hfPageIdx: String(k + 1),
                 hfPage: pageNoTextOf(k + 1),
                 hfTotal: String(visiblePages),
+                hfSectionPages: String(sectionPages[k + 1]),
               })
               el.style.bottom = 'auto'
               // the strip sits at w:headerDist even under a fixed top margin above it: Word lets
@@ -4727,7 +4744,7 @@ export function App() {
                     // Page / Odd & Even toggle can swap the variant behind identical
                     // text), or stale PAGE/NUMPAGES / strip insets / edit targets
                     // survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${sectionPages[k]}/${sectionPages[k + 1]}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -6543,6 +6560,7 @@ export function App() {
       value,
       pageNo: page,
       pageTotal: el.dataset.hfTotal ?? '1',
+      sectionPages: el.dataset.hfSectionPages,
       spellcheck: spellcheckActive,
       onCommit: (next) => {
         committed = true
@@ -8213,6 +8231,7 @@ export function App() {
                             }}
                             pageNo={firstPageNoText}
                             pageTotal={pageInfo.total}
+                            sectionPages={edgeSectionPages?.first}
                             sectionLabel={hfSectionLabel('header', 0)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
@@ -8284,6 +8303,7 @@ export function App() {
                             }}
                             pageNo={lastPageNoText}
                             pageTotal={pageInfo.total}
+                            sectionPages={edgeSectionPages?.last}
                             linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
                             sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
                             editRequest={
