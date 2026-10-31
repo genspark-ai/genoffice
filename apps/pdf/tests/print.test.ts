@@ -201,7 +201,8 @@ describe('printPdf with a printer job', () => {
     const job = { deviceName: 'HP', copies: 2, collate: true, duplex: 'longEdge' as const }
     await printPdf(doc, undefined, job)
 
-    expect(print).toHaveBeenCalledWith(job)
+    // the measured first page rides along for the CUPS print route's paper size
+    expect(print).toHaveBeenCalledWith({ ...job, pageSizeIn: { width: 8.5, height: 11 } })
     expect(imgsAtPrintTime).toBe(2)
     expect(window.print).not.toHaveBeenCalled()
     expect(document.querySelector('.pdf-print-root')).toBeNull()
