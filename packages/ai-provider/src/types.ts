@@ -45,6 +45,9 @@ export interface AiProviderConfig {
   cliPath?: string | undefined
   /** the declarative profile of the active user-hosted endpoint (custom only) */
   profile?: AiCustomProfile | undefined
+  /** per-model thinking-effort picks (model id → level, see thinking-effort.ts);
+   *  absent or a level the model's family does not list = the vendor default */
+  thinking?: Record<string, string> | undefined
 }
 
 /**

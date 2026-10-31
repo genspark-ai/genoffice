@@ -153,6 +153,9 @@ export interface OpenAiRequestOptions {
   bodyExtras?: Record<string, unknown> | undefined
   /** echo `reasoning_content` back on assistant turns; absent = the shipped family heuristic */
   echoReasoning?: boolean | undefined
+  /** OpenAI-style reasoning effort for the families that accept the field
+   * (gpt-5.x chat, o-series, grok); absent = the model's default */
+  reasoningEffort?: string | undefined
   /** static headers a user-hosted endpoint needs (merged last, so they win) */
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
@@ -242,6 +245,7 @@ async function openAiCompatibleTurn(
           }
         : {}),
       ...(options.omitTemperature ? {} : { temperature: 0.3 }),
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
       ...options.bodyExtras,
       stream: true,
       // OpenAI-class providers only report usage in a stream when asked (a final

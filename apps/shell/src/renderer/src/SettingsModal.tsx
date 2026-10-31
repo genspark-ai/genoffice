@@ -9,6 +9,7 @@ import {
   clampAiCustomFontSize,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
+import { thinkingShapeFor } from '@genoffice/ai-provider/browser'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
 import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
@@ -500,6 +501,9 @@ function AiModelPane({ t }: { t: TFunc }) {
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
   const modelsText = JSON.stringify(endpoint?.modelProfiles ?? [], null, 2)
+  // the model's family effort surface: the field only renders for families
+  // with a knob (codex runs its own CLI, so its reasoning is not ours to set)
+  const thinkingLevels = isCodex ? [] : thinkingShapeFor(config.model).levels
   const updateConfig = (patch: Partial<typeof config>) => {
     if (meta?.needsBaseUrl) {
       // the slot mirrors the active endpoint, so the edit lands on the endpoint
@@ -740,6 +744,33 @@ function AiModelPane({ t }: { t: TFunc }) {
           />
         )}
       </div>
+      {thinkingLevels.length > 0 ? (
+        <div className="set-field">
+          <div className="set-field-text">
+            <label className="set-field-label" htmlFor="set-ai-thinking">
+              {t('setAiThinking')}
+            </label>
+          </div>
+          <select
+            id="set-ai-thinking"
+            className="set-input"
+            value={config.thinking?.[config.model] ?? ''}
+            onChange={(e) => {
+              const thinking = { ...(config.thinking ?? {}) }
+              if (e.target.value === '') delete thinking[config.model]
+              else thinking[config.model] = e.target.value
+              updateConfig({ thinking: Object.keys(thinking).length > 0 ? thinking : undefined })
+            }}
+          >
+            <option value="">{t('setAiThinkingDefault')}</option>
+            {thinkingLevels.map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       {isCodex ? (
         <div className="set-field">
           <div className="set-field-text">
