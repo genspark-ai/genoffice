@@ -223,7 +223,6 @@ import type {
   AttachmentMeta,
   ExternalLinkOps,
   ExternalLinkRow,
-  ExternalLinkStatus,
   MenuAction,
   RecoveryPromptPayload,
   WorkbookFile,

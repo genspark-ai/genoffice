@@ -1753,7 +1753,9 @@ function parseExternalLinkUsageCell(input: unknown): ExternalLinkUsageCell {
     !isNonnegativeInteger(input.column) ||
     !isRecord(input.value) ||
     (input.value.kind !== 'missing' &&
-      (!EXTERNAL_LINK_USAGE_KINDS.includes(input.value.kind as (typeof EXTERNAL_LINK_USAGE_KINDS)[number]) ||
+      (!EXTERNAL_LINK_USAGE_KINDS.includes(
+        input.value.kind as (typeof EXTERNAL_LINK_USAGE_KINDS)[number],
+      ) ||
         typeof input.value.value !==
           (input.value.kind === 'number'
             ? 'number'

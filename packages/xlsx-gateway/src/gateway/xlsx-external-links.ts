@@ -319,11 +319,11 @@ export async function planExternalLinkBreak(
       throw new Error(`no external link ${n}: the workbook has ${linkCount}`)
     }
   }
-  const { workbookXml: brokenWorkbookXml, relsXml: nextRelsXml, parts } = applyWorkbookLinkBreak(
-    workbookXml,
-    relsXml,
-    broken,
-  )
+  const {
+    workbookXml: brokenWorkbookXml,
+    relsXml: nextRelsXml,
+    parts,
+  } = applyWorkbookLinkBreak(workbookXml, relsXml, broken)
   // defined names address links through the same [n] indices, so a surviving
   // name has to follow the renumbering; a broken one has no literal form
   const nextWorkbookXml = transformWorkbookForLinkBreak(brokenWorkbookXml, broken)
