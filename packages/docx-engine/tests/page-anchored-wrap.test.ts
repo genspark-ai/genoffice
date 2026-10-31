@@ -81,23 +81,52 @@ describe('page-anchored wrapped shapes keep their page position', () => {
     ],
     ['wrapTopAndBottom', TOP_AND_BOTTOM],
   ] as const) {
-    it(`floats a narrow ${kind} page-anchored box in a later paragraph at its page offset`, async () => {
+    // guard: text cannot wrap around an absolute box, and a band would hang
+    // from an unknown anchor — floating would lay body text over the box
+    it(`keeps a narrow in-column ${kind} page-anchored box in the flow`, async () => {
       const blocks = await boxesOf(
         para(`<w:r><w:t>lead</w:t></w:r>`) +
           para(rect({ posH: '914400', posV: '2743200', cx: 4572000, cy: 914400, wrap })),
       )
       const [box] = blocks[1]
-      expect(box.floating).toBe(true)
+      expect(box.floating).toBeUndefined()
       expect(box.pagePinned).toBeUndefined()
-      expect(box.offsetXEmu).toBe(914400 - MARGIN)
-      expect(box.offsetYEmu).toBe(2743200 - MARGIN)
-      expect(box.pageRelX).toBe(true)
-      expect(box.pageRelV).toBe(true)
-      // the box lies below the body top: no band blanking the lines above it
       expect(box.bandBottomPx).toBeUndefined()
       expect(box.wrapSide).toBeUndefined()
     })
   }
+
+  it('keeps a narrow wrapSquare box covering the body top in the flow (guard)', async () => {
+    const [[box]] = await boxesOf(
+      para(rect({ posH: '914400', posV: '457200', cx: 1828800, cy: 914400, wrap: SQUARE })),
+    )
+    expect(box.floating).toBeUndefined()
+    expect(box.bandBottomPx).toBeUndefined()
+  })
+
+  it('floats a wrapSquare box lying wholly in the left margin, without a band', async () => {
+    const [[box]] = await boxesOf(
+      para(rect({ posH: '91440', posV: '2743200', cx: 685800, cy: 2743200, wrap: SQUARE })),
+    )
+    expect(box.floating).toBe(true)
+    expect(box.offsetXEmu).toBe(91440 - MARGIN)
+    expect(box.offsetYEmu).toBe(2743200 - MARGIN)
+    expect(box.pageRelV).toBe(true)
+    expect(box.bandBottomPx).toBeUndefined()
+  })
+
+  it('floats a full-width wrapTopAndBottom band at the page foot', async () => {
+    const h = 1500000
+    const [[box]] = await boxesOf(
+      para(rect({ posH: '0', posV: String(PAGE_H - h), cx: PAGE_W, cy: h, wrap: TOP_AND_BOTTOM })),
+    )
+    expect(box.floating).toBe(true)
+    expect(box.offsetXEmu).toBe(-MARGIN)
+    expect(box.offsetYEmu).toBe(PAGE_H - h - MARGIN)
+    expect(box.pageRelV).toBe(true)
+    // its band would hang from the anchor: none, nothing pushed off the page
+    expect(box.bandBottomPx).toBeUndefined()
+  })
 
   it('floats a page-bottom wrapSquare band without pushing the flow off the page', async () => {
     const h = 1500000
@@ -108,6 +137,16 @@ describe('page-anchored wrapped shapes keep their page position', () => {
     expect(box.offsetYEmu).toBe(PAGE_H - h - MARGIN)
     expect(box.pageRelV).toBe(true)
     expect(box.bandBottomPx).toBeUndefined()
+  })
+
+  it('keeps a narrow page-aligned wrapSquare box in the flow, offsets unset (guard)', async () => {
+    const [[box]] = await boxesOf(
+      para(rect({ posH: 'center', posV: 'center', cx: 1828800, cy: 914400, wrap: SQUARE })),
+    )
+    expect(box.floating).toBeUndefined()
+    expect(box.offsetXEmu).toBeUndefined()
+    expect(box.offsetYEmu).toBeUndefined()
+    expect(box.pageRelV).toBeUndefined()
   })
 
   it('resolves wp:align left/top against the page for a first-block anchor', async () => {
@@ -164,12 +203,23 @@ describe('page-anchored wrapped shapes keep their page position', () => {
     expect(bottom.offsetYEmu).toBe(PAGE_H - h)
   })
 
-  it('resolves wp:align bottom against the margin box for a wrapped box', async () => {
+  it('resolves wp:align bottom against the margin box for a column-wide wrapped box', async () => {
     const h = 914400
     const [[box]] = await boxesOf(
-      para(rect({ posH: '0', posV: 'bottom', cx: 1828800, cy: h, wrap: SQUARE, relV: 'margin' })),
+      para(
+        rect({
+          posH: '0',
+          posV: 'bottom',
+          cx: PAGE_W - 2 * MARGIN,
+          cy: h,
+          wrap: SQUARE,
+          relH: 'margin',
+          relV: 'margin',
+        }),
+      ),
     )
     expect(box.floating).toBe(true)
+    expect(box.offsetXEmu).toBe(0)
     expect(box.offsetYEmu).toBe(PAGE_H - 2 * MARGIN - h)
     expect(box.pageRelV).toBe(true)
     expect(box.pageRelVFrom).toBe('margin')

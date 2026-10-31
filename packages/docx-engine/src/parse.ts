@@ -3124,10 +3124,53 @@ function extractTextboxes(
     }
     // page/margin-relative V places the box on its anchor's page in Word
     // whatever the wrap kind (wrap only decides how body text flows around
-    // it): a wrapped one floats at that position instead of stacking into the
-    // flow at the anchor paragraph (cover bands drawn margin-shifted)
+    // it). A wrapped one floats at that position instead of stacking into the
+    // flow at the anchor paragraph (cover bands drawn margin-shifted) — but
+    // only where floating cannot lay body text over it: the box lies wholly
+    // outside the body area, spans the column (text only above/below), or is
+    // a topAndBottom band covering the body top (its band is exact). A narrow
+    // in-column wrapped box keeps the flow placement: text cannot wrap around
+    // an absolute box, and its band would be relative to an unknown anchor.
     const pageAbsV = opts?.section !== undefined && (meta.relV === 'page' || meta.relV === 'margin')
-    const pageVFloat = pageAbsV && !meta.noWrap
+    const alignedYEmu =
+      pageAbsV && meta.offsetYEmu === undefined
+        ? resolveAnchorPageYEmu(meta, opts?.section)
+        : undefined
+    let pageVFloat = false
+    // band only inside the body area: a box clear of it excludes no text
+    let pageVBand = false
+    if (pageAbsV && !meta.noWrap && opts?.section) {
+      const s = opts.section
+      // column / body-top space: page-relative X/Y are exact here (only the
+      // anchor paragraph's own position is unknown)
+      const x =
+        (box.offsetXEmu ?? 0) +
+        (pagePos !== null && !pagePos.outsideColumn && meta.offsetXEmu === undefined
+          ? pagePos.xEmu
+          : 0)
+      const y = (box.offsetYEmu ?? 0) + (meta.offsetYEmu ?? alignedYEmu ?? 0)
+      const w = box.widthPx !== undefined ? box.widthPx * EMU_PER_PX : meta.extentXEmu
+      const h =
+        box.heightPx !== undefined
+          ? box.heightPx * EMU_PER_PX
+          : !grouped
+            ? meta.extentYEmu
+            : undefined
+      const colW = (s.pageWidth - s.marginLeft - s.marginRight) * EMU_PER_TWIP
+      const bodyH = (s.pageHeight - s.marginTop - s.marginBottom) * EMU_PER_TWIP
+      if (w !== undefined && w > 0 && h !== undefined && h > 0) {
+        const outsideBody =
+          y + h <= 0 || y >= bodyH || (s.columns <= 1 && (x + w <= 0 || x >= colW))
+        const spans =
+          s.columns <= 1 &&
+          !grouped &&
+          x < MIN_WRAP_SLIVER_EMU &&
+          colW - x - w < MIN_WRAP_SLIVER_EMU
+        const exactBand = meta.topBottom === true && y <= 0 && y + h > 0
+        pageVFloat = outsideBody || spans || exactBand
+        pageVBand = pageVFloat && !outsideBody
+      }
+    }
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the
     // legacy flow placement
@@ -3141,15 +3184,13 @@ function extractTextboxes(
       if (relXAbsolute) box.pageRelX = true
     }
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
-    // wp:align / pctPosVOffset against the page or margin box: the resolved
-    // body-top offset, re-pinned onto the anchor's page like a posOffset
-    if (meta.offsetYEmu === undefined && pageAbsV) {
-      const alignedYEmu = resolveAnchorPageYEmu(meta, opts?.section)
-      if (alignedYEmu !== undefined) {
-        box.offsetYEmu = (box.offsetYEmu ?? 0) + alignedYEmu
-        box.pageRelV = true
-        box.pageRelVFrom = meta.relV === 'page' ? 'page' : 'margin'
-      }
+    // wp:align / pctPosVOffset against the page or margin box on a floating
+    // box: the resolved body-top offset, re-pinned onto the anchor's page like
+    // a posOffset (in-flow boxes keep ignoring it)
+    if (alignedYEmu !== undefined && (meta.noWrap || multiDrawing || pageVFloat)) {
+      box.offsetYEmu = (box.offsetYEmu ?? 0) + alignedYEmu
+      box.pageRelV = true
+      box.pageRelVFrom = meta.relV === 'page' ? 'page' : 'margin'
     }
     // page/margin-relative posOffset V is absolute on the anchor's page in
     // Word; rendered from the anchor paragraph it needs the canvas re-pin
@@ -3187,7 +3228,7 @@ function extractTextboxes(
     // reserves flow height down to the box bottom (union over its boxes).
     if (
       (meta.topBottom || squareSpansColumn) &&
-      (meta.relV === 'paragraph' || meta.relV === 'line' || pageAbsV)
+      (meta.relV === 'paragraph' || meta.relV === 'line' || pageVBand)
     ) {
       // wp:extent cy covers the whole drawing: a usable height fallback only
       // for an ungrouped shape (each group child would claim the group height)

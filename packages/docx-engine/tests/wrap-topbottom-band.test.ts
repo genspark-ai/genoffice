@@ -172,7 +172,8 @@ describe('wrapTopAndBottom band reservation', () => {
     expect(box.bandBottomPx).toBe(50)
   })
 
-  it('floats a page-relative topAndBottom box low on the page without a band', async () => {
+  // no exact band at an unknown anchor: floating would lay text over the box
+  it('keeps a narrow page-relative topAndBottom box low on the page in the flow', async () => {
     const para =
       `<w:p><w:r>` +
       drawing({
@@ -187,10 +188,7 @@ describe('wrapTopAndBottom band reservation', () => {
       `</w:r></w:p>`
     const doc = await parseDocx(await buildDocx({ bodyXml: para }))
     const [box] = doc.blocks[0].textboxes!
-    expect(box.floating).toBe(true)
-    expect(box.offsetYEmu).toBe(914400 * 7)
-    expect(box.pageRelV).toBe(true)
-    // min-height down to the box would blank every line above it
+    expect(box.floating).toBeUndefined()
     expect(box.bandBottomPx).toBeUndefined()
   })
 
