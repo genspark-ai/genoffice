@@ -3234,6 +3234,29 @@ export function registerSheetsIpc(): void {
       cached: z.boolean().optional(),
     })
     .strict()
+  ipcMain.handle(IPC_CHANNELS.listExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const { path } = z
+      .object({ path: z.string().min(1) })
+      .strict()
+      .parse(input)
+    return entry.client.listExternalLinks({ path })
+  })
+  ipcMain.handle(IPC_CHANNELS.updateExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const { path } = z
+      .object({ path: z.string().min(1) })
+      .strict()
+      .parse(input)
+    return entry.client.updateExternalLinks({ path })
+  })
+  // The preload sends this one (fire-and-forget): handle() would make the
+  // renderer's send() a no-op and Locate would never open the file manager.
+  ipcMain.on(IPC_CHANNELS.revealPath, (_event, path: unknown) => {
+    // Reveal only real files: a missing or forged path is a silent no-op.
+    if (typeof path !== 'string' || !existsSync(path)) return
+    shell.showItemInFolder(path)
+  })
   ipcMain.handle(IPC_CHANNELS.recalcWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const request = workbookRecalcRequestSchema.parse(input)
