@@ -75,21 +75,29 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('glm-5.3-flash').levels).not.toContain('none')
   })
 
-  it('the on/off family: qwen', () => {
+  it('qwen: enable_thinking plus a budget per level', () => {
     expect(thinkingShapeFor('qwen3.8-max')).toEqual({
-      kind: 'qwen-toggle',
-      levels: ['none', 'medium'],
+      kind: 'qwen-budget',
+      levels: ['none', 'low', 'medium', 'high'],
     })
+    expect(
+      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'low' } }),
+    ).toEqual({ enable_thinking: true, thinking_budget: 4096 })
   })
 
-  it('grok speaks the openai effort field; families without a knob resolve empty', () => {
+  it('ling is a thinking switch; grok speaks effort; longcat stays knobless', () => {
+    expect(thinkingShapeFor('ling-3.0-flash')).toEqual({
+      kind: 'toggle',
+      levels: ['none', 'medium'],
+    })
+    expect(
+      toggleThinkingBodyFor({ model: 'ling-3.0-flash', thinking: { 'ling-3.0-flash': 'none' } }),
+    ).toEqual({ thinking: { type: 'disabled' } })
     expect(thinkingShapeFor('grok-4.7')).toEqual({
       kind: 'openai-effort',
       levels: ['none', 'low', 'medium', 'high'],
     })
-    for (const model of ['Ling-3.0-flash', 'LongCat-2.0']) {
-      expect(thinkingShapeFor(model).levels, model).toEqual([])
-    }
+    expect(thinkingShapeFor('LongCat-2.0').levels).toEqual([])
   })
 
   it('minimax carries the five effort rungs without none; mimo is a switch', () => {
@@ -224,9 +232,7 @@ describe('per-protocol translators', () => {
     })
     expect(
       toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'medium' } }),
-    ).toEqual({
-      enable_thinking: true,
-    })
+    ).toEqual({ enable_thinking: true, thinking_budget: 8192 })
   })
 })
 

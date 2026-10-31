@@ -24,7 +24,7 @@ export function isThinkingEffort(value: unknown): value is ThinkingEffort {
 
 /** one family's effort surface: which canonical levels it accepts */
 export interface ThinkingShape {
-  kind: 'openai-effort' | 'anthropic-adaptive' | 'gemini-level' | 'toggle' | 'qwen-toggle'
+  kind: 'openai-effort' | 'anthropic-adaptive' | 'gemini-level' | 'toggle' | 'qwen-budget'
   levels: readonly ThinkingEffort[]
 }
 
@@ -87,6 +87,10 @@ export function thinkingShapeFor(model: string): ThinkingShape {
   // internally (none/minimal stop thinking, xhigh/max fold to high on 2.1);
   // the hard on/off stays available through thinking{type} which we do not
   // need once effort carries the choice.
+  // Ant Ling 3.0/3.1: thinking.type enabled|disabled (default enabled) — the
+  // API reference documents the switch, no levels
+  if (/(^|\/)ling-/.test(id) || /(^|\/)ring-/.test(id))
+    return { kind: 'toggle', levels: ['none', 'medium'] }
   if (/(^|\/)doubao-seed-2-1/.test(id)) return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
   // Hunyuan Hy: reasoning_effort with low/high documented (default high) and
   // a thinking{type} switch on top; hy4-preview also thinks by default.
@@ -99,8 +103,10 @@ export function thinkingShapeFor(model: string): ThinkingShape {
     return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
   // MiMo V2.6: thinking.type enabled/disabled, on by default
   if (/(^|\/)mimo-/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
-  // DashScope Qwen 3.x commercial tiers: enable_thinking
-  if (/(^|\/)qwen\d/.test(id)) return { kind: 'qwen-toggle', levels: ['none', 'medium'] }
+  // DashScope Qwen 3.x: enable_thinking plus a thinking_budget token cap
+  // (per-model ranges; these picks sit inside the band the guide cites)
+  if (/(^|\/)qwen\d/.test(id))
+    return { kind: 'qwen-budget', levels: ['none', 'low', 'medium', 'high'] }
   // xAI's grok takes the OpenAI-style effort field on the current lineup
   if (/(^|\/)grok-/.test(id)) return { kind: 'openai-effort', levels: OPENAI_FIVE_LEVELS }
   // Mistral documents reasoning_effort for medium 3.5 (three rungs); the other
@@ -164,6 +170,12 @@ export function toggleThinkingBodyFor(config: {
   const level = resolveThinkingEffort(config)
   if (level === undefined) return undefined
   if (kind === 'toggle') return { thinking: { type: level === 'none' ? 'disabled' : 'enabled' } }
-  if (kind === 'qwen-toggle') return { enable_thinking: level !== 'none' }
+  if (kind === 'qwen-budget') {
+    if (level === 'none') return { enable_thinking: false }
+    const budget =
+      level === 'low' ? 4096 : level === 'medium' ? 8192 : level === 'high' ? 16384 : undefined
+    if (budget === undefined) return undefined
+    return { enable_thinking: true, thinking_budget: budget }
+  }
   return undefined
 }
