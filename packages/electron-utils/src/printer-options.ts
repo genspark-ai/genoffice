@@ -38,11 +38,12 @@ export function parseLpOptions(raw: string): PrinterOption[] {
   const out: PrinterOption[] = []
   for (const line of raw.split('\n')) {
     const m = /^([A-Za-z0-9_.+-]+)\/([^:\n]{1,128}):\s*(.+)$/.exec(line.trim())
-    if (!m) continue
-    const [, name, translation, rest] = m
+    if (!m || m[1] === undefined || m[2] === undefined || m[3] === undefined) continue
+    const name = m[1]
+    const translation = m[2]
     const values: string[] = []
     let defaultValue: string | undefined
-    for (const token of rest.split(/\s+/)) {
+    for (const token of m[3].split(/\s+/)) {
       const isDefault = token.startsWith('*')
       const value = isDefault ? token.slice(1) : token
       if (!OPTION_VALUE_RE.test(value)) continue
