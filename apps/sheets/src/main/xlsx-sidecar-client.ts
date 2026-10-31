@@ -182,6 +182,14 @@ export class XlsxSidecarClient {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 
+  /** Evaluate the file as stored and report every formula cell whose cached
+   * result disagrees with the engine's (the fresh import the comparison
+   * needs is cache-free; a resident model's results are already the
+   * engine's). Fail-soft — callers keep the file as-is when this errors. */
+  async recalcChangedCells(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'recalc_changed_cells', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
   /**
    * Spawn the sidecar ahead of the first request to hide process cold-start.
    * The prewarm is best-effort: on Windows an unrunnable binary (corrupt,

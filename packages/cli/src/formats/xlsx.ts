@@ -1194,7 +1194,6 @@ export async function writeWorkbook(
     formulas: formulaCells.length,
     ...(notes.length ? { notes } : {}),
   }
-  if (formulaCells.length === 0) return { ...base, cachedValues: true }
   if (!xlsxSidecarPath()) {
     return {
       ...base,
@@ -1203,34 +1202,38 @@ export async function writeWorkbook(
     }
   }
   try {
-    const { values, uncached, unparsed } = await evaluateFormulas(outputPath, formulaCells, renames)
+    // One engine pass over the written file reports every formula cell whose
+    // stored result disagrees with its inputs — the batch's own formulas and
+    // the dependents of edited cells alike, which a batch of value edits
+    // alone used to leave stale (genoffice#2304).
+    const { values, uncached, unparsed, stale } = await refreshFormulaResults(outputPath, renames)
     if (values.length) {
       const second = await save(values)
       await atomicWriteFile(outputPath, second.buffer)
-      if (uncached.length === 0 && unparsed.length === 0) return { ...base, cachedValues: true }
-      const skipped = uncached.length + unparsed.length
-      return {
-        ...base,
-        cachedValues: skipped < formulaCells.length,
-        ...(uncached.length ? { uncached } : {}),
-        ...(unparsed.length ? { unparsed } : {}),
-        ...(uncached.length
-          ? {
-              warning: `${uncached.length} formula(s) use functions the local engine does not evaluate (${list(uncached)}); they have no cached value and recalculate on open`,
-            }
-          : {}),
-        ...(unparsed.length
-          ? {
-              formulaError: `${unparsed.length} formula(s) the local engine could not parse (${list(unparsed)}); check their references — they have no cached value and recalculate on open`,
-            }
-          : {}),
-      }
     }
+    const skipped = uncached.length + unparsed.length + stale.length
+    if (skipped === 0) return { ...base, cachedValues: true }
     return {
       ...base,
       cachedValues: false,
-      warning:
-        'the engine returned no results for the written formulas; the file recalculates on open',
+      ...(uncached.length ? { uncached } : {}),
+      ...(unparsed.length ? { unparsed } : {}),
+      ...(stale.length ? { stale } : {}),
+      ...(uncached.length
+        ? {
+            warning: `${uncached.length} formula(s) use functions the local engine does not evaluate (${list(uncached)}); they have no cached value and recalculate on open`,
+          }
+        : {}),
+      ...(unparsed.length
+        ? {
+            formulaError: `${unparsed.length} formula(s) the local engine could not parse (${list(unparsed)}); check their references — they have no cached value and recalculate on open`,
+          }
+        : {}),
+      ...(stale.length
+        ? {
+            staleResults: `${stale.length} formula(s) compute an error from the current inputs (${list(stale)}); their previous cached values were kept and may be out of date`,
+          }
+        : {}),
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -1254,50 +1257,88 @@ const UNKNOWN_FUNCTION_RESULT = '#NAME?'
 const UNPARSED_RESULT = '#ERROR!'
 const list = (cells: readonly string[]) =>
   cells.slice(0, 3).join(', ') + (cells.length > 3 ? ', …' : '')
-async function evaluateFormulas(
+interface ChangedFormulaCell {
+  readonly sheet: string
+  readonly row: number
+  readonly column: number
+  readonly formatted: string
+  readonly number?: number
+  readonly isError: boolean
+  /** the file carried a result for this cell before the pass (as opposed to a
+   * formula written without one — e.g. by this same save — which imported as
+   * the engine's generic `#ERROR!` placeholder) */
+  readonly hadCachedValue: boolean
+}
+
+/**
+ * One engine pass over the file as written: evaluate everything, then rewrite
+ * the formula cells whose stored results disagree. Reading the whole workbook
+ * rather than the batch's bounding box is what keeps dependents of edited
+ * inputs from lying after the save.
+ *
+ * An error result is triaged rather than written: `#NAME?` and `#ERROR!` stay
+ * uncached with their cause reported, an error on a cell that had a stored
+ * value keeps that value (reported as `stale` — the previous result is what
+ * every cached-value reader sees, and it may still be right), and any other
+ * error is cached as its typed self.
+ */
+async function refreshFormulaResults(
   path: string,
-  formulaCells: readonly CellEdit[],
   renames: Record<string, string>,
-): Promise<{ values: SheetFormulaValues[]; uncached: string[]; unparsed: string[] }> {
-  const bySheet = new Map<string, CellEdit[]>()
-  for (const e of formulaCells) bySheet.set(e.sheetName, [...(bySheet.get(e.sheetName) ?? []), e])
-  // edits carry the file's original sheet names; the written file has the renamed ones
-  const wanted = new Set(formulaCells.map((c) => `${c.sheetName} ${c.row} ${c.column}`))
+): Promise<{
+  values: SheetFormulaValues[]
+  uncached: string[]
+  unparsed: string[]
+  stale: string[]
+}> {
+  // the report carries the written file's sheet names; the values are keyed
+  // like the edits, by the file's original sheet names
   const originalName = (written: string) =>
     Object.entries(renames).find(([, after]) => after === written)?.[0] ?? written
   return withSidecar(async (client) => {
-    const out: SheetFormulaValues[] = []
+    const { cells } = (await client.recalcChangedCells({ path })) as {
+      cells: ChangedFormulaCell[]
+    }
+    const bySheet = new Map<string, { row: number; column: number; value: Scalar }[]>()
     const uncached: string[] = []
     const unparsed: string[] = []
-    for (const [sheet, cells] of bySheet) {
-      const evaluated = await recalcRange(client, path, renames[sheet] ?? sheet, boundingBox(cells))
-      const values = evaluated
-        .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
-        .map((cell) => {
-          // Both leave the cell without a cached value — the file is correct
-          // and Excel recomputes on open — but they have different causes and
-          // the caller reports them apart.
-          if (cell.formatted === UNKNOWN_FUNCTION_RESULT) {
-            uncached.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
-            return { row: cell.row, column: cell.column, value: null }
-          }
-          if (cell.formatted === UNPARSED_RESULT) {
-            unparsed.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
-            return { row: cell.row, column: cell.column, value: null }
-          }
-          if (cell.isError) {
-            return { row: cell.row, column: cell.column, value: { error: cell.formatted } }
-          }
-          return {
-            row: cell.row,
-            column: cell.column,
-            value: (cell.number ?? (cell.formatted === '' ? null : cell.formatted)) as Scalar,
-          }
-        })
-      // the refresh is keyed like the edits, by the file's original sheet name
-      if (values.length) out.push({ sheetName: sheet, cells: values })
+    const stale: string[] = []
+    for (const cell of cells) {
+      const sheet = originalName(cell.sheet)
+      const address = `${sheet}!${toA1Address(cell.row, cell.column)}`
+      if (cell.isError) {
+        // Both leave the cell without a cached value — the file is correct
+        // and Excel recomputes on open — but they have different causes and
+        // the caller reports them apart.
+        if (!cell.hadCachedValue && cell.formatted === UNKNOWN_FUNCTION_RESULT) {
+          uncached.push(address)
+          continue
+        }
+        if (!cell.hadCachedValue && cell.formatted === UNPARSED_RESULT) {
+          unparsed.push(address)
+          continue
+        }
+        if (cell.hadCachedValue) {
+          stale.push(address)
+          continue
+        }
+      }
+      const list = bySheet.get(sheet) ?? []
+      list.push({
+        row: cell.row,
+        column: cell.column,
+        value: (cell.isError
+          ? { error: cell.formatted }
+          : (cell.number ?? (cell.formatted === '' ? null : cell.formatted))) as Scalar,
+      })
+      bySheet.set(sheet, list)
     }
-    return { values: out, uncached, unparsed }
+    return {
+      values: [...bySheet].map(([sheetName, refreshed]) => ({ sheetName, cells: refreshed })),
+      uncached,
+      unparsed,
+      stale,
+    }
   })
 }
 

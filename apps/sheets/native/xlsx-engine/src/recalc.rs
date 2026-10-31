@@ -214,6 +214,144 @@ pub fn recalc_cells(
     Ok(RecalcResult { cells, cached })
 }
 
+/// A formula cell whose stored result no longer matches its inputs after the
+/// engine re-evaluated the workbook.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedFormulaCell {
+    pub sheet: String,
+    /// 0-based coordinates on the wire.
+    pub row: u32,
+    pub column: u32,
+    /// Display string after evaluation (number formats applied).
+    pub formatted: String,
+    /// Raw numeric value when the result is a number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number: Option<f64>,
+    /// The engine typed the result as an error. The caller decides between
+    /// writing it and keeping the file's previous cached value.
+    pub is_error: bool,
+    /// The file carried a cached result for this cell (as opposed to a
+    /// formula written without one, e.g. by the same apply): an error result
+    /// then leaves the previous value in place instead of erasing it.
+    pub had_cached_value: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecalcChangedResult {
+    pub cells: Vec<ChangedFormulaCell>,
+}
+
+/// The workbook's formula cells, in sheet then sheet-data order, as
+/// (sheet index, row, column, the file carried a stored result) in IronCalc's
+/// own 1-based coordinates.
+///
+/// The importer has no "written without a result" state: a `<f>` with no
+/// cached `<v>` imports as a placeholder generic error whose message is its
+/// own spelling, `#ERROR!` — no real cached error carries that name. Every
+/// other formula cell came with a stored result.
+fn formula_cell_positions(model: &Model) -> Vec<(u32, i32, i32, bool)> {
+    use ironcalc::base::types::{Cell, FormulaValue};
+    let mut formulas = Vec::new();
+    for (sheet, worksheet) in model.workbook.worksheets.iter().enumerate() {
+        for (row, column, cell) in worksheet.sheet_data.cells() {
+            let has_result = !matches!(
+                cell.as_ref(),
+                Cell::CellFormula {
+                    v: FormulaValue::Error { d, .. },
+                    ..
+                }
+                | Cell::ArrayFormula {
+                    v: FormulaValue::Error { d, .. },
+                    ..
+                }
+                if d.m == "#ERROR!"
+            );
+            if matches!(
+                cell.as_ref(),
+                Cell::CellFormula { .. } | Cell::ArrayFormula { .. }
+            ) {
+                formulas.push((sheet as u32, row, column, has_result));
+            }
+        }
+    }
+    formulas
+}
+
+/// Every formula cell whose stored result disagrees with what the engine
+/// computes for it: the caller stores those results so readers of the cached
+/// values (`sheet read`, previews, pandas) see numbers consistent with the
+/// inputs.
+///
+/// The comparison is on the displayed value, not the raw one: a stored `6.04`
+/// the format shows as `6.0` next to a computed `6.0` stays untouched — a
+/// rewrite nobody can see is churn, not a fix. Error-typed results are
+/// reported rather than written: `#NAME?` is the engine's ignorance of a
+/// function, not the workbook's truth, and the previous cached value (or the
+/// file's recalculate-on-open) is the better state.
+///
+/// Spill members of array formulas are outside this: they hold no `<f>` of
+/// their own to patch, and it is the anchor's result that gets reported.
+pub fn recalc_changed_cells(path: &Path) -> Result<RecalcChangedResult, SidecarError> {
+    // Panics from IronCalc's strict importer are contained to this request,
+    // like recalc_cells.
+    catch_unwind(AssertUnwindSafe(|| {
+        let mut model = import_model(path)?;
+        // The stored results, before evaluation replaces them (the
+        // import's placeholder for a formula written without one — the
+        // generic `#ERROR!` — always differs from the fresh result, which is
+        // exactly the value the caller wants stored).
+        let mut stored: HashMap<(u32, i32, i32), (String, bool)> = HashMap::new();
+        for (sheet, row, column, has_result) in formula_cell_positions(&model) {
+            let formatted = model
+                .get_formatted_cell_value(sheet, row, column)
+                .unwrap_or_default();
+            stored.insert((sheet, row, column), (formatted, has_result));
+        }
+        model.evaluate();
+        let mut cells = Vec::new();
+        for (sheet, row, column, _) in formula_cell_positions(&model) {
+            let Some((before, had_cached_value)) = stored.get(&(sheet, row, column)) else {
+                continue;
+            };
+            let formatted = model
+                .get_formatted_cell_value(sheet, row, column)
+                .unwrap_or_default();
+            if formatted == *before {
+                continue;
+            }
+            let is_error = matches!(
+                model.get_cell_type(sheet, row, column),
+                Ok(CellType::ErrorValue)
+            );
+            cells.push(ChangedFormulaCell {
+                sheet: model.workbook.worksheets[sheet as usize].name.clone(),
+                row: (row - 1) as u32,
+                column: (column - 1) as u32,
+                formatted,
+                number: raw_number(&model, sheet, row, column),
+                is_error,
+                had_cached_value: *had_cached_value,
+            });
+        }
+        Ok(RecalcChangedResult { cells })
+    }))
+    .map_err(|_| {
+        SidecarError::Workbook("The formula engine could not process this workbook.".into())
+    })?
+}
+
+/// A fresh IronCalc model for `path`, replacing the file's own formula
+/// results with the engine's: the cache-miss import, shared with callers
+/// that need those stored results as the importer left them.
+fn import_model(path: &Path) -> Result<Model<'static>, SidecarError> {
+    let mut model = load_model(path)?;
+    requote_bare_sheet_names(&mut model);
+    pin_unparsable_formulas(&mut model);
+    Ok(model)
+}
+
 fn run(
     resident: Option<ResidentModel>,
     path: &Path,
@@ -224,18 +362,13 @@ fn run(
 ) -> Result<(ResidentModel, Vec<RecalcCell>), SidecarError> {
     let mut entry = match resident {
         Some(entry) => entry,
-        None => {
-            let mut model = load_model(path)?;
-            requote_bare_sheet_names(&mut model);
-            pin_unparsable_formulas(&mut model);
-            ResidentModel {
-                model,
-                mtime,
-                size,
-                applied: HashMap::new(),
-                last_used: 0,
-            }
-        }
+        None => ResidentModel {
+            model: import_model(path)?,
+            mtime,
+            size,
+            applied: HashMap::new(),
+            last_used: 0,
+        },
     };
 
     let mut dirty = false;
@@ -699,6 +832,117 @@ mod tests {
             .unwrap()
             .formatted
             .clone()
+    }
+
+    /// Rewrites the fixture's sheet XML with (from, to) replacements, into
+    /// `out`: the surgical shape of a file whose stored results disagree with
+    /// its inputs, which is what a value-only apply used to leave behind
+    /// (IronCalc's export refuses to write an unevaluated model).
+    fn with_edited_sheet(path: &Path, out: &Path, replacements: &[(&str, &str)]) {
+        use std::io::Write;
+
+        let file = std::fs::File::open(path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let sheet = {
+            let mut entry = archive.by_name("xl/worksheets/sheet1.xml").unwrap();
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut text).unwrap();
+            text
+        };
+        let edited = replacements.iter().fold(sheet, |acc, (from, to)| {
+            assert!(acc.contains(from), "sheet XML has no {from}");
+            acc.replace(from, to)
+        });
+        let write = std::fs::File::create(out).unwrap();
+        let mut writer = zip::ZipWriter::new(write);
+        let names: Vec<String> = archive
+            .file_names()
+            .map(|name| name.unwrap().to_string())
+            .collect();
+        for (index, name) in names.iter().enumerate() {
+            if name == "xl/worksheets/sheet1.xml" {
+                let options = zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated);
+                writer.start_file(name, options).unwrap();
+                writer.write_all(edited.as_bytes()).unwrap();
+                continue;
+            }
+            writer
+                .raw_copy_file_rename(archive.by_index_raw(index).unwrap(), name)
+                .unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn reports_a_stale_dependent_of_an_edited_cell() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.xlsx");
+        fixture(&fresh);
+        // the fixture holds A1=10, A2=20, A3=SUM(A1:A2)=30; turn A2's stored
+        // 20 into 5 without touching A3's stored 30 — the mismatch a value
+        // edit leaves behind when dependents are not recalculated
+        let stale = dir.path().join("stale.xlsx");
+        with_edited_sheet(&fresh, &stale, &[("<v>20</v>", "<v>5</v>")]);
+
+        let result = recalc_changed_cells(&stale).unwrap();
+        assert_eq!(result.cells.len(), 1, "no stale cells: {result:?}");
+        let cell = &result.cells[0];
+        assert_eq!(cell.sheet, "Sheet1");
+        assert_eq!(cell.row, 2);
+        assert_eq!(cell.column, 0);
+        assert_eq!(cell.formatted, "15");
+        assert_eq!(cell.number, Some(15.0));
+        assert!(!cell.is_error);
+        assert!(cell.had_cached_value);
+        // a workbook whose stored results already match recomputes to nothing
+        let consistent = recalc_changed_cells(&fresh).unwrap();
+        assert!(consistent.cells.is_empty(), "changed: {consistent:?}");
+    }
+
+    #[test]
+    fn reports_a_formula_written_without_a_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.xlsx");
+        write_fixture(&fresh, &[("A1", "2"), ("B1", "=A1*3")]);
+        // drop the stored result: what a batch that writes a formula leaves
+        // behind before its own refresh runs
+        let path = dir.path().join("no-result.xlsx");
+        with_edited_sheet(&fresh, &path, &[("<f>A1*3</f><v>6</v>", "<f>A1*3</f>")]);
+        let result = recalc_changed_cells(&path).unwrap();
+        assert_eq!(result.cells.len(), 1, "no valued cells: {result:?}");
+        assert_eq!(result.cells[0].number, Some(6.0));
+        assert!(!result.cells[0].had_cached_value);
+    }
+
+    #[test]
+    fn reports_an_error_result_with_whether_the_file_had_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.xlsx");
+        let mut model = Model::new_empty("fixture", "en", "UTC", "en").unwrap();
+        model.set_user_input(0, 2, 1, "3".to_string()).unwrap();
+        model.set_user_input(0, 2, 2, "=A2*2".to_string()).unwrap();
+        model.evaluate();
+        if fresh.exists() {
+            std::fs::remove_file(&fresh).unwrap();
+        }
+        save_to_xlsx(&model, fresh.to_str().unwrap()).unwrap();
+        // A2 becomes a failing formula; its dependent keeps the stale 6
+        let path = dir.path().join("error.xlsx");
+        with_edited_sheet(
+            &fresh,
+            &path,
+            &[("<c r=\"A2\"><v>3</v></c>", "<c r=\"A2\"><f>1/0</f></c>")],
+        );
+        let result = recalc_changed_cells(&path).unwrap();
+        assert_eq!(result.cells.len(), 2, "cells: {result:?}");
+        let edited = result.cells.iter().find(|c| c.column == 0).unwrap();
+        assert!(edited.is_error);
+        assert!(!edited.had_cached_value, "the edited cell had no result");
+        let dependent = result.cells.iter().find(|c| c.column == 1).unwrap();
+        assert!(dependent.is_error);
+        assert_eq!(dependent.formatted, "#DIV/0!");
+        assert!(dependent.had_cached_value, "the stale 6 was stored");
     }
 
     #[test]

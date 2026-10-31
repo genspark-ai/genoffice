@@ -621,17 +621,20 @@ describe('formula cache policy', () => {
     async () => {
       const dir = tempDir()
       const table = join(dir, 't.json')
+      // the engine implements FILTER: the array spills into the occupied B2
+      // and its typed #SPILL! is cached, so the never-cached #NAME? comes from
+      // a function it really does not know
       writeFileSync(
         table,
         JSON.stringify([
           [1, 2, 3],
-          ['=FILTER(A1:C1,A1:C1>1)', '=1/0', '=SUM(A1:C1)', '="#N/A"'],
+          ['=FILTER(A1:C1,A1:C1>1)', '=1/0', '=SUM(A1:C1)', '="#N/A"', '=NOSUCHFN(A1:C1)'],
         ]),
       )
       const out = join(dir, 't.xlsx')
       const r = await run(['create', '--type', 'xlsx', '--from', table, '--out', out, '--json'])
       expect(r.code).toBe(0)
-      expect(r.json().warnings[0].message).toContain('A2')
+      expect(r.json().warnings[0].message).toContain('E2')
       const sheet = await part(out, 'xl/worksheets/sheet1.xml')
       expect(sheet).toMatch(
         /<c r="A2"[^>]*\bcm="1"[^>]*><f t="array" ref="A2">_xlfn\._xlws\.FILTER\(/,
@@ -648,6 +651,33 @@ describe('formula cache policy', () => {
       expect(read.code).toBe(0)
     },
   )
+
+  it.skipIf(!sidecar)('recalculates the dependents of a value-only edit', async () => {
+    const dir = tempDir()
+    const table = join(dir, 't.json')
+    writeFileSync(
+      table,
+      JSON.stringify([
+        ['x', 'y'],
+        [3, '=A2*2'],
+      ]),
+    )
+    const out = join(dir, 'dep.xlsx')
+    expect((await run(['create', '--type', 'xlsx', '--from', table, '--out', out])).code).toBe(0)
+    // a batch of value edits alone carries no formula cells, and it used to
+    // short-circuit to cached_values:true: B2 kept its stale 6 for every
+    // reader of the cached values until Excel opened and saved the file
+    // (genoffice#2304)
+    const ops = join(dir, 'ops.json')
+    writeFileSync(ops, JSON.stringify([{ op: 'set_cell', sheet: 't', address: 'A2', value: 5 }]))
+    const r = await run(['sheet', 'apply', out, '--ops', ops, '--json'])
+    expect(r.code).toBe(0)
+    expect(r.json().detail.cached_values).toBe(true)
+    const sheet = await part(out, 'xl/worksheets/sheet1.xml')
+    expect(sheet).toContain('<f>A2*2</f><v>10</v>')
+    const read = await run(['sheet', 'read', out, '--range', 'A2:B2', '--json'])
+    expect(read.json().detail.rows).toEqual([[5, 10]])
+  })
 })
 
 describe('package validity', () => {
