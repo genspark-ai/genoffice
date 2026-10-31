@@ -122,10 +122,12 @@ describe('resolveThinkingEffort', () => {
     expect(
       resolveThinkingEffort({ model: 'deepseek-v4-pro', thinking: { 'deepseek-v4-pro': 'none' } }),
     ).toBeUndefined()
-    expect(resolveThinkingEffort({ model: 'kimi-k3', thinking: { 'kimi-k3': 'high' } })).toBe('high')
-    expect(
-      resolveThinkingEffort({ model: 'glm-5.2', thinking: { 'glm-5.2': 'none' } }),
-    ).toBe('none')
+    expect(resolveThinkingEffort({ model: 'kimi-k3', thinking: { 'kimi-k3': 'high' } })).toBe(
+      'high',
+    )
+    expect(resolveThinkingEffort({ model: 'glm-5.2', thinking: { 'glm-5.2': 'none' } })).toBe(
+      'none',
+    )
     expect(
       resolveThinkingEffort({ model: 'glm-5.3', thinking: { 'glm-5.3': 'none' } }),
     ).toBeUndefined()
@@ -181,7 +183,9 @@ describe('per-protocol translators', () => {
   })
 
   it('toggles: doubao switches thinking, qwen flips enable_thinking', () => {
-    expect(toggleThinkingBodyFor({ model: 'glm-5.3', thinking: { 'glm-5.3': 'low' } })).toBeUndefined()
+    expect(
+      toggleThinkingBodyFor({ model: 'glm-5.3', thinking: { 'glm-5.3': 'low' } }),
+    ).toBeUndefined()
     expect(
       toggleThinkingBodyFor({
         model: 'doubao-seed-2-1-pro-260628',
