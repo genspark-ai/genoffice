@@ -3,10 +3,11 @@
  * translated into the one request field each model family actually accepts.
  *
  * The levels follow OpenAI's current ladder (the widest one): `none` turns
- * reasoning off, `xhigh`/`max` are the 6.x-generation upper tiers. Every other
- * family maps onto that ladder with its own shape, and a family without any
- * effort parameter (DeepSeek, Kimi, MiniMax — live-verified rejects — and the
- * rest) resolves to nothing sent, i.e. today's behaviour.
+ * reasoning off, `xhigh`/`max` are the upper tiers most 2026 lineups share.
+ * Every other family maps onto that ladder with its own shape, and a family
+ * without any effort parameter (MiniMax — live-verified rejects — Mistral,
+ * Ling, Spark, LongCat, MiMo, Hunyuan, codex CLI) resolves to nothing sent,
+ * i.e. today's behaviour.
  *
  * Resolution order mirrors the temperature rule: a user's stored pick wins,
  * an absent pick means the vendor default, and nothing here overrides a
@@ -69,9 +70,21 @@ export function thinkingShapeFor(model: string): ThinkingShape {
     }
   }
   if (/(^|\/)gemini-[3-9]/.test(id)) return { kind: 'gemini-level', levels: ['low', 'high'] }
-  // GLM-4.5+ and Doubao Seed take a thinking on/off switch, not levels
-  if (/(^|\/)glm-/.test(id) || /(^|\/)doubao-/.test(id))
-    return { kind: 'toggle', levels: ['none', 'medium'] }
+  // DeepSeek V4 and Kimi K3 take the same top-level reasoning_effort field with
+  // their own ladders (DeepSeek's encoding.py: low/high/max presets or an
+  // integer; Kimi's K3 docs: low/high/max, default max). V4 Flash ships
+  // non-thinking by default, so omitting the field is already "off" — no none.
+  if (/(^|\/)deep-?seek-/.test(id)) return { kind: 'openai-effort', levels: ['low', 'high', 'max'] }
+  if (/(^|\/)kimi-k3/.test(id)) return { kind: 'openai-effort', levels: ['low', 'high', 'max'] }
+  // GLM-5.2+ configures reasoning_effort across the full ladder (its docs alias
+  // low/medium→high and xhigh→max, and none/minimal disable thinking); 5.3 is
+  // always-on, so it offers everything but none.
+  if (/(^|\/)glm-5\.3/.test(id))
+    return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
+  if (/(^|\/)glm-/.test(id))
+    return { kind: 'openai-effort', levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }
+  // Doubao Seed takes a thinking on/off switch, not levels
+  if (/(^|\/)doubao-/.test(id)) return { kind: 'toggle', levels: ['none', 'medium'] }
   // DashScope Qwen 3.x commercial tiers: enable_thinking
   if (/(^|\/)qwen\d/.test(id)) return { kind: 'qwen-toggle', levels: ['none', 'medium'] }
   // xAI's grok takes the OpenAI-style effort field on the current lineup

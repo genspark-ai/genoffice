@@ -49,9 +49,37 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('gemini-3.8-flash').levels).toEqual(['low', 'high'])
   })
 
-  it('the on/off families: glm, doubao, qwen', () => {
-    expect(thinkingShapeFor('glm-5.3')).toEqual({ kind: 'toggle', levels: ['none', 'medium'] })
-    expect(thinkingShapeFor('doubao-seed-2-1-pro-260628').kind).toBe('toggle')
+  it('deepseek and kimi take reasoning_effort with their own ladders', () => {
+    expect(thinkingShapeFor('deepseek-v4-pro')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'high', 'max'],
+    })
+    expect(thinkingShapeFor('deepseek-flash').levels).toEqual(['low', 'high', 'max'])
+    expect(thinkingShapeFor('kimi-k3.1-pro')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'high', 'max'],
+    })
+    expect(thinkingShapeFor('kimi-k3').levels).toEqual(['low', 'high', 'max'])
+  })
+
+  it('glm: the full ladder through effort, none only where thinking can stop', () => {
+    expect(thinkingShapeFor('glm-5.2').levels).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(thinkingShapeFor('glm-5.3').levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(thinkingShapeFor('glm-5.3-flash').levels).not.toContain('none')
+  })
+
+  it('the on/off families: doubao, qwen', () => {
+    expect(thinkingShapeFor('doubao-seed-2-1-pro-260628')).toEqual({
+      kind: 'toggle',
+      levels: ['none', 'medium'],
+    })
     expect(thinkingShapeFor('qwen3.8-max')).toEqual({
       kind: 'qwen-toggle',
       levels: ['none', 'medium'],
@@ -64,9 +92,6 @@ describe('thinkingShapeFor', () => {
       levels: ['none', 'low', 'medium', 'high'],
     })
     for (const model of [
-      'deepseek-v4-pro',
-      'deepseek-flash',
-      'kimi-k3.1-pro',
       'MiniMax-M3.1-Flash',
       'mistral-medium-latest',
       'Ling-3.0-flash',
@@ -95,10 +120,14 @@ describe('resolveThinkingEffort', () => {
       resolveThinkingEffort({ model: 'gemini-4-argon', thinking: { 'gemini-4-argon': 'max' } }),
     ).toBeUndefined()
     expect(
-      resolveThinkingEffort({ model: 'deepseek-v4-pro', thinking: { 'deepseek-v4-pro': 'high' } }),
+      resolveThinkingEffort({ model: 'deepseek-v4-pro', thinking: { 'deepseek-v4-pro': 'none' } }),
     ).toBeUndefined()
+    expect(resolveThinkingEffort({ model: 'kimi-k3', thinking: { 'kimi-k3': 'high' } })).toBe('high')
     expect(
-      resolveThinkingEffort({ model: 'glm-5.3', thinking: { 'glm-5.3': 'low' } }),
+      resolveThinkingEffort({ model: 'glm-5.2', thinking: { 'glm-5.2': 'none' } }),
+    ).toBe('none')
+    expect(
+      resolveThinkingEffort({ model: 'glm-5.3', thinking: { 'glm-5.3': 'none' } }),
     ).toBeUndefined()
     expect(resolveThinkingEffort({ model: 'gpt-6.1-terra', thinking: {} })).toBeUndefined()
   })
@@ -151,10 +180,8 @@ describe('per-protocol translators', () => {
     ).toBeUndefined()
   })
 
-  it('toggles: glm and doubao switch thinking, qwen flips enable_thinking', () => {
-    expect(toggleThinkingBodyFor({ model: 'glm-5.3', thinking: { 'glm-5.3': 'none' } })).toEqual({
-      thinking: { type: 'disabled' },
-    })
+  it('toggles: doubao switches thinking, qwen flips enable_thinking', () => {
+    expect(toggleThinkingBodyFor({ model: 'glm-5.3', thinking: { 'glm-5.3': 'low' } })).toBeUndefined()
     expect(
       toggleThinkingBodyFor({
         model: 'doubao-seed-2-1-pro-260628',
