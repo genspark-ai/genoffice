@@ -1,6 +1,7 @@
 import { app, dialog, webContents } from 'electron'
 import type { BrowserWindow, ProcessMetric, WebContents } from 'electron'
 import { writeFile } from 'node:fs/promises'
+import { readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
@@ -74,6 +75,55 @@ interface RendererState {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** how many reports (a .json plus its .cpuprofile pair) stay on disk */
+export const WATCHDOG_REPORTS_KEPT = 10
+
+/**
+ * Retention for watchdog reports (issue #27 item 8): every report is a
+ * `renderer-watchdog-<stamp>.json` plus an optional `.cpuprofile` pair under
+ * userData, and nothing ever removed them — a machine with a recurring hot
+ * renderer grew the directory for as long as the app existed. The stamps are
+ * in the file names, so pruning needs no stats: keep the newest
+ * {@link WATCHDOG_REPORTS_KEPT} stamps, delete every older pair. The stamp
+ * of the report that just triggered the prune is passed in
+ * {@link protectStamp} so a backwards clock step cannot make the report's
+ * own prune delete it. Two reports launched in the same sample share one
+ * stamp and one file name — the second write replaces the first, which
+ * predates retention. Best effort, like the reports themselves —
+ * diagnostics must never make the situation worse.
+ */
+export function pruneWatchdogReports(
+  dir: string,
+  keep = WATCHDOG_REPORTS_KEPT,
+  protectStamp?: number,
+): void {
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  const stamps = new Set<number>()
+  for (const name of names) {
+    const match = /^renderer-watchdog-(\d+)\.(?:json|cpuprofile)$/.exec(name)
+    if (match) stamps.add(Number(match[1]))
+  }
+  const newestFirst = [...stamps].sort((a, b) => b - a)
+  for (const stamp of newestFirst.slice(keep)) {
+    if (stamp === protectStamp) continue
+    for (const name of [
+      `renderer-watchdog-${stamp}.json`,
+      `renderer-watchdog-${stamp}.cpuprofile`,
+    ]) {
+      try {
+        unlinkSync(join(dir, name))
+      } catch {
+        /* already gone: fine */
+      }
+    }
+  }
+}
+
 /** short CDP CPU profile of a live renderer; false when another debugger holds it */
 async function captureCpuProfile(wc: WebContents, outPath: string, ms: number): Promise<boolean> {
   if (wc.isDestroyed() || wc.debugger.isAttached()) return false
@@ -135,6 +185,10 @@ export function startRendererWatchdog(options: RendererWatchdogOptions): () => v
     } catch {
       /* diagnostics are best effort and must never make the situation worse */
     }
+    // the report just written is normally the newest stamp, and its stamp is
+    // passed through so a backwards clock step cannot make its own prune
+    // delete it
+    pruneWatchdogReports(app.getPath('userData'), WATCHDOG_REPORTS_KEPT, stamp)
     // chrome renderers (Home) have no document to close: logging is all that applies
     if (!info || wc.isDestroyed()) return
     const state = states.get(wc.id)

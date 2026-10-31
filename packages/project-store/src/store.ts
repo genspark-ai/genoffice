@@ -101,6 +101,60 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
 
+interface RunFile {
+  path: string
+  runId: string
+  mtimeMs: number
+}
+
+/**
+ * readdir+stat of a runs directory, newest first (issue #27 items 4+8): the
+ * one-stat-per-file pass is what orders the read window and decides
+ * retention, so a week of accumulated runs costs one readdir and N stats —
+ * not N full reads. A file that vanishes mid-pass is skipped.
+ */
+function statRunFiles(dir: string): RunFile[] {
+  let files: string[]
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
+  } catch {
+    return []
+  }
+  const out: RunFile[] = []
+  for (const file of files) {
+    const runId = file.replace(/\.jsonl$/, '')
+    if (!SAFE_ID_PATTERN.test(runId)) continue
+    const path = join(dir, file)
+    try {
+      out.push({ path, runId, mtimeMs: statSync(path).mtimeMs })
+    } catch {
+      // deleted between readdir and stat: nothing to read or prune
+    }
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+/**
+ * The startedAt of the MAX_RUNS_LISTED-th newest summary already folded, as
+ * epoch ms — undefined while the listed window is not yet full. This is
+ * listRuns' stopping boundary: an unread run can only enter the result by
+ * outranking it, and a run's startedAt never postdates the write of its own
+ * start event, which every later write only moves forward (mtime). Two
+ * caveats the caller must respect: filesystems with coarse timestamp
+ * granularity floor an mtime below the write it records, so an unread run's
+ * startedAt can sit up to that granularity ABOVE its file's mtime (the stop
+ * demands the boundary clear the next unread mtime by RUNS_MTIME_SLACK_MS),
+ * and a boundary that cannot be parsed returns NaN — every comparison
+ * against it is false, so the reader fails open and keeps reading.
+ */
+function boundaryStartedAtMs(summaries: RunSummary[]): number | undefined {
+  if (summaries.length < MAX_RUNS_LISTED) return undefined
+  const parsed = summaries.map((s) => Date.parse(s.startedAt))
+  if (parsed.some((ms) => Number.isNaN(ms))) return Number.NaN
+  parsed.sort((a, b) => b - a)
+  return parsed[MAX_RUNS_LISTED - 1]!
+}
+
 // Default number of chat messages returned by loadChat when limit is missing or not finite
 const DEFAULT_CHAT_LIMIT = 200
 // Upper bound for loadChat limit to avoid unbounded reads
@@ -118,6 +172,35 @@ const RUN_CHAT_ID_MAX_CHARS = 100
 const RUN_ERROR_MAX_CHARS = 500
 /** Upper bound on runs returned by listRuns (newest first) */
 const MAX_RUNS_LISTED = 200
+/** Run-record retention (issue #27 item 8): a run is telemetry for the
+ *  background-task list and one run is one file, so an idle directory is
+ *  pruned by age and a busy one by count. */
+const RUNS_RETENTION_DAYS = 30
+const MAX_RUNS_RETAINED = 500
+/** The read granularity of listRuns' windowed read: files are folded one
+ *  RUNS_READ_BATCH-sized batch at a time between soundness checks. The stop
+ *  is soundness-driven, not count-driven (see boundaryStartedAtMs), so the
+ *  number of files read is bounded by MAX_RUNS_RETAINED, not by the batch. */
+const RUNS_READ_BATCH = 16
+/** write-side retention cadence: appends are frequent, prunes are not */
+const RUNS_PRUNE_INTERVAL_MS = 3_600_000
+/** count-cap grace: an in-flight run's file goes quiet at its start event,
+ *  so a fresh-enough file survives even 500 newer runs behind it (its
+ *  terminal event must still have a file to land in). */
+const RUNS_COUNT_GRACE_MS = 24 * 60 * 60 * 1000
+/** Slack for filesystems that floor mtimes to 1-2s granularity (HFS+, ext3,
+ *  FAT32, many SMB servers): an event's ts is stamped with millisecond
+ *  precision before the append completes, and the floored mtime can sit
+ *  below that write — so a run's startedAt can postdate its file's mtime by
+ *  up to the granularity, and the boundary stop demands the boundary clear
+ *  the next unread mtime by this margin. */
+const RUNS_MTIME_SLACK_MS = 10_000
+/** A chat transcript compacts once it doubles its read window (issue #27
+ *  item 8): loadChat reads through readChatTail, whose window starts at
+ *  MAX_CHAT_FILE_READ_BYTES and only grows (to the hard cap) while hunting
+ *  an oversized record's boundary, so bytes past twice the window are dead
+ *  weight. */
+const CHAT_COMPACT_THRESHOLD_BYTES = MAX_CHAT_FILE_READ_BYTES * 2
 
 function normalizeTimelineLimit(limit: number): number {
   if (!Number.isFinite(limit)) return DEFAULT_TIMELINE_LIMIT
@@ -481,6 +564,9 @@ export class ProjectStore {
   /** projectId:chatId → current max seq */
   private readonly seqCounters = new Map<string, number>()
 
+  /** when the write-side run retention last ran (appendRunEvent's throttle) */
+  private runsPrunedAt = 0
+
   private seqKey(projectId: string, chatId: string): string {
     return `${projectId}:${chatId}`
   }
@@ -840,6 +926,7 @@ export class ProjectStore {
           ensureDir(this.chatsDir(projectId))
           const lines = buf.map((r) => JSON.stringify(r) + '\n').join('')
           appendJsonLines(this.chatPath(projectId, chatId), lines)
+          this.compactChatFileIfNeeded(this.chatPath(projectId, chatId))
           this.pendingFirstWrite.delete(key)
           return
         }
@@ -850,6 +937,7 @@ export class ProjectStore {
       const buf = this.pendingFirstWrite.get(key) ?? []
       const lines = [...buf, record].map((r) => JSON.stringify(r) + '\n').join('')
       appendJsonLines(this.chatPath(projectId, chatId), lines)
+      this.compactChatFileIfNeeded(this.chatPath(projectId, chatId))
       this.pendingFirstWrite.delete(key)
     } catch (err) {
       console.warn(
@@ -857,6 +945,83 @@ export class ProjectStore {
         err,
       )
       throw err
+    }
+  }
+
+  /**
+   * The head record line a thread list labels this chat from — not
+   * necessarily the file's first line: firstQuestionInFile takes its label
+   * from the first line that parses to a user turn with non-blank text, so a
+   * torn or non-user first line means the label lives further down the head
+   * window. This mirrors that scan and returns the raw line it would read.
+   * Compaction keeps that line ahead of the rewritten tail so the label
+   * survives; undefined when the head window holds no such record.
+   */
+  private firstUserLineOf(filePath: string): string | undefined {
+    const size = statSync(filePath).size
+    if (size === 0) return undefined
+    const fd = openSync(filePath, 'r')
+    try {
+      const buffer = Buffer.allocUnsafe(Math.min(size, 8192))
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, 0)
+      for (const line of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
+        try {
+          const record = JSON.parse(line) as { role?: string; text?: string }
+          if (record.role === 'user' && typeof record.text === 'string' && record.text.trim()) {
+            return line
+          }
+        } catch {
+          // not a record line — the label scan skips it too
+        }
+      }
+      return undefined
+    } finally {
+      closeSync(fd)
+    }
+  }
+
+  /**
+   * Compaction for chat transcripts (issue #27 item 8): loadChat reads
+   * through readChatTail, whose window starts at MAX_CHAT_FILE_READ_BYTES
+   * (it can grow while hunting an oversized record's boundary, but never
+   * past the hard cap), so a file past twice the window is carrying bytes no
+   * reader will ever see again — and every future append pays for them. Past
+   * the threshold the file is rewritten to its read window (atomic tmp +
+   * rename, same pattern as mergeChatFiles), with the first user record kept
+   * ahead of it so the thread label survives — that head record is the one
+   * thing compaction makes newly visible to loadChat, in exchange for
+   * dropping exactly what loadChat could never show. The one reader that
+   * does take a whole file — mergeChatFiles, on the rebind/rename path —
+   * sees the same compacted window from then on, so a merged thread carries
+   * the visible tail rather than the full history. A head window with no
+   * parseable user record (a chat whose opening turns are all oversized
+   * assistant records) keeps nothing: such a thread was unlabelable before
+   * compaction and afterwards labels from the first user record in the
+   * visible tail. Best effort: a failed compaction warns and leaves the
+   * file as it was; the next append retries.
+   */
+  private compactChatFileIfNeeded(filePath: string): void {
+    try {
+      if (statSync(filePath).size <= CHAT_COMPACT_THRESHOLD_BYTES) return
+      const tail = readChatTail(filePath)
+      if (tail === '') return
+      const first = this.firstUserLineOf(filePath)
+      const kept =
+        first !== undefined && !tail.startsWith(first + '\n') ? first + '\n' + tail : tail
+      const tmpPath = `${filePath}.${randomBytes(6).toString('hex')}.tmp`
+      try {
+        writeFileSync(tmpPath, kept, 'utf8')
+        renameSync(tmpPath, filePath)
+      } catch (err) {
+        try {
+          unlinkSync(tmpPath)
+        } catch {
+          /* the temp never landed: fine */
+        }
+        throw err
+      }
+    } catch (err) {
+      console.warn(`[project-store] chat compaction failed for ${filePath}:`, err)
     }
   }
 
@@ -975,9 +1140,17 @@ export class ProjectStore {
     assertSafeId(projectId, 'projectId')
     assertSafeId(runId, 'runId')
     try {
+      // A caller may carry its own ts (the IPC validator forwards unknown
+      // fields); a future-dated one is nonsense data that would also break
+      // listRuns' stopping rule (a run's startedAt must not postdate the
+      // write that records it), so it is stamped down to the write clock.
+      // Past timestamps are legitimate (imported history) and stay.
+      const writtenAt = nowIso()
+      const eventTs =
+        event.ts !== undefined && Date.parse(event.ts) > Date.now() ? writtenAt : event.ts
       const record: RunEvent = {
         kind: event.kind,
-        ts: event.ts ?? nowIso(),
+        ts: eventTs ?? writtenAt,
         ...(event.instruction !== undefined
           ? { instruction: clampChatField(event.instruction, RUN_INSTRUCTION_MAX_CHARS) }
           : {}),
@@ -991,6 +1164,17 @@ export class ProjectStore {
       }
       ensureDir(this.runsDir(projectId))
       appendJsonLines(this.runPath(projectId, runId), `${JSON.stringify(record)}\n`)
+      // write-side retention (issue #27 item 8): a tray-resident session that
+      // never opens the Ask panel would still grow the runs directory without
+      // end, so appends also prune — after the write, so the newest file is
+      // never one of the pruned — and at most once per
+      // RUNS_PRUNE_INTERVAL_MS, because appends are frequent and the
+      // readdir+stat pass is not free. The count cap lands at MAX_RUNS_RETAINED
+      // plus whatever the grace window still protects.
+      if (Date.now() - this.runsPrunedAt >= RUNS_PRUNE_INTERVAL_MS) {
+        this.runsPrunedAt = Date.now()
+        this.pruneRuns(statRunFiles(this.runsDir(projectId)))
+      }
     } catch (err) {
       console.warn(`[project-store] appendRunEvent failed for ${projectId}/${runId}:`, err)
     }
@@ -1001,28 +1185,37 @@ export class ProjectStore {
    * records hold a start but no terminal event is 'interrupted' — it was in
    * flight when the process went away. Bad JSONL lines are skipped; a runs
    * directory that cannot be read lists nothing.
+   *
+   * One stat per file buys both bounds (issue #27 items 4+8): files are read
+   * newest-first in batches and stop once the listed window is full AND no
+   * unread file can still outrank it — the window ranks files by last write
+   * while the result ranks runs by startedAt, and a run's startedAt never
+   * postdates the write of its start event, so a boundary clearing the next
+   * unread mtime by the granularity slack is a sound stop (see
+   * boundaryStartedAtMs; anything unparsable fails open and reads on). A
+   * week of heavy use used to mean reading every run file on every
+   * Ask-panel mount — and the same stats decide retention, so a directory
+   * that has outgrown what any listing can need is pruned right here, for
+   * free.
    */
   listRuns(projectId: string): RunSummary[] {
     assertSafeId(projectId, 'projectId')
     const dir = this.runsDir(projectId)
-    let files: string[]
-    try {
-      files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
-    } catch {
-      return []
-    }
+    const statted = this.pruneRuns(statRunFiles(dir))
     const summaries: RunSummary[] = []
-    for (const file of files) {
-      const runId = file.replace(/\.jsonl$/, '')
-      if (!SAFE_ID_PATTERN.test(runId)) continue
-      let events: RunEvent[]
-      try {
-        events = parseRunEvents(readFileSync(join(dir, file), 'utf8'))
-      } catch {
-        continue
+    for (let i = 0; i < statted.length; i += RUNS_READ_BATCH) {
+      const boundary = boundaryStartedAtMs(summaries)
+      if (boundary !== undefined && boundary >= statted[i]!.mtimeMs + RUNS_MTIME_SLACK_MS) break
+      for (const entry of statted.slice(i, i + RUNS_READ_BATCH)) {
+        let events: RunEvent[]
+        try {
+          events = parseRunEvents(readFileSync(entry.path, 'utf8'))
+        } catch {
+          continue
+        }
+        const summary = foldRunEvents(entry.runId, events)
+        if (summary) summaries.push(summary)
       }
-      const summary = foldRunEvents(runId, events)
-      if (summary) summaries.push(summary)
     }
     summaries.sort((a, b) =>
       a.startedAt < b.startedAt
@@ -1032,6 +1225,45 @@ export class ProjectStore {
           : a.runId.localeCompare(b.runId),
     )
     return summaries.slice(0, MAX_RUNS_LISTED)
+  }
+
+  /**
+   * Runs a file's records may never need again (issue #27 item 8): older than
+   * RUNS_RETENTION_DAYS, or beyond the newest MAX_RUNS_RETAINED. Returns the
+   * survivors newest-first; a deletion failure warns per file and keeps it.
+   *
+   * The count cap carries a grace window (RUNS_COUNT_GRACE_MS): an in-flight
+   * run's file goes quiet at its start event, so 500 runs started behind it
+   * could otherwise delete it mid-flight — and the terminal event would then
+   * land in a start-less file that folds to nothing. A fresh-enough file
+   * survives the cap; once its mtime passes the grace horizon it is deleted
+   * by the count rule (age only ever applies within the count window). The
+   * residual hazard is a run still executing past 24h with 500 newer runs
+   * behind it — a duration no real run reaches, and its records are
+   * telemetry either way.
+   */
+  private pruneRuns(statted: RunFile[]): RunFile[] {
+    const now = Date.now()
+    const ageCutoff = now - RUNS_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    const countGraceCutoff = now - RUNS_COUNT_GRACE_MS
+    const kept: RunFile[] = []
+    for (let i = 0; i < statted.length; i++) {
+      const entry = statted[i]!
+      if (
+        (i < MAX_RUNS_RETAINED && entry.mtimeMs >= ageCutoff) ||
+        entry.mtimeMs > countGraceCutoff
+      ) {
+        kept.push(entry)
+        continue
+      }
+      try {
+        unlinkSync(entry.path)
+      } catch (err) {
+        console.warn(`[project-store] run retention could not delete ${entry.path}:`, err)
+        kept.push(entry)
+      }
+    }
+    return kept
   }
 
   /** Removes one run's records (the background-task list's clear action). */

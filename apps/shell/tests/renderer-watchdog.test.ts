@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * startRendererWatchdog (src/main/renderer-watchdog.ts): a big-but-stable
@@ -13,16 +16,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const showMessageBox = vi.fn<(...args: unknown[]) => Promise<{ response: number }>>()
 let metrics: unknown[] = []
 let allWebContents: unknown[] = []
+// every report also prunes the userData directory the reports live in — the
+// mocked getPath points at a per-test temp dir, so a simulated report never
+// touches the real /tmp (or deletes a real report pair from it)
+let userDataDir = ''
 
 vi.mock('electron', () => ({
   app: {
     getAppMetrics: () => metrics,
-    getPath: () => '/tmp',
+    getPath: () => userDataDir,
   },
   dialog: { showMessageBox: (...args: unknown[]) => showMessageBox(...args) },
   webContents: { getAllWebContents: () => allWebContents },
 }))
-vi.mock('node:fs/promises', () => ({ writeFile: vi.fn(async () => {}) }))
+// report() writes its .json through node:fs/promises and prunes through
+// node:fs readdirSync/unlinkSync: both are stood in/wrapped so a shared log
+// can pin their ORDER — the prune must observe the write, not race it
+const ioLog: string[] = []
+vi.mock('node:fs/promises', () => ({
+  writeFile: vi.fn(async (path: unknown) => {
+    ioLog.push(`write:${String(path)}`)
+  }),
+}))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    readdirSync: (path: unknown, ...rest: unknown[]) => {
+      if (String(path).includes('watchdog-userdata')) ioLog.push(`readdir:${String(path)}`)
+      return (actual.readdirSync as (p: unknown, ...r: unknown[]) => unknown)(path, ...rest)
+    },
+  }
+})
 
 let startRendererWatchdog: typeof import('../src/main/renderer-watchdog').startRendererWatchdog
 
@@ -66,7 +91,13 @@ beforeEach(async () => {
   showMessageBox.mockResolvedValue({ response: 0 })
   allWebContents = [fakeWc(1, 10)]
   metrics = [tabMetric(10, 2_000, 0)]
+  userDataDir = mkdtempSync(join(tmpdir(), 'watchdog-userdata-'))
+  ioLog.length = 0
   ;({ startRendererWatchdog } = await import('../src/main/renderer-watchdog'))
+})
+
+afterEach(() => {
+  rmSync(userDataDir, { recursive: true, force: true })
 })
 
 describe('renderer watchdog re-prompt policy', () => {
@@ -121,5 +152,39 @@ describe('renderer watchdog re-prompt policy', () => {
     await vi.advanceTimersByTimeAsync(2_100)
     expect(closeDocument).toHaveBeenCalledTimes(1)
     stop()
+  })
+
+  it('every report prunes the directory it reports into, after writing', async () => {
+    // the write is mocked (real file I/O cannot resolve inside a fake-timer
+    // flush), so the disk holds only the fifteen seeded pairs — but the
+    // shared ioLog pins the ORDER the code cannot fake: the report's write
+    // must be logged before the prune's readdir, and a wiring that pruned
+    // before the write (or from sample()) would log them backwards
+    for (let stamp = 2_000; stamp < 2_015; stamp++) {
+      writeFileSync(join(userDataDir, `renderer-watchdog-${stamp}.json`), '{}')
+      if (stamp % 2 === 0) {
+        writeFileSync(join(userDataDir, `renderer-watchdog-${stamp}.cpuprofile`), '[]')
+      }
+    }
+    const stop = startWatchdog()
+    await vi.advanceTimersByTimeAsync(2_100)
+    stop()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    // write first, prune second — exactly one of each for one report
+    const reportWrite = ioLog.findIndex((entry) => entry.startsWith('write:'))
+    const pruneReaddir = ioLog.findIndex((entry) => entry.startsWith('readdir:'))
+    expect(reportWrite).toBeGreaterThanOrEqual(0)
+    expect(pruneReaddir).toBeGreaterThanOrEqual(0)
+    expect(reportWrite).toBeLessThan(pruneReaddir)
+    expect(ioLog.filter((entry) => entry.startsWith('readdir:'))).toHaveLength(1)
+    // and the prune kept the newest ten pairs, profiles riding with stamps:
+    // 2005 is the boundary survivor, 2004 and below are gone
+    const everything = readdirSync(userDataDir)
+    expect(everything.filter((n) => n.endsWith('.json'))).toHaveLength(10)
+    expect(everything).toContain('renderer-watchdog-2014.json')
+    expect(everything).toContain('renderer-watchdog-2010.cpuprofile')
+    expect(everything).toContain('renderer-watchdog-2005.json')
+    expect(everything).not.toContain('renderer-watchdog-2004.json')
+    expect(everything).not.toContain('renderer-watchdog-2000.cpuprofile')
   })
 })
