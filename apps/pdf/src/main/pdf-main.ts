@@ -37,6 +37,7 @@ import {
   printPdfViaCups,
   printToPdfOptionsFor,
 } from '@genoffice/electron-utils/print-cups'
+import { DRIVER_OPTION_NAMES, queryPrinterOptions } from '@genoffice/electron-utils/printer-options'
 
 /** 1-based file page positions for the lp `-p` selection: integers within a
  * real document's reach, undefined = the whole document. Anything else is
@@ -1275,6 +1276,16 @@ function registerPdfIpc(): void {
     }
     const buf = await readFile(path)
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  })
+
+  // The driver option groups one queue advertises, for the print dialog's
+  // dropdowns. The queue name becomes an lpoptions argument, so it is
+  // charset-guarded here; an unknown queue resolves to no groups and the
+  // dialog simply shows nothing extra.
+  ipcMain.handle(PDF_CHANNELS.printerOptions, async (_e, queue: unknown) => {
+    if (typeof queue !== 'string' || !/^[A-Za-z0-9_.+-]{1,128}$/.test(queue)) return []
+    const groups = await queryPrinterOptions(queue)
+    return groups.filter((g) => DRIVER_OPTION_NAMES.includes(g.name))
   })
 
   // pdf.js has already accepted `password` for these bytes on the render side;
