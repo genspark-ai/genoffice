@@ -1,5 +1,9 @@
 import JSZip from 'jszip'
-import { applyRevisionResolutions, resolvePropChangeXml } from './revision-xml'
+import {
+  applyRevisionResolutions,
+  cleanMoveRangeMarkers,
+  resolvePropChangeXml,
+} from './revision-xml'
 import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
@@ -2217,6 +2221,7 @@ export async function saveDocx(
     out.file(CUSTOM_PROPERTIES_PATH, customPropertiesXml)
   }
   await cleanupDocxOwnedResources(out, docPath)
+  await cleanStoryMoveRanges(out, docPath)
   if (scrubPersonalInfo) await scrubPersonalMetadata(out)
   // the property write comes last: what the caller asked for wins over the scrub
   if (options.properties) await applyPropertyChanges(out, options.properties)
@@ -2870,6 +2875,32 @@ function scrubPeopleMetadata(xml: string): string {
     )
   }
   return out
+}
+
+/** Story parts whose XML can carry w:moveFromRangeStart/End / w:moveToRangeStart/End pairs. */
+const MOVE_STORY_PART_RE = /^word\/(?:header|footer)[^/]*\.xml$/i
+
+/**
+ * Orphaned move-range markers are a package-level residue: the editor rebuilds
+ * an edited paragraph from its model (which does not model the range markers),
+ * while an untouched neighbouring paragraph keeps its original bytes including
+ * the end marker of the same range. Drop the markers whose counterpart is gone
+ * so Accept/Reject All never leaves a dangling range behind.
+ */
+async function cleanStoryMoveRanges(zip: JSZip, documentPath: string): Promise<void> {
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir || !/\.xml$/i.test(name)) continue
+    if (
+      name !== documentPath &&
+      !MOVE_STORY_PART_RE.test(name) &&
+      !/^word\/(?:footnotes|endnotes)\.xml$/i.test(name) &&
+      name !== 'word/glossary/document.xml'
+    )
+      continue
+    const xml = await entry.async('string')
+    const cleaned = cleanMoveRangeMarkers(xml)
+    if (cleaned.removed > 0) zip.file(name, cleaned.xml, { date: entry.date })
+  }
 }
 
 /**
