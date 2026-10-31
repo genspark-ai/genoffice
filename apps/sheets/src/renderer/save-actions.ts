@@ -35,6 +35,7 @@ import {
 } from './csv-export'
 import type { CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+import type { ExternalLinkOps } from '../shared/desktop-api'
 import { verifiedFormulaValues } from './formula-values'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
@@ -73,6 +74,10 @@ export interface SaveContext {
    * claiming nothing is hidden.
    */
   redactionStates?: () => readonly SheetRedactionState[] | null
+  /** External-link breaks and source retargets pending this save (the links
+      panel). Consumed with the save that carries them; the caller clears the
+      pending state once the save settles. */
+  externalLinkOps?: () => ExternalLinkOps | null
   /** Saving swaps the session and reinstalls the workbook, which resets the
       view to the first sheet's A1 — stash where the user was so the
       reinstall lands there instead. `viewRow`/`viewColumn` is the viewport's
@@ -92,6 +97,42 @@ export interface SaveContext {
 /// CSV files whose "keep this format?" question was already answered with
 /// "Continue as CSV" — asked once per file, like modern Excel's banner.
 const confirmedCsvSaves = new Set<string>()
+
+/// One formula cell's value the recalc overlay contributes to a save request.
+export type RecalculatedFormulaValue = {
+  sheetId: string
+  row: number
+  column: number
+  value: string | number | boolean | null | { error: string }
+}
+
+/// Recalculated formula results: the engine's values are on screen but
+/// deliberately kept out of the journal (they must not become literals). A save
+/// sends them separately so it refreshes each formula cell's cached `<v>`,
+/// keeping its `<f>`.
+///
+/// A journaled formula is excluded: the overlay may still hold the previous
+/// formula's result when the user saves immediately after entering a
+/// replacement. A sheet whose run kept any cached value is excluded wholesale:
+/// the engine evaluated an incomplete model there, so a dependent of the gap may
+/// carry a clean wrong value (IFERROR over an unsupported precedent collapses to
+/// its literal); the file's own cached results stay, and fullCalcOnLoad already
+/// asks Excel to recalculate the session's edits on open.
+export function recalculatedFormulaValues(state: LazyWorkbookState): RecalculatedFormulaValue[] {
+  return [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
+    isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)
+      ? []
+      : [...cells].flatMap(([key, cell]) => {
+          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
+          if (cell.v === undefined || cell.v === '#ERROR!') return []
+          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
+          const [row, column] = key.split(':').map(Number)
+          if (row === undefined || column === undefined) return []
+          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
+          return [{ sheetId, row, column, value }]
+        }),
+  )
+}
 
 /** What a save actually did — the MCP bridge needs the outcome, fire-and-forget callers ignore it. */
 export interface SaveOutcome {
@@ -227,33 +268,11 @@ export async function handleSave(
             ? {}
             : { fonts: state.editJournal.theme.fonts }),
         }
-  // Recalculated formula results: the engine's values are on screen but
-  // deliberately kept out of the journal (they must not become literals). Send them
-  // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
-  // A journaled formula is excluded: the overlay may still hold the previous
-  // formula's result when the user saves immediately after entering a replacement.
-  // A sheet whose run kept any cached value is excluded wholesale: the engine
-  // evaluated an incomplete model there, so a dependent of the gap may carry a
-  // clean wrong value (IFERROR over an unsupported precedent collapses to its
-  // literal); the file's own cached results stay, and fullCalcOnLoad already
-  // asks Excel to recalculate the session's edits on open.
-  const overlayValues = [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
-    isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)
-      ? []
-      : [...cells].flatMap(([key, cell]) => {
-          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
-          if (cell.v === undefined || cell.v === '#ERROR!') return []
-          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
-          const [row, column] = key.split(':').map(Number)
-          if (row === undefined || column === undefined) return []
-          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
-          return [{ sheetId, row, column, value }]
-        }),
-  )
   // Journaled formulas an MCP batch saw settle (see formula-values.ts) were left
-  // out above because the overlay could be stale; their values are read live here.
+  // out of the overlay above because it could be stale; their values are read
+  // live here.
   const journaledValues = ctx.readCells ? verifiedFormulaValues(ctx.readCells) : []
-  const formulaValues = [...overlayValues, ...journaledValues]
+  const formulaValues = [...recalculatedFormulaValues(state), ...journaledValues]
   // Withheld cells travel in a package part of their own, so they ride with
   // this save rather than in the journal. Copied into the request's own shape
   // so the renderer never hands main a readonly view of its state.
@@ -262,6 +281,9 @@ export async function handleSave(
       sheetName: state.sheetName,
       marks: state.marks.map((mark) => ({ ...mark })),
     })) ?? null
+  // External-link breaks/retargets are one-shot: the panel sets them, this
+  // save carries them, and the caller clears them once it settles.
+  const externalLinkOps = ctx.externalLinkOps?.() ?? null
   // The gateway fails closed when these additions ride with structural or
   // sheet changes (their coordinates entangle). Instead of bouncing the
   // user, hold them back and save in two sequential phases: structure
@@ -449,6 +471,7 @@ export async function handleSave(
     workbookProtectionState,
     protectedRangeStates,
     redactionStates,
+    externalLinkOps,
   }
   if (mode === 'recovery') {
     // Best-effort; a failure only means this tick's copy is skipped — but an
@@ -506,6 +529,7 @@ export async function handleSave(
       workbookProtectionState,
       protectedRangeStates,
       redactionStates,
+      externalLinkOps,
     })
     if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
     if (result.canceled) {
@@ -590,6 +614,8 @@ export async function handleSave(
         // performed. Sending them again would rewrite the part under the names
         // this session loaded — the pre-rename ones — and orphan it.
         redactionStates: null,
+        // link ops rode with the first phase; a second phase carries none
+        externalLinkOps: null,
       })
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {

@@ -67,6 +67,21 @@ export const IPC_CHANNELS = {
   reopenWorkbook: 'workbook:reopen',
   readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
+  listExternalLinks: 'workbook:list-external-links',
+  updateExternalLinks: 'workbook:update-external-links',
+  readExternalLinkUsage: 'workbook:read-external-link-usage',
+  selectExternalLinkSource: 'workbook:select-external-link-source',
+  /// Cross-workbook range picking (genoffice#2109): the tab editing a formula
+  /// arms a pick, the user clicks a range in another workbook's tab, main
+  /// relays the selection back and re-activates the editing tab.
+  listWorkbookTabs: 'workbook:list-tabs',
+  armWorkbookPick: 'workbook:pick-arm',
+  sendWorkbookPickSelection: 'workbook:pick-select',
+  cancelWorkbookPick: 'workbook:pick-cancel',
+  workbookPickArmed: 'workbook:pick-armed',
+  workbookPickSelected: 'workbook:pick-selected',
+  workbookPickCancelled: 'workbook:pick-cancelled',
+  revealPath: 'shell:reveal-path',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
   /** The cells the reader withheld from the model (xl/gxRedactions.json) */

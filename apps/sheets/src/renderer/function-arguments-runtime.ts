@@ -3,6 +3,7 @@
  * what the cell editor holds when the dialog opens, live sub-expression
  * evaluation, grid range picks and the formula bar's fx button.
  */
+import { basename } from 'node:path'
 import { DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, DOCS_NORMAL_EDITOR_UNIT_ID_KEY } from '@univerjs/core'
 import { IEditorService } from '@univerjs/docs-ui'
 import { IFormulaEditorManagerService } from '@univerjs/sheets-ui'
@@ -24,11 +25,30 @@ export interface FunctionTarget {
   readonly editorText: string | null
 }
 
+export interface ExternalPickTarget {
+  /// The link's stored `[n]` index.
+  readonly index: number
+  readonly name: string
+  readonly source: string
+  /// True when the source workbook is open in another tab: a grid pick can
+  /// relay the range. Closed sources take a typed range instead.
+  readonly open: boolean
+  readonly wcId: number | null
+  readonly sheetNames: readonly string[]
+}
+
 export interface FunctionArgumentsHost {
   readTarget(): Promise<FunctionTarget | null>
   write(target: FunctionTarget, formula: string): string | null
   evaluate(target: FunctionTarget, expressions: readonly string[]): Promise<PreviewValue[]>
   observeRangePick(target: FunctionTarget, onPick: (ref: string) => void): () => void
+  /** Linked workbooks of the file being edited, flagged by whether their
+      source is open in another tab. */
+  listExternalPickTargets(): Promise<ExternalPickTarget[]>
+  /** Arms a cross-workbook pick against one open linked workbook; the next
+      range selected on that workbook's grid arrives through onPick as the
+      stored `'[n]Sheet'!A1:B2` spelling. */
+  pickExternalRange(target: ExternalPickTarget, onPick: (ref: string) => void): () => void
   cancel(target: FunctionTarget): void
 }
 
@@ -47,9 +67,43 @@ function editorTextAndCaret(runtime: UniverRuntime): { text: string; caret: numb
 
 let evaluationQueue: Promise<void> = Promise.resolve()
 
+/// The stored spelling of one external sheet reference: `[1]Sheet1` when the
+/// name reads as a bare identifier (Excel leaves it unquoted), the quoted
+/// `'[1]Sheet Name'` otherwise — the two shapes the gateway's break/renumber
+/// scan and the sidecar's usage scan both match.
+export function formatExternalRef(index: number, sheetName: string, body: string): string {
+  const bare = /^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheetName) && !/^[A-Za-z]{1,3}\d+$/.test(sheetName)
+  const part = bare ? `[${index}]${sheetName}` : `'[${index}]${sheetName.replace(/'/g, "''")}'`
+  return `${part}!${body}`
+}
+
+/// The stored spelling for a range picked on another workbook's grid: the
+/// sheet name comes from the link's stored list when the picked tab's sheet
+/// matches one (case-insensitive), the live name otherwise. Whole-row/column
+/// picks keep their `1:3` / `A:C` bodies.
+export function formatExternalPickRef(
+  target: ExternalPickTarget,
+  selection: {
+    sheetName: string
+    startRow: number
+    endRow: number
+    startColumn: number
+    endColumn: number
+    rangeType?: number | undefined
+  },
+): string {
+  const stored =
+    target.sheetNames.find((name) => name.toLowerCase() === selection.sheetName.toLowerCase()) ??
+    selection.sheetName
+  // equal names keep pickedRangeRef sheet-unqualified, leaving the A1 body
+  const body = pickedRangeRef(selection, stored, stored)
+  return formatExternalRef(target.index, stored, body)
+}
+
 export function createFunctionArgumentsHost(
   getRuntime: () => UniverRuntime | null,
   notReady: () => string,
+  getFilePath: () => string | null = () => null,
 ): FunctionArgumentsHost {
   return {
     async readTarget() {
@@ -145,6 +199,53 @@ export function createFunctionArgumentsHost(
         disposable.dispose()
       }
     },
+    async listExternalPickTargets() {
+      const path = getFilePath()
+      if (!path) return []
+      const [links, tabs] = await Promise.all([
+        window.desktopApi.listExternalLinks({ path }),
+        window.desktopApi.listWorkbookTabs(),
+      ])
+      const normalize = (value: string): string => value.replaceAll('\\', '/').toLowerCase()
+      return links.links.map((link) => {
+        const tab = link.source
+          ? tabs.tabs.find((entry) => normalize(entry.path) === normalize(link.source!))
+          : undefined
+        return {
+          index: link.index,
+          name: basename(link.source ?? link.rawTarget),
+          source: link.source ?? link.rawTarget,
+          open: tab !== undefined,
+          wcId: tab?.wcId ?? null,
+          sheetNames: link.sheetNames,
+        }
+      })
+    },
+    pickExternalRange(target, onPick) {
+      let disposed = false
+      let offSelected: (() => void) | null = null
+      let pickId: string | null = null
+      void (async () => {
+        const armed = await window.desktopApi.armWorkbookPick()
+        if (disposed) {
+          void window.desktopApi.cancelWorkbookPick(armed.pickId)
+          return
+        }
+        pickId = armed.pickId
+        offSelected = window.desktopApi.onWorkbookPickSelected((selection) => {
+          if (selection.pickId !== pickId) return
+          onPick(formatExternalPickRef(target, selection))
+          // the pick is consumed; release the other tabs
+          void window.desktopApi.cancelWorkbookPick(pickId!)
+        })
+      })()
+      return () => {
+        disposed = true
+        offSelected?.()
+        offSelected = null
+        if (pickId !== null) void window.desktopApi.cancelWorkbookPick(pickId)
+      }
+    },
     cancel(target) {
       if (target.editorText === null) return
       const runtime = getRuntime()
@@ -175,6 +276,48 @@ export function registerFxButtonOpener(open: () => void): () => void {
   fxOpener = open
   return () => {
     if (fxOpener === open) fxOpener = null
+  }
+}
+
+/**
+ * The picking side of the cross-workbook range picker: while another tab's
+ * Function Arguments dialog has a pick armed, the next selection on THIS
+ * workbook's grid is relayed to it through the main process, which then
+ * re-activates the editing tab.
+ */
+export function installWorkbookPickRelay(runtime: UniverRuntime): { dispose(): void } {
+  let armed: string | null = null
+  const offArmed = window.desktopApi.onWorkbookPickArmed(({ pickId }) => {
+    armed = pickId
+  })
+  const offCancelled = window.desktopApi.onWorkbookPickCancelled(({ pickId }) => {
+    if (armed === pickId) armed = null
+  })
+  const disposable = runtime.univerAPI.addEvent(
+    runtime.univerAPI.Event.SelectionMoveEnd,
+    (params) => {
+      if (armed === null) return
+      const range = params.selections[0]
+      if (!range) return
+      const pickId = armed
+      armed = null
+      void window.desktopApi.sendWorkbookPickSelection({
+        pickId,
+        sheetName: params.worksheet.getSheetName(),
+        startRow: range.startRow,
+        endRow: range.endRow,
+        startColumn: range.startColumn,
+        endColumn: range.endColumn,
+        ...(range.rangeType === undefined ? {} : { rangeType: range.rangeType }),
+      })
+    },
+  )
+  return {
+    dispose: () => {
+      offArmed()
+      offCancelled()
+      disposable.dispose()
+    },
   }
 }
 

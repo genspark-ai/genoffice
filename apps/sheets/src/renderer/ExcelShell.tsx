@@ -2996,6 +2996,13 @@ function Ribbon({
             symbol="👓"
             onClick={() => onCommand('watch-window')}
           />
+          <RibbonButton
+            large
+            label={t('appLinksPanel')}
+            detail={t('appLinksPanelDetail')}
+            symbol="🔗"
+            onClick={() => onCommand('external-links-panel')}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCalculation')}>
           {largeMenu(t('appCalculationOptions'), '🧮', t('appCalculationOptionsTitle'), [

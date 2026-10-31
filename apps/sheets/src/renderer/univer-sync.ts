@@ -21,6 +21,7 @@ import {
   IUndoRedoService,
   IUniverInstanceService,
   LifecycleStages,
+  type Nullable,
   RANGE_TYPE,
   VerticalAlign,
   WrapStrategy,
@@ -187,6 +188,8 @@ import {
   type WrapMeasureCoverage,
 } from './univer-state'
 import type { SheetOutlineState } from './outline-model'
+import { externalLinkOverlayCell } from './external-link-values'
+import type { ExternalLinkCell } from '../shared/desktop-api'
 import { isManualCalculation } from './calc-options'
 import {
   registerCellFontAliases,
@@ -8208,4 +8211,124 @@ export function lazyCellEditable(
     column >= loaded.startColumn &&
     column <= loaded.endColumn
   )
+}
+
+/**
+ * Applies an external-links update (genoffice#2109): installs the freshly
+ * computed values into the recalc overlay so the grid shows them and the
+ * next save writes them as the formulas' cached `<v>` — the stored `[n]`
+ * formula text is untouched. Each cell's `kind` keeps its type: a boolean
+ * stays a boolean and an error stays an error, instead of both becoming the
+ * text of their display spelling. A cell whose report entry has no kind (the
+ * file never cached a value for it) keeps whatever the file has.
+ */
+export function applyExternalLinkValues(
+  state: LazyWorkbookState,
+  runtime: UniverRuntime,
+  report: { cells: readonly ExternalLinkCell[] },
+): { applied: number; sheets: number } {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return { applied: 0, sheets: 0 }
+  const idByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet.getSheetId()]),
+  )
+  const bySheet = new Map<string, Map<string, PinnedClosureCell>>()
+  let applied = 0
+  for (const cell of report.cells) {
+    const overlayValue = externalLinkOverlayCell(cell)
+    if (overlayValue === null) continue
+    const sheetId = idByName.get(cell.sheet.toLowerCase())
+    if (sheetId === undefined) continue
+    const overlay = bySheet.get(sheetId) ?? new Map<string, PinnedClosureCell>()
+    overlay.set(`${cell.row}:${cell.column}`, overlayValue)
+    bySheet.set(sheetId, overlay)
+    applied += 1
+  }
+  for (const [sheetId, overlay] of bySheet) {
+    // merge into the sheet's existing overlay: a recalculation may already
+    // have pinned other formula cells there, and dropping them would lose the
+    // values the next save refreshes from
+    const merged = new Map(state.recalc.overlay.get(sheetId) ?? [])
+    for (const [key, value] of overlay) merged.set(key, value)
+    state.recalc.overlay.set(sheetId, merged)
+    state.recalc.incompleteRuns.delete(sheetId)
+    const loaded = state.loadedRanges.get(sheetId)
+    const worksheet = workbook.getSheets().find((sheet) => sheet.getSheetId() === sheetId)
+    if (worksheet && loaded && overlay.size > 0) {
+      journalSuppression.active = true
+      loadAutoHeightSuppression.active = true
+      try {
+        applyPinnedOverlay(worksheet, overlay, undefined, loaded)
+      } finally {
+        journalSuppression.active = false
+        loadAutoHeightSuppression.active = false
+      }
+    }
+  }
+  return { applied, sheets: bySheet.size }
+}
+
+const SET_RANGE_VALUES_COMMAND = 'sheet.command.set-range-values'
+
+/**
+ * Breaks one link's cells in the model (genoffice#2109): every formula cell
+ * the usage scan reported becomes the literal its cached `<v>` holds, through
+ * the set-range-values command so the edit journal records a literal
+ * overwrite. A cell whose cache is an error or empty stays on the formula —
+ * the save-time break transform freezes those file-side (`t="e"` survives
+ * there, a journal edit would not). Returns how many cells were journaled.
+ */
+export async function journalExternalLinkLiterals(
+  runtime: UniverRuntime,
+  cells: readonly {
+    sheet: string
+    row: number
+    column: number
+    value: { kind: string; value?: number | string | boolean }
+  }[],
+): Promise<number> {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return 0
+  const unitId = workbook.getId()
+  const commandService = runtime.univer.__getInjector().get(ICommandService)
+  const sheetByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet]),
+  )
+  const bySheet = new Map<string, { [row: number]: { [column: number]: ICellData } }>()
+  let journaled = 0
+  for (const cell of cells) {
+    const kind = cell.value.kind
+    if (kind !== 'number' && kind !== 'text' && kind !== 'bool') continue
+    const sheet = sheetByName.get(cell.sheet.toLowerCase())
+    if (!sheet) continue
+    const raw = cell.value.value
+    const patch: ICellData =
+      kind === 'number'
+        ? { v: raw as number, t: CellValueType.NUMBER, f: null, si: null, p: null }
+        : kind === 'bool'
+          ? { v: raw as boolean, t: CellValueType.BOOLEAN, f: null, si: null, p: null }
+          : { v: String(raw), t: CellValueType.STRING, f: null, si: null, p: null }
+    const matrix = bySheet.get(sheet.getSheetId()) ?? {}
+    matrix[cell.row] = { ...matrix[cell.row], [cell.column]: patch }
+    bySheet.set(sheet.getSheetId(), matrix)
+    journaled += 1
+  }
+  for (const [sheetId, matrix] of bySheet) {
+    const rows = Object.keys(matrix).map(Number)
+    const startRow = Math.min(...rows)
+    const endRow = Math.max(...rows)
+    const columns = rows.flatMap((row) => Object.keys(matrix[row]!).map(Number))
+    await commandService.executeCommand(SET_RANGE_VALUES_COMMAND, {
+      unitId,
+      subUnitId: sheetId,
+      range: {
+        startRow,
+        endRow,
+        startColumn: Math.min(...columns),
+        endColumn: Math.max(...columns),
+      },
+      value: matrix as Nullable<Record<number, Record<number, ICellData>>>,
+    })
+  }
+  return journaled
 }

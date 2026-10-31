@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 
+import type { ExternalLinksResult, ExternalLinksUpdateResult } from '../shared/desktop-api'
+
 const PROTOCOL_VERSION = 1
 const REQUEST_TIMEOUT_MS = 30_000
 // Archive commands stream whole workbooks; large files need more headroom.
@@ -182,6 +184,42 @@ export class XlsxSidecarClient {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 
+  /** External links (genoffice#2109): list the workbook's `[n]` links with
+   * their resolved sources and, for each external-formula cell, the freshly
+   * computed value when the source is reachable — the stored formula keeps
+   * its indexed spelling, so the caller updates only the cached `<v>`. Cell
+   * `row`/`column` are 0-based in the report (IronCalc, which computes the
+   * values, addresses the same cells 1-based). */
+  async updateExternalLinks(input: { readonly path: string }): Promise<ExternalLinksUpdateResult> {
+    return this.request<ExternalLinksUpdateResult>(
+      { command: 'update_external_links', ...input },
+      ARCHIVE_TIMEOUT_MS,
+    )
+  }
+
+  /** The link list only: no source is opened, nothing is evaluated. */
+  async readExternalLinks(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
+  /** The formula cells referencing each `[n]` link with the value a break
+   * would freeze them at — a file-level scan, so `t="e"` error caches
+   * survive (a model pass would lose them). */
+  async readExternalLinkUsage(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'read_external_link_usage', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
+  /**
+   * The link list only: no source is opened, nothing is evaluated, and the
+   * targets are not probed (the listing carries no reachability).
+   */
+  async listExternalLinks(input: { readonly path: string }): Promise<ExternalLinksResult> {
+    return this.request<ExternalLinksResult>(
+      { command: 'list_external_links', ...input },
+      ARCHIVE_TIMEOUT_MS,
+    )
+  }
+
   /**
    * Spawn the sidecar ahead of the first request to hide process cold-start.
    * The prewarm is best-effort: on Windows an unrunnable binary (corrupt,
@@ -229,10 +267,10 @@ export class XlsxSidecarClient {
     )
   }
 
-  private request(
+  private request<T = unknown>(
     command: Readonly<Record<string, unknown>>,
     timeoutMs: number = REQUEST_TIMEOUT_MS,
-  ): Promise<unknown> {
+  ): Promise<T> {
     const child = this.ensureStarted()
     const requestId = crypto.randomUUID()
     const payload = JSON.stringify({
@@ -254,7 +292,9 @@ export class XlsxSidecarClient {
         reject(new Error('XLSX sidecar request timed out.'))
       }, timeoutMs)
       this.pending.set(requestId, {
-        resolve,
+        // the queue erases T: the reply arrives as unknown and typed callers
+        // assert through the request<T> return type
+        resolve: resolve as (value: unknown) => void,
         reject,
         timeout,
         command: String(commandName),

@@ -33,6 +33,7 @@ import type {
   SheetVisualAddition,
   SheetFormulaValues,
   SheetCellImageAddition,
+  ExternalLinkOps,
 } from './xlsx-gateway'
 import { planCellEditsToXlsx, syncFileBestEffort } from './xlsx-gateway'
 import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
@@ -110,6 +111,8 @@ export interface StreamingSaveRequest {
   readonly sparklineAdditions?: readonly SheetSparklineAddition[] | undefined
   /// Recalculated formula-cell values written into <v>
   readonly formulaValues?: readonly SheetFormulaValues[] | undefined
+  /// External-link breaks and source retargets, resolved on the final contents
+  readonly externalLinkOps?: ExternalLinkOps | null | undefined
   readonly themeState?: WorkbookThemeState | null | undefined
   readonly workbookProtectionState?: { readonly lockStructure: boolean } | null | undefined
   readonly protectedRangeStates?: readonly SheetProtectedRangesState[] | undefined
@@ -189,6 +192,7 @@ export async function saveWorkbookViaSidecar(
       request.tabColorStates ?? [],
       request.tableEdits ?? [],
       request.cellImageAdditions ?? [],
+      request.externalLinkOps ?? null,
       request.redactionStates ?? null,
     )
 

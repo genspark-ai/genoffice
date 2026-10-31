@@ -221,6 +221,8 @@ import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
 import type {
   AttachmentAddResult,
   AttachmentMeta,
+  ExternalLinkOps,
+  ExternalLinkRow,
   MenuAction,
   RecoveryPromptPayload,
   WorkbookFile,
@@ -348,7 +350,11 @@ import { installFilterRangeOutlineSuppression } from './filter-range-outline'
 import { createSheetTabActions } from './sheet-tab-actions'
 import { installVeryHiddenSheetGuard } from './very-hidden-sheets'
 import { installFormulaBarAutosize } from './formula-bar-autosize'
-import { createFunctionArgumentsHost, installFxButtonHook } from './function-arguments-runtime'
+import {
+  createFunctionArgumentsHost,
+  installFxButtonHook,
+  installWorkbookPickRelay,
+} from './function-arguments-runtime'
 import {
   applyShowFormulasView,
   installFormulaTextInterceptor,
@@ -543,6 +549,9 @@ import {
 } from './formula-values'
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
 import { WatchWindowPanel, watchKey, type WatchCell, type WatchRowValue } from './WatchWindowPanel'
+import { ExternalLinksPanel } from './ExternalLinksPanel'
+import { updateExternalLinksFlow } from './external-links-flow'
+import { applyExternalLinkValues, journalExternalLinkLiterals } from './univer-sync'
 import { TimelineFieldPicker, TimelinePanels, type TimelineUiState } from './TimelinePanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
 import { workbookMediaDataUrl } from './workbook-media'
@@ -911,6 +920,37 @@ export function App({
   /// SlicerPanel).
   const [slicers, setSlicers] = useState<readonly SlicerUiState[]>([])
   const [watchOpen, setWatchOpen] = useState(false)
+  const [linksOpen, setLinksOpen] = useState(false)
+  const [linkStatuses, setLinkStatuses] = useState<ExternalLinkRow[]>([])
+  const [linksBusy, setLinksBusy] = useState(false)
+  // Load the workbook's links when the panel opens: the listing carries
+  // identity fields only and never probes the sources on disk, so it is cheap
+  // and reachability stays unknown (the panel's "—") until Update answers it.
+  useEffect(() => {
+    if (!linksOpen) return
+    const file = lazyWorkbookRef.current?.file
+    const path = file !== undefined && !file.needsSaveAs ? (file.path ?? null) : null
+    if (path === null) {
+      setLinkStatuses([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await window.desktopApi.listExternalLinks({ path })
+        if (!cancelled) setLinkStatuses(result.links)
+      } catch {
+        // an unreadable workbook keeps the panel empty instead of throwing
+        if (!cancelled) setLinkStatuses([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [linksOpen])
+  /// External-link breaks/retargets the links panel queued for the next save;
+  /// cleared once the save settles (see saveContext).
+  const pendingExternalLinkOpsRef = useRef<ExternalLinkOps | null>(null)
   const [watchCells, setWatchCells] = useState<readonly WatchCell[]>([])
   const [calcManual, setCalcManual] = useState(false)
   /// Non-null while the "Insert Slicer" field picker is open.
@@ -1116,6 +1156,7 @@ export function App({
       // null until the part was read: a save in that window must not clear it
       redactionStates: () =>
         loadedRedactionStatesRef.current === null ? null : redactionStatesRef.current,
+      externalLinkOps: () => pendingExternalLinkOpsRef.current,
       stashViewRestore: (view) => {
         viewRestoreRef.current = view
       },
@@ -2291,6 +2332,9 @@ export function App({
     // The fx bar grows to fit a wrapped formula instead of clipping it.
     const formulaBarAutosizeDisposable = installFormulaBarAutosize(runtime)
     const fxButtonDisposable = installFxButtonHook(runtime)
+    // The picking side of the cross-workbook range picker (#2109): another
+    // tab's dialog can arm a pick against this workbook's grid.
+    const pickRelayDisposable = installWorkbookPickRelay(runtime)
     // A file formula the engine re-computes into an error shows the file's
     // cached result instead; display-only.
     const cachedValueDisposable = installCachedValueFallbackInterceptor(runtime, lazyWorkbookRef)
@@ -3723,6 +3767,7 @@ export function App({
       formulaTextDisposable.dispose()
       formulaBarAutosizeDisposable.dispose()
       fxButtonDisposable.dispose()
+      pickRelayDisposable.dispose()
       cachedValueDisposable.dispose()
       formulaNewlineDisposable.dispose()
       functionProbeDisposable.dispose()
@@ -4421,6 +4466,10 @@ export function App({
       createFunctionArgumentsHost(
         () => univerRef.current,
         () => t('appWorkbookNotReady'),
+        () => {
+          const file = lazyWorkbookRef.current?.file
+          return file && !file.needsSaveAs ? (file.csvPath ?? file.path ?? null) : null
+        },
       ),
     [],
   )
@@ -4484,6 +4533,10 @@ export function App({
     }
     if (command === 'watch-window') {
       setWatchOpen((open) => !open)
+      return
+    }
+    if (command === 'external-links-panel') {
+      setLinksOpen((open) => !open)
       return
     }
     if (command === 'toggle-page-break-preview') {
@@ -5977,6 +6030,84 @@ export function App({
           onClose={() => setWatchOpen(false)}
         />
       )}
+      {linksOpen && (
+        <ExternalLinksPanel
+          links={linkStatuses}
+          busy={linksBusy}
+          onUpdate={() => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              setLinksBusy(true)
+              try {
+                await updateExternalLinksFlow({
+                  path,
+                  save: () => handleSave('save'),
+                  update: (target) => window.desktopApi.updateExternalLinks({ path: target }),
+                  apply: (report) => {
+                    const linkRuntime = univerRef.current
+                    const linkState = lazyWorkbookRef.current
+                    if (linkRuntime && linkState) {
+                      applyExternalLinkValues(linkState, linkRuntime, report)
+                    }
+                  },
+                  onStatuses: (report) => setLinkStatuses(report.links),
+                })
+              } finally {
+                setLinksBusy(false)
+              }
+            })()
+          }}
+          onBreak={(index) => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              setLinksBusy(true)
+              try {
+                const usage = await window.desktopApi.readExternalLinkUsage({ path })
+                const entry = usage.links.find((link) => link.index === index)
+                const runtime = univerRef.current
+                if (runtime && entry) {
+                  await journalExternalLinkLiterals(runtime, entry.cells)
+                }
+                pendingExternalLinkOpsRef.current = { broken: [index], retargets: [] }
+                await handleSave('save')
+              } finally {
+                pendingExternalLinkOpsRef.current = null
+                setLinksBusy(false)
+                const fresh = await window.desktopApi.listExternalLinks({ path })
+                setLinkStatuses(fresh.links)
+              }
+            })()
+          }}
+          onChangeSource={(index) => {
+            void (async () => {
+              const file = lazyWorkbookRef.current?.file
+              const path = file && !file.needsSaveAs ? file.path : null
+              if (!path || linksBusy) return
+              const picked = await window.desktopApi.selectExternalLinkSource()
+              if (!picked) return
+              setLinksBusy(true)
+              try {
+                pendingExternalLinkOpsRef.current = {
+                  broken: [],
+                  retargets: [{ index, target: externalFileTarget(picked) }],
+                }
+                await handleSave('save')
+              } finally {
+                pendingExternalLinkOpsRef.current = null
+                setLinksBusy(false)
+                const fresh = await window.desktopApi.listExternalLinks({ path })
+                setLinkStatuses(fresh.links)
+              }
+            })()
+          }}
+          onReveal={(source) => void window.desktopApi.revealPath(source)}
+          onClose={() => setLinksOpen(false)}
+        />
+      )}
     </>
   )
 
@@ -6163,4 +6294,13 @@ export function App({
     setMessage(t('appRangesRecorded', { count: ranges.length }))
     return null
   }
+}
+
+/// A picked file's `file:///` spelling for an external link's rels Target:
+/// forward slashes, percent-encoded segments — what the sidecar's path
+/// resolver decodes back (Excel stores the same shape).
+function externalFileTarget(path: string): string {
+  const universal = path.replaceAll('\\', '/')
+  const trimmed = universal.startsWith('/') ? universal.slice(1) : universal
+  return `file:///${trimmed.split('/').map(encodeURIComponent).join('/')}`
 }
