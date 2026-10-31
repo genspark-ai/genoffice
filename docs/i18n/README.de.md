@@ -255,6 +255,26 @@ aufbauen, während du zusiehst.
   Desktop, Codex, Cursor und anderen Agenten – weiterhin auf dem Gerät.
 - **Kostenlos**, für Einzelpersonen wie für Teams.
 
+## Im Browser nutzen
+
+Die Desktop-App kann sich auch selbst über HTTP ausliefern: Starte sie mit
+`genoffice --web-server` und öffne `http://127.0.0.1:8931/` in einem
+Browser-Tab. Die sechs Editoren sind exakt die Bundles, die auch das
+Desktop-Fenster lädt, und sprechen über einen WebSocket mit denselben
+Engines — Dateien über den Startbildschirm öffnen und speichern, alles
+rendert durch dieselben Pipelines.
+
+- Der Dienst verlangt immer sein Zugriffstoken: Beim Start wird eine
+  `?token=…`-URL gedruckt, die dem Browser ein Cookie hinterlegt — teile
+  diese URL, nicht den nackten Port. `--web-port` und `--web-host` verschieben
+  ihn (binde `0.0.0.0` für dein LAN und öffne die gedruckte URL vom anderen
+  Gerät); `--web-token` setzt ein eigenes Token.
+- Eine kleine Headless-API umhüllt die CLI für Skripte:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
+  `POST /api/info` liefert die Strukturzusammenfassung des Dokuments.
+- Drag-and-Drop lokaler Dateien und natives Drucken bleiben dem Desktop
+  vorbehalten.
+
 ## KI-Backends
 
 **Mit Genspark anmelden**, und es gibt nichts zu konfigurieren:

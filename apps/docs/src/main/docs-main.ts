@@ -3430,6 +3430,13 @@ export function markDocsNewBlank(wcId: number): void {
   pendingNewBlankIds.add(wcId)
 }
 
+/** web-server mode: a browser tab connects with ?path= and seeds its pending
+ *  open the way createDocsView does for a desktop view; the per-id destroyed
+ *  cleanup createDocsView also registers is covered by the bridge's tab object */
+export function queueDocsPendingOpen(wcId: number, path: string): void {
+  pendingWindowOpens.set(wcId, path)
+}
+
 /** AI-authored content waiting for its create_document tab, keyed by webContents id */
 const pendingAiDocContents = new Map<number, AiDocContent>()
 

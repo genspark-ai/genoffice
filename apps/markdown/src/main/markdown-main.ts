@@ -760,40 +760,44 @@ async function readRemoteImage(url: string): Promise<ImageData | null> {
  * open document's directory are served.
  */
 function registerImageProtocol(): void {
-  protocol.handle('md-asset', async (request) => {
-    let target: string
-    try {
-      target = decodeURIComponent(new URL(request.url).pathname)
-    } catch {
-      return new Response(null, { status: 400 })
+  protocol.handle('md-asset', (request) => serveMarkdownAsset(request.url))
+}
+
+/** the md-asset handler body, shared by the Electron protocol route and the
+ *  web server's /__mdasset:// route (browser pages cannot fetch the scheme) */
+export async function serveMarkdownAsset(requestUrl: string): Promise<Response> {
+  let target: string
+  try {
+    target = decodeURIComponent(new URL(requestUrl).pathname)
+  } catch {
+    return new Response(null, { status: 400 })
+  }
+  if (/^\/[a-zA-Z]:\//.test(target)) target = target.slice(1)
+  target = resolve(target)
+  if (!DISPLAY_IMAGE_EXTS.has(extname(target).toLowerCase()) || !existsSync(target)) {
+    return new Response(null, { status: 404 })
+  }
+  let served: string | null = null
+  for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
+    const dir = resolve(dirname(doc))
+    // isInDocDir handles filesystem-root docs ("/", "C:\") whose dir
+    // already ends in a separator — dir + sep would 403 every sibling.
+    if (!isInDocDir(target, dir)) continue
+    const safe = await resolveSafeRelativeImagePath(doc, relative(dir, target))
+    if (safe) {
+      served = safe
+      break
     }
-    if (/^\/[a-zA-Z]:\//.test(target)) target = target.slice(1)
-    target = resolve(target)
-    if (!DISPLAY_IMAGE_EXTS.has(extname(target).toLowerCase()) || !existsSync(target)) {
-      return new Response(null, { status: 404 })
-    }
-    let served: string | null = null
-    for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
-      const dir = resolve(dirname(doc))
-      // isInDocDir handles filesystem-root docs ("/", "C:\") whose dir
-      // already ends in a separator — dir + sep would 403 every sibling.
-      if (!isInDocDir(target, dir)) continue
-      const safe = await resolveSafeRelativeImagePath(doc, relative(dir, target))
-      if (safe) {
-        served = safe
-        break
-      }
-    }
-    if (!served) {
-      // a cross-folder embed resolves through the vault root the wiki resolver
-      // walks, so the picture next to the note (vault attachments/ from a
-      // nested note, the Obsidian layout) renders too: the same root decides,
-      // realpath-resolved so a symlink escape is refused
-      served = await resolveSafeVaultImagePath(configuredDefaultSaveDir(app), target)
-    }
-    if (!served) return new Response(null, { status: 403 })
-    return net.fetch(pathToFileURL(served).toString())
-  })
+  }
+  if (!served) {
+    // a cross-folder embed resolves through the vault root the wiki resolver
+    // walks, so the picture next to the note (vault attachments/ from a
+    // nested note, the Obsidian layout) renders too: the same root decides,
+    // realpath-resolved so a symlink escape is refused
+    served = await resolveSafeVaultImagePath(configuredDefaultSaveDir(app), target)
+  }
+  if (!served) return new Response(null, { status: 403 })
+  return net.fetch(pathToFileURL(served).toString())
 }
 
 const imageExports = new ImageExportSessions()
@@ -1452,6 +1456,15 @@ export function createMarkdownView(openPath?: string | null): WebContentsView {
   grantAndTrack(view.webContents, openPath)
   void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'markdown'))
   return view
+}
+
+/** web-server mode: a browser tab is tracked exactly like a desktop view —
+ *  grantAndTrack only touches id/send/isDestroyed/'destroyed'/window-open, all
+ *  of which the bridge's tab object provides. The IPC registration the desktop
+ *  path does inside createMarkdownView happens here (idempotent). */
+export function trackWebTab(webContents: WebContents, openPath?: string | null): void {
+  registerMarkdownIpc()
+  grantAndTrack(webContents, openPath)
 }
 
 /** Standalone window mode: `npm run dev -w @genoffice/markdown`, md path passed via argv */

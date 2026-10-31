@@ -304,6 +304,24 @@ document in a visible editor tab while you watch.
   and other agents, still on-device.
 - **Free**, for individuals and teams alike.
 
+## Run in a browser
+
+The desktop app can also serve itself over HTTP: start it with
+`genoffice --web-server` and open `http://127.0.0.1:8931/` in a browser tab.
+The six editors are the same bundles the desktop window loads, talking to the
+same engines over a WebSocket — open and save files from the start screen,
+and everything renders through the same pipelines.
+
+- The service always requires its access token: startup prints a
+  `?token=…` URL that grants the browser a cookie — share that URL, not the
+  bare port. `--web-port` and `--web-host` move it (bind `0.0.0.0` for your
+  LAN and open the printed URL from the other device); `--web-token` pins a
+  token of your choice.
+- A small headless API wraps the CLI for scripts:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
+  `POST /api/info` returns the document's structure summary.
+- Drag-and-drop of local files and native printing stay desktop-only.
+
 ## AI backends
 
 **Sign in with Genspark** and there is nothing to configure: model calls route

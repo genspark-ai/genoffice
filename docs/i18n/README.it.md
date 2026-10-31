@@ -251,6 +251,25 @@ Word in una scheda dell'editor visibile mentre osservi.
   Desktop, Codex, Cursor e altri agenti, sempre in locale.
 - **Gratuito**, per singoli utenti e team.
 
+## Usare nel browser
+
+L'app desktop può anche servire se stessa via HTTP: avviala con
+`genoffice --web-server` e apri `http://127.0.0.1:8931/` in una scheda del
+browser. I sei editor sono esattamente i bundle che carica la finestra
+desktop e parlano con gli stessi motori tramite un WebSocket: apri e salva
+file dalla schermata iniziale e tutto viene renderizzato dalle stesse
+pipeline.
+
+- Il servizio richiede sempre il suo token di accesso: all'avvio viene
+  stampato un URL `?token=…` che lascia un cookie nel browser; condividi
+  quell'URL, non la porta nuda. `--web-port` e `--web-host` spostano il
+  servizio (associa `0.0.0.0` per la tua LAN e apri l'URL stampato dall'altro
+  dispositivo); `--web-token` fissa un token a tua scelta.
+- Una piccola API headless incapsula la CLI per gli script:
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`;
+  `POST /api/info` restituisce il riepilogo della struttura del documento.
+- Il trascinamento di file locali e la stampa nativa restano solo desktop.
+
 ## Backend AI
 
 **Accedi con Genspark** e non c'è nulla da configurare: le chiamate ai

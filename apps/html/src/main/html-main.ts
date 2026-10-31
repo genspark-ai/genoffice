@@ -1267,36 +1267,46 @@ async function resolveSaveTarget(
  * "Save page as, complete" assets by signature / requesting slot.
  */
 function registerImageProtocol(): void {
-  protocol.handle('html-asset', async (request) => {
-    let target: string
-    try {
-      target = decodeURIComponent(new URL(request.url).pathname)
-    } catch {
-      return new Response(null, { status: 400 })
+  protocol.handle('html-asset', (request) => serveHtmlAsset(request.url))
+}
+
+/** the html-asset handler body, shared by the Electron protocol route and the
+ *  web server's /__htmlasset:// route (browser pages cannot fetch the scheme).
+ *  The Accept header matters only for extensionless assets, which always come
+ *  from an <img>/embed in the page; the web route passes a generic one. */
+export function serveHtmlAsset(requestUrl: string, accept = '*/*'): Promise<Response> {
+  return serveHtmlAssetInner(requestUrl, accept)
+}
+
+async function serveHtmlAssetInner(requestUrl: string, accept: string): Promise<Response> {
+  let target: string
+  try {
+    target = decodeURIComponent(new URL(requestUrl).pathname)
+  } catch {
+    return new Response(null, { status: 400 })
+  }
+  if (/^\/[a-zA-Z]:\//.test(target)) target = target.slice(1)
+  target = resolve(target)
+  const knownExt = PREVIEW_ASSET_EXTS.has(extname(target).toLowerCase())
+  if (!existsSync(target)) return new Response(null, { status: 404 })
+  let inDocDir = false
+  for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
+    const dir = resolve(dirname(doc))
+    if (!isInDocDir(target, dir)) continue
+    if (await resolveSafeRelativeImagePath(doc, relative(dir, target))) {
+      inDocDir = true
+      break
     }
-    if (/^\/[a-zA-Z]:\//.test(target)) target = target.slice(1)
-    target = resolve(target)
-    const knownExt = PREVIEW_ASSET_EXTS.has(extname(target).toLowerCase())
-    if (!existsSync(target)) return new Response(null, { status: 404 })
-    let inDocDir = false
-    for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
-      const dir = resolve(dirname(doc))
-      if (!isInDocDir(target, dir)) continue
-      if (await resolveSafeRelativeImagePath(doc, relative(dir, target))) {
-        inDocDir = true
-        break
-      }
-    }
-    if (!inDocDir) return new Response(null, { status: 403 })
-    let mime: string | null = null
-    if (!knownExt) {
-      mime = extensionlessAssetMime(target, await readHead(target), request.headers.get('accept'))
-      if (!mime) return new Response(null, { status: 404 })
-    }
-    const res = await net.fetch(pathToFileURL(target).toString())
-    if (!mime || !res.ok) return res
-    return new Response(res.body, { status: 200, headers: { 'Content-Type': mime } })
-  })
+  }
+  if (!inDocDir) return new Response(null, { status: 403 })
+  let mime: string | null = null
+  if (!knownExt) {
+    mime = extensionlessAssetMime(target, await readHead(target), accept)
+    if (!mime) return new Response(null, { status: 404 })
+  }
+  const res = await net.fetch(pathToFileURL(target).toString())
+  if (!mime || !res.ok) return res
+  return new Response(res.body, { status: 200, headers: { 'Content-Type': mime } })
 }
 
 async function readHead(target: string): Promise<Uint8Array> {
@@ -1310,6 +1320,16 @@ async function readHead(target: string): Promise<Uint8Array> {
   }
 }
 
+/** the preview resolver behind the html-preview protocol, shared with the web
+ *  server's /__preview://view-<id>/ route (browser pages cannot fetch the
+ *  scheme); keyed by webContents id, so bridge tabs work unchanged */
+export function previewEntryFor(wcId: number): { text: string; baseHref: string | null } | null {
+  const text = previewTextByWc.get(wcId)
+  if (text === undefined) return null
+  const doc = savePathByWc.get(wcId)
+  return { text, baseHref: doc ? assetBaseHref(dirname(doc)) : null }
+}
+
 let ipcRegistered = false
 
 function registerHtmlIpc(): void {
@@ -1317,12 +1337,7 @@ function registerHtmlIpc(): void {
   ipcRegistered = true
 
   registerImageProtocol()
-  registerPreviewProtocol((wcId) => {
-    const text = previewTextByWc.get(wcId)
-    if (text === undefined) return null
-    const doc = savePathByWc.get(wcId)
-    return { text, baseHref: doc ? assetBaseHref(dirname(doc)) : null }
-  })
+  registerPreviewProtocol(previewEntryFor)
 
   ipcMain.handle(HTML_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
 
@@ -2014,6 +2029,14 @@ export function createHtmlView(openPath?: string | null): WebContentsView {
   grantAndTrack(view.webContents, openPath)
   void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'html'))
   return view
+}
+
+/** web-server mode: a browser tab is tracked exactly like a desktop view (see
+ *  grantAndTrack — id/send/isDestroyed/'destroyed'/window-open only); the IPC
+ *  registration the desktop path does inside createHtmlView happens here */
+export function trackWebTab(webContents: WebContents, openPath?: string | null): void {
+  registerHtmlIpc()
+  grantAndTrack(webContents, openPath)
 }
 
 /** Standalone window mode: `npm run dev -w @genoffice/html`, md path passed via argv */

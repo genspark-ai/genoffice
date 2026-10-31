@@ -281,6 +281,22 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
   在本機執行。
 - **免費**，個人與團隊皆可使用。
 
+## 在瀏覽器中使用
+
+桌面應用程式也可以透過 HTTP 提供自己：用 `genoffice --web-server` 啟動，然後在
+瀏覽器分頁開啟 `http://127.0.0.1:8931/`。六個編輯器就是桌面視窗載入的同一套
+打包產物，透過 WebSocket 與同一批引擎對話——在起始頁開啟和儲存檔案，
+一切都經相同的管線渲染。
+
+- 服務始終要求存取權杖：啟動時會列印一個 `?token=…` 連結，在瀏覽器開啟它
+  即種下 cookie——請分享這個連結而不是裸連接埠。`--web-port` 和 `--web-host`
+  可以移動服務（繫結 `0.0.0.0` 供區域網路存取，並在另一台裝置上開啟列印的
+  連結）；`--web-token` 可指定自選權杖。
+- 內建一個面向指令碼的無頭 API，封裝的是同一個 CLI：
+  `curl --data-binary @report.docx 'http://127.0.0.1:8931/api/convert?to=pdf&name=report.docx&token=PRINTED_AT_STARTUP' > report.pdf`；
+  `POST /api/info` 回傳文件結構摘要。
+- 本地檔案拖放與原生列印仍僅限桌面端。
+
 ## AI 後端
 
 **用 Genspark 登入**就完全不用設定：模型呼叫會透過 Genspark 代理路由

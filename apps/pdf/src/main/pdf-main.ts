@@ -2279,6 +2279,14 @@ export function createPdfView(openPath?: string | null): WebContentsView {
   return view
 }
 
+/** web-server mode: a browser tab is tracked exactly like a desktop view (see
+ *  grantAndTrack — id/send/isDestroyed/'destroyed'/window-open only); the IPC
+ *  registration the desktop path does inside createPdfView happens here */
+export function trackWebTab(webContents: WebContents, openPath?: string | null): void {
+  registerPdfIpc()
+  grantAndTrack(webContents, openPath)
+}
+
 /** Standalone window mode: `npm run dev -w @genoffice/pdf`, pdf path passed via argv */
 export function startPdfStandalone(): void {
   registerRendererScheme()
