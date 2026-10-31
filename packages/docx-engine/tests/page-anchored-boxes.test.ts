@@ -87,7 +87,9 @@ describe('page/margin-anchored textboxes outside the body column', () => {
     expect(name.vAlign).toBeUndefined()
   })
 
-  it('keeps in-column wrapSquare boxes in the flow', async () => {
+  // Word places a page/margin-V anchor at its page position whatever the
+  // wrap kind (IeumOffice divergence, genoffice #2331)
+  it('floats an in-column page-anchored wrapSquare box at its resolved position', async () => {
     const posH = `<wp:positionH relativeFrom="page"><wp14:pctPosHOffset ${WP14_NS}>20000</wp14:pctPosHOffset></wp:positionH>`
     const posV = `<wp:positionV relativeFrom="margin"><wp:align>top</wp:align></wp:positionV>`
     const para = anchorPara(
@@ -98,8 +100,14 @@ describe('page/margin-anchored textboxes outside the body column', () => {
     )
     const doc = await parseDocx(await buildDocx({ bodyXml: para }))
     const [box] = doc.blocks[0].textboxes!
-    expect(box.floating).toBeUndefined()
-    expect(box.offsetXEmu).toBeUndefined()
+    expect(box.floating).toBe(true)
+    expect(box.offsetXEmu).toBe(Math.round((PAGE_W * 20000) / 100000) - MARGIN)
+    expect(box.offsetYEmu).toBe(0)
+    expect(box.pageRelV).toBe(true)
+    expect(box.pageRelVFrom).toBe('margin')
+    // narrow box: no band, and not a CSS side float either
+    expect(box.bandBottomPx).toBeUndefined()
+    expect(box.wrapSide).toBeUndefined()
   })
 
   it('resolves page-relative wp:align right/bottom against the page geometry', async () => {

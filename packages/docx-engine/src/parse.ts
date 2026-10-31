@@ -145,6 +145,7 @@ import {
   gradFillApproxHex,
   lineBoxOf,
   resolveAnchorPagePos,
+  resolveAnchorPageYEmu,
   topLevelDrawings,
   w14GlowOf,
   w14TextFillHex,
@@ -3121,6 +3122,12 @@ function extractTextboxes(
       if (relXAbsolute) box.pageRelX = true
       if (meta.relH === 'page') box.pageRelXFrom = 'page'
     }
+    // page/margin-relative V places the box on its anchor's page in Word
+    // whatever the wrap kind (wrap only decides how body text flows around
+    // it): a wrapped one floats at that position instead of stacking into the
+    // flow at the anchor paragraph (cover bands drawn margin-shifted)
+    const pageAbsV = opts?.section !== undefined && (meta.relV === 'page' || meta.relV === 'margin')
+    const pageVFloat = pageAbsV && !meta.noWrap
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the
     // legacy flow placement
@@ -3128,12 +3135,22 @@ function extractTextboxes(
       pagePos !== null &&
       !pagePos.outsideColumn &&
       meta.offsetXEmu === undefined &&
-      (meta.topBottom || meta.noWrap || multiDrawing)
+      (meta.topBottom || meta.noWrap || multiDrawing || pageVFloat)
     ) {
       box.offsetXEmu = (box.offsetXEmu ?? 0) + pagePos.xEmu
       if (relXAbsolute) box.pageRelX = true
     }
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
+    // wp:align / pctPosVOffset against the page or margin box: the resolved
+    // body-top offset, re-pinned onto the anchor's page like a posOffset
+    if (meta.offsetYEmu === undefined && pageAbsV) {
+      const alignedYEmu = resolveAnchorPageYEmu(meta, opts?.section)
+      if (alignedYEmu !== undefined) {
+        box.offsetYEmu = (box.offsetYEmu ?? 0) + alignedYEmu
+        box.pageRelV = true
+        box.pageRelVFrom = meta.relV === 'page' ? 'page' : 'margin'
+      }
+    }
     // page/margin-relative posOffset V is absolute on the anchor's page in
     // Word; rendered from the anchor paragraph it needs the canvas re-pin
     if (
@@ -3170,7 +3187,7 @@ function extractTextboxes(
     // reserves flow height down to the box bottom (union over its boxes).
     if (
       (meta.topBottom || squareSpansColumn) &&
-      (meta.relV === 'paragraph' || meta.relV === 'line')
+      (meta.relV === 'paragraph' || meta.relV === 'line' || pageAbsV)
     ) {
       // wp:extent cy covers the whole drawing: a usable height fallback only
       // for an ungrouped shape (each group child would claim the group height)
@@ -3181,7 +3198,11 @@ function extractTextboxes(
           : undefined)
       if (h !== undefined) {
         const top = Math.round((box.offsetYEmu ?? 0) / EMU_PER_PX)
-        if (top + h > 0) {
+        // a page-relative top counts from the body top (anchor paragraph
+        // assumed there): only a box covering that origin (a band hanging
+        // from the page top) bands exactly; reserving down to a box lower on
+        // the page would blank all the flow above it
+        if (top + h > 0 && (!pageAbsV || top <= 0)) {
           box.bandTopPx = top
           box.bandBottomPx = top + h
           // only a box that spans the column BY ITSELF may overflow the page
@@ -3192,7 +3213,7 @@ function extractTextboxes(
       }
       box.floating = true
     }
-    if (meta.noWrap || multiDrawing) box.floating = true
+    if (meta.noWrap || multiDrawing || pageVFloat) box.floating = true
     if (!meta.noWrap && !meta.topBottom) {
       box.wrapSides = true
       if (box.floating) {
@@ -3316,7 +3337,9 @@ function extractTextboxes(
         aligned !== null
           ? aligned.xEmu + marL
           : (meta.relH === 'margin' ? marL : 0) + (meta.offsetXEmu ?? 0)
-      meta.pageYEmu = aligned?.yEmu !== undefined ? aligned.yEmu + marT : (meta.offsetYEmu ?? 0)
+      // aligned V resolves on its own: a posOffset X leaves `aligned` null
+      const alignedYEmu = resolveAnchorPageYEmu(meta, opts.section)
+      meta.pageYEmu = alignedYEmu !== undefined ? alignedYEmu + marT : (meta.offsetYEmu ?? 0)
     }
     const pagePos = meta.pageXEmu === undefined ? resolveAnchorPagePos(meta, opts?.section) : null
     let wspCount = 0
