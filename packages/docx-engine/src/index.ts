@@ -252,6 +252,7 @@ export { previewFontSettings } from './font-settings'
 export {
   applyRevisionResolutions,
   applyTrackedChangesXml,
+  cleanMoveRangeMarkers,
   countTrackedChangesXml,
   readPropChangeXml,
   resolvePropChangeXml,
