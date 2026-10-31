@@ -35,5 +35,18 @@ export function printScaleOption(scale: unknown): { scale: number } | Record<str
     : {}
 }
 
+/** the document's own paper size for the CUPS print route: the renderer reads
+ * it off the pagination preview's first sheet (twips), and printToPDF bakes
+ * the pages at that size instead of Chromium's Letter default. Absent or
+ * malformed = no pageSize, never a wrong size. */
+export function validPrintPaper(
+  paper: unknown,
+): { widthTwips: number; heightTwips: number } | null {
+  if (typeof paper !== 'object' || paper === null) return null
+  const p = paper as Record<string, unknown>
+  if (!validPrintDim(p.widthTwips) || !validPrintDim(p.heightTwips)) return null
+  return { widthTwips: p.widthTwips, heightTwips: p.heightTwips }
+}
+
 export { printJobOptions } from '@genoffice/electron-utils/print-job'
 export type { PrintDuplex, PrintJobOptions } from '@genoffice/electron-utils/print-job'
