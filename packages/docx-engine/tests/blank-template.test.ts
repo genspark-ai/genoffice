@@ -3,6 +3,9 @@ import JSZip from 'jszip'
 import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
+  NEW_DOCUMENT_APPLICATION,
+  NEW_DOCUMENT_APP_VERSION,
+  NEW_DOCUMENT_TEMPLATE,
   buildBlankDocx,
   paperSizeForLocale,
   paperSizeForRegion,
@@ -10,6 +13,7 @@ import {
   saveDocx,
   type SaveBlock,
 } from '../src/index'
+import enginePackage from '../package.json'
 
 describe('blank document paper size follows the OS region like Word', () => {
   it('maps Letter regions and defaults everything else to A4', () => {
@@ -159,5 +163,98 @@ describe('blank document template (new-document / AI generation base)', () => {
     expect(visible[1].runs?.some((r) => r.bold && r.text === '重点')).toBe(true)
     expect(visible[2].list?.kind).toBe('bullet')
     expect(visible[3].list?.kind).toBe('ordered')
+  })
+
+  // Word always writes docProps/core.xml and docProps/app.xml; a newly created
+  // document carries minimal Word-like ones so later property sets have a home
+  const CREATED = new Date('2026-01-02T03:04:05Z')
+
+  it('writes minimal Word-like core and app parts', async () => {
+    const zip = await JSZip.loadAsync(await buildBlankDocx({ createdAt: CREATED }))
+    const core = await zip.file('docProps/core.xml')!.async('string')
+    expect(core).toContain(
+      '<dcterms:created xsi:type="dcterms:W3CDTF">2026-01-02T03:04:05Z</dcterms:created>',
+    )
+    expect(core).toContain(
+      '<dcterms:modified xsi:type="dcterms:W3CDTF">2026-01-02T03:04:05Z</dcterms:modified>',
+    )
+    expect(core).toContain('<cp:revision>1</cp:revision>')
+    // no people data on a fresh document
+    expect(core).not.toContain('<dc:creator')
+    expect(core).not.toContain('lastModifiedBy')
+
+    const app = await zip.file('docProps/app.xml')!.async('string')
+    expect(app).toContain(`<Template>${NEW_DOCUMENT_TEMPLATE}</Template>`)
+    expect(app).toContain(`<Application>${NEW_DOCUMENT_APPLICATION}</Application>`)
+    expect(app).toContain(`<AppVersion>${NEW_DOCUMENT_APP_VERSION}</AppVersion>`)
+    expect(app).not.toContain('Company')
+    expect(app).not.toContain('Manager')
+  })
+
+  it('registers the parts in [Content_Types].xml and the root relationships', async () => {
+    const zip = await JSZip.loadAsync(await buildBlankDocx({ createdAt: CREATED }))
+    const types = await zip.file('[Content_Types].xml')!.async('string')
+    expect(types).toContain(
+      '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+    )
+    expect(types).toContain(
+      '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
+    )
+    const rels = await zip.file('_rels/.rels')!.async('string')
+    expect(rels).toContain(
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>',
+    )
+    expect(rels).toContain(
+      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>',
+    )
+  })
+
+  it('parses back as document properties, keeping the app version pinned to the package', async () => {
+    expect(NEW_DOCUMENT_APP_VERSION).toBe(enginePackage.version)
+    const doc = await parseDocx(await buildBlankDocx({ createdAt: CREATED }))
+    expect(doc.properties.core).toEqual({
+      created: '2026-01-02T03:04:05Z',
+      modified: '2026-01-02T03:04:05Z',
+      revision: '1',
+    })
+    expect(doc.properties.app).toEqual({
+      template: NEW_DOCUMENT_TEMPLATE,
+      application: NEW_DOCUMENT_APPLICATION,
+      appVersion: NEW_DOCUMENT_APP_VERSION,
+    })
+    expect(doc.properties.custom).toEqual({})
+    expect(doc.properties.customTypes).toEqual({})
+  })
+
+  it('a real save stamps modified/revision and keeps the parts', async () => {
+    const doc = await parseDocx(await buildBlankDocx({ createdAt: CREATED }))
+    const saved = await saveDocx(
+      doc,
+      [{ kind: 'generated', block: { type: 'paragraph', runs: [{ text: 'hi' }] } }],
+      { savedAt: '2026-07-28T08:30:00Z' },
+    )
+    const zip = await JSZip.loadAsync(saved)
+    const core = await zip.file('docProps/core.xml')!.async('string')
+    expect(core).toContain(
+      '<dcterms:modified xsi:type="dcterms:W3CDTF">2026-07-28T08:30:00Z</dcterms:modified>',
+    )
+    expect(core).toContain(
+      '<dcterms:created xsi:type="dcterms:W3CDTF">2026-01-02T03:04:05Z</dcterms:created>',
+    )
+    expect(core).toContain('<cp:revision>2</cp:revision>')
+    expect(zip.file('docProps/app.xml')).not.toBeNull()
+  })
+
+  it('lets a caller override the application stamp', async () => {
+    const zip = await JSZip.loadAsync(
+      await buildBlankDocx({
+        createdAt: CREATED,
+        application: 'GenOffice Docs',
+        appVersion: '9.9.9',
+      }),
+    )
+    const app = await zip.file('docProps/app.xml')!.async('string')
+    expect(app).toContain('<Application>GenOffice Docs</Application>')
+    expect(app).toContain('<AppVersion>9.9.9</AppVersion>')
   })
 })

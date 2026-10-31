@@ -81,7 +81,8 @@ export const docsCommand: CommandDef = {
     },
     {
       name: 'properties',
-      description: 'read: the document properties of the file (core, app, custom)',
+      description:
+        'read: the document properties of the file (core, app, custom and customTypes — the vt type each custom value is stored as)',
     },
     {
       name: 'ops',
