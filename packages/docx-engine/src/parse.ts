@@ -6824,12 +6824,14 @@ function hfContentFromXml(
         hasPageNumber = true
         return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
       }
-      // complete result runs between separate and end (partial run fragments at the edges drop out)
-      return emit(
-        (cached?.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g) ?? [])
-          .filter((run) => run.includes('<w:t'))
-          .join(''),
-      )
+      // Keep the original run boundaries: separate/result/end may share a run,
+      // whose rPr is outside this span. Rewrapping only complete result runs
+      // drops those edge fragments and their formatting.
+      if (cached === undefined) return emit('')
+      const prefix = span.slice(0, span.length - cached.length)
+      return (prefix.replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '') + cached)
+        .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
+        .replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, '')
     },
   )
   // <w:fldSimple w:instr=" PAGE "> single-element field form
