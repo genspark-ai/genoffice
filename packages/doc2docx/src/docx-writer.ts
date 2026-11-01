@@ -6,9 +6,9 @@
  * with run-level direct formatting and paragraph formatting. Stage 3b resolves
  * the stylesheet into that formatting; stage 3c-1 replaces the template's
  * trailing sectPr with the document's section geometry and adds header/footer
- * parts (plus settings.xml when even/odd headers are used). Tables, images,
- * footnotes and text boxes are still flattened or omitted and reported in the
- * honest warnings list.
+ * parts (plus settings.xml when even/odd headers are used), tables as
+ * <w:tbl> and inline PNG/JPEG pictures as <w:drawing>. Footnotes and text
+ * boxes are still omitted and reported in the honest warnings list.
  */
 import JSZip from 'jszip'
 import {
@@ -21,6 +21,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { FormattedParagraph, FormattedRun, ParagraphFormatting } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
+import { EMU_PER_TWIP, type ImageBlock } from './images'
 import type { SectionInfo } from './sections'
 import type {
   BodyBlock,
@@ -168,6 +169,8 @@ const SETTINGS_CONTENT_TYPE =
 const HEADER_REL_TYPE = `${WORD_REL_NAMESPACE}/header`
 const FOOTER_REL_TYPE = `${WORD_REL_NAMESPACE}/footer`
 const SETTINGS_REL_TYPE = `${WORD_REL_NAMESPACE}/settings`
+const IMAGE_REL_TYPE = `${WORD_REL_NAMESPACE}/image`
+const DRAWING_URI = 'http://schemas.openxmlformats.org/drawingml/2006/picture'
 const CONTENT_TYPES_PATH = '[Content_Types].xml'
 const DOCUMENT_RELS_PATH = 'word/_rels/document.xml.rels'
 const SETTINGS_PATH = 'word/settings.xml'
@@ -347,14 +350,64 @@ export function generateTableXml(table: TableModel): string {
   return '<w:tbl><w:tblPr>' + tableProperties.join('') + '</w:tblPr>' + grid + rows + '</w:tbl>'
 }
 
-/** Generated XML for the reconstructed body (paragraphs and tables in CP order). */
-export function generateBodyBlocksXml(blocks: BodyBlock[]): string {
+/** an inline picture paragraph; the blank template declares the wp/a/pic/r namespaces */
+function generateImageParagraphXml(image: ImageBlock, rId: string, pictureNumber: number): string {
+  const cx = image.widthTwips * EMU_PER_TWIP
+  const cy = image.heightTwips * EMU_PER_TWIP
+  const name = 'Picture ' + pictureNumber
+  return (
+    '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    '<wp:extent cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '"/>' +
+    '<wp:docPr id="' +
+    pictureNumber +
+    '" name="' +
+    name +
+    '"/>' +
+    '<a:graphic><a:graphicData uri="' +
+    DRAWING_URI +
+    '">' +
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="' +
+    pictureNumber +
+    '" name="' +
+    name +
+    '"/>' +
+    '<pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="' +
+    rId +
+    '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+  )
+}
+
+/** Generated XML for the reconstructed body (paragraphs, tables and images in CP order). */
+export function generateBodyBlocksXml(
+  blocks: BodyBlock[],
+  imageRelIds: Map<number, string> = new Map(),
+): string {
+  let pictureNumber = 0
   return blocks
-    .map((block) =>
-      block.type === 'table'
-        ? generateTableXml(block.table)
-        : generateParagraphXml(paragraphBlock(block.paragraph), GENERATE_CONTEXT),
-    )
+    .map((block) => {
+      if (block.type === 'table') return generateTableXml(block.table)
+      if (block.type === 'image') {
+        pictureNumber++
+        return generateImageParagraphXml(
+          block.image,
+          imageRelIds.get(block.image.cp) ?? '',
+          pictureNumber,
+        )
+      }
+      return generateParagraphXml(paragraphBlock(block.paragraph), GENERATE_CONTEXT)
+    })
     .join('')
 }
 
@@ -390,18 +443,11 @@ export async function writeLegacyDocx(
   const placeholderStart = template.indexOf(BODY_PLACEHOLDER, bodyStart)
   if (placeholderStart < 0)
     throw new Error('the blank docx template has no placeholder paragraph in <w:body>')
-  const bodyXml =
-    body && body.blocks.some((block) => block.type === 'table')
-      ? generateBodyBlocksXml(body.blocks)
-      : generateBodyParagraphsXml(model.paragraphs)
-  let documentXml =
-    template.slice(0, placeholderStart) +
-    bodyXml +
-    template.slice(placeholderStart + BODY_PLACEHOLDER.length)
 
   const parts: HeaderFooterPart[] = []
   let settingsNeeded = false
   let nextRelId = 3
+  let generatedSectPr: string | undefined
   if (layout && layout.sections.length > 0) {
     // single-section output: flatten the document to its last section
     const section = layout.sections[layout.sections.length - 1]!
@@ -416,24 +462,71 @@ export async function writeLegacyDocx(
         return `<w:${element} w:type="${part.referenceType}" r:id="${part.rId}"/>`
       })
       .join('')
-    const generated = sectPrXml(section, references)
+    generatedSectPr = sectPrXml(section, references)
+  }
+
+  // media parts and picture relationships come after the header/footer parts
+  interface MediaPart {
+    path: string
+    extension: 'png' | 'jpeg'
+    contentType: string
+    bytes: Uint8Array
+    rId: string
+  }
+  const mediaParts: MediaPart[] = []
+  const imageRelIds = new Map<number, string>()
+  if (body) {
+    let mediaIndex = 0
+    for (const block of body.blocks) {
+      if (block.type !== 'image') continue
+      mediaIndex++
+      const extension = block.image.mediaType === 'image/png' ? 'png' : 'jpeg'
+      const mediaPart: MediaPart = {
+        path: `word/media/image${mediaIndex}.${extension}`,
+        extension,
+        contentType: block.image.mediaType,
+        bytes: block.image.bytes,
+        rId: `rId${nextRelId++}`,
+      }
+      imageRelIds.set(block.image.cp, mediaPart.rId)
+      mediaParts.push(mediaPart)
+    }
+  }
+
+  const bodyXml =
+    body && body.blocks.some((block) => block.type === 'table' || block.type === 'image')
+      ? generateBodyBlocksXml(body.blocks, imageRelIds)
+      : generateBodyParagraphsXml(model.paragraphs)
+  let documentXml =
+    template.slice(0, placeholderStart) +
+    bodyXml +
+    template.slice(placeholderStart + BODY_PLACEHOLDER.length)
+  if (generatedSectPr) {
     const sectStart = documentXml.lastIndexOf('<w:sectPr')
     if (sectStart >= 0) {
       const sectEnd = documentXml.indexOf('</w:sectPr>', sectStart)
       if (sectEnd >= 0) {
         documentXml =
           documentXml.slice(0, sectStart) +
-          generated +
+          generatedSectPr +
           documentXml.slice(sectEnd + '</w:sectPr>'.length)
       }
     }
   }
   zip.file(DOCUMENT_PATH, documentXml)
 
-  if (parts.length > 0 || settingsNeeded) {
+  if (parts.length > 0 || settingsNeeded || mediaParts.length > 0) {
     const contentTypesFile = zip.file(CONTENT_TYPES_PATH)
     if (!contentTypesFile) throw new Error('the blank docx template has no [Content_Types].xml')
     let contentTypes = await contentTypesFile.async('string')
+    const extensions = [...new Set(mediaParts.map((part) => part.extension))]
+    const defaults = extensions
+      .map((extension) => {
+        const contentType =
+          mediaParts.find((part) => part.extension === extension)?.contentType ?? 'image/png'
+        return `<Default Extension="${extension}" ContentType="${contentType}"/>`
+      })
+      .join('')
     const overrides =
       parts
         .map(
@@ -446,6 +539,13 @@ export async function writeLegacyDocx(
       (settingsNeeded
         ? `<Override PartName="/${SETTINGS_PATH}" ContentType="${SETTINGS_CONTENT_TYPE}"/>`
         : '')
+    if (defaults !== '') {
+      const firstOverride = contentTypes.indexOf('<Override')
+      contentTypes =
+        firstOverride >= 0
+          ? contentTypes.slice(0, firstOverride) + defaults + contentTypes.slice(firstOverride)
+          : contentTypes.replace('</Types>', `${defaults}</Types>`)
+    }
     contentTypes = contentTypes.replace('</Types>', `${overrides}</Types>`)
     zip.file(CONTENT_TYPES_PATH, contentTypes)
 
@@ -461,12 +561,21 @@ export async function writeLegacyDocx(
             }" Target="${part.path.slice('word/'.length)}"/>`,
         )
         .join('') +
+      mediaParts
+        .map(
+          (part) =>
+            `<Relationship Id="${part.rId}" Type="${IMAGE_REL_TYPE}" Target="${part.path.slice(
+              'word/'.length,
+            )}"/>`,
+        )
+        .join('') +
       (settingsNeeded
         ? `<Relationship Id="rId${nextRelId}" Type="${SETTINGS_REL_TYPE}" Target="settings.xml"/>`
         : '')
     relationships = relationships.replace('</Relationships>', `${newRelationships}</Relationships>`)
     zip.file(DOCUMENT_RELS_PATH, relationships)
     for (const part of parts) zip.file(part.path, storyPartXml(part.kind, part.story))
+    for (const part of mediaParts) zip.file(part.path, part.bytes)
     if (settingsNeeded)
       zip.file(
         SETTINGS_PATH,
@@ -480,7 +589,6 @@ export async function writeLegacyDocx(
     compressionOptions: { level: 6 },
   })
 }
-
 export interface ConversionWarningOptions {
   /** the model was read through the style resolver, so styles are applied (not a gap) */
   stylesResolved?: boolean

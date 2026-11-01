@@ -14,6 +14,7 @@ import {
   readResolvedLegacyDocModel,
   readLegacyDocLayout,
   buildLegacyDocBody,
+  parseInlineImages,
   parseHeaderStories,
   parseSections,
 } from '../src/index'
@@ -707,5 +708,66 @@ describe('mutation validation: stage-3c-2 tables', () => {
       }
       expect(outcomes.docx + outcomes.rejected).toBe(12)
     }
+  })
+})
+
+describe('mutation validation: stage-3c-3 pictures', () => {
+  function imageFixture(name: string): Uint8Array {
+    return new Uint8Array(
+      readFileSync(fileURLToPath(new URL('./fixtures/' + name, import.meta.url))),
+    )
+  }
+
+  it('image.doc: Data stream byte flips end as pictures or a LegacyDocError', () => {
+    const bytes = imageFixture('image.doc')
+    const doc = openLegacyDoc(bytes)
+    const data = doc.stream('Data')!
+    const random = seededRandom(0x3c30_0001)
+    const outcomes = { images: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const mutated = data.slice()
+      const position =
+        index % 3 === 0
+          ? Math.floor(random() * Math.min(0x44, mutated.length))
+          : Math.floor(random() * mutated.length)
+      mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const result = parseInlineImages({
+          ...doc,
+          stream: (name: string) => (name === 'Data' ? mutated : doc.stream(name)),
+        })
+        expect(Array.isArray(result.images)).toBe(true)
+        outcomes.images++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.images + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('image.doc: file-level flips through conversion stay within the contract', async () => {
+    const bytes = imageFixture('image.doc')
+    const random = seededRandom(0x3c30_0002)
+    const outcomes = { docx: 0, rejected: 0 }
+    for (let index = 0; index < 12; index++) {
+      let mutated: Uint8Array
+      if (index % 2 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+      else {
+        mutated = bytes.slice()
+        const position = Math.floor(random() * Math.min(512, mutated.length))
+        mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      }
+      try {
+        const { docx } = await convertLegacyDocToDocx(mutated)
+        expect(docx.length).toBeGreaterThan(1000)
+        outcomes.docx++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.docx + outcomes.rejected).toBe(12)
   })
 })

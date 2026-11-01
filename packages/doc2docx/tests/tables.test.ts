@@ -165,7 +165,7 @@ describe('rich.doc: merged first row plus kept honest warnings', () => {
     expect(xml.indexOf('Merged header')).toBeLessThan(xml.indexOf('R1C3'))
     expect(xml.indexOf('R1C3')).toBeLessThan(xml.indexOf('R2C1'))
     expect(xml.indexOf('R3C3')).toBeLessThan(xml.indexOf('Image below:'))
-    expect(warnings.some((warning) => warning.includes('images are not converted'))).toBe(true)
+    expect(warnings.some((warning) => warning.includes('images are not converted'))).toBe(false)
     expect(warnings.some((warning) => warning.includes('hyperlinks are not converted'))).toBe(true)
     expect(warnings.some((warning) => warning.includes('lists are not converted'))).toBe(true)
     expect(warnings.some((warning) => warning.includes('tables are flattened'))).toBe(false)
