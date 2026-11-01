@@ -1,7 +1,20 @@
 import * as CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
-import { LegacyDocError, readLegacyDocText } from '../src/index'
+import {
+  LegacyDocError,
+  openLegacyDoc,
+  parsePlcBte,
+  readFormatting,
+  readLegacyDocModel,
+  readLegacyDocText,
+} from '../src/index'
 import { FIXTURE_NAMES, fixtureBytes, type FixtureName } from './helpers/fixtures'
+import {
+  SYNTHETIC_TEXT_OFFSET,
+  buildSyntheticDoc,
+  encodeChpxFkp,
+  encodePapxFkp,
+} from './helpers/synthetic-doc'
 
 /**
  * Mutation validation: a truncated or randomly corrupted .doc must either be
@@ -100,6 +113,204 @@ describe('mutation validation: every corrupted input ends as data or LegacyDocEr
   it('keeps the real fixtures readable after the loop', () => {
     for (const name of FIXTURE_NAMES) {
       expect(readLegacyDocText(fixtureBytes(name)).paragraphs.length).toBeGreaterThan(1)
+    }
+  })
+})
+
+/** read one mutated file through the stage-2 model; a model or a LegacyDocError are the only outcomes */
+function attemptModel(bytes: Uint8Array): 'read' | 'rejected' {
+  try {
+    const model = readLegacyDocModel(bytes)
+    expect(Array.isArray(model.paragraphs)).toBe(true)
+    for (const paragraph of model.paragraphs) expect(typeof paragraph.text).toBe('string')
+    return 'read'
+  } catch (error) {
+    expect(error).toBeInstanceOf(LegacyDocError)
+    return 'rejected'
+  }
+}
+
+/** read one mutated FKP/PLCF state through the formatting layer */
+function attemptFormatting(source: Parameters<typeof readFormatting>[0]): 'read' | 'rejected' {
+  try {
+    const paragraphs = readFormatting(source)
+    expect(Array.isArray(paragraphs)).toBe(true)
+    return 'read'
+  } catch (error) {
+    expect(error).toBeInstanceOf(LegacyDocError)
+    return 'rejected'
+  }
+}
+
+describe('mutation validation: stage-2 formatting model', () => {
+  it('formatting.doc: truncations, CFB header flips and FIB flips never leak a raw error', () => {
+    const bytes = fixtureBytes('formatting')
+    const random = seededRandom(0x5f0c_0001)
+    const outcomes = { read: 0, rejected: 0 }
+    const count = (outcome: 'read' | 'rejected') => {
+      outcomes[outcome]++
+    }
+    for (let index = 0; index < 15; index++)
+      count(attemptModel(bytes.slice(0, Math.floor(random() * bytes.length))))
+    for (let index = 0; index < 15; index++) {
+      const mutated = bytes.slice()
+      const position = Math.floor(random() * Math.min(512, mutated.length))
+      mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      count(attemptModel(mutated))
+    }
+    for (let index = 0; index < 15; index++)
+      count(
+        attemptModel(flipFibByte(bytes, Math.floor(random() * 64), 1 + Math.floor(random() * 255))),
+      )
+    expect(outcomes.read + outcomes.rejected).toBe(45)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('formatting.doc: FKP and PLCF byte flips end as a formatting model or a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('formatting'))
+    const chpxPages = parsePlcBte(doc.table, doc.fib.fcPlcfbteChpx, doc.fib.lcbPlcfbteChpx).pages
+    const papxPages = parsePlcBte(doc.table, doc.fib.fcPlcfbtePapx, doc.fib.lcbPlcfbtePapx).pages
+    const random = seededRandom(0x5f0c_0002)
+    const outcomes = { read: 0, rejected: 0 }
+    for (let index = 0; index < 30; index++) {
+      const wordDocument = doc.wordDocument.slice()
+      const table = doc.table.slice()
+      const target = index % 3
+      if (target === 0 || target === 1) {
+        const pages = target === 0 ? chpxPages : papxPages
+        const page = pages[Math.floor(random() * pages.length)] ?? 5
+        const position = page * 512 + Math.floor(random() * 512)
+        wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      } else {
+        const usingChpx = random() < 0.5
+        const fc = usingChpx ? doc.fib.fcPlcfbteChpx : doc.fib.fcPlcfbtePapx
+        const lcb = usingChpx ? doc.fib.lcbPlcfbteChpx : doc.fib.lcbPlcfbtePapx
+        const position = fc + Math.floor(random() * lcb)
+        table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      }
+      outcomes[
+        attemptFormatting({
+          fib: doc.fib,
+          pieces: doc.pieces,
+          wordDocument,
+          table,
+          rawText: doc.rawText,
+          stream: doc.stream,
+        })
+      ]++
+    }
+    expect(outcomes.read + outcomes.rejected).toBe(30)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('formatting.doc: truncating the WordDocument stream below an FKP page is a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('formatting'))
+    const chpxPages = parsePlcBte(doc.table, doc.fib.fcPlcfbteChpx, doc.fib.lcbPlcfbteChpx).pages
+    const page = chpxPages[0]!
+    const outcome = attemptFormatting({
+      fib: doc.fib,
+      pieces: doc.pieces,
+      wordDocument: doc.wordDocument.slice(0, page * 512),
+      table: doc.table,
+      rawText: doc.rawText,
+      stream: doc.stream,
+    })
+    expect(outcome).toBe('rejected')
+  })
+
+  it('formatting.doc: truncating the table stream before the PLCFs is a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('formatting'))
+    const outcome = attemptFormatting({
+      fib: doc.fib,
+      pieces: doc.pieces,
+      wordDocument: doc.wordDocument,
+      table: doc.table.slice(0, doc.fib.fcPlcfbteChpx),
+      rawText: doc.rawText,
+      stream: doc.stream,
+    })
+    expect(outcome).toBe('rejected')
+  })
+
+  it('synthetic FKP documents: FKP and PLCF byte flips end as a model or a LegacyDocError', () => {
+    const text = 'bold and plain\rsecond paragraph\r'
+    const first = text.indexOf('\r')
+    const second = text.indexOf('\r', first + 1)
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + (first + 1) * 2,
+            grpprl: Uint8Array.from([0x35, 0x08, 1]),
+          },
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET + (first + 1) * 2,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + (second + 1) * 2,
+          },
+        ]),
+      ],
+      papxFkpPages: [
+        encodePapxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + (first + 1) * 2,
+            grpprl: Uint8Array.from([0x06, 0x24, 1]),
+          },
+        ]),
+      ],
+    })
+    const doc = openLegacyDoc(bytes)
+    const chpxPages = parsePlcBte(doc.table, doc.fib.fcPlcfbteChpx, doc.fib.lcbPlcfbteChpx).pages
+    const papxPages = parsePlcBte(doc.table, doc.fib.fcPlcfbtePapx, doc.fib.lcbPlcfbtePapx).pages
+    const random = seededRandom(0x5f0c_0003)
+    const outcomes = { read: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const wordDocument = doc.wordDocument.slice()
+      const table = doc.table.slice()
+      switch (index % 4) {
+        case 0: {
+          const page = chpxPages[0]!
+          const position = page * 512 + Math.floor(random() * 512)
+          wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+          break
+        }
+        case 1: {
+          const page = papxPages[0]!
+          const position = page * 512 + Math.floor(random() * 512)
+          wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+          break
+        }
+        case 2: {
+          const position = doc.fib.fcPlcfbteChpx + Math.floor(random() * doc.fib.lcbPlcfbteChpx)
+          table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+          break
+        }
+        default: {
+          const position = doc.fib.fcPlcfbtePapx + Math.floor(random() * doc.fib.lcbPlcfbtePapx)
+          table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+        }
+      }
+      outcomes[
+        attemptFormatting({
+          fib: doc.fib,
+          pieces: doc.pieces,
+          wordDocument,
+          table,
+          rawText: doc.rawText,
+          stream: doc.stream,
+        })
+      ]++
+    }
+    expect(outcomes.read + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('keeps every fixture readable through the formatting model after the loops', () => {
+    for (const name of FIXTURE_NAMES) {
+      const model = readLegacyDocModel(fixtureBytes(name))
+      expect(model.paragraphs.length).toBeGreaterThan(0)
+      expect(model.warnings).toEqual([])
     }
   })
 })

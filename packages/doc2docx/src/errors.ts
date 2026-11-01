@@ -15,6 +15,8 @@ export const LEGACY_DOC_ERROR_CODES = [
   'bad_piece_table',
   'limits_exceeded',
   'corrupt',
+  'bad_fkp',
+  'bad_sprm',
 ] as const
 
 export type LegacyDocErrorCode = (typeof LEGACY_DOC_ERROR_CODES)[number]
@@ -39,6 +41,10 @@ const HINTS: Record<LegacyDocErrorCode, string> = {
   limits_exceeded:
     'the document is larger than the legacy import limit; split it or convert it to .docx in Word or LibreOffice',
   corrupt: 'the document is corrupt; open it in Word or LibreOffice and save it again',
+  bad_fkp:
+    'the document formatting table is invalid; open the file in Word or LibreOffice and save it again',
+  bad_sprm:
+    'the document formatting records are invalid; open the file in Word or LibreOffice and save it again',
 }
 
 /** A legacy .doc that cannot be read, with a machine-readable reason code. */
