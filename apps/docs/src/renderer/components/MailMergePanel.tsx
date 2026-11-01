@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { mergeFieldInstruction } from '@genoffice/docx-engine'
-import type { MergeDataSource } from '../../shared/ipc'
+import type { MergeDataSource, MergeOutputMode } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { documentText, substituteMergeFields } from '../mail-merge/template'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
+import {
+  AVERY_5160,
+  customGridLayout,
+  envelopeLayout,
+  type EnvelopePresetId,
+  type MergePageLayout,
+} from '../mail-merge/layout'
 import { useI18n } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 
@@ -46,11 +53,28 @@ export function MailMergePanel({
 }: MailMergePanelProps) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const [mode, setMode] = useState<'single' | 'perRecord'>('perRecord')
+  const [mode, setMode] = useState<MergeOutputMode>('perRecord')
   const [namePattern, setNamePattern] = useState('')
+  // the label stock: the built-in sheet, or an even custom grid on Letter/A4
+  const [labelStock, setLabelStock] = useState<'avery5160' | 'custom'>('avery5160')
+  const [paper, setPaper] = useState<'letter' | 'a4'>('letter')
+  const [gridColumns, setGridColumns] = useState(3)
+  const [gridRows, setGridRows] = useState(10)
+  const [envelopeSize, setEnvelopeSize] = useState<EnvelopePresetId>('size10')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
+
+  /** the paper the label or envelope modes print on, from the options above */
+  const layoutOf = (): MergePageLayout | undefined => {
+    if (mode === 'labels') {
+      return labelStock === 'avery5160'
+        ? AVERY_5160
+        : customGridLayout(paper, Math.max(1, gridColumns), Math.max(1, gridRows))
+    }
+    if (mode === 'envelopes') return envelopeLayout(envelopeSize)
+    return undefined
+  }
 
   const records = source?.records ?? []
   const record = records[recordIndex]
@@ -75,6 +99,7 @@ export function MailMergePanel({
         records,
         fields: source.fields,
         namePattern,
+        layout: layoutOf(),
       })
       if (result.canceled) {
         setBusy(false)
@@ -177,7 +202,94 @@ export function MailMergePanel({
                 {t('ribbonMailingsOutputSingle')}
               </label>
             </div>
-            {mode === 'perRecord' && (
+            <div className="modal-row">
+              <label className="mailmerge-radio">
+                <input
+                  type="radio"
+                  name="mailmerge-output"
+                  checked={mode === 'labels'}
+                  onChange={() => setMode('labels')}
+                />
+                {t('ribbonMailingsOutputLabels')}
+              </label>
+              <label className="mailmerge-radio">
+                <input
+                  type="radio"
+                  name="mailmerge-output"
+                  checked={mode === 'envelopes'}
+                  onChange={() => setMode('envelopes')}
+                />
+                {t('ribbonMailingsOutputEnvelopes')}
+              </label>
+            </div>
+            {mode === 'labels' && (
+              <div className="mailmerge-pattern">
+                <label className="mailmerge-radio">
+                  <input
+                    type="radio"
+                    name="mailmerge-stock"
+                    checked={labelStock === 'avery5160'}
+                    onChange={() => setLabelStock('avery5160')}
+                  />
+                  {t('ribbonMailingsStock5160')}
+                </label>
+                <label className="mailmerge-radio">
+                  <input
+                    type="radio"
+                    name="mailmerge-stock"
+                    checked={labelStock === 'custom'}
+                    onChange={() => setLabelStock('custom')}
+                  />
+                  {t('ribbonMailingsStockCustom')}
+                </label>
+                {labelStock === 'custom' && (
+                  <div className="modal-row">
+                    <select
+                      value={paper}
+                      onChange={(e) => setPaper(e.target.value as 'letter' | 'a4')}
+                    >
+                      <option value="letter">Letter</option>
+                      <option value="a4">A4</option>
+                    </select>
+                    <label>
+                      {t('ribbonMailingsLabelColumns')}
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={gridColumns}
+                        onChange={(e) => setGridColumns(Number(e.target.value) || 1)}
+                      />
+                    </label>
+                    <label>
+                      {t('ribbonMailingsLabelRows')}
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={gridRows}
+                        onChange={(e) => setGridRows(Number(e.target.value) || 1)}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+            {mode === 'envelopes' && (
+              <label className="mailmerge-pattern">
+                {t('ribbonMailingsEnvelopeSize')}
+                <select
+                  value={envelopeSize}
+                  onChange={(e) => setEnvelopeSize(e.target.value as EnvelopePresetId)}
+                >
+                  <option value="size10">Size 10</option>
+                  <option value="dl">DL</option>
+                  <option value="c5">C5</option>
+                  <option value="c6">C6</option>
+                </select>
+              </label>
+            )}
+            {(mode === 'perRecord' || mode === 'envelopes') && (
               <label className="mailmerge-pattern">
                 {t('ribbonMailingsNamePattern')}
                 <input
