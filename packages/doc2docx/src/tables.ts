@@ -30,10 +30,13 @@ import { parsePlcBte } from './plcf'
 import {
   resolveParagraphFormattingFor,
   resolveRunsForRange,
+  type FormattedLinkRange,
   type ParagraphRunRequest,
 } from './resolve'
 import { iterateSprms, readSprmI16, readSprmU16, readSprmU8, type Sprm } from './sprm'
+import type { FieldParseResult } from './fields'
 import type { ImageBlock } from './images'
+import { isBulletLevel, type ListTables } from './lists'
 import { parseStsh, type StyleSheet } from './styles'
 import { mapWordControlChars } from './text'
 
@@ -116,15 +119,24 @@ export interface TableModel {
   warnings: string[]
 }
 
+/** List membership of a body paragraph (stage 3c-4); numId is 100 + ilfo. */
+export interface ParagraphListInfo {
+  kind: 'bullet' | 'ordered'
+  numId: string
+  ilvl: number
+}
+
 export type BodyBlock =
-  | { type: 'paragraph'; paragraph: FormattedParagraph }
+  | { type: 'paragraph'; paragraph: FormattedParagraph; list?: ParagraphListInfo }
   | { type: 'table'; table: TableModel }
   | { type: 'image'; image: ImageBlock }
 
-/** The reconstructed body: paragraphs and tables in CP (document) order. */
+/** The reconstructed body: paragraphs, tables and pictures in CP (document) order. */
 export interface LegacyDocBody {
   blocks: BodyBlock[]
   warnings: string[]
+  /** list definitions/overrides the numbered paragraphs refer to (stage 3c-4) */
+  lists?: ListTables
 }
 
 /** One raw unit of the body text; markers keep their CP so formatting can be sliced. */
@@ -569,7 +581,12 @@ function buildTable(
 export function buildLegacyDocBody(
   source: FormattingSource,
   read?: FormattingRead,
-  options: { styles?: StyleSheet; images?: ImageBlock[] } = {},
+  options: {
+    styles?: StyleSheet
+    images?: ImageBlock[]
+    lists?: ListTables
+    fields?: FieldParseResult
+  } = {},
 ): LegacyDocBody {
   const warnings: string[] = []
   const detailed = read ?? readFormattingDetailed(source, warnings)
@@ -616,6 +633,42 @@ export function buildLegacyDocBody(
   const imagesByCp = new Map<number, ImageBlock>()
   for (const image of options.images ?? []) imagesByCp.set(image.cp, image)
   const consumedImageCps = new Set<number>()
+  const hyperlinks = options.fields?.hyperlinks ?? []
+  const linkRangesFor = (startCp: number, endCp: number): FormattedLinkRange[] =>
+    hyperlinks
+      .filter((link) => link.endCp > startCp && link.startCp < endCp)
+      .map((link) => ({
+        startCp: Math.max(link.startCp, startCp),
+        endCp: Math.min(link.endCp, endCp),
+        href: link.anchor ? '#' + link.anchor : (link.target ?? ''),
+        ...(link.tooltip ? { tooltip: link.tooltip } : {}),
+      }))
+      .filter((range) => range.href !== '') as FormattedLinkRange[]
+  const missingListIlfos = new Set<number>()
+  const listInfoFor = (formatting: ParagraphFormatting): ParagraphListInfo | undefined => {
+    const ilfo = formatting.listId
+    if (ilfo === undefined || ilfo === 0 || !options.lists) return undefined
+    const lsid = options.lists.overrides.get(ilfo)
+    const definition = lsid !== undefined ? options.lists.lists.get(lsid) : undefined
+    if (!definition) {
+      if (!missingListIlfos.has(ilfo)) {
+        missingListIlfos.add(ilfo)
+        warnings.push(
+          'a paragraph references a list (ilfo ' +
+            ilfo +
+            ') that is missing; list formatting was omitted',
+        )
+      }
+      return undefined
+    }
+    const ilvl = Math.min(Math.max(formatting.listLevel ?? 0, 0), 8)
+    const level = definition.levels[ilvl]
+    return {
+      kind: level && isBulletLevel(level) ? 'bullet' : 'ordered',
+      numId: String(100 + ilfo),
+      ilvl,
+    }
+  }
   let index = 0
   while (index < units.length) {
     const unit = units[index]!
@@ -634,14 +687,24 @@ export function buildLegacyDocBody(
         styleIstd: entry?.istd ?? 0,
         papxSprms: entry?.sprms ?? EMPTY,
       }
+      const formatting = resolveParagraphFormattingFor(source, options.styles, request, warnings)
+      const list = listInfoFor(formatting)
       blocks.push({
         type: 'paragraph',
+        ...(list ? { list } : {}),
         paragraph: {
           startCp: unit.startCp,
           endCp: unit.endCp,
           text: mapWordControlChars(source.rawText.slice(unit.startCp, unit.endCp)),
-          formatting: resolveParagraphFormattingFor(source, options.styles, request, warnings),
-          runs: resolveRunsForRange(detailed, source, options.styles, request, warnings),
+          formatting,
+          runs: resolveRunsForRange(
+            detailed,
+            source,
+            options.styles,
+            request,
+            warnings,
+            linkRangesFor(unit.startCp, unit.endCp),
+          ),
         },
       })
       index++
@@ -721,34 +784,24 @@ export function buildLegacyDocBody(
     }
   }
   // content this stage still drops, reported once per document
-  if (source.rawText.includes('\u0001') && (options.images ?? []).length === 0)
+  if (source.rawText.includes('\u0001') && options.images === undefined)
     warnings.push('images are not converted yet; image placeholders are omitted')
-  if (source.rawText.includes('HYPERLINK'))
-    warnings.push(
-      'hyperlinks are not converted yet; the link text is imported without the hyperlink',
-    )
-  const hasListItems = blocks.some(
-    (block) =>
-      block.type === 'paragraph' &&
-      (block.paragraph.formatting.listLevel !== undefined ||
-        block.paragraph.formatting.listId !== undefined),
-  )
-  if (hasListItems)
-    warnings.push(
-      'numbered and bulleted lists are not converted yet; list text is imported as plain paragraphs',
-    )
   const unusedImages = (options.images ?? []).filter((image) => !consumedImageCps.has(image.cp))
   if (unusedImages.length > 0)
     warnings.push(
       'a picture inside a table cell or a text paragraph is not supported yet; it was omitted',
     )
-  return { blocks, warnings: [...new Set(warnings)] }
+  return {
+    blocks,
+    warnings: [...new Set(warnings)],
+    ...(options.lists ? { lists: options.lists } : {}),
+  }
 }
 
 /** Read the reconstructed body of a .doc (paragraphs, tables and images in CP order). */
 export function readLegacyDocBody(
   source: FormattingSource,
-  options: { images?: ImageBlock[] } = {},
+  options: { images?: ImageBlock[]; lists?: ListTables; fields?: FieldParseResult } = {},
 ): LegacyDocBody {
   const detailedWarnings: string[] = []
   const detailed = readFormattingDetailed(source, detailedWarnings)
@@ -756,9 +809,15 @@ export function readLegacyDocBody(
     source.fib.lcbStshf > 0
       ? parseStsh(source.table, source.fib.fcStshf, source.fib.lcbStshf)
       : undefined
-  const body = buildLegacyDocBody(source, detailed, { styles, images: options.images })
+  const body = buildLegacyDocBody(source, detailed, {
+    styles,
+    images: options.images,
+    lists: options.lists,
+    fields: options.fields,
+  })
   return {
     blocks: body.blocks,
     warnings: [...new Set([...detailedWarnings, ...body.warnings])],
+    ...(body.lists ? { lists: body.lists } : {}),
   }
 }

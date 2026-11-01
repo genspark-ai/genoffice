@@ -178,6 +178,14 @@ function buildResolvedRuns(
   return runs
 }
 
+/** A hyperlink result range the resolved runs should be tagged with. */
+export interface FormattedLinkRange {
+  startCp: number
+  endCp: number
+  href: string
+  tooltip?: string
+}
+
 /** A CP range whose runs should be resolved (table cell/body unit of stage 3c-2). */
 export interface ParagraphRunRequest {
   startCp: number
@@ -196,12 +204,18 @@ function runsForRange(
     covering: FormattingRead['characterRuns'][number] | undefined,
   ) => CharacterFormatting,
   rawText: string,
+  linkRanges: FormattedLinkRange[] = [],
 ): FormattedRun[] {
   const boundaries = new Set<number>([startCp, endCp])
   for (const run of read.characterRuns) {
     if (run.cpEnd <= startCp || run.cpStart >= endCp) continue
     boundaries.add(Math.max(run.cpStart, startCp))
     boundaries.add(Math.min(run.cpEnd, endCp))
+  }
+  for (const link of linkRanges) {
+    if (link.endCp <= startCp || link.startCp >= endCp) continue
+    boundaries.add(Math.max(link.startCp, startCp))
+    boundaries.add(Math.min(link.endCp, endCp))
   }
   const points = [...boundaries].sort((left, right) => left - right)
   const mapper = createWordControlMapper()
@@ -214,12 +228,27 @@ function runsForRange(
       (run) => run.cpStart <= segmentStart && run.cpEnd >= segmentEnd,
     )
     const formatting = formattingOf(covering)
+    const link = linkRanges.find(
+      (range) => range.startCp <= segmentStart && range.endCp >= segmentEnd,
+    )
     const text = mapper.map(rawText.slice(segmentStart, segmentEnd))
     if (text === '') continue
     const previous = runs[runs.length - 1]
-    if (previous && JSON.stringify(previous.formatting) === JSON.stringify(formatting))
+    if (
+      previous &&
+      JSON.stringify(previous.formatting) === JSON.stringify(formatting) &&
+      JSON.stringify(previous.link ?? null) ===
+        JSON.stringify(link ? { href: link.href, tooltip: link.tooltip } : null)
+    )
       previous.text += text
-    else runs.push({ text, formatting })
+    else
+      runs.push({
+        text,
+        formatting,
+        ...(link
+          ? { link: { href: link.href, ...(link.tooltip ? { tooltip: link.tooltip } : {}) } }
+          : {}),
+      })
   }
   return runs
 }
@@ -266,6 +295,7 @@ export function resolveRunsForRange(
   styles: StyleSheet | undefined,
   request: ParagraphRunRequest,
   warnings: string[] = [],
+  linkRanges: FormattedLinkRange[] = [],
 ): FormattedRun[] {
   if (!styles) {
     return runsForRange(
@@ -274,6 +304,7 @@ export function resolveRunsForRange(
       request.endCp,
       (covering) => characterFormattingOf(covering?.sprms ?? NO_SPRMS),
       source.rawText,
+      linkRanges,
     )
   }
   const resolver: Resolver = { styles, context: { source, warnings }, warn: warnOnce(warnings) }
@@ -290,6 +321,7 @@ export function resolveRunsForRange(
     (covering) =>
       resolveCharacterFormatting(covering?.sprms ?? NO_SPRMS, paragraphStyles, resolver),
     source.rawText,
+    linkRanges,
   )
 }
 

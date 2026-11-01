@@ -112,6 +112,43 @@ export interface SyntheticDocOptions {
   /** raw PlcfHdd override + pair-11 lcb override (corrupt-header tests) */
   plcfHdd?: Uint8Array
   lcbPlcfhdd?: number
+  /** synthetic PlfLst lists (table stream, FIB pair 73) + PlfLfo overrides (pair 74) */
+  lists?: SyntheticListDefinition[]
+  /** 1-based ilfo -> lsid overrides; defaults to one override per list in order */
+  listOverrides?: number[]
+  /** raw PlfLst / PlfLfo overrides + pair-73/74 lcb overrides (corrupt-list tests) */
+  plfLst?: Uint8Array
+  lcbPlfLst?: number
+  plfLfo?: Uint8Array
+  lcbPlfLfo?: number
+}
+
+/** One synthetic list level (encoded as LVLF + papx + chpx + Xst). */
+export interface SyntheticListLevel {
+  startAt?: number
+  /** Word nfc numbering format (0 decimal, 23 bullet, ...) */
+  numberFormat?: number
+  /** raw Xst characters; 0x00-0x08 are level-number placeholders */
+  levelText?: string
+  /** jc bits of LVLF.info (0 left, 1 center, 2 right) */
+  alignment?: number
+  legal?: boolean
+  noRestart?: boolean
+  /** ixchFollow: 0 tab, 1 space, 2 nothing */
+  follow?: number
+  indentLeft?: number
+  /** positive = first line, negative = hanging */
+  indentFirstLine?: number
+  indentRight?: number
+  /** raw grpprlPapx override (corrupt-level tests) */
+  paragraphSprms?: Uint8Array
+}
+
+export interface SyntheticListDefinition {
+  lsid: number
+  /** fSimpleList: one level instead of nine */
+  simple?: boolean
+  levels: SyntheticListLevel[]
 }
 
 /** One synthetic section for the PlcfSed/SEPX builders. */
@@ -636,6 +673,115 @@ export function encodePictureChpx(fcPic: number): Uint8Array {
   }
   return out
 }
+/** little-endian i16 bytes */
+function i16Bytes(value: number): number[] {
+  return [value & 0xff, (value >> 8) & 0xff]
+}
+
+/** one LVL: LVLF (28 bytes) + grpprlPapx + grpprlChpx + Xst */
+export function encodeListLevel(level: SyntheticListLevel): Uint8Array {
+  const paragraphSprms =
+    level.paragraphSprms ??
+    (() => {
+      const parts: Uint8Array[] = []
+      if (level.indentLeft !== undefined) parts.push(encodeSprm(0x845e, i16Bytes(level.indentLeft)))
+      if (level.indentFirstLine !== undefined)
+        parts.push(encodeSprm(0x8460, i16Bytes(level.indentFirstLine)))
+      if (level.indentRight !== undefined)
+        parts.push(encodeSprm(0x845d, i16Bytes(level.indentRight)))
+      const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+      let offset = 0
+      for (const part of parts) {
+        out.set(part, offset)
+        offset += part.length
+      }
+      return out
+    })()
+  const characterSprms = new Uint8Array(0)
+  const textCodes: number[] = []
+  for (const char of level.levelText ?? '') textCodes.push(char.charCodeAt(0))
+  const lvlf = new Uint8Array(28)
+  const view = new DataView(lvlf.buffer)
+  view.setUint32(0, level.startAt ?? 1, true)
+  lvlf[4] = level.numberFormat ?? 0
+  lvlf[5] =
+    ((level.alignment ?? 0) & 0x03) | (level.legal ? 0x04 : 0) | (level.noRestart ? 0x08 : 0)
+  lvlf[0x0f] = level.follow ?? 0
+  lvlf[0x18] = paragraphSprms.length
+  lvlf[0x19] = characterSprms.length
+  const out = new Uint8Array(
+    28 + paragraphSprms.length + characterSprms.length + 2 + textCodes.length * 2,
+  )
+  out.set(lvlf, 0)
+  out.set(paragraphSprms, 28)
+  out.set(characterSprms, 28 + paragraphSprms.length)
+  const xstStart = 28 + paragraphSprms.length + characterSprms.length
+  new DataView(out.buffer).setUint16(xstStart, textCodes.length, true)
+  textCodes.forEach((code, index) =>
+    new DataView(out.buffer).setUint16(xstStart + 2 + index * 2, code, true),
+  )
+  return out
+}
+
+/**
+ * A PlfLst split into its header (cLst + LSTF records, what lcbPlfLst covers)
+ * and the level array that follows it in the table stream.
+ */
+export function encodePlfLst(lists: SyntheticListDefinition[]): {
+  header: Uint8Array
+  levels: Uint8Array
+} {
+  const header = new Uint8Array(2 + lists.length * 28)
+  const headerView = new DataView(header.buffer)
+  headerView.setUint16(0, lists.length, true)
+  lists.forEach((list, index) => {
+    const base = 2 + index * 28
+    headerView.setUint32(base, list.lsid, true)
+    header[base + 0x1a] = list.simple ? 0x01 : 0x00
+  })
+  const encoded = lists.map((list) => {
+    const levels = [...list.levels]
+    if (!list.simple) {
+      // a non-simple list always carries nine LVLs; pad the sparse test input
+      while (levels.length < 9)
+        levels.push({ numberFormat: 0, levelText: String.fromCharCode(levels.length) + '.' })
+    }
+    return levels.map(encodeListLevel)
+  })
+  const levels = new Uint8Array(
+    encoded.reduce((sum, list) => sum + list.reduce((inner, level) => inner + level.length, 0), 0),
+  )
+  let offset = 0
+  for (const list of encoded)
+    for (const level of list) {
+      levels.set(level, offset)
+      offset += level.length
+    }
+  return { header, levels }
+}
+
+/** a PlfLfo: one LFO per lsid (clfolvl 0) plus the LFOData cp records */
+export function encodePlfLfo(lsids: number[]): Uint8Array {
+  const out = new Uint8Array(4 + lsids.length * 16 + lsids.length * 4)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, lsids.length, true)
+  lsids.forEach((lsid, index) => view.setUint32(4 + index * 16, lsid, true))
+  const dataStart = 4 + lsids.length * 16
+  lsids.forEach((_, index) => view.setUint32(dataStart + index * 4, 0xffffffff, true))
+  return out
+}
+
+/** the PAPX sprms of a list paragraph: sprmPIlvl + sprmPIlfo (ilfo is 1-based) */
+export function encodeListParagraphPapx(ilfo: number, ilvl = 0): Uint8Array {
+  const parts = [encodeSprm(0x260a, [ilvl]), encodeSprm(0x460b, [ilfo & 0xff, (ilfo >> 8) & 0xff])]
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
 /** wrap streams in an OLE2 compound file (cfb seeds its own producer marker, ignored on read) */
 export function buildCompound(streams: Array<[string, Uint8Array]>): Uint8Array {
   const container = CFB.utils.cfb_new()
@@ -656,6 +802,8 @@ interface FibValues {
   stshf?: { fc: number; lcb: number }
   plcfsed?: { fc: number; lcb: number }
   plcfhdd?: { fc: number; lcb: number }
+  plcflst?: { fc: number; lcb: number }
+  plcflfo?: { fc: number; lcb: number }
   ccpFtn?: number
   ccpHdd?: number
   ccpAtn?: number
@@ -699,6 +847,8 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   const PLCFHDD_PAIR_INDEX = 11
   const CHPX_PAIR_INDEX = 12
   const PAPX_PAIR_INDEX = 13
+  const PLCFLST_PAIR_INDEX = 73
+  const PLCFLFO_PAIR_INDEX = 74
   if (values.stshf) {
     view.setUint32(offset + STSHF_PAIR_INDEX * 8, values.stshf.fc, true)
     view.setUint32(offset + STSHF_PAIR_INDEX * 8 + 4, values.stshf.lcb, true)
@@ -706,6 +856,8 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   for (const [index, pair] of [
     [PLCFSED_PAIR_INDEX, values.plcfsed],
     [PLCFHDD_PAIR_INDEX, values.plcfhdd],
+    [PLCFLST_PAIR_INDEX, values.plcflst],
+    [PLCFLFO_PAIR_INDEX, values.plcflfo],
   ] as const) {
     if (!pair) continue
     view.setUint32(offset + index * 8, pair.fc, true)
@@ -740,6 +892,18 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
   let papxPlcf = options.papxPlcf
   let plcfsed = options.plcfSed
   let plcfhdd = options.plcfHdd
+  let plfLst = options.plfLst
+  let plfLstLevels: Uint8Array = new Uint8Array(0)
+  if (!plfLst && options.lists && options.lists.length > 0) {
+    const encoded = encodePlfLst(options.lists)
+    plfLst = encoded.header
+    plfLstLevels = encoded.levels
+  }
+  const plfLfo =
+    options.plfLfo ??
+    (options.lists && options.lists.length > 0
+      ? encodePlfLfo(options.listOverrides ?? options.lists.map((list) => list.lsid))
+      : undefined)
   const stsh =
     options.stsh ??
     (options.stshStyles ? encodeStsh(options.stshStyles, options.stshCbStdBase) : undefined)
@@ -861,6 +1025,9 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
     const stshFc = papxPlcFc + (papxPlcf?.length ?? 0)
     const plcfsedFc = stshFc + (stsh?.length ?? 0)
     const plcfhddFc = plcfsedFc + (plcfsed?.length ?? 0)
+    const plcflstFc = plcfhddFc + (plcfhdd?.length ?? 0)
+    const plfLstLevelsFc = plcflstFc + (plfLst?.length ?? 0)
+    const plcflfoFc = plfLstLevelsFc + plfLstLevels.length
     const word = new Uint8Array(nextPage * SYNTHETIC_FKP_PAGE_BYTES + sepxTotal)
     writeFib(word, {
       wIdent,
@@ -884,6 +1051,8 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       ...(stsh ? { stshf: { fc: stshFc, lcb: options.lcbStshf ?? stsh.length } } : {}),
       ...(plcfsed ? { plcfsed: { fc: plcfsedFc, lcb: options.lcbPlcfsed ?? plcfsed.length } } : {}),
       ...(plcfhdd ? { plcfhdd: { fc: plcfhddFc, lcb: options.lcbPlcfhdd ?? plcfhdd.length } } : {}),
+      ...(plfLst ? { plcflst: { fc: plcflstFc, lcb: options.lcbPlfLst ?? plfLst.length } } : {}),
+      ...(plfLfo ? { plcflfo: { fc: plcflfoFc, lcb: options.lcbPlfLfo ?? plfLfo.length } } : {}),
     })
     let textOffset = TEXT_OFFSET
     for (const bytes of encoded) {
@@ -910,7 +1079,10 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
         (papxPlcf?.length ?? 0) +
         (stsh?.length ?? 0) +
         (plcfsed?.length ?? 0) +
-        (plcfhdd?.length ?? 0),
+        (plcfhdd?.length ?? 0) +
+        (plfLst?.length ?? 0) +
+        plfLstLevels.length +
+        (plfLfo?.length ?? 0),
     )
     if (clx) table.set(clx, fcClx)
     if (chpxPlcf) table.set(chpxPlcf, baseTableLength)
@@ -927,7 +1099,19 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       table.set(plcfsed, cursor)
       cursor += plcfsed.length
     }
-    if (plcfhdd) table.set(plcfhdd, cursor)
+    if (plcfhdd) {
+      table.set(plcfhdd, cursor)
+      cursor += plcfhdd.length
+    }
+    if (plfLst) {
+      table.set(plfLst, cursor)
+      cursor += plfLst.length
+    }
+    if (plfLstLevels.length > 0) {
+      table.set(plfLstLevels, cursor)
+      cursor += plfLstLevels.length
+    }
+    if (plfLfo) table.set(plfLfo, cursor)
   }
 
   const streams: Array<[string, Uint8Array]> = []

@@ -22,10 +22,18 @@ import {
 import type { FormattedParagraph, FormattedRun, ParagraphFormatting } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
 import { EMU_PER_TWIP, type ImageBlock } from './images'
+import {
+  isBulletLevel,
+  levelTextForWriter,
+  NUMBER_FORMATS,
+  type ListDefinition,
+  type ListLevel,
+} from './lists'
 import type { SectionInfo } from './sections'
 import type {
   BodyBlock,
   LegacyDocBody,
+  ParagraphListInfo,
   TableBorders,
   TableCell,
   TableModel,
@@ -120,6 +128,12 @@ export function toDocxRun(run: FormattedRun): Run {
     const color = COLOR_BY_INDEX[formatting.colorIndex]
     if (color !== undefined) out.color = color
   }
+  if (run.link) {
+    out.link = {
+      href: run.link.href,
+      ...(run.link.tooltip ? { tooltip: run.link.tooltip } : {}),
+    }
+  }
   return out
 }
 
@@ -148,11 +162,16 @@ export function toParaFormat(formatting: ParagraphFormatting): ParaFormat | unde
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function paragraphBlock(paragraph: FormattedParagraph): GeneratedBlock {
+function paragraphBlock(entry: {
+  paragraph: FormattedParagraph
+  list?: ParagraphListInfo
+}): GeneratedBlock {
+  const paragraph = entry.paragraph
   const block: GeneratedBlock = {
-    type: 'paragraph',
+    type: entry.list ? 'listItem' : 'paragraph',
     runs: paragraph.runs.map(toDocxRun),
   }
+  if (entry.list) block.list = { ...entry.list }
   const format = toParaFormat(paragraph.formatting)
   if (format) block.format = format
   return block
@@ -302,7 +321,7 @@ function cellBordersXml(cell: TableCell): string {
   return '<w:tcBorders>' + visible.map(borderXml).join('') + '</w:tcBorders>'
 }
 
-function tableCellXml(cell: TableCell): string {
+function tableCellXml(cell: TableCell, context: GenerateContext): string {
   const properties = ['<w:tcW w:w="' + cell.widthTwips + '" w:type="dxa"/>']
   if (cell.gridSpan > 1) properties.push('<w:gridSpan w:val="' + cell.gridSpan + '"/>')
   if (cell.verticalMerge === 'restart') properties.push('<w:vMerge w:val="restart"/>')
@@ -313,12 +332,12 @@ function tableCellXml(cell: TableCell): string {
     cell.paragraphs.length === 0
       ? '<w:p/>'
       : cell.paragraphs
-          .map((paragraph) => generateParagraphXml(paragraphBlock(paragraph), GENERATE_CONTEXT))
+          .map((paragraph) => generateParagraphXml(paragraphBlock({ paragraph }), context))
           .join('')
   return '<w:tc><w:tcPr>' + properties.join('') + '</w:tcPr>' + paragraphs + '</w:tc>'
 }
 
-function tableRowXml(row: TableRow): string {
+function tableRowXml(row: TableRow, context: GenerateContext): string {
   const properties: string[] = []
   if (row.cantSplit) properties.push('<w:cantSplit/>')
   if (row.heightTwips !== undefined)
@@ -331,11 +350,14 @@ function tableRowXml(row: TableRow): string {
     )
   if (row.header) properties.push('<w:tblHeader/>')
   const trPr = properties.length > 0 ? '<w:trPr>' + properties.join('') + '</w:trPr>' : ''
-  return '<w:tr>' + trPr + row.cells.map(tableCellXml).join('') + '</w:tr>'
+  return '<w:tr>' + trPr + row.cells.map((cell) => tableCellXml(cell, context)).join('') + '</w:tr>'
 }
 
 /** a complete <w:tbl> for one reconstructed table (fixed layout, explicit grid) */
-export function generateTableXml(table: TableModel): string {
+export function generateTableXml(
+  table: TableModel,
+  context: GenerateContext = GENERATE_CONTEXT,
+): string {
   const tableProperties = [
     '<w:tblW w:w="0" w:type="auto"/>',
     ...(table.alignment ? ['<w:jc w:val="' + table.alignment + '"/>'] : []),
@@ -346,7 +368,7 @@ export function generateTableXml(table: TableModel): string {
     '<w:tblGrid>' +
     table.gridWidths.map((width) => '<w:gridCol w:w="' + width + '"/>').join('') +
     '</w:tblGrid>'
-  const rows = table.rows.map(tableRowXml).join('')
+  const rows = table.rows.map((row) => tableRowXml(row, context)).join('')
   return '<w:tbl><w:tblPr>' + tableProperties.join('') + '</w:tblPr>' + grid + rows + '</w:tbl>'
 }
 
@@ -393,11 +415,12 @@ function generateImageParagraphXml(image: ImageBlock, rId: string, pictureNumber
 export function generateBodyBlocksXml(
   blocks: BodyBlock[],
   imageRelIds: Map<number, string> = new Map(),
+  context: GenerateContext = GENERATE_CONTEXT,
 ): string {
   let pictureNumber = 0
   return blocks
     .map((block) => {
-      if (block.type === 'table') return generateTableXml(block.table)
+      if (block.type === 'table') return generateTableXml(block.table, context)
       if (block.type === 'image') {
         pictureNumber++
         return generateImageParagraphXml(
@@ -406,7 +429,7 @@ export function generateBodyBlocksXml(
           pictureNumber,
         )
       }
-      return generateParagraphXml(paragraphBlock(block.paragraph), GENERATE_CONTEXT)
+      return generateParagraphXml(paragraphBlock(block), context)
     })
     .join('')
 }
@@ -418,10 +441,98 @@ const DOCUMENT_PATH = 'word/document.xml'
 /** Generated <w:p> XML for every model paragraph. */
 export function generateBodyParagraphsXml(paragraphs: FormattedParagraph[]): string {
   return paragraphs
-    .map((paragraph) => generateParagraphXml(paragraphBlock(paragraph), GENERATE_CONTEXT))
+    .map((paragraph) => generateParagraphXml(paragraphBlock({ paragraph }), GENERATE_CONTEXT))
     .join('')
 }
 
+const NUMBERING_PATH = 'word/numbering.xml'
+const HYPERLINK_REL_TYPE = `${WORD_REL_NAMESPACE}/hyperlink`
+
+/** the w:ind of one numbering level (level props come from the LVL grpprlPapx) */
+function numberingIndentXml(level: ListLevel): string {
+  const attributes: string[] = []
+  if (level.indentLeftTwips !== undefined) attributes.push('w:left="' + level.indentLeftTwips + '"')
+  if (level.indentRightTwips !== undefined)
+    attributes.push('w:right="' + level.indentRightTwips + '"')
+  if (level.indentFirstLineTwips !== undefined) {
+    if (level.indentFirstLineTwips >= 0)
+      attributes.push('w:firstLine="' + level.indentFirstLineTwips + '"')
+    else attributes.push('w:hanging="' + Math.abs(level.indentFirstLineTwips) + '"')
+  }
+  return attributes.length > 0 ? '<w:ind ' + attributes.join(' ') + '/>' : ''
+}
+
+/** one w:lvl of a reconstructed list definition */
+function numberingLevelXml(level: ListLevel, ilvl: number): string {
+  const bullet = isBulletLevel(level)
+  const numberFormat = bullet ? 'bullet' : (NUMBER_FORMATS[level.numberFormat] ?? 'decimal')
+  const levelText = escapeXmlText(levelTextForWriter(level))
+  const indent = numberingIndentXml(level)
+  return (
+    '<w:lvl w:ilvl="' +
+    ilvl +
+    '"><w:start w:val="' +
+    level.startAt +
+    '"/><w:numFmt w:val="' +
+    numberFormat +
+    '"/>' +
+    (level.legal ? '<w:isLgl/>' : '') +
+    '<w:suff w:val="' +
+    level.follow +
+    '"/><w:lvlText w:val="' +
+    levelText +
+    '"/><w:lvlJc w:val="' +
+    level.alignment +
+    '"/>' +
+    (indent !== '' ? '<w:pPr>' + indent + '</w:pPr>' : '') +
+    '</w:lvl>'
+  )
+}
+
+/**
+ * Insert the reconstructed list definitions into the blank template's
+ * numbering.xml: new abstractNum definitions (ids from 10) after the existing
+ * abstract numbers and the w:num entries (ids 100 + ilfo) before the closing
+ * tag, keeping the CT_Numbering abstractNum* -> num* order.
+ */
+function reconstructNumberingXml(
+  numbering: string,
+  used: Array<{ numId: number; ilfo: number }>,
+  lists: Map<number, number>,
+  definitions: Map<number, ListDefinition>,
+): string {
+  const abstractIdByLsid = new Map<number, number>()
+  const abstractXml: string[] = []
+  const numXml: string[] = []
+  for (const entry of used) {
+    const lsid = lists.get(entry.ilfo)
+    const definition = lsid !== undefined ? definitions.get(lsid) : undefined
+    if (!definition) continue
+    let abstractId = abstractIdByLsid.get(definition.lsid)
+    if (abstractId === undefined) {
+      abstractId = 10 + abstractIdByLsid.size
+      abstractIdByLsid.set(definition.lsid, abstractId)
+      abstractXml.push(
+        '<w:abstractNum w:abstractNumId="' +
+          abstractId +
+          '"><w:multiLevelType w:val="hybridMultilevel"/>' +
+          definition.levels.map(numberingLevelXml).join('') +
+          '</w:abstractNum>',
+      )
+    }
+    numXml.push(
+      '<w:num w:numId="' + entry.numId + '"><w:abstractNumId w:val="' + abstractId + '"/></w:num>',
+    )
+  }
+  if (abstractXml.length === 0) return numbering
+  const firstNum = numbering.indexOf('<w:num ')
+  let out =
+    firstNum >= 0
+      ? numbering.slice(0, firstNum) + abstractXml.join('') + numbering.slice(firstNum)
+      : numbering.replace('</w:numbering>', abstractXml.join('') + '</w:numbering>')
+  out = out.replace('</w:numbering>', numXml.join('') + '</w:numbering>')
+  return out
+}
 /**
  * Write the formatting model as a .docx: start from docx-engine's blank
  * template, replace its single placeholder paragraph inside <w:body> with the
@@ -449,7 +560,6 @@ export async function writeLegacyDocx(
   let nextRelId = 3
   let generatedSectPr: string | undefined
   if (layout && layout.sections.length > 0) {
-    // single-section output: flatten the document to its last section
     const section = layout.sections[layout.sections.length - 1]!
     const stories = layout.headerFooter[layout.headerFooter.length - 1] ?? {}
     const collected = collectHeaderFooterParts(stories, section)
@@ -465,7 +575,6 @@ export async function writeLegacyDocx(
     generatedSectPr = sectPrXml(section, references)
   }
 
-  // media parts and picture relationships come after the header/footer parts
   interface MediaPart {
     path: string
     extension: 'png' | 'jpeg'
@@ -493,10 +602,42 @@ export async function writeLegacyDocx(
     }
   }
 
-  const bodyXml =
-    body && body.blocks.some((block) => block.type === 'table' || block.type === 'image')
-      ? generateBodyBlocksXml(body.blocks, imageRelIds)
-      : generateBodyParagraphsXml(model.paragraphs)
+  // numbered paragraphs: one w:num per used ilfo, definitions patched into numbering.xml
+  const usedNumbering: Array<{ numId: number; ilfo: number }> = []
+  if (body) {
+    const seenNumIds = new Set<number>()
+    for (const block of body.blocks) {
+      if (block.type !== 'paragraph' || !block.list) continue
+      const numId = Number(block.list.numId)
+      if (!Number.isFinite(numId) || seenNumIds.has(numId)) continue
+      seenNumIds.add(numId)
+      usedNumbering.push({ numId, ilfo: numId - 100 })
+    }
+  }
+
+  // external hyperlink relationships get rIds while the body runs are generated
+  const hyperlinkRels: Array<{ rId: string; href: string }> = []
+  const generateContext: GenerateContext = {
+    headingStyleIds: new Map(),
+    allocateHyperlinkRel: (href: string) => {
+      const rId = `rId${nextRelId++}`
+      hyperlinkRels.push({ rId, href })
+      return rId
+    },
+  }
+
+  const usesBodyBlocks =
+    body !== undefined &&
+    body.blocks.some(
+      (block) =>
+        block.type === 'table' ||
+        block.type === 'image' ||
+        (block.type === 'paragraph' &&
+          (block.list !== undefined || block.paragraph.runs.some((run) => run.link !== undefined))),
+    )
+  const bodyXml = usesBodyBlocks
+    ? generateBodyBlocksXml(body!.blocks, imageRelIds, generateContext)
+    : generateBodyParagraphsXml(model.paragraphs)
   let documentXml =
     template.slice(0, placeholderStart) +
     bodyXml +
@@ -515,7 +656,13 @@ export async function writeLegacyDocx(
   }
   zip.file(DOCUMENT_PATH, documentXml)
 
-  if (parts.length > 0 || settingsNeeded || mediaParts.length > 0) {
+  if (
+    parts.length > 0 ||
+    settingsNeeded ||
+    mediaParts.length > 0 ||
+    hyperlinkRels.length > 0 ||
+    usedNumbering.length > 0
+  ) {
     const contentTypesFile = zip.file(CONTENT_TYPES_PATH)
     if (!contentTypesFile) throw new Error('the blank docx template has no [Content_Types].xml')
     let contentTypes = await contentTypesFile.async('string')
@@ -569,6 +716,14 @@ export async function writeLegacyDocx(
             )}"/>`,
         )
         .join('') +
+      hyperlinkRels
+        .map(
+          (rel) =>
+            `<Relationship Id="${rel.rId}" Type="${HYPERLINK_REL_TYPE}" Target="${escapeXmlText(
+              rel.href,
+            )}" TargetMode="External"/>`,
+        )
+        .join('') +
       (settingsNeeded
         ? `<Relationship Id="rId${nextRelId}" Type="${SETTINGS_REL_TYPE}" Target="settings.xml"/>`
         : '')
@@ -581,6 +736,19 @@ export async function writeLegacyDocx(
         SETTINGS_PATH,
         `${STORY_XML_DECL}<w:settings xmlns:w="${W_NAMESPACE}"><w:evenAndOddHeaders/></w:settings>`,
       )
+    if (usedNumbering.length > 0 && body?.lists) {
+      const numberingFile = zip.file(NUMBERING_PATH)
+      if (numberingFile) {
+        const numbering = await numberingFile.async('string')
+        const patched = reconstructNumberingXml(
+          numbering,
+          usedNumbering,
+          body.lists.overrides,
+          body.lists.lists,
+        )
+        if (patched !== numbering) zip.file(NUMBERING_PATH, patched)
+      }
+    }
   }
 
   return zip.generateAsync({
