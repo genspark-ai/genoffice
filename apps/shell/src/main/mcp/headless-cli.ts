@@ -160,3 +160,30 @@ export async function mergeTemplateViaCli(
     return outcome.json
   })
 }
+
+/**
+ * `sheet links <path>`: list, refresh (`--update`) or break (`--break`, 1-based
+ * indices) a workbook's external links. Mutations default to writing in place
+ * and honour `--out`/`--force` — the CLI routes them through the same
+ * output/allow-list/open-in-GenOffice guards `sheet apply` uses.
+ */
+export async function sheetLinksViaCli(
+  runner: CliRunner,
+  opts: {
+    path: string
+    update?: boolean
+    break?: number[]
+    out?: string
+    overwrite?: boolean
+  },
+): Promise<CliJsonOk> {
+  const args = ['sheet', 'links', opts.path]
+  if (opts.break !== undefined) args.push('--break', opts.break.join(','))
+  else if (opts.update) args.push('--update')
+  if (opts.out !== undefined) args.push('--out', opts.out, ...(opts.overwrite ? ['--force'] : []))
+  const outcome = await runner.run(args)
+  if (!outcome.ok || !outcome.json || outcome.json.status !== 'ok') {
+    throw new Error(cliErrorMessage(outcome))
+  }
+  return outcome.json
+}
