@@ -40,7 +40,8 @@ document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
 editable OOXML copies; the import is open-only — saving writes OOXML, never
-ODF.
+ODF. Hancom documents (`.hwp`, `.hwpx`) open in Docs the same way, as `.docx`
+copies; GenOffice never writes HWP.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
