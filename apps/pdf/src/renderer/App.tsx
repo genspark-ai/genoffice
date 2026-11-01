@@ -137,6 +137,7 @@ import {
   remapOutlineTree,
 } from './heading-outline'
 import { filterPageParity, printPdf, type PageParity } from './print'
+import { readFileBytes } from './file-bytes'
 import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
 import { PasswordDialog } from './PasswordDialog'
@@ -1268,7 +1269,7 @@ export default function App() {
       saved?: SavedSnapshot,
       waitForPageNos: number[] = [],
     ) => {
-      const data = await window.pdfApi.readFile(path)
+      const data = await readFileBytes(window.pdfApi, path)
       const bytes = new Uint8Array(data)
       setFormHasXfa(hasXfaMarker(bytes))
       if (!saved) {
@@ -1695,7 +1696,7 @@ export default function App() {
           // reports it like a password failure, and the answer has to name the
           // real reason instead of looping the prompt
           try {
-            const raw = new Uint8Array(await window.pdfApi.readFile(path))
+            const raw = await readFileBytes(window.pdfApi, path)
             const probe = await window.pdfApi.decryptPdf(raw, '')
             if (!probe.ok && probe.reason === 'certificate-encryption') {
               showNotice(t('pwCertEncrypted'))
@@ -6710,7 +6711,7 @@ export default function App() {
       await flushThen(async () => {
         setPrinting(true)
         try {
-          const data = await window.pdfApi.readFile(filePath)
+          const data = await readFileBytes(window.pdfApi, filePath)
           const pdoc = await getDocument({ data: new Uint8Array(data), ...DOC_OPTS }).promise
           try {
             await printPdf(pdoc, pages, job)

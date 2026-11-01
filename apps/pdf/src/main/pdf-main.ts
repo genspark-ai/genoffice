@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, stat, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
@@ -32,6 +32,9 @@ import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
 import { printJobOptions } from '@genoffice/electron-utils/print-job'
+
+/** the largest slice readFileChunk hands over IPC (the renderer loops) */
+const PDF_READ_CHUNK_MAX_BYTES = 8 * 1024 * 1024
 import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
@@ -1232,6 +1235,39 @@ function registerPdfIpc(): void {
     }
     const buf = await readFile(path)
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  })
+
+  // Chunked reads for the same grant: one 42 MB ArrayBuffer over IPC has
+  // killed renderers before first paint on Windows (genoffice#2366), while
+  // small slices deserialize fine. The size rides along so the renderer's
+  // loop needs no separate stat.
+  ipcMain.handle(PDF_CHANNELS.readFileChunk, async (e, request: unknown) => {
+    if (typeof request !== 'object' || request === null) {
+      throw new Error('pdf: malformed chunk request')
+    }
+    const req = request as Record<string, unknown>
+    if (typeof req.path !== 'string' || !allowedByWc.get(e.sender.id)?.has(req.path)) {
+      throw new Error('pdf: path not granted to this view')
+    }
+    const start =
+      typeof req.start === 'number' && Number.isInteger(req.start) && req.start >= 0
+        ? req.start
+        : -1
+    const end =
+      typeof req.end === 'number' && Number.isInteger(req.end) && req.end >= start ? req.end : -1
+    if (start < 0 || end < 0 || end - start > PDF_READ_CHUNK_MAX_BYTES) {
+      throw new Error('pdf: invalid chunk range')
+    }
+    const handle = await open(req.path, 'r')
+    try {
+      const length = end - start
+      const buf = Buffer.alloc(length)
+      const { bytesRead } = await handle.read(buf, 0, length, start)
+      const fileSize = (await handle.stat()).size
+      return { data: new Uint8Array(buf.subarray(0, bytesRead)), fileSize }
+    } finally {
+      await handle.close()
+    }
   })
 
   // pdf.js has already accepted `password` for these bytes on the render side;
