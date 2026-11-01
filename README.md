@@ -39,9 +39,9 @@ files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
-editable OOXML copies; the import is open-only — saving writes OOXML, never
-ODF. Hancom documents (`.hwp`, `.hwpx`) open in Docs the same way, as `.docx`
-copies; GenOffice never writes HWP.
+editable OOXML copies, and so do legacy Word `.doc`/`.dot` files and Hancom
+documents (`.hwp`, `.hwpx`); the imports are open-only — saving writes OOXML,
+never the source format.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
