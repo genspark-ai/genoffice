@@ -1,0 +1,7 @@
+Legacy DOC text extraction
+English paragraph with punctuation: 1, 2, 3.
+中文段落：混合中英文 ABC 测试。
+Column A	Column B
+
+Emoji and quotes: 😀 “curly” — dash…
+Last paragraph.

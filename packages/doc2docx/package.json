@@ -1,0 +1,24 @@
+{
+  "name": "@genoffice/doc2docx",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Legacy Word 97-2003 import: parse .doc (OLE2/CFB + FIB/piece table) and rebuild it as .docx; staged as text foundation, then formatting, then styles/tables/images",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "cfb": "^1.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}
