@@ -264,6 +264,54 @@ describe('buildSmartArtParts: the radial layout', () => {
     }
   })
 
+  it('keeps the boxes from overlapping', () => {
+    // a branch with many children: the ring has to be pushed out for them
+    const wide = {
+      label: 'Root',
+      children: ['A', 'B', 'C'].map((k) => ({
+        label: k,
+        children: ['1', '2', '3', '4', '5'].map((i) => ({ label: `${k}${i}` })),
+      })),
+    }
+    const laid = buildSmartArtParts(wide, { orientation: 'radial' }, REL_IDS)
+    const boxes: Array<{ x: number; y: number; w: number; h: number }> = []
+    for (const m of laid.drawingXml.matchAll(/<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/g)) {
+      const spPr = m[1]
+      if (/<a:prstGeom prst="line"/.test(spPr)) continue
+      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(spPr)
+      const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(spPr)
+      if (!off || !ext) continue
+      boxes.push({
+        x: Number(off[1]) / 9525,
+        y: Number(off[2]) / 9525,
+        w: Number(ext[1]) / 9525,
+        h: Number(ext[2]) / 9525,
+      })
+    }
+    expect(boxes.length).toBe(19)
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        const overlaps = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        expect(overlaps, `box ${i} overlaps box ${j}`).toBe(false)
+      }
+    }
+  })
+
+  it('keeps the map inside the page', () => {
+    const wide = {
+      label: 'Root',
+      children: ['A', 'B', 'C'].map((k) => ({
+        label: k,
+        children: ['1', '2', '3', '4', '5'].map((i) => ({ label: `${k}${i}` })),
+      })),
+    }
+    const laid = buildSmartArtParts(wide, { orientation: 'radial' }, REL_IDS)
+    expect(laid.widthPx).toBeLessThanOrEqual(700)
+    expect(laid.heightPx).toBeLessThanOrEqual(700)
+  })
+
   it('lays the branches out with the cycle algorithm', () => {
     expect(radial.layoutXml).toContain('<dgm:alg type="cycle">')
     expect(radial.layoutXml).toContain(SMARTART_RADIAL_LAYOUT_ID)

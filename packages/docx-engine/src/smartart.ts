@@ -47,6 +47,10 @@ export interface SmartArtOptions {
   widthPx?: number
   /** frame height in px; defaults to a height that fits the tree */
   heightPx?: number
+  /** the widest the frame may get, in px; a larger map scales down to fit.
+   *  A reader drops a diagram that is wider than the page, so the default is
+   *  a little under the width of A4. */
+  maxSizePx?: number
 }
 
 export interface SmartArtParts {
@@ -73,6 +77,9 @@ const DGM_NS = 'http://schemas.openxmlformats.org/drawingml/2006/diagram'
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 const DSP_NS = 'http://schemas.microsoft.com/office/drawing/2008/diagram'
+
+/** the width a node box is drawn at before the map is scaled to fit */
+const BASE_NODE_WIDTH = 150
 
 /** EMU per px at 96 dpi. */
 const EMU_PER_PX = 9525
@@ -574,6 +581,8 @@ const RADIAL_METRICS = {
   ringStep: 168,
   /** the share of a branch's slice its own children get */
   childSpread: 0.72,
+  /** the degrees between two children on the same arm */
+  fanDeg: 9,
   /** the room kept between two boxes */
   boxGap: 18,
 } as const
@@ -600,7 +609,7 @@ interface RadialGeometry {
  * until the boxes fit, so neighbours never overlap.
  */
 function layoutRadial(root: FlatNode): RadialGeometry {
-  const { nodeWidth: W, nodeHeight: H, firstRing, childSpread, boxGap } = RADIAL_METRICS
+  const { nodeWidth: W, nodeHeight: H, firstRing, childSpread, fanDeg, boxGap } = RADIAL_METRICS
   const boxes: RadialGeometry['boxes'] = []
   const lines: RadialGeometry['lines'] = []
   // the map is laid out around the origin; the frame is measured from the
@@ -635,19 +644,15 @@ function layoutRadial(root: FlatNode): RadialGeometry {
     const kids = node.children
     if (kids.length === 0) return
     const slice = angleSpan / kids.length
-    const childSpan = slice * childSpread
-    // the ring has to be wide enough for the boxes that sit on it, spread
-    // over the angle they share
-    const arc = (angleSpan * Math.PI) / 180
-    const needed = (kids.length * (W + boxGap)) / Math.max(arc, 0.001)
-    // the ring clears the one inside it: a box is wide, so a parent and the
-    // child below it need a full box between them
-    const ring = Math.max(needed, prevRing + W + boxGap)
     kids.forEach((kid, i) => {
-      const deg = angleCenter - angleSpan / 2 + slice * (i + 0.5)
+      // the children walk out along the arm their parent opened, one box
+      // apart: boxes on a ring would sit on top of each other wherever the
+      // ring runs sideways
+      const deg = angleCenter + (i - (kids.length - 1) / 2) * fanDeg
       const rad = (deg * Math.PI) / 180
-      const x = cx + Math.cos(rad) * ring
-      const y = cy + Math.sin(rad) * ring
+      const step = prevRing + (i + 1) * (W + boxGap)
+      const x = cx + Math.cos(rad) * step
+      const y = cy + Math.sin(rad) * step
       const box = push(kid, x, y)
       lines.push({
         x1: parent.x + parent.w / 2,
@@ -657,7 +662,7 @@ function layoutRadial(root: FlatNode): RadialGeometry {
         from: node,
         to: kid,
       })
-      place(box, kid, deg, childSpan, ring)
+      place(box, kid, deg, slice * childSpread, step)
     })
   }
 
@@ -701,6 +706,9 @@ interface DrawingGeometry {
     h: number
     /** the node the box stands for, when the layout knows it */
     node?: FlatNode
+    /** the presentation point the shape stands for: the drawing is matched to
+     *  the data model through it */
+    presId?: string
   }>
   lines: Array<{
     x1: number
@@ -710,6 +718,9 @@ interface DrawingGeometry {
     /** the boxes the connector joins, so it can meet their borders */
     from?: FlatNode
     to?: FlatNode
+    /** the presentation points the connector stands for */
+    fromPres?: string
+    toPres?: string
   }>
 }
 
@@ -777,8 +788,10 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     const w = box.w
     const h = box.h
     const label = box.label
+    // the text follows the box: a scaled map keeps its proportions
+    const fontSize = Math.max(700, Math.round((1200 * box.w) / BASE_NODE_WIDTH))
     sps.push(
-      `<dsp:sp modelId="${modelId(`dsp:${label}:${x}:${y}`)}">` +
+      `<dsp:sp modelId="${box.presId ?? modelId(`dsp:${label}:${x}:${y}`)}">` +
         '<dsp:nvSpPr>' +
         `<dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/>` +
         '</dsp:nvSpPr>' +
@@ -801,7 +814,7 @@ function buildDrawingXml(geo: DrawingGeometry): string {
         '<a:noAutofit/></a:bodyPr>' +
         '<a:lstStyle/>' +
         '<a:p><a:pPr lvl="0" algn="ctr" defTabSz="1111250"/>' +
-        `<a:r><a:rPr lang="en-US" sz="1200" b="1" kern="1200"><a:solidFill><a:srgbClr val="${textColor}"/></a:solidFill></a:rPr>` +
+        `<a:r><a:rPr lang="en-US" sz="${fontSize}" b="1" kern="1200"><a:solidFill><a:srgbClr val="${textColor}"/></a:solidFill></a:rPr>` +
         `<a:t>${escapeXmlText(label)}</a:t></a:r>` +
         '</a:p>' +
         '</dsp:txBody>' +
@@ -827,7 +840,7 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     // the line preset draws the top left to the bottom right diagonal
     const flipV = end.y < start.y
     sps.push(
-      `<dsp:sp modelId="${modelId(`dspLine:${x}:${y}:${cx}:${cy}`)}">` +
+      `<dsp:sp modelId="${line.toPres ?? modelId(`dspLine:${x}:${y}:${cx}:${cy}`)}">` +
         '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
         '<dsp:spPr>' +
         // a line preset draws the diagonal of its box, from the top left to the
@@ -948,27 +961,33 @@ export function buildSmartArtParts(
         )
       : 0
     const pad = 12
-    widthPx = options.widthPx ?? Math.ceil(reach * 2 + pad * 2)
-    heightPx = options.heightPx ?? Math.ceil(reach * 2 + pad * 2)
+    const wanted = Math.ceil(reach * 2 + pad * 2)
+    // a map wider than the page scales down as a whole, so it still fits
+    const limit = options.maxSizePx ?? 700
+    const scale = Math.min(1, limit / Math.max(1, wanted))
+    widthPx = options.widthPx ?? Math.ceil(wanted * scale)
+    heightPx = options.heightPx ?? Math.ceil(wanted * scale)
     const shiftX = widthPx / 2
     const shiftY = heightPx / 2
     geo = {
       boxes: radial.boxes.map((b) => ({
         label: b.node.label,
         depth: b.node.depth,
-        x: b.x + shiftX,
-        y: b.y + shiftY,
-        w: b.w,
-        h: b.h,
+        x: b.x * scale + shiftX,
+        y: b.y * scale + shiftY,
+        w: b.w * scale,
+        h: b.h * scale,
         node: b.node,
+        presId: ids.get(b.node)?.pres,
       })),
       lines: radial.lines.map((l) => ({
-        x1: l.x1 + shiftX,
-        y1: l.y1 + shiftY,
-        x2: l.x2 + shiftX,
-        y2: l.y2 + shiftY,
+        x1: l.x1 * scale + shiftX,
+        y1: l.y1 * scale + shiftY,
+        x2: l.x2 * scale + shiftX,
+        y2: l.y2 * scale + shiftY,
         from: l.from,
         to: l.to,
+        toPres: l.to ? ids.get(l.to)?.connectorPres : undefined,
       })),
     }
   } else {
