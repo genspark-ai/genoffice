@@ -15,7 +15,7 @@ on:
   `WordDocument` stream required.
 - **FIB parser**: FibBase/FibRgW97/FibRgLw97/FibRgFcLcb97, the nFib 0x00C1–0x0112
   gate, encrypted-document refusal, `0Table`/`1Table` selection, and the CLX
-  plus stage-2/3 table ranges.
+  plus formatting table ranges.
 - **CLX piece table**: Prc/Pcdt walk, Windows-1252 compressed and UTF-16LE
   pieces, CP monotonicity and per-piece WordDocument range validation.
 - **Body text and paragraph boundaries**: Word control marks mapped to readable
@@ -38,19 +38,33 @@ story on top of the stage-1 piece table:
   unknown sprms skipped structurally, huge PAPX read through the Data stream.
 - **Model** — `readLegacyDocModel(bytes)` returns
   `{ fib, text, paragraphs, warnings }`; each paragraph has
-  `ParagraphFormatting` (style index, alignment, keep/page-break flags,
-  indents, spacing, line spacing, outline level, list level/id, table flags)
-  and `FormattedRun[]` with `CharacterFormatting` (bold, italic, underline
-  kind, size, strike/outline/shadow/small caps/caps/hidden, color index,
-  vertical align, highlight, font indices, character style, position,
-  kerning). Only explicit sprms are surfaced — style-sheet inheritance is
-  stage 3.
+  `ParagraphFormatting` and `FormattedRun[]` with `CharacterFormatting`.
+  Only explicit sprms are surfaced — style-sheet inheritance is stage 3b.
+
+## Stage 3a — .docx writer (core conversion)
+
+Internal only (no CLI/UI wiring yet): `convertLegacyDocToDocx(bytes)` returns
+`{ docx, warnings }`. The writer builds the document on docx-engine's blank
+template (`buildBlankDocx`) and emits one `<w:p>` per model paragraph through
+`generateParagraphXml`:
+
+- **runs**: bold/italic/strike, underline kinds → `w:u`, font size, superscript/
+  subscript, highlight colours, the 16 Word colour indices → hex;
+- **paragraphs**: alignment, left/right/first-line indents, spacing before/
+  after, line spacing (multiple → `w:line` in 240ths, otherwise an exact
+  rule), keep-lines / keep-next / page-break-before;
+- **warnings** name every known gap honestly: unresolved styles (stage 3b),
+  flattened tables, and footnotes/endnotes/headers/text boxes that are not
+  converted yet.
 
 ## Roadmap
 
-- **Stage 3**: stylesheet (STSH), tables (TAP), images and headers/footers;
-  then the `.docx` writer and the docs import wiring (`.doc` → `.docx` in
-  File → Open / drag-and-drop and the CLI), as core + UI PRs.
+- **Stage 3b**: stylesheet (STSH) resolution, so style-based formatting is
+  applied instead of only direct sprms; tighter paragraph-count parity.
+- **Stage 3c**: tables (TAP), images, headers/footers, section geometry
+  (page size/margins), lists and hyperlinks.
+- **Stage 3d**: docs import wiring (`.doc` → `.docx` in File → Open /
+  drag-and-drop and the CLI), as core + UI PRs.
 
 ## Format coverage
 

@@ -2,6 +2,7 @@ import * as CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import {
   LegacyDocError,
+  convertLegacyDocToDocx,
   openLegacyDoc,
   parsePlcBte,
   readFormatting,
@@ -312,5 +313,83 @@ describe('mutation validation: stage-2 formatting model', () => {
       expect(model.paragraphs.length).toBeGreaterThan(0)
       expect(model.warnings).toEqual([])
     }
+  })
+})
+
+describe('mutation validation: stage-3a docx writer', () => {
+  it('formatting.doc: corrupted inputs through convertLegacyDocToDocx yield a docx or a LegacyDocError', async () => {
+    const bytes = fixtureBytes('formatting')
+    const random = seededRandom(0x3a0c_0001)
+    const outcomes = { docx: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      let mutated: Uint8Array
+      switch (index % 3) {
+        case 0:
+          mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+          break
+        case 1: {
+          mutated = bytes.slice()
+          const position = Math.floor(random() * Math.min(512, mutated.length))
+          mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+          break
+        }
+        default:
+          mutated = flipFibByte(bytes, Math.floor(random() * 64), 1 + Math.floor(random() * 255))
+      }
+      try {
+        const { docx, warnings } = await convertLegacyDocToDocx(mutated)
+        expect(docx).toBeInstanceOf(Uint8Array)
+        expect(docx.length).toBeGreaterThan(0)
+        // a .docx is a ZIP: check the local file header magic
+        expect([...docx.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
+        expect(Array.isArray(warnings)).toBe(true)
+        outcomes.docx++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.docx + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('synthetic FKP documents: corrupted inputs through the writer stay within the LegacyDocError contract', async () => {
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: 'bold and plain\rsecond\r' }],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + 15 * 2,
+            grpprl: Uint8Array.from([0x35, 0x08, 1]),
+          },
+        ]),
+      ],
+      papxFkpPages: [
+        encodePapxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + 15 * 2,
+            grpprl: Uint8Array.from([0x06, 0x24, 1]),
+          },
+        ]),
+      ],
+    })
+    const random = seededRandom(0x3a0c_0002)
+    const outcomes = { docx: 0, rejected: 0 }
+    for (let index = 0; index < 18; index++) {
+      const mutated = bytes.slice()
+      const position = Math.floor(random() * Math.min(600, mutated.length))
+      mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const { docx } = await convertLegacyDocToDocx(mutated)
+        expect(docx.length).toBeGreaterThan(0)
+        outcomes.docx++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.docx + outcomes.rejected).toBe(18)
   })
 })
