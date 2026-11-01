@@ -572,6 +572,7 @@ function drawWmfText(ctx, state, text, x, y) {
   }
   ctx.textAlign = prevAlign;
   ctx.textBaseline = prevBaseline;
+  return ctx.measureText(mapped).width;
 }
 function drawTextDecorations(ctx, state, x, y, width, scale = 1) {
   if (!state.fontUnderline && !state.fontStrikeOut) {
@@ -5310,7 +5311,19 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
             const txCoord = view.getInt16(txOff + 2, true);
             applyFont(ctx, state, Math.abs(mh(1)));
             ctx.fillStyle = state.textColor;
-            drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
+            // TA_UPDATECP (1) ignores the record coords and draws at — then
+            // advances — the current position. MathType OLE previews place
+            // every run with MOVETO + a zero-coord ExtTextOut/TextOut, so the
+            // record path stacks all of them at the origin (genoffice#2316).
+            if ((state.textAlign & 1) !== 0) {
+              const advance = drawWmfText(ctx, state, text, mx(state.curX), my(state.curY));
+              const unit = mx(1) - mx(0);
+              if (advance > 0 && unit !== 0) {
+                state.curX += advance / unit;
+              }
+            } else {
+              drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
+            }
           }
         }
       }
@@ -5333,7 +5346,16 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
           }
           applyFont(ctx, state, Math.abs(mh(1)));
           ctx.fillStyle = state.textColor;
-          drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
+          // same TA_UPDATECP semantics as META_TEXTOUT above
+          if ((state.textAlign & 1) !== 0) {
+            const advance = drawWmfText(ctx, state, text, mx(state.curX), my(state.curY));
+            const unit = mx(1) - mx(0);
+            if (advance > 0 && unit !== 0) {
+              state.curX += advance / unit;
+            }
+          } else {
+            drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
+          }
         }
       }
       return true;
