@@ -174,3 +174,44 @@ export function extractBodyText(
   const paragraphs = rawText.split('\r').map(mapWordControlChars)
   return { rawText, text: paragraphs.join('\n'), paragraphs }
 }
+
+/**
+ * Decode the raw Word text (control marks intact) for a CP range that reaches
+ * past the body story, e.g. the header/footer document after the footnotes.
+ * Throws 'bad_piece_table' when the range is invalid or outside the pieces.
+ */
+export function decodeWordDocumentRange(
+  wordDocument: Uint8Array,
+  pieceTable: PieceTable,
+  cpStart: number,
+  cpEnd: number,
+): string {
+  const total = pieceTable.cps.at(-1) ?? 0
+  if (!Number.isInteger(cpStart) || !Number.isInteger(cpEnd) || cpStart < 0 || cpEnd < cpStart)
+    throw new LegacyDocError('bad_piece_table', `the text range ${cpStart}..${cpEnd} is invalid`)
+  if (cpEnd > total)
+    throw new LegacyDocError(
+      'bad_piece_table',
+      `the text range ${cpStart}..${cpEnd} lies outside the document's ${total} characters`,
+    )
+  const chunks: string[] = []
+  for (const piece of pieceTable.pieces) {
+    const width = piece.compressed ? 1 : 2
+    const start = Math.max(cpStart, piece.cpStart)
+    const end = Math.min(cpEnd, piece.cpEnd)
+    if (end <= start) continue
+    const byteStart = piece.fc + (start - piece.cpStart) * width
+    const byteEnd = byteStart + (end - start) * width
+    if (byteEnd > wordDocument.length)
+      throw new LegacyDocError(
+        'bad_piece_table',
+        `the text range ${cpStart}..${cpEnd} points outside the WordDocument stream`,
+      )
+    chunks.push(
+      piece.compressed
+        ? decodeCompressed(wordDocument.subarray(byteStart, byteEnd))
+        : decodeUtf16Le(wordDocument.subarray(byteStart, byteEnd)),
+    )
+  }
+  return chunks.join('')
+}

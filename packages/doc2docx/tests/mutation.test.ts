@@ -10,6 +10,9 @@ import {
   readLegacyDocText,
   readResolvedFormatting,
   readResolvedLegacyDocModel,
+  readLegacyDocLayout,
+  parseHeaderStories,
+  parseSections,
 } from '../src/index'
 import { FIXTURE_NAMES, fixtureBytes, type FixtureName } from './helpers/fixtures'
 import {
@@ -513,5 +516,105 @@ describe('mutation validation: stage-3b stylesheet resolution', () => {
     const { docx, warnings } = await convertLegacyDocToDocx(fixtureBytes('styles'))
     expect(docx.length).toBeGreaterThan(1000)
     expect(warnings.some((warning) => warning.includes('styles are not resolved'))).toBe(false)
+  })
+})
+
+describe('mutation validation: stage-3c-1 sections and headers', () => {
+  function u32(bytes: Uint8Array, offset: number): number {
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true)
+  }
+
+  it('page-setup.doc: PlcfSed and SEPX byte flips end as sections or a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('page-setup'))
+    const count = (doc.fib.lcbPlcfsed - 4) / 16
+    const fcSepx = u32(doc.table, doc.fib.fcPlcfsed + (count + 1) * 4 + 2)
+    const random = seededRandom(0x3c10_0001)
+    const outcomes = { sections: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const table = doc.table.slice()
+      const wordDocument = doc.wordDocument.slice()
+      if (index % 2 === 0) {
+        const position = doc.fib.fcPlcfsed + Math.floor(random() * doc.fib.lcbPlcfsed)
+        table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      } else {
+        const position = fcSepx + Math.floor(random() * 60)
+        if (position < wordDocument.length)
+          wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      }
+      try {
+        const sections = parseSections({ fib: doc.fib, wordDocument, table })
+        expect(Array.isArray(sections)).toBe(true)
+        outcomes.sections++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.sections + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('header-footer.doc: PlcfHdd and header-text byte flips end as stories or a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('header-footer'))
+    const random = seededRandom(0x3c10_0002)
+    const outcomes = { stories: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const table = doc.table.slice()
+      const wordDocument = doc.wordDocument.slice()
+      if (index % 2 === 0) {
+        const position = doc.fib.fcPlcfhdd + Math.floor(random() * doc.fib.lcbPlcfhdd)
+        table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      } else {
+        const position = Math.floor(random() * wordDocument.length)
+        wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      }
+      try {
+        const sections = parseSections({ fib: doc.fib, wordDocument, table })
+        const result = parseHeaderStories(
+          { fib: doc.fib, wordDocument, table, pieces: doc.pieces },
+          sections,
+        )
+        expect(Array.isArray(result.stories)).toBe(true)
+        outcomes.stories++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.stories + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('page-setup.doc and header-footer.doc: file-level flips through readLegacyDocLayout stay within the contract', () => {
+    for (const name of ['page-setup', 'header-footer'] as const) {
+      const bytes = fixtureBytes(name)
+      const random = seededRandom(0x3c10_0003 ^ name.length)
+      const outcomes = { layout: 0, rejected: 0 }
+      for (let index = 0; index < 10; index++) {
+        let mutated: Uint8Array
+        if (index % 2 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+        else {
+          mutated = bytes.slice()
+          const position = Math.floor(random() * Math.min(256, mutated.length))
+          mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+        }
+        try {
+          const layout = readLegacyDocLayout(mutated)
+          expect(Array.isArray(layout.sections)).toBe(true)
+          outcomes.layout++
+        } catch (error) {
+          expect(error).toBeInstanceOf(LegacyDocError)
+          outcomes.rejected++
+        }
+      }
+      expect(outcomes.layout + outcomes.rejected).toBe(10)
+    }
+  })
+
+  it('keeps converting both fixtures after the loops', async () => {
+    for (const name of ['page-setup', 'header-footer'] as const) {
+      const { docx } = await convertLegacyDocToDocx(fixtureBytes(name))
+      expect(docx.length).toBeGreaterThan(1000)
+    }
   })
 })

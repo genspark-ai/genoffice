@@ -100,6 +100,30 @@ export interface SyntheticDocOptions {
   stsh?: Uint8Array
   /** pair-1 lcb override, for malformed stylesheet tests */
   lcbStshf?: number
+  /** section table entries (PlcfSed + SEPX); omitted -> the FIB carries no section table */
+  sections?: SyntheticSection[]
+  /** six header/footer stories of the first/only section (evenH, oddH, evenF, oddF, firstH, firstF) */
+  headerStories?: Array<string | undefined>
+  /** per-section header/footer stories (one six-entry array per section; overrides headerStories) */
+  sectionHeaderStories?: Array<Array<string | undefined>>
+  /** raw PlcfSed override + pair-6 lcb override (corrupt-section tests) */
+  plcfSed?: Uint8Array
+  lcbPlcfsed?: number
+  /** raw PlcfHdd override + pair-11 lcb override (corrupt-header tests) */
+  plcfHdd?: Uint8Array
+  lcbPlcfhdd?: number
+}
+
+/** One synthetic section for the PlcfSed/SEPX builders. */
+export interface SyntheticSection {
+  /** section text end CP; defaults to the whole text for the last section */
+  endCp?: number
+  /** write fcSepx = 0xFFFFFFFF (Word's default section) */
+  defaultSep?: boolean
+  /** section sprms for the SEPX */
+  sepxSprms?: Uint8Array
+  /** force the SED's fcSepx, for out-of-range SEPX tests */
+  fcSepxOverride?: number
 }
 
 /** Windows-1252 high-half punctuation -> byte, for compressed-piece fixtures */
@@ -273,6 +297,47 @@ export function encodeStsh(styles: SyntheticStyle[], cbStdBase: 0x0a | 0x12 = 0x
   return Uint8Array.from(bytes)
 }
 
+/** a SEPX blob: u16 length + section sprms */
+export function encodeSepx(sprms: Uint8Array): Uint8Array {
+  const out = new Uint8Array(2 + sprms.length)
+  new DataView(out.buffer).setUint16(0, sprms.length, true)
+  out.set(sprms, 2)
+  return out
+}
+
+/**
+ * A PlcfSed table: n+1 section CPs then n 12-byte SEDs (fn u16, fcSepx u32,
+ * fnMpr u16, fcMpr u32). undefined/0xFFFFFFFF fcSepx means the default SEP.
+ */
+export function encodeSectionPlcf(
+  endCps: number[],
+  sepxFcs: Array<number | undefined>,
+): Uint8Array {
+  const count = endCps.length
+  if (sepxFcs.length !== count)
+    throw new Error('test fixture: encodeSectionPlcf needs one fcSepx per section')
+  const out = new Uint8Array(4 * (count + 1) + 12 * count)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, 0, true)
+  endCps.forEach((cp, index) => view.setUint32(4 * (index + 1), cp, true))
+  sepxFcs.forEach((fc, index) => {
+    const sedStart = 4 * (count + 1) + 12 * index
+    view.setUint16(sedStart, 0, true) // fn
+    view.setUint32(sedStart + 2, fc === undefined ? 0xffffffff : fc >>> 0, true) // fcSepx
+    view.setUint16(sedStart + 6, 0, true) // fnMpr
+    view.setUint32(sedStart + 8, 0, true) // fcMpr
+  })
+  return out
+}
+
+/** a PlcfHdd table: the story CPs only (no data entries) */
+export function encodePlcfHdd(cps: number[]): Uint8Array {
+  const out = new Uint8Array(4 * cps.length)
+  const view = new DataView(out.buffer)
+  cps.forEach((cp, index) => view.setUint32(index * 4, cp, true))
+  return out
+}
+
 /**
  * A 512-byte CHPX FKP page from runs: rgfc (crun+1 FCs), rgb (offset/2 per run)
  * and the CHPX records packed after them; crun is the last byte. A run without
@@ -387,6 +452,8 @@ interface FibValues {
   chpxPlcf?: { fc: number; lcb: number }
   papxPlcf?: { fc: number; lcb: number }
   stshf?: { fc: number; lcb: number }
+  plcfsed?: { fc: number; lcb: number }
+  plcfhdd?: { fc: number; lcb: number }
   ccpFtn?: number
   ccpHdd?: number
   ccpAtn?: number
@@ -426,11 +493,21 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   view.setUint32(offset + CLX_PAIR_INDEX * 8, values.fcClx, true)
   view.setUint32(offset + CLX_PAIR_INDEX * 8 + 4, values.lcbClx, true)
   const STSHF_PAIR_INDEX = 1
+  const PLCFSED_PAIR_INDEX = 6
+  const PLCFHDD_PAIR_INDEX = 11
   const CHPX_PAIR_INDEX = 12
   const PAPX_PAIR_INDEX = 13
   if (values.stshf) {
     view.setUint32(offset + STSHF_PAIR_INDEX * 8, values.stshf.fc, true)
     view.setUint32(offset + STSHF_PAIR_INDEX * 8 + 4, values.stshf.lcb, true)
+  }
+  for (const [index, pair] of [
+    [PLCFSED_PAIR_INDEX, values.plcfsed],
+    [PLCFHDD_PAIR_INDEX, values.plcfhdd],
+  ] as const) {
+    if (!pair) continue
+    view.setUint32(offset + index * 8, pair.fc, true)
+    view.setUint32(offset + index * 8 + 4, pair.lcb, true)
   }
   if (values.chpxPlcf) {
     view.setUint32(offset + CHPX_PAIR_INDEX * 8, values.chpxPlcf.fc, true)
@@ -459,6 +536,8 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
   let wordDocument = options.wordDocument
   let chpxPlcf = options.chpxPlcf
   let papxPlcf = options.papxPlcf
+  let plcfsed = options.plcfSed
+  let plcfhdd = options.plcfHdd
   const stsh =
     options.stsh ??
     (options.stshStyles ? encodeStsh(options.stshStyles, options.stshCbStdBase) : undefined)
@@ -476,7 +555,74 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       charCount += piece.text.length
       cps.push(charCount)
     }
+    const bodyCharCount = charCount
+    // header/footer stories per section (six each) and the header-document text
+    const sectionStorySets =
+      options.sectionHeaderStories ?? (options.headerStories ? [options.headerStories] : [])
+    const sectionDefs: SyntheticSection[] =
+      options.sections ??
+      (sectionStorySets.length > 0
+        ? sectionStorySets.map(() => ({}))
+        : options.headerStories
+          ? [{}]
+          : [])
+    const storySets = sectionDefs.map(
+      (_, index) =>
+        sectionStorySets[index] ??
+        (index === 0 && options.headerStories ? options.headerStories : []),
+    )
+    const storiesProvided =
+      options.headerStories !== undefined || options.sectionHeaderStories !== undefined
+    let headerText = ''
+    let headerChars = 0
+    const hddCps: number[] = []
+    if (sectionDefs.length > 0) {
+      if ((options.ccpFtn ?? 0) > 0)
+        throw new Error(
+          'test fixture: the builder does not support footnotes together with headers',
+        )
+      hddCps.push(0, 0, 0, 0, 0, 0, 0) // the six empty footnote/endnote separator stories
+      for (const stories of storySets) {
+        for (let variant = 0; variant < 6; variant++) {
+          const text = stories[variant]
+          if (text) {
+            headerText += text + '\r'
+            headerChars += text.length + 1
+          }
+          hddCps.push(headerChars)
+        }
+      }
+      hddCps.push(headerChars + 1) // n+2nd CP (one past the last story limit)
+    }
+    if (headerText !== '') {
+      pcds.push({ fc: byteCursor, compressed: false })
+      const bytes = encodeUtf16Le(headerText)
+      encoded.push(bytes)
+      byteCursor += bytes.length
+      charCount += headerText.length
+      cps.push(charCount)
+    }
     clx ??= encodeClx(cps, pcds)
+    const totalTextLength = charCount
+    // section CP ranges + SEPX placement after the FKP pages
+    const sectionCps: number[] = []
+    for (let index = 0; index < sectionDefs.length; index++) {
+      const definition = sectionDefs[index]!
+      let endCp = definition.endCp
+      if (endCp === undefined) {
+        if (index !== sectionDefs.length - 1)
+          throw new Error('test fixture: sections other than the last need an endCp')
+        endCp = totalTextLength
+      }
+      if (sectionCps.length > 0 && endCp < sectionCps[sectionCps.length - 1]!)
+        throw new Error('test fixture: section end CPs must increase')
+      sectionCps.push(endCp)
+    }
+    const sepxBlobs = sectionDefs.map((definition) =>
+      definition.defaultSep || definition.fcSepxOverride !== undefined
+        ? new Uint8Array(0)
+        : encodeSepx(definition.sepxSprms ?? new Uint8Array(0)),
+    )
     // FKP pages follow the text, one page per 512-byte block
     let nextPage = Math.ceil(byteCursor / SYNTHETIC_FKP_PAGE_BYTES)
     const chpxPages: number[] = []
@@ -491,21 +637,38 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
     }
     chpxPlcf ??= chpxPages.length ? encodePlcBte([TEXT_OFFSET, ...chpxPages], chpxPages) : undefined
     papxPlcf ??= papxPages.length ? encodePlcBte([TEXT_OFFSET, ...papxPages], papxPages) : undefined
-    // table layout: CLX, then the two formatting tables, then the stylesheet
+    const sepxStart = nextPage * SYNTHETIC_FKP_PAGE_BYTES
+    let sepxCursor = sepxStart
+    const sepxFcs: Array<number | undefined> = sectionDefs.map((definition, index) => {
+      if (definition.fcSepxOverride !== undefined) return definition.fcSepxOverride
+      if (definition.defaultSep) return undefined
+      const fc = sepxCursor
+      sepxCursor += sepxBlobs[index]!.length
+      return fc
+    })
+    const sepxTotal = sepxCursor - sepxStart
+    plcfsed ??= sectionDefs.length > 0 ? encodeSectionPlcf(sectionCps, sepxFcs) : undefined
+    plcfhdd ??=
+      sectionDefs.length > 0 && (storiesProvided || headerText !== '')
+        ? encodePlcfHdd(hddCps)
+        : undefined
+    // table layout: CLX, formatting tables, stylesheet, section and header tables
     const baseTableLength = fcClx + clx.length
     const chpxPlcFc = baseTableLength
-    const papxPlcFc = baseTableLength + (chpxPlcf?.length ?? 0)
+    const papxPlcFc = chpxPlcFc + (chpxPlcf?.length ?? 0)
     const stshFc = papxPlcFc + (papxPlcf?.length ?? 0)
-    const word = new Uint8Array(nextPage * SYNTHETIC_FKP_PAGE_BYTES)
+    const plcfsedFc = stshFc + (stsh?.length ?? 0)
+    const plcfhddFc = plcfsedFc + (plcfsed?.length ?? 0)
+    const word = new Uint8Array(nextPage * SYNTHETIC_FKP_PAGE_BYTES + sepxTotal)
     writeFib(word, {
       wIdent,
       nFib,
       flags,
-      ccpText: options.ccpText ?? charCount,
+      ccpText: options.ccpText ?? bodyCharCount,
       fcClx,
       lcbClx: options.lcbClx ?? clx.length,
       ccpFtn: options.ccpFtn,
-      ccpHdd: options.ccpHdd,
+      ccpHdd: options.ccpHdd ?? headerChars,
       ccpAtn: options.ccpAtn,
       ccpEdn: options.ccpEdn,
       ccpTxbx: options.ccpTxbx,
@@ -517,6 +680,8 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
         ? { papxPlcf: { fc: papxPlcFc, lcb: options.papxPlcLcb ?? papxPlcf.length } }
         : {}),
       ...(stsh ? { stshf: { fc: stshFc, lcb: options.lcbStshf ?? stsh.length } } : {}),
+      ...(plcfsed ? { plcfsed: { fc: plcfsedFc, lcb: options.lcbPlcfsed ?? plcfsed.length } } : {}),
+      ...(plcfhdd ? { plcfhdd: { fc: plcfhddFc, lcb: options.lcbPlcfhdd ?? plcfhdd.length } } : {}),
     })
     let textOffset = TEXT_OFFSET
     for (const bytes of encoded) {
@@ -527,19 +692,40 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       const pageNumber = [...chpxPages, ...papxPages][index]!
       word.set(page, pageNumber * SYNTHETIC_FKP_PAGE_BYTES)
     })
+    sectionDefs.forEach((definition, index) => {
+      const fc = sepxFcs[index]
+      if (fc === undefined || definition.defaultSep || sepxBlobs[index]!.length === 0) return
+      word.set(sepxBlobs[index]!, fc)
+    })
     wordDocument = word
   }
   let table = options.table
   if (!table) {
     const baseTableLength = fcClx + (clx?.length ?? 0)
     table = new Uint8Array(
-      baseTableLength + (chpxPlcf?.length ?? 0) + (papxPlcf?.length ?? 0) + (stsh?.length ?? 0),
+      baseTableLength +
+        (chpxPlcf?.length ?? 0) +
+        (papxPlcf?.length ?? 0) +
+        (stsh?.length ?? 0) +
+        (plcfsed?.length ?? 0) +
+        (plcfhdd?.length ?? 0),
     )
     if (clx) table.set(clx, fcClx)
     if (chpxPlcf) table.set(chpxPlcf, baseTableLength)
-    const papxTableFc = baseTableLength + (chpxPlcf?.length ?? 0)
-    if (papxPlcf) table.set(papxPlcf, papxTableFc)
-    if (stsh) table.set(stsh, papxTableFc + (papxPlcf?.length ?? 0))
+    let cursor = baseTableLength + (chpxPlcf?.length ?? 0)
+    if (papxPlcf) {
+      table.set(papxPlcf, cursor)
+      cursor += papxPlcf.length
+    }
+    if (stsh) {
+      table.set(stsh, cursor)
+      cursor += stsh.length
+    }
+    if (plcfsed) {
+      table.set(plcfsed, cursor)
+      cursor += plcfsed.length
+    }
+    if (plcfhdd) table.set(plcfhdd, cursor)
   }
 
   const streams: Array<[string, Uint8Array]> = []
