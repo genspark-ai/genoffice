@@ -503,16 +503,15 @@ export async function commentImageFromFile(file: File): Promise<CommentImage | n
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
-  let width = 0
-  let height = 0
+  let bitmap: ImageBitmap
   try {
-    const bitmap = await createImageBitmap(new Blob([file], { type: file.type }))
-    width = bitmap.width
-    height = bitmap.height
-    bitmap.close()
+    bitmap = await createImageBitmap(new Blob([file], { type: file.type }))
   } catch {
     return null
   }
+  const width = bitmap.width
+  const height = bitmap.height
+  bitmap.close()
   if (width <= 0 || height <= 0) return null
   const scale = Math.min(1, MAX_COMMENT_IMAGE_PX / Math.max(width, height))
   return {

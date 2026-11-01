@@ -1465,7 +1465,7 @@ export async function saveDocx(
     if (imageComments.length > 0) {
       const commentsRelsPath = 'word/_rels/comments.xml.rels'
       const relsFile = zip.file(commentsRelsPath)
-      let relsXml: string | null = relsFile ? await relsFile.async('string') : null
+      const relsXml: string | null = relsFile ? await relsFile.async('string') : null
       if (!relsXml) commentsRelsIsNew = true
       let relSeq = 0
       for (const m of (relsXml ?? '').matchAll(/Id="rId(\d+)"/g)) {
