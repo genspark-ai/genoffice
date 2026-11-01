@@ -17,6 +17,7 @@ export const LEGACY_DOC_ERROR_CODES = [
   'corrupt',
   'bad_fkp',
   'bad_sprm',
+  'bad_stsh',
 ] as const
 
 export type LegacyDocErrorCode = (typeof LEGACY_DOC_ERROR_CODES)[number]
@@ -45,6 +46,8 @@ const HINTS: Record<LegacyDocErrorCode, string> = {
     'the document formatting table is invalid; open the file in Word or LibreOffice and save it again',
   bad_sprm:
     'the document formatting records are invalid; open the file in Word or LibreOffice and save it again',
+  bad_stsh:
+    'the document stylesheet is invalid; open the file in Word or LibreOffice and save it again',
 }
 
 /** A legacy .doc that cannot be read, with a machine-readable reason code. */

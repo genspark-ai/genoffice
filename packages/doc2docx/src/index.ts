@@ -1,14 +1,16 @@
 /**
  * Legacy Word 97-2003 (.doc) import: OLE2/CFB container + FIB + CLX piece table
- * -> body text (stage 1) and a per-run / per-paragraph formatting model from
- * the CHPX/PAPX FKPs (stage 2). Styles/tables/images are stage 3; the whole
- * package is internal only.
+ * -> body text (stage 1), a per-run / per-paragraph formatting model from the
+ * CHPX/PAPX FKPs (stage 2), the STSH stylesheet resolved into that model
+ * (stage 3b) and a .docx writer (stage 3a). Tables/images and the docs UI are
+ * later stages; the whole package is internal only.
  */
 import { openCompoundFile } from './compound'
 import { parseFib, validateFibTableRanges, type FibInfo } from './fib'
 import { parseClx, type PieceTable } from './clx'
 import { extractBodyText } from './text'
 import { readFormatting, type FormattedParagraph } from './formatting'
+import { readResolvedFormatting } from './resolve'
 import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
@@ -42,16 +44,36 @@ export {
   sprmOperandSize,
 } from './sprm'
 export type { Sprm } from './sprm'
-export { cpOfFc, fcOfCp, readFormatting } from './formatting'
+export {
+  applyCharacterGrpprl,
+  applyParagraphGrpprl,
+  cpOfFc,
+  fcOfCp,
+  readFormatting,
+  readFormattingDetailed,
+} from './formatting'
 export type {
   CharacterFormatting,
   FcResolution,
   FormattedParagraph,
   FormattedRun,
+  FormattingRead,
   FormattingSource,
+  ParagraphContext,
   ParagraphFormatting,
+  RawCharacterRun,
+  RawParagraphSprms,
+  ToggleMode,
   UnderlineKind,
 } from './formatting'
+export { parseStsh } from './styles'
+export type { Style, StyleKind, StyleSheet } from './styles'
+export {
+  DEFAULT_CHARACTER_STYLE_ISTD,
+  DEFAULT_PARAGRAPH_STYLE_ISTD,
+  readResolvedFormatting,
+  resolveFormatting,
+} from './resolve'
 
 /** Everything stage 1 reads from one .doc file. */
 export interface LegacyDoc {
@@ -119,11 +141,23 @@ export interface LegacyDocModel {
   warnings: string[]
 }
 
-/** Open a .doc and read body text plus the run/paragraph formatting model. */
+/** Open a .doc and read body text plus the direct-formatting model (stage 1/2 read). */
 export function readLegacyDocModel(bytes: Uint8Array): LegacyDocModel {
   const doc = openLegacyDoc(bytes)
   const warnings: string[] = []
   const paragraphs = readFormatting(doc, warnings)
+  return { fib: doc.fib, text: doc.text, paragraphs, warnings }
+}
+
+/**
+ * Open a .doc and resolve its STSH stylesheet into the formatting model
+ * (stage 3b read): the paragraphs carry style-based plus direct formatting.
+ * Documents without an STSH keep their direct formatting.
+ */
+export function readResolvedLegacyDocModel(bytes: Uint8Array): LegacyDocModel {
+  const doc = openLegacyDoc(bytes)
+  const warnings: string[] = []
+  const paragraphs = readResolvedFormatting(doc, warnings)
   return { fib: doc.fib, text: doc.text, paragraphs, warnings }
 }
 
