@@ -286,3 +286,4 @@ export {
   type CompareResult,
   type CompareSummary,
 } from './compare'
+export { keepsHangulKanaSingle } from './parse-block-passes'

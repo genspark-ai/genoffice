@@ -66,7 +66,7 @@ const SINGLE_SPACING_HANGUL_KANA_FONTS = new Set([
   'ｍｓｐゴシック',
 ])
 
-function keepsHangulKanaSingle(font: string | undefined): boolean {
+export function keepsHangulKanaSingle(font: string | undefined): boolean {
   return (
     !!font && SINGLE_SPACING_HANGUL_KANA_FONTS.has(font.toLowerCase().replace(/[\s\u3000]+/g, ''))
   )

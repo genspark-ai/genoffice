@@ -45,6 +45,12 @@ All pure TypeScript, no Electron dependency, unit-tested (except the UI kit):
   the app's own Chromium, reduced in-browser to a document intent tree, and
   written as native OOXML with the `docx` library; only visuals with no Word
   counterpart are screenshotted. Drives the HTML app's Export as Word.
+- `packages/hwp2docx` — local HWP/HWPX → DOCX conversion: HWPX (OWPML)
+  parsed directly, binary `.hwp` read through rhwp (MIT, WebAssembly) into
+  HWPX first; character and paragraph shapes, tables, pictures, sections,
+  headers and footers rebuilt through `docx-engine`, anything else counted
+  in `dropped`. Docs opens `.hwp`/`.hwpx` through it as converted `.docx`
+  copies, like `.odt`.
 - `packages/file-parse` — text extraction for AI attachments (office formats,
   text formats).
 - `packages/agent-core` — the AI agent loop and skill composition shared by
