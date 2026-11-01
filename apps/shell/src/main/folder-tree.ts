@@ -41,6 +41,8 @@ export const TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   'ppt',
   'odt',
   'ott',
+  'hwpx',
+  'hwp',
   'odp',
   'otp',
   'pdf',
