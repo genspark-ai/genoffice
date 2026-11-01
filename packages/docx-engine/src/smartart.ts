@@ -330,20 +330,19 @@ function buildDataXml(
     const nodeIds = ids.get(node)!
     node.children.forEach((kid, i) => {
       const kidIds = ids.get(kid)!
+      // the shape, then the connector that reaches it: a connector is the
+      // sibling right after the shape it leads to
       cxns.push(
         `<dgm:cxn modelId="${modelId(`presPar:${kidIds.pres}`)}" type="presParOf" ` +
-          `srcId="${nodeIds.pres}" destId="${kidIds.pres}" srcOrd="${i}" destOrd="0" ` +
+          `srcId="${nodeIds.pres}" destId="${kidIds.pres}" srcOrd="${i * 2}" destOrd="0" ` +
           `presId="${layoutId}"/>`,
       )
-      mapPresTree(kid)
-    })
-    node.children.forEach((kid, i) => {
-      const kidIds = ids.get(kid)!
       cxns.push(
         `<dgm:cxn modelId="${modelId(`presParConn:${kidIds.connectorPres}`)}" type="presParOf" ` +
           `srcId="${nodeIds.pres}" destId="${kidIds.connectorPres}" ` +
-          `srcOrd="${node.children.length + i}" destOrd="0" presId="${layoutId}"/>`,
+          `srcOrd="${i * 2 + 1}" destOrd="0" presId="${layoutId}"/>`,
       )
+      mapPresTree(kid)
     })
   }
   mapPresTree(root)
@@ -399,21 +398,24 @@ function buildLayoutXml(kind: SmartArtLayoutKind): string {
       `<dgm:clrData useDef="1">${emptyDataModel}</dgm:clrData>` +
       '<dgm:layoutNode name="diagram">' +
       '<dgm:varLst><dgm:animLvl val="lvl"/><dgm:resizeHandles val="exact"/></dgm:varLst>' +
-      '<dgm:alg type="composite"/>' +
+      // the branches sit on the ring: the cycle arranges the children of this
+      // node, which are the branches the forEach below produces
+      '<dgm:alg type="cycle"><dgm:param type="stAng" val="0"/><dgm:param type="spanAng" val="360"/></dgm:alg>' +
       `<dgm:shape xmlns:r="${R_NS}" r:blip=""><dgm:adjLst/></dgm:shape>` +
       '<dgm:presOf/>' +
       '<dgm:constrLst>' +
       '<dgm:constr type="w" for="des" forName="radialNode" refType="w" fact="0.26"/>' +
       '<dgm:constr type="h" for="des" forName="radialNode" refType="w" fact="0.13"/>' +
-      '<dgm:constr type="sibSp" refType="w" fact="0.06"/>' +
-      '<dgm:constr type="sp" refType="h" fact="0.4"/>' +
+      '<dgm:constr type="sibSp" refType="w" fact="0.12"/>' +
+      '<dgm:constr type="sp" refType="h" fact="0.6"/>' +
       '<dgm:constr type="primFontSz" for="des" forName="radialNode" op="equ" val="55"/>' +
       '<dgm:constr type="primFontSz" for="des" forName="node" op="equ" val="50"/>' +
       '</dgm:constrLst>' +
       '<dgm:ruleLst/>' +
       '<dgm:forEach name="Name0" axis="ch" ptType="node">' +
       '<dgm:layoutNode name="radialNode">' +
-      '<dgm:alg type="cycle"><dgm:param type="stAng" val="0"/><dgm:param type="spanAng" val="360"/></dgm:alg>' +
+      // inside a branch the children run outwards in a line
+      '<dgm:alg type="lin"><dgm:param type="linDir" val="fromT"/></dgm:alg>' +
       `<dgm:shape xmlns:r="${R_NS}" r:blip=""><dgm:adjLst/></dgm:shape>` +
       '<dgm:presOf/>' +
       '<dgm:constrLst/><dgm:ruleLst/>' +
@@ -564,53 +566,47 @@ function buildColorsXml(): string {
 const RADIAL_METRICS = {
   nodeWidth: 150,
   nodeHeight: 30,
-  /** the radius the first ring sits at, in px */
-  firstRing: 132,
-  /** the distance between two rings, in px */
-  ringStep: 96,
-  /** the share of a branch's angle its own children get */
-  childSpread: 0.62,
-  /** the room kept between two boxes of the same ring */
-  boxGap: 24,
+  /** the radius the first ring sits at, in px: a box wide plus the gap, so
+   *  the topic and the branch beside it do not overlap */
+  firstRing: 168,
+  /** the distance between two rings, in px: a box wide plus the gap, so a
+   *  parent and the child below it do not overlap either */
+  ringStep: 168,
+  /** the share of a branch's slice its own children get */
+  childSpread: 0.72,
+  /** the room kept between two boxes */
+  boxGap: 18,
 } as const
 
 /** The boxes and connectors of the radial layout, in px. */
 interface RadialGeometry {
   boxes: Array<{ node: FlatNode; x: number; y: number; w: number; h: number }>
-  lines: Array<{ x1: number; y1: number; x2: number; y2: number }>
-}
-
-/** The deepest level of the tree, counting the root as 0. */
-function maxDepthOf(node: FlatNode): number {
-  return node.children.reduce((max, kid) => Math.max(max, maxDepthOf(kid)), node.depth + 1)
-}
-
-/**
- * The size of the square the radial layout needs: the outermost ring plus the
- * box that sits on it, on both sides.
- */
-function radialFrameSize(root: FlatNode): number {
-  const { nodeWidth, firstRing, ringStep, boxGap } = RADIAL_METRICS
-  const branches = root.children.length
-  // the first ring has to be wide enough for the branches to sit apart
-  const ring = Math.max(firstRing, (branches * (nodeWidth + boxGap)) / (2 * Math.PI))
-  const maxRadius = ring + Math.max(0, maxDepthOf(root) - 1) * ringStep
-  return Math.ceil(2 * (maxRadius + nodeWidth / 2 + 12))
+  lines: Array<{
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    /** the nodes the connector joins */
+    from: FlatNode
+    to: FlatNode
+  }>
 }
 
 /**
  * The radial layout: the topic in the middle, the branches around it.
  *
- * Every branch owns a slice of the circle; the children of a branch take a
- * slice of that slice, one ring further out. The connectors run from the
- * centre of a parent to the centre of a child.
+ * Every branch owns a slice of the circle. The children of a branch sit on
+ * the next ring, spread over a share of that slice — the ring is pushed out
+ * until the boxes fit, so neighbours never overlap.
  */
-function layoutRadial(root: FlatNode, size: number): RadialGeometry {
-  const { nodeWidth: W, nodeHeight: H, firstRing, ringStep, childSpread, boxGap } = RADIAL_METRICS
+function layoutRadial(root: FlatNode): RadialGeometry {
+  const { nodeWidth: W, nodeHeight: H, firstRing, childSpread, boxGap } = RADIAL_METRICS
   const boxes: RadialGeometry['boxes'] = []
   const lines: RadialGeometry['lines'] = []
-  const cx = size / 2
-  const cy = size / 2
+  // the map is laid out around the origin; the frame is measured from the
+  // result, so a ring that had to be pushed out is never cut off
+  const cx = 0
+  const cy = 0
 
   const push = (
     node: FlatNode,
@@ -622,24 +618,31 @@ function layoutRadial(root: FlatNode, size: number): RadialGeometry {
     return box
   }
 
-  const rootBox = push(root, cx, cy)
+  push(root, cx, cy)
 
+  /**
+   * The children of a node sit on the next ring, spread over their share of
+   * the parent's slice. The ring is pushed out until the boxes of that ring
+   * fit without touching.
+   */
   const place = (
     parent: { x: number; y: number; w: number; h: number },
     node: FlatNode,
     angleCenter: number,
     angleSpan: number,
-    depth: number,
+    prevRing: number,
   ): void => {
     const kids = node.children
     if (kids.length === 0) return
-    const branches = root.children.length
-    // the first ring is pushed out when the branches would otherwise touch
-    const ring =
-      depth === 1
-        ? Math.max(firstRing, (branches * (W + boxGap)) / (2 * Math.PI))
-        : firstRing + (depth - 1) * ringStep
     const slice = angleSpan / kids.length
+    const childSpan = slice * childSpread
+    // the ring has to be wide enough for the boxes that sit on it, spread
+    // over the angle they share
+    const arc = (angleSpan * Math.PI) / 180
+    const needed = (kids.length * (W + boxGap)) / Math.max(arc, 0.001)
+    // the ring clears the one inside it: a box is wide, so a parent and the
+    // child below it need a full box between them
+    const ring = Math.max(needed, prevRing + W + boxGap)
     kids.forEach((kid, i) => {
       const deg = angleCenter - angleSpan / 2 + slice * (i + 0.5)
       const rad = (deg * Math.PI) / 180
@@ -651,15 +654,35 @@ function layoutRadial(root: FlatNode, size: number): RadialGeometry {
         y1: parent.y + parent.h / 2,
         x2: x,
         y2: y,
+        from: node,
+        to: kid,
       })
-      place(box, kid, deg, angleSpan * childSpread, depth + 1)
+      place(box, kid, deg, childSpan, ring)
     })
   }
 
-  const branches = root.children.length
-  if (branches > 0) {
+  const branches = root.children
+  const count = branches.length
+  if (count > 0) {
     // the branches fill the circle, the first one at the top
-    place(rootBox, root, 90, 360, 1)
+    const slice = 360 / count
+    const ring = Math.max(firstRing, (count * (W + boxGap)) / (2 * Math.PI))
+    branches.forEach((branch, i) => {
+      const deg = -90 + slice * (i + 0.5)
+      const rad = (deg * Math.PI) / 180
+      const x = cx + Math.cos(rad) * ring
+      const y = cy + Math.sin(rad) * ring
+      const box = push(branch, x, y)
+      lines.push({
+        x1: cx,
+        y1: cy,
+        x2: x,
+        y2: y,
+        from: root,
+        to: branch,
+      })
+      place(box, branch, deg, slice * childSpread, ring)
+    })
   }
   return { boxes, lines }
 }
@@ -669,8 +692,25 @@ function layoutRadial(root: FlatNode, size: number): RadialGeometry {
 /** The geometry the drawing is written from, in px. */
 /** The boxes and connectors of a layout, in px. */
 interface DrawingGeometry {
-  boxes: Array<{ label: string; depth: number; x: number; y: number; w: number; h: number }>
-  lines: Array<{ x1: number; y1: number; x2: number; y2: number }>
+  boxes: Array<{
+    label: string
+    depth: number
+    x: number
+    y: number
+    w: number
+    h: number
+    /** the node the box stands for, when the layout knows it */
+    node?: FlatNode
+  }>
+  lines: Array<{
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    /** the boxes the connector joins, so it can meet their borders */
+    from?: FlatNode
+    to?: FlatNode
+  }>
 }
 
 /** Turn the tree into the shape the org-chart interpreter lays out. */
@@ -681,6 +721,37 @@ function toHierTree(node: FlatNode, depth = 0, depths?: Map<HierTreeNode, number
   }
   depths?.set(hier, depth)
   return hier
+}
+
+/** The box a node is drawn in, when the layout knows the node. */
+function boxOfNode(
+  boxes: DrawingGeometry['boxes'],
+  node: FlatNode,
+): DrawingGeometry['boxes'][number] | null {
+  for (const box of boxes) {
+    if (box.node === node) return box
+  }
+  return null
+}
+
+/**
+ * Where the segment towards (tx, ty) leaves the box: the border point in
+ * that direction, so a connector starts at the edge of the shape.
+ */
+function borderPoint(
+  box: { x: number; y: number; w: number; h: number },
+  tx: number,
+  ty: number,
+): { x: number; y: number } {
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const dx = tx - cx
+  const dy = ty - cy
+  if (dx === 0 && dy === 0) return { x: cx, y: cy }
+  const sx = dx === 0 ? Infinity : box.w / 2 / Math.abs(dx)
+  const sy = dy === 0 ? Infinity : box.h / 2 / Math.abs(dy)
+  const s = Math.min(sx, sy)
+  return { x: cx + dx * s, y: cy + dy * s }
 }
 
 /**
@@ -740,18 +811,29 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     )
   }
 
-  // the connectors: stroke-only lines, drawn from the elbow to the child
+  // the connectors: stroke-only lines from the border of one box to the
+  // border of the next, so a line never runs through a shape
   for (const line of lines) {
-    const x = Math.min(line.x1, line.x2)
-    const y = Math.min(line.y1, line.y2)
-    const cx = Math.abs(line.x2 - line.x1)
-    const cy = Math.abs(line.y2 - line.y1)
+    const from = line.from ? boxOfNode(boxes, line.from) : null
+    const to = line.to ? boxOfNode(boxes, line.to) : null
+    const start = from ? borderPoint(from, line.x2, line.y2) : { x: line.x1, y: line.y1 }
+    const end = to ? borderPoint(to, line.x1, line.y1) : { x: line.x2, y: line.y2 }
+
+    const x = Math.min(start.x, end.x)
+    const y = Math.min(start.y, end.y)
+    const cx = Math.abs(end.x - start.x)
+    const cy = Math.abs(end.y - start.y)
     if (cx < 1 && cy < 1) continue
+    // the line preset draws the top left to the bottom right diagonal
+    const flipV = end.y < start.y
     sps.push(
       `<dsp:sp modelId="${modelId(`dspLine:${x}:${y}:${cx}:${cy}`)}">` +
         '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
         '<dsp:spPr>' +
-        `<a:xfrm><a:off x="${Math.round(x * EMU_PER_PX)}" y="${Math.round(y * EMU_PER_PX)}"/>` +
+        // a line preset draws the diagonal of its box, from the top left to the
+        // bottom right: a connector that climbs needs the box flipped
+        `<a:xfrm${flipV ? ' flipV="1"' : ''}>` +
+        `<a:off x="${Math.round(x * EMU_PER_PX)}" y="${Math.round(y * EMU_PER_PX)}"/>` +
         `<a:ext cx="${Math.round(cx * EMU_PER_PX)}" cy="${Math.round(cy * EMU_PER_PX)}"/></a:xfrm>` +
         '<a:prstGeom prst="line"><a:avLst/></a:prstGeom>' +
         '<a:noFill/>' +
@@ -856,21 +938,39 @@ export function buildSmartArtParts(
 
   if (options.orientation === 'radial') {
     // the topic in the middle, the branches around it
-    const size = options.widthPx ?? radialFrameSize(flat)
-    const radial = layoutRadial(flat, size)
+    const radial = layoutRadial(flat)
+    // the topic sits in the middle, the branches reach out from it
+    const reach = radial.boxes.length
+      ? Math.max(
+          ...radial.boxes.map(
+            (b) => Math.hypot(b.x + b.w / 2, b.y + b.h / 2) + Math.max(b.w, b.h) / 2,
+          ),
+        )
+      : 0
+    const pad = 12
+    widthPx = options.widthPx ?? Math.ceil(reach * 2 + pad * 2)
+    heightPx = options.heightPx ?? Math.ceil(reach * 2 + pad * 2)
+    const shiftX = widthPx / 2
+    const shiftY = heightPx / 2
     geo = {
       boxes: radial.boxes.map((b) => ({
         label: b.node.label,
         depth: b.node.depth,
-        x: b.x,
-        y: b.y,
+        x: b.x + shiftX,
+        y: b.y + shiftY,
         w: b.w,
         h: b.h,
+        node: b.node,
       })),
-      lines: radial.lines,
+      lines: radial.lines.map((l) => ({
+        x1: l.x1 + shiftX,
+        y1: l.y1 + shiftY,
+        x2: l.x2 + shiftX,
+        y2: l.y2 + shiftY,
+        from: l.from,
+        to: l.to,
+      })),
     }
-    widthPx = size
-    heightPx = options.heightPx ?? size
   } else {
     // A probe pass measures the tree, the real pass fills the frame with it.
     // The interpreter scales the tree until it fills the frame, so the probe

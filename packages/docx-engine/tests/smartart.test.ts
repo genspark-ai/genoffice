@@ -145,6 +145,24 @@ describe('buildSmartArtParts: the drawing', () => {
     }
   })
 
+  it('places the shapes inside the frame it declares', () => {
+    const offsets = [...parts.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
+      (m) => ({
+        x: Number(m[1]),
+        y: Number(m[2]),
+      }),
+    )
+    expect(offsets.length).toBeGreaterThan(0)
+    const widthEmu = Math.round(parts.widthPx * 9525)
+    const heightEmu = Math.round(parts.heightPx * 9525)
+    for (const off of offsets) {
+      expect(off.x).toBeGreaterThanOrEqual(0)
+      expect(off.y).toBeGreaterThanOrEqual(0)
+      expect(off.x).toBeLessThanOrEqual(widthEmu)
+      expect(off.y).toBeLessThanOrEqual(heightEmu)
+    }
+  })
+
   it('is deterministic', () => {
     const again = buildSmartArtParts(tree, {}, REL_IDS)
     expect(again.dataXml).toBe(parts.dataXml)
@@ -167,18 +185,83 @@ describe('buildSmartArtParts: the radial layout', () => {
   const radial = buildSmartArtParts(tree, { orientation: 'radial' }, REL_IDS)
 
   it('puts the topic in the middle and the branches around it', () => {
-    const boxes = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)]
-    expect(boxes.length).toBeGreaterThan(0)
-    // every branch sits on a ring around the centre, not below it
-    const offs = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map((m) => ({
-      x: Number(m[1]) / 9525,
-      y: Number(m[2]) / 9525,
-    }))
+    // the first shape is the topic
+    const first = /<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/.exec(radial.drawingXml)![1]
+    const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(first)!
+    const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(first)!
+    const topicX = Number(off[1]) / 9525 + Number(ext[1]) / 9525 / 2
+    const topicY = Number(off[2]) / 9525 + Number(ext[2]) / 9525 / 2
+    expect(topicX).toBeCloseTo(radial.widthPx / 2, 0)
+    expect(topicY).toBeCloseTo(radial.heightPx / 2, 0)
+
+    // the branches sit on a ring around it
     const centre = radial.widthPx / 2
-    const distance = offs.map((o) => Math.hypot(o.x - centre, o.y - centre))
-    // the topic is at the centre, the branches further out
-    expect(Math.min(...distance)).toBeLessThan(10)
+    const distance = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
+      (m) => Math.hypot(Number(m[1]) / 9525 - centre, Number(m[2]) / 9525 - centre),
+    )
     expect(Math.max(...distance)).toBeGreaterThan(60)
+  })
+
+  it('meets every connector on the borders of the boxes it joins', () => {
+    const EMU = 9525
+    interface Shape {
+      x: number
+      y: number
+      w: number
+      h: number
+      line: boolean
+      flip: boolean
+    }
+    const shapes: Shape[] = []
+    for (const m of radial.drawingXml.matchAll(/<dsp:sp [^>]*>([\s\S]*?)<\/dsp:sp>/g)) {
+      const spPr = /<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/.exec(m[1])?.[1]
+      if (!spPr) continue
+      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(spPr)
+      const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(spPr)
+      if (!off || !ext) continue
+      shapes.push({
+        x: Number(off[1]) / EMU,
+        y: Number(off[2]) / EMU,
+        w: Number(ext[1]) / EMU,
+        h: Number(ext[2]) / EMU,
+        line: /<a:prstGeom prst="line"/.test(spPr),
+        flip: /<a:xfrm[^>]*flipV="1"/.test(spPr),
+      })
+    }
+    const boxes = shapes.filter((s) => !s.line)
+    const lines = shapes.filter((s) => s.line)
+    expect(boxes.length).toBe(6)
+    expect(lines.length).toBeGreaterThanOrEqual(5)
+
+    /** the two ends of the diagonal a line shape draws */
+    const endsOf = (l: Shape): Array<{ x: number; y: number }> =>
+      l.flip
+        ? [
+            { x: l.x, y: l.y + l.h },
+            { x: l.x + l.w, y: l.y },
+          ]
+        : [
+            { x: l.x, y: l.y },
+            { x: l.x + l.w, y: l.y + l.h },
+          ]
+
+    const onBorder = (b: Shape, p: { x: number; y: number }): boolean => {
+      const tol = 2
+      const inside =
+        p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol
+      const edge =
+        Math.abs(p.x - b.x) <= tol ||
+        Math.abs(p.x - (b.x + b.w)) <= tol ||
+        Math.abs(p.y - b.y) <= tol ||
+        Math.abs(p.y - (b.y + b.h)) <= tol
+      return inside && edge
+    }
+
+    for (const line of lines) {
+      const [start, end] = endsOf(line)
+      expect(boxes.some((b) => onBorder(b, start))).toBe(true)
+      expect(boxes.some((b) => onBorder(b, end))).toBe(true)
+    }
   })
 
   it('lays the branches out with the cycle algorithm', () => {
