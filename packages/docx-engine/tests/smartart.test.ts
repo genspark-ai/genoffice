@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildSmartArtParts, type SmartArtNode } from '../src/smartart'
-import { SMARTART_CONTENT_TYPES, SMARTART_REL_TYPES } from '../src/smartart'
+import {
+  SMARTART_CONTENT_TYPES,
+  SMARTART_RADIAL_LAYOUT_ID,
+  SMARTART_REL_TYPES,
+} from '../src/smartart'
 import { parseDocx } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
 
@@ -35,15 +39,31 @@ async function buildSmartArtDocx(): Promise<Uint8Array> {
     bodyXml: parts.paragraphXml,
     extraRels: relsXml,
     extraParts: [
-      { path: 'word/diagrams/data1.xml', xml: parts.dataXml, contentType: SMARTART_CONTENT_TYPES.data },
-      { path: 'word/diagrams/layout1.xml', xml: parts.layoutXml, contentType: SMARTART_CONTENT_TYPES.layout },
+      {
+        path: 'word/diagrams/data1.xml',
+        xml: parts.dataXml,
+        contentType: SMARTART_CONTENT_TYPES.data,
+      },
+      {
+        path: 'word/diagrams/layout1.xml',
+        xml: parts.layoutXml,
+        contentType: SMARTART_CONTENT_TYPES.layout,
+      },
       {
         path: 'word/diagrams/quickStyle1.xml',
         xml: parts.quickStyleXml,
         contentType: SMARTART_CONTENT_TYPES.quickStyle,
       },
-      { path: 'word/diagrams/colors1.xml', xml: parts.colorsXml, contentType: SMARTART_CONTENT_TYPES.colors },
-      { path: 'word/diagrams/drawing1.xml', xml: parts.drawingXml, contentType: SMARTART_CONTENT_TYPES.drawing },
+      {
+        path: 'word/diagrams/colors1.xml',
+        xml: parts.colorsXml,
+        contentType: SMARTART_CONTENT_TYPES.colors,
+      },
+      {
+        path: 'word/diagrams/drawing1.xml',
+        xml: parts.drawingXml,
+        contentType: SMARTART_CONTENT_TYPES.drawing,
+      },
     ],
   })
 }
@@ -108,10 +128,12 @@ describe('buildSmartArtParts: the drawing', () => {
   })
 
   it('places the shapes inside the frame it declares', () => {
-    const offsets = [...parts.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map((m) => ({
-      x: Number(m[1]),
-      y: Number(m[2]),
-    }))
+    const offsets = [...parts.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
+      (m) => ({
+        x: Number(m[1]),
+        y: Number(m[2]),
+      }),
+    )
     expect(offsets.length).toBeGreaterThan(0)
     const widthEmu = Math.round(parts.widthPx * 9525)
     const heightEmu = Math.round(parts.heightPx * 9525)
@@ -138,6 +160,41 @@ describe('buildSmartArtParts: the document paragraph', () => {
     expect(parts.paragraphXml).toContain(`r:qs="${REL_IDS.quickStyle}"`)
     expect(parts.paragraphXml).toContain(`r:cs="${REL_IDS.colors}"`)
     expect(parts.paragraphXml).toContain('drawingml/2006/diagram')
+  })
+})
+
+describe('buildSmartArtParts: the radial layout', () => {
+  const radial = buildSmartArtParts(tree, { orientation: 'radial' }, REL_IDS)
+
+  it('puts the topic in the middle and the branches around it', () => {
+    const boxes = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)]
+    expect(boxes.length).toBeGreaterThan(0)
+    // every branch sits on a ring around the centre, not below it
+    const offs = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map((m) => ({
+      x: Number(m[1]) / 9525,
+      y: Number(m[2]) / 9525,
+    }))
+    const centre = radial.widthPx / 2
+    const distance = offs.map((o) => Math.hypot(o.x - centre, o.y - centre))
+    // the topic is at the centre, the branches further out
+    expect(Math.min(...distance)).toBeLessThan(10)
+    expect(Math.max(...distance)).toBeGreaterThan(60)
+  })
+
+  it('lays the branches out with the cycle algorithm', () => {
+    expect(radial.layoutXml).toContain('<dgm:alg type="cycle">')
+    expect(radial.layoutXml).toContain(SMARTART_RADIAL_LAYOUT_ID)
+  })
+
+  it('points the data model at the radial layout', () => {
+    expect(radial.dataXml).toContain(`loTypeId="${SMARTART_RADIAL_LAYOUT_ID}"`)
+    expect(radial.dataXml).toContain(`presId="${SMARTART_RADIAL_LAYOUT_ID}"`)
+    expect(radial.dataXml).toContain('presName="radialNode"')
+  })
+
+  it('gives the frame the shape of the drawing', () => {
+    expect(radial.widthPx).toBe(radial.heightPx)
+    expect(radial.widthPx).toBeGreaterThan(0)
   })
 })
 

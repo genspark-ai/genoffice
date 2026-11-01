@@ -20,7 +20,6 @@
 
 import {
   layoutHierTree,
-  type HierBox,
   type HierConstraints,
   type HierTreeNode,
 } from '@genoffice/pptx-engine/dgm-hier'
@@ -32,7 +31,14 @@ export interface SmartArtNode {
 }
 
 /** How the tree is arranged. */
-export type SmartArtOrientation = 'top-down' | 'left-right'
+export type SmartArtOrientation = 'top-down' | 'left-right' | 'radial'
+
+/**
+ * The two layout definitions. `hierarchy` is the org-chart shape — the topic
+ * on top, the branches below it. `radial` puts the topic in the middle and
+ * the branches around it.
+ */
+export type SmartArtLayoutKind = 'hierarchy' | 'radial'
 
 export interface SmartArtOptions {
   /** defaults to `left-right` — the root in the middle, branches to both sides */
@@ -59,6 +65,7 @@ export interface SmartArtParts {
 
 /** The layout this module writes. Word shows it as "Mind Map". */
 export const SMARTART_LAYOUT_ID = 'urn:genoffice/officeart/layout/mindMap'
+export const SMARTART_RADIAL_LAYOUT_ID = 'urn:genoffice/officeart/layout/radialMindMap'
 export const SMARTART_QUICK_STYLE_ID = 'urn:genoffice/officeart/quickstyle/mindMap'
 export const SMARTART_COLORS_ID = 'urn:genoffice/officeart/colors/mindMap'
 
@@ -74,7 +81,8 @@ const EMU_PER_PX = 9525
 export const SMARTART_REL_TYPES = {
   data: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData',
   layout: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout',
-  quickStyle: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle',
+  quickStyle:
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle',
   colors: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors',
   drawing: 'http://schemas.microsoft.com/office/2007/relationships/diagramDrawing',
 } as const
@@ -179,16 +187,21 @@ function buildIds(root: FlatNode): Map<FlatNode, Ids> {
 }
 
 /** The presentation name of a node's shape, matching the layout's node names. */
-function presNameOf(depth: number): string {
-  return depth === 0 ? 'diagram' : depth === 1 ? 'rootComposite1' : 'hierRoot1'
+function presNameOf(depth: number, kind: SmartArtLayoutKind): string {
+  if (depth === 0) return 'diagram'
+  if (kind === 'radial') return depth === 1 ? 'radialNode' : 'node'
+  return depth === 1 ? 'rootComposite1' : 'hierRoot1'
+}
+
+/** The presentation name of a connector, matching the layout's node names. */
+function connectorPresNameOf(kind: SmartArtLayoutKind): string {
+  return kind === 'radial' ? 'radialConnector' : 'rootConnector1'
 }
 
 function textBody(label: string): string {
   return (
     '<dgm:t><a:bodyPr/><a:lstStyle/><a:p>' +
-    (label
-      ? `<a:r><a:rPr lang="en-US"/><a:t>${escapeXmlText(label)}</a:t></a:r>`
-      : '') +
+    (label ? `<a:r><a:rPr lang="en-US"/><a:t>${escapeXmlText(label)}</a:t></a:r>` : '') +
     '<a:endParaRPr lang="en-US"/>' +
     '</a:p></dgm:t>'
   )
@@ -199,14 +212,21 @@ function textBody(label: string): string {
  * and a presentation point per shape. Word rewrites the presentation tree
  * when the reader moves something, so it has to mirror the layout.
  */
-function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: string): string {
+function buildDataXml(
+  root: FlatNode,
+  ids: Map<FlatNode, Ids>,
+  drawingRelId: string,
+  kind: SmartArtLayoutKind,
+): string {
   const rootIds = ids.get(root)!
+  // the data model points at the layout it was written for
+  const layoutId = kind === 'radial' ? SMARTART_RADIAL_LAYOUT_ID : SMARTART_LAYOUT_ID
   const pts: string[] = []
 
   // the document point carries the ids of the layout, style and colours
   pts.push(
     `<dgm:pt modelId="${rootIds.data}" type="doc">` +
-      `<dgm:prSet loTypeId="${SMARTART_LAYOUT_ID}" loCatId="hierarchy" ` +
+      `<dgm:prSet loTypeId="${layoutId}" loCatId="hierarchy" ` +
       `qsTypeId="${SMARTART_QUICK_STYLE_ID}" qsCatId="simple" ` +
       `csTypeId="${SMARTART_COLORS_ID}" csCatId="accent1"/>` +
       '<dgm:spPr/>' +
@@ -242,7 +262,7 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
       // the connector of the link into this node hangs off its sibling transition
       pts.push(
         `<dgm:pt modelId="${nodeIds.connectorPres}" type="pres">` +
-          `<dgm:prSet presAssocID="${nodeIds.sibTrans}" presName="rootConnector1" presStyleCnt="0"/>` +
+          `<dgm:prSet presAssocID="${nodeIds.sibTrans}" presName="${connectorPresNameOf(kind)}" presStyleCnt="0"/>` +
           '<dgm:spPr/>' +
           '</dgm:pt>',
       )
@@ -250,7 +270,7 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
     // the presentation point of the node's shape
     pts.push(
       `<dgm:pt modelId="${nodeIds.pres}" type="pres">` +
-        `<dgm:prSet presAssocID="${nodeIds.data}" presName="${presNameOf(node.depth)}" ` +
+        `<dgm:prSet presAssocID="${nodeIds.data}" presName="${presNameOf(node.depth, kind)}" ` +
         'presStyleLbl="node1" presStyleCnt="0"/>' +
         '<dgm:spPr/>' +
         '</dgm:pt>',
@@ -290,14 +310,14 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
     cxns.push(
       `<dgm:cxn modelId="${modelId(`presOf:${nodeIds.pres}`)}" type="presOf" ` +
         `srcId="${nodeIds.data}" destId="${nodeIds.pres}" srcOrd="0" destOrd="0" ` +
-        `presId="${SMARTART_LAYOUT_ID}"/>`,
+        `presId="${layoutId}"/>`,
     )
     node.children.forEach((kid) => {
       const kidIds = ids.get(kid)!
       cxns.push(
         `<dgm:cxn modelId="${modelId(`presOfConn:${kidIds.connectorPres}`)}" type="presOf" ` +
           `srcId="${kidIds.sibTrans}" destId="${kidIds.connectorPres}" srcOrd="0" destOrd="0" ` +
-          `presId="${SMARTART_LAYOUT_ID}"/>`,
+          `presId="${layoutId}"/>`,
       )
     })
     for (const kid of node.children) mapPres(kid)
@@ -313,7 +333,7 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
       cxns.push(
         `<dgm:cxn modelId="${modelId(`presPar:${kidIds.pres}`)}" type="presParOf" ` +
           `srcId="${nodeIds.pres}" destId="${kidIds.pres}" srcOrd="${i}" destOrd="0" ` +
-          `presId="${SMARTART_LAYOUT_ID}"/>`,
+          `presId="${layoutId}"/>`,
       )
       mapPresTree(kid)
     })
@@ -322,7 +342,7 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
       cxns.push(
         `<dgm:cxn modelId="${modelId(`presParConn:${kidIds.connectorPres}`)}" type="presParOf" ` +
           `srcId="${nodeIds.pres}" destId="${kidIds.connectorPres}" ` +
-          `srcOrd="${node.children.length + i}" destOrd="0" presId="${SMARTART_LAYOUT_ID}"/>`,
+          `srcOrd="${node.children.length + i}" destOrd="0" presId="${layoutId}"/>`,
       )
     })
   }
@@ -353,7 +373,7 @@ function buildDataXml(root: FlatNode, ids: Map<FlatNode, Ids>, drawingRelId: str
  * layout Word applies describe the same geometry: a box as wide as it is
  * tall times 0.5, a sibling gap of 0.21 and a row gap of 0.21.
  */
-function buildLayoutXml(): string {
+function buildLayoutXml(kind: SmartArtLayoutKind): string {
   const constraints =
     '<dgm:constrLst>' +
     '<dgm:constr type="h" for="des" forName="rootComposite1" refType="h" refForName="rootComposite1" fact="0.5"/>' +
@@ -365,8 +385,63 @@ function buildLayoutXml(): string {
     '<dgm:constr type="primFontSz" for="des" forName="rootComposite1" op="equ" val="65"/>' +
     '<dgm:constr type="primFontSz" for="des" forName="hierRoot1" op="equ" val="60"/>' +
     '</dgm:constrLst>'
-  const emptyDataModel =
-    '<dgm:dataModel><dgm:ptLst/><dgm:bg/><dgm:whole/></dgm:dataModel>'
+  const emptyDataModel = '<dgm:dataModel><dgm:ptLst/><dgm:bg/><dgm:whole/></dgm:dataModel>'
+
+  if (kind === 'radial') {
+    return (
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+      `<dgm:layoutDef xmlns:dgm="${DGM_NS}" xmlns:a="${A_NS}" uniqueId="${SMARTART_RADIAL_LAYOUT_ID}">` +
+      '<dgm:title val="Radial Mind Map"/>' +
+      '<dgm:desc val="A mind map: the topic in the middle, the branches around it."/>' +
+      '<dgm:catLst><dgm:cat type="radial" pri="1000"/></dgm:catLst>' +
+      `<dgm:sampData useDef="1">${emptyDataModel}</dgm:sampData>` +
+      `<dgm:styleData useDef="1">${emptyDataModel}</dgm:styleData>` +
+      `<dgm:clrData useDef="1">${emptyDataModel}</dgm:clrData>` +
+      '<dgm:layoutNode name="diagram">' +
+      '<dgm:varLst><dgm:animLvl val="lvl"/><dgm:resizeHandles val="exact"/></dgm:varLst>' +
+      '<dgm:alg type="composite"/>' +
+      `<dgm:shape xmlns:r="${R_NS}" r:blip=""><dgm:adjLst/></dgm:shape>` +
+      '<dgm:presOf/>' +
+      '<dgm:constrLst>' +
+      '<dgm:constr type="w" for="des" forName="radialNode" refType="w" fact="0.26"/>' +
+      '<dgm:constr type="h" for="des" forName="radialNode" refType="w" fact="0.13"/>' +
+      '<dgm:constr type="sibSp" refType="w" fact="0.06"/>' +
+      '<dgm:constr type="sp" refType="h" fact="0.4"/>' +
+      '<dgm:constr type="primFontSz" for="des" forName="radialNode" op="equ" val="55"/>' +
+      '<dgm:constr type="primFontSz" for="des" forName="node" op="equ" val="50"/>' +
+      '</dgm:constrLst>' +
+      '<dgm:ruleLst/>' +
+      '<dgm:forEach name="Name0" axis="ch" ptType="node">' +
+      '<dgm:layoutNode name="radialNode">' +
+      '<dgm:alg type="cycle"><dgm:param type="stAng" val="0"/><dgm:param type="spanAng" val="360"/></dgm:alg>' +
+      `<dgm:shape xmlns:r="${R_NS}" r:blip=""><dgm:adjLst/></dgm:shape>` +
+      '<dgm:presOf/>' +
+      '<dgm:constrLst/><dgm:ruleLst/>' +
+      '<dgm:layoutNode name="radialConnector">' +
+      '<dgm:alg type="conn"><dgm:param type="dim" val="1D"/><dgm:param type="endSty" val="noArr"/></dgm:alg>' +
+      `<dgm:shape xmlns:r="${R_NS}" type="conn" r:blip=""><dgm:adjLst/></dgm:shape>` +
+      '<dgm:presOf axis="self"/>' +
+      '<dgm:constrLst><dgm:constr type="begPad"/><dgm:constr type="endPad"/></dgm:constrLst>' +
+      '<dgm:ruleLst/>' +
+      '</dgm:layoutNode>' +
+      '<dgm:forEach name="Name1" axis="ch" ptType="node">' +
+      '<dgm:layoutNode name="node">' +
+      '<dgm:alg type="space"/>' +
+      `<dgm:shape xmlns:r="${R_NS}" type="roundRect" r:blip=""><dgm:adjLst/></dgm:shape>` +
+      '<dgm:presOf axis="self" ptType="node"/>' +
+      '<dgm:constrLst>' +
+      '<dgm:constr type="lMarg" refType="primFontSz" fact="0.3"/>' +
+      '<dgm:constr type="rMarg" refType="primFontSz" fact="0.3"/>' +
+      '</dgm:constrLst>' +
+      '<dgm:ruleLst><dgm:rule type="primFontSz" val="5" fact="NaN" max="NaN"/></dgm:ruleLst>' +
+      '</dgm:layoutNode>' +
+      '</dgm:forEach>' +
+      '</dgm:layoutNode>' +
+      '</dgm:forEach>' +
+      '</dgm:layoutNode>' +
+      '</dgm:layoutDef>'
+    )
+  }
 
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
@@ -483,13 +558,119 @@ function buildColorsXml(): string {
   )
 }
 
+// ---- radial layout ----
+
+/** The metrics of the radial layout, in px. */
+const RADIAL_METRICS = {
+  nodeWidth: 150,
+  nodeHeight: 30,
+  /** the radius the first ring sits at, in px */
+  firstRing: 132,
+  /** the distance between two rings, in px */
+  ringStep: 96,
+  /** the share of a branch's angle its own children get */
+  childSpread: 0.62,
+  /** the room kept between two boxes of the same ring */
+  boxGap: 24,
+} as const
+
+/** The boxes and connectors of the radial layout, in px. */
+interface RadialGeometry {
+  boxes: Array<{ node: FlatNode; x: number; y: number; w: number; h: number }>
+  lines: Array<{ x1: number; y1: number; x2: number; y2: number }>
+}
+
+/** The deepest level of the tree, counting the root as 0. */
+function maxDepthOf(node: FlatNode): number {
+  return node.children.reduce((max, kid) => Math.max(max, maxDepthOf(kid)), node.depth + 1)
+}
+
+/**
+ * The size of the square the radial layout needs: the outermost ring plus the
+ * box that sits on it, on both sides.
+ */
+function radialFrameSize(root: FlatNode): number {
+  const { nodeWidth, firstRing, ringStep, boxGap } = RADIAL_METRICS
+  const branches = root.children.length
+  // the first ring has to be wide enough for the branches to sit apart
+  const ring = Math.max(firstRing, (branches * (nodeWidth + boxGap)) / (2 * Math.PI))
+  const maxRadius = ring + Math.max(0, maxDepthOf(root) - 1) * ringStep
+  return Math.ceil(2 * (maxRadius + nodeWidth / 2 + 12))
+}
+
+/**
+ * The radial layout: the topic in the middle, the branches around it.
+ *
+ * Every branch owns a slice of the circle; the children of a branch take a
+ * slice of that slice, one ring further out. The connectors run from the
+ * centre of a parent to the centre of a child.
+ */
+function layoutRadial(root: FlatNode, size: number): RadialGeometry {
+  const { nodeWidth: W, nodeHeight: H, firstRing, ringStep, childSpread, boxGap } = RADIAL_METRICS
+  const boxes: RadialGeometry['boxes'] = []
+  const lines: RadialGeometry['lines'] = []
+  const cx = size / 2
+  const cy = size / 2
+
+  const push = (
+    node: FlatNode,
+    x: number,
+    y: number,
+  ): { x: number; y: number; w: number; h: number } => {
+    const box = { node, x: x - W / 2, y: y - H / 2, w: W, h: H }
+    boxes.push(box)
+    return box
+  }
+
+  const rootBox = push(root, cx, cy)
+
+  const place = (
+    parent: { x: number; y: number; w: number; h: number },
+    node: FlatNode,
+    angleCenter: number,
+    angleSpan: number,
+    depth: number,
+  ): void => {
+    const kids = node.children
+    if (kids.length === 0) return
+    const branches = root.children.length
+    // the first ring is pushed out when the branches would otherwise touch
+    const ring =
+      depth === 1
+        ? Math.max(firstRing, (branches * (W + boxGap)) / (2 * Math.PI))
+        : firstRing + (depth - 1) * ringStep
+    const slice = angleSpan / kids.length
+    kids.forEach((kid, i) => {
+      const deg = angleCenter - angleSpan / 2 + slice * (i + 0.5)
+      const rad = (deg * Math.PI) / 180
+      const x = cx + Math.cos(rad) * ring
+      const y = cy + Math.sin(rad) * ring
+      const box = push(kid, x, y)
+      lines.push({
+        x1: parent.x + parent.w / 2,
+        y1: parent.y + parent.h / 2,
+        x2: x,
+        y2: y,
+      })
+      place(box, kid, deg, angleSpan * childSpread, depth + 1)
+    })
+  }
+
+  const branches = root.children.length
+  if (branches > 0) {
+    // the branches fill the circle, the first one at the top
+    place(rootBox, root, 90, 360, 1)
+  }
+  return { boxes, lines }
+}
+
 // ---- the pre-rendered drawing ----
 
 /** The geometry the drawing is written from, in px. */
-interface Geometry {
-  boxes: HierBox[]
-  /** each connector as a top-left corner plus a size, the shape a line takes */
-  lines: Array<{ x: number; y: number; cx: number; cy: number }>
+/** The boxes and connectors of a layout, in px. */
+interface DrawingGeometry {
+  boxes: Array<{ label: string; depth: number; x: number; y: number; w: number; h: number }>
+  lines: Array<{ x1: number; y1: number; x2: number; y2: number }>
 }
 
 /** Turn the tree into the shape the org-chart interpreter lays out. */
@@ -510,10 +691,7 @@ function toHierTree(node: FlatNode, depth = 0, depths?: Map<HierTreeNode, number
  * interpreter that reads a real org chart, so the picture matches what the
  * layout produces when Word re-lays it out.
  */
-function buildDrawingXml(
-  geo: Geometry,
-  depths: Map<HierTreeNode, number>,
-): string {
+function buildDrawingXml(geo: DrawingGeometry): string {
   const { boxes, lines } = geo
   const sps: string[] = []
 
@@ -522,12 +700,12 @@ function buildDrawingXml(
   const textColor = 'FFFFFF'
 
   for (const box of boxes) {
-    const depth = depths.get(box.node) ?? 0
+    const depth = box.depth
     const x = box.x
     const y = box.y
     const w = box.w
     const h = box.h
-    const label = box.node.texts.join(' ')
+    const label = box.label
     sps.push(
       `<dsp:sp modelId="${modelId(`dsp:${label}:${x}:${y}`)}">` +
         '<dsp:nvSpPr>' +
@@ -564,7 +742,10 @@ function buildDrawingXml(
 
   // the connectors: stroke-only lines, drawn from the elbow to the child
   for (const line of lines) {
-    const { x, y, cx, cy } = line
+    const x = Math.min(line.x1, line.x2)
+    const y = Math.min(line.y1, line.y2)
+    const cx = Math.abs(line.x2 - line.x1)
+    const cy = Math.abs(line.y2 - line.y1)
     if (cx < 1 && cy < 1) continue
     sps.push(
       `<dsp:sp modelId="${modelId(`dspLine:${x}:${y}:${cx}:${cy}`)}">` +
@@ -655,6 +836,7 @@ export function buildSmartArtParts(
 ): SmartArtParts {
   const flat = flatten(root)
   const ids = buildIds(flat)
+  const kind: SmartArtLayoutKind = options.orientation === 'radial' ? 'radial' : 'hierarchy'
 
   // the geometry: the org-chart interpreter places the tree inside the frame
   // and hands back pixel coordinates, so the frame is the size of the diagram
@@ -668,30 +850,67 @@ export function buildSmartArtParts(
     hangIndent: 0.25,
     fontMax: 65,
   }
-  // A probe pass measures the tree, the real pass fills the frame with it.
-  // The interpreter scales the tree until it fills the frame, so the probe
-  // yields the width-to-height ratio rather than a size.
-  const probe = layoutHierTree([hierRoot], cons, 1000, 1000)
-  const probed = probe?.boxes ?? []
-  const spanW = probed.length
-    ? Math.max(...probed.map((b) => b.x + b.w)) - Math.min(...probed.map((b) => b.x))
-    : 0
-  const spanH = probed.length
-    ? Math.max(...probed.map((b) => b.y + b.h)) - Math.min(...probed.map((b) => b.y))
-    : 0
-  const ratio = spanH > 0 ? spanW / spanH : 1
-  const widthPx = options.widthPx ?? 800
-  const heightPx = options.heightPx ?? Math.max(140, Math.round(widthPx / ratio))
-  const geo = layoutHierTree([hierRoot], cons, widthPx, heightPx) ?? probe
-  const boxes = geo?.boxes ?? []
-  const lines = geo?.lines ?? []
+  let geo: DrawingGeometry
+  let widthPx: number
+  let heightPx: number
+
+  if (options.orientation === 'radial') {
+    // the topic in the middle, the branches around it
+    const size = options.widthPx ?? radialFrameSize(flat)
+    const radial = layoutRadial(flat, size)
+    geo = {
+      boxes: radial.boxes.map((b) => ({
+        label: b.node.label,
+        depth: b.node.depth,
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+      })),
+      lines: radial.lines,
+    }
+    widthPx = size
+    heightPx = options.heightPx ?? size
+  } else {
+    // A probe pass measures the tree, the real pass fills the frame with it.
+    // The interpreter scales the tree until it fills the frame, so the probe
+    // yields the width-to-height ratio rather than a size.
+    const probe = layoutHierTree([hierRoot], cons, 1000, 1000)
+    const probed = probe?.boxes ?? []
+    const spanW = probed.length
+      ? Math.max(...probed.map((b) => b.x + b.w)) - Math.min(...probed.map((b) => b.x))
+      : 0
+    const spanH = probed.length
+      ? Math.max(...probed.map((b) => b.y + b.h)) - Math.min(...probed.map((b) => b.y))
+      : 0
+    const ratio = spanH > 0 ? spanW / spanH : 1
+    widthPx = options.widthPx ?? 800
+    heightPx = options.heightPx ?? Math.max(140, Math.round(widthPx / ratio))
+    const laid = layoutHierTree([hierRoot], cons, widthPx, heightPx) ?? probe
+    geo = {
+      boxes: (laid?.boxes ?? []).map((b) => ({
+        label: b.node.texts.join(' '),
+        depth: depths.get(b.node) ?? 0,
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+      })),
+      lines: (laid?.lines ?? []).map((l) => ({
+        x1: l.x,
+        y1: l.y,
+        x2: l.x + l.cx,
+        y2: l.y + l.cy,
+      })),
+    }
+  }
 
   return {
-    dataXml: buildDataXml(flat, ids, relIds.drawing),
-    layoutXml: buildLayoutXml(),
+    dataXml: buildDataXml(flat, ids, relIds.drawing, kind),
+    layoutXml: buildLayoutXml(kind),
     quickStyleXml: buildQuickStyleXml(),
     colorsXml: buildColorsXml(),
-    drawingXml: buildDrawingXml({ boxes, lines }, depths),
+    drawingXml: buildDrawingXml(geo),
     paragraphXml: buildParagraphXml(relIds, widthPx, heightPx, docPrId),
     widthPx,
     heightPx,
