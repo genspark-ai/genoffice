@@ -79,7 +79,6 @@ const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 const DSP_NS = 'http://schemas.microsoft.com/office/drawing/2008/diagram'
 
 /** the width a node box is drawn at before the map is scaled to fit */
-const BASE_NODE_WIDTH = 150
 
 /** EMU per px at 96 dpi. */
 const EMU_PER_PX = 9525
@@ -206,10 +205,11 @@ function connectorPresNameOf(kind: SmartArtLayoutKind): string {
 }
 
 function textBody(label: string): string {
+  const lang = runLang(label)
   return (
     '<dgm:t><a:bodyPr/><a:lstStyle/><a:p>' +
-    (label ? `<a:r><a:rPr lang="en-US"/><a:t>${escapeXmlText(label)}</a:t></a:r>` : '') +
-    '<a:endParaRPr lang="en-US"/>' +
+    (label ? `<a:r><a:rPr lang="${lang}"/><a:t>${escapeXmlText(label)}</a:t></a:r>` : '') +
+    `<a:endParaRPr lang="${lang}"/>` +
     '</a:p></dgm:t>'
   )
 }
@@ -567,129 +567,333 @@ function buildColorsXml(): string {
   )
 }
 
-// ---- radial layout ----
+// ---- the shared box metrics ----
 
-/** The metrics of the radial layout, in px. */
-const RADIAL_METRICS = {
-  nodeWidth: 150,
-  nodeHeight: 30,
-  /** the radius the first ring sits at, in px: a box wide plus the gap, so
-   *  the topic and the branch beside it do not overlap */
-  firstRing: 168,
-  /** the distance between two rings, in px: a box wide plus the gap, so a
-   *  parent and the child below it do not overlap either */
-  ringStep: 168,
-  /** the share of a branch's slice its own children get */
-  childSpread: 0.72,
-  /** the degrees between two children on the same arm */
-  fanDeg: 9,
-  /** the room kept between two boxes */
-  boxGap: 18,
-} as const
+/** The base font of a label, in px, by depth. */
+function labelFontPx(depth: number): number {
+  return depth === 0 ? 13 : depth === 1 ? 11.5 : 10.5
+}
 
-/** The boxes and connectors of the radial layout, in px. */
-interface RadialGeometry {
+/** The run language a label declares: CJK-bearing labels say so, so consumers
+ *  pick an east-asian face for them instead of guessing from en-US. */
+const CJK_RE = /[\u2e80-\u9fff\uf900-\ufaff\uac00-\ud7af\uff00-\uffef]/
+
+function runLang(label: string): string {
+  return CJK_RE.test(label) ? 'zh-CN' : 'en-US'
+}
+
+/** The width one label character renders at, in ems of the font size: CJK and
+ *  the fullwidth forms run the whole em, latin text about half. */
+function textUnitsOf(label: string): number {
+  let units = 0
+  for (const ch of label) {
+    units += ch.charCodeAt(0) > 0x2e7f ? 1 : 0.55
+  }
+  return units
+}
+
+/** The box a label is drawn in: wide enough for its text at the depth's base
+ *  font, with the padding the box style carries. */
+function labelBox(label: string, depth: number): { w: number; h: number } {
+  const w = Math.ceil(textUnitsOf(label) * labelFontPx(depth) + 26)
+  return { w: Math.min(280, Math.max(64, w)), h: depth === 0 ? 40 : 32 }
+}
+
+/** The rendered font size of a label, in DrawingML hundredths of a point:
+ *  the depth's base size, shrunk when the box it ended up in (a scaled-down
+ *  map) got too narrow for the text. */
+function labelFontSize(label: string, boxW: number, depth: number): number {
+  const units = textUnitsOf(label)
+  const cap = units > 0 ? (boxW - 22) / units : labelFontPx(depth)
+  const px = Math.max(7, Math.min(labelFontPx(depth), cap))
+  return Math.round(px * 75)
+}
+
+// ---- the left-right mind map ----
+
+/** The boxes and connectors of a mind map layout, in px. Boxes sit at their
+ *  top-left corner; the frame hugs the map. */
+interface TreeGeometry {
+  width: number
+  height: number
   boxes: Array<{ node: FlatNode; x: number; y: number; w: number; h: number }>
   lines: Array<{
     x1: number
     y1: number
     x2: number
     y2: number
-    /** the nodes the connector joins */
     from: FlatNode
     to: FlatNode
   }>
 }
 
-/**
- * The radial layout: the topic in the middle, the branches around it.
- *
- * Every branch owns a slice of the circle. The children of a branch sit on
- * the next ring, spread over a share of that slice — the ring is pushed out
- * until the boxes fit, so neighbours never overlap.
- */
-function layoutRadial(root: FlatNode): RadialGeometry {
-  const { nodeWidth: W, nodeHeight: H, firstRing, childSpread, fanDeg, boxGap } = RADIAL_METRICS
-  const boxes: RadialGeometry['boxes'] = []
-  const lines: RadialGeometry['lines'] = []
-  // the map is laid out around the origin; the frame is measured from the
-  // result, so a ring that had to be pushed out is never cut off
-  const cx = 0
-  const cy = 0
+/** The left-right metrics, in px. */
+const LR_METRICS = {
+  /** the horizontal room between two columns */
+  colGap: 30,
+  /** the vertical room between two sibling boxes */
+  sibGap: 10,
+  /** the frame padding */
+  pad: 14,
+} as const
 
-  const push = (
-    node: FlatNode,
-    x: number,
-    y: number,
-  ): { x: number; y: number; w: number; h: number } => {
-    const box = { node, x: x - W / 2, y: y - H / 2, w: W, h: H }
-    boxes.push(box)
-    return box
+/**
+ * The left-right mind map: the topic in the middle of the page, its branches
+ * split between a right and a left half, every subtree stacking its children
+ * in a column beside it. The shape every mind-mapping tool calls the logic
+ * diagram — columns of boxes read top to bottom, and the connectors stay
+ * short no matter how wide the tree grows.
+ */
+function layoutLeftRight(root: FlatNode): TreeGeometry {
+  const { colGap, sibGap, pad } = LR_METRICS
+  const boxes: TreeGeometry['boxes'] = []
+  const lines: TreeGeometry['lines'] = []
+
+  const boxH = (node: FlatNode): number => labelBox(node.label, node.depth).h
+
+  /** the vertical room a subtree's stack takes */
+  const subtreeH = (node: FlatNode): number => {
+    if (node.children.length === 0) return boxH(node)
+    const kids =
+      node.children.reduce((sum, kid) => sum + subtreeH(kid), 0) +
+      sibGap * (node.children.length - 1)
+    return Math.max(boxH(node), kids)
   }
 
-  push(root, cx, cy)
+  // each depth is a column as wide as its widest box, so the grandchildren
+  // line up even when the children vary in length
+  const columnW = new Map<number, number>()
+  const measure = (node: FlatNode): void => {
+    const w = labelBox(node.label, node.depth).w
+    columnW.set(node.depth, Math.max(columnW.get(node.depth) ?? 0, w))
+    for (const kid of node.children) measure(kid)
+  }
+  measure(root)
 
-  /**
-   * The children of a node sit on the next ring, spread over their share of
-   * the parent's slice. The ring is pushed out until the boxes of that ring
-   * fit without touching.
-   */
+  // the columns walk outward from the root's own box
+  const columnX = (side: 1 | -1, depth: number): number => {
+    let x = (columnW.get(0) ?? 0) / 2
+    for (let d = 1; d <= depth; d++)
+      x += (columnW.get(d - 1) ?? 0) / 2 + colGap + (columnW.get(d) ?? 0) / 2
+    return side * x
+  }
+
   const place = (
-    parent: { x: number; y: number; w: number; h: number },
     node: FlatNode,
-    angleCenter: number,
-    angleSpan: number,
-    prevRing: number,
-  ): void => {
-    const kids = node.children
-    if (kids.length === 0) return
-    const slice = angleSpan / kids.length
-    kids.forEach((kid, i) => {
-      // the children walk out along the arm their parent opened, one box
-      // apart: boxes on a ring would sit on top of each other wherever the
-      // ring runs sideways
-      const deg = angleCenter + (i - (kids.length - 1) / 2) * fanDeg
-      const rad = (deg * Math.PI) / 180
-      const step = prevRing + (i + 1) * (W + boxGap)
-      const x = cx + Math.cos(rad) * step
-      const y = cy + Math.sin(rad) * step
-      const box = push(kid, x, y)
+    side: 1 | -1,
+    depth: number,
+    yCenter: number,
+  ): { x: number; y: number; w: number; h: number } => {
+    const { w, h } = labelBox(node.label, depth)
+    const x = side === 1 ? columnX(1, depth) - w / 2 : columnX(-1, depth) - w / 2
+    const box = { node, x, y: yCenter - h / 2, w, h }
+    boxes.push(box)
+    if (node.children.length === 0) return box
+    const totalH =
+      node.children.reduce((sum, kid) => sum + subtreeH(kid), 0) +
+      sibGap * (node.children.length - 1)
+    let cursor = yCenter - totalH / 2
+    for (const kid of node.children) {
+      const kidH = subtreeH(kid)
+      const kidCenter = cursor + kidH / 2
+      const kidBox = place(kid, side, depth + 1, kidCenter)
+      // the connector runs from the parent's inner edge to the child's inner
+      // edge — in a stacked tree both are short and near-horizontal
+      const parentEdgeX = side === 1 ? box.x + box.w : box.x
+      const childEdgeX = side === 1 ? kidBox.x : kidBox.x + kidBox.w
       lines.push({
-        x1: parent.x + parent.w / 2,
-        y1: parent.y + parent.h / 2,
-        x2: x,
-        y2: y,
+        x1: parentEdgeX,
+        y1: yCenter,
+        x2: childEdgeX,
+        y2: kidCenter,
         from: node,
         to: kid,
       })
-      place(box, kid, deg, slice * childSpread, step)
-    })
+      cursor += kidH + sibGap
+    }
+    return box
   }
 
   const branches = root.children
-  const count = branches.length
-  if (count > 0) {
-    // the branches fill the circle, the first one at the top
-    const slice = 360 / count
-    const ring = Math.max(firstRing, (count * (W + boxGap)) / (2 * Math.PI))
-    branches.forEach((branch, i) => {
-      const deg = -90 + slice * (i + 0.5)
-      const rad = (deg * Math.PI) / 180
-      const x = cx + Math.cos(rad) * ring
-      const y = cy + Math.sin(rad) * ring
-      const box = push(branch, x, y)
+  // the first half of the branches goes right, the rest left; an odd branch
+  // out breaks for the right side, which reads first
+  const rightCount = Math.ceil(branches.length / 2)
+  const sides: Array<{ side: 1 | -1; branches: FlatNode[] }> = [
+    { side: 1, branches: branches.slice(0, rightCount) },
+    { side: -1, branches: branches.slice(rightCount) },
+  ]
+  for (const { side, branches: group } of sides) {
+    if (group.length === 0) continue
+    const span =
+      group.reduce((sum, branch) => sum + subtreeH(branch), 0) + sibGap * (group.length - 1)
+    let cursor = -span / 2
+    for (const branch of group) {
+      const h = subtreeH(branch)
+      const branchBox = place(branch, side, 1, cursor + h / 2)
+      // the root's connector reaches the branch's inner edge
+      const rootW = labelBox(root.label, 0).w / 2
       lines.push({
-        x1: cx,
-        y1: cy,
-        x2: x,
-        y2: y,
+        x1: side === 1 ? rootW : -rootW,
+        y1: 0,
+        x2: side === 1 ? branchBox.x : branchBox.x + branchBox.w,
+        y2: cursor + h / 2,
         from: root,
         to: branch,
       })
-      place(box, branch, deg, slice * childSpread, ring)
+      cursor += h + sibGap
+    }
+  }
+
+  // the root box itself, centered between the two halves
+  const rootW = labelBox(root.label, 0).w
+  const rootH = boxH(root)
+  boxes.unshift({ node: root, x: -rootW / 2, y: -rootH / 2, w: rootW, h: rootH })
+
+  // the frame hugs the map
+  const shiftX = pad - Math.min(...boxes.map((b) => b.x))
+  const shiftY = pad - Math.min(...boxes.map((b) => b.y))
+  for (const box of boxes) {
+    box.x += shiftX
+    box.y += shiftY
+  }
+  for (const line of lines) {
+    line.x1 += shiftX
+    line.y1 += shiftY
+    line.x2 += shiftX
+    line.y2 += shiftY
+  }
+  const width = Math.max(...boxes.map((b) => b.x + b.w)) + pad
+  const height = Math.max(...boxes.map((b) => b.y + b.h)) + pad
+  return { width, height, boxes, lines }
+}
+
+// ---- the radial mind map ----
+
+/** The metrics of the radial layout, in px. */
+const RADIAL_METRICS = {
+  /** the radius the first ring sits at */
+  firstRing: 190,
+  /** the distance between two rings */
+  ringStep: 125,
+  /** the room kept between two boxes on a ring */
+  boxGap: 16,
+  /** the share of a branch's slice its own children spread over */
+  childSpread: 0.82,
+} as const
+
+/**
+ * The radial layout: the topic in the middle, the branches around it.
+ *
+ * Every branch owns a slice of the circle, sized by the share of the map that
+ * lives in it. The children of a node sit side by side on the next ring,
+ * spread over their parent's slice — never further out per sibling, which is
+ * what made the earlier arms needle out into the page. A ring that ran too
+ * crowded pushes itself out until its boxes fit.
+ */
+function layoutRadial(root: FlatNode): TreeGeometry {
+  const { firstRing, ringStep, boxGap, childSpread } = RADIAL_METRICS
+  const boxes: TreeGeometry['boxes'] = []
+  const lines: TreeGeometry['lines'] = []
+
+  /** the tangential room one box takes on the ring at this angle: its
+   *  projection on the circle's direction — wide boxes cost the most where
+   *  the ring runs horizontally (the sides of the map) */
+  const extentAt = (node: FlatNode, angle: number): number => {
+    const { w, h } = labelBox(node.label, node.depth)
+    return Math.abs(w * Math.sin(angle)) + Math.abs(h * Math.cos(angle))
+  }
+
+  const placeRing = (
+    parent: FlatNode,
+    parentBox: { x: number; y: number; w: number; h: number },
+    angleCenter: number,
+    angleSpan: number,
+    radius: number,
+  ): void => {
+    const kids = parent.children
+    if (kids.length === 0) return
+    // each child's slice of the parent's span, in proportion to the subtree
+    // that lives under it
+    const weights = kids.map((kid) => countNodes(kid))
+    const total = weights.reduce((sum, w) => sum + w, 0)
+    const span = angleSpan * childSpread
+    const angleOf = (i: number): number =>
+      angleCenter +
+      span * ((weights.slice(0, i).reduce((a, b) => a + b, 0) + weights[i]! / 2) / total - 0.5)
+    // the ring pushes out until the slice's boxes fit side by side: their
+    // projected extents plus the gaps must fit the arc the slice offers
+    const arcNeed =
+      kids.reduce((sum, kid, i) => sum + extentAt(kid, (angleOf(i) * Math.PI) / 180) + boxGap, 0) /
+      ((span * Math.PI) / 180)
+    const r = Math.max(radius, arcNeed)
+    kids.forEach((kid, i) => {
+      const angle = angleOf(i)
+      const rad = (angle * Math.PI) / 180
+      const x = Math.cos(rad) * r
+      const y = Math.sin(rad) * r
+      const { w, h } = labelBox(kid.label, kid.depth)
+      const box = { node: kid, x: x - w / 2, y: y - h / 2, w, h }
+      boxes.push(box)
+      lines.push({
+        x1: parentBox.x + parentBox.w / 2,
+        y1: parentBox.y + parentBox.h / 2,
+        x2: x,
+        y2: y,
+        from: parent,
+        to: kid,
+      })
+      placeRing(kid, box, angle, angleSpan * childSpread, r + ringStep)
     })
   }
-  return { boxes, lines }
+
+  const rootBoxSize = labelBox(root.label, 0)
+  const rootBox = {
+    node: root,
+    x: -rootBoxSize.w / 2,
+    y: -rootBoxSize.h / 2,
+    w: rootBoxSize.w,
+    h: rootBoxSize.h,
+  }
+  boxes.push(rootBox)
+  const branches = root.children
+  if (branches.length > 0) {
+    const weights = branches.map((b) => countNodes(b))
+    const total = weights.reduce((sum, w) => sum + w, 0)
+    let from = 0
+    branches.forEach((branch, i) => {
+      // the slices tile the full circle, the first branch opening at the top
+      const span = (weights[i]! / total) * 360
+      const angle = -90 + from + span / 2
+      from += span
+      const rad = (angle * Math.PI) / 180
+      const x = Math.cos(rad) * firstRing
+      const y = Math.sin(rad) * firstRing
+      const { w, h } = labelBox(branch.label, 1)
+      const box = { node: branch, x: x - w / 2, y: y - h / 2, w, h }
+      boxes.push(box)
+      lines.push({ x1: 0, y1: 0, x2: x, y2: y, from: root, to: branch })
+      placeRing(branch, box, angle, span, firstRing + ringStep)
+    })
+  }
+
+  // the frame stays centered on the topic, as far as the furthest box reaches
+  const reach = boxes.length
+    ? Math.max(
+        ...boxes.map((b) => Math.hypot(b.x + b.w / 2, b.y + b.h / 2) + Math.max(b.w, b.h) / 2),
+      )
+    : 0
+  const half = reach + 14
+  for (const box of boxes) {
+    box.x += half
+    box.y += half
+  }
+  for (const line of lines) {
+    line.x1 += half
+    line.y1 += half
+    line.x2 += half
+    line.y2 += half
+  }
+  return { width: half * 2, height: half * 2, boxes, lines }
 }
 
 // ---- the pre-rendered drawing ----
@@ -789,7 +993,7 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     const h = box.h
     const label = box.label
     // the text follows the box: a scaled map keeps its proportions
-    const fontSize = Math.max(700, Math.round((1200 * box.w) / BASE_NODE_WIDTH))
+    const fontSize = labelFontSize(label, w, depth)
     sps.push(
       `<dsp:sp modelId="${box.presId ?? modelId(`dsp:${label}:${x}:${y}`)}">` +
         '<dsp:nvSpPr>' +
@@ -814,7 +1018,7 @@ function buildDrawingXml(geo: DrawingGeometry): string {
         '<a:noAutofit/></a:bodyPr>' +
         '<a:lstStyle/>' +
         '<a:p><a:pPr lvl="0" algn="ctr" defTabSz="1111250"/>' +
-        `<a:r><a:rPr lang="en-US" sz="${fontSize}" b="1" kern="1200"><a:solidFill><a:srgbClr val="${textColor}"/></a:solidFill></a:rPr>` +
+        `<a:r><a:rPr lang="${runLang(label)}" sz="${fontSize}" b="1" kern="1200"><a:solidFill><a:srgbClr val="${textColor}"/></a:solidFill></a:rPr>` +
         `<a:t>${escapeXmlText(label)}</a:t></a:r>` +
         '</a:p>' +
         '</dsp:txBody>' +
@@ -837,8 +1041,11 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     const cx = Math.abs(end.x - start.x)
     const cy = Math.abs(end.y - start.y)
     if (cx < 1 && cy < 1) continue
-    // the line preset draws the top left to the bottom right diagonal
-    const flipV = end.y < start.y
+    // the line preset draws the top left to the bottom right diagonal; a
+    // segment that runs the other diagonal (its start towards the upper left
+    // or the lower right) needs the vertical flip — the direction signs of x
+    // and y decide together, one alone is wrong for left-going segments
+    const flipV = end.x < start.x !== end.y < start.y
     sps.push(
       `<dsp:sp modelId="${line.toPres ?? modelId(`dspLine:${x}:${y}:${cx}:${cy}`)}">` +
         '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
@@ -949,42 +1156,31 @@ export function buildSmartArtParts(
   let widthPx: number
   let heightPx: number
 
-  if (options.orientation === 'radial') {
-    // the topic in the middle, the branches around it
-    const radial = layoutRadial(flat)
-    // the topic sits in the middle, the branches reach out from it
-    const reach = radial.boxes.length
-      ? Math.max(
-          ...radial.boxes.map(
-            (b) => Math.hypot(b.x + b.w / 2, b.y + b.h / 2) + Math.max(b.w, b.h) / 2,
-          ),
-        )
-      : 0
-    const pad = 12
-    const wanted = Math.ceil(reach * 2 + pad * 2)
+  if (options.orientation === 'radial' || options.orientation !== 'top-down') {
+    // the mind-map shapes: the topic in the middle for the radial form, a
+    // two-column logic tree otherwise (the documented default)
+    const tree = options.orientation === 'radial' ? layoutRadial(flat) : layoutLeftRight(flat)
     // a map wider than the page scales down as a whole, so it still fits
     const limit = options.maxSizePx ?? 700
-    const scale = Math.min(1, limit / Math.max(1, wanted))
-    widthPx = options.widthPx ?? Math.ceil(wanted * scale)
-    heightPx = options.heightPx ?? Math.ceil(wanted * scale)
-    const shiftX = widthPx / 2
-    const shiftY = heightPx / 2
+    const scale = Math.min(1, limit / Math.max(1, Math.max(tree.width, tree.height)))
+    widthPx = options.widthPx ?? Math.ceil(tree.width * scale)
+    heightPx = options.heightPx ?? Math.ceil(tree.height * scale)
     geo = {
-      boxes: radial.boxes.map((b) => ({
+      boxes: tree.boxes.map((b) => ({
         label: b.node.label,
         depth: b.node.depth,
-        x: b.x * scale + shiftX,
-        y: b.y * scale + shiftY,
+        x: b.x * scale,
+        y: b.y * scale,
         w: b.w * scale,
         h: b.h * scale,
         node: b.node,
         presId: ids.get(b.node)?.pres,
       })),
-      lines: radial.lines.map((l) => ({
-        x1: l.x1 * scale + shiftX,
-        y1: l.y1 * scale + shiftY,
-        x2: l.x2 * scale + shiftX,
-        y2: l.y2 * scale + shiftY,
+      lines: tree.lines.map((l) => ({
+        x1: l.x1 * scale,
+        y1: l.y1 * scale,
+        x2: l.x2 * scale,
+        y2: l.y2 * scale,
         from: l.from,
         to: l.to,
         toPres: l.to ? ids.get(l.to)?.connectorPres : undefined,
