@@ -9235,6 +9235,38 @@ body.show-curtain::after {
 .print-options .print-range-input.invalid {
   border-color: var(--danger);
 }
+.print-options .print-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 2px 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+  color: inherit;
+}
+.print-options .print-select:focus {
+  border-color: var(--accent);
+}
+.print-options .print-copies-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.print-options .print-copies-row label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.print-options .print-copies-row .print-range-input {
+  width: 64px;
+}
 .print-page-count {
   margin-top: auto;
   padding: 2px 2px 0;

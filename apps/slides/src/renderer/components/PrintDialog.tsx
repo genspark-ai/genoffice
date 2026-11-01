@@ -17,8 +17,14 @@ import {
   type PrintOrientation,
 } from '../../shared/print-html'
 import { renderSlidesToPngBase64 } from '../export-render'
+import type { PrintDuplex, PrinterInfo, PrinterOption } from '../../shared/ipc'
 
 type RangeMode = 'all' | 'current' | 'custom'
+
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+/** the escape hatch: hand the job to the OS print dialog instead of printing here */
+const PRINT_SYSTEM_DIALOG = '\u0000system-dialog'
+const PRINT_DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 
 export function PrintDialog({
   slides,
@@ -46,6 +52,14 @@ export function PrintDialog({
   const [frame, setFrame] = useState(false)
   const [includeHidden, setIncludeHidden] = useState(false)
   const [printing, setPrinting] = useState(false)
+  // the printer section: '' = the OS default, a name = that queue, SYSTEM = the OS dialog
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [printDevice, setPrintDevice] = useState(IS_MAC ? PRINT_SYSTEM_DIALOG : '')
+  const [printCopies, setPrintCopies] = useState(1)
+  const [printCollate, setPrintCollate] = useState(true)
+  const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
+  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
+  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   const blobUrlsRef = useRef<string[]>([])
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const paneRef = useRef<HTMLDivElement | null>(null)
@@ -103,6 +117,19 @@ export function PrintDialog({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
+  useEffect(() => {
+    let alive = true
+    window.slidesApi
+      .listPrinters()
+      .then((list) => {
+        if (alive) setPrinters(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
   /** 0-based deck indices selected by the range options (before the hidden filter) */
   const rangeIndices = useMemo<number[] | null>(() => {
     if (rangeMode === 'all') return slides.map((_s, i) => i)
@@ -155,6 +182,21 @@ export function PrintDialog({
     setPrinting(true)
     try {
       const first = slides[selected[0]]
+      const job =
+        printDevice === PRINT_SYSTEM_DIALOG
+          ? undefined
+          : {
+              deviceName: printDevice,
+              copies: printCopies,
+              collate: printCollate,
+              duplex: printDuplex,
+              driverOptions: driverOptions
+                .filter(
+                  (g) =>
+                    driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
+                )
+                .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
+            }
       const r = await window.slidesApi.printSlides({
         pngsBase64: selected.map((i) => pngs[i]),
         widthPx: first.widthPx,
@@ -163,6 +205,7 @@ export function PrintDialog({
         ...(layout === 'notes' ? { notes: selected.map((i) => notes[i] ?? '') } : {}),
         ...(layout !== 'full' ? { orientation } : {}),
         ...(frame && layout === 'full' ? { frame: true } : {}),
+        ...(job ? { job } : {}),
       })
       if (r.ok) onClose()
       else if (r.error) setStatus(t('appPrintFailed', { error: r.error }))
@@ -302,6 +345,100 @@ export function PrintDialog({
                 />
                 {t('appPrintHidden')}
               </label>
+            </fieldset>
+            <fieldset>
+              <legend>{t('appPrintPrinter')}</legend>
+              <select
+                className="print-select"
+                value={printDevice}
+                onChange={(e) => {
+                  setPrintDevice(e.target.value)
+                  setDriverChoices({})
+                  setDriverOptions([])
+                  if (e.target.value && e.target.value !== PRINT_SYSTEM_DIALOG && IS_MAC) {
+                    void window.slidesApi
+                      .printerOptions(e.target.value)
+                      .then(setDriverOptions)
+                      .catch(() => setDriverOptions([]))
+                  }
+                }}
+              >
+                <option value="">{t('appPrintDefaultPrinter')}</option>
+                {printers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.displayName}
+                  </option>
+                ))}
+                <option value={PRINT_SYSTEM_DIALOG}>{t('appPrintSystemDialog')}</option>
+              </select>
+              {printDevice !== PRINT_SYSTEM_DIALOG && (
+                <>
+                  <div className="print-copies-row">
+                    <label>
+                      {t('appPrintCopies')}
+                      <input
+                        type="number"
+                        className="print-range-input"
+                        min={1}
+                        max={999}
+                        value={printCopies}
+                        onChange={(e) =>
+                          setPrintCopies(
+                            Math.min(999, Math.max(1, Math.round(Number(e.target.value)) || 1)),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="print-radio">
+                      <input
+                        type="checkbox"
+                        checked={printCollate}
+                        disabled={printCopies < 2}
+                        onChange={(e) => setPrintCollate(e.target.checked)}
+                      />
+                      {t('appPrintCollate')}
+                    </label>
+                  </div>
+                  <label className="print-radio">
+                    {t('appPrintDuplex')}
+                    <select
+                      className="print-select"
+                      value={printDuplex}
+                      onChange={(e) => setPrintDuplex(e.target.value as PrintDuplex)}
+                    >
+                      {PRINT_DUPLEX_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {t(
+                            m === 'simplex'
+                              ? 'appPrintDuplexOff'
+                              : m === 'longEdge'
+                                ? 'appPrintDuplexLong'
+                                : 'appPrintDuplexShort',
+                          )}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {driverOptions.map((group) => (
+                    <label key={group.name} className="print-radio">
+                      {group.translation}
+                      <select
+                        className="print-select"
+                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
+                        onChange={(e) =>
+                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
+                        }
+                      >
+                        {group.values.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </>
+              )}
             </fieldset>
             <div className="print-page-count">
               {selected.length > 0 ? t('appPrintPageCount', { n: pageCount }) : ''}
