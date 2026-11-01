@@ -1,4 +1,3 @@
-
 export interface PageGeometry {
   width: number
   height: number
