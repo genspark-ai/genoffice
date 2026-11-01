@@ -300,6 +300,16 @@ export interface Run {
 }
 
 /** One comment from word/comments.xml (read-only display model). */
+/** a picture inside a comment: shown under the comment's text and saved back into it (genoffice#2040) */
+export interface CommentImage {
+  mime: NewImage['mime']
+  /** the picture bytes, base64 */
+  base64: string
+  /** the display size, px (the drawing's extent) */
+  widthPx: number
+  heightPx: number
+}
+
 export interface CommentInfo {
   id: string
   author: string
@@ -308,6 +318,8 @@ export interface CommentInfo {
   date?: string
   /** plain text, paragraphs joined with \n */
   text: string
+  /** the picture the comment carries; absent for a text-only comment */
+  image?: CommentImage
   /** Reply: the parent comment's w:id (resolved via the paraId relation in commentsExtended) */
   parentId?: string
   /** Resolved (w15:done) */

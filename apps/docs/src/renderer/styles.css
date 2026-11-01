@@ -4745,6 +4745,32 @@ th[data-rev-fmt] {
   word-break: break-word;
 }
 
+.comment-image {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.comment-image-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.comment-image-preview img {
+  max-width: 120px;
+  max-height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.comment-image-preview button {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
 .comments-empty {
   padding: 12px 14px;
   font-size: 12px;

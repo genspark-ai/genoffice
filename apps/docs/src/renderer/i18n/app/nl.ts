@@ -141,6 +141,7 @@ export const nl = {
   appCommentsTitle: 'Opmerkingen ({n})',
   appCommentPlaceholder: 'Typ een opmerking…',
   appCommentBtn: 'Opmerking',
+  appAttachImage: 'Afbeelding bijvoegen',
   appUnknownAuthor: '(Onbekende auteur)',
   appResolved: 'Opgelost',
   appResolvedComments: 'Opgeloste opmerkingen ({n})',

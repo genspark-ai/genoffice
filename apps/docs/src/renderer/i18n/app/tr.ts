@@ -135,6 +135,7 @@ export const tr = {
   appCommentsTitle: 'Yorumlar ({n})',
   appCommentPlaceholder: 'Yorum yazın…',
   appCommentBtn: 'Yorum Yap',
+  appAttachImage: 'Resim ekle',
   appUnknownAuthor: '(Bilinmeyen yazar)',
   appResolved: 'Çözüldü',
   appResolvedComments: 'Çözülen yorumlar ({n})',

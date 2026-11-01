@@ -278,6 +278,15 @@ function makeBubble(
     const text = document.createElement('div')
     text.className = 'comment-text'
     text.textContent = c.text
+    if (c.image) {
+      // the picture a comment carries (genoffice#2040): shown under its text,
+      // sized by the saved extent like the editor draws body pictures
+      const img = document.createElement('img')
+      img.className = 'comment-image'
+      img.src = `data:${c.image.mime};base64,${c.image.base64}`
+      img.alt = ''
+      text.after(img)
+    }
     const head = makeCommentHead(c)
     const startEdit = () => {
       if (!h.onCommentEdit || entry.querySelector('textarea')) return
