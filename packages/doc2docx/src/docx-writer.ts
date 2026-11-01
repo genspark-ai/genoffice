@@ -22,6 +22,14 @@ import {
 import type { FormattedParagraph, FormattedRun, ParagraphFormatting } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
 import type { SectionInfo } from './sections'
+import type {
+  BodyBlock,
+  LegacyDocBody,
+  TableBorders,
+  TableCell,
+  TableModel,
+  TableRow,
+} from './tables'
 import type { LegacyDocLayout, LegacyDocModel } from './index'
 
 /** Word color index (sprmCIco 1..16) -> OOXML hex value */
@@ -263,6 +271,93 @@ function sectPrXml(section: SectionInfo, references: string): string {
   )
 }
 
+const W_BORDER_SIDES = ['top', 'left', 'bottom', 'right'] as const
+
+/** one single-line border element; table borders always use a 4-eighth-point line */
+function borderXml(side: string): string {
+  return '<w:' + side + ' w:val="single" w:sz="4" w:space="0" w:color="auto"/>'
+}
+
+/** the table border set: any visible border becomes the full single-line set (stage 3c-2) */
+function tableBordersXml(borders: TableBorders): string {
+  const visible =
+    borders.top ||
+    borders.left ||
+    borders.bottom ||
+    borders.right ||
+    borders.insideHorizontal ||
+    borders.insideVertical
+  if (!visible) return ''
+  const sides = W_BORDER_SIDES.map(borderXml).join('') + borderXml('insideH') + borderXml('insideV')
+  return '<w:tblBorders>' + sides + '</w:tblBorders>'
+}
+
+function cellBordersXml(cell: TableCell): string {
+  if (!cell.borders) return ''
+  const visible = W_BORDER_SIDES.filter((side) => cell.borders![side])
+  if (visible.length === 0) return ''
+  return '<w:tcBorders>' + visible.map(borderXml).join('') + '</w:tcBorders>'
+}
+
+function tableCellXml(cell: TableCell): string {
+  const properties = ['<w:tcW w:w="' + cell.widthTwips + '" w:type="dxa"/>']
+  if (cell.gridSpan > 1) properties.push('<w:gridSpan w:val="' + cell.gridSpan + '"/>')
+  if (cell.verticalMerge === 'restart') properties.push('<w:vMerge w:val="restart"/>')
+  else if (cell.verticalMerge === 'continue') properties.push('<w:vMerge/>')
+  const borders = cellBordersXml(cell)
+  if (borders !== '') properties.push(borders)
+  const paragraphs =
+    cell.paragraphs.length === 0
+      ? '<w:p/>'
+      : cell.paragraphs
+          .map((paragraph) => generateParagraphXml(paragraphBlock(paragraph), GENERATE_CONTEXT))
+          .join('')
+  return '<w:tc><w:tcPr>' + properties.join('') + '</w:tcPr>' + paragraphs + '</w:tc>'
+}
+
+function tableRowXml(row: TableRow): string {
+  const properties: string[] = []
+  if (row.cantSplit) properties.push('<w:cantSplit/>')
+  if (row.heightTwips !== undefined)
+    properties.push(
+      '<w:trHeight w:val="' +
+        row.heightTwips +
+        '" w:hRule="' +
+        (row.heightExact ? 'exact' : 'atLeast') +
+        '"/>',
+    )
+  if (row.header) properties.push('<w:tblHeader/>')
+  const trPr = properties.length > 0 ? '<w:trPr>' + properties.join('') + '</w:trPr>' : ''
+  return '<w:tr>' + trPr + row.cells.map(tableCellXml).join('') + '</w:tr>'
+}
+
+/** a complete <w:tbl> for one reconstructed table (fixed layout, explicit grid) */
+export function generateTableXml(table: TableModel): string {
+  const tableProperties = [
+    '<w:tblW w:w="0" w:type="auto"/>',
+    ...(table.alignment ? ['<w:jc w:val="' + table.alignment + '"/>'] : []),
+    tableBordersXml(table.borders),
+    '<w:tblLayout w:type="fixed"/>',
+  ].filter((part) => part !== '')
+  const grid =
+    '<w:tblGrid>' +
+    table.gridWidths.map((width) => '<w:gridCol w:w="' + width + '"/>').join('') +
+    '</w:tblGrid>'
+  const rows = table.rows.map(tableRowXml).join('')
+  return '<w:tbl><w:tblPr>' + tableProperties.join('') + '</w:tblPr>' + grid + rows + '</w:tbl>'
+}
+
+/** Generated XML for the reconstructed body (paragraphs and tables in CP order). */
+export function generateBodyBlocksXml(blocks: BodyBlock[]): string {
+  return blocks
+    .map((block) =>
+      block.type === 'table'
+        ? generateTableXml(block.table)
+        : generateParagraphXml(paragraphBlock(block.paragraph), GENERATE_CONTEXT),
+    )
+    .join('')
+}
+
 const BODY_OPEN = '<w:body>'
 const BODY_PLACEHOLDER = '<w:p/>'
 const DOCUMENT_PATH = 'word/document.xml'
@@ -284,6 +379,7 @@ export function generateBodyParagraphsXml(paragraphs: FormattedParagraph[]): str
 export async function writeLegacyDocx(
   model: LegacyDocModel,
   layout?: LegacyDocLayout,
+  body?: LegacyDocBody,
 ): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(await buildBlankDocx())
   const documentFile = zip.file(DOCUMENT_PATH)
@@ -294,9 +390,13 @@ export async function writeLegacyDocx(
   const placeholderStart = template.indexOf(BODY_PLACEHOLDER, bodyStart)
   if (placeholderStart < 0)
     throw new Error('the blank docx template has no placeholder paragraph in <w:body>')
+  const bodyXml =
+    body && body.blocks.some((block) => block.type === 'table')
+      ? generateBodyBlocksXml(body.blocks)
+      : generateBodyParagraphsXml(model.paragraphs)
   let documentXml =
     template.slice(0, placeholderStart) +
-    generateBodyParagraphsXml(model.paragraphs) +
+    bodyXml +
     template.slice(placeholderStart + BODY_PLACEHOLDER.length)
 
   const parts: HeaderFooterPart[] = []
@@ -386,6 +486,8 @@ export interface ConversionWarningOptions {
   stylesResolved?: boolean
   /** section geometry and header/footer stories read from the document */
   layout?: LegacyDocLayout
+  /** tables were reconstructed and written as w:tbl (stage 3c-2) */
+  tablesHandled?: boolean
 }
 
 /**
@@ -410,7 +512,7 @@ export function conversionWarnings(
     (paragraph) =>
       paragraph.formatting.inTable === true || paragraph.formatting.tableRowEnd === true,
   )
-  if (flattensTables)
+  if (flattensTables && !options.tablesHandled)
     warnings.push('tables are flattened to paragraphs (stage 3a); cell structure is not preserved')
   const { fib } = model
   if (fib.ccpFtn > 0) warnings.push('footnotes are not converted yet; their text is omitted')
@@ -442,12 +544,16 @@ export async function convertLegacyDocToDocx(
   bytes: Uint8Array,
 ): Promise<{ docx: Uint8Array; warnings: string[] }> {
   // dynamic import keeps the module graph acyclic: index.ts re-exports this file
-  const { readLegacyDocLayout, readLegacyDocModel, readResolvedLegacyDocModel } =
+  const { readLegacyDocBody, readLegacyDocLayout, readLegacyDocModel, readResolvedLegacyDocModel } =
     await import('./index')
   const layout = readLegacyDocLayout(bytes)
   const base = readLegacyDocModel(bytes)
   const stylesResolved = base.fib.lcbStshf > 0
   const model = stylesResolved ? readResolvedLegacyDocModel(bytes) : base
-  const docx = await writeLegacyDocx(model, layout)
-  return { docx, warnings: conversionWarnings(model, { stylesResolved, layout }) }
+  const body = readLegacyDocBody(bytes)
+  const tablesHandled = body.blocks.some((block) => block.type === 'table')
+  const docx = await writeLegacyDocx(model, layout, body)
+  const warnings = conversionWarnings(model, { stylesResolved, layout, tablesHandled })
+  for (const warning of body.warnings) if (!warnings.includes(warning)) warnings.push(warning)
+  return { docx, warnings }
 }

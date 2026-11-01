@@ -13,6 +13,7 @@ import { readFormatting, type FormattedParagraph } from './formatting'
 import { readResolvedFormatting } from './resolve'
 import { parseSections, type SectionInfo } from './sections'
 import { parseHeaderStories, type SectionHeaderFooter } from './headers'
+import { readLegacyDocBody as readBodyFromSource, type LegacyDocBody } from './tables'
 import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
@@ -49,6 +50,7 @@ export type { Sprm } from './sprm'
 export {
   applyCharacterGrpprl,
   applyParagraphGrpprl,
+  characterFormattingOf,
   cpOfFc,
   fcOfCp,
   readFormatting,
@@ -84,7 +86,21 @@ export {
   DEFAULT_PARAGRAPH_STYLE_ISTD,
   readResolvedFormatting,
   resolveFormatting,
+  resolveParagraphFormattingFor,
+  resolveRunsForRange,
 } from './resolve'
+export type { ParagraphRunRequest } from './resolve'
+export { buildLegacyDocBody } from './tables'
+export type {
+  BodyBlock,
+  CellBorders,
+  LegacyDocBody,
+  TableBorders,
+  TableCell,
+  TableCellPadding,
+  TableModel,
+  TableRow,
+} from './tables'
 
 /** Everything stage 1 reads from one .doc file. */
 export interface LegacyDoc {
@@ -181,6 +197,15 @@ export interface LegacyDocLayout {
   warnings: string[]
 }
 
+/**
+ * Read the reconstructed body of a .doc: paragraphs and real tables in CP
+ * order (stage 3c-2). Cell character formatting is resolved from the stylesheet
+ * when the document has one; cell paragraph formatting stays plain.
+ */
+export function readLegacyDocBody(bytes: Uint8Array): LegacyDocBody {
+  return readBodyFromSource(openLegacyDoc(bytes))
+}
+
 /** Read the section geometry and header/footer stories of a .doc. */
 export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
   const doc = openLegacyDoc(bytes)
@@ -193,11 +218,13 @@ export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
   }
 }
 
-/* stage 3a/3c-1: .docx writer */
+/* stage 3a/3c-1/3c-2: .docx writer */
 export {
   conversionWarnings,
   convertLegacyDocToDocx,
+  generateBodyBlocksXml,
   generateBodyParagraphsXml,
+  generateTableXml,
   toDocxRun,
   toParaFormat,
   writeLegacyDocx,

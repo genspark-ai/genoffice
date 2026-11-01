@@ -339,6 +339,157 @@ export function encodePlcfHdd(cps: number[]): Uint8Array {
 }
 
 /**
+ * A synthetic table row (stage 3c-2): grid widths plus the TC descriptor
+ * fields of every physical cell. `encodeTableRowPapx` turns it into the TAP
+ * sprms a row-end PAPX carries.
+ */
+export interface SyntheticTableRow {
+  /** cell boundaries in twips (deltas become the grid widths) */
+  gridWidths: number[]
+  cells: Array<{
+    /** TC rgf: 0x0001 fFirstMerged, 0x0002 fMerged, 0x0020 fVertMerge, 0x0040 fVertRestart */
+    rgf?: number
+    /** TC wWidth in twips (informational; the grid widths win) */
+    wWidth?: number
+    /** visible cell borders (default: all four visible) */
+    borders?: { top?: boolean; left?: boolean; bottom?: boolean; right?: boolean }
+  }>
+  /** sprmTTableHeader: repeat this row on every page */
+  header?: boolean
+  /** sprmTFCantSplit: keep the row together */
+  cantSplit?: boolean
+  /** sprmTDyaRowHeight in twips; negative means an exact height */
+  rowHeightTwips?: number
+  /** sprmTJc: table alignment (only the first row's value is used) */
+  alignment?: 'left' | 'center' | 'right'
+  /** sprmTTableBorders: emit a visible single-line border set */
+  tableBorders?: boolean
+  /** sprmTCellPaddingDefault: dxa cell padding in twips (left/right) */
+  cellPadding?: number
+  /** cell text for the synthetic document builder (cells with fMerged usually stay empty) */
+  texts?: string[]
+}
+
+/** Encode one sprm; spra 6 uses a u8 length, except TDefTable/sprmPChgTabs (u16, declared = payload + 1). */
+export function encodeSprm(opcode: number, operand: Uint8Array | number[]): Uint8Array {
+  const bytes = operand instanceof Uint8Array ? operand : Uint8Array.from(operand)
+  const spra = (opcode >> 13) & 7
+  const header: number[] = [opcode & 0xff, (opcode >> 8) & 0xff]
+  if (spra === 6) {
+    if (opcode === 0xd608 || opcode === 0xc615) {
+      const declared = bytes.length + 1
+      header.push(declared & 0xff, (declared >> 8) & 0xff)
+    } else {
+      if (bytes.length > 255) throw new Error('test fixture: variable sprm operand is too long')
+      header.push(bytes.length)
+    }
+  }
+  const out = new Uint8Array(header.length + bytes.length)
+  out.set(header, 0)
+  out.set(bytes, header.length)
+  return out
+}
+
+/** One TAP sprm (sprm type 5) with the given operation (0x6000 base + variable length). */
+export function encodeTapSprm(operation: number, operand: Uint8Array | number[]): Uint8Array {
+  if (operation === 0x08) return encodeSprm(0xd608, operand)
+  return encodeSprm(0xd600 | (operation & 0x1f), operand)
+}
+
+/** The TDefTable operand: itcMac, rgdxaCenter, then one 20-byte TC per cell. */
+export function encodeTDefTableOperand(row: SyntheticTableRow): Uint8Array {
+  const itcMac = row.gridWidths.length
+  if (itcMac < 1) throw new Error('test fixture: a table row needs at least one cell')
+  const out = new Uint8Array(1 + (itcMac + 1) * 2 + itcMac * 20)
+  const view = new DataView(out.buffer)
+  out[0] = itcMac
+  let cursor = 0
+  view.setInt16(1, cursor, true)
+  for (let index = 0; index < itcMac; index++) {
+    cursor += row.gridWidths[index]!
+    view.setInt16(1 + (index + 1) * 2, cursor, true)
+  }
+  const tcStart = 1 + (itcMac + 1) * 2
+  for (let index = 0; index < itcMac; index++) {
+    const cell = row.cells[index] ?? {}
+    const base = tcStart + index * 20
+    view.setUint16(base, cell.rgf ?? 0, true)
+    view.setUint16(base + 2, cell.wWidth ?? 0, true)
+    const visible = cell.borders ?? { top: true, left: true, bottom: true, right: true }
+    const sides = [visible.top, visible.left, visible.bottom, visible.right]
+    sides.forEach((on, side) => {
+      const offset = base + 4 + side * 4
+      out[offset] = on ? 4 : 0 // dptLineWidth
+      out[offset + 1] = on ? 1 : 0 // brcType: single / none
+      out[offset + 2] = on ? 1 : 0 // ico: auto
+      out[offset + 3] = 0 // dptSpace
+    })
+  }
+  return out
+}
+
+/** The TAP sprms of one row-end PAPX (fTtp + TDefTable + row properties). */
+export function encodeTableRowPapx(row: SyntheticTableRow, itap = 1): Uint8Array {
+  const parts: Uint8Array[] = [
+    encodeSprm(0x2416, [1]), // sprmPFInTable
+    encodeSprm(0x2417, [1]), // sprmPFTtp (row end)
+    encodeSprm(0x6649, [itap & 0xff, (itap >> 8) & 0xff, 0, 0]), // sprmPItap
+    encodeTapSprm(0x08, encodeTDefTableOperand(row)),
+  ]
+  if (row.alignment !== undefined) {
+    const value = row.alignment === 'center' ? 1 : row.alignment === 'right' ? 2 : 0
+    parts.push(encodeTapSprm(0x00, [value, 0]))
+  }
+  if (row.cantSplit) parts.push(encodeTapSprm(0x03, [1]))
+  if (row.header) parts.push(encodeTapSprm(0x04, [1]))
+  if (row.rowHeightTwips !== undefined) {
+    const value = row.rowHeightTwips
+    parts.push(
+      encodeTapSprm(0x07, [
+        value & 0xff,
+        (value >> 8) & 0xff,
+        (value >> 16) & 0xff,
+        (value >> 24) & 0xff,
+      ]),
+    )
+  }
+  if (row.tableBorders) {
+    const visible = [4, 1, 1, 0]
+    const borders = new Uint8Array(24)
+    for (let side = 0; side < 6; side++) borders.set(visible, side * 4)
+    parts.push(encodeTapSprm(0x05, borders))
+  }
+  if (row.cellPadding !== undefined) {
+    const width = row.cellPadding
+    parts.push(encodeTapSprm(0x34, [0, 0xff, 0x03, 3, width & 0xff, (width >> 8) & 0xff]))
+    parts.push(encodeTapSprm(0x34, [0, 0xff, 0x0c, 3, width & 0xff, (width >> 8) & 0xff]))
+  }
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
+
+/** The sprms of a normal table-cell paragraph PAPX. */
+export function encodeTableCellPapx(itap = 1): Uint8Array {
+  const parts = [
+    encodeSprm(0x2416, [1]), // sprmPFInTable
+    encodeSprm(0x6649, [itap & 0xff, (itap >> 8) & 0xff, 0, 0]), // sprmPItap
+  ]
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
+
+/**
  * A 512-byte CHPX FKP page from runs: rgfc (crun+1 FCs), rgb (offset/2 per run)
  * and the CHPX records packed after them; crun is the last byte. A run without
  * a grpprl gets rgb entry 0 (no explicit properties).
