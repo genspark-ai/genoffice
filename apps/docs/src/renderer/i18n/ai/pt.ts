@@ -211,4 +211,7 @@ export const pt = {
   aiMindMapReset: 'Redefinir visualização',
   aiMindMapExpand: 'Expandir ramo',
   aiMindMapCollapse: 'Recolher ramo',
+  aiMindMapToggleLayout: 'Mudar layout',
+  aiMindMapLayoutTopDown: 'Mudar para o layout de cima para baixo',
+  aiMindMapLayoutLeftRight: 'Mudar para o layout da esquerda para a direita',
 } satisfies Record<keyof typeof zh, string>
