@@ -5082,7 +5082,7 @@ button {
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: var(--panel, #f3f3f3);
-  color: var(--danger, #b3261e);
+  background: var(--surface);
+  color: var(--danger);
   font-size: 12px;
 }
