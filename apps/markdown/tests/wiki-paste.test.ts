@@ -122,6 +122,15 @@ describe('pasted wiki syntax goes live', () => {
     expect(collectWikiTargets(editor.state.doc)).toEqual([])
   })
 
+  it('leaves a typed literal elsewhere in the block alone on a later paste', () => {
+    const editor = openDoc('Start.')
+    caretAfter(editor, 'Start')
+    editor.commands.insertContent(' [[Typed]]')
+    paste(editor, ' then [[Pasted]]')
+    expect(collectWikiTargets(editor.state.doc)).toEqual(['[[Pasted]]'])
+    expect(editor.getMarkdown()).toBe('Start. [[Typed]] then [[Pasted]]')
+  })
+
   it('leaves a link that is already live as it is', () => {
     const editor = openDoc('See [[Existing]] here.')
     caretAfter(editor, 'here')

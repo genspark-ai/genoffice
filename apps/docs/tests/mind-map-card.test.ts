@@ -54,9 +54,9 @@ describe('MindMapCard exports', () => {
     })
     try {
       const buttons = document.querySelectorAll('.ai-mindmap-actions button')
-      expect(buttons.length).toBe(4)
+      expect(buttons.length).toBe(5)
       act(() => {
-        ;(buttons[2] as HTMLButtonElement).click()
+        ;(buttons[3] as HTMLButtonElement).click()
       })
 
       expect(downloads).toEqual(['mindmap.svg'])
@@ -83,9 +83,9 @@ describe('MindMapCard exports', () => {
     const onInsert = vi.fn()
     renderCard(onInsert)
     const buttons = document.querySelectorAll('.ai-mindmap-actions button')
-    expect(buttons.length).toBe(4)
+    expect(buttons.length).toBe(5)
     act(() => {
-      ;(buttons[3] as HTMLButtonElement).click()
+      ;(buttons[4] as HTMLButtonElement).click()
     })
 
     expect(onInsert).toHaveBeenCalledTimes(1)
@@ -95,5 +95,30 @@ describe('MindMapCard exports', () => {
     expect(String(svg)).toContain('fill="#ffffff"')
     expect(size.width).toBeGreaterThan(0)
     expect(size.height).toBeGreaterThan(0)
+  })
+})
+
+describe('MindMapCard layout', () => {
+  it('the layout button switches the card between the two orientations', () => {
+    renderCard(() => {})
+    const widthOf = () =>
+      Number(
+        (document.querySelector('.ai-mindmap-canvas svg') as SVGSVGElement).getAttribute('width'),
+      )
+    const before = widthOf()
+
+    const button = document.querySelector('.ai-mindmap-layout-btn') as HTMLButtonElement
+    expect(button).toBeTruthy()
+    act(() => {
+      button.click()
+    })
+    const after = widthOf()
+    expect(after).not.toBe(before)
+
+    // and back again: the switch is a two-way toggle
+    act(() => {
+      button.click()
+    })
+    expect(widthOf()).toBe(before)
   })
 })

@@ -16,7 +16,7 @@ import { modelSaveAsName } from '../src/renderer/file-naming'
  * this one about the naming decision rather than about the layout engine.
  */
 
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 const SECRET = '13800138000'
 
 const SP = (runs: string, cx = 3000000) =>
@@ -44,7 +44,7 @@ const render = (body: string): RenderSlide =>
 
 /** A deck whose phone number the reader has hidden from the model. */
 function redactedDeck(): RenderSlide[] {
-  return [render(SP(run(RPR, '客户回访') + run(MARKED, SECRET)))]
+  return [render(SP(run(RPR, '\u5ba2\u6237\u56de\u8bbf') + run(MARKED, SECRET)))]
 }
 
 /** A deck with nothing withheld. */
@@ -56,7 +56,7 @@ function plainDeck(): RenderSlide[] {
 let sent: Array<{ content: string }> = []
 
 /** What the model answers with; '' is a model that returned nothing usable. */
-let answer = '客户回访记录'
+let answer = '\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55'
 
 /**
  * Install the naming bridge the preload exposes. Assigned onto the real window
@@ -70,7 +70,7 @@ function installBridge(api: {
 
 beforeEach(() => {
   sent = []
-  answer = '客户回访记录'
+  answer = '\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55'
   installBridge({
     suggestFileName: async (input) => {
       sent.push({ content: input.content })
@@ -98,7 +98,7 @@ describe('the name is derived from the projected text', () => {
   it('sends the marker the reader chose, so the model can still read the slide', async () => {
     await modelSaveAsName(redactedDeck())
     expect(sent[0]!.content).toContain(LABEL)
-    expect(sent[0]!.content).toContain('客户回访')
+    expect(sent[0]!.content).toContain('\u5ba2\u6237\u56de\u8bbf')
   })
 
   it('sends the whole deck for one with nothing withheld', async () => {
@@ -113,7 +113,7 @@ describe('the name is derived from the projected text', () => {
     installBridge({
       suggestFileName: async (input) => {
         received.push(input as unknown as Record<string, unknown>)
-        return { ok: true, name: '季度回顾' }
+        return { ok: true, name: '\u5b63\u5ea6\u56de\u987e' }
       },
     })
     await modelSaveAsName(plainDeck())
@@ -123,7 +123,7 @@ describe('the name is derived from the projected text', () => {
 
 describe('a name is offered only when the model has one', () => {
   it('offers the model name when one does arrive', async () => {
-    expect(await modelSaveAsName(plainDeck())).toBe('客户回访记录')
+    expect(await modelSaveAsName(plainDeck())).toBe('\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55')
   })
 
   it('offers nothing when the model declines', async () => {

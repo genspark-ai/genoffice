@@ -515,7 +515,7 @@ const LABELS: Record<string, Labels> = {
     about: 'GenOffice Hakkında',
     checkUpdates: 'Güncellemeleri Denetle…',
     version: 'Sürüm',
-    nameWithAi: 'AI ile adlandır',
+    nameWithAi: 'AI ile adlandır…',
     settings: 'Ayarlar…',
   },
   'zh-TW': {

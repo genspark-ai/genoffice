@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/grid-saved-layout-wins/probe.docx",
+  "tables": 1,
+  "hashes": ["8d935c2e1b4cc1f0"],
+  "staticTables": 1,
+  "staticHashes": ["64ed27bffaf05b85"]
+}

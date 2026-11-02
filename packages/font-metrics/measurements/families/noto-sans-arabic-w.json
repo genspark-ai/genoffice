@@ -1,0 +1,14 @@
+{
+  "family": "Noto Sans Arabic W",
+  "source": {
+    "kind": "legacy",
+    "date": "2026-08-13",
+    "probe": "bundled subset ~13% wider than Word, calibration source not recorded"
+  },
+  "faces": [
+    {
+      "src": "url('./NotoSansArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 87
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "id": "dxa-overwide-no-clamp",
+  "title": "An explicit dxa w:tblW wider than the column is drawn at its width whatever the jc: centred on the margin box, right-pinned to the right margin, clipped by the paper, never shrunk; a nested dxa table widens its parent column",
+  "section": "word-truths.md#L826",
+  "probe_date": "2026-10-29",
+  "source": "probe build.py, Letter 9360-twip column, Word for Mac direct PDF, pymupdf vertical rules (line centres)",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "availTwips": 12240,
+      "fitTwips": 9360,
+      "expect": [3000, 6000, 3000],
+      "note": "jc center dxa 12000: rules at 120/3120/9120/12120 = width kept, left edge at 1440 + (9360 - 12000) / 2"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 1,
+      "expect": {
+        "policy": "dxa",
+        "hold": true,
+        "origin": "marginBox",
+        "bleed": "both",
+        "widthTwips": 12000
+      }
+    },
+    {
+      "kind": "autofitCols",
+      "block": 3,
+      "availTwips": 12240,
+      "fitTwips": 9360,
+      "expect": [3250, 6500, 3250],
+      "note": "jc center dxa 13000: rules at -379/2870/9370/12619, both paper edges clip"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 5,
+      "availTwips": 10800,
+      "fitTwips": 9360,
+      "expect": [3000, 6000, 3000],
+      "note": "jc right dxa 12000: rules at -1205/1795/7795/10795, right edge on the right margin"
+    },
+    {
+      "kind": "tableGeom",
+      "block": 5,
+      "expect": { "hold": true, "origin": "rightMargin", "bleed": "left", "widthTwips": 12000 }
+    },
+    {
+      "kind": "autofitCols",
+      "block": 7,
+      "availTwips": 12240,
+      "fitTwips": 9360,
+      "expect": [1536, 6226, 2237],
+      "tol": 40,
+      "note": "jc center dxa 10000 (2000/5000/3000) holding a nested dxa 6000 table in column 2: Word 1536/6226/2237, total kept, nested drawn 3000/3000"
+    },
+    {
+      "kind": "nestedCols",
+      "block": 7,
+      "row": 0,
+      "cell": 1,
+      "expect": [3000, 3000]
+    },
+    {
+      "kind": "autofitCols",
+      "block": 9,
+      "availTwips": 10800,
+      "fitTwips": 9360,
+      "expect": [3000, 6000, 3000],
+      "note": "control, jc left dxa 12000: rules at 1445/4445/10445/13445 (2026-09-23 truth)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

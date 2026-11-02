@@ -461,8 +461,12 @@ describe('computeListMarkers', () => {
     expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
     expect(style).not.toContain('--li-marker-scale')
     // Symbol's ascent tops the 12pt Calibri text: the bullet box carries Word's
-    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom
-    expect(style).toContain('--li-marker-lh: calc(15.288pt * var(--doc-line-mult,1))')
+    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom;
+    // a line multiple adds (m - 1) x the text face's single line, not m x the lift
+    // (Word: Arial 12 + Symbol 12 at line=360 is 21.5pt, TNR 12 at line=480 28.5pt)
+    expect(style).toContain(
+      '--li-marker-lh: calc(15.288pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 12pt)',
+    )
     expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
     editor.destroy()
@@ -527,13 +531,17 @@ describe('computeListMarkers', () => {
     expect(items[0].getAttribute('data-marker')).toBe('▸')
     expect(tri).toContain("--li-marker-font: 'Segoe UI Symbol GO',")
     expect(tri).toContain('--li-marker-size: 11pt')
-    expect(tri).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    expect(tri).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
     expect(tri).toContain('--li-marker-va: bottom')
     expect(dot).not.toContain('--li-marker-lh')
     expect(dot).not.toContain('Segoe')
     expect(seg).toContain('--li-marker-font: "Segoe UI Symbol"')
     expect(seg).not.toContain('--li-marker-lh: 0')
-    expect(seg).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    expect(seg).toContain(
+      '--li-marker-lh: calc(14.825pt + (var(--doc-line-mult,1) - 1) * var(--doc-line-factor,1.2) * 11pt)',
+    )
     editor.destroy()
   })
 

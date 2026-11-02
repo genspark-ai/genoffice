@@ -22,9 +22,9 @@ import type { ActionCtx } from '../src/renderer/action-context'
  * asks, and that answer reaches the Save As dialog, not the file on disk.
  */
 
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 const SECRET = '13800138000'
-const MODEL_NAME = '客户回访记录'
+const MODEL_NAME = '\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55'
 
 const SP = (runs: string, cx = 3000000) =>
   '<p:sp><p:nvSpPr><p:cNvPr id="2" name="s"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
@@ -51,12 +51,12 @@ const render = (body: string): RenderSlide =>
 
 /** A deck whose phone number the reader has hidden from the model. */
 function redactedDeck(): RenderSlide[] {
-  return [render(SP(run(RPR, '客户回访') + run(MARKED, SECRET)))]
+  return [render(SP(run(RPR, '\u5ba2\u6237\u56de\u8bbf') + run(MARKED, SECRET)))]
 }
 
 /** A deck with nothing withheld. */
 function plainDeck(): RenderSlide[] {
-  return [render(SP(run(RPR, '客户回访')))]
+  return [render(SP(run(RPR, '\u5ba2\u6237\u56de\u8bbf')))]
 }
 
 function ctxWith(over: {

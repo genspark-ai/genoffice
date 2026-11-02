@@ -99,6 +99,7 @@ function assertExtraResourceSources() {
     '../../node_modules/electron/dist/LICENSES.chromium.html',
     '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
     '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
+    '../../node_modules/@rhwp/core/rhwp_bg.wasm',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -399,6 +400,22 @@ const FILE_ASSOCIATIONS = [
     mimeType: 'application/vnd.oasis.opendocument.text-template',
   },
   {
+    // import-only: opens as a converted .docx copy, GenOffice never writes HWPX
+    ext: 'hwpx',
+    name: 'Hancom HWPX Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/hwp+zip',
+  },
+  {
+    // import-only, like .hwpx: HWP binaries are read through rhwp into HWPX first
+    ext: 'hwp',
+    name: 'Hancom HWP Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/x-hwp',
+  },
+  {
     // import-only: opens as a converted .pptx copy, GenOffice never writes ODF
     ext: 'odp',
     name: 'OpenDocument Presentation',
@@ -519,6 +536,11 @@ const config = {
     {
       from: '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
       to: 'wasm/hb-subset.wasm',
+    },
+    // .hwp import (packages/hwp2docx/src/hwp.ts): rhwp reads HWP binaries into HWPX
+    {
+      from: '../../node_modules/@rhwp/core/rhwp_bg.wasm',
+      to: 'wasm/rhwp_bg.wasm',
     },
     // platform system-OCR helpers for scanned-page recovery (each exists only
     // on its own build platform; electron-builder skips absent sources and the
@@ -693,6 +715,16 @@ const config = {
       {
         from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
         to: 'native/xlsx-sidecar',
+      },
+      // Same blank templates the Windows installer registers for Explorer's
+      // "New" menu. The deb/rpm post-install step copies them into
+      // /usr/share/templates, which KDE Plasma's Dolphin "Create New" menu
+      // scans (genoffice#2384). AppImage gets the payload too but runs no
+      // install script, so it adds no templates.
+      {
+        from: 'build/shell-new',
+        to: 'shell-new',
+        filter: ['*.docx', '*.xlsx', '*.pptx'],
       },
     ],
   },

@@ -61,8 +61,9 @@ function referencesBroken(body: string, broken: readonly number[]): boolean {
 }
 
 /// An element body that can carry a link reference: a cell formula, a
-/// conditional-formatting rule formula, or a data-validation formula.
-const SHEET_FORMULA_BODY = /<(f|formula|formula1|formula2)\b([^>]*)>([\s\S]*?)<\/\1>/g
+/// conditional-formatting rule formula, a data-validation formula, or the
+/// `<xm:f>` of an x14 rule / validation in the sheet's extension list.
+const SHEET_FORMULA_BODY = /<(f|formula|formula1|formula2|xm:f)\b([^>]*)>([\s\S]*?)<\/\1>/g
 
 /// Renumbers the surviving link references of the sheet's formula elements.
 function renumberSheetFormulaBodies(xml: string, broken: readonly number[]): string {
@@ -85,7 +86,9 @@ function assertNoBrokenSheetRefs(xml: string, broken: readonly number[]): void {
         ? 'a conditional-formatting rule'
         : tag === 'f'
           ? 'a cell formula'
-          : 'a data-validation rule'
+          : tag === 'xm:f'
+            ? 'an extension-list (x14) rule'
+            : 'a data-validation rule'
     throw new Error(
       'the sheet has ' +
         where +

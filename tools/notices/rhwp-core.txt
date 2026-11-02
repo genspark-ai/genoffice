@@ -1,0 +1,51 @@
+Supplementary notice for @rhwp/core (rhwp, https://github.com/edwardkim/rhwp)
+
+rhwp_bg.wasm, which GenOffice ships to read binary .hwp documents, is rhwp
+compiled to WebAssembly together with the Rust crates it depends on. rhwp
+v0.8.7 lists those crates and their licenses in
+https://github.com/edwardkim/rhwp/blob/v0.8.7/THIRD_PARTY_LICENSES.md. All of
+them are under permissive terms (MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause,
+Zlib, Unlicense, 0BSD, ISC, Unicode-DFS-2016, CC0-1.0); encoding_rs is
+licensed (Apache-2.0 OR MIT) AND BSD-3-Clause.
+
+rhwp's HWP 5 decryption (EncryptVersion 4 key derivation and AES-CFB) is
+ported from Volexity hwp-extract
+(https://github.com/volexity/hwp-extract, commit
+e5f8b5e1590dee973630666e687e919fa70da2e2), under this license:
+
+Modified BSD License
+====================
+
+_Copyright © `2024`, `Volexity, Inc`_
+_All rights reserved._
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the name of the `Volexity, Inc` nor the
+   names of its contributors may be used to endorse or promote products
+   derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL `Volexity, Inc` BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Hancom notice, as rhwp states it:
+본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+(This product was developed with reference to Hancom's published
+specification of the Hangul document file format (.hwp).)
+
+"한글", "한컴", "HWP" and "HWPX" are registered trademarks of Hancom Inc.
+Neither rhwp nor GenOffice is affiliated with, sponsored or endorsed by Hancom.

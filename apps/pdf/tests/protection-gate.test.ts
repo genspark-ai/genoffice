@@ -5,7 +5,7 @@ import { mayChangeProtection } from '../src/renderer/protection-gate'
  * The Protect dialog is the only way to change or lift protection, and its
  * button is gated by this rule: the owner password is what authorizes a change.
  * A user-password session that may modify the content still must not be able to
- * strip the owner's password (reviewer probe on PR #2228).
+ * strip the owner's password.
  */
 describe('protection changes need the owner password', () => {
   it('lets a plain document gain protection', () => {

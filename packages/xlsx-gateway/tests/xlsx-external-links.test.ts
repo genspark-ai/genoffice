@@ -159,6 +159,29 @@ describe('transformSheetForLinkBreak', () => {
     expect(out).toContain('<formula1>[2]Sheet1!$A$1:$A$3</formula1>')
   })
 
+  it('renumbers x14 extension-list formulas too', () => {
+    const xml =
+      '<worksheet><extLst><ext uri="{78C0D931-6437-407d-A8EE-F0AAD7539E65}">' +
+      '<x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression" id="{1}">' +
+      '<xm:f>[2]Sheet1!$A$1&gt;5</xm:f></x14:cfRule><xm:sqref>A1</xm:sqref></x14:conditionalFormatting>' +
+      '</x14:conditionalFormattings></ext><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}">' +
+      '<x14:dataValidations count="1"><x14:dataValidation type="list"><x14:formula1>' +
+      '<xm:f>[3]Sheet1!$A$1:$A$3</xm:f></x14:formula1><xm:sqref>B1</xm:sqref></x14:dataValidation>' +
+      '</x14:dataValidations></ext></extLst></worksheet>'
+    const out = transformSheetForLinkBreak(xml, [1])
+    expect(out).toContain('<xm:f>[1]Sheet1!$A$1&gt;5</xm:f>')
+    expect(out).toContain('<xm:f>[2]Sheet1!$A$1:$A$3</xm:f>')
+    expect(out).not.toContain('[3]Sheet1')
+  })
+
+  it('refuses a break an x14 extension-list rule references', () => {
+    const xml =
+      '<worksheet><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting>' +
+      '<x14:cfRule type="expression"><xm:f>[1]Sheet1!$A$1&gt;5</xm:f></x14:cfRule>' +
+      '</x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>'
+    expect(() => transformSheetForLinkBreak(xml, [1])).toThrow(/extension-list \(x14\) rule/)
+  })
+
   it('refuses a break a conditional format references instead of leaving it dangling', () => {
     const xml =
       '<worksheet><conditionalFormatting sqref="A1"><cfRule type="expression" priority="1">' +

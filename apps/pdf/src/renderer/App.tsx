@@ -237,6 +237,7 @@ import {
 } from './view-config'
 import type { PageSize, FitMode } from './view-config'
 import { useVisibleSet, PdfPage, MarkupOverlay } from './PdfPage'
+import { probePageGeometry } from './page-probe'
 import { PdfThumb, ThumbPendingOverlay } from './PdfThumb'
 import type { ThumbMenu } from './PdfThumb'
 import { SignDropOverlay, signPlaceK, imagePlaceK, staticFormFillPlaceK } from './SignDropOverlay'
@@ -413,6 +414,10 @@ export default function App() {
     'loading',
   )
   const [sizes, setSizes] = useState<PageSize[]>([])
+  /** 1-based pages whose probe failed: they render as error tiles instead of canvases */
+  const [failedPages, setFailedPages] = useState<Set<number>>(new Set())
+  /** the message of a failed open, shown with the placeholder's loadError line */
+  const [openError, setOpenError] = useState<string | null>(null)
   // Blank pages added this session live past the document's pages as virtual original
   // indices (see BlankPageInput); allSizes is the page table every index lookup uses
   const [blankPages, setBlankPages] = useState<LocalBlankPage[]>([])
@@ -450,6 +455,7 @@ export default function App() {
   const [compareName, setCompareName] = useState<string | null>(null)
   const [compareBusy, setCompareBusy] = useState(false)
   const [compareSwapped, setCompareSwapped] = useState(false)
+  const compareSidesRef = useRef<{ mine: PageText[]; theirs: PageText[] } | null>(null)
   const [sidebarW, setSidebarW] = useState(loadSidebarW)
   /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
   const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
@@ -924,7 +930,7 @@ export default function App() {
   const [pendingSign, setPendingSign] = useState<SignatureData | null>(null)
   /** A /Sig widget selected from the form layer; confirmed signatures fit this rect directly. */
   const [signatureTarget, setSignatureTarget] = useState<FormWidget | null>(null)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<'png' | 'jpg' | null>(null)
   const [formCatalog, setFormCatalog] = useState<FormCatalog | null>(null)
   const [formHasXfa, setFormHasXfa] = useState(false)
   const [documentEncrypted, setDocumentEncrypted] = useState(false)
@@ -1352,15 +1358,29 @@ export default function App() {
           diskPasswordRef.current = null
         }
         setProtectionDirty(false)
-        for (let i = 1; i <= loaded.numPages; i++) {
-          const page = await loaded.getPage(i)
-          // Unrotated size; display size is derived by geom from the total rotation
-          const vp = page.getViewport({ scale: 1, rotation: 0 })
-          all.push({ width: vp.width, height: vp.height })
-          rots.push(page.rotate ?? 0)
-          origins.push([page.view[0]!, page.view[1]!])
-          userUnits.push(page.userUnit ?? 1)
+        const probe = await probePageGeometry(loaded)
+        for (const geo of probe.pages) {
+          all.push({ width: geo.width, height: geo.height })
+          rots.push(geo.rotate)
+          origins.push(geo.origin)
+          userUnits.push(geo.userUnit)
         }
+        // A page that cannot be probed no longer destroys the document: the
+        // tile renders as an error placeholder and the rest of the book opens
+        // (genoffice#2366 — one broken page deep in a large file used to blank
+        // the whole viewer with the reason only in the console)
+        if (probe.failures.length > 0) {
+          setFailedPages(new Set(probe.failures.map((f) => f.page)))
+          showNotice(
+            t('pdfPagesFailed', {
+              count: probe.failures.length,
+              detail: probe.failures
+                .slice(0, 3)
+                .map((f) => `#${f.page} ${f.message}`)
+                .join(', '),
+            }),
+          )
+        } else setFailedPages(new Set())
       } catch (err) {
         // getMetadata/page probing failed after the document resolved but before
         // setDoc adopted it: destroy the half-open document (pdfjs-dist 6.x
@@ -1674,6 +1694,7 @@ export default function App() {
     async (path: string) => {
       try {
         setFilePath(path)
+        setOpenError(null)
         // A newly opened file starts outside the autosave gate
         savedOnceRef.current = false
         await loadDoc(path, null)
@@ -1711,6 +1732,7 @@ export default function App() {
           return
         }
         console.error('[pdf] open failed:', err)
+        setOpenError(err instanceof Error ? err.message : String(err))
         setStatus('error')
       }
     },
@@ -4404,8 +4426,10 @@ export default function App() {
     if (!doc || compareBusy) return
     // Both sides must come from the same extraction engine — pdf.js and pdfium
     // break lines differently, and a cross-engine diff reports phantom changes
-    // on identical files. The open document therefore needs a file on disk.
-    if (!filePath) {
+    // on identical files. The open document therefore needs its current state
+    // on disk: no file yet, or pending edits, both mean "save first". Redaction
+    // marks stay out — a save does not apply them, so they could never unblock.
+    if (!filePath || ordinaryDirty) {
       showNotice(t('compareNeedsSaved'))
       return
     }
@@ -4416,22 +4440,25 @@ export default function App() {
         if (!('canceled' in picked)) showNotice(picked.reason)
         return
       }
-      const mine = await window.pdfApi.compareReadOpen(filePath)
+      const mine = await window.pdfApi.compareReadOpen(filePath, passwordRef.current)
       if (!mine.ok) {
         showNotice(mine.reason)
         return
       }
       const mineSide: PageText[] = mine.pages.map((text, pageIndex) => ({ pageIndex, text }))
       const theirs: PageText[] = picked.pages.map((text, pageIndex) => ({ pageIndex, text }))
-      const [oldSide, newSide] = compareSwapped ? [theirs, mineSide] : [mineSide, theirs]
+      compareSidesRef.current = { mine: mineSide, theirs }
       setCompareName(picked.name)
-      setCompareResult(compareDocuments(oldSide, newSide))
+      setCompareResult(compareSides(mineSide, theirs, compareSwapped))
     } catch (err) {
       showNotice(err instanceof Error ? err.message : String(err))
     } finally {
       setCompareBusy(false)
     }
   }
+
+  const compareSides = (mine: PageText[], theirs: PageText[], swapped: boolean): CompareResult =>
+    swapped ? compareDocuments(theirs, mine) : compareDocuments(mine, theirs)
 
   const attachmentRows = (): AttachmentRow[] => {
     const rows: AttachmentRow[] = []
@@ -5278,7 +5305,14 @@ export default function App() {
     const inserts = buildBatesInserts(
       visList.map((origIdx) => {
         const geom = pageGeom(origIdx)
-        return { width: geom.pw, height: geom.ph, rotate: geom.rot, x0: geom.x0, y0: geom.y0 }
+        return {
+          width: geom.pw,
+          height: geom.ph,
+          rotate: geom.rot,
+          x0: geom.x0,
+          y0: geom.y0,
+          userUnit: geom.userUnit,
+        }
       }),
       config,
       (text, size) => measureTextWidth(text, fontOf(size)),
@@ -6159,7 +6193,7 @@ export default function App() {
   const exportImages = (allPages: boolean, format: 'png' | 'jpg' = 'png') =>
     flushThen(async () => {
       if (!doc || exporting) return
-      setExporting(true)
+      setExporting(format)
       try {
         const targets = allPages ? visList : [curOrigIdx].filter((i) => i >= 0)
         const images: string[] = []
@@ -6206,7 +6240,7 @@ export default function App() {
       } catch (err) {
         opFailed(err instanceof Error ? err.message : String(err))
       } finally {
-        setExporting(false)
+        setExporting(null)
       }
     })
 
@@ -7615,7 +7649,13 @@ export default function App() {
     return (
       <div className="app">
         <div className="pdf-placeholder">
-          {status === 'loading' ? t('loading') : status === 'error' ? t('loadError') : t('noFile')}
+          {status === 'loading'
+            ? t('loading')
+            : status === 'error'
+              ? openError
+                ? `${t('loadError')}: ${openError}`
+                : t('loadError')
+              : t('noFile')}
         </div>
       </div>
     )
@@ -8248,24 +8288,24 @@ export default function App() {
                   <button
                     className="rb-big"
                     data-tip={t('exportImagesAll')}
-                    disabled={exporting}
+                    disabled={exporting !== null}
                     onClick={() => void exportImages(true)}
                   >
                     <span className="rb-big-icon">
                       <IconExportImg />
                     </span>
-                    <span>{exporting ? t('exporting') : t('exportImages')}</span>
+                    <span>{exporting === 'png' ? t('exporting') : t('exportImages')}</span>
                   </button>
                   <button
                     className="rb-big"
                     data-tip={t('exportImagesAllJpg')}
-                    disabled={exporting}
+                    disabled={exporting !== null}
                     onClick={() => void exportImages(true, 'jpg')}
                   >
                     <span className="rb-big-icon">
                       <IconExportImg />
                     </span>
-                    <span>{exporting ? t('exporting') : t('exportImagesJpg')}</span>
+                    <span>{exporting === 'jpg' ? t('exporting') : t('exportImagesJpg')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8920,7 +8960,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    disabled={readOnly || sizes.length === 0}
+                    disabled={readOnly || pageCount === 0}
                     data-tip={t('batesHint')}
                     onClick={() => setBatesDlg(true)}
                   >
@@ -9206,8 +9246,10 @@ export default function App() {
                   busy={compareBusy}
                   onPick={() => void runCompare()}
                   onSwap={() => {
-                    setCompareSwapped((v) => !v)
-                    setCompareResult(null)
+                    const swapped = !compareSwapped
+                    setCompareSwapped(swapped)
+                    const sides = compareSidesRef.current
+                    setCompareResult(sides ? compareSides(sides.mine, sides.theirs, swapped) : null)
                   }}
                   onGoToPage={(pageNo) => scrollToPage(pageNo)}
                 />
@@ -9520,16 +9562,22 @@ export default function App() {
                             }
                           }}
                         >
-                          {!isBlankPage(origIdx) && (
-                            <PdfPage
-                              doc={doc}
-                              pageNo={origIdx + 1}
-                              scale={scale}
-                              rotationDelta={rotDelta(origIdx)}
-                              visible={rowVisible}
-                              onRenderState={pageRenderState}
-                            />
-                          )}
+                          {!isBlankPage(origIdx) &&
+                            (failedPages.has(origIdx) ? (
+                              <div className="pdf-page-broken">
+                                <span>{t('loadError')}</span>
+                                <span>#{origIdx + 1}</span>
+                              </div>
+                            ) : (
+                              <PdfPage
+                                doc={doc}
+                                pageNo={origIdx + 1}
+                                scale={scale}
+                                rotationDelta={rotDelta(origIdx)}
+                                visible={rowVisible}
+                                onRenderState={pageRenderState}
+                              />
+                            ))}
                           {livePreview.has(origIdx) &&
                             (() => {
                               const lp = livePreview.get(origIdx)!
@@ -11256,7 +11304,7 @@ export default function App() {
             {batesDlg && (
               <BatesDialog
                 t={t}
-                pageCount={sizes.length}
+                pageCount={pageCount}
                 onApply={applyBates}
                 onClose={() => setBatesDlg(false)}
               />

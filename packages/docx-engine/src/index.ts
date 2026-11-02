@@ -59,18 +59,26 @@ export {
   APP_PROPERTY_KEYS,
   CORE_PROPERTIES_PATH,
   CORE_PROPERTY_KEYS,
+  NEW_DOCUMENT_APPLICATION,
+  NEW_DOCUMENT_APP_VERSION,
+  NEW_DOCUMENT_TEMPLATE,
   applyPropertyChanges,
   emptyDocumentProperties,
+  newDocumentAppPropertiesXml,
+  newDocumentCorePropertiesXml,
   parseAppPropertiesXml,
   parseCorePropertiesXml,
   parseCustomPropertiesXml,
+  parseCustomPropertyTypesXml,
   parsePropertyChanges,
   patchAppPropertiesXml,
   patchCorePropertiesXml,
   patchCustomPropertiesXml,
   readDocumentProperties,
+  w3cdtfStamp,
   type DocumentProperties,
   type PropertyChanges,
+  type PropertyValue,
 } from './doc-properties'
 export {
   saveDocx,
@@ -104,6 +112,8 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  paraMarkRevisionXml,
+  setParaMarkRevision,
   stripParaMarkRevision,
   resolveParaMarkRPrChange,
   paraMarkColor,
@@ -248,8 +258,14 @@ export {
 
 export { previewFontSettings } from './font-settings'
 export {
+  applyRevisionResolutions,
   applyTrackedChangesXml,
+  cleanMoveRangeMarkers,
   countTrackedChangesXml,
+  readPropChangeXml,
+  resolvePropChangeXml,
+  type PropChangeRecord,
+  type RevisionResolution,
   type RevisionXmlFilter,
   type RevisionXmlMode,
   type RevisionXmlResult,
@@ -279,3 +295,4 @@ export {
   type CompareResult,
   type CompareSummary,
 } from './compare'
+export { keepsHangulKanaSingle } from './parse-block-passes'

@@ -1,7 +1,7 @@
 /**
  * The fragment suggester's main-side half: what a note offers behind `[[Note#`
  * is read from the file — headings, fenced code, the frontmatter block and the
- * lone-marker layout the resolver (#2257) and the id writer (#2268) already
+ * lone-marker layout the resolver and the id writer already
  * agree on.
  */
 import { describe, expect, it } from 'vitest'
@@ -59,6 +59,14 @@ describe('parseWikiHeads', () => {
   it('closes a fence only on the same character, so ~~~ does not close ```', () => {
     const raw = '```\n~~~\n# inside\n```\n\n# Outside'
     expect(parseWikiHeads(raw)).toEqual([{ kind: 'heading', text: 'Outside', level: 1 }])
+  })
+
+  it('a shorter fence or one with an info string does not close a longer fence', () => {
+    const raw = '````md\n```js\n# inside\n```\n# still inside\n````\n\n# Outside'
+    expect(parseWikiHeads(raw)).toEqual([{ kind: 'heading', text: 'Outside', level: 1 }])
+    expect(parseWikiHeads('```\n```js\n# inside\n```\n# Out')).toEqual([
+      { kind: 'heading', text: 'Out', level: 1 },
+    ])
   })
 
   it('a closing-bracket hash run is trimmed off the heading text', () => {

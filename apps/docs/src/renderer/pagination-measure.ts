@@ -9,7 +9,47 @@ import type {
   PageSlice,
 } from './pagination-types'
 import { effectiveParaFlags } from './editor/para-flags'
+import type { BlockPlan, PlanOf } from './pagination-plan'
+import { floatKeepWholeOf, wrapperObstacleFacts } from './editor/obstacle-plan'
+
+/** the break facts of one block, from the plan or scraped from its DOM */
+interface BreakFacts {
+  breakOnly: boolean
+  brLines: number
+  hasText: boolean
+  leadingCount: number
+  trailingCount: number
+  leadingCut: boolean
+  leadingColBreak: boolean
+  innerBreaks: number[]
+  hasCellBreak: boolean
+}
+
+/** the engine flags a scrape would have produced (BlockBox.shadowScrape) */
+function scrapeFlags(
+  f: BreakFacts,
+  pageBreakBefore: boolean,
+  hasColBreak: boolean,
+  zeroHeight: boolean,
+) {
+  const leadingBreak = f.hasText && f.leadingCount > 0 && !f.leadingCut
+  return {
+    breakBefore: pageBreakBefore || leadingBreak || undefined,
+    breakBeforeBr: leadingBreak || undefined,
+    ...(f.hasText && f.leadingCount > 1 ? { extraBreaksBefore: f.leadingCount - 1 } : {}),
+    breakAfter: f.trailingCount > 0 || undefined,
+    ...(f.trailingCount > 1 ? { extraBreaksAfter: f.trailingCount - 1 } : {}),
+    innerBreakCount: f.innerBreaks.length,
+    ...(f.leadingCut ? { leadingBreakCut: true as const } : {}),
+    ...(f.hasCellBreak ? { hasCellBreak: true as const } : {}),
+    colBreakBefore: f.leadingColBreak || undefined,
+    colBreakAfter: (hasColBreak && !f.leadingColBreak) || undefined,
+    breakForce: (f.brLines + f.leadingCount + f.trailingCount > 0 && zeroHeight) || undefined,
+    breakOnly: f.breakOnly,
+  }
+}
 import { additiveParagraphSpacing, autoLineMultOf } from './line-metrics'
+import { appliedFloatShift } from './editor/layout-health'
 
 /**
  * Collect the editor's top-level block boxes (relative to the content-area top,
@@ -79,10 +119,36 @@ function bucketByBlock(pm: HTMLElement, selector: string): Map<HTMLElement, HTML
   return byOwner
 }
 
+/**
+ * `planOf` (pagination-plan.ts) supplies the model facts of a block — break
+ * classification, row keep policy; with it only the geometry is read here
+ * (break-line Ys, boxes). Blocks without a plan (decoration widgets, callers
+ * without an editor) fall back to the DOM scrape of the same facts.
+ */
+const isJoinHead = (el: HTMLElement) => getComputedStyle(el).display === 'inline'
+
+function planKeepWhole(
+  el: HTMLElement,
+  plan: BlockPlan,
+  widthPx: number,
+  zoomFactor: number,
+): { bottom: number; maxH: number } | undefined {
+  if (plan.kind !== 'protected' || !el.classList.contains('doc-protected-floating'))
+    return undefined
+  const facts = wrapperObstacleFacts(el, plan, widthPx, zoomFactor)
+  return facts ? floatKeepWholeOf(facts) : undefined
+}
+
 export function measureBlocks(
   pm: HTMLElement,
   origin: number,
   zoomFactor: number,
+  planOf?: PlanOf,
+  /** also run the scrape for planned blocks and keep it on `shadowScrape` (I9) */
+  shadow = false,
+  /** float-carry spacer height before a block, by its position (the engine's
+   *  decoration spec); plan-less blocks read the spacer element */
+  carryOf?: (pos: number) => number | undefined,
 ): MeasuredContent {
   const blocks: BlockBox[] = []
   const floats: FloatBox[] = []
@@ -113,6 +179,23 @@ export function measureBlocks(
       gapAccum += rect.height
       continue
     }
+    // a paragraph joined onto the previous one (pending paragraph-mark deletion
+    // in a final-text view) shares its line: it extends that block, not a new
+    // one. A tail with break or float facts of its own stays a block.
+    if (el.classList.contains('doc-para-join-tail') && rect.height > 0) {
+      const prev = blocks[blocks.length - 1]
+      const liveBreak = (b: Element) => showDeleted || !b.closest('.doc-del')
+      const plain =
+        !breaksByBlock.get(el)?.some(liveBreak) &&
+        !colBreaksByBlock.get(el)?.some(liveBreak) &&
+        [gapInlinesByBlock, relImgsByBlock, relXImgsByBlock].every((m) => !m.get(el)?.length)
+      if (plain && prev?.el && isJoinHead(prev.el)) {
+        const bottom = (rect.bottom - origin - gapAccum) / zoomFactor
+        prev.height = Math.max(prev.height, bottom - prev.top)
+        prev.domHeight = prev.height
+        continue
+      }
+    }
     if (el.classList.contains('page-float-carry')) {
       carryApplied += rect.height / zoomFactor
       continue
@@ -120,7 +203,10 @@ export function measureBlocks(
     // floating-anchor boxes: absolute children of a zero-height wrapper; record
     // shift-neutral virtual positions so pages can be extended to contain them
     let wrapFloatBottom: number | undefined
-    const pageBreakBefore = el.classList.contains('page-break-before')
+    const plan = planOf?.(el)
+    const pageBreakBefore = plan
+      ? plan.pageBreakBeforeDirect
+      : el.classList.contains('page-break-before')
     let nudge = 0
     if (rect.height <= 0 && pageBreakBefore) {
       const raw = (rect.top - origin - gapAccum) / zoomFactor
@@ -137,7 +223,7 @@ export function measureBlocks(
       )) {
         const b = (box as HTMLElement).getBoundingClientRect()
         if (b.height <= 0) continue
-        const applied = parseFloat((box as HTMLElement).dataset.pageFloatDy ?? '0') || 0
+        const applied = appliedFloatShift(box as HTMLElement)
         const top = (b.top - origin - (pinned ? 0 : gapAccum)) / zoomFactor - applied + nudge
         const height = b.height / zoomFactor
         if (!pinned) wrapFloatBottom = Math.max(wrapFloatBottom ?? 0, top + height)
@@ -158,7 +244,7 @@ export function measureBlocks(
     for (const img of relImgsByBlock.get(el) ?? []) {
       const b = img.getBoundingClientRect()
       if (b.height <= 0) continue
-      const applied = parseFloat(img.dataset.pageFloatDy ?? '0') || 0
+      const applied = appliedFloatShift(img)
       floats.push({
         el: img,
         top: (b.top - origin - gapAccum) / zoomFactor - applied,
@@ -209,9 +295,29 @@ export function measureBlocks(
     // in-block gaps from mid-paragraph page breaks: subtract from block height and add to the gap accumulator for later blocks
     let innerGap = 0
     for (const g of gapInlinesByBlock.get(el) ?? []) innerGap += g.getBoundingClientRect().height
-    const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor + nudge
+    let top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor + nudge
+    // a page-opening section clears the previous section's page-bottom float:
+    // it starts where the shifted float ends, without the float's text distance
+    const prev = blocks[blocks.length - 1]
+    if (el.classList.contains('doc-sect-page-start') && prev?.pageRelVyPx !== undefined) {
+      const prevDy = prev.floatShiftPx ?? 0
+      if (prevDy > 0) top = Math.min(top, prev.top + prevDy + prev.height)
+    }
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
+    // the plan's break facts apply when it saw the same break characters the
+    // DOM holds (the shadow comparison keeps the two in step)
+    const planned = plan && plan.breakCount === breakEls.length ? plan : undefined
+    const gapRects = (gapInlinesByBlock.get(el) ?? []).map((g) => g.getBoundingClientRect())
+    const gapAbove = (y: number) => gapRects.reduce((s, g) => (g.top <= y ? s + g.height : s), 0)
+    // Y of the line starting after a break: its ink top, element-relative and
+    // net of inline gaps a previous pass already inserted there
+    const lineAfter = (r: Range, b: Element): number | undefined => {
+      r.setStartAfter(b)
+      r.setEnd(el, el.childNodes.length)
+      const first = Array.from(r.getClientRects?.() ?? []).find((c) => c.height > 0 && c.width > 0)
+      return first ? (first.top - rect.top - gapAbove(first.top)) / zoomFactor : undefined
+    }
     // break-only paragraph: marked for dedicated placement — Word pushes it into a
     // deliberate blank page when its line doesn't fit at the page bottom. Word
     // renders a single break line; the DOM lays out one line box per break (the
@@ -222,69 +328,93 @@ export function measureBlocks(
     // while an exact line demands its full exact height), so auto multiples above
     // 1 are divided out.
     // ProseMirror's separator img (a layout stub before the trailing break) is not content
-    const breakOnly =
-      hasBreak &&
-      !(el.textContent ?? '').trim() &&
-      !(imgsByBlock.get(el) ?? []).some((i) => !i.classList.contains('ProseMirror-separator'))
-    const brLines = breakOnly ? el.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length : 0
+    // the DOM scrape of the plan's break facts (text is measured outside the
+    // break nodes: a field break carries its own label); the fallback for
+    // plan-less blocks, and the shadow twin the I9 comparison reads
+    const scrape = (): BreakFacts => {
+      const breakOnly =
+        hasBreak &&
+        !(el.textContent ?? '').trim() &&
+        !(imgsByBlock.get(el) ?? []).some((i) => !i.classList.contains('ProseMirror-separator'))
+      const f: BreakFacts = {
+        breakOnly,
+        brLines: breakOnly ? el.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length : 0,
+        hasText: false,
+        leadingCount: 0,
+        trailingCount: 0,
+        leadingCut: false,
+        leadingColBreak: false,
+        innerBreaks: [],
+        hasCellBreak: !!el.querySelector('tr p.page-break-before'),
+      }
+      if (colBreakEls.length === 1) {
+        const r = document.createRange()
+        r.setStart(el, 0)
+        r.setEndBefore(colBreakEls[0])
+        f.leadingColBreak = !r.toString().trim()
+      }
+      if (hasBreak) {
+        const r = document.createRange()
+        const brs = breakEls.map((b) => {
+          r.setStart(el, 0)
+          r.setEndBefore(b)
+          const before = r.toString().trim() !== ''
+          r.setStartAfter(b)
+          r.setEnd(el, el.childNodes.length)
+          const after = r.toString().trim() !== ''
+          return { b, before, after }
+        })
+        f.hasText = brs.some((x) => x.before || x.after)
+        f.leadingCount = brs.filter((x) => !x.before).length
+        f.trailingCount = brs.filter((x) => !x.after).length
+        brs.forEach(({ b, before, after }, i) => {
+          if (!after || !b.classList.contains('doc-page-br')) return
+          if (!before && i !== f.leadingCount - 1) return
+          const y = lineAfter(r, b)
+          if (y === undefined) return
+          f.innerBreaks.push(y)
+          if (!before) f.leadingCut = true
+        })
+      }
+      return f
+    }
+    const fromPlan = (p: BlockPlan): BreakFacts => {
+      const innerBreaks: number[] = []
+      if (p.innerBreakIdx.length > 0) {
+        const r = document.createRange()
+        for (const i of p.innerBreakIdx) {
+          const y = lineAfter(r, breakEls[i])
+          if (y !== undefined) innerBreaks.push(y)
+        }
+      }
+      return {
+        breakOnly: p.breakOnly,
+        brLines: p.breakOnly ? p.hardBreaks : 0,
+        hasText: p.hasText,
+        leadingCount: p.leadingBreaks,
+        trailingCount: p.trailingBreaks,
+        leadingCut: p.leadingBreakCut,
+        leadingColBreak: p.colBreakBefore,
+        innerBreaks,
+        hasCellBreak: p.hasCellBreak,
+      }
+    }
+    const scraped = !planned || shadow ? scrape() : undefined
+    const {
+      breakOnly,
+      brLines,
+      hasText,
+      leadingCount,
+      trailingCount,
+      leadingCut,
+      leadingColBreak,
+      innerBreaks,
+      hasCellBreak,
+    } = planned ? fromPlan(planned) : scraped!
     let breakOnlyLineH: number | undefined
     if (breakOnly) {
       const box = brLines > 1 ? height / brLines : height
       breakOnlyLineH = box / Math.max(1, autoLineMultOf(el))
-    }
-    // breaks with no text before them lead the block: the break line stays on
-    // the current page and the block's text starts the next one (Word), so the
-    // last leading break cuts like a mid-paragraph break; a field break has no
-    // line of its own and maps to breakBefore. Breaks with no text after it
-    // trail (breakAfter pushes the next block). Every break character turns the
-    // page, so a run of N adjacent breaks leaves N-1 blank sheets. Text is
-    // measured outside the break nodes (a field break carries its own label).
-    let hasText = false
-    let leadingCount = 0
-    let trailingCount = 0
-    let leadingCut = false
-    // a column break with nothing before it moves the whole paragraph (its own
-    // line included) to the next column top; a break-only paragraph likewise
-    let leadingColBreak = false
-    if (colBreakEls.length === 1) {
-      const r = document.createRange()
-      r.setStart(el, 0)
-      r.setEndBefore(colBreakEls[0])
-      leadingColBreak = !r.toString().trim()
-    }
-    // breaks with text on both sides split the paragraph across the page turn
-    // (Word keeps the text before on this page); only a trailing break pushes
-    // the next block. Y = the post-break line's ink top, element-relative and
-    // net of inline gaps a previous pass already inserted there
-    const innerBreaks: number[] = []
-    if (hasBreak) {
-      const gapRects = (gapInlinesByBlock.get(el) ?? []).map((g) => g.getBoundingClientRect())
-      const gapAbove = (y: number) => gapRects.reduce((s, g) => (g.top <= y ? s + g.height : s), 0)
-      const r = document.createRange()
-      const brs = breakEls.map((b) => {
-        r.setStart(el, 0)
-        r.setEndBefore(b)
-        const before = r.toString().trim() !== ''
-        r.setStartAfter(b)
-        r.setEnd(el, el.childNodes.length)
-        const after = r.toString().trim() !== ''
-        return { b, before, after }
-      })
-      hasText = brs.some((x) => x.before || x.after)
-      leadingCount = brs.filter((x) => !x.before).length
-      trailingCount = brs.filter((x) => !x.after).length
-      brs.forEach(({ b, before, after }, i) => {
-        if (!after || !b.classList.contains('doc-page-br')) return
-        if (!before && i !== leadingCount - 1) return
-        r.setStartAfter(b)
-        r.setEnd(el, el.childNodes.length)
-        const first = Array.from(r.getClientRects?.() ?? []).find(
-          (c) => c.height > 0 && c.width > 0,
-        )
-        if (!first) return
-        innerBreaks.push((first.top - rect.top - gapAbove(first.top)) / zoomFactor)
-        if (!before) leadingCut = true
-      })
     }
     const leadingBreak = hasText && leadingCount > 0 && !leadingCut
     const floatTable =
@@ -300,10 +430,17 @@ export function measureBlocks(
     // page/margin-anchored floated table: strip the applied --tblp-dy shift so
     // the engine sees the natural flow position (float margins move only the
     // float's own box, so no gapAccum contribution)
-    const relVy = floated ? parseFloat(el.dataset.tblpVy ?? '') : NaN
+    // an in-flow wrapTopAndBottom band carries the same page-relative Y
+    const pageRelBand = !floated && el.classList.contains('img-wrap-topBottom')
+    const relVy = floated || pageRelBand ? parseFloat(el.dataset.tblpVy ?? '') : NaN
     const relVAnchor = el.dataset.tblpVanchor
     const relVSpec = el.dataset.tblpVspec
-    const relVApplied = Number.isFinite(relVy) ? parseFloat(el.dataset.tblpDy ?? '') || 0 : 0
+    const scrapedShift = Number.isFinite(relVy) ? parseFloat(el.dataset.tblpDy ?? '') || 0 : 0
+    // plan-driven block: the float facts come from the model and the applied
+    // shift from the engine's own plugin state; the dataset is CSS only
+    const planGeom = plan ? (plan.tableGeom ?? plan.anchorGeom) : undefined
+    const planShift = plan?.floatShift && !plan.floatShift.flow ? plan.floatShift.dyPx : 0
+    const relVApplied = plan ? (planGeom?.pageRelV ? planShift : 0) : scrapedShift
     const blockImgs = imgsByBlock.get(el) ?? []
     const emptyPara = !(el.textContent ?? '').trim() && blockImgs.length === 0
     const pictures = blockImgs.filter((i) => !i.classList.contains('ProseMirror-separator'))
@@ -314,7 +451,6 @@ export function measureBlocks(
       pictures.every(
         (i) => i.closest('.doc-inline-img-anchor') || /(?:^|\s)doc-inline-img--/.test(i.className),
       )
-    const hasCellBreak = !!el.querySelector('tr p.page-break-before')
     // non-reflowable blocks keep their rendered width in any column (tables,
     // anchored/inline textbox shapes; protected text paragraphs still reflow)
     const fixedWidth =
@@ -345,42 +481,91 @@ export function measureBlocks(
         }
       }
     }
+    const scrapedBandKeep =
+      el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating')
     const bandKeep =
-      paraFloatBottom !== undefined ||
-      (el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating'))
+      paraFloatBottom !== undefined || (plan ? !!planGeom?.bandKeep : scrapedBandKeep)
     const keepFloatBottom = wrapFloatBottom ?? paraFloatBottom
+    // side-wrapped drawings as page obstacles: from the plan's obstacle rects
+    // (the data-obs-* twins stay the fallback of a plan-less block)
+    const keepWhole = bandKeep
+      ? undefined
+      : plan
+        ? planKeepWhole(el, plan, rect.width / zoomFactor, zoomFactor)
+        : el.dataset.obsBottom !== undefined && el.dataset.obsMaxh !== undefined
+          ? {
+              bottom: parseFloat(el.dataset.obsBottom) || 0,
+              maxH: parseFloat(el.dataset.obsMaxh) || 0,
+            }
+          : undefined
     const liftPx = parseFloat(el.dataset.tblpLift ?? '')
+    // the plan's space before: padded under additive spacing, otherwise a
+    // margin the folds below consume (page lead / forced section start)
+    const planSpaceBeforePx =
+      plan && plan.kind !== 'table' && !plan.spaceBeforeInner && plan.spaceBeforePt !== undefined
+        ? (plan.spaceBeforePt * 96) / 72
+        : undefined
+    const additive = additiveParagraphSpacing()
     const padBeforePx =
-      additiveParagraphSpacing() && !el.matches('table')
-        ? parseFloat(getComputedStyle(el).paddingTop) || 0
+      additive && !el.matches('table')
+        ? (planSpaceBeforePx ?? (parseFloat(getComputedStyle(el).paddingTop) || 0))
         : 0
+    const marginBeforePx =
+      planSpaceBeforePx === undefined ? undefined : additive ? 0 : planSpaceBeforePx
+    // the data-tblp-* / band facts: from the plan when the block has one, the
+    // scrape otherwise (and as the shadow twin of a planned block)
+    const scrapedFloat = {
+      ...(floatFlowed ? { floatFlowed: true as const } : {}),
+      ...(liftPx > 0 ? { liftPx } : {}),
+      ...(el.dataset.tblpPush === '1' ? { floatPushWhole: true as const } : {}),
+      ...(paraFloatBottom !== undefined || scrapedBandKeep ? { bandKeep: true } : {}),
+      ...(Number.isFinite(relVy) && (relVAnchor === 'page' || relVAnchor === 'margin')
+        ? {
+            pageRelVyPx: relVy,
+            pageRelVAnchor: relVAnchor as 'page' | 'margin',
+            ...(relVSpec === 'top' || relVSpec === 'center' || relVSpec === 'bottom'
+              ? { pageRelVSpec: relVSpec as 'top' | 'center' | 'bottom' }
+              : {}),
+            ...(pageRelBand ? { pageRelVApplied: scrapedShift } : {}),
+            floatShiftPx: scrapedShift,
+          }
+        : {}),
+    }
+    const plannedFloat = plan
+      ? {
+          ...(floatFlowed ? { floatFlowed: true as const } : {}),
+          ...(planGeom?.liftPx ? { liftPx: planGeom.liftPx } : {}),
+          ...(planGeom?.pushWhole ? { floatPushWhole: true as const } : {}),
+          ...(bandKeep ? { bandKeep: true } : {}),
+          ...(planGeom?.pageRelV
+            ? {
+                pageRelVyPx: planGeom.pageRelV.yPx,
+                pageRelVAnchor: planGeom.pageRelV.band,
+                ...(planGeom.pageRelV.spec ? { pageRelVSpec: planGeom.pageRelV.spec } : {}),
+                ...(!planGeom.floated ? { pageRelVApplied: planShift } : {}),
+                floatShiftPx: planShift,
+              }
+            : {}),
+        }
+      : scrapedFloat
+    const carryAppliedPx = plan && carryOf ? (carryOf(plan.pos) ?? 0) : carryApplied
     blocks.push({
       top: top - relVApplied,
       height,
       domHeight: height,
       ...(padBeforePx > 0.5 ? { padBeforePx } : {}),
+      ...(marginBeforePx !== undefined ? { marginBeforePx } : {}),
+      ...(plan ? { dropAtPageTop: plan.dropAtPageTop } : {}),
       ...(floated ? { floated: true } : {}),
       ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
-      ...(floatFlowed ? { floatFlowed: true } : {}),
-      ...(liftPx > 0 ? { liftPx } : {}),
-      ...(el.dataset.tblpPush === '1' ? { floatPushWhole: true } : {}),
-      ...(bandKeep ? { bandKeep: true } : {}),
+      ...plannedFloat,
       ...(bandKeep && keepFloatBottom !== undefined ? { floatBottom: keepFloatBottom } : {}),
-      ...(!bandKeep && el.dataset.obsBottom !== undefined && el.dataset.obsMaxh !== undefined
+      ...(keepWhole
         ? {
             floatKeepWhole: true,
-            floatBottom: top - relVApplied + (parseFloat(el.dataset.obsBottom) || 0),
-            floatMaxH: parseFloat(el.dataset.obsMaxh) || 0,
-          }
-        : {}),
-      ...(Number.isFinite(relVy) && (relVAnchor === 'page' || relVAnchor === 'margin')
-        ? {
-            pageRelVyPx: relVy,
-            pageRelVAnchor: relVAnchor,
-            ...(relVSpec === 'top' || relVSpec === 'center' || relVSpec === 'bottom'
-              ? { pageRelVSpec: relVSpec }
-              : {}),
+            floatBottom: top - relVApplied + keepWhole.bottom,
+            floatMaxH: keepWhole.maxH,
           }
         : {}),
       ...(emptyPara ? { emptyPara: true } : {}),
@@ -394,14 +579,24 @@ export function measureBlocks(
       breakAfter: trailingCount > 0 || undefined,
       ...(trailingCount > 1 ? { extraBreaksAfter: trailingCount - 1 } : {}),
       ...(innerBreaks.length > 0 ? { innerBreaks } : {}),
+      ...(leadingCut ? { leadingBreakCut: true } : {}),
       ...(hasCellBreak ? { hasCellBreak: true } : {}),
+      ...(planned?.rowPlan ? { rowPlan: planned.rowPlan } : {}),
+      ...(plan && scraped
+        ? {
+            shadowScrape: {
+              ...scrapeFlags(scraped, pageBreakBefore, hasColBreak, rect.height <= 0),
+              ...scrapedFloat,
+            },
+          }
+        : {}),
       colBreakBefore: leadingColBreak || undefined,
       colBreakAfter: (hasColBreak && !leadingColBreak) || undefined,
       breakForce: (hasBreak && rect.height <= 0) || undefined,
       el,
       ...(breakOnlyLineH !== undefined ? { breakOnlyLineH } : {}),
       ...(idxAttr ? { docxIndex: parseInt(idxAttr, 10) } : {}),
-      ...(carryApplied > 0 ? { carryAppliedPx: carryApplied } : {}),
+      ...(carryAppliedPx > 0 ? { carryAppliedPx } : {}),
     })
     carryApplied = 0
     // a CSS float's in-table gaps grow only the float's own box: the blocks
@@ -414,6 +609,10 @@ export function measureBlocks(
   // it to the height, so the engine's capacity bookkeeping matches Y coordinates and
   // the "trailing space doesn't consume page capacity" rule (Word breaks by text only) applies.
   for (let i = 0; i + 1 < blocks.length; i++) {
+    // a page/margin-anchored float takes no flow space: the distance to the
+    // next block is its own applied shift (or that block clearing it), and
+    // folding it in would cancel the shift on the next pass
+    if (blocks[i].pageRelVyPx !== undefined) continue
     const gap = blocks[i + 1].top - (blocks[i].top + blocks[i].height)
     if (gap > 0.5) {
       blocks[i].spaceAfterPx = (blocks[i].spaceAfterPx ?? 0) + gap
@@ -426,12 +625,19 @@ export function measureBlocks(
   const first = blocks[0]
   const firstIsTable =
     !!first?.el && (first.el.matches('table') || !!tablesByBlock.get(first.el)?.length)
-  if (blocks.length > 0 && first.top > 0.5 && !firstIsTable) {
-    const lead = blocks[0].top
-    blocks[0].spaceBeforePx = (blocks[0].spaceBeforePx ?? 0) + lead
-    blocks[0].height += lead
-    blocks[0].top = 0
-    blocks[0].leadFoldPx = lead
+  if (first && !firstIsTable) {
+    // the plan's margin for a planned block, the DOM offset otherwise; what the
+    // DOM adds beyond the plan is editor chrome (break indicator) and stays an
+    // offset Word reserves nothing for
+    const lead = first.marginBeforePx ?? first.top
+    if (first.shadowScrape) first.shadowScrape.leadPx = first.top
+    if (lead > 0.5) {
+      const rest = first.top - lead
+      first.spaceBeforePx = (first.spaceBeforePx ?? 0) + lead
+      first.height += lead
+      first.top = rest > 0.1 ? rest : 0
+      first.leadFoldPx = lead
+    }
   }
   return { blocks, totalHeight, floats, sectBreaks }
 }
@@ -616,7 +822,7 @@ export function tableRowFlags(
     keepNext?: boolean
     minHPx?: number
   }> = []
-  for (const m of tableXml.matchAll(/<w:tr[\s>][\s\S]*?(?=<w:tr[\s>]|<\/w:tbl>)/g)) {
+  for (const m of outerRowsXml(tableXml).matchAll(/<w:tr[\s>][\s\S]*?(?=<w:tr[\s>]|<\/w:tbl>)/g)) {
     const trPr = m[0].match(/<w:trPr>[\s\S]*?<\/w:trPr>/)?.[0] ?? ''
     let keepNext = false
     const firstCell = /<w:tc[\s>]([\s\S]*?)(?=<w:tc[\s>]|<\/w:tr>|$)/.exec(m[0])?.[1] ?? ''
@@ -645,6 +851,28 @@ export function tableRowFlags(
     })
   }
   return flags
+}
+
+/** The table XML with every nested table removed: nested rows are cell content,
+ *  counting them shifts every later flag onto the wrong outer row. */
+export function outerRowsXml(tableXml: string): string {
+  let depth = 0
+  let out = ''
+  for (const m of tableXml.matchAll(/<w:tbl[\s>]|<\/w:tbl>|[^<]+|<[^>]*>/g)) {
+    const tok = m[0]
+    if (/^<w:tbl[\s>]/.test(tok)) {
+      depth++
+      if (depth === 1) out += tok
+      continue
+    }
+    if (tok === '</w:tbl>') {
+      if (depth === 1) out += tok
+      depth--
+      continue
+    }
+    if (depth <= 1) out += tok
+  }
+  return out
 }
 
 /** Extract each tr's tblHeader flag from table XML (header repeated at page top after a table break) */

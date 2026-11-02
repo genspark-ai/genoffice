@@ -24,6 +24,26 @@ describe('buildPrintHtml', () => {
     expect(html).toContain('<h1>Hello</h1>')
   })
 
+  it('prints an aliased wiki link as the alias the canvas shows', () => {
+    const html = buildPrintHtml(
+      editorRoot(
+        '<p><a class="wiki-link"><span class="wiki-alias-hidden">[[Note|</span><span class="wiki-link-resolved">Alias</span><span class="wiki-alias-hidden">]]</span></a>' +
+          // the link under the caret shows its syntax and carries no hidden spans
+          '<a class="wiki-link">[[Other|Two]]</a>' +
+          // no alias: the literal is what the canvas shows
+          '<a class="wiki-link">[[Plain]]</a>' +
+          // a literal an inline mark splits stays visible on the canvas too
+          '<a class="wiki-link">[[Note|bo<strong>ld</strong>]]</a></p>',
+      ),
+      'x',
+    )
+    expect(html).toContain('<a class="wiki-link">Alias</a>')
+    expect(html).toContain('<a class="wiki-link">Two</a>')
+    expect(html).toContain('<a class="wiki-link">[[Plain]]</a>')
+    expect(html).toContain('<a class="wiki-link">[[Note|bo<strong>ld</strong>]]</a>')
+    expect(html).not.toContain('[[Note|</span>')
+  })
+
   it('escapes the document title', () => {
     const html = buildPrintHtml(editorRoot('<p>x</p>'), 'A&B <C>')
     expect(html).toContain('<title>A&amp;B &lt;C></title>')

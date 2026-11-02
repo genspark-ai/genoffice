@@ -74,7 +74,7 @@ describe('measureRevisionSpots', () => {
     pm.append(block(3, [rect(100, 0, 300)]), block(4, []), block(5, [rect(140, 0, 300)]))
     pm.getClientRects = () => [rect(0, 0, 300, 400)] as unknown as DOMRectList
     const xml = (t: string) =>
-      `<w:p><w:r><w:t>live</w:t></w:r><w:del w:id="1" w:author="A"><w:r><w:delText>${t}</w:delText></w:r></w:del></w:p>`
+      `<w:p><w:r><w:t>live</w:t></w:r><w:del w:id="1" w:author="A" w:date="2026-07-02T10:00:00Z"><w:r><w:delText>${t}</w:delText></w:r></w:del></w:p>`
     const blocks = [
       { type: 'passthrough', docxIndex: 3, originalXml: xml('6 &amp; 7') },
       {
@@ -85,9 +85,10 @@ describe('measureRevisionSpots', () => {
       { type: 'paragraph', docxIndex: 5, originalXml: xml('marked in the editor instead') },
     ]
     const spots = measureRevisionSpots(null, pm, blocks, 0, 1, 0)
+    const meta = { author: 'A', date: '2026-07-02T10:00:00Z' }
     expect(spots).toEqual([
-      { key: 'x3', kind: 'del', text: '6 & 7', top: 100, endX: 300, endY: 115 },
-      { key: 'x4', kind: 'del', text: 'Introduction 1', top: 100, endX: 300, endY: 115 },
+      { key: 'x3', kind: 'del', text: '6 & 7', ...meta, top: 100, endX: 300, endY: 115 },
+      { key: 'x4', kind: 'del', text: 'Introduction 1', ...meta, top: 100, endX: 300, endY: 115 },
     ])
   })
 })

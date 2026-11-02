@@ -20,6 +20,8 @@ describe('findOpenableDocPath', () => {
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/notes.odt'])).toBe('/tmp/notes.odt')
     // and so does the .ott template, in either case
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/letter.ott'])).toBe('/tmp/letter.ott')
+    // .hwpx (Hancom) joins too, as a converted .docx copy
+    expect(findOpenableDocPath(['GenOffice Docs', '/tmp/신고서.HWPX'])).toBe('/tmp/신고서.HWPX')
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/LETTER.OTT'])).toBe('/tmp/LETTER.OTT')
   })
 
@@ -37,7 +39,7 @@ describe('findOpenableDocPath', () => {
  */
 describe('OPENABLE_DOC_EXTENSIONS', () => {
   it('covers every extension the argv route and the guard accept', () => {
-    expect(OPENABLE_DOC_EXTENSIONS).toEqual(['docx', 'odt', 'ott'])
+    expect(OPENABLE_DOC_EXTENSIONS).toEqual(['docx', 'odt', 'ott', 'hwpx', 'hwp'])
     for (const extension of OPENABLE_DOC_EXTENSIONS) {
       expect(isOpenableDocPath(`/tmp/Quarterly Plan.${extension.toUpperCase()}`)).toBe(true)
     }
@@ -65,6 +67,19 @@ describe('the open dialog and the external-open guard', () => {
 
   it('guards the external-open route with the same helper', () => {
     expect(source).toContain('if (!isOpenableDocPath(filePath)) return')
+  })
+
+  it('opens .hwp/.hwpx as a converted .docx copy, like .odt', () => {
+    const prepare = source.slice(
+      source.indexOf('async function prepareDocumentForOpen('),
+      source.indexOf('async function loadDocx('),
+    )
+    expect(prepare).toContain("const isHwp = extension === 'hwp' || extension === 'hwpx'")
+    expect(prepare).toContain("tm(isHwp ? 'hwpImportDetail' : 'odtImportDetail')")
+    expect(prepare).toContain('isHwp ? await convertHwpToDocx(source)')
+    expect(prepare).toContain(".replace(/\\.(odt|ott|hwpx?)$/i, '.docx')")
+    // loadDocx itself still opens nothing but .docx
+    expect(source).toContain('!/\\.docx$/i.test(filePath)) return null')
   })
 })
 

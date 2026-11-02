@@ -20,7 +20,7 @@ const RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400]
  * locks or on filesystems without fsync. The bytes are already written, so a
  * refused flush only weakens power-loss durability and must not fail the save.
  */
-const TOLERATED_SYNC_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'EINVAL', 'ENOSYS'])
+const TOLERATED_SYNC_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'EINVAL', 'ENOSYS', 'ENOTSUP'])
 
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException).code ?? ''
 const isRetryableRename = (error: unknown) => RETRYABLE_RENAME_CODES.has(errorCode(error))

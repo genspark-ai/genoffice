@@ -1,0 +1,79 @@
+[
+  {
+    "section": 0,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 67,
+    "floorPx": 67,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 1,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 67,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 2,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 67,
+    "floorPx": 67,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 3,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 67,
+    "floorPx": 67,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 4,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 39,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 5,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 40,
+    "floorPx": 40,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 6,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 642.5,
+    "pageWidthPx": 642.5,
+    "estimatePx": 84.1,
+    "floorPx": 67,
+    "floats": [],
+    "disagree": []
+  }
+]

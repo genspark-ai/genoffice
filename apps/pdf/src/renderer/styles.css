@@ -5022,7 +5022,7 @@ button {
 }
 
 .pdf-compare-other {
-  color: var(--pdf-prop-bg);
+  color: var(--text-muted);
 }
 
 .pdf-compare-list {
@@ -5071,4 +5071,18 @@ button {
 .pdf-compare-truncated {
   color: var(--pdf-sig-warn);
   font-size: 0.82em;
+}
+
+/* a page whose probe failed: same frame as a rendered page, an error line instead of a canvas */
+.pdf-page-broken {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
 }

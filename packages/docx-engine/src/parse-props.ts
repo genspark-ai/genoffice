@@ -820,7 +820,7 @@ export function rubyPartText(rubyNode: XNode, part: 'w:rubyBase' | 'w:rt'): stri
 }
 
 /** Word's face for an East Asian theme slot whose typeface is empty (<a:ea typeface=""/>) */
-const EMPTY_EA_THEME_FONT = 'DengXian'
+export const EMPTY_EA_THEME_FONT = 'DengXian'
 
 /** empty EA slot faces by settings.xml w:themeFontLang w:eastAsia (zh-CN / missing → DengXian) */
 const EMPTY_EA_SLOT_BY_LANG: Record<string, { major: string; minor: string }> = {

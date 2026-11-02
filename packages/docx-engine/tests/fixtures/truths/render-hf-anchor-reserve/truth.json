@@ -56,8 +56,7 @@
       "control": 1,
       "expect": 0,
       "tol": 0.3,
-      "note": "CASE07 wrapSquare: Word does not push (gen estimateHfHeight pushes 64pt for every wrap other than none)",
-      "status": "failing"
+      "note": "CASE07 wrapSquare: Word does not push"
     },
     {
       "kind": "pageTextTopDeltaPt",
@@ -81,8 +80,7 @@
       "control": 1,
       "expect": 28.08,
       "tol": 0.6,
-      "note": "CASE06 wrapTopAndBottom pushes: 110.64 baseline = 82.56 + 28.08 (gen pushes nothing: the header topAndBottom picture clamped to the page top is not reserved)",
-      "status": "failing"
+      "note": "CASE06 wrapTopAndBottom pushes: 110.64 baseline = 82.56 + 28.08"
     }
   ],
   "docx": "probe.docx"

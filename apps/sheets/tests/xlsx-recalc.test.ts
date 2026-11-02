@@ -175,7 +175,7 @@ async function buildExternalLinkFixture(): Promise<Buffer> {
       '<row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c>' +
       '<c r="C1" t="str"><f>\'[1]Sheet1\'!A1&amp;" units"</f><v>42 units</v></c>' +
       '<c r="D1" t="str"><f>\'[1]Sheet Name\'!A1+1</f><v>7</v></c>' +
-      '<c r="E1" t="str"><f>\'[1]数据\'!A1+2</f><v>9</v></c></row>' +
+      '<c r="E1" t="str"><f>\'[1]\u6570\u636e\'!A1+2</f><v>9</v></c></row>' +
       '<row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row>' +
       '</sheetData>' +
       '</worksheet>',

@@ -1,0 +1,25 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-hf-anchor-reserve/probe.docx",
+  "editor": [],
+  "nested": [],
+  "hf": [
+    "ddaa5b6f79eb1daa",
+    "12dd34dc0260ade6",
+    "edf2d9bb97a7c40e",
+    "78db5282592227fe",
+    "c34097560efcf404",
+    "7b11413365ec24a3",
+    "d95a5a45210e6a35",
+    "4c376890fbe7e0b3",
+    "fa32ef4330a361c4",
+    "aa9d59ded4ed70f2",
+    "edf2d9bb97a7c40e",
+    "78db5282592227fe",
+    "16697c67988912f9",
+    "8e6454de010ef28c",
+    "402aab8dec60c0ea",
+    "8631d24064180475",
+    "b8dd8268eb83e225",
+    "c0148c1d66f501ee"
+  ]
+}

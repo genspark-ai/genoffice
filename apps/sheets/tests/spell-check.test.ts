@@ -106,8 +106,8 @@ describe('collectWorkbookTextCells', () => {
 })
 
 describe('tokenizeCellText', () => {
-  it('splits on non-letters, lower-cases, and keeps first-seen order without repeats', () => {
-    expect(tokenizeCellText('The the THE qick, qick! brown')).toEqual(['the', 'qick', 'brown'])
+  it('splits on non-letters, keeps the first-seen casing and order without repeats', () => {
+    expect(tokenizeCellText('The the THE qick, qick! brown')).toEqual(['The', 'qick', 'brown'])
   })
 
   it('keeps apostrophes and dashes inside a word, drops single letters and digits', () => {
@@ -260,13 +260,19 @@ describe('runSheetSpellCheck', () => {
   it('flags misspelled words per cell with as-written casing and capped suggestions', () => {
     const findings = runSheetSpellCheck(
       [ref('A1', 'the Qick fox'), ref('B1', 'all good')],
-      engineOf(['qick']),
+      engineOf(['Qick']),
       new Set(),
       new Set(),
     )
     expect(findings).toHaveLength(1)
     expect(findings[0]?.word).toBe('Qick')
-    expect(findings[0]?.suggestions).toEqual(['fix-qick', 'other'])
+    expect(findings[0]?.suggestions).toEqual(['fix-Qick', 'other'])
+  })
+
+  it('asks the engine with the spelling as written: a proper noun is not lower-cased', () => {
+    const calls: string[] = []
+    runSheetSpellCheck([ref('A1', 'to London')], engineOf(['london'], calls), new Set(), new Set())
+    expect(calls).toEqual(['to', 'London'])
   })
 
   it('asks the engine once per distinct word, not once per cell', () => {

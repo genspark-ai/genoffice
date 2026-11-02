@@ -1,0 +1,28 @@
+{
+  "name": "@genoffice/hwp2docx",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "HWP/HWPX (Hancom) import filter: .hwpx → .docx parsed locally, .hwp read through rhwp (MIT) into HWPX first, rebuilt through docx-engine; the same output as Tiptap JSON",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tiptap": "./src/tiptap.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/docx-engine": "*",
+    "@rhwp/core": "0.8.7",
+    "fast-xml-parser": "^5.3.4",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

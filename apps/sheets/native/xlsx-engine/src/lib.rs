@@ -25,6 +25,7 @@ mod rels_normalize;
 mod richdata;
 mod shared_formulas;
 pub mod spreadsheetml;
+pub mod stream_patch;
 mod visuals;
 
 mod cell_images;

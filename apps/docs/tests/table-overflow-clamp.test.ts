@@ -334,13 +334,15 @@ describe('expandAutofitColWidths', () => {
     )
     expect(Math.abs(sum(legacyAuto.colWidthsTwips!) - 9956)).toBeLessThanOrEqual(2)
     // past the paper edge a left-aligned table still holds its widths (Word draws a
-    // 531 pt grid on a 451 pt column 8 pt past the paper edge and clips it); a
-    // centred one still compresses to the column
+    // 531 pt grid on a 451 pt column 8 pt past the paper edge and clips it); so do
+    // centred and right-aligned ones (probe 2026-10-29: centred on the margin box /
+    // pinned to the right margin, clipped by the paper)
     const wide: TableModel = { ...model, colWidthsTwips: [603, 1807, 1276, 1418, 1842, 4600] }
     expect(expandAutofitColWidths(wide, 10466, 9026)).toBe(wide)
     const centred: TableModel = { ...wide, indentTwips: undefined, align: 'center' }
-    const centredTotal = expandAutofitColWidths(centred, 10466, 9026).colWidthsTwips!
-    expect(Math.abs(sum(centredTotal) - 9026)).toBeLessThanOrEqual(2)
+    expect(expandAutofitColWidths(centred, 11906, 9026)).toBe(centred)
+    const right: TableModel = { ...centred, align: 'right' }
+    expect(expandAutofitColWidths(right, 10466, 9026)).toBe(right)
   })
 
   it('leaves a full-width pct table alone even when its indent pushes it past the column', () => {

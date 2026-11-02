@@ -1496,7 +1496,7 @@ async function verifyContentEdits(
       const pageIndex = finalPageIndex(request, e.pageIndex)
       return pageIndex === null || e.kind === 'deleteImage' ? [] : [{ pageIndex, rect: e.rect }]
     })
-    failures.push(...(await verifyImageEdits(bytes, remapped)))
+    failures.push(...(await verifyImageEdits(bytes, remapped, savedOutputPassword(request))))
   }
   if (failures.length > 0) {
     const pages = [...new Set(failures.map((f) => f.pageIndex + 1))].sort((a, b) => a - b)

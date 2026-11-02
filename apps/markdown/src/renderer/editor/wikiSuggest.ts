@@ -313,14 +313,16 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
     let visibleItems: WikiSuggestItem[] = []
     /** whether the last render offered a create row; a key-down has no query either */
     let visibleCreateName = ''
+    // a fragment names something that exists; creation is the notes list's row
+    const offeredCreateName = (props: SuggestionProps<WikiSuggestItem>): string =>
+      props.query.includes('#') ? '' : createNameOf(props)
     const toState = (props: SuggestionProps<WikiSuggestItem>): WikiSuggestState => {
       const embed = embedPrefixBefore(props.editor, props.range) === '!'
       return {
         items: props.items,
         clientRect: props.clientRect?.() ?? null,
         command: (item) => props.command(item),
-        // a fragment names something that exists; creation is the notes list's row
-        createName: props.query.includes('#') ? '' : createNameOf(props),
+        createName: offeredCreateName(props),
         create: () => void createNoteAndComplete(props, embed),
       }
     }
@@ -378,12 +380,12 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
         render: () => ({
           onStart: (props) => {
             visibleItems = props.items
-            visibleCreateName = createNameOf(props)
+            visibleCreateName = offeredCreateName(props)
             getController()?.onOpen(toState(props))
           },
           onUpdate: (props) => {
             visibleItems = props.items
-            visibleCreateName = createNameOf(props)
+            visibleCreateName = offeredCreateName(props)
             getController()?.onUpdate(toState(props))
           },
           onKeyDown: (props) => {

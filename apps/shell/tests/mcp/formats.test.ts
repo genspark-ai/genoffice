@@ -16,7 +16,7 @@ import {
 
 describe('format registry', () => {
   it('mirrors the shell open routing for the mcp-driven families', () => {
-    expect(formatFamily('docx').editorOpen).toEqual(['docx', 'odt', 'ott'])
+    expect(formatFamily('docx').editorOpen).toEqual(['docx', 'odt', 'ott', 'hwpx', 'hwp'])
     expect(formatFamily('xlsx').editorOpen).toEqual([
       'xlsx',
       'xlsm',
@@ -33,7 +33,7 @@ describe('format registry', () => {
     // the xlsx family converts .tsv/.ods to .xlsx; docx/pptx take .odt/.odp the same way
     for (const [family, exts] of [
       ['xlsx', ['tsv', 'ods', 'ots']],
-      ['docx', ['odt', 'ott']],
+      ['docx', ['odt', 'ott', 'hwpx', 'hwp']],
       ['pptx', ['odp', 'otp']],
     ] as const) {
       const entry = formatFamily(family)
@@ -114,7 +114,7 @@ describe('capabilityReport', () => {
     const report = capabilityReport()
     expect(report.map((r) => r.family)).toEqual(['docx', 'xlsx', 'pptx', 'md', 'html', 'pdf'])
     const docx = report.find((r) => r.family === 'docx')!
-    expect(docx.editor.open).toEqual(['docx', 'odt', 'ott'])
+    expect(docx.editor.open).toEqual(['docx', 'odt', 'ott', 'hwpx', 'hwp'])
     expect(docx.editor.export).toEqual(['pdf'])
     expect(docx.mcp).toEqual({ generate: 'docx', save: ['docx'], read: 'docx' })
     // editor-only family carries no mcp key

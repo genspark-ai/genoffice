@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
@@ -259,7 +259,19 @@ describe('the legacy per-tool skill copies', () => {
     installSkill(join(h, '.codex', 'skills'), b, ledger)
     expect(currentSkillInstalled(ledger, {}, h)).toBe(false)
 
-    installSkill(join(h, '.agents', 'skills'), b, ledger)
+    const sharedPath = installSkill(join(h, '.agents', 'skills'), b, ledger)
     expect(currentSkillInstalled(ledger, {}, h)).toBe(true)
+    // a ledger row for a file that is gone must not open the gate
+    rmSync(sharedPath)
+    expect(currentSkillInstalled(ledger, {}, h)).toBe(false)
+  })
+
+  it('a ledger row whose legacy file is already gone is dropped, not kept as edited', () => {
+    const h = home()
+    const ledger: SkillLedger = {}
+    const codexPath = installSkill(join(h, '.codex', 'skills'), bundled(), ledger)
+    rmSync(codexPath)
+    expect(findLegacySkillCopies(ledger, {}, h)).toEqual([])
+    expect(ledger[codexPath]).toBeUndefined()
   })
 })

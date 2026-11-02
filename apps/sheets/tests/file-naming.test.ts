@@ -34,7 +34,7 @@ import { handleSave as handleSaveImpl, type SaveContext } from '../src/renderer/
 import * as fileNaming from '../src/renderer/file-naming'
 import { modelSaveAsName } from '../src/renderer/file-naming'
 
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 const SECRET = '13800138000'
 
 const SHEETS = [
@@ -50,7 +50,7 @@ const SNAPSHOT: WorkbookSnapshot = {
       id: 'sh1',
       name: 'Customers',
       cells: {
-        A1: { value: '季度客户回访' },
+        A1: { value: '\u5b63\u5ea6\u5ba2\u6237\u56de\u8bbf' },
         B2: { value: SECRET },
         C1: { value: 42 },
       },
@@ -65,6 +65,41 @@ const MARKS: SheetRedactionState[] = [
     marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: LABEL }],
   },
 ]
+
+/** A read context over an opened file: cells live in the grid, the adapter is the blank boot workbook. */
+function fileContext(): WorkbookReadContext {
+  const grid: Record<string, string> = { A1: 'Region', B1: 'Revenue', A2: 'North', B2: '1200' }
+  // C1 is a rich-text title: no plain v, only the document stream
+  const worksheet = {
+    getSheetId: () => 'sheet-1',
+    getSheetName: () => 'Sales',
+    getRange: (address: string) => ({
+      getFormula: () => '',
+      getValue: () => grid[address] ?? null,
+      getCellDatas: () => [
+        [
+          address === 'C1'
+            ? { p: { body: { dataStream: 'FY26 Plan\r\n' } } }
+            : grid[address] === undefined
+              ? undefined
+              : { v: grid[address] },
+        ],
+      ],
+    }),
+  }
+  const workbook = { getSheets: () => [worksheet] }
+  return {
+    univerRef: { current: { univerAPI: { getActiveWorkbook: () => workbook } } },
+    lazyWorkbookRef: {
+      current: {
+        editJournal: createEditJournal(),
+        file: { sheets: [{ id: 'sheet-1', rowCount: 2, columnCount: 3 }] },
+      },
+    },
+    adapterRef: { current: new InMemoryWorkbookAdapter({ revision: 1, sheets: [] }) },
+    redactionIndexRef: { current: NO_REDACTIONS },
+  } as never
+}
 
 /** A read context over the snapshot, withholding nothing unless asked to. */
 function context(withheld: boolean): WorkbookReadContext {
@@ -164,15 +199,23 @@ describe('the name the reader asked for', () => {
   it('sends the marker the reader chose, so the model can still read the sheet', async () => {
     await modelSaveAsName(context(true))
     expect(sent[0]).toContain(`{{${LABEL}}}`)
-    expect(sent[0]).toContain('季度客户回访')
+    expect(sent[0]).toContain('\u5b63\u5ea6\u5ba2\u6237\u56de\u8bbf')
   })
 
   it('leaves the cells around a mark readable', async () => {
     // Over-redaction is its own bug: a workbook where everything reads as
     // withheld teaches the model nothing.
     await modelSaveAsName(context(true))
-    expect(sent[0]).toContain('A1: 季度客户回访')
+    expect(sent[0]).toContain('A1: \u5b63\u5ea6\u5ba2\u6237\u56de\u8bbf')
     expect(sent[0]).toContain('C1: 42')
+  })
+
+  it('reads an opened file off the grid, not the blank adapter snapshot', async () => {
+    await modelSaveAsName(fileContext())
+    expect(sent[0]).toContain('Sales')
+    expect(sent[0]).toContain('A1: Region')
+    expect(sent[0]).toContain('B2: 1200')
+    expect(sent[0]).toContain('C1: FY26 Plan')
   })
 
   it('sends the whole workbook for one with nothing withheld', async () => {

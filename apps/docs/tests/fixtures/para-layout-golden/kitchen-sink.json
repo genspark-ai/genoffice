@@ -1,0 +1,26 @@
+{
+  "source": "apps/docs/tests/pagination-corpus/docx/kitchen-sink.docx",
+  "paragraphs": 12,
+  "hashes": [
+    "c5a28c2e15ca2e8f",
+    "30ce89f420606184",
+    "25476bda98864f56",
+    "2be29fc592d1f962",
+    "95f5b423a2ab64d3",
+    "7bfa4fa68a361d79",
+    "3a810cb631d9d592",
+    "f109babaff9f9418",
+    "22f19d7766c35a4d",
+    "2f4b31d5a3acec6a",
+    "95c4ef2a7b471850",
+    "b63677936cd328bd"
+  ],
+  "cellParagraphs": 4,
+  "cellHashes": ["52c151b1bbb0f605", "7da36083711695c3", "3a05a06cb91c3a66", "5109969a523bdbd1"],
+  "boxParagraphs": 4,
+  "boxHashes": ["fd89bc94c715c760", "845bf6e52a3e026c", "ee2c5e702375160c", "d79ecc7dfc59238d"],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

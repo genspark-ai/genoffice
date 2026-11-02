@@ -475,6 +475,15 @@ interface ElementBase {
   transform: Transform
   /** Editor dirty flag: when true, save must regenerate OOXML; otherwise originalXml passes through */
   dirty?: boolean
+  /**
+   * Text-moved flag: a traced paragraph/run landed at a different index than its
+   * source (reorder, split or insert), so the in-place run patch would inherit the
+   * attributes of the old run now sitting at that position. Set by setText and
+   * consumed by patchTextElementXml, which rebuilds the txBody instead; it stays
+   * set until the element is reparsed/materialized (a rebuild cannot clear it while
+   * the moved text still occupies a foreign position).
+   */
+  textMoved?: boolean
   /** Geometry dirty flag: when true, save patches <a:xfrm> in place (orthogonal to text patches) */
   dirtyTransform?: boolean
   /** Fill dirty flag: when true, save patches the spPr fill node in place */

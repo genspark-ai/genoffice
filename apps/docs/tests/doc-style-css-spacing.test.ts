@@ -78,7 +78,9 @@ describe('docStyleCss spacing', () => {
   it('suppresses style-level auto space-before on the document first block', () => {
     const css = docStyleCss(parsedWith('web', { spaceBeforeAuto: true }))
     expect(css).toContain(
-      '.doc-page > [data-style="web"]:nth-child(1 of :not(.page-float-host)) { margin-top:0 }',
+      '.doc-page > [data-style="web"]:nth-child(1 of :not(.page-float-host)), ' +
+        '.doc-page > .doc-protected:nth-child(1 of :not(.page-float-host)) > ' +
+        ':is(.doc-anchor-line, .doc-textbox-stray)[data-style="web"] { margin-top:0 }',
     )
   })
 
@@ -87,7 +89,9 @@ describe('docStyleCss spacing', () => {
     ;(parsed as unknown as { docDefaults: object }).docDefaults = { spaceBeforeAuto: true }
     const css = docStyleCss(parsed)
     expect(css).toContain(
-      ':not([data-style]):nth-child(1 of :not(.page-float-host)) { margin-top:0 }',
+      ':not([data-style]):nth-child(1 of :not(.page-float-host)), ' +
+        '.doc-page > .doc-protected:nth-child(1 of :not(.page-float-host)) > ' +
+        ':is(.doc-anchor-line, .doc-textbox-stray):not([data-style]) { margin-top:0 }',
     )
   })
 
@@ -111,10 +115,10 @@ describe('docStyleCss spacing', () => {
     const css = docStyleCss(parsed)
     const cell = '.doc-table :is(td, th, .cell-clip, .cell-vert) > '
     expect(css).toContain(
-      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)) { margin-top:0 }`,
+      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para, .doc-textbox-para, .doc-cell-para):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)) { margin-top:0 }`,
     )
     expect(css).toContain(
-      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para):not([data-style]):nth-last-child(1 of :not(.doc-cell-boxes)) { margin-bottom:0 }`,
+      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para, .doc-textbox-para, .doc-cell-para):not([data-style]):nth-last-child(1 of :not(.doc-cell-boxes)) { margin-bottom:0 }`,
     )
   })
 
@@ -261,7 +265,8 @@ describe('docStyleCss spacing', () => {
       .split('\n')
       .filter((l) => l.includes(lp) && l.includes('.doc-table') && l.endsWith(decl))
       .map((l) => l.slice(0, -decl.length))
-    expect(selectors).toHaveLength(2)
+    // before-table rule, its page-widget twin, and the cell-closing rule
+    expect(selectors).toHaveLength(3)
     const cell = (wrap: string, cls: string, ...ps: string[]) =>
       `<td>${wrap ? `<div class="${wrap}">` : ''}${ps
         .map((p) => `<p data-style="ListParagraph" class="${cls}">${p}</p>`)

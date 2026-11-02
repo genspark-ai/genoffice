@@ -7,7 +7,6 @@ import {
   alignGapHfStrips,
   canvasZoomOf,
   alignTableGapFills,
-  leadDropsSpaceBefore,
   makeGapEl,
   pageFramesFromGaps,
   syncCutOverlays,
@@ -22,6 +21,7 @@ import {
   syncPageBorders,
   syncFloatShifts,
 } from '../src/renderer/editor/pagination-gaps'
+import { leadDropsSpaceBefore } from '../src/renderer/pagination-cuts'
 import { measureBlocks } from '../src/renderer/pagination-measure'
 import { createLineRectsCache, singleCutCell } from '../src/renderer/pagination'
 import { Editor } from '@tiptap/core'

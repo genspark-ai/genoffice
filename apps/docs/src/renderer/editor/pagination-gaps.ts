@@ -1,12 +1,14 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
 import type { RowFillPatch } from '../pagination-types'
 import { rangeSlot } from '../dom-range'
-import { autoLineMultOf } from '../line-metrics'
+import { additiveParagraphSpacing, autoLineMultOf } from '../line-metrics'
+import type { PlanOf } from '../pagination-plan'
 import { TopLevelPositions } from './top-level-pos'
+import { appliedFloatShift, floatShiftTarget, layoutHealth, writeFloatShift } from './layout-health'
 
 const anchorRange = rangeSlot()
 
@@ -328,6 +330,37 @@ export const FloatVShiftsExtension = Extension.create({
   },
 })
 
+export interface FloatShiftState {
+  /** applied --tblp-dy (px, signed); 0 for a flowed table */
+  dyPx: number
+  flow: boolean
+}
+
+/** the engine's float shifts in `state` by top-level node position: the plan's
+ *  model-side twin of `dataset.tblpDy` / the doc-table-float-flow class */
+export function floatShiftsOf(state: EditorState): (pos: number) => FloatShiftState | undefined {
+  const set = floatVKey.getState(state)
+  if (!set) return () => undefined
+  const byPos = new Map<number, FloatShiftState>()
+  for (const d of set.find()) {
+    const spec = d.spec as { flow?: boolean; dy?: number }
+    if (spec.flow) byPos.set(d.from, { dyPx: 0, flow: true })
+    else if (typeof spec.dy === 'number') byPos.set(d.from, { dyPx: spec.dy, flow: false })
+  }
+  return (pos) => byPos.get(pos)
+}
+
+/** the engine's float-carry spacers in `state` by the position they precede:
+ *  the model-side twin of the .page-float-carry element's height */
+export function floatCarriesOf(state: EditorState): (pos: number) => number | undefined {
+  const set = floatVKey.getState(state)
+  if (!set) return () => undefined
+  const byPos = new Map<number, number>()
+  for (const d of set.find(undefined, undefined, (spec) => typeof spec.carry === 'number'))
+    byPos.set(d.from, (byPos.get(d.from) ?? 0) + (d.spec as { carry: number }).carry)
+  return (pos) => byPos.get(pos)
+}
+
 /** transaction meta set when the set of flowed floating tables changed: the
  *  reflow moves real layout, so the pagination pass must run again */
 export const floatFlowChangedMeta = 'paginationFloatFlowChanged'
@@ -370,7 +403,7 @@ export function setFloatVShifts(
               div.style.height = `${carry}px`
               return div
             },
-            { side: -1, key: `tblp-carry-${i}-${carry}` },
+            { side: -1, key: `tblp-carry-${i}-${carry}`, carry },
           ),
         )
       } catch {
@@ -415,7 +448,7 @@ export function setFloatVShifts(
               from,
               to,
               { style: `--tblp-dy:${dy}px`, 'data-tblp-dy': String(dy) },
-              { key: `tblp-dy-${i}-${dy}` },
+              { key: `tblp-dy-${i}-${dy}`, dy },
             ),
           )
         }
@@ -431,6 +464,23 @@ export function setFloatVShifts(
       .map((d) => String(d.from))
       .sort()
     const flowChanged = prevFlow.join(',') !== flowKeys.sort().join(',')
+    layoutHealth.count('floatFlow', setDelta(prevFlow, flowKeys))
+    const isCarry = (spec: { carry?: number }) => typeof spec.carry === 'number'
+    const isDy = (spec: { flow?: boolean; carry?: number }) => spec.flow !== true && !isCarry(spec)
+    layoutHealth.count(
+      'tblpDy',
+      setDelta(
+        (prev?.find(undefined, undefined, isDy) ?? []).map(decoKey),
+        next.find(undefined, undefined, isDy).map(decoKey),
+      ),
+    )
+    layoutHealth.count(
+      'carry',
+      setDelta(
+        (prev?.find(undefined, undefined, isCarry) ?? []).map(decoKey),
+        next.find(undefined, undefined, isCarry).map(decoKey),
+      ),
+    )
     if (batch) {
       batch.set(floatVKey, next)
       batch.set(floatFlowChangedMeta, flowChanged)
@@ -462,14 +512,6 @@ export interface GapMetrics {
    *  documents center narrower pages); absent = the page spans the paper */
   pageLeft?: number
   pageWidth?: number
-}
-
-/** Word drops the space-before of a block that opens a page after a natural
- *  break too (probe 2026-10-20: a before=360 heading pushed by overflow or by
- *  its keepNext chain lands at the plain first-line position, compat 14 and
- *  15); only a section's first page keeps it */
-export function leadDropsSpaceBefore(blocks: { section?: number }[], i: number): boolean {
-  return i > 0 && (blocks[i].section ?? 0) === (blocks[i - 1].section ?? 0)
 }
 
 /** height of the gray inter-page band inside a page gap */
@@ -1262,6 +1304,15 @@ export function syncPhantomRowspans(root: HTMLElement): void {
   }
 }
 
+const decoKey = (d: Decoration) => `${d.from}:${(d.spec as { key?: string }).key ?? ''}`
+
+/** entries that changed between two key lists (a replaced value counts once) */
+function setDelta(prev: string[], next: string[]): number {
+  const a = new Set(prev)
+  const b = new Set(next)
+  return Math.max(next.filter((k) => !a.has(k)).length, prev.filter((k) => !b.has(k)).length)
+}
+
 function sameGaps(a: DecorationSet, b: DecorationSet): boolean {
   const keyOf = (d: Decoration) => (d.spec as { key?: string }).key ?? ''
   const af = a.find()
@@ -1343,21 +1394,7 @@ export function syncFloatShifts(
     // page-edge V offsets count from the pgMar top, not the header-pushed flow start
     const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) - (f.pageRelFromPage ? pagePush : 0) : f.top
     const desired = origin + (pageStart + rel) * factor + above
-    const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
-    const next = applied + (desired - curTops[i]) / factor
-    // a single shape's float slot (and with it the display shift) sits on the
-    // chrome rotator, so the shift must ride there or the box would slide out
-    // of the layer that turns it
-    const shiftEl = f.el.parentElement?.classList.contains('box-rotator')
-      ? f.el.parentElement
-      : f.el
-    if (Math.abs(next) < 0.5) {
-      shiftEl.style.removeProperty('--page-float-dy')
-      delete f.el.dataset.pageFloatDy
-    } else if (Math.abs(next - applied) > 0.5 || !f.el.dataset.pageFloatDy) {
-      shiftEl.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
-      f.el.dataset.pageFloatDy = String(next)
-    }
+    writeFloatShift(f.el, appliedFloatShift(f.el) + (desired - curTops[i]) / factor)
   })
 }
 
@@ -1623,18 +1660,8 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
   boxes.forEach((box, i) => {
     const r = rects[i]
     if (r.height <= 0) return
-    const applied = parseFloat(box.dataset.pageFloatDy ?? '0') || 0
-    const naturalTop = r.top - applied * factor
-    const next = Math.max(0, (paperTop - naturalTop) / factor)
-    if (next < 0.5) {
-      if (box.dataset.pageFloatDy) {
-        box.style.removeProperty('--page-float-dy')
-        delete box.dataset.pageFloatDy
-      }
-    } else if (Math.abs(next - applied) > 0.5 || !box.dataset.pageFloatDy) {
-      box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
-      box.dataset.pageFloatDy = String(next)
-    }
+    const naturalTop = r.top - appliedFloatShift(box) * factor
+    writeFloatShift(box, Math.max(0, (paperTop - naturalTop) / factor))
   })
 }
 
@@ -1776,17 +1803,30 @@ export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
  * Run-anchored front/behind pictures with a paragraph-relative Y: Word measures
  * wp:posOffset from the paragraph top including w:spacing before, but the host
  * paragraph's margin-top sits outside the positioning box, so the picture lands
- * one spacing-before too low. Hand the host's resolved margin to the picture
- * (direct, style-level, grid-snapped or contextual spacing all resolve here).
+ * one spacing-before too low. Hand the host's space before to the picture: the
+ * BlockPlan's for a planned paragraph (0 where the page lead dropped it or the
+ * additive-spacing padding carries it), the computed margin for the rest.
  */
-export function pinParagraphRelVPictures(pm: HTMLElement): void {
+export function pinParagraphRelVPictures(
+  pm: HTMLElement,
+  planOf?: PlanOf,
+  leadDropped?: ReadonlySet<HTMLElement>,
+): void {
   const imgs = pm.querySelectorAll<HTMLElement>(
     '.doc-anchor-origin .doc-inline-img-anchor > img:not([data-page-rel-v])',
   )
+  const additive = additiveParagraphSpacing()
   for (const img of imgs) {
     const host = img.closest<HTMLElement>('.doc-anchor-origin')
     if (!host) continue
-    const before = Math.max(0, parseFloat(getComputedStyle(host).marginTop) || 0)
+    const plan = planOf?.(host)
+    const planned =
+      plan && plan.kind === 'para' && !plan.spaceBeforeInner && plan.spaceBeforePt !== undefined
+        ? leadDropped?.has(host) || additive
+          ? 0
+          : (plan.spaceBeforePt * 96) / 72
+        : undefined
+    const before = Math.max(0, planned ?? (parseFloat(getComputedStyle(host).marginTop) || 0))
     const prev = parseFloat(img.style.getPropertyValue('--anchor-before')) || 0
     if (Math.abs(before - prev) > 0.1) {
       img.style.setProperty('--anchor-before', `${before.toFixed(1)}px`)
@@ -1914,7 +1954,7 @@ export function alignGapHfStrips(pm: HTMLElement, bodyLeftPx: number, factor: nu
 /** remove all float display shifts (leaving print view) */
 export function clearFloatShifts(pm: HTMLElement): void {
   for (const el of Array.from(pm.querySelectorAll<HTMLElement>('[data-page-float-dy]'))) {
-    el.style.removeProperty('--page-float-dy')
+    floatShiftTarget(el).style.removeProperty('--page-float-dy')
     delete el.dataset.pageFloatDy
   }
 }

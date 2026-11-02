@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { PdfLoadError } from '@genoffice/pdf2docx'
 import { flagBool, flagString, type ParsedArgs } from '../args'
 import { csvToXlsx, sheetNameFromStem } from '../formats/csv'
+import { convertHwp } from '../formats/hwp'
 import { convertOdp, convertOdt } from '../formats/odf'
 import { convertPdf, type PdfTarget } from '../formats/pdf'
 import { convertLegacyWorkbook, sheetToCsv } from '../formats/xlsx'
@@ -24,6 +25,8 @@ const NODE_ROUTES: Record<string, readonly string[]> = {
   ots: ['xlsx'],
   odt: ['docx'],
   ott: ['docx'],
+  hwpx: ['docx'],
+  hwp: ['docx'],
   odp: ['pptx'],
   otp: ['pptx'],
   md: ['docx', 'html'],
@@ -180,6 +183,10 @@ async function run(
   if (to === 'md') return docxToMarkdown(readInput(input), ctx)
   if (from === 'odt' || from === 'ott') {
     const r = await convertOdt(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'hwpx' || from === 'hwp') {
+    const r = await convertHwp(readInput(input))
     return { bytes: r.bytes, detail: r.detail }
   }
   if (from === 'odp' || from === 'otp') {

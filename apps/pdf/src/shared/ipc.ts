@@ -1052,6 +1052,7 @@ export interface PdfApi {
       and the diff would report phantom changes on identical files */
   compareReadOpen(
     path: string,
+    password?: string,
   ): Promise<
     { ok: true; name: string; pageCount: number; pages: string[] } | { ok: false; reason: string }
   >

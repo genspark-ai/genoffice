@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PAGE_MARK, TOTAL_PAGES_MARK, parseDocx } from '../src/index'
+import { PAGE_MARK, TOTAL_PAGES_MARK, parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -91,5 +91,73 @@ describe('single-quoted header/footer field markers', () => {
     const parsed = await parseDocx(bytes)
     expect(parsed.headerText).toBe(PAGE_MARK)
     expect(parsed.headerHasPageNumber).toBe(true)
+  })
+})
+
+describe('cached header/footer field result run boundaries', () => {
+  it('keeps canonical and simple cached fields alongside live page fields', async () => {
+    const parsed = await parseFooter(
+      `<w:p>${complexField('"', 'SECTIONPAGES', '17')}` +
+        `${simpleField('"', 'SECTIONPAGES', '18')}` +
+        `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> PAGE </w:instrText>` +
+        `<w:fldChar w:fldCharType="separate"/><w:t>99</w:t><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> NUMPAGES </w:instrText>` +
+        `<w:fldChar w:fldCharType="separate"/><w:t>99</w:t><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+    )
+    expect(parsed.footerText).toBe(`1718${PAGE_MARK}${TOTAL_PAGES_MARK}`)
+  })
+
+  it('does not expose instruction-side text or invent a missing cache', async () => {
+    const parsed = await parseFooter(
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText> DATE </w:instrText>` +
+        `<w:t>hidden</w:t><w:fldChar w:fldCharType="separate"/><w:t>shown</w:t>` +
+        `<w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> DATE </w:instrText>` +
+        `<w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+    )
+    expect(parsed.footerText).toBe('shown')
+  })
+
+  it.each(['SECTIONPAGES', 'DATE', 'FILENAME'])(
+    'keeps a same-run %s cache and its formatting without evaluating it',
+    async (instr) => {
+      const parsed = await parseFooter(
+        `<w:p><w:r><w:t>Before </w:t></w:r>` +
+          `<w:r><w:rPr><w:b/><w:color w:val="123456"/></w:rPr>` +
+          `<w:fldChar w:fldCharType="begin"/><w:instrText> ${instr} </w:instrText>` +
+          `<w:fldChar w:fldCharType="separate"/><w:t>17</w:t>` +
+          `<w:fldChar w:fldCharType="end"/></w:r>` +
+          `<w:r><w:t> after</w:t></w:r></w:p>`,
+      )
+      expect(parsed.footerText).toBe('Before 17 after')
+      expect(parsed.footerParas![0].runs.find((run) => run.text === '17')).toMatchObject({
+        bold: true,
+        color: '123456',
+      })
+      const saved = await saveDocx(
+        parsed,
+        parsed.blocks
+          .filter((block) => !block.hidden)
+          .map((block) => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      )
+      expect(saved).toBe(parsed.internal.originalBytes)
+    },
+  )
+
+  it('keeps partial edge runs and complete middle result runs in order', async () => {
+    const parsed = await parseFooter(
+      `<w:p><w:r><w:rPr><w:b/></w:rPr>` +
+        `<w:fldChar w:fldCharType="begin"/><w:instrText> SECTIONPAGES </w:instrText>` +
+        `<w:fldChar w:fldCharType="separate"/><w:t>1</w:t></w:r>` +
+        `<w:r><w:rPr><w:i/></w:rPr><w:t>2</w:t></w:r>` +
+        `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>3</w:t>` +
+        `<w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+    )
+    expect(parsed.footerText).toBe('123')
+    expect(parsed.footerParas![0].runs).toMatchObject([
+      { text: '1', bold: true },
+      { text: '2', italic: true },
+      { text: '3', underline: true },
+    ])
   })
 })

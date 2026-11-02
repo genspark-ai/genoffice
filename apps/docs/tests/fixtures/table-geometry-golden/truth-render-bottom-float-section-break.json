@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-bottom-float-section-break/probe.docx",
+  "tables": 2,
+  "hashes": ["314a90d620f83ca5", "092b36822888d8b2"],
+  "staticTables": 2,
+  "staticHashes": ["b194b2de526988fc", "079601a8ef71eed0"]
+}
