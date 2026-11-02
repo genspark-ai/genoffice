@@ -974,6 +974,10 @@ export const ms = {
   ribbonMailingsMerged: '{n} dokumen digabungkan',
   ribbonMailingsMergeFailed: 'Gabungan gagal',
   ribbonMailingsClose: 'Tutup',
+  ribbonMailingsEnvelopeNote:
+    'Sampul surat mencetak dokumen ini seadanya pada kertas sampul; blok alamat kekal pada jidar kiri atas (wizard Sampul Surat Word meletakkan alamat penghantaran di tengah).',
+  ribbonMailingsLabelsDroppedHint:
+    'Helaian label hanya membawa perenggan: {n} blok templat (jadual, gambar) akan ditinggalkan.',
   ribbonReviewingPane: 'Anak Tetingkap Semakan',
   ribbonReviewingPaneTip: 'Senaraikan semua perubahan yang dijejak',
   ribbonMarkupShow: 'Tunjukkan Penanda',

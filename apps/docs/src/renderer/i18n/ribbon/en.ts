@@ -965,6 +965,10 @@ export const en = {
   ribbonMailingsMerged: '{n} documents merged',
   ribbonMailingsMergeFailed: 'The merge failed',
   ribbonMailingsClose: 'Close',
+  ribbonMailingsEnvelopeNote:
+    "Envelopes print this document as it is on the envelope paper; the address block keeps the top-left margin (Word's Envelope wizard would centre the delivery address).",
+  ribbonMailingsLabelsDroppedHint:
+    'The label sheet carries paragraphs only: {n} block(s) of the template (tables, pictures) will be left out.',
   ribbonReviewingPane: 'Reviewing Pane',
   ribbonReviewingPaneTip: 'List every tracked change',
   ribbonMarkupShow: 'Show Markup',

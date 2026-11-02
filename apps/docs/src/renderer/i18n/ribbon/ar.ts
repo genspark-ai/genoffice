@@ -963,6 +963,10 @@ export const ar = {
   ribbonMailingsMerged: 'تم دمج {n} مستندًا',
   ribbonMailingsMergeFailed: 'فشل الدمج',
   ribbonMailingsClose: 'إغلاق',
+  ribbonMailingsEnvelopeNote:
+    'تُطبع المظاريف هذا المستند كما هو على ورق المظروف؛ يبقى عنوان الكتلة عند الهامش العلوي الأيسر (يركّز معالج المظاريف في Word عنوان التسليم).',
+  ribbonMailingsLabelsDroppedHint:
+    'تحتوي ورقة الملصقات على الفقرات فقط: سيتم حذف {n} من الكتل (جداول، صور) من القالب.',
   ribbonReviewingPane: 'جزء المراجعة',
   ribbonReviewingPaneTip: 'عرض كل التغييرات المتعقبة في قائمة',
   ribbonMarkupShow: 'إظهار العلامات',

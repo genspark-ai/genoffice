@@ -982,6 +982,10 @@ export const it = {
   ribbonMailingsMerged: '{n} documenti uniti',
   ribbonMailingsMergeFailed: 'Unione non riuscita',
   ribbonMailingsClose: 'Chiudi',
+  ribbonMailingsEnvelopeNote:
+    "Le buste stampano questo documento così com'è sulla carta per buste; il blocco indirizzo resta sul margine in alto a sinistra (la procedura Buste di Word centra l'indirizzo di consegna).",
+  ribbonMailingsLabelsDroppedHint:
+    'Il foglio etichette contiene solo paragrafi: {n} blocchi del modello (tabelle, immagini) verranno omessi.',
   ribbonReviewingPane: 'Riquadro revisioni',
   ribbonReviewingPaneTip: 'Elenca tutte le revisioni',
   ribbonMarkupShow: 'Mostra commenti e revisioni',

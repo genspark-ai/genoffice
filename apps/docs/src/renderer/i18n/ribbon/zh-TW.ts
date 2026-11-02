@@ -948,6 +948,9 @@ export const zhTW = {
   ribbonMailingsMerged: '已合併 {n} 個文件',
   ribbonMailingsMergeFailed: '合併失敗',
   ribbonMailingsClose: '關閉',
+  ribbonMailingsEnvelopeNote:
+    '信封會將此文件原樣印在信封紙上；地址區塊留在左上邊界（Word 的信封精靈會將收件地址置中）。',
+  ribbonMailingsLabelsDroppedHint: '標籤紙僅承載段落：範本中的 {n} 個區塊（表格、圖片）將被略過。',
   ribbonReviewingPane: '校閱窗格',
   ribbonReviewingPaneTip: '在清單中檢視全部修訂',
   ribbonMarkupShow: '顯示標記',

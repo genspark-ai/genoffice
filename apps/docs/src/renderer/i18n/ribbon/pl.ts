@@ -974,6 +974,10 @@ export const pl = {
   ribbonMailingsMerged: 'Scalono dokumentów: {n}',
   ribbonMailingsMergeFailed: 'Scalanie nie powiodło się',
   ribbonMailingsClose: 'Zamknij',
+  ribbonMailingsEnvelopeNote:
+    'Koperty drukują ten dokument bez zmian na papierze kopertowym; blok adresu pozostaje przy lewym górnym marginesie (kreator kopert Worda centruje adres dostawy).',
+  ribbonMailingsLabelsDroppedHint:
+    'Arkusz etykiet zawiera tylko akapity: {n} bloków szablonu (tabele, obrazy) zostanie pominiętych.',
   ribbonReviewingPane: 'Okienko recenzowania',
   ribbonReviewingPaneTip: 'Wyświetl listę wszystkich śledzonych zmian',
   ribbonMarkupShow: 'Pokaż adiustację',

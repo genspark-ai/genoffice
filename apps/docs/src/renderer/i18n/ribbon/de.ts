@@ -980,6 +980,10 @@ export const de = {
   ribbonMailingsMerged: '{n} Dokumente zusammengeführt',
   ribbonMailingsMergeFailed: 'Die Zusammenführung ist fehlgeschlagen',
   ribbonMailingsClose: 'Schließen',
+  ribbonMailingsEnvelopeNote:
+    'Umschläge drucken dieses Dokument unverändert auf Umschlagpapier; der Adressblock bleibt am oberen linken Rand (der Umschlag-Assistent von Word zentriert die Zustelladresse).',
+  ribbonMailingsLabelsDroppedHint:
+    'Das Etikettenblatt enthält nur Absätze: {n} Blöcke der Vorlage (Tabellen, Bilder) werden weggelassen.',
   ribbonReviewingPane: 'Überarbeitungsbereich',
   ribbonReviewingPaneTip: 'Alle nachverfolgten Änderungen auflisten',
   ribbonMarkupShow: 'Markup anzeigen',

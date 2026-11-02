@@ -982,6 +982,10 @@ export const es = {
   ribbonMailingsMerged: '{n} documentos combinados',
   ribbonMailingsMergeFailed: 'La combinación ha fallado',
   ribbonMailingsClose: 'Cerrar',
+  ribbonMailingsEnvelopeNote:
+    'Los sobres imprimen este documento tal cual en el papel del sobre; el bloque de dirección queda en el margen superior izquierdo (el asistente de sobres de Word centra la dirección de entrega).',
+  ribbonMailingsLabelsDroppedHint:
+    'La hoja de etiquetas solo admite párrafos: se omitirán {n} bloques de la plantilla (tablas, imágenes).',
   ribbonReviewingPane: 'Panel de revisiones',
   ribbonReviewingPaneTip: 'Mostrar todos los cambios realizados en una lista',
   ribbonMarkupShow: 'Mostrar marcas',

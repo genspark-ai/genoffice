@@ -978,6 +978,10 @@ export const nl = {
   ribbonMailingsMerged: '{n} documenten samengevoegd',
   ribbonMailingsMergeFailed: 'Het samenvoegen is mislukt',
   ribbonMailingsClose: 'Sluiten',
+  ribbonMailingsEnvelopeNote:
+    'Enveloppen drukken dit document ongewijzigd af op enveloppapier; het adresblok blijft linksboven in de marge (de envelopwizard van Word centreert het bezorgadres).',
+  ribbonMailingsLabelsDroppedHint:
+    "Het etikettenvel bevat alleen alinea's: {n} blokken van de sjabloon (tabellen, afbeeldingen) worden weggelaten.",
   ribbonReviewingPane: 'Revisievenster',
   ribbonReviewingPaneTip: 'Alle bijgehouden wijzigingen weergeven',
   ribbonMarkupShow: 'Markeringen weergeven',

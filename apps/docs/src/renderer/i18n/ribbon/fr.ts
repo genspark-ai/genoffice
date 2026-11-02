@@ -983,6 +983,10 @@ export const fr = {
   ribbonMailingsMerged: '{n} documents fusionnés',
   ribbonMailingsMergeFailed: 'La fusion a échoué',
   ribbonMailingsClose: 'Fermer',
+  ribbonMailingsEnvelopeNote:
+    "Les enveloppes impriment ce document tel quel sur le papier enveloppe ; le bloc d'adresse reste à la marge supérieure gauche (l'assistant Enveloppes de Word centre l'adresse de destination).",
+  ribbonMailingsLabelsDroppedHint:
+    "La planche d'étiquettes ne reprend que les paragraphes : {n} blocs du modèle (tableaux, images) seront ignorés.",
   ribbonReviewingPane: 'Volet Vérifications',
   ribbonReviewingPaneTip: 'Lister toutes les modifications suivies',
   ribbonMarkupShow: 'Afficher les marques',

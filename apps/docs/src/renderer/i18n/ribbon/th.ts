@@ -958,6 +958,10 @@ export const th = {
   ribbonMailingsMerged: 'รวมเอกสารแล้ว {n} ฉบับ',
   ribbonMailingsMergeFailed: 'การรวมล้มเหลว',
   ribbonMailingsClose: 'ปิด',
+  ribbonMailingsEnvelopeNote:
+    'ซองจดหมายพิมพ์เอกสารนี้ตามต้นฉบับลงบนกระดาษซอง โดยบล็อกที่อยู่ยังคงอยู่ที่ขอบซ้ายบน (ตัวช่วยสร้างซองของ Word จะจัดที่อยู่ผู้รับไว้กลางซอง)',
+  ribbonMailingsLabelsDroppedHint:
+    'แผ่นฉลากบรรจุเฉพาะย่อหน้า: บล็อกของเทมเพลต {n} บล็อก (ตาราง รูปภาพ) จะถูกข้ามไป',
   ribbonReviewingPane: 'บานหน้าต่างตรวจทาน',
   ribbonReviewingPaneTip: 'แสดงรายการการเปลี่ยนแปลงทั้งหมด',
   ribbonMarkupShow: 'แสดงมาร์กอัป',

@@ -973,6 +973,10 @@ export const pt = {
   ribbonMailingsMerged: '{n} documentos mesclados',
   ribbonMailingsMergeFailed: 'A mesclagem falhou',
   ribbonMailingsClose: 'Fechar',
+  ribbonMailingsEnvelopeNote:
+    'Os envelopes imprimem este documento tal como está no papel de envelope; o bloco de endereço fica na margem superior esquerda (o assistente de Envelopes do Word centra o endereço de entrega).',
+  ribbonMailingsLabelsDroppedHint:
+    'A folha de etiquetas só contém parágrafos: {n} blocos do modelo (tabelas, imagens) serão omitidos.',
   ribbonReviewingPane: 'Painel de Revisão',
   ribbonReviewingPaneTip: 'Listar todas as alterações controladas',
   ribbonMarkupShow: 'Mostrar Marcações',

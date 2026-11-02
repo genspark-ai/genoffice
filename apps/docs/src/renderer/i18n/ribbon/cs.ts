@@ -965,6 +965,10 @@ export const cs = {
   ribbonMailingsMerged: 'Sloučeno dokumentů: {n}',
   ribbonMailingsMergeFailed: 'Sloučení se nezdařilo',
   ribbonMailingsClose: 'Zavřít',
+  ribbonMailingsEnvelopeNote:
+    'Obálky tisknou tento dokument tak, jak je, na papír obálky; blok adresy zůstává u levého horního okraje (průvodce obálkami ve Wordu umisťuje doručovací adresu doprostřed).',
+  ribbonMailingsLabelsDroppedHint:
+    'List štítků nese pouze odstavce: {n} bloků šablony (tabulky, obrázky) bude vynecháno.',
   ribbonReviewingPane: 'Podokno revizí',
   ribbonReviewingPaneTip: 'Zobrazit seznam všech sledovaných změn',
   ribbonMarkupShow: 'Zobrazit revize',

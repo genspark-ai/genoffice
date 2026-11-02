@@ -974,6 +974,10 @@ export const ru = {
   ribbonMailingsMerged: 'Объединено документов: {n}',
   ribbonMailingsMergeFailed: 'Слияние не удалось',
   ribbonMailingsClose: 'Закрыть',
+  ribbonMailingsEnvelopeNote:
+    'Конверты печатают этот документ как есть на конвертной бумаге; блок адреса остаётся у верхнего левого поля (мастер конвертов Word центрирует адрес получателя).',
+  ribbonMailingsLabelsDroppedHint:
+    'Лист наклеек содержит только абзацы: {n} блоков шаблона (таблицы, рисунки) будут пропущены.',
   ribbonReviewingPane: 'Область проверки',
   ribbonReviewingPaneTip: 'Показать все исправления списком',
   ribbonMarkupShow: 'Показать исправления',

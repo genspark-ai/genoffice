@@ -972,6 +972,10 @@ export const id = {
   ribbonMailingsMerged: '{n} dokumen digabungkan',
   ribbonMailingsMergeFailed: 'Penggabungan gagal',
   ribbonMailingsClose: 'Tutup',
+  ribbonMailingsEnvelopeNote:
+    'Amplop mencetak dokumen ini apa adanya pada kertas amplop; blok alamat tetap di margin kiri atas (wizard Amplop Word memusatkan alamat pengiriman).',
+  ribbonMailingsLabelsDroppedHint:
+    'Lembar label hanya memuat paragraf: {n} blok templat (tabel, gambar) akan dilewati.',
   ribbonReviewingPane: 'Panel Peninjauan',
   ribbonReviewingPaneTip: 'Tampilkan semua perubahan terlacak dalam daftar',
   ribbonMarkupShow: 'Tampilkan Markup',

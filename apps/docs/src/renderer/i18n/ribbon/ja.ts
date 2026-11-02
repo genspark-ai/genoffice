@@ -985,6 +985,10 @@ export const ja = {
   ribbonMailingsMerged: '{n} 個のドキュメントを差し込みました',
   ribbonMailingsMergeFailed: '差し込みに失敗しました',
   ribbonMailingsClose: '閉じる',
+  ribbonMailingsEnvelopeNote:
+    '封筒はこの文書をそのまま封筒用紙に印刷します。住所ブロックは左上余白のままです（Word の封筒ウィザードは宛先住所を中央に配置します）。',
+  ribbonMailingsLabelsDroppedHint:
+    'ラベル用紙には段落だけが入ります。テンプレートの {n} 個のブロック（表や画像）は除外されます。',
   ribbonReviewingPane: '変更履歴ウィンドウ',
   ribbonReviewingPaneTip: 'すべての変更履歴を一覧表示',
   ribbonMarkupShow: '変更内容の表示',

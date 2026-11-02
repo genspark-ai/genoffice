@@ -976,6 +976,10 @@ export const tr = {
   ribbonMailingsMerged: '{n} belge birleştirildi',
   ribbonMailingsMergeFailed: 'Birleştirme başarısız oldu',
   ribbonMailingsClose: 'Kapat',
+  ribbonMailingsEnvelopeNote:
+    "Zarflar bu belgeyi zarf kâğıdına olduğu gibi basar; adres bloğu sol üst kenar boşluğunda kalır (Word'ün Zarf sihirbazı teslimat adresini ortalar).",
+  ribbonMailingsLabelsDroppedHint:
+    'Etiket sayfası yalnızca paragrafları taşır: şablonun {n} bloğu (tablo, resim) atlanır.',
   ribbonReviewingPane: 'Gözden Geçirme Bölmesi',
   ribbonReviewingPaneTip: 'İzlenen tüm değişiklikleri listele',
   ribbonMarkupShow: 'İşaretlemeyi Göster',

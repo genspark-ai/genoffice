@@ -983,6 +983,10 @@ export const ko = {
   ribbonMailingsMerged: '문서 {n}개를 병합했습니다',
   ribbonMailingsMergeFailed: '병합에 실패했습니다',
   ribbonMailingsClose: '닫기',
+  ribbonMailingsEnvelopeNote:
+    '봉투는 이 문서를 봉투 용지에 그대로 인쇄합니다. 주소 블록은 왼쪽 위 여백에 그대로 남습니다(Word 봉투 마법사는 받는 주소를 가운데에 배치합니다).',
+  ribbonMailingsLabelsDroppedHint:
+    '라벨 시트에는 단락만 들어갑니다. 서식 파일의 블록 {n}개(표, 그림)는 제외됩니다.',
   ribbonReviewingPane: '검토 창',
   ribbonReviewingPaneTip: '모든 변경 내용을 목록으로 보기',
   ribbonMarkupShow: '변경 내용 표시',

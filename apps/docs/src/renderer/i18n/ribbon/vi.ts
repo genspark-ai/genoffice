@@ -965,6 +965,10 @@ export const vi = {
   ribbonMailingsMerged: 'Đã trộn {n} tài liệu',
   ribbonMailingsMergeFailed: 'Trộn thư thất bại',
   ribbonMailingsClose: 'Đóng',
+  ribbonMailingsEnvelopeNote:
+    'Phong bì in tài liệu này nguyên trạng trên giấy phong bì; khối địa chỉ vẫn ở lề trên trái (trình hướng dẫn Phong bì của Word đặt địa chỉ nhận ở giữa).',
+  ribbonMailingsLabelsDroppedHint:
+    'Trang nhãn chỉ chứa đoạn văn: {n} khối của mẫu (bảng, hình ảnh) sẽ bị bỏ qua.',
   ribbonReviewingPane: 'Ngăn Xem lại',
   ribbonReviewingPaneTip: 'Liệt kê mọi thay đổi được theo dõi',
   ribbonMarkupShow: 'Hiện Đánh dấu',

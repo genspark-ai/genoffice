@@ -956,6 +956,10 @@ export const he = {
   ribbonMailingsMerged: 'מוזגו {n} מסמכים',
   ribbonMailingsMergeFailed: 'המיזוג נכשל',
   ribbonMailingsClose: 'סגירה',
+  ribbonMailingsEnvelopeNote:
+    'מעטפות מדפיסות את המסמך כפי שהוא על נייר המעטפה; גוש הכתובת נשאר בשוליים העליונים השמאליים (אשף המעטפות של Word ממרכז את כתובת המשלוח).',
+  ribbonMailingsLabelsDroppedHint:
+    'גיליון המדבקות כולל פסקאות בלבד: {n} בלוקים מהתבנית (טבלאות, תמונות) יושמטו.',
   ribbonReviewingPane: 'חלונית סקירה',
   ribbonReviewingPaneTip: 'הצג את כל השינויים במעקב ברשימה',
   ribbonMarkupShow: 'הצג סימון',

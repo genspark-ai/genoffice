@@ -15170,6 +15170,13 @@ tr > .page-gap-cut {
   color: var(--color-text-primary);
 }
 
+.mailmerge-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
 .rb-field-list {
   width: 220px;
   max-height: 320px;

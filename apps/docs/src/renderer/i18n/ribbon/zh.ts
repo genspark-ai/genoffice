@@ -970,6 +970,9 @@ export const zh = {
   ribbonMailingsMerged: '已合并 {n} 个文档',
   ribbonMailingsMergeFailed: '合并失败',
   ribbonMailingsClose: '关闭',
+  ribbonMailingsEnvelopeNote:
+    '信封按当前文档原样打印在信封纸上，地址块留在左上页边距处（Word 的信封向导会把收件地址居中放置）。',
+  ribbonMailingsLabelsDroppedHint: '标签纸只承载段落：模板中的 {n} 个块（表格、图片）将被略过。',
   ribbonReviewingPane: '审阅窗格',
   ribbonReviewingPaneTip: '在列表中查看全部修订',
   ribbonMarkupShow: '显示标记',

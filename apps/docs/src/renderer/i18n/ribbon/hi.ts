@@ -971,6 +971,10 @@ export const hi = {
   ribbonMailingsMerged: '{n} दस्तावेज़ मर्ज किए गए',
   ribbonMailingsMergeFailed: 'मर्ज विफल रहा',
   ribbonMailingsClose: 'बंद करें',
+  ribbonMailingsEnvelopeNote:
+    'लिफ़ाफ़े इस दस्तावेज़ को लिफ़ाफ़ा कागज़ पर जैसा है वैसा छापते हैं; पता ब्लॉक ऊपरी बाएँ मार्जिन पर रहता है (Word का लिफ़ाफ़ा विज़ार्ड डिलीवरी पता केंद्र में रखता है)।',
+  ribbonMailingsLabelsDroppedHint:
+    'लेबल शीट केवल पैराग्राफ़ ले जाती है: टेम्पलेट के {n} ब्लॉक (टेबल, चित्र) छोड़े जाएँगे।',
   ribbonReviewingPane: 'समीक्षा फलक',
   ribbonReviewingPaneTip: 'सभी ट्रैक किए गए परिवर्तन सूची में देखें',
   ribbonMarkupShow: 'मार्कअप दिखाएँ',

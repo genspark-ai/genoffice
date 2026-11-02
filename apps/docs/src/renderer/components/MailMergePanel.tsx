@@ -7,8 +7,10 @@ import { documentText, substituteMergeFields } from '../mail-merge/template'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import {
   AVERY_5160,
+  clampGridCount,
   customGridLayout,
   envelopeLayout,
+  unsupportedLabelBlocks,
   type EnvelopePresetId,
   type MergePageLayout,
 } from '../mail-merge/layout'
@@ -70,11 +72,18 @@ export function MailMergePanel({
     if (mode === 'labels') {
       return labelStock === 'avery5160'
         ? AVERY_5160
-        : customGridLayout(paper, Math.max(1, gridColumns), Math.max(1, gridRows))
+        : customGridLayout(paper, gridColumns, gridRows)
     }
     if (mode === 'envelopes') return envelopeLayout(envelopeSize)
     return undefined
   }
+
+  // a label cell only takes paragraphs: tell the user when the template has
+  // blocks the sheet would drop, instead of letting the merge waste a sheet
+  const droppedLabelBlocks = useMemo(
+    () => (mode === 'labels' ? unsupportedLabelBlocks(editor.getJSON() as PmNode) : 0),
+    [editor, mode],
+  )
 
   const records = source?.records ?? []
   const record = records[recordIndex]
@@ -242,6 +251,11 @@ export function MailMergePanel({
                   />
                   {t('ribbonMailingsStockCustom')}
                 </label>
+                {droppedLabelBlocks > 0 && (
+                  <div className="mailmerge-note">
+                    {t('ribbonMailingsLabelsDroppedHint', { n: droppedLabelBlocks })}
+                  </div>
+                )}
                 {labelStock === 'custom' && (
                   <div className="modal-row">
                     <select
@@ -258,7 +272,7 @@ export function MailMergePanel({
                         min={1}
                         max={20}
                         value={gridColumns}
-                        onChange={(e) => setGridColumns(Number(e.target.value) || 1)}
+                        onChange={(e) => setGridColumns(clampGridCount(Number(e.target.value)))}
                       />
                     </label>
                     <label>
@@ -268,7 +282,7 @@ export function MailMergePanel({
                         min={1}
                         max={20}
                         value={gridRows}
-                        onChange={(e) => setGridRows(Number(e.target.value) || 1)}
+                        onChange={(e) => setGridRows(clampGridCount(Number(e.target.value)))}
                       />
                     </label>
                   </div>
@@ -276,18 +290,21 @@ export function MailMergePanel({
               </div>
             )}
             {mode === 'envelopes' && (
-              <label className="mailmerge-pattern">
-                {t('ribbonMailingsEnvelopeSize')}
-                <select
-                  value={envelopeSize}
-                  onChange={(e) => setEnvelopeSize(e.target.value as EnvelopePresetId)}
-                >
-                  <option value="size10">Size 10</option>
-                  <option value="dl">DL</option>
-                  <option value="c5">C5</option>
-                  <option value="c6">C6</option>
-                </select>
-              </label>
+              <>
+                <label className="mailmerge-pattern">
+                  {t('ribbonMailingsEnvelopeSize')}
+                  <select
+                    value={envelopeSize}
+                    onChange={(e) => setEnvelopeSize(e.target.value as EnvelopePresetId)}
+                  >
+                    <option value="size10">Size 10</option>
+                    <option value="dl">DL</option>
+                    <option value="c5">C5</option>
+                    <option value="c6">C6</option>
+                  </select>
+                </label>
+                <div className="mailmerge-note">{t('ribbonMailingsEnvelopeNote')}</div>
+              </>
             )}
             {(mode === 'perRecord' || mode === 'envelopes') && (
               <label className="mailmerge-pattern">
