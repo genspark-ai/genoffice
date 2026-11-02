@@ -84,15 +84,14 @@ describe('imageDropPages on the first paper', () => {
 })
 
 describe('imageDropPages without a gap below the last paper', () => {
+  // the editor root is the paper: its padding is the page margin
   const paperEl = (bottom: number) => {
-    const paper = document.createElement('div')
-    paper.className = 'doc-page'
-    paper.style.paddingBottom = '120px'
-    paper.getBoundingClientRect = () => rect(0, bottom)
     const pm = document.createElement('div')
-    pm.getBoundingClientRect = () => rect(96, bottom - 120)
-    paper.append(pm)
-    return { paper, pm }
+    pm.className = 'doc-page'
+    pm.style.paddingTop = '96px'
+    pm.style.paddingBottom = '120px'
+    pm.getBoundingClientRect = () => rect(0, bottom)
+    return { pm }
   }
 
   it('a single page takes its extents off the paper itself', () => {

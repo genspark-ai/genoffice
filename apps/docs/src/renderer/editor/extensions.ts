@@ -6645,10 +6645,13 @@ export interface ImageDropPage {
  */
 export function imageDropPages(pm: HTMLElement, zoom: number): ImageDropPage[] {
   const pages: ImageDropPage[] = []
+  // the paper is the editor root: its padding is the page margin
   const paper = pm.closest<HTMLElement>('.doc-page')
   const paperRect = paper?.getBoundingClientRect()
+  const pad = paper ? getComputedStyle(paper) : null
+  const padPx = (v: string | undefined) => (parseFloat(v ?? '') || 0) * zoom
   let paperTop = paperRect?.top ?? -Infinity
-  let bodyTop = paperRect ? pm.getBoundingClientRect().top : -Infinity
+  let bodyTop = paperRect ? paperRect.top + padPx(pad?.paddingTop) : -Infinity
   for (const gap of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))) {
     // a split floating table's gap rows grow only the table's own box
     if (insideFloatTable(gap)) continue
@@ -6674,12 +6677,11 @@ export function imageDropPages(pm: HTMLElement, zoom: number): ImageDropPage[] {
   // the paper's own bottom edge with its padding above it; off the DOM, the
   // extents of the page before
   const prev = pages.at(-1)
-  if (paper && paperRect) {
-    const padBottom = (parseFloat(getComputedStyle(paper).paddingBottom) || 0) * zoom
+  if (paperRect) {
     pages.push({
       paperTop,
       bodyTop,
-      bodyBottom: paperRect.bottom - padBottom,
+      bodyBottom: paperRect.bottom - padPx(pad?.paddingBottom),
       paperBottom: paperRect.bottom,
     })
   } else {
