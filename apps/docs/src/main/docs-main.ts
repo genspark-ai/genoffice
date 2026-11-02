@@ -3626,7 +3626,7 @@ async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions)
 async function saveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
   // before any pick is remembered, bare-name suggestions anchor in the
   // configurable default save folder instead of Electron's Downloads pin
-  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir())
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir)
 }
 
 /** default folder where new files land on their first (silent) save; shared with the other editors via shell. User-configurable (app-settings.json), falls back to <Documents>/GenOffice. */
