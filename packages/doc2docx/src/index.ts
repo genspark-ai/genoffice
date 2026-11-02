@@ -13,6 +13,10 @@ import { readFormatting, type FormattedParagraph } from './formatting'
 import { readResolvedFormatting } from './resolve'
 import { parseSections, type SectionInfo } from './sections'
 import { parseHeaderStories, type SectionHeaderFooter } from './headers'
+import { parseInlineImages } from './images'
+import { parseListTables } from './lists'
+import { parseFields } from './fields'
+import { readLegacyDocBody as readBodyFromSource, type LegacyDocBody } from './tables'
 import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
@@ -49,6 +53,7 @@ export type { Sprm } from './sprm'
 export {
   applyCharacterGrpprl,
   applyParagraphGrpprl,
+  characterFormattingOf,
   cpOfFc,
   fcOfCp,
   readFormatting,
@@ -70,7 +75,13 @@ export type {
 } from './formatting'
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
+export { isBulletLevel, levelTextForWriter, parseListTables } from './lists'
+export type { ListDefinition, ListLevel, ListTables } from './lists'
+export { parseFields } from './fields'
+export type { FieldParseResult, HyperlinkField } from './fields'
 export { DEFAULT_SECTION_GEOMETRY, parseSections } from './sections'
+export { EMU_PER_TWIP, imageExtentEmu, parseInlineImages } from './images'
+export type { ImageBlock, InlineImageResult } from './images'
 export type { SectionInfo, SectionMargins, SectionSource } from './sections'
 export { parseHeaderStories } from './headers'
 export type {
@@ -84,7 +95,21 @@ export {
   DEFAULT_PARAGRAPH_STYLE_ISTD,
   readResolvedFormatting,
   resolveFormatting,
+  resolveParagraphFormattingFor,
+  resolveRunsForRange,
 } from './resolve'
+export type { FormattedLinkRange, ParagraphRunRequest } from './resolve'
+export { buildLegacyDocBody } from './tables'
+export type {
+  BodyBlock,
+  CellBorders,
+  LegacyDocBody,
+  TableBorders,
+  TableCell,
+  TableCellPadding,
+  TableModel,
+  TableRow,
+} from './tables'
 
 /** Everything stage 1 reads from one .doc file. */
 export interface LegacyDoc {
@@ -181,6 +206,31 @@ export interface LegacyDocLayout {
   warnings: string[]
 }
 
+/**
+ * Read the reconstructed body of a .doc: paragraphs, real tables and inline
+ * PNG/JPEG pictures in CP order (stages 3c-2/3c-3). Cell character formatting
+ * is resolved from the stylesheet when the document has one; cell paragraph
+ * formatting stays plain.
+ */
+export function readLegacyDocBody(bytes: Uint8Array): LegacyDocBody {
+  const doc = openLegacyDoc(bytes)
+  const images = parseInlineImages(doc)
+  const lists = parseListTables(doc.fib, doc.table)
+  const fields = parseFields(doc.rawText)
+  const body = readBodyFromSource(doc, {
+    images: images.images,
+    lists,
+    fields,
+  })
+  return {
+    blocks: body.blocks,
+    warnings: [
+      ...new Set([...body.warnings, ...images.warnings, ...lists.warnings, ...fields.warnings]),
+    ],
+    ...(body.lists ? { lists: body.lists } : {}),
+  }
+}
+
 /** Read the section geometry and header/footer stories of a .doc. */
 export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
   const doc = openLegacyDoc(bytes)
@@ -193,11 +243,13 @@ export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
   }
 }
 
-/* stage 3a/3c-1: .docx writer */
+/* stage 3a/3c-1/3c-2: .docx writer */
 export {
   conversionWarnings,
   convertLegacyDocToDocx,
+  generateBodyBlocksXml,
   generateBodyParagraphsXml,
+  generateTableXml,
   toDocxRun,
   toParaFormat,
   writeLegacyDocx,
