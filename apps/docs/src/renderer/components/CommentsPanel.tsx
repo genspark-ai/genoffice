@@ -357,7 +357,14 @@ export const CommentsPanel = memo(function CommentsPanel({
         {replies.map((r) => (
           <div key={r.id} className="comment-reply">
             <CommentHead c={r} unknownAuthor={unknown} actions={headActions(r, false, [])} />
-            {editingId === r.id ? editBox : <div className="comment-text">{r.text}</div>}
+            {editingId === r.id ? (
+              editBox
+            ) : (
+              <>
+                <div className="comment-text">{r.text}</div>
+                {r.image && <img className="comment-image" src={commentImageSrc(r.image)} alt="" />}
+              </>
+            )}
           </div>
         ))}
         {!c.done && (

@@ -729,7 +729,7 @@ fn inline_literal(
         return None;
     }
     let model = sources.get_mut(link_index - 1)?.as_mut()?;
-    let sheet = source_sheet_index(model, sheet_name, link)?;
+    let sheet = source_sheet_index(model, sheet_name)?;
     let (row1, column1, mut row2, mut column2) = span.bounds();
     if row2 == u32::MAX || column2 == u32::MAX {
         // a full-column / full-row span bounds to the used extent
@@ -772,23 +772,18 @@ fn inline_literal(
     Some(literal)
 }
 
-/// The source sheet matching a reference's sheet name — by name first (Excel
-/// is case-insensitive here), then by the link's own `<sheetName>` order.
-fn source_sheet_index(model: &Model, sheet_name: &str, link: &ExternalLinkStatus) -> Option<u32> {
+/// The source sheet matching a reference's sheet name (Excel is
+/// case-insensitive here). A name the live source no longer has keeps the
+/// formula on its cache: the cached `<sheetName>` order cannot stand in for
+/// it once the source's sheets moved.
+fn source_sheet_index(model: &Model, sheet_name: &str) -> Option<u32> {
     let wanted = sheet_name.to_lowercase();
-    if let Some(index) = model
+    model
         .workbook
         .worksheets
         .iter()
         .position(|worksheet| worksheet.name.to_lowercase() == wanted)
-    {
-        return Some(index as u32);
-    }
-    let position = link
-        .sheet_names
-        .iter()
-        .position(|name| name.to_lowercase() == wanted)?;
-    (position < model.workbook.worksheets.len()).then_some(position as u32)
+        .map(|index| index as u32)
 }
 
 /// The used extent (max row, max column, 0-based) of a source sheet, from its
@@ -1039,6 +1034,17 @@ mod tests {
         // the source has no such sheet: the file's cached value stands
         let missing = cell_of(&report, "'[1]Missing Sheet'!A1+1");
         assert_eq!(missing.formatted, "9");
+    }
+
+    /// A sheet the live source no longer has must not fall back to the
+    /// cached `<sheetName>` position: that would read another live sheet.
+    #[test]
+    fn a_missing_source_sheet_never_maps_to_another_sheet() {
+        let mut model = Model::new_empty("source", "en", "UTC", "en").unwrap();
+        model.add_sheet("Data").unwrap();
+        assert_eq!(source_sheet_index(&model, "data"), Some(1));
+        assert_eq!(source_sheet_index(&model, "Sheet1"), Some(0));
+        assert_eq!(source_sheet_index(&model, "Archive"), None);
     }
 
     /// An unreachable source: every cell reports its cached value and the
