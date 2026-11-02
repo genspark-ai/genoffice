@@ -61,6 +61,9 @@ export function PrintDialog({
   const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
   const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   const blobUrlsRef = useRef<string[]>([])
+  // Only the newest printer-options request may fill the dropdowns: a slow
+  // answer for an earlier queue must not land after a later selection's.
+  const driverOptionsRequest = useRef(0)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const paneRef = useRef<HTMLDivElement | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -352,14 +355,23 @@ export function PrintDialog({
                 className="print-select"
                 value={printDevice}
                 onChange={(e) => {
-                  setPrintDevice(e.target.value)
+                  const device = e.target.value
+                  setPrintDevice(device)
                   setDriverChoices({})
                   setDriverOptions([])
-                  if (e.target.value && e.target.value !== PRINT_SYSTEM_DIALOG && IS_MAC) {
+                  // Bumped on every switch (including the system-dialog entry),
+                  // so a pending request for an earlier queue can never fill the
+                  // groups of the queue selected now.
+                  const request = ++driverOptionsRequest.current
+                  if (device && device !== PRINT_SYSTEM_DIALOG && IS_MAC) {
                     void window.slidesApi
-                      .printerOptions(e.target.value)
-                      .then(setDriverOptions)
-                      .catch(() => setDriverOptions([]))
+                      .printerOptions(device)
+                      .then((groups) => {
+                        if (request === driverOptionsRequest.current) setDriverOptions(groups)
+                      })
+                      .catch(() => {
+                        if (request === driverOptionsRequest.current) setDriverOptions([])
+                      })
                   }
                 }}
               >

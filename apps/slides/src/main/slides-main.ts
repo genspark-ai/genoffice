@@ -4807,7 +4807,7 @@ export function registerSlidesIpc(): void {
             : {}),
           webPreferences: { sandbox: true },
         })
-      const opts = printJobOptions(op)
+      const opts = printJobOptions(op.job)
       if (opts.silent) {
         const win = buildWindow(false)
         let tempDir: string | null = null
