@@ -147,7 +147,7 @@ describe('wrapTopAndBottom band reservation', () => {
     expect(box.bandBottomPx).toBe(40)
   })
 
-  // IeumOffice divergence (genoffice #2331): the box floats at its page
+  // IeumOffice divergence (genoffice#2331): the box floats at its page
   // position; a 1in page offset is the body top under 1in margins, so the band
   // starts at the anchor and following text resumes below the box
   it('floats a page-relative topAndBottom box and bands it from the body top', async () => {

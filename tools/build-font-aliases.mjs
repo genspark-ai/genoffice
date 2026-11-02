@@ -11,6 +11,8 @@
 //   node tools/build-font-aliases.mjs --refit-buckets [--write] [--family NAME]
 //        rebuild the faces of every family with refit.method 'hmtx-buckets' from
 //        the font files named in refit.cuts (see fitBuckets)
+//   families with refit.method 'advance-matched' are built by tools/build-metric-fonts.py
+//        (derived TTFs + their faces in the manifest); this script only emits the CSS
 //
 // Inputs:  packages/font-metrics/measurements/families/*.json  (one per CSS family)
 //          packages/font-metrics/measurements/line-factors.json

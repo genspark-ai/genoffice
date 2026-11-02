@@ -1,0 +1,96 @@
+{
+  "id": "fonttable-altname-missing-cs",
+  "title": "A missing face follows its fontTable altName in the cs, ascii and eastAsia slots; a Shift-JIS charset entry without altName is Yu Gothic",
+  "section": "word-truths.md#L913",
+  "probe_date": "2026-11-02",
+  "source": "build.py -> gwc_staging/w2alt_probe.pdf, Word for Mac direct PDF, pymupdf span fonts and origins",
+  "class": "pure",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeAltMajalla",
+      "expect": "Sakkal Majalla",
+      "note": "P1: cs altName Sakkal Majalla -> SakkalMajalla spans, same wrap as P5"
+    },
+    {
+      "kind": "factor",
+      "font": "ProbeAltMajalla",
+      "expect": 1.3965,
+      "note": "P1 digit-free lines 18.0 at 12pt line 259"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 18.0,
+      "tol": 0.15,
+      "note": "P1 Sakkal Majalla 12 via altName; Word 18.0 on digit-free lines, 19.44 on lines holding the Traditional Arabic digits; gen lifts every line to 19.43 (rtl-run digit rule, leftover)",
+      "status": "failing"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 18.0,
+      "tol": 0.15,
+      "note": "P5 Sakkal Majalla 12 declared; Word 18.0 on digit-free lines, 19.44 on lines holding the Traditional Arabic digits; gen lifts every line to 19.43 (rtl-run digit rule, leftover)",
+      "status": "failing"
+    },
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeAltArial",
+      "expect": "Arial",
+      "note": "P6: cs altName Arial -> ArialMT"
+    },
+    {
+      "kind": "factor",
+      "font": "ProbeAltArial",
+      "expect": 1.15
+    },
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeNoAlt",
+      "expect": "Cambria",
+      "note": "P9: Latin ascii, roman entry without altName -> Cambria 15.12"
+    },
+    {
+      "kind": "linePt",
+      "block": 8,
+      "expect": 15.12,
+      "tol": 0.15,
+      "note": "P9 Cambria 12 line 259; gen 15.80 (pre-existing Cambria fallback pitch gap)",
+      "status": "failing"
+    },
+    {
+      "kind": "linePt",
+      "block": 6,
+      "expect": 18.0,
+      "tol": 0.15,
+      "note": "P7: ascii altName Sakkal Majalla -> SakkalMajalla 12"
+    },
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeAltTimesSans",
+      "expect": "Times New Roman",
+      "note": "P8: altName beats the swiss PANOSE"
+    },
+    {
+      "kind": "linePt",
+      "block": 7,
+      "expect": 14.88,
+      "tol": 0.15,
+      "note": "P8 Times New Roman 12 line 259"
+    },
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeAltMincho",
+      "expect": "MS Mincho",
+      "note": "P10: eastAsia altName MS Mincho, pitch 16.8"
+    },
+    {
+      "kind": "resolvedFace",
+      "font": "ProbeNoAltEA",
+      "expect": "Yu Gothic",
+      "note": "P11: charset 80 without altName -> YuGothic-Regular 18.48/18.96"
+    }
+  ]
+}

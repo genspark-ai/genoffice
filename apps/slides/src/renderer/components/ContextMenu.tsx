@@ -1,5 +1,6 @@
 /**
- * Context menu — fixed positioning, kept within the viewport; closes on any click/Escape/scroll.
+ * Context menu — fixed positioning, kept within the viewport; closes on any click/Escape or a
+ * scroll outside the menu. A menu taller than the viewport scrolls its own body instead.
  * Items that are null render as separators; items with `sub` open a one-level flyout on hover.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -37,12 +38,28 @@ export function ContextMenu({ x, y, items, onClose, keepEdit }: Props) {
   const [pos, setPos] = useState({ x, y })
   const [openSub, setOpenSub] = useState<number | null>(null)
   const subRef = useRef<HTMLDivElement>(null)
-  const [subLeft, setSubLeft] = useState(false)
+  const subAnchor = useRef<DOMRect | null>(null)
+  const [subStyle, setSubStyle] = useState<React.CSSProperties>()
 
+  const openSubAt = (i: number, host: Element) => {
+    subAnchor.current = host.getBoundingClientRect()
+    setOpenSub(i)
+  }
+
+  // The flyout is fixed-positioned from the host row's rect: the menu body scrolls when
+  // taller than the viewport, and an absolutely-positioned flyout would be clipped by
+  // that scroll box
   useLayoutEffect(() => {
     const el = subRef.current
-    if (openSub == null || !el) return
-    setSubLeft(el.getBoundingClientRect().right > window.innerWidth)
+    const anchor = subAnchor.current
+    if (openSub == null || !el || !anchor) return
+    const r = el.getBoundingClientRect()
+    const left =
+      anchor.right + 2 + r.width > window.innerWidth
+        ? Math.max(0, anchor.left - r.width - 2)
+        : anchor.right + 2
+    const top = Math.max(4, Math.min(anchor.top - 5, window.innerHeight - r.height - 4))
+    setSubStyle({ position: 'fixed', left, top, margin: 0 })
   }, [openSub])
 
   useLayoutEffect(() => {
@@ -67,14 +84,18 @@ export function ContextMenu({ x, y, items, onClose, keepEdit }: Props) {
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
+    // Wheel inside the menu scrolls an overflowing menu body; only an outside scroll closes
+    const onWheel = (e: WheelEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose()
+    }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('mousedown', onDown)
-    window.addEventListener('wheel', onClose, { once: true })
+    window.addEventListener('wheel', onWheel)
     window.addEventListener('blur', onClose)
     return () => {
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('wheel', onClose)
+      window.removeEventListener('wheel', onWheel)
       window.removeEventListener('blur', onClose)
     }
   }, [onClose])
@@ -120,6 +141,7 @@ export function ContextMenu({ x, y, items, onClose, keepEdit }: Props) {
       className="ctx-menu"
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(e) => e.preventDefault()}
+      onScroll={() => setOpenSub(null)}
       {...(keepEdit ? { 'data-keep-edit': '', onMouseDown: (e) => e.preventDefault() } : {})}
     >
       {items.map((item, i) =>
@@ -134,22 +156,19 @@ export function ContextMenu({ x, y, items, onClose, keepEdit }: Props) {
           <div
             key={i}
             className="ctx-sub-host"
-            onMouseEnter={() => !item.disabled && setOpenSub(i)}
+            onMouseEnter={(e) => !item.disabled && openSubAt(i, e.currentTarget)}
             onMouseLeave={() => setOpenSub(null)}
           >
             <button
               className={`ctx-item${openSub === i ? ' ctx-sub-open' : ''}`}
               disabled={item.disabled}
-              onClick={() => setOpenSub(i)}
+              onClick={(e) => openSubAt(i, e.currentTarget)}
             >
               <span>{item.label}</span>
               <span className="ctx-hint">▸</span>
             </button>
             {openSub === i && (
-              <div
-                ref={subRef}
-                className={`ctx-menu ctx-submenu${subLeft ? ' ctx-submenu-left' : ''}`}
-              >
+              <div ref={subRef} className="ctx-menu ctx-submenu" style={subStyle}>
                 {item.sub.map((it, j) =>
                   it === null ? <div key={j} className="ctx-sep" /> : plainItem(it, j),
                 )}

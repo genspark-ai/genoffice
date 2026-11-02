@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   GAP_BAND,
+  gapLedgerOf,
   alignGapHfStrips,
   canvasZoomOf,
   alignTableGapFills,
@@ -40,11 +41,48 @@ const rowOf = (cells: number): HTMLTableRowElement => {
 
 const m = { marginTop: 96, marginBottom: 96, marginLeft: 90, marginRight: 90 }
 
-describe('page gap header push', () => {
-  it('writes the push even when zero so a later page clears an earlier one', () => {
-    expect(makeGapEl({ ...m, sectionMarginTop: 70 }, 'cell').dataset.topPush).toBe('26.0')
-    expect(makeGapEl({ ...m, sectionMarginTop: 96 }, 'cell').dataset.topPush).toBe('0.0')
-    expect(makeGapEl(m, 'cell').dataset.topPush).toBeUndefined()
+describe('gap ledger', () => {
+  it('records the header push even when zero so a later page clears an earlier one', () => {
+    const [a, b, c] = gapLedgerOf(
+      [
+        { pos: 1, kind: 'cell', page: 1, metrics: { ...m, sectionMarginTop: 70 } },
+        { pos: 2, kind: 'cell', page: 2, metrics: { ...m, sectionMarginTop: 96 } },
+        { pos: 3, kind: 'cell', page: 3, metrics: m },
+      ],
+      [],
+    )
+    expect([a.topPushPx, b.topPushPx, c.topPushPx]).toEqual([26, 0, undefined])
+    expect(a.heightPx).toBe(96 + GAP_BAND + 96)
+  })
+
+  it('cut markers and overlay anchors are zero-height boundaries; carry spacers have no page', () => {
+    const el = document.createElement('p')
+    const entries = gapLedgerOf(
+      [
+        { pos: 1, kind: 'cut', page: 1, metrics: m },
+        {
+          el,
+          carryPx: 120,
+          metrics: { marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0 },
+        },
+        {
+          pos: 9,
+          kind: 'table',
+          page: 3,
+          metrics: m,
+          floatGap: true,
+          repeatHeaderPx: 18,
+          pullUp: 40,
+        },
+      ],
+      [2],
+    )
+    expect(entries.map((e) => [e.page, e.kind, e.heightPx])).toEqual([
+      [1, 'cut', 0],
+      [3, 'table', 96 + GAP_BAND + 96],
+      [2, 'cut', 0],
+    ])
+    expect(entries[1]).toMatchObject({ floatGap: true, repeatHeaderPx: 18, pullUpPx: 0 })
   })
 })
 

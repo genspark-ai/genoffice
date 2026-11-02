@@ -349,6 +349,14 @@ const homeApi: HomeApi = {
     if (typeof on !== 'boolean') throw new Error('Invalid update check setting.')
     await ipcRenderer.invoke(HOME_CHANNELS.setAutoUpdateCheck, on)
   },
+  async getSilentInstallUpdate() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getSilentInstallUpdate)
+    return result === true
+  },
+  async setSilentInstallUpdate(on) {
+    if (typeof on !== 'boolean') throw new Error('Invalid silent install setting.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setSilentInstallUpdate, on)
+  },
   async accountStatus() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.accountStatus)
     return (result ?? { loggedIn: false }) as AccountStatus
@@ -518,6 +526,12 @@ const homeApi: HomeApi = {
     if (typeof enabled !== 'boolean') throw new Error('Invalid analytics consent.')
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setAnalyticsEnabled, enabled)
     return result === true
+  },
+  async getLegacyImportPrompt() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.getLegacyImportPrompt)) !== false
+  },
+  async setLegacyImportPrompt(prompt) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.setLegacyImportPrompt, prompt)) !== false
   },
   async getAuthorName() {
     return normalizeAuthorNameSetting(await ipcRenderer.invoke(HOME_CHANNELS.getAuthorName))

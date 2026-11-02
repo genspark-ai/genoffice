@@ -10,7 +10,7 @@ import { hfDocJson, hfValueFromDoc } from '../src/renderer/editor/hf-editor'
 import { applyHfText, hfEditText } from '../src/renderer/editor/hf-text'
 import { sectionPageCounts, type PageSlice } from '../src/renderer/pagination'
 
-/** SECTIONPAGES (#2331): the strip shows the page count of its own section */
+/** SECTIONPAGES (genoffice#2331): the strip shows the page count of its own section */
 
 const FOOTER: HeaderFooter = {
   text: `- ${PAGE_MARK} / ${SECTION_PAGES_MARK} -`,

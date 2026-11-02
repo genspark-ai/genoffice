@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
-  HIGHLIGHTER_ALPHA,
+  isPenKind,
   nextInkId,
   strokeHitTest,
+  strokeLayers,
   strokePathD,
   type InkAnnotation,
   type InkPoint,
@@ -76,7 +77,15 @@ function pickAnchor(positions: AnchorPositions, start: InkPoint): number | null 
   return best
 }
 
-export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRemove }: InkOverlayProps) {
+export function InkOverlay({
+  tool,
+  color,
+  width,
+  zoom,
+  annotations,
+  onAdd,
+  onRemove,
+}: InkOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const [anchors, setAnchors] = useState<AnchorPositions>(new Map())
   const [livePoints, setLivePoints] = useState<InkPoint[] | null>(null)
@@ -84,7 +93,7 @@ export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRem
   const erasedRef = useRef<Set<string>>(new Set())
 
   const zoomFactor = zoom / 100
-  const drawing = tool === 'pen' || tool === 'highlighter'
+  const drawing = isPenKind(tool)
 
   const remeasure = useCallback(() => {
     const overlay = overlayRef.current
@@ -167,7 +176,7 @@ export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRem
   const onPointerUp = () => {
     const points = drawingRef.current
     drawingRef.current = null
-    if (tool !== 'pen' && tool !== 'highlighter') return
+    if (!isPenKind(tool)) return
     setLivePoints(null)
     if (!points || points.length === 0) return
     const anchorIndex = pickAnchor(anchors, points[0])
@@ -182,14 +191,20 @@ export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRem
     onAdd({ id: nextInkId(), anchorIndex, stroke })
   }
 
-  const strokeStyle = (s: InkStroke) => ({
-    stroke: `#${s.color}`,
-    strokeWidth: s.width,
-    strokeOpacity: s.tool === 'highlighter' ? HIGHLIGHTER_ALPHA : 1,
-    fill: 'none' as const,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-  })
+  const strokePaths = (s: InkStroke, key: string, transform?: string) =>
+    strokeLayers(s).map((layer, i) => (
+      <path
+        key={`${key}:${i}`}
+        d={strokePathD(layer.points)}
+        transform={transform}
+        stroke={`#${s.color}`}
+        strokeWidth={layer.width}
+        strokeOpacity={layer.alpha}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ))
 
   return (
     <div
@@ -204,16 +219,7 @@ export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRem
         {annotations.map((ann) => {
           const pos = anchors.get(ann.anchorIndex)
           if (!pos) return null
-          if (ann.stroke) {
-            return (
-              <path
-                key={ann.id}
-                d={strokePathD(ann.stroke.points)}
-                transform={`translate(${pos.x} ${pos.y})`}
-                {...strokeStyle(ann.stroke)}
-              />
-            )
-          }
+          if (ann.stroke) return strokePaths(ann.stroke, ann.id, `translate(${pos.x} ${pos.y})`)
           if (ann.image?.dataUrl) {
             return (
               <image
@@ -228,9 +234,7 @@ export function InkOverlay({ tool, color, width, zoom, annotations, onAdd, onRem
           }
           return null
         })}
-        {livePoints && drawing && (
-          <path d={strokePathD(livePoints)} {...strokeStyle({ tool, color, width, points: livePoints })} />
-        )}
+        {livePoints && drawing && strokePaths({ tool, color, width, points: livePoints }, 'live')}
       </svg>
     </div>
   )

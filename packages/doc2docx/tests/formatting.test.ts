@@ -106,7 +106,7 @@ describe('real formatting.doc fixture (python-docx document saved as Word 97 by 
 
   it('P6: bold CJK run, plus the paragraph defaults LibreOffice writes explicitly', () => {
     expect(model.paragraphs[6]!.runs).toEqual([
-      { text: '中文粗体段落', formatting: { bold: true } },
+      { text: '\u4e2d\u6587\u7c97\u4f53\u6bb5\u843d', formatting: { bold: true } },
     ])
     // LibreOffice wrote its 276/1 default line spacing and left alignment as
     // explicit sprms, and 200 twips of space after; all are real file data.
@@ -179,7 +179,7 @@ describe('synthetic CHPX formatting', () => {
 
   it('splits a run across compressed and UTF-16LE pieces', () => {
     const bytes = buildSyntheticDoc({
-      pieces: [{ text: 'abcd', compressed: true }, { text: '中文x\r' }],
+      pieces: [{ text: 'abcd', compressed: true }, { text: '\u4e2d\u6587x\r' }],
       chpxFkpPages: [
         encodeChpxFkp([
           { fcStart: 2048, fcEnd: 2050 }, // CP 0-1: 'ab'
@@ -188,10 +188,10 @@ describe('synthetic CHPX formatting', () => {
       ],
     })
     const model = modelOf(bytes)
-    expect(model.paragraphs[0]!.text).toBe('abcd中文x')
+    expect(model.paragraphs[0]!.text).toBe('abcd\u4e2d\u6587x')
     expect(model.paragraphs[0]!.runs).toEqual([
       { text: 'ab', formatting: {} },
-      { text: 'cd中文x', formatting: { bold: true } },
+      { text: 'cd\u4e2d\u6587x', formatting: { bold: true } },
     ])
   })
 
@@ -254,6 +254,96 @@ describe('synthetic CHPX formatting', () => {
       listId: 3,
       inTable: true,
       tableRowEnd: true,
+    })
+  })
+
+  it('reads sprmCCv RGB colors, keeping the palette index alongside', () => {
+    const text = 'ab\r'
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: textFc(0),
+            fcEnd: textFc(1),
+            grpprl: concat(sprm(0x2a42, [6]), sprm(0x6870, [0xcc, 0, 0, 0])),
+          },
+          { fcStart: textFc(1), fcEnd: textFc(2), grpprl: sprm(0x6870, [0, 0, 0, 0xff]) },
+        ]),
+      ],
+    })
+    const runs = modelOf(bytes).paragraphs[0]!.runs
+    expect(runs[0]!.formatting).toEqual({ colorIndex: 6, colorRgb: 'CC0000' })
+    expect(runs[1]!.formatting).toEqual({ colorRgb: 'auto' })
+  })
+
+  it('reads tab stops from sprmPChgTabsPapx and sprmPChgTabs (delete, then add)', () => {
+    const text = 'a\rb\r'
+    // sprmPChgTabsPapx: no deletions; add 720 left and 8640 right-dot (TBD jc 2, tlc 1)
+    const papxTabs = sprm(0xc60d, [8, 0, 2, 0xd0, 0x02, 0xc0, 0x21, 0x00, 0x0a])
+    // sprmPChgTabs: delete 720 (with close tolerance), add 4320 center
+    const chgTabs = sprm(0xc615, [10, 0, 1, 0xd0, 0x02, 0x10, 0x00, 1, 0xe0, 0x10, 0x01])
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      papxFkpPages: [
+        encodePapxFkp([
+          { fcStart: textFc(0), fcEnd: textFc(2), grpprl: papxTabs },
+          { fcStart: textFc(2), fcEnd: textFc(4), grpprl: concat(papxTabs, chgTabs) },
+        ]),
+      ],
+    })
+    const paragraphs = modelOf(bytes).paragraphs
+    expect(paragraphs[0]!.formatting.tabStops).toEqual([
+      { positionTwips: 720, alignment: 'left' },
+      { positionTwips: 8640, alignment: 'right', leader: 'dot' },
+    ])
+    expect(paragraphs[1]!.formatting.tabStops).toEqual([
+      { positionTwips: 4320, alignment: 'center' },
+      { positionTwips: 8640, alignment: 'right', leader: 'dot' },
+    ])
+  })
+
+  it('reads paragraph borders from the Brc80 and Brc sprms', () => {
+    const text = 'a\rb\r'
+    const brc80 = concat(
+      sprm(0x6424, [4, 1, 8, 1]), // top: 0.5pt single, ico 8 (white), 1pt space
+      sprm(0x6426, [16, 1, 2, 4]), // bottom: 2pt single, ico 2 (blue), 4pt space
+    )
+    const brc = concat(
+      brc80,
+      sprm(0xc650, [8, 0x2b, 0x6c, 0xb0, 0, 16, 1, 4, 0]), // bottom again with the RGB twin
+      sprm(0xc64e, [8, 0, 0, 0, 0, 0, 0, 0, 0]), // top removed (brcType none)
+    )
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      papxFkpPages: [
+        encodePapxFkp([
+          { fcStart: textFc(0), fcEnd: textFc(2), grpprl: brc80 },
+          { fcStart: textFc(2), fcEnd: textFc(4), grpprl: brc },
+        ]),
+      ],
+    })
+    const paragraphs = modelOf(bytes).paragraphs
+    expect(paragraphs[0]!.formatting.borders).toEqual({
+      top: { widthEighths: 4, spacePoints: 1, color: 'FFFFFF' },
+      bottom: { widthEighths: 16, spacePoints: 4, color: '0000FF' },
+    })
+    expect(paragraphs[1]!.formatting.borders).toEqual({
+      bottom: { widthEighths: 16, spacePoints: 4, color: '2B6CB0' },
+    })
+  })
+
+  it('reads character-unit indents next to their twips twins', () => {
+    const text = 'a\r'
+    const grpprl = concat(sprm(0x8460, [0x80, 0x02]), sprm(0x4457, [200, 0]), sprm(0x4456, [50, 0]))
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      papxFkpPages: [encodePapxFkp([{ fcStart: textFc(0), fcEnd: textFc(2), grpprl }])],
+    })
+    expect(modelOf(bytes).paragraphs[0]!.formatting).toEqual({
+      styleIndex: 0,
+      indentFirstLineTwips: 640,
+      charIndents: { firstLine: 200, left: 50 },
     })
   })
 

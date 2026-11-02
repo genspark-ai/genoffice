@@ -1250,6 +1250,78 @@
       "truths": 3,
       "proseOnly": null,
       "fixtures": ["render-hf-fixed-margin-header-dist"]
+    },
+    {
+      "line": 873,
+      "date": "2026-11-02",
+      "title": "2026-11-02 a break-only paragraph after a page-anchored floating table turns the page above the float band",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-break-para-after-page-float"]
+    },
+    {
+      "line": 878,
+      "date": "2026-11-02",
+      "title": "Space before at a page top opened by the paragraph's own break: pageBreakBefore vs leading w:br, compat 14 15",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-pbb-text-space-before", "render-pbb-text-space-before-c14"]
+    },
+    {
+      "line": 884,
+      "date": "2026-11-02",
+      "title": "2026-11-02 anchored picture past the column edge keeps its posOffset X; CSS float stacking is not a Word rule",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["anchor-overhang-keeps-offset"]
+    },
+    {
+      "line": 891,
+      "date": "2026-11-02",
+      "title": "2026-11-02 docDefaults w:lang w:val naming an East Asian language lays every run's Latin out with the run's eastAsia face",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["ea-lang-latin-via-ea-slot"]
+    },
+    {
+      "line": 899,
+      "date": "2026-11-02",
+      "title": "2026-11-02 VML rule-only paragraph = one line of the rule run's face, whatever marks wrap it",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-vml-rule-only-line"]
+    },
+    {
+      "line": 904,
+      "date": "2026-11-02",
+      "title": "2026-11-02 header paragraph under an auto line multiple below 1 keeps its glyphs whole over a tiny advance",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-hf-tiny-line-mult-ink"]
+    },
+    {
+      "line": 908,
+      "date": "2026-11-02",
+      "title": "2026-11-02 Korean bullet faces lift Latin list lines by their centred ascent; Word-shipped Gulim is not the charset-81 Malgun route",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["kr-marker-face-line"]
+    },
+    {
+      "line": 913,
+      "date": "2026-11-02",
+      "title": "2026-11-02 a missing face follows its fontTable altName in the cs, ascii and eastAsia slots; Shift-JIS charset without altName is Yu Gothic; digits in an rtl run take the ascii face",
+      "abridged": false,
+      "truths": 7,
+      "proseOnly": null,
+      "fixtures": ["fonttable-altname-missing-cs"]
     }
   ]
 }

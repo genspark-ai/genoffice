@@ -391,7 +391,7 @@ describe('rich-text footnote display runs', () => {
     expect(notes[1].text).toBe('纯文本')
   })
 
-  it('recovers the direct Latin font of a run (w:ascii, else w:hAnsi); font alone makes the note rich', async () => {
+  it('recovers the direct Latin font of a run (w:ascii only, a lone w:hAnsi inherits); font alone makes the note rich', async () => {
     const footnotesXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
@@ -407,7 +407,7 @@ describe('rich-text footnote display runs', () => {
     const notes = parseNotesXml(footnotesXml, 'footnote', standaloneNoteParagraphReader())
     expect(notes[0].richParas?.[0]).toEqual([
       { text: 'Source ANSD', sizeHalfPoints: 18, fontAscii: 'Times New Roman' },
-      { text: ', 2023', fontAscii: 'Garamond' },
+      { text: ', 2023' },
     ])
     expect(notes[1].richParas?.[0]).toEqual([{ text: 'font only', fontAscii: 'Arial' }])
   })
