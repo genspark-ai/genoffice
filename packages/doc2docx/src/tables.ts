@@ -33,6 +33,7 @@ import {
   type ParagraphRunRequest,
 } from './resolve'
 import { iterateSprms, readSprmI16, readSprmU16, readSprmU8, type Sprm } from './sprm'
+import type { ImageBlock } from './images'
 import { parseStsh, type StyleSheet } from './styles'
 import { mapWordControlChars } from './text'
 
@@ -116,7 +117,9 @@ export interface TableModel {
 }
 
 export type BodyBlock =
-  { type: 'paragraph'; paragraph: FormattedParagraph } | { type: 'table'; table: TableModel }
+  | { type: 'paragraph'; paragraph: FormattedParagraph }
+  | { type: 'table'; table: TableModel }
+  | { type: 'image'; image: ImageBlock }
 
 /** The reconstructed body: paragraphs and tables in CP (document) order. */
 export interface LegacyDocBody {
@@ -566,7 +569,7 @@ function buildTable(
 export function buildLegacyDocBody(
   source: FormattingSource,
   read?: FormattingRead,
-  options: { styles?: StyleSheet } = {},
+  options: { styles?: StyleSheet; images?: ImageBlock[] } = {},
 ): LegacyDocBody {
   const warnings: string[] = []
   const detailed = read ?? readFormattingDetailed(source, warnings)
@@ -610,10 +613,20 @@ export function buildLegacyDocBody(
     previousMarkerEmpty = unit.text === ''
   })
   const blocks: BodyBlock[] = []
+  const imagesByCp = new Map<number, ImageBlock>()
+  for (const image of options.images ?? []) imagesByCp.set(image.cp, image)
+  const consumedImageCps = new Set<number>()
   let index = 0
   while (index < units.length) {
     const unit = units[index]!
     if (unit.kind === 'paragraph' && !cellParagraph.has(index)) {
+      const image = imagesByCp.get(unit.startCp)
+      if (image && unit.text === '\u0001') {
+        blocks.push({ type: 'image', image })
+        consumedImageCps.add(image.cp)
+        index++
+        continue
+      }
       const entry = papx.get(unit.startCp)
       const request: ParagraphRunRequest = {
         startCp: unit.startCp,
@@ -708,7 +721,7 @@ export function buildLegacyDocBody(
     }
   }
   // content this stage still drops, reported once per document
-  if (source.rawText.includes('\u0001'))
+  if (source.rawText.includes('\u0001') && (options.images ?? []).length === 0)
     warnings.push('images are not converted yet; image placeholders are omitted')
   if (source.rawText.includes('HYPERLINK'))
     warnings.push(
@@ -724,18 +737,26 @@ export function buildLegacyDocBody(
     warnings.push(
       'numbered and bulleted lists are not converted yet; list text is imported as plain paragraphs',
     )
+  const unusedImages = (options.images ?? []).filter((image) => !consumedImageCps.has(image.cp))
+  if (unusedImages.length > 0)
+    warnings.push(
+      'a picture inside a table cell or a text paragraph is not supported yet; it was omitted',
+    )
   return { blocks, warnings: [...new Set(warnings)] }
 }
 
-/** Read the reconstructed body of a .doc (paragraphs + tables in document order). */
-export function readLegacyDocBody(source: FormattingSource): LegacyDocBody {
+/** Read the reconstructed body of a .doc (paragraphs, tables and images in CP order). */
+export function readLegacyDocBody(
+  source: FormattingSource,
+  options: { images?: ImageBlock[] } = {},
+): LegacyDocBody {
   const detailedWarnings: string[] = []
   const detailed = readFormattingDetailed(source, detailedWarnings)
   const styles =
     source.fib.lcbStshf > 0
       ? parseStsh(source.table, source.fib.fcStshf, source.fib.lcbStshf)
       : undefined
-  const body = buildLegacyDocBody(source, detailed, { styles })
+  const body = buildLegacyDocBody(source, detailed, { styles, images: options.images })
   return {
     blocks: body.blocks,
     warnings: [...new Set([...detailedWarnings, ...body.warnings])],

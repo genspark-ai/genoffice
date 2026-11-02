@@ -145,23 +145,57 @@ sprms of each row-end PAPX, and writes real `w:tbl` tables:
 - **Warnings** — table cell paragraph formatting is flattened, and images,
   lists and hyperlinks are still omitted (reported once per document).
 
+## Stage 3c-3 — inline pictures
+
+Internal only. Reads the inline pictures of the body story from the CFB Data
+stream and writes them as real .docx media parts with inline drawings:
+
+- **parseInlineImages** — walks the body CPs, ignores picture characters inside
+  field ranges, maps each remaining picture CP to its CHPX run and requires
+  sprmCFSpec plus a signed sprmCPicLocation (both from the run grpprl). The
+  PICF at that Data offset is validated (lcb, cbHeader, bounds), the display
+  size comes from dxaGoal * mx / 1000 (mx/my are unsigned 16-bit scaling
+  factors) with xExt/yExt and plain dxaGoal as fallbacks, and the exact image
+  bytes are cut from the PICF range: a PNG chunk sequence through IEND or a
+  JPEG SOI..EOI range. Unsupported formats (EMF/WMF/DIB) and a missing Data
+  stream are warnings; corrupt PICF or truncated image data raise
+  `bad_picture`. `ImageBlock` carries cp, widthTwips/heightTwips, mediaType and
+  the exact bytes.
+- **Body model** — `readLegacyDocBody` now emits `{ type: "image" }` blocks in
+  CP order (an image character that is a paragraph of its own), so paragraphs,
+  tables and pictures keep their document order. Pictures inside a text
+  paragraph or a table cell are reported and omitted.
+- **Writer** — adds `word/media/imageN.png|jpeg` with the exact bytes, a
+  `<Default Extension=... ContentType=image/...>` entry in
+  [Content_Types].xml, an image relationship in word/_rels/document.xml.rels,
+  and an inline `<w:drawing>` paragraph (wp:inline with wp:extent in EMU =
+  twips * 635, docPr, pic:pic with a:blip r:embed and a:stretch). The drawing
+  is written at the picture CP, between the surrounding paragraphs; documents
+  without pictures keep the previous writer output unchanged.
+- **Limitations** — only inline PNG/JPEG pictures are converted: EMF/WMF/DIB
+  blips are warned and skipped, floating images and pictures in headers,
+  footnotes or table cells are not handled yet, and picture metadata
+  (alt text, borders, hyperlinks) is not carried over.
+
 ## Roadmap
 
-- **Stage 3c-3**: images, lists and hyperlinks, emitted real .docx styles
-  instead of resolved direct formatting, richer header/footer formatting,
-  real multi-section output, and table cell padding/shading/styles plus
-  nested tables; tighter paragraph-count parity.
+- **Stage 3c-4**: lists and hyperlinks, EMF/WMF conversion, floating images,
+  pictures in headers/cells, emitted real .docx styles instead of resolved
+  direct formatting, richer header/footer formatting, real multi-section
+  output and table cell padding/shading/styles; tighter paragraph-count
+  parity.
 - **Stage 3d**: docs import wiring (`.doc` files through File → Open /
   drag-and-drop and the CLI), as core + UI PRs.
 
 ## Format coverage
 
 Word 97-2003 (nFib 0x00C1–0x0112), main document story with section geometry,
-header/footer stories and real tables; paragraph/character styles are resolved
-into direct formatting. Footnotes, textboxes, images, lists, emitted .docx
-styles and nested tables are later stages, and multi-section documents are
-flattened to one section. Encrypted files and Word 6/95 documents are rejected
-with actionable `LegacyDocError` codes (`not_cfb`, `truncated`, `bad_fib`,
+header/footer stories, real tables and inline PNG/JPEG pictures;
+paragraph/character styles are resolved into direct formatting. Footnotes,
+textboxes, lists, emitted .docx styles, nested tables and EMF/WMF pictures are
+later stages, and multi-section documents are flattened to one section.
+Encrypted files and Word 6/95 documents are rejected with actionable
+`LegacyDocError` codes (`not_cfb`, `truncated`, `bad_fib`,
 `unsupported_version`, `encrypted`, `missing_stream`, `bad_clx`,
 `bad_piece_table`, `bad_fkp`, `bad_sprm`, `bad_stsh`, `bad_section`,
-`bad_hdd`, `bad_table`, `limits_exceeded`, `corrupt`).
+`bad_hdd`, `bad_table`, `bad_picture`, `limits_exceeded`, `corrupt`).

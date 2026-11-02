@@ -585,6 +585,57 @@ export function encodePlcBte(fcs: number[], pages: number[]): Uint8Array {
   return out
 }
 
+/** Options for a synthetic PICF header + picture blob at a Data stream offset. */
+export interface SyntheticPicfOptions {
+  /** bytes after the 68-byte PICF header (PNG/JPEG/unsupported payload) */
+  payload: Uint8Array
+  xExt?: number
+  yExt?: number
+  dxaGoal?: number
+  dyaGoal?: number
+  /** scaling factor stored as unsigned 16-bit (48000 = 0.5 inch at 15 twips) */
+  mx?: number
+  my?: number
+  /** override the PICF lcb for corrupt-PICF tests */
+  lcb?: number
+  /** override the PICF cbHeader for corrupt-PICF tests */
+  cbHeader?: number
+}
+
+/** A PICF (0x44-byte header) followed by the picture payload. */
+export function encodePicf(options: SyntheticPicfOptions): Uint8Array {
+  const header = new Uint8Array(0x44)
+  const view = new DataView(header.buffer)
+  const out = new Uint8Array(header.length + options.payload.length)
+  out.set(options.payload, header.length)
+  const lcb = options.lcb ?? out.length
+  const cbHeader = options.cbHeader ?? 0x44
+  view.setUint32(0, lcb >>> 0, true)
+  view.setUint16(4, cbHeader, true)
+  view.setUint16(6, 0x64, true) // mm constant written by Word/LibreOffice
+  view.setInt16(0x08, options.xExt ?? 0, true)
+  view.setInt16(0x0a, options.yExt ?? 0, true)
+  view.setInt16(0x1c, options.dxaGoal ?? 0, true)
+  view.setInt16(0x1e, options.dyaGoal ?? 0, true)
+  view.setUint16(0x20, (options.mx ?? 0) & 0xffff, true)
+  view.setUint16(0x22, (options.my ?? 0) & 0xffff, true)
+  out.set(header, 0)
+  return out
+}
+
+/** The CHPX sprms of a picture character: sprmCFSpec + sprmCPicLocation. */
+export function encodePictureChpx(fcPic: number): Uint8Array {
+  const location = new Uint8Array(4)
+  new DataView(location.buffer).setInt32(0, fcPic, true)
+  const parts = [encodeSprm(0x0855, [1]), encodeSprm(0x6a03, location)]
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
+  }
+  return out
+}
 /** wrap streams in an OLE2 compound file (cfb seeds its own producer marker, ignored on read) */
 export function buildCompound(streams: Array<[string, Uint8Array]>): Uint8Array {
   const container = CFB.utils.cfb_new()

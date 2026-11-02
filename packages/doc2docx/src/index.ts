@@ -13,6 +13,7 @@ import { readFormatting, type FormattedParagraph } from './formatting'
 import { readResolvedFormatting } from './resolve'
 import { parseSections, type SectionInfo } from './sections'
 import { parseHeaderStories, type SectionHeaderFooter } from './headers'
+import { parseInlineImages } from './images'
 import { readLegacyDocBody as readBodyFromSource, type LegacyDocBody } from './tables'
 import { LegacyDocError } from './errors'
 
@@ -73,6 +74,8 @@ export type {
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
 export { DEFAULT_SECTION_GEOMETRY, parseSections } from './sections'
+export { EMU_PER_TWIP, imageExtentEmu, parseInlineImages } from './images'
+export type { ImageBlock, InlineImageResult } from './images'
 export type { SectionInfo, SectionMargins, SectionSource } from './sections'
 export { parseHeaderStories } from './headers'
 export type {
@@ -198,12 +201,19 @@ export interface LegacyDocLayout {
 }
 
 /**
- * Read the reconstructed body of a .doc: paragraphs and real tables in CP
- * order (stage 3c-2). Cell character formatting is resolved from the stylesheet
- * when the document has one; cell paragraph formatting stays plain.
+ * Read the reconstructed body of a .doc: paragraphs, real tables and inline
+ * PNG/JPEG pictures in CP order (stages 3c-2/3c-3). Cell character formatting
+ * is resolved from the stylesheet when the document has one; cell paragraph
+ * formatting stays plain.
  */
 export function readLegacyDocBody(bytes: Uint8Array): LegacyDocBody {
-  return readBodyFromSource(openLegacyDoc(bytes))
+  const doc = openLegacyDoc(bytes)
+  const images = parseInlineImages(doc)
+  const body = readBodyFromSource(doc, { images: images.images })
+  return {
+    blocks: body.blocks,
+    warnings: [...new Set([...body.warnings, ...images.warnings])],
+  }
 }
 
 /** Read the section geometry and header/footer stories of a .doc. */
