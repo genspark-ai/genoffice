@@ -8,6 +8,7 @@ import {
   formatSerial,
   type DateFormatParts,
 } from './xlsx-dates'
+import { decodeXlsxEscapes } from '@genoffice/xlsx-gateway/gateway/xlsx-escapes'
 
 function stripNamespacePrefix(name: string): string {
   const separator = name.indexOf(':')
@@ -53,11 +54,11 @@ function sharedStringText(si: Record<string, unknown>): string {
   let out = ''
   for (const key of Object.keys(si)) {
     if (key === 't') {
-      for (const node of asArray(si[key] as unknown)) out += textOf(node)
+      for (const node of asArray(si[key] as unknown)) out += decodeXlsxEscapes(textOf(node))
     } else if (key === 'r') {
       for (const run of asArray(si[key] as unknown)) {
         const r = run as Record<string, unknown>
-        for (const node of asArray(r['t'] as unknown)) out += textOf(node)
+        for (const node of asArray(r['t'] as unknown)) out += decodeXlsxEscapes(textOf(node))
       }
     }
   }
@@ -177,6 +178,7 @@ function cellText(
     return shared[index] ?? ''
   }
   if (type === 'b') return value.trim() === '1' ? 'TRUE' : 'FALSE'
+  if (type === 'str') return decodeXlsxEscapes(value)
   return value
 }
 
