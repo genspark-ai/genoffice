@@ -1008,7 +1008,9 @@ fn workbook_has_formulas(path: &Path) -> Result<bool, SidecarError> {
                 "The formula engine could not read the workbook archive: {error}"
             ))
         })?;
-        let name = entry.name().to_owned();
+        let Some(name) = entry.name().ok().map(|name| name.into_owned()) else {
+            continue;
+        };
         if name.starts_with("xl/worksheets/") && name.ends_with(".xml") {
             names.push(name);
         }
@@ -1743,7 +1745,7 @@ mod tests {
         let mut entries = Vec::new();
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).unwrap();
-            let entry_name = entry.name().to_owned();
+            let entry_name = entry.name().unwrap().into_owned();
             let mut content = Vec::new();
             entry.read_to_end(&mut content).unwrap();
             entries.push((entry_name, content));
