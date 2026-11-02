@@ -2,131 +2,122 @@ import { describe, expect, it } from 'vitest'
 
 import {
   a1RangeToTarget,
-  boundConnections,
-  queryTableBinding,
-  refreshableConnections,
-  tableToCellEdits,
+  connectionSourceOf,
+  planTableRefresh,
+  refreshableQueriesOf,
 } from '../src/gateway/xlsx-connection-refresh'
 
-const CONNECTIONS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <connection id="1" name="Rates" type="5" refreshedVersion="8">
-    <webPr url="https://example.com/rates.html"/>
-  </connection>
-  <connection id="2" name="Local" type="6">
-    <textPr sourceFile="rates.csv"/>
-  </connection>
-  <connection id="3" name="Ledger" type="1">
-    <dbPr connection="Provider=SQLOLEDB;Data Source=secret-host;User ID=admin;Password=hunter2"/>
-  </connection>
-  <connection id="4" name="Mashup" type="5">
-    <dbPr connection="Provider=Microsoft.Mashup.OleDb;Data Source=$Workbook$;Location=Rates"/>
-  </connection>
-</connections>`
+const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-describe('refreshableConnections', () => {
-  it('lists the web and text connections with what they read', () => {
-    expect(refreshableConnections(CONNECTIONS_XML)).toEqual([
-      { id: '1', name: 'Rates', kind: 'web', source: 'https://example.com/rates.html' },
-      { id: '2', name: 'Local', kind: 'text', source: 'rates.csv' },
-    ])
-  })
+/// The parts Excel writes for an Excel-authored workbook: a Power Query loaded
+/// to a table, a ListObject-backed web query, a text query, a legacy web query
+/// loaded straight onto a sheet (no table part, only ExternalData_1), and a
+/// connection-only web query. "Sales &amp; Notes" keeps an escaped sheet name
+/// on the legacy route.
+const PARTS: Record<string, string> = {
+  'xl/connections.xml':
+    '<connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<connection id="1" name="Query - Rates" type="5">' +
+    '<dbPr connection="Provider=Microsoft.Mashup.OleDb.1;Data Source=$Workbook$;Location=Rates"/></connection>' +
+    '<connection id="2" name="Rates" type="4">' +
+    '<webPr url="https://example.com/rates.html"/></connection>' +
+    '<connection id="3" name="prices" type="6">' +
+    '<textPr sourceFile="C:\\data\\prices.csv"/></connection>' +
+    '<connection id="4" name="Legacy" type="4">' +
+    '<webPr url="https://example.com/legacy.html"/></connection>' +
+    '<connection id="5" name="No destination" type="4">' +
+    '<webPr url="https://example.com/none.html"/></connection>' +
+    '</connections>',
+  'xl/workbook.xml':
+    '<workbook xmlns:r="' +
+    REL +
+    '"><sheets><sheet name="Rates" sheetId="1" r:id="rId1"/>' +
+    '<sheet name="Sales &amp; Notes" sheetId="2" r:id="rId2"/></sheets>' +
+    '<definedNames><definedName name="ExternalData_1" localSheetId="1" hidden="1">' +
+    "'Sales &amp; Notes'!$D$2:$E$12</definedName></definedNames></workbook>",
+  'xl/_rels/workbook.xml.rels':
+    '<Relationships>' +
+    '<Relationship Id="rId1" Type="' +
+    REL +
+    '/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '<Relationship Id="rId2" Type="' +
+    REL +
+    '/worksheet" Target="worksheets/sheet2.xml"/>' +
+    '</Relationships>',
+  'xl/worksheets/_rels/sheet1.xml.rels':
+    '<Relationships><Relationship Id="rId1" Type="' +
+    REL +
+    '/table" Target="../tables/table1.xml"/></Relationships>',
+  'xl/tables/table1.xml':
+    '<table id="1" name="Rates" displayName="Rates" ref="A1:C21" tableType="queryTable"/>',
+  'xl/tables/_rels/table1.xml.rels':
+    '<Relationships><Relationship Id="rId1" Type="' +
+    REL +
+    '/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>',
+  'xl/queryTables/queryTable1.xml':
+    '<queryTable name="ExternalData_1" connectionId="2" autoFormatId="16"/>',
+  'xl/worksheets/_rels/sheet2.xml.rels':
+    '<Relationships><Relationship Id="rId1" Type="' +
+    REL +
+    '/queryTable" Target="../queryTables/queryTable2.xml"/></Relationships>',
+  'xl/queryTables/queryTable2.xml': '<queryTable name="ExternalData_1" connectionId="4"/>',
+}
 
-  it('does not list a database connection, whose string can carry credentials', () => {
-    const listed = refreshableConnections(CONNECTIONS_XML)
-    expect(listed.some((c) => c.id === '3')).toBe(false)
-    expect(JSON.stringify(listed)).not.toContain('hunter2')
-  })
+const reader =
+  (files: Record<string, string>) =>
+  async (path: string): Promise<string | undefined> =>
+    files[path]
 
-  it('does not list a Power Query connection, which needs an M interpreter', () => {
-    expect(refreshableConnections(CONNECTIONS_XML).some((c) => c.id === '4')).toBe(false)
-  })
-
-  it('finds nothing in a package without connections', () => {
-    expect(refreshableConnections('<connections/>')).toEqual([])
-  })
-})
-
-describe('queryTableBinding', () => {
-  it('reads the connection and the range the query table fills', () => {
-    const xml =
-      '<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
-      'name="Rates" connectionId="1" ref="A1:D21"/>'
-    expect(queryTableBinding(xml)).toEqual({ connectionId: '1', ref: 'A1:D21' })
-  })
-
-  it('returns null when the part names neither a connection nor a range', () => {
-    expect(queryTableBinding('<queryTable name="Rates"/>')).toBeNull()
-    expect(queryTableBinding('<not-a-query-table/>')).toBeNull()
-  })
-})
-
-const WORKBOOK_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="Rates" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`
-
-const WORKBOOK_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`
-
-const SHEET_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/>
-</Relationships>`
-
-const QUERY_TABLE_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="Rates" connectionId="1" ref="A1:D21"/>`
-
-describe('boundConnections', () => {
-  const parts = {
-    connectionsXml: CONNECTIONS_XML,
-    workbookXml: WORKBOOK_XML,
-    workbookRelsXml: WORKBOOK_RELS_XML,
-    sheetRels: [{ partPath: 'xl/worksheets/sheet1.xml', xml: SHEET_RELS_XML }],
-    queryTables: [{ path: 'xl/queryTables/queryTable1.xml', xml: QUERY_TABLE_XML }],
-  }
-
-  it('binds a refreshable query to the sheet and range it fills', () => {
-    expect(boundConnections(parts)).toEqual([
+describe('refreshableQueriesOf', () => {
+  it('finds a ListObject-backed web query through the table part Excel writes', async () => {
+    expect(await refreshableQueriesOf(reader(PARTS))).toEqual([
       {
-        connection: {
-          id: '1',
-          name: 'Rates',
-          kind: 'web',
-          source: 'https://example.com/rates.html',
-        },
+        id: '2',
+        name: 'Rates',
+        kind: 'web',
+        source: 'https://example.com/rates.html',
         sheetName: 'Rates',
-        range: 'A1:D21',
+        range: 'A1:C21',
+      },
+      {
+        id: '4',
+        name: 'Legacy',
+        kind: 'web',
+        source: 'https://example.com/legacy.html',
+        sheetName: 'Sales & Notes',
+        range: 'D2:E12',
       },
     ])
   })
 
-  it('leaves out a connection that has no query table to write into', () => {
-    const result = boundConnections({
-      ...parts,
-      queryTables: [],
-    })
-    expect(result).toEqual([])
+  it('decodes the escaped sheet name from the legacy defined-name route', async () => {
+    const queries = await refreshableQueriesOf(reader(PARTS))
+    expect(queries[1]?.sheetName).toBe('Sales & Notes')
+    expect(queries[1]?.range).toBe('D2:E12')
   })
 
-  it('leaves out a query table whose connection is not refreshable', () => {
-    const result = boundConnections({
-      ...parts,
-      queryTables: [
-        {
-          path: 'xl/queryTables/queryTable1.xml',
-          xml: QUERY_TABLE_XML.replace('connectionId="1"', 'connectionId="3"'),
-        },
-      ],
-    })
-    expect(result).toEqual([])
+  it('leaves out a text query, a Power Query and a connection with no destination', async () => {
+    const sources = (await refreshableQueriesOf(reader(PARTS))).map((query) => query.id)
+    expect(sources).toEqual(['2', '4'])
   })
 
-  it('finds nothing in a package without connections', () => {
-    expect(boundConnections({ ...parts, connectionsXml: '<connections/>' })).toEqual([])
+  it('finds nothing in a workbook without a connections part', async () => {
+    const { ['xl/connections.xml']: _omit, ...rest } = PARTS
+    expect(await refreshableQueriesOf(reader(rest))).toEqual([])
+  })
+})
+
+describe('connectionSourceOf', () => {
+  it('resolves the URL from the connection id, not from the caller', async () => {
+    expect(await connectionSourceOf(reader(PARTS), '2')).toBe('https://example.com/rates.html')
+    expect(await connectionSourceOf(reader(PARTS), '4')).toBe('https://example.com/legacy.html')
+  })
+
+  it('returns null for a text connection, an unknown id or no connections part', async () => {
+    expect(await connectionSourceOf(reader(PARTS), '3')).toBeNull()
+    expect(await connectionSourceOf(reader(PARTS), '999')).toBeNull()
+    const { ['xl/connections.xml']: _omit, ...rest } = PARTS
+    expect(await connectionSourceOf(reader(rest), '2')).toBeNull()
   })
 })
 
@@ -167,67 +158,82 @@ describe('a1RangeToTarget', () => {
   it('rejects a backwards range', () => {
     expect(a1RangeToTarget('D5:A1', 'Rates')).toBeNull()
   })
+
+  it('rejects a range past the sheet grid or too large to plan', () => {
+    expect(a1RangeToTarget('XFE1', 'Rates')).toBeNull() // one column past XFD
+    expect(a1RangeToTarget('A1048577', 'Rates')).toBeNull() // one row past the grid
+    expect(a1RangeToTarget('A1:XFD1048576', 'Rates')).toBeNull() // the whole grid
+    expect(a1RangeToTarget('A1048576', 'Rates')).not.toBeNull() // the last cell is fine
+  })
 })
 
-describe('tableToCellEdits', () => {
-  const target = {
-    sheetName: 'Rates',
-    startRow: 0,
-    startColumn: 0,
-    width: 2,
-    height: 3,
-  }
+describe('planTableRefresh', () => {
+  const target = { sheetName: 'Rates', startRow: 4, startColumn: 2, width: 3, height: 4 }
 
-  it('writes the header and the rows from the top-left corner', () => {
-    const edits = tableToCellEdits(target, {
-      headers: ['Currency', 'Rate'],
+  it('writes the header and rows and leaves the rest of the range blank', () => {
+    const plan = planTableRefresh(target, {
+      headers: ['Currency', 'Rate', 'Change'],
       rows: [
-        ['EUR', '1.09'],
-        ['USD', '1.00'],
+        ['EUR', '1.09', '-0.02'],
+        ['USD', '1.00', 'n/a'],
       ],
     })
-    expect(edits.map((e) => [e.row, e.column, e.cell.value])).toEqual([
-      [0, 0, 'Currency'],
-      [0, 1, 'Rate'],
-      [1, 0, 'EUR'],
-      [1, 1, '1.09'],
-      [2, 0, 'USD'],
-      [2, 1, '1.00'],
+    expect(plan.values).toEqual([
+      ['Currency', 'Rate', 'Change'],
+      ['EUR', 1.09, -0.02],
+      ['USD', 1, 'n/a'],
+      [null, null, null],
     ])
-    expect(edits.every((e) => e.sheetName === 'Rates' && e.writeValue)).toBe(true)
+    expect(plan.droppedRows).toBe(0)
+    expect(plan.droppedColumns).toBe(0)
   })
 
-  it('keeps the edits inside the target range', () => {
-    const edits = tableToCellEdits(target, {
-      headers: ['a', 'b', 'c'],
-      rows: [
-        ['1', '2', '3'],
-        ['4', '5', '6'],
-        ['7', '8', '9'],
-        ['10', '11', '12'],
-      ],
-    })
-    for (const edit of edits) {
-      expect(edit.row).toBeLessThan(target.height)
-      expect(edit.column).toBeLessThan(target.width)
-    }
-  })
-
-  it('writes into a target that does not start at A1', () => {
-    const edits = tableToCellEdits(
-      { sheetName: 'Rates', startRow: 4, startColumn: 2, width: 2, height: 2 },
-      { headers: ['h1', 'h2'], rows: [['v1', 'v2']] },
+  it('covers the whole destination range, so a shrinking answer clears stale rows', () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 2, height: 5 },
+      { headers: ['h1', 'h2'], rows: [] },
     )
-    expect(edits.map((e) => [e.row, e.column, e.cell.value])).toEqual([
-      [4, 2, 'h1'],
-      [4, 3, 'h2'],
-      [5, 2, 'v1'],
-      [5, 3, 'v2'],
-    ])
+    expect(plan.values).toHaveLength(5)
+    expect(plan.values.every((row) => row.length === 2)).toBe(true)
+    for (const row of plan.values.slice(1)) expect(row).toEqual([null, null])
   })
 
-  it('writes an empty value as an empty cell', () => {
-    const edits = tableToCellEdits(target, { headers: ['a'], rows: [['']] })
-    expect(edits[1]?.cell.value).toBe('')
+  it('counts the rows and columns that no longer fit the fixed range', () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 2, height: 3 },
+      {
+        headers: ['a', 'b', 'c'],
+        rows: [
+          ['1', '2', '3'],
+          ['4', '5', '6'],
+          ['7', '8', '9'],
+        ],
+      },
+    )
+    expect(plan.values).toHaveLength(3)
+    expect(plan.droppedRows).toBe(1)
+    expect(plan.droppedColumns).toBe(1)
+  })
+
+  it('converts plain numbers and leaves locale-formatted text alone', () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 8, height: 2 },
+      {
+        headers: ['int', 'decimal', 'negative', 'exponent', 'grouped', 'percent', 'date', 'blank'],
+        rows: [[' 42 ', '.5', '-3', '1e3', '1,09', '5%', '2024-01-01', '']],
+      },
+    )
+    expect(plan.values[1]).toEqual([42, 0.5, -3, 1000, '1,09', '5%', '2024-01-01', null])
+  })
+
+  it('pads a short row with blanks instead of shifting the row', () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 3, height: 2 },
+      { headers: ['a', 'b', 'c'], rows: [['1'], ['2', '3']] },
+    )
+    expect(plan.values).toEqual([
+      ['a', 'b', 'c'],
+      [1, null, null],
+    ])
   })
 })

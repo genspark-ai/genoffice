@@ -1170,6 +1170,7 @@ export const vi = {
   appQueryConnectionsTitle: 'Làm mới truy vấn của sổ làm việc',
   appQueryRefreshing: 'Đang làm mới {name}…',
   appQueryRefreshed: 'Đã làm mới {name} ({rows} hàng)',
+  appQueryRefreshedClipped: 'Đã làm mới {name} ({rows} hàng, {dropped} hàng vượt vùng)',
   appQueryRefreshFailed: 'Không thể làm mới {name}',
   appWorkbookNoPivot: 'Không có bảng PivotTable nào trong sổ làm việc này.',
   appRefreshAllTitle: 'Làm mới mọi bảng PivotTable',

@@ -1,9 +1,10 @@
 /// Fetch a table from a remote source, for a workbook's data connection.
 ///
-/// A workbook's web or text query names a URL (or a file); refreshing it means
-/// fetching that address and reading the table out of the answer. This module
-/// does the fetch and the reading, and nothing else: no workbook is touched
-/// here, the caller decides where the rows land.
+/// A workbook's web query names a URL; refreshing it means fetching that
+/// address and reading the table out of the answer. (A text query names a local
+/// file instead, which the SSRF gate rightly refuses, so only web queries are
+/// refreshed for now.) This module does the fetch and the reading, and nothing
+/// else: no workbook is touched here, the caller decides where the rows land.
 ///
 /// The fetch goes through the SSRF gate (`fetchWithSsrfGuard`), because the
 /// address comes out of a file the app did not write — a workbook could name

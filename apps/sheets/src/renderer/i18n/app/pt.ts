@@ -1219,6 +1219,7 @@ export const pt = {
   appQueryConnectionsTitle: 'Atualizar as consultas da pasta de trabalho',
   appQueryRefreshing: 'Atualizando {name}…',
   appQueryRefreshed: '{name} atualizado ({rows} linhas)',
+  appQueryRefreshedClipped: '{name} atualizado ({rows} linhas, {dropped} não cabem no intervalo)',
   appQueryRefreshFailed: 'Não foi possível atualizar {name}',
   appWorkbookNoPivot: 'Nenhuma tabela dinâmica nesta pasta de trabalho.',
   appRefreshAllTitle: 'Atualizar todas as tabelas dinâmicas',

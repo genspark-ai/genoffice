@@ -1116,6 +1116,7 @@ export const zh = {
   appQueryConnectionsTitle: '刷新工作簿里的查询',
   appQueryRefreshing: '正在刷新 {name}…',
   appQueryRefreshed: '{name} 已刷新（{rows} 行）',
+  appQueryRefreshedClipped: '{name} 已刷新（{rows} 行，{dropped} 行超出固定区域未写入）',
   appQueryRefreshFailed: '无法刷新 {name}',
   appWorkbookNoPivot: '工作簿中没有透视表。',
   appRefreshAllTitle: '刷新全部透视表',

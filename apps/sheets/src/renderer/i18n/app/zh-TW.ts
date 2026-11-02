@@ -1091,6 +1091,7 @@ export const zhTW = {
   appQueryConnectionsTitle: '重新整理工作簿裡的查詢',
   appQueryRefreshing: '正在重新整理 {name}…',
   appQueryRefreshed: '{name} 已重新整理（{rows} 列）',
+  appQueryRefreshedClipped: '{name} 已重新整理（{rows} 列，{dropped} 列超出固定範圍未寫入）',
   appQueryRefreshFailed: '無法重新整理 {name}',
   appWorkbookNoPivot: '活頁簿中沒有樞紐分析表。',
   appRefreshAllTitle: '重新整理全部樞紐分析表',

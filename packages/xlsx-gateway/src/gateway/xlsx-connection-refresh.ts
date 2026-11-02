@@ -1,13 +1,36 @@
-/// Where a refreshed table lands, and how it becomes cell edits.
+/// Where a fetched query table lands, and how it becomes the values the grid
+/// takes.
 ///
-/// A workbook's web or text query fills a range: the query table part carries
-/// the `ref` it occupies, and the sheet that owns it carries the name. This
-/// module turns that range into a target and turns a fetched table into the
-/// cell edits that write it there.
+/// A workbook's web query fills a range on a sheet. Finding the query and its
+/// destination is the listing side's job: this module builds on
+/// `listWorkbookQueries` (genoffice#2345), which walks both shapes Excel
+/// writes — a ListObject-backed query (the range lives in
+/// `xl/tables/tableN.xml`) and a legacy range query (the range lives in a
+/// sheet-scoped `ExternalData_N` defined name). This side answers the two
+/// questions a refresh needs: "which URL does this connection read?" and
+/// "given the fetched table and the destination range, what goes in each
+/// cell?".
 ///
-/// It deliberately does not read `xl/connections.xml` — finding the queries a
-/// workbook has is the listing side's job (genoffice#2051 stage 1). This side
-/// only answers "given this range and this table, what do I write?".
+/// It deliberately does not touch the package: the caller writes the values
+/// through the app's normal grid edits, and the save path stores them.
+
+import { listWorkbookQueries, parseConnections, type PartReader } from './xlsx-connections'
+
+export type { PartReader }
+
+/// A connection the Data menu can refresh, with the range its rows fill.
+export interface RefreshableQuery {
+  readonly id: string
+  readonly name: string
+  /// Always a web query for now: a text query reads a local path, which the
+  /// SSRF gate rejects, so text connections are left out of the listing.
+  readonly kind: 'web'
+  /// The URL the connection reads.
+  readonly source: string
+  readonly sheetName: string
+  /// A1 range of the loaded rows, header included.
+  readonly range: string
+}
 
 export interface RefreshTarget {
   readonly sheetName: string
@@ -19,178 +42,73 @@ export interface RefreshTarget {
   readonly height: number
 }
 
-import { resolveRelTarget } from './xlsx-drawing-add'
-
 export interface RefreshedTable {
   readonly headers: readonly string[]
   readonly rows: readonly (readonly string[])[]
 }
 
-/// A connection that can be refreshed without a query engine: a web query
-/// names a URL, a text query names a file. A Power Query connection does not
-/// qualify — its M code lives in the DataMashup part and needs an interpreter.
-export interface RefreshableConnection {
-  readonly id: string
-  readonly name: string
-  readonly kind: 'web' | 'text'
-  /// The URL (web) or the file path (text) the connection reads.
-  readonly source: string
-}
+/// One cell of a refresh plan: a typed value to write, or null to clear.
+export type RefreshCell = string | number | null
 
-/// A query table part: which connection it belongs to, and where it lands.
-export interface QueryTableBinding {
-  readonly connectionId: string
-  readonly ref: string
+export interface TableRefreshPlan {
+  /// Row-major over the destination range; null cells clear what was there.
+  readonly values: readonly (readonly RefreshCell[])[]
+  /// Rows the fetched table had beyond the destination range (the range is
+  /// not grown yet, so they are dropped and reported to the user).
+  readonly droppedRows: number
+  /// Columns the fetched table had beyond the destination range.
+  readonly droppedColumns: number
 }
 
 /**
- * The connections a refresh can act on, read from `xl/connections.xml`.
+ * The connections this build can refresh: web queries with a destination.
  *
- * The file uses one `<connection>` element per source, with the kind in a
- * child element: `<webPr url>` for a web query, `<textPr sourceFile>` for a
- * text query, `<dbPr connection>` for a database. Only the first two name a
- * place to read from, and a database connection's string can carry
- * credentials, so it is not listed.
+ * A text query is not listed: it reads a local file, which the SSRF gate
+ * rightly rejects, so it would only fail with "could not refresh". A
+ * connection-only query has no rows of its own, and a Power Query needs an M
+ * interpreter for its DataMashup definition.
+ *
+ * `listWorkbookQueries` returns one entry per `<connection>` in document
+ * order, and `parseConnections` returns the same connections in the same
+ * order, so the connection id is zipped in from the latter.
  */
-export function refreshableConnections(connectionsXml: string): RefreshableConnection[] {
-  const out: RefreshableConnection[] = []
-  for (const match of connectionsXml.matchAll(
-    /<connection\b[^>]*?(?:\/>|>[\s\S]*?<\/connection>)/g,
-  )) {
-    const xml = match[0]
-    const open = /<connection\b[^>]*>/.exec(xml)?.[0] ?? xml
-    const id = /\bid="([^"]+)"/.exec(open)?.[1]
-    if (!id) continue
-    const name = /\bname="([^"]*)"/.exec(open)?.[1] ?? `Connection ${id}`
-    const webUrl = /<webPr\b[^>]*>/.exec(xml)?.[0]
-    const webSource = webUrl ? /\burl="([^"]*)"/.exec(webUrl)?.[1] : undefined
-    if (webSource) {
-      out.push({ id, name, kind: 'web', source: webSource })
-      continue
-    }
-    const textPr = /<textPr\b[^>]*>/.exec(xml)?.[0]
-    const textSource = textPr ? /\bsourceFile="([^"]*)"/.exec(textPr)?.[1] : undefined
-    if (textSource) {
-      out.push({ id, name, kind: 'text', source: textSource })
-    }
+export async function refreshableQueriesOf(read: PartReader): Promise<RefreshableQuery[]> {
+  const queries = await listWorkbookQueries(read)
+  if (queries.length === 0) return []
+  const connectionsXml = await read('xl/connections.xml')
+  const ids = connectionsXml === undefined ? [] : parseConnections(connectionsXml).map((c) => c.id)
+  const out: RefreshableQuery[] = []
+  for (const [index, query] of queries.entries()) {
+    const id = ids[index]
+    if (id === undefined || query.kind !== 'web' || !query.source || !query.destination) continue
+    out.push({
+      id,
+      name: query.name,
+      kind: 'web',
+      source: query.source,
+      sheetName: query.destination.sheet,
+      range: query.destination.range,
+    })
   }
   return out
 }
 
 /**
- * The query table part's binding: the connection it refreshes and the range
- * it fills. The sheet that owns it says which sheet that range is on.
+ * The URL a refreshable connection reads, resolved from the workbook part
+ * itself. The renderer names only the connection id, so this IPC stays a
+ * "refresh this workbook's query" call instead of a general fetch proxy.
+ * Null when the workbook has no such web connection.
  */
-export function queryTableBinding(queryTableXml: string): QueryTableBinding | null {
-  const open = /<queryTable\b[^>]*>/.exec(queryTableXml)?.[0]
-  if (!open) return null
-  const connectionId = /\bconnectionId="([^"]+)"/.exec(open)?.[1]
-  const ref = /\bref="([^"]+)"/.exec(open)?.[1]
-  if (!connectionId || !ref) return null
-  return { connectionId, ref }
-}
-
-/// A query table bound to a sheet: where its rows land.
-export interface BoundConnection {
-  readonly connection: RefreshableConnection
-  readonly sheetName: string
-  readonly range: string
-}
-
-/// The package parts the connection walk needs.
-export interface ConnectionPackageParts {
-  readonly connectionsXml: string
-  readonly workbookXml: string
-  readonly workbookRelsXml: string
-  /// The `xl/worksheets/_rels/sheetN.xml.rels` parts, with the sheet part they
-  /// belong to (`xl/worksheets/sheetN.xml`) — a relationship target is relative
-  /// to that part, not to the rels file.
-  readonly sheetRels: readonly { readonly partPath: string; readonly xml: string }[]
-  /// The `xl/queryTables/queryTableN.xml` parts, with their part path.
-  readonly queryTables: readonly { readonly path: string; readonly xml: string }[]
-}
-
-const QUERY_TABLE_REL = 'relationships/queryTable'
-
-/** The sheet a `xl/worksheets/sheetN.xml` belongs to, by its name. */
-function sheetNamesByPart(workbookXml: string, workbookRelsXml: string): Map<string, string> {
-  const relTargets = new Map<string, string>()
-  for (const match of workbookRelsXml.matchAll(/<Relationship\b[^>]*>/g)) {
-    const open = match[0]
-    const id = /\bId="([^"]+)"/.exec(open)?.[1]
-    const target = /\bTarget="([^"]+)"/.exec(open)?.[1]
-    if (!id || !target) continue
-    try {
-      relTargets.set(id, resolveRelTarget('xl/workbook.xml', target))
-    } catch {
-      /* an unresolvable target names no sheet */
-    }
-  }
-  const names = new Map<string, string>()
-  for (const match of workbookXml.matchAll(/<sheet\b[^>]*\/>/g)) {
-    const open = match[0]
-    const name = /\bname="([^"]*)"/.exec(open)?.[1]
-    const relId = /\br:id="([^"]+)"/.exec(open)?.[1]
-    if (!name || !relId) continue
-    const target = relTargets.get(relId)
-    if (!target) continue
-    names.set(target, name.replace(/&amp;/g, '&'))
-  }
-  return names
-}
-
-/** The query table part a sheet's relationships point at. */
-function queryTableTargetsOf(sheetPartPath: string, sheetRelsXml: string): string[] {
-  const targets: string[] = []
-  for (const match of sheetRelsXml.matchAll(/<Relationship\b[^>]*>/g)) {
-    const open = match[0]
-    if (!open.includes(QUERY_TABLE_REL)) continue
-    const target = /\bTarget="([^"]+)"/.exec(open)?.[1]
-    if (!target) continue
-    try {
-      targets.push(resolveRelTarget(sheetPartPath, target))
-    } catch {
-      /* an unresolvable target names no query table */
-    }
-  }
-  return targets
-}
-
-/**
- * The queries this workbook can refresh, with the sheet and range each one
- * fills. A connection with no query table is a connection-only query: it has
- * no rows of its own, so there is nowhere to write the answer and it is left
- * out.
- */
-export function boundConnections(parts: ConnectionPackageParts): BoundConnection[] {
-  const connections = refreshableConnections(parts.connectionsXml)
-  if (connections.length === 0) return []
-  const sheetNames = sheetNamesByPart(parts.workbookXml, parts.workbookRelsXml)
-  const queryTables = new Map(parts.queryTables.map((q) => [q.path, q.xml]))
-  const out: BoundConnection[] = []
-  for (const sheetRels of parts.sheetRels) {
-    const sheetName = sheetNames.get(sheetRels.partPath)
-    if (!sheetName) continue
-    for (const target of queryTableTargetsOf(sheetRels.partPath, sheetRels.xml)) {
-      const xml = queryTables.get(target)
-      if (!xml) continue
-      const binding = queryTableBinding(xml)
-      if (!binding) continue
-      const connection = connections.find((c) => c.id === binding.connectionId)
-      if (!connection) continue
-      out.push({ connection, sheetName, range: binding.ref })
-    }
-  }
-  return out
-}
-
-/// A cell edit the save path understands.
-export interface TableCellEdit {
-  readonly sheetName: string
-  readonly row: number
-  readonly column: number
-  readonly writeValue: true
-  readonly cell: { readonly value: string | null }
+export async function connectionSourceOf(
+  read: PartReader,
+  connectionId: string,
+): Promise<string | null> {
+  const connectionsXml = await read('xl/connections.xml')
+  if (connectionsXml === undefined) return null
+  const connection = parseConnections(connectionsXml).find((c) => c.id === connectionId)
+  const query = connection?.query
+  // A text, Power Query or database connection has no URL this path can fetch.
+  return query?.kind === 'web' && query.source ? query.source : null
 }
 
 /** `A1` → column 0, `B14` → row 13. */
@@ -201,6 +119,13 @@ function columnOf(letters: string): number {
 }
 
 const A1_CELL = /^([A-Za-z]{1,3})([1-9][0-9]{0,6})$/
+/// Excel's grid: 1,048,576 rows by 16,384 columns.
+const MAX_GRID_ROWS = 1_048_576
+const MAX_GRID_COLUMNS = 16_384
+/// A refresh rewrites the destination cell by cell, so the plan allocates one
+/// value per cell: a range this large is a corrupt or hostile package, not a
+/// real query table.
+const MAX_TARGET_CELLS = 1_000_000
 
 /**
  * A range like `A1:D21` as a target. A single cell (`A1`) is a one-by-one
@@ -217,44 +142,58 @@ export function a1RangeToTarget(range: string, sheetName: string): RefreshTarget
   const endColumn = last ? columnOf(last[1]!.toUpperCase()) : startColumn
   if (startRow < 0 || startColumn < 0) return null
   if (endRow < startRow || endColumn < startColumn) return null
-  return {
-    sheetName,
-    startRow,
-    startColumn,
-    width: endColumn - startColumn + 1,
-    height: endRow - startRow + 1,
-  }
+  if (endRow >= MAX_GRID_ROWS || endColumn >= MAX_GRID_COLUMNS) return null
+  const width = endColumn - startColumn + 1
+  const height = endRow - startRow + 1
+  if (width * height > MAX_TARGET_CELLS) return null
+  return { sheetName, startRow, startColumn, width, height }
+}
+
+/// A plain numeric token: signs, digits, an optional decimal part, an optional
+/// exponent — but no grouping, currency or percent sign. A "1,09" from one
+/// locale and a "1.09" from another cannot be told apart without the query's
+/// `textPr` separators, so both stay text rather than become a wrong number.
+const PLAIN_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+
+/**
+ * One fetched cell as a grid value. Excel's legacy web queries recognise
+ * numbers and leave only what they cannot parse as text — that is what keeps
+ * `=SUM(B2:B6)` over a refreshed rate table working instead of adding zeros.
+ * Dates are not converted here.
+ */
+function refreshCellValue(text: string | undefined): RefreshCell {
+  if (text === undefined || text === '') return null
+  const trimmed = text.trim()
+  if (!PLAIN_NUMBER.test(trimmed)) return text
+  const value = Number(trimmed)
+  return Number.isFinite(value) ? value : text
 }
 
 /**
- * The table as cell edits, written from the target's top-left corner.
+ * The fetched table as the values to write into the destination range.
  *
- * Values go in as text, the way Excel's own web query imports them: a page
- * that means "1.09" and a page that means "1,09" cannot be told apart
- * without the page's locale, and a number guessed wrong is worse than a
- * string the user can convert. The header row is written too — the query's
- * range includes it.
+ * The whole destination is covered, not just the rows the answer happened to
+ * return: Excel's default refresh clears the cells a shrinking answer no
+ * longer fills, and a stale row left behind reads as current data. Growing the
+ * range is out of scope, so rows and columns that no longer fit are dropped
+ * and counted for the status message.
  */
-export function tableToCellEdits(target: RefreshTarget, table: RefreshedTable): TableCellEdit[] {
-  const edits: TableCellEdit[] = []
-  const push = (row: number, column: number, value: string): void => {
-    if (column - target.startColumn >= target.width) return
-    if (row - target.startRow >= target.height) return
-    edits.push({
-      sheetName: target.sheetName,
-      row,
-      column,
-      writeValue: true,
-      cell: { value },
-    })
+export function planTableRefresh(target: RefreshTarget, table: RefreshedTable): TableRefreshPlan {
+  const sourceRows: readonly (readonly string[])[] = [table.headers, ...table.rows]
+  let sourceWidth = 0
+  for (const row of sourceRows) sourceWidth = Math.max(sourceWidth, row.length)
+  const values: RefreshCell[][] = []
+  for (let row = 0; row < target.height; row++) {
+    const source = sourceRows[row]
+    const cells: RefreshCell[] = []
+    for (let column = 0; column < target.width; column++) {
+      cells.push(refreshCellValue(source?.[column]))
+    }
+    values.push(cells)
   }
-  table.headers.forEach((header, column) => {
-    push(target.startRow, target.startColumn + column, header)
-  })
-  table.rows.forEach((row, rowIndex) => {
-    row.forEach((value, column) => {
-      push(target.startRow + 1 + rowIndex, target.startColumn + column, value)
-    })
-  })
-  return edits
+  return {
+    values,
+    droppedRows: Math.max(0, sourceRows.length - target.height),
+    droppedColumns: Math.max(0, sourceWidth - target.width),
+  }
 }

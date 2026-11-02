@@ -1180,6 +1180,7 @@ export const id = {
   appQueryConnectionsTitle: 'Muat ulang kueri workbook',
   appQueryRefreshing: 'Memuat ulang {name}…',
   appQueryRefreshed: '{name} dimuat ulang ({rows} baris)',
+  appQueryRefreshedClipped: '{name} dimuat ulang ({rows} baris, {dropped} tidak muat di rentang)',
   appQueryRefreshFailed: 'Gagal memuat ulang {name}',
   appWorkbookNoPivot: 'Tidak ada PivotTable di buku kerja ini.',
   appRefreshAllTitle: 'Segarkan semua PivotTable',

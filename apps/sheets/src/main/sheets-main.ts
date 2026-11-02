@@ -128,8 +128,13 @@ import {
   readArchiveEntriesText,
   readArchiveEntryText,
   saveWorkbookViaSidecar,
+  type ArchiveClient,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
-import { boundConnections } from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
+import {
+  connectionSourceOf,
+  refreshableQueriesOf,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
+import type { PartReader } from '@genoffice/xlsx-gateway/gateway/xlsx-connections'
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { readWorkbookRedactionPart } from './workbook-redactions'
@@ -1944,6 +1949,39 @@ function sessionFor(event: IpcMainInvokeEvent): SheetsTabSession {
 }
 
 /**
+ * Parts the connection walk reads: the connections part, the workbook and its
+ * relationships, sheet relationship parts, tables and query tables. Worksheet
+ * cell data is never read, so the prefetch stays small even for a big sheet.
+ */
+function isConnectionWalkPart(name: string): boolean {
+  return (
+    name === 'xl/connections.xml' ||
+    name === 'xl/workbook.xml' ||
+    name === 'xl/_rels/workbook.xml.rels' ||
+    name.startsWith('xl/tables/') ||
+    name.startsWith('xl/queryTables/') ||
+    /^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(name)
+  )
+}
+
+/**
+ * A part reader over a session snapshot for the connection walk. The walk asks
+ * for parts by path, so every part it can ask for is fetched in one sidecar
+ * round trip; a part the manifest does not list reads as undefined.
+ */
+async function connectionPartReader(
+  client: ArchiveClient,
+  snapshotPath: string,
+): Promise<PartReader> {
+  const manifest = z
+    .object({ entries: z.array(z.object({ name: z.string() })) })
+    .parse(await client.archiveManifest(snapshotPath))
+  const wanted = manifest.entries.map((entry) => entry.name).filter(isConnectionWalkPart)
+  const texts = await readArchiveEntriesText(client, snapshotPath, wanted)
+  return async (path) => texts.get(path)
+}
+
+/**
  * Local media roots for a sheets renderer: the directories of the workbooks its
  * tab has open, plus the directory sheets stages pasted images in. A tab can
  * hold several workbook sessions, so every open one contributes its directory —
@@ -3419,65 +3457,40 @@ export function registerSheetsIpc(): void {
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
   })
 
-  // The workbook's refreshable data connections: a web or text query names a
-  // place to read from and a range to fill. Read from the session snapshot so
-  // the list matches what the renderer shows.
+  // The workbook's refreshable web queries: the walk follows both shapes Excel
+  // writes (a table part's relationship, or a legacy ExternalData_N name) and
+  // returns the sheet and range each query fills. Read from the session
+  // snapshot so the list matches what the renderer shows.
   ipcMain.handle(IPC_CHANNELS.listWorkbookConnections, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const request = workbookConnectionsRequestSchema.parse(input)
     const session = entry.sessions.get(request.sessionId)
     if (!session) throw new Error('Unknown workbook session.')
-    const manifest = z
-      .object({ entries: z.array(z.object({ name: z.string() })) })
-      .parse(await entry.client.archiveManifest(session.snapshotPath))
-    const names = manifest.entries.map((e) => e.name)
-    // The sidecar fails the whole request for a missing entry, so ask only for
-    // parts the manifest says are there.
-    const wanted = names.filter(
-      (name) =>
-        name === 'xl/connections.xml' ||
-        name === 'xl/workbook.xml' ||
-        name === 'xl/_rels/workbook.xml.rels' ||
-        name.startsWith('xl/queryTables/') ||
-        /^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(name),
-    )
-    if (!wanted.includes('xl/connections.xml')) {
-      return workbookConnectionsResultSchema.parse({ connections: [] })
-    }
-    const texts = await readArchiveEntriesText(entry.client, session.snapshotPath, wanted)
-    const bound = boundConnections({
-      connectionsXml: texts.get('xl/connections.xml') ?? '',
-      workbookXml: texts.get('xl/workbook.xml') ?? '',
-      workbookRelsXml: texts.get('xl/_rels/workbook.xml.rels') ?? '',
-      sheetRels: wanted
-        .filter((name) => name.startsWith('xl/worksheets/_rels/'))
-        .map((name) => ({
-          partPath: name.replace('/_rels/', '/').replace(/\.rels$/, ''),
-          xml: texts.get(name) ?? '',
-        })),
-      queryTables: wanted
-        .filter((name) => name.startsWith('xl/queryTables/'))
-        .map((name) => ({ path: name, xml: texts.get(name) ?? '' })),
-    })
-    return workbookConnectionsResultSchema.parse({
-      connections: bound.map((b) => ({
-        id: b.connection.id,
-        name: b.connection.name,
-        kind: b.connection.kind,
-        source: b.connection.source,
-        sheetName: b.sheetName,
-        range: b.range,
-      })),
-    })
+    const read = await connectionPartReader(entry.client, session.snapshotPath)
+    return workbookConnectionsResultSchema.parse({ connections: await refreshableQueriesOf(read) })
   })
 
-  // Fetching a connection's table: the address comes out of the workbook, so it
-  // goes through the SSRF gate (a workbook could name loopback, a cloud
-  // metadata endpoint or a UNC share).
+  // Refreshing a query: the renderer names only the connection id, and the URL
+  // is resolved from the workbook part here — this IPC is not a fetch proxy.
+  // The fetch still goes through the SSRF gate, because a workbook could name
+  // loopback, a cloud metadata endpoint or a UNC share.
   ipcMain.handle(IPC_CHANNELS.refreshWorkbookConnection, async (event, input: unknown) => {
-    sessionFor(event)
+    const entry = sessionFor(event)
     const request = workbookRefreshRequestSchema.parse(input)
-    const table = await fetchRemoteTable(request.url)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // Only this part is needed, and a workbook without connections has no
+    // listed query to refresh: a missing part means "no such connection".
+    const connectionsXml = await readArchiveEntryText(
+      entry.client,
+      session.snapshotPath,
+      'xl/connections.xml',
+    ).catch(() => undefined)
+    const read: PartReader = async (path) =>
+      path === 'xl/connections.xml' ? connectionsXml : undefined
+    const source = await connectionSourceOf(read, request.connectionId)
+    if (!source) throw new Error('This workbook has no refreshable web query with that id.')
+    const table = await fetchRemoteTable(source)
     if (!table) throw new Error('Could not read a table from that address.')
     return workbookRefreshResultSchema.parse({
       headers: [...table.headers],

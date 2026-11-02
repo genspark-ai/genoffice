@@ -1246,6 +1246,7 @@ export const fr = {
   appQueryConnectionsTitle: 'Actualiser les requêtes du classeur',
   appQueryRefreshing: 'Actualisation de {name}…',
   appQueryRefreshed: '{name} actualisé ({rows} lignes)',
+  appQueryRefreshedClipped: '{name} actualisé ({rows} lignes, {dropped} hors de la plage fixe)',
   appQueryRefreshFailed: 'Impossible d’actualiser {name}',
   appWorkbookNoPivot: 'Aucun tableau croisé dans ce classeur.',
   appRefreshAllTitle: 'Actualiser tous les tableaux croisés',

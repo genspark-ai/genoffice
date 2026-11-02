@@ -1210,6 +1210,7 @@ export const tr = {
   appQueryConnectionsTitle: 'Çalışma kitabı sorgularını yenile',
   appQueryRefreshing: '{name} yenileniyor…',
   appQueryRefreshed: '{name} yenilendi ({rows} satır)',
+  appQueryRefreshedClipped: '{name} yenilendi ({rows} satır, {dropped} aralığa sığmadı)',
   appQueryRefreshFailed: '{name} yenilenemedi',
   appWorkbookNoPivot: 'Bu çalışma kitabında pivot tablo yok.',
   appRefreshAllTitle: 'Her pivot tabloyu yenile',

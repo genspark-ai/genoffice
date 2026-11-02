@@ -1121,6 +1121,7 @@ export const he = {
   appQueryConnectionsTitle: 'רענן את השאילתות בחוברת',
   appQueryRefreshing: 'מרענן {name}…',
   appQueryRefreshed: '{name} רוענן ({rows} שורות)',
+  appQueryRefreshedClipped: '{name} רוענן ({rows} שורות, {dropped} לא נכנסו לטווח)',
   appQueryRefreshFailed: 'לא ניתן לרענן {name}',
   appWorkbookNoPivot: 'אין טבלאות ציר בחוברת זו.',
   appRefreshAllTitle: 'רענון כל טבלאות הציר',

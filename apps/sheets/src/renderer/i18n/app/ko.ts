@@ -1199,6 +1199,7 @@ export const ko = {
   appQueryConnectionsTitle: '워크북의 쿼리를 새로 고칩니다',
   appQueryRefreshing: '{name} 새로 고치는 중…',
   appQueryRefreshed: '{name} 새로 고침 완료 ({rows}행)',
+  appQueryRefreshedClipped: '{name} 새로 고침 완료 ({rows}행, {dropped}행이 범위를 벗어남)',
   appQueryRefreshFailed: '{name} 새로 고침에 실패했습니다',
   appWorkbookNoPivot: '통합 문서에 피벗 테이블이 없습니다.',
   appRefreshAllTitle: '모든 피벗 테이블 새로 고침',

@@ -1143,6 +1143,7 @@ export const th = {
   appQueryConnectionsTitle: 'รีเฟรชคิวรีของสมุดงาน',
   appQueryRefreshing: 'กำลังรีเฟรช {name}…',
   appQueryRefreshed: 'รีเฟรช {name} แล้ว ({rows} แถว)',
+  appQueryRefreshedClipped: 'รีเฟรช {name} แล้ว ({rows} แถว, {dropped} แถวไม่พอดีช่วง)',
   appQueryRefreshFailed: 'ไม่สามารถรีเฟรช {name}',
   appWorkbookNoPivot: 'ไม่มี PivotTable ในเวิร์กบุ๊กนี้',
   appRefreshAllTitle: 'รีเฟรช PivotTable ทั้งหมด',

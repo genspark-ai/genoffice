@@ -1217,6 +1217,7 @@ export const nl = {
   appQueryConnectionsTitle: 'Werkmapquery’s vernieuwen',
   appQueryRefreshing: '{name} wordt vernieuwd…',
   appQueryRefreshed: '{name} vernieuwd ({rows} rijen)',
+  appQueryRefreshedClipped: '{name} vernieuwd ({rows} rijen, {dropped} pasten niet in het bereik)',
   appQueryRefreshFailed: 'Kan {name} niet vernieuwen',
   appWorkbookNoPivot: 'Geen draaitabellen in deze werkmap.',
   appRefreshAllTitle: 'Alle draaitabellen vernieuwen',

@@ -1299,12 +1299,14 @@ function assertWorkbookSessionRequest(input: unknown): asserts input is Workbook
 }
 
 function assertWorkbookRefreshRequest(input: unknown): asserts input is WorkbookRefreshRequest {
+  // The URL never crosses the IPC boundary: main resolves it from the
+  // workbook's connection part, so this is a connection id, not a fetch target.
   if (
     !isRecord(input) ||
     !isUuid(input.sessionId) ||
-    typeof input.url !== 'string' ||
-    input.url.length === 0 ||
-    input.url.length > 4_000
+    typeof input.connectionId !== 'string' ||
+    input.connectionId.length === 0 ||
+    input.connectionId.length > 200
   ) {
     throw new Error('Invalid workbook-refresh request.')
   }
@@ -1315,7 +1317,7 @@ function parseWorkbookConnection(input: unknown): WorkbookConnection {
     !isRecord(input) ||
     typeof input.id !== 'string' ||
     typeof input.name !== 'string' ||
-    (input.kind !== 'web' && input.kind !== 'text') ||
+    input.kind !== 'web' ||
     typeof input.source !== 'string' ||
     typeof input.sheetName !== 'string' ||
     typeof input.range !== 'string'

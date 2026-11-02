@@ -1180,6 +1180,8 @@ export const ms = {
   appQueryConnectionsTitle: 'Muat semula pertanyaan buku',
   appQueryRefreshing: 'Memuat semula {name}…',
   appQueryRefreshed: '{name} disegarkan semula ({rows} baris)',
+  appQueryRefreshedClipped:
+    '{name} disegarkan semula ({rows} baris, {dropped} tidak muat dalam julat)',
   appQueryRefreshFailed: 'Gagal memuat semula {name}',
   appWorkbookNoPivot: 'Tiada Jadual Pangsi dalam buku kerja ini.',
   appRefreshAllTitle: 'Segar semula semua Jadual Pangsi',

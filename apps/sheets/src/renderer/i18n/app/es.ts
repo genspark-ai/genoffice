@@ -1223,6 +1223,7 @@ export const es = {
   appQueryConnectionsTitle: 'Actualizar las consultas del libro',
   appQueryRefreshing: 'Actualizando {name}…',
   appQueryRefreshed: '{name} actualizado ({rows} filas)',
+  appQueryRefreshedClipped: '{name} actualizado ({rows} filas, {dropped} no caben en el rango)',
   appQueryRefreshFailed: 'No se pudo actualizar {name}',
   appWorkbookNoPivot: 'No hay tablas dinámicas en este libro.',
   appRefreshAllTitle: 'Actualizar todas las tablas dinámicas',

@@ -1156,6 +1156,7 @@ export const en = {
   appQueryConnectionsTitle: 'Refresh the workbook’s queries',
   appQueryRefreshing: 'Refreshing {name}…',
   appQueryRefreshed: '{name} refreshed ({rows} rows)',
+  appQueryRefreshedClipped: '{name} refreshed ({rows} rows, {dropped} did not fit the range)',
   appQueryRefreshFailed: 'Could not refresh {name}',
   appWorkbookNoPivot: 'No pivot tables in this workbook.',
   appRefreshAllTitle: 'Refresh every pivot table',

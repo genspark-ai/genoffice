@@ -1180,6 +1180,7 @@ export const cs = {
   appQueryConnectionsTitle: 'Aktualizovat dotazy sešita',
   appQueryRefreshing: 'Obnovuji {name}…',
   appQueryRefreshed: '{name} aktualizováno ({rows} řádků)',
+  appQueryRefreshedClipped: '{name} aktualizováno ({rows} řádků, {dropped} se nevešlo do rozsahu)',
   appQueryRefreshFailed: '{name} se nepodařilo aktualizovat',
   appWorkbookNoPivot: 'V tomto sešitu nejsou žádné kontingenční tabulky.',
   appRefreshAllTitle: 'Aktualizovat všechny kontingenční tabulky',

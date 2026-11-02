@@ -1219,6 +1219,7 @@ export const it = {
   appQueryConnectionsTitle: 'Aggiorna le query della cartella di lavoro',
   appQueryRefreshing: 'Aggiornamento di {name}…',
   appQueryRefreshed: '{name} aggiornato ({rows} righe)',
+  appQueryRefreshedClipped: "{name} aggiornato ({rows} righe, {dropped} oltre l'intervallo)",
   appQueryRefreshFailed: 'Impossibile aggiornare {name}',
   appWorkbookNoPivot: 'Nessuna tabella pivot in questa cartella.',
   appRefreshAllTitle: 'Aggiorna tutte le tabelle pivot',

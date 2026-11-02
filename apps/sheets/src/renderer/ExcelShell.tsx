@@ -416,7 +416,7 @@ interface ExcelShellProps {
   readonly pageLayout: PageLayoutEcho
   /// Manual-recalc mode echo for the Calculation Options menu.
   readonly calcManual: boolean
-  /// The workbook's refreshable queries (web / text queries).
+  /// The workbook's refreshable web queries.
   readonly queryConnections: readonly QueryConnection[]
   /// Goal Seek solve; rejects with a user-facing Error message.
   readonly onGoalSeek: (setCell: string, toValue: number, byCell: string) => Promise<GoalSeekResult>
@@ -1984,9 +1984,9 @@ function Ribbon({
   readonly onCommand: (command: string) => void
   /** Defined names for the Use in Formula menu. */
   readonly onListNames: () => readonly string[]
-  /** Manual-recalc mode lower for the Calculation Options menu. */
+  /** Manual-recalc mode echo for the Calculation Options menu. */
   readonly calcManual: boolean
-  /** The workbook's refreshable queries, listed under Data ▸ Get data. */
+  /** The workbook's refreshable web queries, listed under Data ▸ Get data. */
   readonly queryConnections: readonly QueryConnection[]
   /** Open the AI panel and immediately send the given prompt */
   readonly onAiRun: (prompt: string) => void

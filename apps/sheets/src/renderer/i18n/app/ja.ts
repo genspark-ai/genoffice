@@ -1228,6 +1228,7 @@ export const ja = {
   appQueryConnectionsTitle: 'ワークブックのクエリを更新します',
   appQueryRefreshing: '{name} を更新中…',
   appQueryRefreshed: '{name} を更新しました（{rows} 行）',
+  appQueryRefreshedClipped: '{name} を更新しました（{rows} 行、{dropped} 行は範囲外）',
   appQueryRefreshFailed: '{name} を更新できませんでした',
   appWorkbookNoPivot: 'ブックにピボットテーブルがありません。',
   appRefreshAllTitle: 'すべてのピボットテーブルを更新',

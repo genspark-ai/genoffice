@@ -1198,6 +1198,7 @@ export const ru = {
   appQueryConnectionsTitle: 'Обновить запросы книги',
   appQueryRefreshing: 'Обновление {name}…',
   appQueryRefreshed: '{name} обновлён ({rows} строк)',
+  appQueryRefreshedClipped: '{name} обновлён ({rows} строк, {dropped} не поместилось в диапазон)',
   appQueryRefreshFailed: 'Не удалось обновить {name}',
   appWorkbookNoPivot: 'В книге нет сводных таблиц.',
   appRefreshAllTitle: 'Обновить все сводные таблицы',

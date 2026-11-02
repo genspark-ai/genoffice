@@ -3136,9 +3136,9 @@ export interface DesktopApi {
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
-  /** The workbook's refreshable data connections (web / text queries). */
+  /** The workbook's refreshable data connections (web queries for now). */
   listWorkbookConnections(request: WorkbookConnectionsRequest): Promise<WorkbookConnectionsResult>
-  /** Fetch a table from a connection's URL through the SSRF gate. */
+  /** Fetch a web query's table: main resolves its URL from the workbook part. */
   refreshWorkbookConnection(request: WorkbookRefreshRequest): Promise<WorkbookRefreshResult>
   readWorkbookRowOutline(request: WorkbookFormulaCellsRequest): Promise<WorkbookRowOutlineResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
@@ -3294,14 +3294,17 @@ export interface GenerateImageResult {
   error?: string
 }
 
-/// A workbook's data connections that can be refreshed: a web query names a
-/// URL, a text query names a file, and each fills a range on a sheet.
+/// A workbook's data connections that can be refreshed: a web query fills a
+/// range on a sheet, and its URL lives in the workbook's connection part.
+/// Text queries are not listed yet: a local path cannot go through the SSRF
+/// gate, so refreshing one would only fail (genoffice#2363 review).
 export const workbookConnectionSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    kind: z.enum(['web', 'text']),
-    /** the URL (web) or the file path (text) the connection reads */
+    /** only web queries are refreshable for now */
+    kind: z.literal('web'),
+    /** the URL the query reads */
     source: z.string(),
     /** the sheet the query's rows land on */
     sheetName: z.string(),
@@ -3325,8 +3328,8 @@ export const workbookConnectionsResultSchema = z
 export const workbookRefreshRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
-    /** the URL to read the table from */
-    url: z.string().min(1).max(4_000),
+    /** the connection list's id; main resolves the URL from the workbook */
+    connectionId: z.string().min(1).max(200),
   })
   .strict()
 

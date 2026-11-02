@@ -1179,6 +1179,8 @@ export const hi = {
   appQueryConnectionsTitle: 'वर्कबुक के प्रश्न रीफ़्रेश करें',
   appQueryRefreshing: '{name} रीफ़्रेश हो रहा है…',
   appQueryRefreshed: '{name} रीफ़्रेश हो गया ({rows} पंक्तियाँ)',
+  appQueryRefreshedClipped:
+    '{name} रीफ़्रेश हो गया ({rows} पंक्तियाँ, {dropped} सीमा में नहीं आईं)',
   appQueryRefreshFailed: '{name} रीफ़्रेश नहीं हो सका',
   appWorkbookNoPivot: 'इस वर्कबुक में कोई पिवट टेबल नहीं।',
   appRefreshAllTitle: 'सभी पिवट टेबल रीफ़्रेश करें',

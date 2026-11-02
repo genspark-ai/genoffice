@@ -1144,6 +1144,7 @@ export const ar = {
   appQueryConnectionsTitle: 'تحديث استعلامات المصنف',
   appQueryRefreshing: 'جارٍ تحديث {name}…',
   appQueryRefreshed: 'تمت تحديث {name} ({rows} صف)',
+  appQueryRefreshedClipped: 'تم تحديث {name} ({rows} صف، {dropped} لم يتسع في النطاق)',
   appQueryRefreshFailed: 'تعذّر تحديث {name}',
   appWorkbookNoPivot: 'لا توجد جداول محورية في هذا المصنف.',
   appRefreshAllTitle: 'تحديث كل الجداول المحورية',

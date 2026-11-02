@@ -1206,6 +1206,8 @@ export const pl = {
   appQueryConnectionsTitle: 'Odśwież zapytania skoroszytu',
   appQueryRefreshing: 'Odświeżanie {name}…',
   appQueryRefreshed: 'Odświeżono {name} ({rows} wierszy)',
+  appQueryRefreshedClipped:
+    'Odświeżono {name} ({rows} wierszy, {dropped} nie mieści się w zakresie)',
   appQueryRefreshFailed: 'Nie udało się odświeżyć {name}',
   appWorkbookNoPivot: 'Brak tabel przestawnych w tym skoroszycie.',
   appRefreshAllTitle: 'Odśwież wszystkie tabele przestawne',

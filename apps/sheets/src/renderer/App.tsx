@@ -211,7 +211,10 @@ import { isSelectionDrag, type Point, type SelectionAskAnchor } from './ai/selec
 import { createAiDocument } from './ai/create-document'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
-import { a1RangeToTarget } from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
+import {
+  a1RangeToTarget,
+  planTableRefresh,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
 import { traceWorkbookDependents, traceWorkbookPrecedents } from './ai/formula-audit'
 import { createFilesSkill } from './ai/files-skill'
 import { createMergeSkill } from './ai/merge-skill'
@@ -690,7 +693,7 @@ export function App({
   const [preview, setPreview] = useState<ChangePlan | null>(null)
   const [_revision, setRevision] = useState(0)
   const [workbookFile, setWorkbookFile] = useState<WorkbookFile | null>(null)
-  /// The workbook's refreshable data connections (web / text queries).
+  /// The workbook's refreshable data connections (web queries for now).
   const [queryConnections, setQueryConnections] = useState<QueryConnection[]>([])
   const [pendingEdits, setPendingEdits] = useState(0)
   /// Whether any cell in the workbook has content — the ribbon's one-click AI
@@ -4479,8 +4482,9 @@ export function App({
     )
   }
 
-  // The workbook's refreshable queries: a web or text query names a URL and a
-  // range, so the list is read from the package, not built in the renderer.
+  // The workbook's refreshable web queries: the list is read from the package
+  // (the renderer never scans it) and each entry carries the sheet and range
+  // its rows fill — the destination Excel writes, not the queryTable's own.
   useEffect(() => {
     const sessionId = workbookFile?.sessionId
     if (!sessionId) {
@@ -4502,10 +4506,12 @@ export function App({
   }, [workbookFile?.sessionId])
 
   /**
-   * Refresh one query: fetch its table through the main process (the SSRF gate
-   * lives there) and write the rows into the range the query fills. The values
-   * go in as text — a page's "1,09" and "1.09" cannot be told apart without
-   * its locale, and a guessed number is worse than a string.
+   * Refresh one query: main resolves the URL from the workbook and fetches the
+   * table through the SSRF gate, then the plan turns it into grid values for
+   * the range the query fills. Numbers go in as numbers (Excel's web query
+   * does the same — a SUM over a text copy would read zeros), and the whole
+   * destination range is written so cells a shrinking answer no longer fills
+   * are cleared instead of keeping stale rows.
    */
   async function refreshQueryConnection(connectionId: string): Promise<void> {
     const connection = queryConnections.find((c) => c.id === connectionId)
@@ -4516,26 +4522,36 @@ export function App({
     try {
       const table = await window.desktopApi.refreshWorkbookConnection({
         sessionId,
-        url: connection.source,
+        connectionId: connection.id,
       })
       const target = a1RangeToTarget(connection.range, connection.sheetName)
       const worksheet = target
         ? runtime.univerAPI.getActiveWorkbook()?.getSheetByName(connection.sheetName)
         : undefined
       if (!target || !worksheet) throw new Error('The query has no target range.')
-      const all = [table.headers, ...table.rows]
-      const height = Math.min(all.length, target.height)
-      const width = Math.min(all[0]?.length ?? 0, target.width)
-      if (height === 0 || width === 0) throw new Error('The query returned no rows.')
-      const matrix = all.slice(0, height).map((row) =>
-        Array.from({ length: width }, (_, column) => ({
-          v: row[column] ?? '',
-          f: null,
-          si: null,
-        })),
+      if (table.headers.length === 0 && table.rows.length === 0) {
+        throw new Error('The query returned no rows.')
+      }
+      const plan = planTableRefresh(target, table)
+      const matrix: ICellData[][] = plan.values.map((row) =>
+        row.map((value) => ({ v: value, f: null, si: null, p: null })),
       )
-      worksheet.getRange(target.startRow, target.startColumn, height, width).setValues(matrix)
-      setMessage(t('appQueryRefreshed', { name: connection.name, rows: table.rows.length }))
+      worksheet
+        .getRange(target.startRow, target.startColumn, target.height, target.width)
+        .setValues(matrix)
+      // Growing the destination range is out of scope: say so rather than drop
+      // the extra rows silently.
+      if (plan.droppedRows > 0) {
+        setMessage(
+          t('appQueryRefreshedClipped', {
+            name: connection.name,
+            rows: table.rows.length,
+            dropped: plan.droppedRows,
+          }),
+        )
+      } else {
+        setMessage(t('appQueryRefreshed', { name: connection.name, rows: table.rows.length }))
+      }
     } catch {
       setMessage(t('appQueryRefreshFailed', { name: connection.name }))
     }
