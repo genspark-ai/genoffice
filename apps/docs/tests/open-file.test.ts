@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { runGuardedCandidate, runGuardedDocumentAction } from '../src/renderer/doc-dirty'
 import {
   OPENABLE_DOC_EXTENSIONS,
+  docImportKindForPath,
   findOpenableDocPath,
   isOpenableDocPath,
 } from '../src/shared/open-file'
@@ -18,11 +19,13 @@ describe('findOpenableDocPath', () => {
     )
     // an .odt argument routes through the import filter like the shell open
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/notes.odt'])).toBe('/tmp/notes.odt')
-    // and so does the .ott template, in either case
+    // and so do the .ott template and legacy Word .doc/.dot, in either case
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/letter.ott'])).toBe('/tmp/letter.ott')
     // .hwpx (Hancom) joins too, as a converted .docx copy
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/신고서.HWPX'])).toBe('/tmp/신고서.HWPX')
     expect(findOpenableDocPath(['GenOffice Docs', '/tmp/LETTER.OTT'])).toBe('/tmp/LETTER.OTT')
+    expect(findOpenableDocPath(['GenOffice Docs', '/tmp/legacy.doc'])).toBe('/tmp/legacy.doc')
+    expect(findOpenableDocPath(['GenOffice Docs', '/tmp/TEMPLATE.DOT'])).toBe('/tmp/TEMPLATE.DOT')
   })
 
   it('ignores Electron switches and unrelated files', () => {
@@ -39,16 +42,28 @@ describe('findOpenableDocPath', () => {
  */
 describe('OPENABLE_DOC_EXTENSIONS', () => {
   it('covers every extension the argv route and the guard accept', () => {
-    expect(OPENABLE_DOC_EXTENSIONS).toEqual(['docx', 'odt', 'ott', 'hwpx', 'hwp'])
+    expect(OPENABLE_DOC_EXTENSIONS).toEqual(['docx', 'odt', 'ott', 'doc', 'dot', 'hwpx', 'hwp'])
     for (const extension of OPENABLE_DOC_EXTENSIONS) {
       expect(isOpenableDocPath(`/tmp/Quarterly Plan.${extension.toUpperCase()}`)).toBe(true)
     }
   })
 
   it('rejects the neighbouring formats Docs does not open', () => {
-    for (const path of ['/tmp/notes.txt', '/tmp/legacy.doc', '/tmp/deck.odp', '/tmp/book.ods']) {
+    for (const path of ['/tmp/notes.txt', '/tmp/legacy.rtf', '/tmp/deck.odp', '/tmp/book.ods']) {
       expect(isOpenableDocPath(path)).toBe(false)
     }
+  })
+})
+
+describe('docImportKindForPath', () => {
+  it('separates the two import filters from the native and foreign formats', () => {
+    expect(docImportKindForPath('/tmp/notes.odt')).toBe('odf')
+    expect(docImportKindForPath('/tmp/LETTER.OTT')).toBe('odf')
+    expect(docImportKindForPath('/tmp/legacy.doc')).toBe('word97')
+    expect(docImportKindForPath('/tmp/TEMPLATE.DOT')).toBe('word97')
+    expect(docImportKindForPath('/tmp/report.docx')).toBeNull()
+    expect(docImportKindForPath('/tmp/notes.txt')).toBeNull()
+    expect(docImportKindForPath('/tmp/noextension')).toBeNull()
   })
 })
 
@@ -74,12 +89,20 @@ describe('the open dialog and the external-open guard', () => {
       source.indexOf('async function prepareDocumentForOpen('),
       source.indexOf('async function loadDocx('),
     )
-    expect(prepare).toContain("const isHwp = extension === 'hwp' || extension === 'hwpx'")
-    expect(prepare).toContain("tm(isHwp ? 'hwpImportDetail' : 'odtImportDetail')")
-    expect(prepare).toContain('isHwp ? await convertHwpToDocx(source)')
-    expect(prepare).toContain(".replace(/\\.(odt|ott|hwpx?)$/i, '.docx')")
+    expect(prepare).toContain("const isHwp = importKind === 'hwp'")
+    expect(prepare).toContain("isHwp ? 'hwpImportDetail' : 'odtImportDetail'")
+    expect(prepare).toContain('? await convertHwpToDocx(source)')
+    expect(prepare).toContain(".replace(/\\.(odt|ott|hwpx?|doc|dot)$/i, '.docx')")
     // loadDocx itself still opens nothing but .docx
     expect(source).toContain('!/\\.docx$/i.test(filePath)) return null')
+  })
+
+  it('routes legacy Word files through doc2docx with its own dialog keys', () => {
+    expect(source).toContain('convertLegacyDocToDocx')
+    expect(source).toContain('docImportKindForPath(filePath)')
+    for (const key of ['docImportMsg', 'docImportDetail', 'docImportConvertBtn']) {
+      expect(source).toContain(key)
+    }
   })
 })
 

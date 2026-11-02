@@ -179,3 +179,33 @@ describe('docxToText (XML scan)', () => {
     )
   })
 })
+
+describe('docxToText tracked formatting', () => {
+  it('reads visible text whose previous run properties were hidden', async () => {
+    const bytes = await docx(
+      '<w:p><w:r><w:rPr><w:rPrChange w:id="1" w:author="Editor"><w:rPr><w:vanish/></w:rPr></w:rPrChange></w:rPr><w:t>Visible now</w:t></w:r></w:p>',
+    )
+    expect(await docxToText(bytes)).toBe('Visible now')
+  })
+
+  it('keeps current paragraph formatting instead of historical heading and numbering', async () => {
+    const bytes = await docx(
+      p(
+        'Current body',
+        '<w:pPrChange w:id="2" w:author="Editor"><w:pPr><w:pStyle w:val="Heading1"/><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:pPrChange>',
+      ) +
+        p(
+          'Current list',
+          '<w:numPr><w:numId w:val="3"/></w:numPr><w:pPrChange w:id="3" w:author="Editor"><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:pPrChange>',
+        ),
+    )
+    expect(await docxToText(bytes)).toBe('Current body\n- Current list')
+  })
+
+  it('still excludes currently hidden text with a visible historical format', async () => {
+    const bytes = await docx(
+      '<w:p><w:r><w:rPr><w:vanish/><w:rPrChange w:id="4" w:author="Editor"><w:rPr/></w:rPrChange></w:rPr><w:t>Hidden now</w:t></w:r><w:r><w:t>Visible control</w:t></w:r></w:p>',
+    )
+    expect(await docxToText(bytes)).toBe('Visible control')
+  })
+})

@@ -292,6 +292,8 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
         'docx',
         'odt',
         'ott',
+        'doc',
+        'dot',
         'hwpx',
         'hwp',
       ])
