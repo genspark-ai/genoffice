@@ -12,7 +12,7 @@ import {
   mindMapToMermaid,
   parseMindMapTree,
   wrapLabel,
-} from '../src/renderer/ai/mind-map'
+} from '@genoffice/agent-core/mind-map'
 import { AGENT_SYSTEM_PROMPT } from '../src/renderer/ai/protocol'
 import type { MindMapTreeNode } from '@genoffice/agent-core'
 

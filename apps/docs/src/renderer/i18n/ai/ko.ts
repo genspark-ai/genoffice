@@ -204,4 +204,7 @@ export const ko = {
   aiMindMapReset: '보기 초기화',
   aiMindMapExpand: '가지 펼치기',
   aiMindMapCollapse: '가지 접기',
+  aiMindMapToggleLayout: '레이아웃 전환',
+  aiMindMapLayoutTopDown: '위에서 아래로 레이아웃으로 전환',
+  aiMindMapLayoutLeftRight: '왼쪽에서 오른쪽 레이아웃으로 전환',
 } satisfies Record<keyof typeof zh, string>
