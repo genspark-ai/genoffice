@@ -6645,7 +6645,7 @@ export interface ImageDropPage {
  */
 export function imageDropPages(pm: HTMLElement, zoom: number): ImageDropPage[] {
   const pages: ImageDropPage[] = []
-  let paperTop = -Infinity
+  let paperTop = pm.closest<HTMLElement>('.doc-page')?.getBoundingClientRect().top ?? -Infinity
   let bodyTop = -Infinity
   for (const gap of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))) {
     // a split floating table's gap rows grow only the table's own box

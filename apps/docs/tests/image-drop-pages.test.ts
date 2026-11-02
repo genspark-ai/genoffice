@@ -61,6 +61,28 @@ describe('imageDropPages', () => {
   })
 })
 
+describe('imageDropPages on the first paper', () => {
+  it('reads the first page top off the paper so a drop near its foot is pulled up', () => {
+    const paper = document.createElement('div')
+    paper.className = 'doc-page'
+    paper.getBoundingClientRect = () => rect(0, 1204)
+    const pm = document.createElement('div')
+    paper.append(pm)
+    pm.append(gapEl(1000, 1300, { bodyPad: 40 }))
+    const pages = imageDropPages(pm, 1)
+    expect(pages[0].paperTop).toBe(0)
+    const placed = placeImageDrop(
+      [anchor(400), anchor(900)],
+      300,
+      pages[0].paperBottom - 20,
+      100,
+      pages,
+      1,
+    )
+    expect(placed.top).toBe(pages[0].paperBottom - 100)
+  })
+})
+
 describe('placeImageDrop', () => {
   const anchors = [anchor(400), anchor(900), anchor(1300), anchor(1800), anchor(2200), anchor(2600)]
 
