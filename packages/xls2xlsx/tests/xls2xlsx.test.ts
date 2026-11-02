@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { convertXlsToXlsx, parseXlsWorkbook } from '../src/index'
-import {
-  buildSstRecord,
-  buildWorkbookStream,
-  buildXlsContainer,
-  type SheetSpec,
-} from './synthetic-xls'
+import { buildWorkbookStream, buildXlsContainer, type SheetSpec } from './synthetic-xls'
 import * as CFB from 'cfb'
 
 const tree: SheetSpec[] = [
