@@ -1,17 +1,27 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { buildBlankDocx, parseDocx } from '@genoffice/docx-engine'
 import { insertTableAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions, TABLE_TRAILING_SKIP } from '../src/renderer/editor/extensions'
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function openBlank(content?: unknown) {
   const parsed = await parseDocx(await buildBlankDocx())
-  return new Editor({
+  const editor = new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
     content: (content ?? blocksToPmDoc(parsed.blocks)) as never,
   })
+  liveEditors.push(editor)
+  return editor
 }
 
 const topLevel = (editor: Editor) => editor.state.doc.content.content.map((n) => n.type.name)
