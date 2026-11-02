@@ -16,7 +16,15 @@ import {
 
 describe('format registry', () => {
   it('mirrors the shell open routing for the mcp-driven families', () => {
-    expect(formatFamily('docx').editorOpen).toEqual(['docx', 'odt', 'ott', 'doc', 'dot', 'hwpx', 'hwp'])
+    expect(formatFamily('docx').editorOpen).toEqual([
+      'docx',
+      'odt',
+      'ott',
+      'doc',
+      'dot',
+      'hwpx',
+      'hwp',
+    ])
     expect(formatFamily('xlsx').editorOpen).toEqual([
       'xlsx',
       'xlsm',
