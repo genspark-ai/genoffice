@@ -11,6 +11,8 @@ import { parseClx, type PieceTable } from './clx'
 import { extractBodyText } from './text'
 import { readFormatting, type FormattedParagraph } from './formatting'
 import { readResolvedFormatting } from './resolve'
+import { parseSections, type SectionInfo } from './sections'
+import { parseHeaderStories, type SectionHeaderFooter } from './headers'
 import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
@@ -68,6 +70,15 @@ export type {
 } from './formatting'
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
+export { DEFAULT_SECTION_GEOMETRY, parseSections } from './sections'
+export type { SectionInfo, SectionMargins, SectionSource } from './sections'
+export { parseHeaderStories } from './headers'
+export type {
+  HeaderFooterResult,
+  HeaderFooterStory,
+  HeaderStoriesSource,
+  SectionHeaderFooter,
+} from './headers'
 export {
   DEFAULT_CHARACTER_STYLE_ISTD,
   DEFAULT_PARAGRAPH_STYLE_ISTD,
@@ -161,7 +172,28 @@ export function readResolvedLegacyDocModel(bytes: Uint8Array): LegacyDocModel {
   return { fib: doc.fib, text: doc.text, paragraphs, warnings }
 }
 
-/* stage 3a: .docx writer */
+/** Stage 3c-1 layout: section geometry plus the header/footer stories of every section. */
+export interface LegacyDocLayout {
+  sections: SectionInfo[]
+  /** one entry per section (even/odd/first header and footer stories) */
+  headerFooter: SectionHeaderFooter[]
+  /** non-fatal layout problems (missing header table, flattened columns, ...) */
+  warnings: string[]
+}
+
+/** Read the section geometry and header/footer stories of a .doc. */
+export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
+  const doc = openLegacyDoc(bytes)
+  const sections = parseSections(doc)
+  const headerFooter = parseHeaderStories(doc, sections)
+  return {
+    sections,
+    headerFooter: headerFooter.stories,
+    warnings: [...sections.flatMap((section) => section.warnings), ...headerFooter.warnings],
+  }
+}
+
+/* stage 3a/3c-1: .docx writer */
 export {
   conversionWarnings,
   convertLegacyDocToDocx,

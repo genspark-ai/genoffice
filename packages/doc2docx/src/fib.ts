@@ -42,9 +42,12 @@ export interface FibInfo {
   /** stylesheet (stage 3) */
   fcStshf: number
   lcbStshf: number
-  /** section descriptor table (stage 2) */
+  /** section descriptor table (stage 3c) */
   fcPlcfsed: number
   lcbPlcfsed: number
+  /** header/footer story table (stage 3c) */
+  fcPlcfhdd: number
+  lcbPlcfhdd: number
   /** CHPX / PAPX bin tables (stage 2) */
   fcPlcfbteChpx: number
   lcbPlcfbteChpx: number
@@ -67,6 +70,7 @@ const LW_CCP_HDR_TXBX = 10
 /** FibRgFcLcb97 pair indices (MS-DOC 2.5.2 / 2.9.3xx) */
 const PAIR_STSHF = 1
 const PAIR_PLCFSED = 6
+const PAIR_PLCFHDD = 11
 const PAIR_PLCFBTE_CHPX = 12
 const PAIR_PLCFBTE_PAPX = 13
 const PAIR_DOP = 31
@@ -191,6 +195,7 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
 
   const stshf = fibPair(reader, pairsStart, pairCount, PAIR_STSHF)
   const plcfsed = fibPair(reader, pairsStart, pairCount, PAIR_PLCFSED)
+  const plcfhdd = fibPair(reader, pairsStart, pairCount, PAIR_PLCFHDD)
   const chpx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_CHPX)
   const papx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_PAPX)
   const dop = fibPair(reader, pairsStart, pairCount, PAIR_DOP)
@@ -216,6 +221,8 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
     lcbStshf: stshf.lcb,
     fcPlcfsed: plcfsed.fc,
     lcbPlcfsed: plcfsed.lcb,
+    fcPlcfhdd: plcfhdd.fc,
+    lcbPlcfhdd: plcfhdd.lcb,
     fcPlcfbteChpx: chpx.fc,
     lcbPlcfbteChpx: chpx.lcb,
     fcPlcfbtePapx: papx.fc,
@@ -236,6 +243,11 @@ export function validateFibTableRanges(fib: FibInfo, tableLength: number): void 
     { fc: fib.fcPlcfsed, lcb: fib.lcbPlcfsed },
     tableLength,
     'section table (fcPlcfsed)',
+  )
+  validatePairRange(
+    { fc: fib.fcPlcfhdd, lcb: fib.lcbPlcfhdd },
+    tableLength,
+    'header/footer table (fcPlcfhdd)',
   )
   validatePairRange(
     { fc: fib.fcPlcfbteChpx, lcb: fib.lcbPlcfbteChpx },

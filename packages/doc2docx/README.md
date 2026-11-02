@@ -81,20 +81,54 @@ formatting model, so style-based formatting is no longer dropped:
   it renders in Word/LibreOffice; the .docx styles themselves are not emitted
   yet (that is a later polish item).
 
+## Stage 3c-1 — section geometry and headers/footers
+
+Internal only. Reads the PlcfSed section table and its SEPX section sprms, and
+the PlcfHdd header/footer stories (FIB pair 11), and writes them into the
+generated package:
+
+- **parseSections** — page size, margins (left/right/top/bottom), header and
+  footer distances, gutter, portrait/landscape and the title-page flag.
+  Section sprms are matched by their low 9-bit operation (producers vary the
+  spra bits, e.g. LibreOffice writes sprmSDyaTop as 0x9023), each section
+  starts from the blank template's geometry, and multi-column sections are
+  reported as warnings. Malformed tables/SEPX bytes raise \`bad_section\`.
+- **parseHeaderStories** — the six separator stories plus six stories per
+  section (even header, odd header, even footer, odd footer, first header,
+  first footer); story CPs are offsets from the header document at
+  \`ccpText + ccpFtn\`, the guard paragraph mark is stripped, and empty stories
+  stay empty. Malformed tables raise \`bad_hdd\`; a document that declares
+  header text without a header table gets a warning instead of failing.
+- **Writer** — replaces the template's trailing \`sectPr\` with the last
+  section's geometry (header/footer references, \`pgSz\` with
+  \`w:orient="landscape"\`, \`pgMar\`, \`titlePg\`) and adds
+  \`word/headerN.xml\` / \`word/footerN.xml\` parts with the matching
+  [Content_Types].xml overrides and document.xml.rels relationships. Even/odd
+  headers need settings.xml (\`w:evenAndOddHeaders\`), which is added only when
+  an even story exists; the odd stories are the default variant and the first
+  stories need \`w:titlePg\`. Header/footer character formatting is plain text
+  for now (tabs and line breaks are kept).
+- **Limitations** — multi-section documents are flattened to their last
+  section with an explicit warning; page-number format and footnote/endnote
+  separator stories are not written; header/footer runs carry no bold/size
+  etc. yet.
+
 ## Roadmap
 
-- **Stage 3c**: tables (TAP), images, headers/footers, section geometry
-  (page size/margins), lists and hyperlinks, and emitting real .docx styles
-  instead of resolved direct formatting; tighter paragraph-count parity.
-- **Stage 3d**: docs import wiring (`.doc` → `.docx` in File → Open /
+- **Stage 3c-2**: tables (TAP), images, lists and hyperlinks, emitted real
+  .docx styles instead of resolved direct formatting, richer header/footer
+  formatting and real multi-section output; tighter paragraph-count parity.
+- **Stage 3d**: docs import wiring (\`.doc\` → \`.docx\` in File → Open /
   drag-and-drop and the CLI), as core + UI PRs.
 
 ## Format coverage
 
-Word 97-2003 (nFib 0x00C1–0x0112), main document story; paragraph/character
-styles are resolved into direct formatting. Footnotes, headers/footers,
-textboxes, tables, images and emitted .docx styles are later stages. Encrypted
-files and Word 6/95 documents are rejected with actionable `LegacyDocError`
-codes (`not_cfb`, `truncated`, `bad_fib`, `unsupported_version`,
-`encrypted`, `missing_stream`, `bad_clx`, `bad_piece_table`, `bad_fkp`,
-`bad_sprm`, `bad_stsh`, `limits_exceeded`, `corrupt`).
+Word 97-2003 (nFib 0x00C1–0x0112), main document story with section geometry
+and header/footer stories; paragraph/character styles are resolved into direct
+formatting. Footnotes, textboxes, tables, images, lists and emitted .docx
+styles are later stages, and multi-section documents are flattened to one
+section. Encrypted files and Word 6/95 documents are rejected with actionable
+\`LegacyDocError\` codes (\`not_cfb\`, \`truncated\`, \`bad_fib\`,
+\`unsupported_version\`, \`encrypted\`, \`missing_stream\`, \`bad_clx\`,
+\`bad_piece_table\`, \`bad_fkp\`, \`bad_sprm\`, \`bad_stsh\`, \`bad_section\`,
+\`bad_hdd\`, \`limits_exceeded\`, \`corrupt\`).

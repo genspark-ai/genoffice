@@ -10,6 +10,8 @@ export const FIXTURE_NAMES = [
   'word97-sample',
   'formatting',
   'styles',
+  'page-setup',
+  'header-footer',
 ] as const
 export type FixtureName = (typeof FIXTURE_NAMES)[number]
 
