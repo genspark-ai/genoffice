@@ -78,7 +78,11 @@ import { scrollRibbonOnWheel } from './ribbon-wheel'
 
 import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
-import type { AttachmentMeta, WorkbookConnection as QueryConnection, WorkbookQueriesResult } from '../shared/desktop-api'
+import type {
+  AttachmentMeta,
+  WorkbookConnection as QueryConnection,
+  WorkbookQueriesResult,
+} from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
 import type { SelectionAskAnchor } from './ai/selection-ask'
