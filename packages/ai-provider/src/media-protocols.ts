@@ -681,6 +681,77 @@ async function analyzeMediaGemini(
   return text
 }
 
+// ── Microsoft Foundry MAI image API ─────────────────────────────────
+
+/** MAI wants pixel width/height (min 768 each); this grid stays within the
+ * tightest pixel cap (MAI-Image-2.5 models: 1,048,576 pixels) */
+const MAI_SIZES: Record<string, string> = {
+  '1:1': '1024x1024',
+  '16:9': '1344x768',
+  '3:2': '1152x768',
+  '4:3': '1152x864',
+  '9:16': '768x1344',
+  '2:3': '768x1152',
+  '3:4': '864x1152',
+}
+
+async function maiImageResult(label: string, resp: Response): Promise<MediaBlob> {
+  if (!resp.ok) return failFrom(label, resp)
+  const json = await readJson(label, resp)
+  const first = asRecord((json.data as unknown[] | undefined)?.[0])
+  if (typeof first.b64_json === 'string' && first.b64_json) return fromBase64(first.b64_json)
+  throw new Error(`${label} returned no image: ${JSON.stringify(json).slice(0, 200)}`)
+}
+
+async function generateImageMai(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  const base = trimSlash(config.baseUrl || '')
+  const size =
+    input.aspectRatio && input.aspectRatio !== 'auto' ? MAI_SIZES[input.aspectRatio] : undefined
+  const [width, height] = size ? size.split('x').map(Number) : []
+  const auth = { 'api-key': config.apiKey }
+  if (input.references?.length) {
+    // edits ride /mai/v1/images/edits: multipart with the reference images
+    // repeated in the `image` field, at most five per request
+    if (input.references.length > 5) {
+      throw new Error('MAI-Image accepts at most 5 reference images per edit')
+    }
+    const form = new FormData()
+    form.set('model', model)
+    form.set('prompt', input.prompt)
+    input.references.forEach((ref, i) => {
+      const ext = ref.mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
+      form.append(
+        'image',
+        new Blob([toArrayBuffer(ref.bytes)], { type: ref.mime }),
+        ref.name ?? `ref-${i}.${ext}`,
+      )
+    })
+    const resp = await aiFetch(`${base}/mai/v1/images/edits`, {
+      method: 'POST',
+      headers: auth,
+      body: form,
+      signal,
+    })
+    return maiImageResult('MAI image edit failed:', resp)
+  }
+  const resp = await aiFetch(`${base}/mai/v1/images/generations`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      prompt: input.prompt,
+      ...(width && height ? { width, height } : {}),
+    }),
+    signal,
+  })
+  return maiImageResult('MAI image generation failed:', resp)
+}
+
 // ── dispatch ────────────────────────────────────────────────────────
 
 /** Stability's generation endpoint per model id; sd3.5 ids pick the model inside /sd3 */
@@ -850,6 +921,8 @@ export async function generateImageWithProvider(
       return generateImageStability(config, model, input, guard)
     case 'bfl':
       return generateImageBfl(config, model, input, guard)
+    case 'mai':
+      return generateImageMai(config, model, input, guard)
     case 'openai-images':
       return generateImageOpenAi(provider, config, model, input, guard)
   }

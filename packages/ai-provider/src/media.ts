@@ -227,6 +227,30 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     videoAnalysis: false,
   },
   {
+    id: 'microsoft',
+    label: 'Microsoft (MAI-Image)',
+    description:
+      'MAI-Image generation and editing through Microsoft Foundry; base URL is your resource endpoint (https://<resource>.services.ai.azure.com)',
+    keyPlaceholder: 'API key',
+    needsBaseUrl: true,
+    defaultBaseUrl: '',
+    imageProtocol: 'mai',
+    // per learn.microsoft.com "deploy and use MAI image models" 2026-11-03: all
+    // five are Preview Global Standard deployments; the model field carries the
+    // deployment name, so a differently named deployment goes into the field
+    imageModels: [
+      'MAI-Image-2.6',
+      'MAI-Image-2.6-Flash',
+      'MAI-Image-2.5-Pro',
+      'MAI-Image-2.5-Flash',
+      'MAI-Image-2.5',
+    ],
+    defaultImageModel: 'MAI-Image-2.6',
+    analysisModels: [],
+    defaultAnalysisModel: '',
+    videoAnalysis: false,
+  },
+  {
     id: 'deepseek',
     label: 'DeepSeek',
     // native multimodal (V4.1 Flash = wire id deepseek-flash): reads JPEG/PNG/GIF/WebP,

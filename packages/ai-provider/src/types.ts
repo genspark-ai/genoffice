@@ -179,11 +179,12 @@ export type AiMediaProviderId =
   | 'deepseek'
   | 'stability'
   | 'bfl'
+  | 'microsoft'
   | 'custom'
 
 /** wire shape of the image endpoint */
 export type AiImageProtocol =
-  'openai-images' | 'gemini' | 'dashscope' | 'minimax' | 'stability' | 'bfl'
+  'openai-images' | 'gemini' | 'dashscope' | 'minimax' | 'stability' | 'bfl' | 'mai'
 /** wire shape of the understanding endpoint */
 export type AiAnalysisProtocol = 'openai-chat' | 'gemini'
 

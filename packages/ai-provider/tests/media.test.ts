@@ -931,3 +931,70 @@ describe('generateImageWithProvider (stability & bfl)', () => {
     ).rejects.toThrow(/cannot edit/)
   })
 })
+describe('generateImageWithProvider (mai)', () => {
+  const cfg = (imageModel: string) => ({
+    apiKey: 'k',
+    imageModel,
+    analysisModel: '',
+    baseUrl: 'https://res.services.ai.azure.com',
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('generations: JSON to /mai/v1/images/generations with the api-key header and a pixel size', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+      prompt: 'a fox',
+      aspectRatio: '16:9',
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://res.services.ai.azure.com/mai/v1/images/generations')
+    expect((init.headers as Record<string, string>)['api-key']).toBe('k')
+    expect(JSON.parse(init.body as string)).toEqual({
+      model: 'MAI-Image-2.6',
+      prompt: 'a fox',
+      width: 1344,
+      height: 768,
+    })
+  })
+
+  it('edits: references ride /mai/v1/images/edits as repeated image fields; over five refuses', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+      prompt: 'combine',
+      references: [
+        { bytes: PNG, mime: 'image/png', name: 'a.png' },
+        { bytes: PNG, mime: 'image/png', name: 'b.png' },
+      ],
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://res.services.ai.azure.com/mai/v1/images/edits')
+    expect((init.headers as Record<string, string>)['api-key']).toBe('k')
+    const form = init.body as FormData
+    expect(form.get('model')).toBe('MAI-Image-2.6')
+    expect(form.get('prompt')).toBe('combine')
+    expect(form.getAll('image')).toHaveLength(2)
+    await expect(
+      generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+        prompt: 'x',
+        references: Array.from({ length: 6 }, () => ({ bytes: PNG, mime: 'image/png' })),
+      }),
+    ).rejects.toThrow(/at most 5/)
+  })
+
+  it('an unmapped or auto aspect ratio omits width/height and the service picks its default', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('microsoft', cfg('MAI-Image-2.5'), {
+      prompt: 'a fox',
+      aspectRatio: '21:9',
+    })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ model: 'MAI-Image-2.5', prompt: 'a fox' })
+  })
+})
