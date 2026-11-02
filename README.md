@@ -40,7 +40,8 @@ document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
 editable OOXML copies; the import is open-only — saving writes OOXML, never
-ODF.
+ODF. Hancom documents (`.hwp`, `.hwpx`) open in Docs the same way, as `.docx`
+copies; GenOffice never writes HWP.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
@@ -725,6 +726,11 @@ GenOffice would not be possible without these open-source projects:
   of the Rust xlsx sidecar.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — the MicroType
   Express decoder for embedded PowerPoint fonts, ported to TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — reads binary `.hwp`
+  documents into HWPX for the Hancom import; its WebAssembly build carries the
+  Rust crates and the Volexity hwp-extract port listed in the third-party
+  notices. "한글", "한컴", "HWP" and "HWPX" are registered trademarks of Hancom
+  Inc.; GenOffice is not affiliated with Hancom.
 - [React](https://react.dev/) (MIT) — the UI layer of every app.
 - [Mermaid](https://mermaid.js.org/) (MIT) and [KaTeX](https://katex.org/)
   (MIT) — diagrams and math in Markdown and Docs.

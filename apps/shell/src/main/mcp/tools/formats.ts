@@ -55,9 +55,9 @@ export const FORMAT_FAMILIES: readonly FormatFamily[] = [
   {
     family: 'docx',
     label: 'Word document',
-    // .odt/.ott open as converted copies and save as .docx, so they are open-only
+    // .odt/.ott/.hwpx/.hwp open as converted copies and save as .docx, so they are open-only
     // formats: they must not appear in editorSave (GenOffice never writes ODF)
-    editorOpen: ['docx', 'odt', 'ott'],
+    editorOpen: ['docx', 'odt', 'ott', 'hwpx', 'hwp'],
     editorSave: ['docx'],
     editorExport: ['pdf'],
     mcp: { generate: 'docx', save: ['docx'], read: 'docx' },

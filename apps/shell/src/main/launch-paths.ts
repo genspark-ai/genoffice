@@ -7,6 +7,8 @@ export const LAUNCHABLE_EXTS = [
   'docx',
   'odt',
   'ott',
+  'hwpx',
+  'hwp',
   'xlsx',
   'xlsm',
   'xls',

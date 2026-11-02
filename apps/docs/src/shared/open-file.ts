@@ -1,11 +1,12 @@
 /**
- * The documents the Docs app opens. `.odt`/`.ott` arrive through the import
- * filter, which converts a copy — the same route the shell takes — so the
+ * The documents the Docs app opens. `.odt`/`.ott` and `.hwp`/`.hwpx` arrive
+ * through the import filters, which convert a copy — the same route the shell
+ * takes — so the
  * standalone argv route, the external-open guard and the open dialog's picker
  * filter all read this one list instead of drifting apart.
  */
 
-export const OPENABLE_DOC_EXTENSIONS = ['docx', 'odt', 'ott'] as const
+export const OPENABLE_DOC_EXTENSIONS = ['docx', 'odt', 'ott', 'hwpx', 'hwp'] as const
 
 const OPENABLE_DOC_PATTERN = new RegExp(`\\.(${OPENABLE_DOC_EXTENSIONS.join('|')})$`, 'i')
 
