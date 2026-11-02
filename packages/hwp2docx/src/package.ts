@@ -104,7 +104,9 @@ export async function loadHwpxPackage(bytes: Uint8Array): Promise<HwpxPackage> {
     throw new HwpConvertError('unreadable')
   }
   const mimetypeEntry = zip.file('mimetype')
-  const mimetype = mimetypeEntry ? (await mimetypeEntry.async('string')).trim() : ''
+  const mimetype = mimetypeEntry
+    ? new TextDecoder().decode(await inflateCapped(mimetypeEntry)).trim()
+    : ''
   if (mimetype && mimetype !== 'application/hwp+zip' && mimetype !== 'application/haansofthwpx') {
     throw new HwpConvertError('not-hwpx')
   }

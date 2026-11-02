@@ -195,6 +195,22 @@ describe('convertHwpxToDocx', () => {
     )
   })
 
+  it('caps a hostile table grid instead of allocating rowCnt x colCnt slots', async () => {
+    const table =
+      `<hp:tbl rowCnt="60000" colCnt="60000" borderFillIDRef="1"><hp:sz width="10000" height="2000"/>` +
+      `<hp:tr>${cell(0, 0, '\uc548')}${cell(40000, 40000, '\ubc16')}</hp:tr></hp:tbl>`
+    const xml = section(
+      `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${SEC_PR}${table}</hp:run></hp:p>`,
+    )
+    const result = await convertHwpxToDocx(await hwpx(xml))
+    const doc = await documentXml(result.docx)
+    expect(doc).toContain('\uc548')
+    expect(doc).not.toContain('\ubc16')
+    expect((doc.match(/<w:tr>/g) ?? []).length).toBe(4096)
+    expect((doc.match(/<w:gridCol /g) ?? []).length).toBe(63)
+    expect(result.dropped).toContainEqual({ what: 'table-cells-out-of-range', count: 1 })
+  })
+
   it('writes tables with spans, borders, fills, margins and a caption', async () => {
     const table =
       `<hp:tbl rowCnt="2" colCnt="3" borderFillIDRef="1"><hp:sz width="30000" height="4000"/>` +
