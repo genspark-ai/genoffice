@@ -390,6 +390,29 @@ describe('parseFileToText: pptx', () => {
     )
   })
 
+  it.each(['single quotes', 'shape attributes', 'alternate prefixes'])(
+    'reads speaker notes with %s',
+    async (variant) => {
+      const zip = await JSZip.loadAsync(await buildPptxFixture())
+      zip.file(
+        'ppt/slides/_rels/slide1.xml.rels',
+        notesRelationship('../notesSlides/notesSlide1.xml'),
+      )
+      let xml = notesSlideXml(['Discuss revenue &amp; costs', 'Keep 0042 intact'], '1')
+      if (variant === 'single quotes') xml = xml.replaceAll('"', "'")
+      if (variant === 'shape attributes') xml = xml.replaceAll('<p:sp>', '<p:sp useBgFill="0">')
+      if (variant === 'alternate prefixes')
+        xml = xml.replaceAll('p:', 'presentation:').replaceAll('xmlns:p=', 'xmlns:presentation=')
+      zip.file('ppt/notesSlides/notesSlide1.xml', xml)
+      const result = await parseFileToText(
+        writeFixture(`notes-${variant}.pptx`, await zip.generateAsync({ type: 'uint8array' })),
+      )
+      expect(result.ok).toBe(true)
+      expect(result.text).toContain('### Notes\nDiscuss revenue & costs\nKeep 0042 intact')
+      expect(result.text).not.toContain('Keep 0042 intact\n1')
+    },
+  )
+
   it('follows presentation order with positional numbering and excludes orphan slides', async () => {
     const zip = await presentationFixture(
       "<p:sldId id='265' r:id='rId10'/><p:sldId id='256' r:id='rId1'/>",

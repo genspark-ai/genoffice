@@ -118,9 +118,26 @@ async function notesXmlForSlide(zip: JSZip, slidePath: string): Promise<string |
 /** body placeholder only: the notes page's slide-number field would read as a stray digit */
 function notesParagraphs(notesXml: string): string[] {
   const out: string[] = []
-  for (const m of notesXml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
-    if (!/<p:ph\b[^>]*type="body"/.test(m[0])) continue
-    collectParagraphs(parser.parse(m[0]), out)
+  const notesParser = new XMLParser({
+    ignoreAttributes: false,
+    trimValues: false,
+    parseTagValue: false,
+    preserveOrder: true,
+    removeNSPrefix: true,
+  })
+  type Node = Record<string, unknown>
+  const child = (nodes: Node[], name: string): Node[] =>
+    (nodes.find((node) => Array.isArray(node[name]))?.[name] as Node[] | undefined) ?? []
+  const tree = notesParser.parse(notesXml) as Node[]
+  const shapes = child(child(child(tree, 'notes'), 'cSld'), 'spTree')
+  for (const shape of shapes) {
+    if (!Array.isArray(shape.sp)) continue
+    const children = shape.sp as Node[]
+    const properties = child(child(children, 'nvSpPr'), 'nvPr')
+    const placeholder = properties.find((node) => Array.isArray(node.ph))
+    const attributes = placeholder?.[':@'] as Record<string, string> | undefined
+    if (attributes?.['@_type'] !== 'body') continue
+    collectParagraphs(child(children, 'txBody'), out)
   }
   return out
 }
