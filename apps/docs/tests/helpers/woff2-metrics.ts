@@ -1,7 +1,7 @@
 /**
  * Minimal WOFF2 reader for advance-width assertions on the bundled KR subsets.
  *
- * Only supports what those files use: CFF flavor (no glyf/loca transform),
+ * Only supports what those files use: untransformed glyf/loca (or CFF),
  * untransformed hmtx, cmap formats 4/12. Avoids adding a woff2 dependency.
  */
 import { readFileSync } from 'node:fs'

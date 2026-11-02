@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildNamingInstruction, excerptForNaming, sanitizeFileStem } from '../src/main/ai-naming'
+import {
+  buildNamingInstruction,
+  excerptForNaming,
+  NAMING_MAX_TOKENS,
+  sanitizeFileStem,
+} from '../src/main/ai-naming'
 
 describe('sanitizeFileStem', () => {
   it('keeps a plain name unchanged', () => {
@@ -117,5 +122,20 @@ describe('excerptForNaming', () => {
 
   it('collapses runs of blank lines so the budget goes to content', () => {
     expect(excerptForNaming('a\n\n\n\n\nb')).toBe('a\n\nb')
+  })
+})
+
+describe('NAMING_MAX_TOKENS', () => {
+  it('leaves room for a reasoning preamble before the name', () => {
+    // A reasoning model spends the output budget thinking before it answers:
+    // with 64 tokens, deepseek-flash hit finish_reason "length" with every
+    // token in reasoning_content and no content at all (measured 2026-10-31;
+    // the same prompt thought for ~130 tokens with a 200 budget, then named
+    // the document). A starved naming call answers empty, and the callers
+    // keep the document's own name — the button then did nothing. The floor
+    // sits far above the measured thinking length, with margin for chattier
+    // models; a non-thinking model is unaffected because the budget is a
+    // ceiling, not a target.
+    expect(NAMING_MAX_TOKENS).toBeGreaterThanOrEqual(1024)
   })
 })

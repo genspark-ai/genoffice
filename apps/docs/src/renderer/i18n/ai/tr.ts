@@ -205,4 +205,7 @@ export const tr = {
   aiMindMapReset: 'Görünümü sıfırla',
   aiMindMapExpand: 'Dalı genişlet',
   aiMindMapCollapse: 'Dalı daralt',
+  aiMindMapToggleLayout: 'Yerleşimi değiştir',
+  aiMindMapLayoutTopDown: 'Yukarıdan aşağı yerleşime geç',
+  aiMindMapLayoutLeftRight: 'Soldan sağa yerleşime geç',
 } satisfies Record<keyof typeof zh, string>

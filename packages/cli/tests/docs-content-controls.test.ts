@@ -176,3 +176,151 @@ it('rejects an unwrap of a tag no control carries', async () => {
   expect(result.code).not.toBe(0)
   expect(result.stdout + result.stderr).toMatch(/no content control is tagged/)
 })
+
+// ---- Nested block-level controls and inline (run-level) controls ----
+
+// matches the genoffice#2062 fixture: outer wraps a paragraph + an inner
+// control + a paragraph with a run-level control
+const NESTED_SDT =
+  '<w:sdt><w:sdtPr><w:tag w:val="outer"/><w:alias w:val="Outer"/><w:id w:val="10"/>' +
+  '<w:lock w:val="sdtLocked"/><w:richText/></w:sdtPr><w:sdtContent>' +
+  '<w:p><w:r><w:t>outer para</w:t></w:r></w:p>' +
+  '<w:sdt><w:sdtPr><w:tag w:val="inner"/><w:alias w:val="Inner"/><w:id w:val="11"/>' +
+  '<w:lock w:val="contentLocked"/><w:richText/></w:sdtPr><w:sdtContent>' +
+  '<w:p><w:r><w:t>inner para</w:t></w:r></w:p>' +
+  '</w:sdtContent></w:sdt>' +
+  '<w:p><w:r><w:t>inline </w:t></w:r>' +
+  '<w:sdt><w:sdtPr><w:tag w:val="run"/><w:id w:val="12"/><w:text/></w:sdtPr>' +
+  '<w:sdtContent><w:r><w:t>INLINE</w:t></w:r></w:sdtContent></w:sdt>' +
+  '<w:r><w:t> tail</w:t></w:r></w:p>' +
+  '</w:sdtContent></w:sdt>'
+
+const NESTED_BODY =
+  '<w:p><w:r><w:t>Body before.</w:t></w:r></w:p>' +
+  NESTED_SDT +
+  '<w:p><w:r><w:t>Body after.</w:t></w:r></w:p>'
+
+interface ReadItem {
+  index: number
+  text: string
+  contentControl?: { tag: string; title: string; lock: string; id: string }
+  contentControls?: Array<{ tag: string; title: string; lock: string; id: string }>
+  inlineContentControls?: Array<{
+    tag: string
+    title: string
+    lock: string
+    id: string
+    text: string
+  }>
+}
+
+const readItems = async (file: string): Promise<ReadItem[]> => {
+  const read = await run(['docs', 'read', file, '--json'])
+  expect(read.code, read.stderr).toBe(0)
+  return JSON.parse(read.stdout).detail.items as ReadItem[]
+}
+
+it('reports the control chain and the inline control of a nested document', async () => {
+  const dir = tempDir()
+  const input = join(dir, 'nested.docx')
+  writeFileSync(input, await buildDocx({ bodyXml: NESTED_BODY }))
+  const items = await readItems(input)
+  expect(items.map((item) => item.text)).toEqual([
+    'Body before.',
+    'outer para',
+    'inner para',
+    'inlineINLINEtail',
+    'Body after.',
+  ])
+  const controlled = items.filter((item) => item.contentControl)
+  expect(controlled.map((item) => item.text)).toEqual([
+    'outer para',
+    'inner para',
+    'inlineINLINEtail',
+  ])
+  // contentControl stays the outermost control for compatibility
+  expect(controlled.map((item) => item.contentControl!.tag)).toEqual(['outer', 'outer', 'outer'])
+  // contentControls carries the whole chain, outermost first
+  const inner = items.find((item) => item.text === 'inner para')!
+  expect(inner.contentControls!.map((control) => control.tag)).toEqual(['outer', 'inner'])
+  expect(inner.contentControls![1]).toEqual({
+    tag: 'inner',
+    title: 'Inner',
+    lock: 'contentLocked',
+    id: '11',
+  })
+  expect(inner.contentControls![0]!.lock).toBe('sdtLocked')
+  // the run-level control is reported, the paragraph text stays merged
+  const inline = items.find((item) => item.text === 'inlineINLINEtail')!
+  expect(inline.inlineContentControls).toEqual([
+    { tag: 'run', title: '', lock: '', id: '12', text: 'INLINE' },
+  ])
+  expect(items.find((item) => item.text === 'outer para')!.inlineContentControls).toBeUndefined()
+})
+
+it('unwraps a nested inner control and keeps the outer one', async () => {
+  const dir = tempDir()
+  const input = join(dir, 'nested.docx')
+  const ops = join(dir, 'ops.json')
+  writeFileSync(input, await buildDocx({ bodyXml: NESTED_BODY }))
+  writeFileSync(ops, JSON.stringify([{ op: 'unwrap_content_control', tag: 'inner' }]))
+  const result = await run(['docs', 'apply', input, '--ops', ops, '--json'])
+  expect(result.code, result.stderr).toBe(0)
+  const xml = await documentXml(input)
+  expect(xml).toContain('w:val="outer"')
+  expect(xml).not.toContain('w:val="inner"')
+  expect(xml).toContain('w:val="run"')
+  const items = await readItems(input)
+  expect(items.map((item) => item.text)).toEqual([
+    'Body before.',
+    'outer para',
+    'inner para',
+    'inlineINLINEtail',
+    'Body after.',
+  ])
+  const controlled = items.filter((item) => item.contentControl)
+  expect(controlled.map((item) => item.text)).toEqual([
+    'outer para',
+    'inner para',
+    'inlineINLINEtail',
+  ])
+  for (const item of controlled) expect(item.contentControls!.map((c) => c.tag)).toEqual(['outer'])
+})
+
+it('unwraps the outermost control and leaves the inner control standing', async () => {
+  const dir = tempDir()
+  const input = join(dir, 'nested.docx')
+  const ops = join(dir, 'ops.json')
+  writeFileSync(input, await buildDocx({ bodyXml: NESTED_BODY }))
+  writeFileSync(ops, JSON.stringify([{ op: 'unwrap_content_control', tag: 'outer' }]))
+  const result = await run(['docs', 'apply', input, '--ops', ops, '--json'])
+  expect(result.code, result.stderr).toBe(0)
+  const xml = await documentXml(input)
+  expect(xml).not.toContain('w:val="outer"')
+  expect(xml).toContain('w:val="inner"')
+  expect(xml).toContain('w:val="run"')
+  const items = await readItems(input)
+  expect(items.map((item) => item.text)).toEqual([
+    'Body before.',
+    'outer para',
+    'inner para',
+    'inlineINLINEtail',
+    'Body after.',
+  ])
+  const controlled = items.filter((item) => item.contentControl)
+  expect(controlled.map((item) => item.text)).toEqual(['inner para'])
+  expect(controlled[0]!.contentControl!.tag).toBe('inner')
+  expect(controlled[0]!.contentControls!.map((c) => c.tag)).toEqual(['inner'])
+})
+
+it('leaves word/document.xml byte-identical when a save does not touch it', async () => {
+  const dir = tempDir()
+  const input = join(dir, 'nested.docx')
+  const ops = join(dir, 'ops.json')
+  writeFileSync(input, await buildDocx({ bodyXml: NESTED_BODY }))
+  const before = await documentXml(input)
+  writeFileSync(ops, JSON.stringify([{ op: 'set_properties', core: { title: 'Nested' } }]))
+  const result = await run(['docs', 'apply', input, '--ops', ops, '--json'])
+  expect(result.code, result.stderr).toBe(0)
+  expect(await documentXml(input)).toBe(before)
+})

@@ -2807,6 +2807,32 @@ export function visiblePageCount(slices: PageSlice[], upTo = slices.length): num
 }
 
 /**
+ * SECTIONPAGES per page: the visible pages of the run of slices sharing that page's
+ * section, counted like visiblePageCount (a parity blank draws no page).
+ */
+export function sectionPageCounts(slices: PageSlice[]): number[] {
+  const counts: number[] = []
+  let runStart = 0
+  let visible = 0
+  const close = (end: number) => counts.push(...Array<number>(end - runStart).fill(visible))
+  for (let i = 0; i < slices.length; i++) {
+    if (i > 0 && slices[i].section !== slices[i - 1].section) {
+      close(i)
+      runStart = i
+      visible = 0
+    }
+    if (
+      i === 0 ||
+      slices[i].start !== slices[i - 1].start ||
+      slices[i - 1].end === slices[i - 1].start
+    )
+      visible++
+  }
+  close(slices.length)
+  return counts
+}
+
+/**
  * Paragraphs cut at a line boundary between two consecutive column windows of
  * different widths (balanced or overflowing, within a region, across stacked
  * regions or across a page turn): the head keeps the first window's width and

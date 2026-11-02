@@ -49,6 +49,7 @@ const WINDOWS_1252_DECODER = new TextDecoder('windows-1252')
  * index what survives. null only for a BOM-declared UTF-32 file.
  */
 function decodeTextBytes(bytes: Buffer): string | null {
+  if (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0xfe && bytes[3] === 0xff) return null
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
     if (bytes[2] === 0 && bytes[3] === 0) return null // UTF-32LE BOM
     return bytes.toString('utf16le', 2)

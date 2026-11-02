@@ -40,7 +40,7 @@ import { setInactiveSelectionShown } from '../editor/inactiveSelection'
 import { uiOp } from '../editor/ops'
 import { createMarkdownSkill, MARKDOWN_RULES } from './markdown-skill'
 import { MindMapCard } from './MindMapCard'
-import { mindMapToMermaid } from './mind-map'
+import { mindMapToMermaid } from '@genoffice/agent-core/mind-map'
 import {
   buildDocWriterRequest,
   countMarkdownBlocks,

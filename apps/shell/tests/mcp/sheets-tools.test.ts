@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -298,5 +298,146 @@ describe('visible grid session tools', () => {
     for (const tool of ['create_session', 'read_sheet', 'apply_sheet_ops', 'save_session']) {
       expect(names).not.toContain(tool)
     }
+  })
+})
+describe('headless sheet_links', () => {
+  /** a workbook the existsSync guard accepts */
+  function stageWorkbook(name = 'linked.xlsx'): string {
+    const path = join(dir, name)
+    writeFileSync(path, 'stub')
+    return path
+  }
+
+  it("lists a workbook's external links through the CLI", async () => {
+    const cli = fakeCli()
+    cli.setSheetLinksDetail({
+      links: [
+        { index: 1, source: '/tmp/source.xlsx', reachable: true },
+        { index: 2, source: 'file:///gone/archived.xlsx', reachable: false },
+      ],
+      units: 'index is the [n] formulas use; source is the resolved path',
+    })
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const path = stageWorkbook()
+    const result = await client!.callTool({ name: 'sheet_links', arguments: { path } })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(text(result.content)) as {
+      path: string
+      links: Array<{ index: number; reachable: boolean }>
+      units: string
+    }
+    expect(payload.path).toBe(path)
+    expect(payload.links).toHaveLength(2)
+    expect(payload.links[1]).toMatchObject({ index: 2, reachable: false })
+    expect(payload.units).toContain('index is the [n]')
+    expect(cli.last()).toEqual(['sheet', 'links', path])
+  })
+
+  it('breaks chosen links in place, or through --out/--force', async () => {
+    const cli = fakeCli()
+    cli.setSheetLinksDetail({ broken: [1], removedLinks: 1 })
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const path = stageWorkbook()
+    const result = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, break: [1] },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(cli.last()).toEqual(['sheet', 'links', path, '--break', '1'])
+
+    const out = join(dir, 'severed.xlsx')
+    await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, break: [1, 2], out, overwrite: true },
+    })
+    expect(cli.last()).toEqual(['sheet', 'links', path, '--break', '1,2', '--out', out, '--force'])
+  })
+
+  it('refreshes cached values with --update', async () => {
+    const cli = fakeCli()
+    cli.setSheetLinksDetail({ updated: 4, reachable: 1, broken: 0 })
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const path = stageWorkbook()
+    const result = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, update: true },
+    })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(text(result.content)) as { updated: number; reachable: number }
+    expect(payload.updated).toBe(4)
+    expect(cli.last()).toEqual(['sheet', 'links', path, '--update'])
+  })
+
+  it('keeps list available with background off but refuses the writing actions', async () => {
+    const cli = fakeCli()
+    await startService(
+      createSheetsTools({ ...baseDeps(false), cli: cli.runner }, createSessionHost()),
+    )
+    const names = (await client!.listTools()).tools.map((t) => t.name)
+    expect(names).toContain('sheet_links')
+
+    const path = stageWorkbook()
+    const listed = await client!.callTool({ name: 'sheet_links', arguments: { path } })
+    expect(listed.isError).toBeFalsy()
+
+    const update = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, update: true },
+    })
+    expect(update.isError).toBe(true)
+    expect(text(update.content)).toMatch(/headless file writes are off/)
+
+    const broken = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, break: [1] },
+    })
+    expect(broken.isError).toBe(true)
+  })
+
+  it('refuses update+break together and bad indices', async () => {
+    const cli = fakeCli()
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const path = stageWorkbook()
+    const both = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path, update: true, break: [1] },
+    })
+    expect(both.isError).toBe(true)
+    expect(text(both.content)).toMatch(/cannot combine/)
+  })
+
+  it('validates the path like read_docx does', async () => {
+    const cli = fakeCli()
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const relative = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path: 'relative.xlsx' },
+    })
+    expect(relative.isError).toBe(true)
+    expect(text(relative.content)).toMatch(/path must be absolute/)
+
+    const wrongExt = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path: join(dir, 'notes.txt') },
+    })
+    expect(wrongExt.isError).toBe(true)
+    expect(text(wrongExt.content)).toMatch(/must point to an .xlsx/)
+
+    const missing = await client!.callTool({
+      name: 'sheet_links',
+      arguments: { path: join(dir, 'nope.xlsx') },
+    })
+    expect(missing.isError).toBe(true)
+    expect(text(missing.content)).toMatch(/file not found/)
+  })
+
+  it("surfaces the CLI's error message", async () => {
+    const cli = fakeCli()
+    cli.failNext('sheet links: source workbook is unreachable and no cache exists')
+    await startService(createSheetsTools({ ...baseDeps(), cli: cli.runner }, createSessionHost()))
+    const path = stageWorkbook()
+    const failed = await client!.callTool({ name: 'sheet_links', arguments: { path } })
+    expect(failed.isError).toBe(true)
+    expect(text(failed.content)).toContain('unreachable')
   })
 })

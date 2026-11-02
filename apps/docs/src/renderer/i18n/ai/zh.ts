@@ -195,4 +195,7 @@ export const zh = {
   aiMindMapReset: '重置视图',
   aiMindMapExpand: '展开分支',
   aiMindMapCollapse: '折叠分支',
+  aiMindMapToggleLayout: '切换布局',
+  aiMindMapLayoutTopDown: '切换为从上到下布局',
+  aiMindMapLayoutLeftRight: '切换为左右分栏布局',
 }

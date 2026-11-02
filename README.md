@@ -39,8 +39,9 @@ files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
-editable OOXML copies; the import is open-only — saving writes OOXML, never
-ODF.
+editable OOXML copies, and so do legacy Word `.doc`/`.dot` files and Hancom
+documents (`.hwp`, `.hwpx`); the imports are open-only — saving writes OOXML,
+never the source format.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
@@ -380,7 +381,7 @@ check its own work.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -523,6 +524,11 @@ On Fedora / RHEL-family / openSUSE, install the rpm instead:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+The deb and rpm also add blank templates for KDE Plasma's Dolphin: right-click
+in a folder → **Create New** lists _GenOffice Document_, _GenOffice Spreadsheet_
+and _GenOffice Presentation_. They live in `/usr/share/templates` and are
+removed with the package.
 
 The AppImage runs in place: install the FUSE 2 runtime
 (`sudo apt install libfuse2`; on Ubuntu 24.04 the package is `libfuse2t64`),
@@ -720,6 +726,11 @@ GenOffice would not be possible without these open-source projects:
   of the Rust xlsx sidecar.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — the MicroType
   Express decoder for embedded PowerPoint fonts, ported to TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — reads binary `.hwp`
+  documents into HWPX for the Hancom import; its WebAssembly build carries the
+  Rust crates and the Volexity hwp-extract port listed in the third-party
+  notices. "한글", "한컴", "HWP" and "HWPX" are registered trademarks of Hancom
+  Inc.; GenOffice is not affiliated with Hancom.
 - [React](https://react.dev/) (MIT) — the UI layer of every app.
 - [Mermaid](https://mermaid.js.org/) (MIT) and [KaTeX](https://katex.org/)
   (MIT) — diagrams and math in Markdown and Docs.

@@ -204,4 +204,7 @@ export const th = {
   aiMindMapReset: 'รีเซ็ตมุมมอง',
   aiMindMapExpand: 'ขยายสาขา',
   aiMindMapCollapse: 'ย่อสาขา',
+  aiMindMapToggleLayout: 'สลับเลย์เอาต์',
+  aiMindMapLayoutTopDown: 'สลับเป็นเลย์เอาต์แบบบนลงล่าง',
+  aiMindMapLayoutLeftRight: 'สลับเป็นเลย์เอาต์แบบซ้ายไปขวา',
 } satisfies Record<keyof typeof zh, string>

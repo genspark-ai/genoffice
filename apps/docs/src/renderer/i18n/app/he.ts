@@ -131,6 +131,7 @@ export const he = {
   appCommentsTitle: 'הערות ({n})',
   appCommentPlaceholder: 'הקלידו הערה…',
   appCommentBtn: 'הערה',
+  appAttachImage: 'צרף תמונה',
   appUnknownAuthor: '(מחבר לא ידוע)',
   appResolved: 'נפתרה',
   appResolvedComments: 'הערות שנפתרו ({n})',
