@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import * as CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import {
@@ -11,6 +13,10 @@ import {
   readResolvedFormatting,
   readResolvedLegacyDocModel,
   readLegacyDocLayout,
+  buildLegacyDocBody,
+  parseInlineImages,
+  parseListTables,
+  parseFields,
   parseHeaderStories,
   parseSections,
 } from '../src/index'
@@ -615,6 +621,231 @@ describe('mutation validation: stage-3c-1 sections and headers', () => {
     for (const name of ['page-setup', 'header-footer'] as const) {
       const { docx } = await convertLegacyDocToDocx(fixtureBytes(name))
       expect(docx.length).toBeGreaterThan(1000)
+    }
+  })
+})
+
+describe('mutation validation: stage-3c-2 tables', () => {
+  function tableFixture(name: string): Uint8Array {
+    return new Uint8Array(
+      readFileSync(fileURLToPath(new URL('./fixtures/' + name, import.meta.url))),
+    )
+  }
+
+  function tablePapxPages(bytes: Uint8Array): number[] {
+    const doc = openLegacyDoc(bytes)
+    const plc = parsePlcBte(doc.table, doc.fib.fcPlcfbtePapx, doc.fib.lcbPlcfbtePapx)
+    return plc.pages
+  }
+
+  it('table.doc: TAP/TDefTable byte flips end as a body or a LegacyDocError', () => {
+    const bytes = tableFixture('table.doc')
+    const doc = openLegacyDoc(bytes)
+    const pages = tablePapxPages(bytes)
+    const random = seededRandom(0x3c20_0001)
+    const outcomes = { body: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const wordDocument = doc.wordDocument.slice()
+      const page = pages[index % pages.length]!
+      const base = page * 512
+      const position = base + Math.floor(random() * 512)
+      wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const body = buildLegacyDocBody({ ...doc, wordDocument })
+        expect(Array.isArray(body.blocks)).toBe(true)
+        outcomes.body++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.body + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+  it('rich.doc: TAP/TDefTable byte flips end as a body or a LegacyDocError', () => {
+    const bytes = tableFixture('rich.doc')
+    const doc = openLegacyDoc(bytes)
+    const pages = tablePapxPages(bytes)
+    const random = seededRandom(0x3c20_0002)
+    const outcomes = { body: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const wordDocument = doc.wordDocument.slice()
+      const page = pages[index % pages.length]!
+      const position = page * 512 + Math.floor(random() * 512)
+      wordDocument[position] = (wordDocument[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const body = buildLegacyDocBody({ ...doc, wordDocument })
+        expect(Array.isArray(body.blocks)).toBe(true)
+        outcomes.body++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.body + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('table.doc and rich.doc: file-level flips through conversion stay within the contract', async () => {
+    for (const name of ['table.doc', 'rich.doc']) {
+      const bytes = tableFixture(name)
+      const random = seededRandom(0x3c20_0003 ^ name.length)
+      const outcomes = { docx: 0, rejected: 0 }
+      for (let index = 0; index < 12; index++) {
+        let mutated: Uint8Array
+        if (index % 2 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+        else {
+          mutated = bytes.slice()
+          const position = Math.floor(random() * Math.min(512, mutated.length))
+          mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+        }
+        try {
+          const { docx } = await convertLegacyDocToDocx(mutated)
+          expect(docx.length).toBeGreaterThan(1000)
+          outcomes.docx++
+        } catch (error) {
+          expect(error).toBeInstanceOf(LegacyDocError)
+          outcomes.rejected++
+        }
+      }
+      expect(outcomes.docx + outcomes.rejected).toBe(12)
+    }
+  })
+})
+
+describe('mutation validation: stage-3c-3 pictures', () => {
+  function imageFixture(name: string): Uint8Array {
+    return new Uint8Array(
+      readFileSync(fileURLToPath(new URL('./fixtures/' + name, import.meta.url))),
+    )
+  }
+
+  it('image.doc: Data stream byte flips end as pictures or a LegacyDocError', () => {
+    const bytes = imageFixture('image.doc')
+    const doc = openLegacyDoc(bytes)
+    const data = doc.stream('Data')!
+    const random = seededRandom(0x3c30_0001)
+    const outcomes = { images: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const mutated = data.slice()
+      const position =
+        index % 3 === 0
+          ? Math.floor(random() * Math.min(0x44, mutated.length))
+          : Math.floor(random() * mutated.length)
+      mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const result = parseInlineImages({
+          ...doc,
+          stream: (name: string) => (name === 'Data' ? mutated : doc.stream(name)),
+        })
+        expect(Array.isArray(result.images)).toBe(true)
+        outcomes.images++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.images + outcomes.rejected).toBe(24)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('image.doc: file-level flips through conversion stay within the contract', async () => {
+    const bytes = imageFixture('image.doc')
+    const random = seededRandom(0x3c30_0002)
+    const outcomes = { docx: 0, rejected: 0 }
+    for (let index = 0; index < 12; index++) {
+      let mutated: Uint8Array
+      if (index % 2 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+      else {
+        mutated = bytes.slice()
+        const position = Math.floor(random() * Math.min(512, mutated.length))
+        mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      }
+      try {
+        const { docx } = await convertLegacyDocToDocx(mutated)
+        expect(docx.length).toBeGreaterThan(1000)
+        outcomes.docx++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.docx + outcomes.rejected).toBe(12)
+  })
+})
+
+describe('mutation validation: stage-3c-4 lists and fields', () => {
+  function stageFixture(name: string): Uint8Array {
+    return new Uint8Array(
+      readFileSync(fileURLToPath(new URL('./fixtures/' + name, import.meta.url))),
+    )
+  }
+
+  it('lists-link.doc: PlfLst / level / PlfLfo byte flips end as lists or a LegacyDocError', () => {
+    const bytes = stageFixture('lists-link.doc')
+    const doc = openLegacyDoc(bytes)
+    const random = seededRandom(0x3c40_0001)
+    const levelsStart = doc.fib.fcPlfLst + doc.fib.lcbPlfLst
+    const levelsEnd = doc.fib.fcPlfLfo
+    const outcomes = { lists: 0, rejected: 0 }
+    for (let index = 0; index < 30; index++) {
+      const table = doc.table.slice()
+      let position: number
+      if (index % 3 === 0) position = doc.fib.fcPlfLst + Math.floor(random() * doc.fib.lcbPlfLst)
+      else if (index % 3 === 1)
+        position = levelsStart + Math.floor(random() * Math.max(1, levelsEnd - levelsStart))
+      else position = doc.fib.fcPlfLfo + Math.floor(random() * doc.fib.lcbPlfLfo)
+      table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const result = parseListTables(doc.fib, table)
+        expect(Array.isArray([...result.lists.keys()])).toBe(true)
+        outcomes.lists++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.lists + outcomes.rejected).toBe(30)
+    expect(outcomes.rejected).toBeGreaterThan(0)
+  })
+
+  it('lists-link.doc and rich.doc: file-level flips through conversion stay within the contract', async () => {
+    for (const name of ['lists-link.doc', 'rich.doc']) {
+      const bytes = stageFixture(name)
+      const random = seededRandom(0x3c40_0002 ^ name.length)
+      const outcomes = { docx: 0, rejected: 0 }
+      for (let index = 0; index < 10; index++) {
+        let mutated: Uint8Array
+        if (index % 2 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+        else {
+          mutated = bytes.slice()
+          const position = Math.floor(random() * Math.min(512, mutated.length))
+          mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+        }
+        try {
+          const { docx } = await convertLegacyDocToDocx(mutated)
+          expect(docx.length).toBeGreaterThan(1000)
+          outcomes.docx++
+        } catch (error) {
+          expect(error).toBeInstanceOf(LegacyDocError)
+          outcomes.rejected++
+        }
+      }
+      expect(outcomes.docx + outcomes.rejected).toBe(10)
+    }
+  })
+
+  it('field bytes: random raw-text mutations never escape parseFields', () => {
+    const rawText = 'Visit \u0013 HYPERLINK "https://example.org/"\u0001\u0014the site\u0015\r'
+    const random = seededRandom(0x3c40_0003)
+    for (let index = 0; index < 24; index++) {
+      const chars = [...rawText]
+      const position = Math.floor(random() * chars.length)
+      const replacement = String.fromCharCode(Math.floor(random() * 0x20))
+      chars[position] = replacement
+      const result = parseFields(chars.join(''))
+      expect(Array.isArray(result.hyperlinks)).toBe(true)
+      expect(Array.isArray(result.warnings)).toBe(true)
     }
   })
 })

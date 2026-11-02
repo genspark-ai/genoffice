@@ -62,15 +62,23 @@ describe('sprm operand sizing (MS-DOC 2.6.1)', () => {
     expect(sprmOperandSize(grpprl, 0)).toBe(1)
   })
 
-  it('uses a u16 length for sprmTDefTable / sprmPChgTabs', () => {
+  it('uses a u16 length for sprmTDefTable / sprmPChgTabs (declared = payload + 1)', () => {
     for (const opcode of [SPRM_LONG_TABLE, SPRM_LONG_PARAGRAPH]) {
-      const grpprl = concat(sprm(opcode, [2, 0, 0xaa, 0xbb]), sprm(0x0835, [1]))
+      // Word writes 3 for a 2-byte operand: the u16 length counts one of its own bytes
+      const grpprl = concat(sprm(opcode, [3, 0, 0xaa, 0xbb]), sprm(0x0835, [1]))
       const sprms = iterateSprms(grpprl)
       expect(sprms).toHaveLength(2)
       expect(sprms[0]!.opcode).toBe(opcode)
       expect([...sprms[0]!.operand]).toEqual([0xaa, 0xbb])
       expect(sprms[1]!.opcode).toBe(0x0835)
     }
+  })
+
+  it('allows an empty u16-length operand and rejects a declared zero length', () => {
+    const empty = iterateSprms(concat(sprm(SPRM_LONG_TABLE, [1, 0]), sprm(0x0835, [1])))
+    expect(empty.map((entry) => entry.opcode)).toEqual([SPRM_LONG_TABLE, 0x0835])
+    expect(empty[0]!.operand).toHaveLength(0)
+    expect(errorCode(() => iterateSprms(sprm(SPRM_LONG_TABLE, [0, 0])))).toBe('bad_sprm')
   })
 
   it('excludes the length byte from a variable-length operand', () => {

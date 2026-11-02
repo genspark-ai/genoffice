@@ -311,10 +311,11 @@ function ensureThirdPartyNotices() {
 
 /** @type {import('electron-builder').Configuration} */
 // NSIS makes every declared ProgId the extension's default opener; for the
-// office types that is the point, for plain text and JSON it would hijack the
-// system editor, so Windows leaves those two out (mac/Linux only offer them
-// in Open With).
-const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json'])
+// office types that is the point, for plain text/JSON and the legacy Word
+// 97-2003 .doc/.dot it would hijack the system editor, so Windows leaves those
+// out (mac/Linux still declare them for Open With). GenOffice opens .doc/.dot
+// through its own Open dialog on every platform.
+const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json', 'doc', 'dot'])
 const FILE_ASSOCIATIONS = [
   {
     ext: 'docx',
@@ -323,6 +324,22 @@ const FILE_ASSOCIATIONS = [
     role: 'Editor',
     icon: 'docx',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes .doc
+    ext: 'doc',
+    name: 'Word 97-2003 Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
+  },
+  {
+    // import-only: the template opens as a converted .docx copy
+    ext: 'dot',
+    name: 'Word 97-2003 Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
   },
   {
     ext: 'xlsx',

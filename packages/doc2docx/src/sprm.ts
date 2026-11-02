@@ -28,8 +28,9 @@ function isLongLengthOpcode(opcode: number): boolean {
  * Payload size (bytes after the length byte(s)) of the sprm whose 2-byte
  * opcode starts at `offset`: spra 0/1 -> 1, 2/4/5 -> 2, 3 -> 4, 7 -> 3;
  * spra 6 -> the length byte (u8), except sprmTDefTable/sprmPChgTabs, which use
- * a u16 length. Matches POI's SprmOperation sizing (total size = header +
- * operand).
+ * a u16 length that counts one of its own bytes, so the payload is one byte
+ * shorter than the declared value (MS-DOC 2.6.1; matches POI's SprmOperation,
+ * whose total size is declared + 3).
  */
 export function sprmOperandSize(grpprl: Uint8Array, offset: number): number {
   const opcode = grpprl[offset]! | (grpprl[offset + 1]! << 8)
@@ -50,7 +51,12 @@ export function sprmOperandSize(grpprl: Uint8Array, offset: number): number {
       const lengthBytes = isLongLengthOpcode(opcode) ? 2 : 1
       if (offset + 2 + lengthBytes > grpprl.length)
         badSprm(`sprm 0x${opcode.toString(16)} has no operand length byte`)
-      if (lengthBytes === 2) return grpprl[offset + 2]! | (grpprl[offset + 3]! << 8)
+      if (lengthBytes === 2) {
+        const declared = grpprl[offset + 2]! | (grpprl[offset + 3]! << 8)
+        if (declared < 1)
+          badSprm(`sprm 0x${opcode.toString(16)} declares an empty u16 operand length`)
+        return declared - 1
+      }
       return grpprl[offset + 2]!
     }
     default:
