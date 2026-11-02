@@ -1178,6 +1178,8 @@ export const cs = {
   appRefreshAll: 'Aktualizovat vše',
   appWorkbookNoPivot: 'V tomto sešitu nejsou žádné kontingenční tabulky.',
   appRefreshAllTitle: 'Aktualizovat všechny kontingenční tabulky',
+  appQueriesConnections: 'Dotazy a připojení',
+  appQueriesConnectionsTitle: 'Zobrazit dotazy a datová připojení sešitu',
   appErrorCheckingDetail: 'Prohledat list na chybové hodnoty',
   appErrorsFound: '{count} chyb — v {cell}: {value}',
   appCheckingErrors: 'Prohledává se celý list na chyby…',

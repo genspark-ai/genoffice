@@ -1221,6 +1221,8 @@ export const es = {
   appRefreshAll: 'Actualizar todo',
   appWorkbookNoPivot: 'No hay tablas dinámicas en este libro.',
   appRefreshAllTitle: 'Actualizar todas las tablas dinámicas',
+  appQueriesConnections: 'Consultas y conexiones',
+  appQueriesConnectionsTitle: 'Mostrar las consultas y conexiones de datos del libro',
   appErrorCheckingDetail: 'Buscar valores de error en la hoja',
   appErrorsFound: '{count} errores — en {cell}: {value}',
   appCheckingErrors: 'Buscando errores en toda la hoja…',

@@ -1178,6 +1178,8 @@ export const ms = {
   appRefreshAll: 'Segar Semula Semua',
   appWorkbookNoPivot: 'Tiada Jadual Pangsi dalam buku kerja ini.',
   appRefreshAllTitle: 'Segar semula semua Jadual Pangsi',
+  appQueriesConnections: 'Pertanyaan & Sambungan',
+  appQueriesConnectionsTitle: 'Senaraikan pertanyaan dan sambungan data buku kerja',
   appErrorCheckingDetail: 'Imbas nilai ralat dalam helaian',
   appErrorsFound: '{count} ralat — di {cell}: {value}',
   appCheckingErrors: 'Mengimbas ralat di seluruh helaian…',

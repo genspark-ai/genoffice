@@ -1204,6 +1204,8 @@ export const pl = {
   appRefreshAll: 'Odśwież wszystko',
   appWorkbookNoPivot: 'Brak tabel przestawnych w tym skoroszycie.',
   appRefreshAllTitle: 'Odśwież wszystkie tabele przestawne',
+  appQueriesConnections: 'Zapytania i połączenia',
+  appQueriesConnectionsTitle: 'Pokaż zapytania i połączenia danych skoroszytu',
   appErrorCheckingDetail: 'Skanuj arkusz w poszukiwaniu błędów',
   appErrorsFound: 'Błędy: {count} — w {cell}: {value}',
   appCheckingErrors: 'Skanowanie całego arkusza w poszukiwaniu błędów…',

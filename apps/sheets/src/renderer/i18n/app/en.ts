@@ -1154,6 +1154,8 @@ export const en = {
   appRefreshAll: 'Refresh All',
   appWorkbookNoPivot: 'No pivot tables in this workbook.',
   appRefreshAllTitle: 'Refresh every pivot table',
+  appQueriesConnections: 'Queries & Connections',
+  appQueriesConnectionsTitle: "List the workbook's queries and data connections",
   appErrorCheckingDetail: 'Scan the sheet for error values',
   appErrorsFound: '{count} errors — at {cell}: {value}',
   appCheckingErrors: 'Scanning the whole sheet for errors…',

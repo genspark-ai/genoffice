@@ -1196,6 +1196,8 @@ export const ru = {
   appRefreshAll: 'Обновить все',
   appWorkbookNoPivot: 'В книге нет сводных таблиц.',
   appRefreshAllTitle: 'Обновить все сводные таблицы',
+  appQueriesConnections: 'Запросы и подключения',
+  appQueriesConnectionsTitle: 'Показать запросы и подключения к данным книги',
   appErrorCheckingDetail: 'Найти значения ошибок на листе',
   appErrorsFound: 'Ошибок: {count} — в {cell}: {value}',
   appCheckingErrors: 'Идёт поиск ошибок по всему листу…',

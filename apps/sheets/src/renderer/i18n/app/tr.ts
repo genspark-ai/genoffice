@@ -1208,6 +1208,8 @@ export const tr = {
   appRefreshAll: 'Tümünü Yenile',
   appWorkbookNoPivot: 'Bu çalışma kitabında pivot tablo yok.',
   appRefreshAllTitle: 'Her pivot tabloyu yenile',
+  appQueriesConnections: 'Sorgular ve Bağlantılar',
+  appQueriesConnectionsTitle: 'Çalışma kitabının sorgularını ve veri bağlantılarını listeleyin',
   appErrorCheckingDetail: 'Sayfayı hata değerleri için tara',
   appErrorsFound: '{count} hata — {cell} konumunda: {value}',
   appCheckingErrors: 'Tüm sayfa hatalar için taranıyor…',
