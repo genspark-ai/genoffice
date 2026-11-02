@@ -46,6 +46,20 @@ describe('parseHierConstraints', () => {
       <dgm:constr type="primFontSz" for="ch" forName="rootText1" val="48"/>`
     expect(parseHierConstraints(xml).fontMax).toBe(48)
   })
+
+  it('reads the built-in hierarchy1 facts, scaling a height-relative row gap', () => {
+    // The facts Word writes into urn:microsoft.com/office/officeart/2005/8/layout/hierarchy1.
+    const xml = `
+      <dgm:constr type="primFontSz" for="des" ptType="node" op="equ" val="65"/>
+      <dgm:constr type="h" for="des" forName="composite" refType="w" refFor="des" refForName="composite" fact="0.667"/>
+      <dgm:constr type="sibSp" refType="w" refFor="des" refForName="composite" fact="0.1"/>
+      <dgm:constr type="sp" for="des" forName="hierRoot1" refType="h" refFor="des" refForName="composite" fact="0.25"/>`
+    const c = parseHierConstraints(xml)
+    expect(c.boxAspect).toBeCloseTo(0.667)
+    expect(c.sibSp).toBeCloseTo(0.1)
+    expect(c.sp).toBeCloseTo(0.25 * 0.667)
+    expect(c.fontMax).toBe(65)
+  })
 })
 
 describe('layoutHierTree', () => {

@@ -19,8 +19,6 @@ export interface BuildDocxOptions {
   extraRels?: string
   /** extra zip parts (charts etc.) with their [Content_Types].xml override */
   extraParts?: Array<{ path: string; xml: string; contentType: string }>
-  /** extra relationship parts, e.g. word/diagrams/_rels/data1.xml.rels */
-  extraRelsParts?: Array<{ path: string; xml: string }>
   /** extra binary media parts with their [Content_Types].xml Default extension */
   binaryParts?: Array<{ path: string; base64: string; extension: string; contentType: string }>
   /** extra sectPr children inserted first (headerReference/footerReference…) */
@@ -114,7 +112,6 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
   if (withNumbering) zip.file('word/numbering.xml', options.numberingXml ?? NUMBERING_XML)
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)
-  for (const part of options.extraRelsParts ?? []) zip.file(part.path, part.xml)
   for (const part of options.binaryParts ?? []) zip.file(part.path, part.base64, { base64: true })
 
   const sectPr =

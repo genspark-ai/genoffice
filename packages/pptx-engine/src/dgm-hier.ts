@@ -1,5 +1,6 @@
 /**
- * Hierarchy-family (orgChart1) diagram layout interpreter.
+ * Hierarchy-family (orgChart1, and the built-in hierarchy1) diagram layout
+ * interpreter.
  *
  * PowerPoint org charts carry the full layout algorithm in diagrams/layoutN.xml:
  * box proportions and gaps as <dgm:constr> factors, and the std/hang branch
@@ -68,15 +69,32 @@ export function parseHierConstraints(layoutXml: string | undefined): HierConstra
     const v = parseFloat(m[1]!)
     return Number.isFinite(v) && v > 0 ? v : undefined
   }
+  // The box and gap facts hang off the node composite. Office's orgChart1 names
+  // it rootComposite1; the built-in hierarchy1 layout names it composite.
+  const composite = '(?:rootComposite1?|composite)'
   cons.boxAspect =
     fact(
-      /<dgm:constr type="h" for="des" forName="rootComposite1?"[^>]*refForName="rootComposite1?"[^>]*fact="([\d.]+)"/,
+      new RegExp(
+        `<dgm:constr type="h" for="des" forName="${composite}"[^>]*refForName="${composite}"[^>]*fact="([\\d.]+)"`,
+      ),
     ) ?? cons.boxAspect
   cons.sibSp =
-    fact(/<dgm:constr type="sibSp"[^>]*refForName="rootComposite1?"[^>]*fact="([\d.]+)"/) ??
-    cons.sibSp
-  cons.sp =
-    fact(/<dgm:constr type="sp" for="des" forName="hierRoot1"[^>]*fact="([\d.]+)"/) ?? cons.sp
+    fact(
+      new RegExp(`<dgm:constr type="sibSp"[^>]*refForName="${composite}"[^>]*fact="([\\d.]+)"`),
+    ) ?? cons.sibSp
+  // Row gap: measured against a sibling box width (orgChart1) or against the
+  // composite height (hierarchy1), so a height reference scales by the aspect.
+  const sp =
+    /<dgm:constr type="sp" for="des" forName="hierRoot1"[^>]*?refType="(w|h)"[^>]*?fact="([\d.]+)"/.exec(
+      layoutXml,
+    )
+  if (sp) {
+    const v = parseFloat(sp[2]!)
+    if (Number.isFinite(v) && v > 0) cons.sp = sp[1] === 'h' ? v * cons.boxAspect : v
+  } else {
+    cons.sp =
+      fact(/<dgm:constr type="sp" for="des" forName="hierRoot1"[^>]*fact="([\d.]+)"/) ?? cons.sp
+  }
   const connW = fact(/<dgm:constr type="w" for="ch" forName="rootConnector1?"[^>]*fact="([\d.]+)"/)
   if (connW != null) cons.trunkOff = connW / 2
   const fsz = /<dgm:constr type="primFontSz"[^>]*\bval="([\d.]+)"/.exec(layoutXml)

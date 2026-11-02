@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildSmartArtParts, type SmartArtNode } from '../src/smartart'
 import {
+  buildSmartArtParts,
   SMARTART_CONTENT_TYPES,
-  SMARTART_RADIAL_LAYOUT_ID,
+  SMARTART_LAYOUT_ID,
   SMARTART_REL_TYPES,
+  type SmartArtNode,
 } from '../src/smartart'
 import { parseDocx } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
@@ -68,41 +69,194 @@ async function buildSmartArtDocx(): Promise<Uint8Array> {
   })
 }
 
-describe('buildSmartArtParts: the data model', () => {
-  it('writes a data point, a transition pair and a presentation point per node', () => {
-    const data = parts.dataXml
-    // 6 nodes: root, Product, Docs, Sheets, Architecture, Main process
-    const points = [...data.matchAll(/<dgm:pt modelId="([^"]+)"/g)]
-    const dataPoints = [
-      ...data.matchAll(/<dgm:pt modelId="[^"]+"(?![^>]*type="(?:pres|parTrans|sibTrans)")/g),
+interface Point {
+  id: string
+  attrs: string
+  body: string
+}
+
+function pointsOf(source = parts.dataXml): Point[] {
+  return [...source.matchAll(/<dgm:pt ([^>]*)>([\s\S]*?)<\/dgm:pt>/g)].map((m) => ({
+    id: attr(m[1]!, 'modelId')!,
+    attrs: m[1]!,
+    body: m[2]!,
+  }))
+}
+
+function attr(fragment: string, name: string): string | undefined {
+  return new RegExp(`${name}="([^"]*)"`).exec(fragment)?.[1]
+}
+
+function cxnsOf(source = parts.dataXml): string[] {
+  return [...source.matchAll(/<dgm:cxn ([^>]*)\/>/g)].map((m) => m[1]!)
+}
+
+describe('buildSmartArtParts: the layout', () => {
+  it("emits Word's built-in hierarchy1 definition verbatim", () => {
+    const layout = parts.layoutXml
+    expect(layout.includes(`uniqueId="${SMARTART_LAYOUT_ID}"`)).toBe(true)
+    // the recursion Word needs to lay a tree out: hierChild -> forEach ->
+    // hierRoot -> composite -> text, then hierChild again
+    const structure = [
+      '<dgm:alg type="hierChild">',
+      '<dgm:forEach',
+      'name="hierRoot1"',
+      '<dgm:alg type="composite"/>',
+      '<dgm:alg type="tx"/>',
+      '<dgm:layoutNode name="hierChild5">',
+      '<dgm:forEach name="Name31" ref="repeat"/>',
     ]
-    const presPoints = [...data.matchAll(/<dgm:pt [^>]*type="pres"/g)]
-    const parTrans = [...data.matchAll(/type="parTrans"/g)]
-    const sibTrans = [...data.matchAll(/type="sibTrans"/g)]
-
-    expect(dataPoints.length).toBe(6)
-    expect(presPoints.length).toBe(6 + 5) // one per node, plus one per link
-    expect(parTrans.length).toBe(5) // one per connection
-    expect(sibTrans.length).toBe(5)
-    expect(points.length).toBe(6 + 10 + 11)
+    for (const marker of structure) expect(layout.includes(marker), marker).toBe(true)
+    // the hand-written definition Word used to replace is gone
+    expect(layout.includes('rootComposite1')).toBe(false)
+    expect(layout.includes('urn:genoffice/officeart/layout')).toBe(false)
   })
 
-  it('points every presentation point at a point that exists', () => {
-    const ids = new Set([...parts.dataXml.matchAll(/<dgm:pt modelId="([^"]+)"/g)].map((m) => m[1]))
-    const assoc = [...parts.dataXml.matchAll(/presAssocID="([^"]+)"/g)].map((m) => m[1])
-    expect(assoc.length).toBeGreaterThan(0)
-    for (const id of assoc) expect(ids.has(id)).toBe(true)
+  it('is byte-identical on every build', () => {
+    const again = buildSmartArtParts(tree, {}, REL_IDS)
+    expect(again.dataXml).toBe(parts.dataXml)
+    expect(again.drawingXml).toBe(parts.drawingXml)
+    expect(again.layoutXml).toBe(parts.layoutXml)
+    expect(again.quickStyleXml).toBe(parts.quickStyleXml)
+    expect(again.colorsXml).toBe(parts.colorsXml)
+  })
+})
+
+describe('buildSmartArtParts: the data model', () => {
+  it('keeps the doc point empty and puts the title in a node point below it', () => {
+    const points = pointsOf(parts.dataXml)
+    const doc = points.find((p) => p.attrs.includes('type="doc"'))!
+    expect(doc).toBeDefined()
+    // a layout never presents the doc point's text, so the title must not be there
+    expect(doc.body).not.toContain('<a:t>')
+    expect(doc.body).not.toContain('Mind map')
+
+    const title = points.find(
+      (p) => !p.attrs.includes('type=') && p.body.includes('<a:t>Mind map</a:t>'),
+    )
+    expect(title, 'the root label needs a regular node point').toBeDefined()
+
+    // and the document point is connected to that node, so the tree has a root
+    const docLink = cxnsOf().find((c) => !c.includes('type=') && attr(c, 'srcId') === doc.id)
+    expect(docLink).toBeDefined()
+    expect(attr(docLink!, 'destId')).toBe(title!.id)
   })
 
-  it('links every node to its parent and maps it to a presentation point', () => {
-    const data = parts.dataXml
-    const plainCxns = [...data.matchAll(/<dgm:cxn (?![^>]*type=)[^>]*\/>/g)]
-    const presOf = [...data.matchAll(/type="presOf"/g)]
-    const presParOf = [...data.matchAll(/type="presParOf"/g)]
+  it('gives every node a data point and a parent/sibling transition pair', () => {
+    const points = pointsOf(parts.dataXml)
+    const data = points.filter((p) => !p.attrs.includes('type='))
+    expect(data).toHaveLength(6) // one per node, the root included
+    expect(points.filter((p) => p.attrs.includes('type="parTrans"'))).toHaveLength(6)
+    expect(points.filter((p) => p.attrs.includes('type="sibTrans"'))).toHaveLength(6)
 
-    expect(plainCxns.length).toBe(5) // 6 nodes form 5 parent-child links
-    expect(presOf.length).toBe(6 + 5)
-    expect(presParOf.length).toBe(5 + 5)
+    // every transition pair belongs to the connection that brings a node in
+    const connectionIds = new Set(
+      cxnsOf()
+        .filter((c) => !c.includes('type='))
+        .map((c) => attr(c, 'modelId')),
+    )
+    for (const p of points.filter((q) => q.attrs.includes('Trans"'))) {
+      expect(connectionIds.has(attr(p.attrs, 'cxnId'))).toBe(true)
+    }
+  })
+
+  it('links every node to its parent and its transition pair', () => {
+    const points = pointsOf(parts.dataXml)
+    const data = points.filter((p) => !p.attrs.includes('type='))
+    const links = cxnsOf().filter((c) => !c.includes('type='))
+    expect(links).toHaveLength(6) // the root from the doc + five parent-child links
+    const doc = points.find((p) => p.attrs.includes('type="doc"'))!
+    for (const link of links) {
+      const src = attr(link, 'srcId')
+      expect(src === doc.id || data.some((p) => p.id === src)).toBe(true)
+      expect(data.some((p) => p.id === attr(link, 'destId'))).toBe(true)
+      // the link carries the transition pair of its destination
+      const parTrans = points.find((p) => p.id === attr(link, 'parTransId'))
+      const sibTrans = points.find((p) => p.id === attr(link, 'sibTransId'))
+      expect(parTrans?.attrs).toContain('type="parTrans"')
+      expect(sibTrans?.attrs).toContain('type="sibTrans"')
+    }
+  })
+
+  it('presents the tree through the layout nodes Word expects', () => {
+    const points = pointsOf(parts.dataXml)
+    const pres = points.filter((p) => p.attrs.includes('type="pres"'))
+    // one doc point, five presentation points per node, one connector per edge
+    expect(pres).toHaveLength(1 + 6 * 5 + 5)
+
+    const layoutNames = new Set([
+      ...[...parts.layoutXml.matchAll(/<dgm:layoutNode name="([^"]+)"/g)].map((m) => m[1]!),
+      ...[...parts.layoutXml.matchAll(/<dgm:forEach name="([^"]+)"/g)].map((m) => m[1]!),
+    ])
+    for (const p of pres) {
+      const name = attr(p.body, 'presName') ?? attr(p.attrs, 'presName')
+      expect(name, 'every presentation point names a layout node').toBeTruthy()
+      expect(layoutNames.has(name!), `${name} is not a layout node`).toBe(true)
+    }
+  })
+
+  it('presents a connector from the parent transition, not the sibling one', () => {
+    const points = pointsOf(parts.dataXml)
+    const connectorPres = points.filter((p) => {
+      const name = attr(p.body, 'presName')
+      return name === 'Name10' || name === 'Name17' || name === 'Name23'
+    })
+    expect(connectorPres).toHaveLength(5)
+    const parTransIds = new Set(
+      points.filter((p) => p.attrs.includes('type="parTrans"')).map((p) => p.id),
+    )
+    const sibTransIds = new Set(
+      points.filter((p) => p.attrs.includes('type="sibTrans"')).map((p) => p.id),
+    )
+    for (const p of connectorPres) {
+      const assoc = attr(p.body, 'presAssocID')!
+      expect(parTransIds.has(assoc), 'connector must ride on the parTrans point').toBe(true)
+      expect(sibTransIds.has(assoc)).toBe(false)
+    }
+  })
+
+  it('presents a node through its text point and a connector through its parTrans', () => {
+    const points = pointsOf(parts.dataXml)
+    const byId = new Map(points.map((p) => [p.id, p]))
+    const presOf = cxnsOf().filter((c) => c.includes('type="presOf"'))
+    // one per node, one per connector (not the doc-to-root one), one for the doc
+    expect(presOf).toHaveLength(6 + 5 + 1)
+    for (const cxn of presOf) {
+      const src = byId.get(attr(cxn, 'srcId')!)!
+      const dest = byId.get(attr(cxn, 'destId')!)!
+      const destName = attr(dest.body, 'presName')!
+      expect(destName).toBeTruthy()
+      if (src.attrs.includes('type="doc"')) {
+        expect(destName).toBe('hierChild1')
+      } else if (src.attrs.includes('type="parTrans"')) {
+        expect(destName).toMatch(/^Name\d+$/)
+      } else {
+        // a node's data point is presented by the text layout node
+        expect(destName).toMatch(/^text\d*$/)
+      }
+    }
+  })
+
+  it('wires every presentation point into one tree under the doc point', () => {
+    const points = pointsOf(parts.dataXml)
+    const pres = points.filter((p) => p.attrs.includes('type="pres"'))
+    const presIds = new Set(pres.map((p) => p.id))
+    const links = cxnsOf().filter((c) => c.includes('type="presParOf"'))
+    expect(links).toHaveLength(pres.length - 1) // a tree over every presentation point
+
+    const children = links.map((c) => attr(c, 'destId')!)
+    for (const c of children) expect(presIds.has(c)).toBe(true)
+    const docPres = pres.find((p) => attr(p.body, 'presName') === 'hierChild1')
+    expect(docPres, 'the doc point needs a presentation point').toBeDefined()
+    // every point but the doc one has exactly one presentation parent
+    for (const p of pres) {
+      const incoming = children.filter((c) => c === p.id).length
+      expect(incoming, `${p.id} needs one presentation parent`).toBe(p.id === docPres!.id ? 0 : 1)
+    }
+    // and that makes the doc point's presentation the single root
+    const top = pres.filter((p) => !children.includes(p.id))
+    expect(top).toHaveLength(1)
+    expect(top[0]!.id).toBe(docPres!.id)
   })
 
   it('carries the labels of every node', () => {
@@ -118,21 +272,17 @@ describe('buildSmartArtParts: the data model', () => {
   })
 })
 
-describe('buildSmartArtParts: the drawing', () => {
+describe('buildSmartArtParts: the cached drawing', () => {
   it('writes one shape per node plus the connectors', () => {
     const boxes = [...parts.drawingXml.matchAll(/<a:prstGeom prst="roundRect"/g)]
     const lines = [...parts.drawingXml.matchAll(/<a:prstGeom prst="line"/g)]
     expect(boxes.length).toBe(6)
-    // the org-chart layout draws each link as several segments
     expect(lines.length).toBeGreaterThanOrEqual(5)
   })
 
   it('places the shapes inside the frame it declares', () => {
     const offsets = [...parts.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
-      (m) => ({
-        x: Number(m[1]),
-        y: Number(m[2]),
-      }),
+      (m) => ({ x: Number(m[1]), y: Number(m[2]) }),
     )
     expect(offsets.length).toBeGreaterThan(0)
     const widthEmu = Math.round(parts.widthPx * 9525)
@@ -145,29 +295,45 @@ describe('buildSmartArtParts: the drawing', () => {
     }
   })
 
-  it('places the shapes inside the frame it declares', () => {
-    const offsets = [...parts.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
-      (m) => ({
-        x: Number(m[1]),
-        y: Number(m[2]),
-      }),
-    )
-    expect(offsets.length).toBeGreaterThan(0)
-    const widthEmu = Math.round(parts.widthPx * 9525)
-    const heightEmu = Math.round(parts.heightPx * 9525)
-    for (const off of offsets) {
-      expect(off.x).toBeGreaterThanOrEqual(0)
-      expect(off.y).toBeGreaterThanOrEqual(0)
-      expect(off.x).toBeLessThanOrEqual(widthEmu)
-      expect(off.y).toBeLessThanOrEqual(heightEmu)
+  it('derives the picture from the same constraints the layout declares', () => {
+    // hierarchy1's box fact is 0.667: the interpreter's boxes share that aspect
+    const extents = [...parts.drawingXml.matchAll(/<a:ext cx="(\d+)" cy="(\d+)"\/>/g)].map((m) => ({
+      cx: Number(m[1]),
+      cy: Number(m[2]),
+    }))
+    const boxExtents = extents.slice(0, 6)
+    for (const e of boxExtents) {
+      expect(e.cy / e.cx).toBeCloseTo(0.667, 2)
+    }
+  })
+})
+
+describe('buildSmartArtParts: the page limit', () => {
+  it('keeps the default frame inside the page column', () => {
+    expect(parts.widthPx).toBeLessThanOrEqual(700)
+    expect(parts.heightPx).toBeLessThanOrEqual(700)
+    expect(parts.widthPx).toBeGreaterThan(0)
+    expect(parts.heightPx).toBeGreaterThan(0)
+  })
+
+  it('scales a wider tree down to the limit', () => {
+    const wide: SmartArtNode = {
+      label: 'Root',
+      children: Array.from({ length: 8 }, (_, i) => ({ label: `Branch ${i}` })),
+    }
+    for (const options of [{}, { widthPx: 900 }, { maxSizePx: 400 }]) {
+      const laid = buildSmartArtParts(wide, options, REL_IDS)
+      const limit = options.maxSizePx ?? 700
+      expect(laid.widthPx).toBeLessThanOrEqual(limit)
+      expect(laid.heightPx).toBeLessThanOrEqual(limit)
+      if (options.widthPx) expect(laid.widthPx).toBeLessThanOrEqual(700)
     }
   })
 
-  it('is deterministic', () => {
-    const again = buildSmartArtParts(tree, {}, REL_IDS)
-    expect(again.dataXml).toBe(parts.dataXml)
-    expect(again.drawingXml).toBe(parts.drawingXml)
-    expect(again.layoutXml).toBe(parts.layoutXml)
+  it('honours an explicit frame the user set within the limit', () => {
+    const laid = buildSmartArtParts(tree, { widthPx: 480, maxSizePx: 700 }, REL_IDS)
+    expect(laid.widthPx).toBe(480)
+    expect(laid.heightPx).toBeLessThanOrEqual(700)
   })
 })
 
@@ -181,154 +347,6 @@ describe('buildSmartArtParts: the document paragraph', () => {
   })
 })
 
-describe('buildSmartArtParts: the radial layout', () => {
-  const radial = buildSmartArtParts(tree, { orientation: 'radial' }, REL_IDS)
-
-  it('puts the topic in the middle and the branches around it', () => {
-    // the first shape is the topic
-    const first = /<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/.exec(radial.drawingXml)![1]
-    const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(first)!
-    const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(first)!
-    const topicX = Number(off[1]) / 9525 + Number(ext[1]) / 9525 / 2
-    const topicY = Number(off[2]) / 9525 + Number(ext[2]) / 9525 / 2
-    expect(topicX).toBeCloseTo(radial.widthPx / 2, 0)
-    expect(topicY).toBeCloseTo(radial.heightPx / 2, 0)
-
-    // the branches sit on a ring around it
-    const centre = radial.widthPx / 2
-    const distance = [...radial.drawingXml.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/>/g)].map(
-      (m) => Math.hypot(Number(m[1]) / 9525 - centre, Number(m[2]) / 9525 - centre),
-    )
-    expect(Math.max(...distance)).toBeGreaterThan(60)
-  })
-
-  it('meets every connector on the borders of the boxes it joins', () => {
-    const EMU = 9525
-    interface Shape {
-      x: number
-      y: number
-      w: number
-      h: number
-      line: boolean
-      flip: boolean
-    }
-    const shapes: Shape[] = []
-    for (const m of radial.drawingXml.matchAll(/<dsp:sp [^>]*>([\s\S]*?)<\/dsp:sp>/g)) {
-      const spPr = /<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/.exec(m[1])?.[1]
-      if (!spPr) continue
-      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(spPr)
-      const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(spPr)
-      if (!off || !ext) continue
-      shapes.push({
-        x: Number(off[1]) / EMU,
-        y: Number(off[2]) / EMU,
-        w: Number(ext[1]) / EMU,
-        h: Number(ext[2]) / EMU,
-        line: /<a:prstGeom prst="line"/.test(spPr),
-        flip: /<a:xfrm[^>]*flipV="1"/.test(spPr),
-      })
-    }
-    const boxes = shapes.filter((s) => !s.line)
-    const lines = shapes.filter((s) => s.line)
-    expect(boxes.length).toBe(6)
-    expect(lines.length).toBeGreaterThanOrEqual(5)
-
-    /** the two ends of the diagonal a line shape draws */
-    const endsOf = (l: Shape): Array<{ x: number; y: number }> =>
-      l.flip
-        ? [
-            { x: l.x, y: l.y + l.h },
-            { x: l.x + l.w, y: l.y },
-          ]
-        : [
-            { x: l.x, y: l.y },
-            { x: l.x + l.w, y: l.y + l.h },
-          ]
-
-    const onBorder = (b: Shape, p: { x: number; y: number }): boolean => {
-      const tol = 2
-      const inside =
-        p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol
-      const edge =
-        Math.abs(p.x - b.x) <= tol ||
-        Math.abs(p.x - (b.x + b.w)) <= tol ||
-        Math.abs(p.y - b.y) <= tol ||
-        Math.abs(p.y - (b.y + b.h)) <= tol
-      return inside && edge
-    }
-
-    for (const line of lines) {
-      const [start, end] = endsOf(line)
-      expect(boxes.some((b) => onBorder(b, start))).toBe(true)
-      expect(boxes.some((b) => onBorder(b, end))).toBe(true)
-    }
-  })
-
-  it('keeps the boxes from overlapping', () => {
-    // a branch with many children: the ring has to be pushed out for them
-    const wide = {
-      label: 'Root',
-      children: ['A', 'B', 'C'].map((k) => ({
-        label: k,
-        children: ['1', '2', '3', '4', '5'].map((i) => ({ label: `${k}${i}` })),
-      })),
-    }
-    const laid = buildSmartArtParts(wide, { orientation: 'radial' }, REL_IDS)
-    const boxes: Array<{ x: number; y: number; w: number; h: number }> = []
-    for (const m of laid.drawingXml.matchAll(/<dsp:spPr>([\s\S]*?)<\/dsp:spPr>/g)) {
-      const spPr = m[1]
-      if (/<a:prstGeom prst="line"/.test(spPr)) continue
-      const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/>/.exec(spPr)
-      const ext = /<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(spPr)
-      if (!off || !ext) continue
-      boxes.push({
-        x: Number(off[1]) / 9525,
-        y: Number(off[2]) / 9525,
-        w: Number(ext[1]) / 9525,
-        h: Number(ext[2]) / 9525,
-      })
-    }
-    expect(boxes.length).toBe(19)
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i]
-        const b = boxes[j]
-        const overlaps = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-        expect(overlaps, `box ${i} overlaps box ${j}`).toBe(false)
-      }
-    }
-  })
-
-  it('keeps the map inside the page', () => {
-    const wide = {
-      label: 'Root',
-      children: ['A', 'B', 'C'].map((k) => ({
-        label: k,
-        children: ['1', '2', '3', '4', '5'].map((i) => ({ label: `${k}${i}` })),
-      })),
-    }
-    const laid = buildSmartArtParts(wide, { orientation: 'radial' }, REL_IDS)
-    expect(laid.widthPx).toBeLessThanOrEqual(700)
-    expect(laid.heightPx).toBeLessThanOrEqual(700)
-  })
-
-  it('lays the branches out with the cycle algorithm', () => {
-    expect(radial.layoutXml).toContain('<dgm:alg type="cycle">')
-    expect(radial.layoutXml).toContain(SMARTART_RADIAL_LAYOUT_ID)
-  })
-
-  it('points the data model at the radial layout', () => {
-    expect(radial.dataXml).toContain(`loTypeId="${SMARTART_RADIAL_LAYOUT_ID}"`)
-    expect(radial.dataXml).toContain(`presId="${SMARTART_RADIAL_LAYOUT_ID}"`)
-    expect(radial.dataXml).toContain('presName="radialNode"')
-  })
-
-  it('gives the frame the shape of the drawing', () => {
-    expect(radial.widthPx).toBe(radial.heightPx)
-    expect(radial.widthPx).toBeGreaterThan(0)
-  })
-})
-
 describe('a document holding the diagram', () => {
   it('reads back: the engine finds the shapes and their labels', async () => {
     const bytes = await buildSmartArtDocx()
@@ -337,7 +355,6 @@ describe('a document holding the diagram', () => {
     expect(diagram).toBeTruthy()
     if (!diagram) return
 
-    // one box per node, plus the connector segments
     const boxes = diagram.shapes.filter((s) => s.prst === 'roundRect')
     const lines = diagram.shapes.filter((s) => s.prst === 'line')
     expect(boxes.length).toBe(6)
