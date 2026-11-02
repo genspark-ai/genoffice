@@ -12,6 +12,7 @@ import {
   resolveHf,
   withHfEdit,
   withHfLink,
+  withHfPictureEdit,
   type HfSectionState,
 } from '../src/renderer/hf-sections'
 
@@ -327,6 +328,112 @@ describe('hfSaveOptions', () => {
       sectionEnd: 20,
       kind: 'header',
       variant: 'even',
+    })
+  })
+})
+
+describe('floating header pictures moved in the strip', () => {
+  const banner = {
+    dataUrl: 'banner',
+    floating: true,
+    wrap: 'square' as const,
+    posXPx: 2,
+    posYPx: 2,
+    posHRel: 'margin' as const,
+    posVRel: 'paragraph' as const,
+    widthPx: 600,
+    heightPx: 150,
+    drawing: 0,
+  }
+  const withBanner = (): HfSectionState => {
+    const s = threeSections()
+    s.parsed!.hfParts!.rH1 = { ...part('first section'), images: [banner, { dataUrl: 'logo' }] }
+    return s
+  }
+  const box = { posXPx: 120, posYPx: 40, widthPx: 500, heightPx: 125 }
+
+  it('pins the moved picture to the page in every strip that shows the part', () => {
+    const s = withBanner()
+    Object.assign(s, withHfPictureEdit(s, 1, 'header', 'default', 0, box))
+    for (const si of [0, 1]) {
+      const [moved, logo] = resolveHf(s, si, 'header', 'default').images!
+      expect(moved).toMatchObject({ ...box, posHRel: 'page', posVRel: 'page' })
+      expect(logo).toEqual({ dataUrl: 'logo' })
+    }
+    // the other section's part is untouched
+    expect(resolveHf(s, 2, 'header', 'default').images).toBeUndefined()
+  })
+
+  it('a move alone keeps the text bytes; a later text edit keeps the move', () => {
+    const s = withBanner()
+    Object.assign(s, withHfPictureEdit(s, 0, 'header', 'default', 0, box))
+    const moved = s.edits[editKey(10, 'header', 'default')]
+    expect(moved).toMatchObject({
+      text: 'first section',
+      pictureOnly: true,
+      pictureEdits: { 0: box },
+    })
+    // the strip editor's value predates the move: the commit must not drop it
+    Object.assign(s, withHfEdit(s, 0, 'header', 'default', hf('typed')))
+    const typed = s.edits[editKey(10, 'header', 'default')]
+    expect(typed.text).toBe('typed')
+    expect(typed.pictureOnly).toBeUndefined()
+    expect(typed.pictureEdits).toEqual({ 0: box })
+  })
+
+  it('a move on a strip with pending text keeps that text', () => {
+    const s = withBanner()
+    Object.assign(s, withHfEdit(s, 0, 'header', 'default', hf('typed')))
+    Object.assign(s, withHfPictureEdit(s, 0, 'header', 'default', 0, box))
+    const next = s.edits[editKey(10, 'header', 'default')]
+    expect(next.text).toBe('typed')
+    expect(next.pictureOnly).toBeUndefined()
+    expect(next.pictureEdits).toEqual({ 0: box })
+  })
+
+  it('a resize from the far edge keeps the picture on its own bases', () => {
+    const s = withBanner()
+    Object.assign(
+      s,
+      withHfPictureEdit(s, 0, 'header', 'default', 0, { widthPx: 610, heightPx: 152 }),
+    )
+    const [resized] = resolveHf(s, 0, 'header', 'default').images!
+    expect(resized).toMatchObject({
+      posXPx: 2,
+      posYPx: 2,
+      posHRel: 'margin',
+      posVRel: 'paragraph',
+      widthPx: 610,
+      heightPx: 152,
+    })
+  })
+
+  it('a move along one axis pins only that axis; an aligned axis stays aligned', () => {
+    const s = withBanner()
+    s.parsed!.hfParts!.rH1!.images![0] = {
+      ...banner,
+      posXPx: undefined,
+      posH: 'center',
+      anchorPara: 0,
+    }
+    Object.assign(
+      s,
+      withHfPictureEdit(s, 0, 'header', 'default', 0, { posYPx: 30, widthPx: 600, heightPx: 150 }),
+    )
+    const [moved] = resolveHf(s, 0, 'header', 'default').images!
+    expect(moved).toMatchObject({ posH: 'center', posHRel: 'margin', posYPx: 30, posVRel: 'page' })
+    expect(moved.anchorPara).toBeUndefined()
+  })
+
+  it('a resize after a move keeps the move', () => {
+    const s = withBanner()
+    Object.assign(s, withHfPictureEdit(s, 0, 'header', 'default', 0, box))
+    Object.assign(
+      s,
+      withHfPictureEdit(s, 0, 'header', 'default', 0, { widthPx: 520, heightPx: 130 }),
+    )
+    expect(s.edits[editKey(10, 'header', 'default')].pictureEdits).toEqual({
+      0: { posXPx: 120, posYPx: 40, widthPx: 520, heightPx: 130 },
     })
   })
 })

@@ -120,6 +120,7 @@ import {
   patchZoteroDocumentDataXml,
 } from './zotero-doc-props'
 import { applyPropertyChanges, type PropertyChanges } from './doc-properties'
+import { patchHfPicturesXml } from './run-picture'
 
 /**
  * Relationship attributes are read quote-agnostically and with any spacing
@@ -1189,6 +1190,20 @@ export async function saveDocx(
     if (rIds.size > 0) hfRelsOut.set(relsPath, relsXml)
     return out
   }
+  /** an existing part after a strip edit: moved / resized floating pictures are
+   *  patched into their drawings, and a picture-only edit keeps the text bytes */
+  const editedHfPartXml = (
+    kind: 'header' | 'footer',
+    hf: HeaderFooter,
+    originalXml: string | null,
+  ): string => {
+    const base =
+      originalXml && hf.pictureEdits
+        ? patchHfPicturesXml(originalXml, hf.pictureEdits)
+        : originalXml
+    if (base && (hf.pictureOnly || hf.keepContent)) return base
+    return headerFooterPartXml(kind, hf, undefined, base, options.pageCount)
+  }
   const planHeaderFooter = async (
     kind: 'header' | 'footer',
     hf: HeaderFooter | undefined,
@@ -1210,13 +1225,7 @@ export async function saveDocx(
       if (!path) return
       const file = zip.file(path)
       const originalXml = hfOriginalXml(hf, file ? await file.async('string') : null)
-      const partXml = await resolveHfNewPictures(
-        path,
-        hf.keepContent && originalXml
-          ? originalXml
-          : headerFooterPartXml(kind, hf, undefined, originalXml, options.pageCount),
-        hf,
-      )
+      const partXml = await resolveHfNewPictures(path, editedHfPartXml(kind, hf, originalXml), hf)
       hfParts.push({ path, xml: partXml })
     } else {
       let n = 1
@@ -1284,9 +1293,7 @@ export async function saveDocx(
         path,
         xml: await resolveHfNewPictures(
           path,
-          edit.hf.keepContent && originalXml
-            ? originalXml
-            : headerFooterPartXml(edit.kind, edit.hf, undefined, originalXml, options.pageCount),
+          editedHfPartXml(edit.kind, edit.hf, originalXml),
           edit.hf,
         ),
       })

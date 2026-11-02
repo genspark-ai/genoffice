@@ -1028,12 +1028,26 @@ export interface HeaderFooter {
   /** editor-side: bytes of pictures inserted into the part, keyed by the
    *  placeholder token their drawing XML carries (see SaveOptions.newPictures) */
   newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
+  /** floating pictures moved or resized in the strip, keyed by HfImage.drawing */
+  pictureEdits?: Record<number, HfPictureEdit>
+  /** only pictureEdits changed: the part's text paragraphs keep their bytes */
+  pictureOnly?: boolean
   /** tracked changes the editor accepted / rejected in the part: replayed on the
    *  original bytes before the paragraphs regenerate */
   revisionsResolved?: RevisionResolution[]
   /** editor-side: `paras` only mirror the resolutions; the part keeps its
    *  original bytes with the resolutions applied instead of regenerating */
   keepContent?: true
+}
+
+/** a floating header/footer picture's new box: its top-left corner page-relative
+ *  px on each axis it moved along; an axis left out keeps its own base and
+ *  offset (a resize from the far edge) */
+export interface HfPictureEdit {
+  posXPx?: number
+  posYPx?: number
+  widthPx: number
+  heightPx: number
 }
 
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
@@ -1089,6 +1103,9 @@ export interface HfImage {
   anchorPara?: number
   /** source crop (a:srcRect) as fractions of the source picture (display-only) */
   crop?: { l: number; t: number; r: number; b: number }
+  /** ordinal of its <w:drawing> in the part XML: set on single-picture anchors,
+   *  the ones the strip can move and resize (HeaderFooter.pictureEdits keys) */
+  drawing?: number
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */

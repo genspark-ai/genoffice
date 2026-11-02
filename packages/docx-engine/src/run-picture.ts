@@ -4,8 +4,58 @@ import {
   resizeInlinePictureXml,
   swapAnchorWrap,
 } from './generate'
-import { runPictureAnchorOf } from './parse'
-import type { ImageWrap } from './types'
+import { HF_DRAWING_RE, hfMovablePictureFrag, runPictureAnchorOf } from './parse'
+import type { HfPictureEdit, ImageWrap } from './types'
+
+const EMU_PER_PX = 9525
+
+/**
+ * Write the floating pictures a header/footer strip moved or resized back into
+ * the part: each edited <w:drawing> (by its HfImage.drawing ordinal) takes
+ * the new extents, and each axis it moved along is pinned to the page at the
+ * new top-left corner. An axis it did not move keeps its own base and offset,
+ * so a resize from the far edge leaves a margin-relative banner relative to
+ * the margin. Every other byte of the part is kept.
+ */
+export function patchHfPicturesXml(partXml: string, edits: Record<number, HfPictureEdit>): string {
+  let ordinal = -1
+  return partXml.replace(HF_DRAWING_RE, (frag) => {
+    ordinal++
+    const edit = edits[ordinal]
+    if (!edit || !hfMovablePictureFrag(frag)) return frag
+    let out = frag
+    if (edit.posXPx != null || edit.posYPx != null) {
+      // simplePos="1" places by wp:simplePos instead of the position elements,
+      // which the strip (like the parser) positioned the picture from
+      out = out.replace(/(<wp:anchor\b[^>]*\bsimplePos=")(?:1|true)"/, '$10"')
+      out = setAnchorPosition(out, 'H', edit.posXPx)
+      out = setAnchorPosition(out, 'V', edit.posYPx)
+    }
+    return resizeAnchoredPictureXml(out, edit.widthPx, edit.heightPx)
+  })
+}
+
+/**
+ * An anchor's wp:positionH / wp:positionV set to a page-relative offset, or
+ * left alone when px is absent. A missing element is inserted where the
+ * schema orders it (after wp:simplePos, V after H), so the file agrees with
+ * the screen.
+ */
+function setAnchorPosition(xml: string, axis: 'H' | 'V', px: number | undefined): string {
+  if (px == null) return xml
+  const emu = Math.round(px * EMU_PER_PX)
+  const el = `<wp:position${axis} relativeFrom="page"><wp:posOffset>${emu}</wp:posOffset></wp:position${axis}>`
+  const existing = new RegExp(`<wp:position${axis}\\b[\\s\\S]*?</wp:position${axis}>`)
+  if (existing.test(xml)) return xml.replace(existing, el)
+  // the element it follows: wp:positionH for V, else wp:simplePos, else the anchor's open tag
+  const follows =
+    (axis === 'V' ? /<wp:positionH\b[\s\S]*?<\/wp:positionH>/.exec(xml) : null) ??
+    /<wp:simplePos\b[^>]*\/>|<wp:simplePos\b[\s\S]*?<\/wp:simplePos>/.exec(xml) ??
+    /<wp:anchor\b[^>]*>/.exec(xml)
+  if (!follows) return xml
+  const end = follows.index + follows[0].length
+  return xml.slice(0, end) + el + xml.slice(end)
+}
 
 /** The editor's geometry of a run-level picture (its docInlineImage attrs). */
 export interface RunPictureGeometry {
