@@ -422,6 +422,46 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'siliconflow',
+    label: 'SiliconFlow',
+    // Lab-namespaced ids exactly as the pricing page and GET
+    // api.siliconflow.cn/v1/models (type=text&sub_type=chat) list them
+    // (2026-11-02); the rest of the catalog works as-is when typed in, and a
+    // Pro/<id> prefix selects the accelerated serving. OpenAI-compatible
+    // /chat/completions; docs: https://api-docs.siliconflow.cn. The CN and
+    // global platforms (api.siliconflow.com) do not share keys or base URLs.
+    models: [
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4-Pro',
+      'deepseek-ai/DeepSeek-V3.2',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'Qwen/Qwen3.8-27B',
+    ],
+    defaultModel: 'deepseek-ai/DeepSeek-V4-Pro',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'ppio',
+    label: 'PPIO',
+    // Lowercase lab-namespaced ids exactly as GET <base>/models lists them for
+    // the OpenAI-compatible endpoint (2026-11-02); the rest of the catalog
+    // works as-is when typed in. Docs: https://ppio.com/docs/model/llm — the
+    // official SDK base_url is https://api.ppio.com/openai, so the chat
+    // endpoint rides /openai/v1.
+    models: [
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-pro',
+      'moonshotai/kimi-k3',
+      'zai-org/glm-5.3',
+      'qwen/qwen3.8-max',
+      'minimax/minimax-m3.1-flash',
+    ],
+    defaultModel: 'deepseek/deepseek-v4.1-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

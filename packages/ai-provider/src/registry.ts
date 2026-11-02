@@ -313,6 +313,18 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every model; the bare model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://cloudgpu.app/v1'),
   },
+  siliconflow: {
+    meta: metaOf('siliconflow'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the namespaced id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.siliconflow.cn/v1'),
+  },
+  ppio: {
+    meta: metaOf('ppio'),
+    capabilities: { auth: 'api-key', vision: true },
+    // the official SDK base_url is https://api.ppio.com/openai; chat rides /v1
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ppio.com/openai/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

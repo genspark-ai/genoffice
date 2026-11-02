@@ -175,6 +175,15 @@ describe('provider registry', () => {
     })
   })
 
+  it('resolves SiliconFlow and PPIO to their chat-completions endpoints', () => {
+    expect(
+      AI_PROVIDER_ADAPTERS.siliconflow.resolveEndpoint(config('deepseek-ai/DeepSeek-V4-Pro')),
+    ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.siliconflow.cn/v1' })
+    expect(
+      AI_PROVIDER_ADAPTERS.ppio.resolveEndpoint(config('deepseek/deepseek-v4.1-flash')),
+    ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.ppio.com/openai/v1' })
+  })
+
   it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
     const spark = AI_PROVIDERS.find((p) => p.id === 'spark')!
     expect(spark.models).toEqual(['spark-x2.5'])

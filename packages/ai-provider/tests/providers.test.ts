@@ -118,6 +118,42 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds SiliconFlow with lab-namespaced ids and the CN endpoint base', () => {
+    const siliconflow = AI_PROVIDERS.find((provider) => provider.id === 'siliconflow')!
+    expect(siliconflow.models).toEqual([
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4-Pro',
+      'deepseek-ai/DeepSeek-V3.2',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'Qwen/Qwen3.8-27B',
+    ])
+    expect(siliconflow.defaultModel).toBe('deepseek-ai/DeepSeek-V4-Pro')
+    expect(siliconflow.models).toContain(siliconflow.defaultModel)
+    expect(siliconflow.needsBaseUrl).toBeUndefined()
+    expect(siliconflow.keyPlaceholder).toBe('sk-...')
+  })
+
+  it('seeds PPIO with lowercase namespaced ids', () => {
+    const ppio = AI_PROVIDERS.find((provider) => provider.id === 'ppio')!
+    expect(ppio.models).toEqual([
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-pro',
+      'moonshotai/kimi-k3',
+      'zai-org/glm-5.3',
+      'qwen/qwen3.8-max',
+      'minimax/minimax-m3.1-flash',
+    ])
+    expect(ppio.defaultModel).toBe('deepseek/deepseek-v4.1-flash')
+    expect(ppio.models).toContain(ppio.defaultModel)
+    expect(ppio.needsBaseUrl).toBeUndefined()
+    expect(ppio.keyPlaceholder).toBe('sk-...')
+    for (const model of ppio.models) {
+      expect(model).toBe(model.toLowerCase())
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)

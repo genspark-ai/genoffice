@@ -257,6 +257,18 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM5.793 9.207A1 1 0 0 1 7.207 7.793L11.414 12 7.207 16.207A1 1 0 0 1 5.793 14.793L8.586 12ZM13 14.5h4.5a1 1 0 0 1 0 2H13a1 1 0 0 1 0-2Z" />
     </svg>
   ),
+  // Original mark: three stacked flow lines for layered GPU serving, 24-unit frame
+  siliconflow: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M3 7.5h13a4 4 0 0 1 0 8h-1.1l1.3-2.2a1.8 1.8 0 0 0-1.55-2.7H6.5A1.25 1.25 0 0 1 6.5 8h9.15a4 4 0 0 1 0 5.5H6.5a3.45 3.45 0 0 1 0-6Zm1.5 6.5h12a1.25 1.25 0 0 1 0 2.5H7.65a4 4 0 0 1-3.15-2.5ZM3.9 5.5A4 4 0 0 1 7.5 3H16a1.25 1.25 0 0 1 0 2.5H7.5c-.9 0-1.7.5-2.1 1.25A4 4 0 0 0 3.9 5.5Z" />
+    </svg>
+  ),
+  // Original mark: a bolt inside a rounded square, for the accelerate cloud, 24-unit frame
+  ppio: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6Zm6.53 4.5h-4.1L7.2 12.1h2.9l-1.1 6.4 5.7-7.9h-3l2.83-5.1Z" />
+    </svg>
+  ),
   // Original mark: a rounded square with a chip motif, 24-unit frame
   cloudgpu: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
