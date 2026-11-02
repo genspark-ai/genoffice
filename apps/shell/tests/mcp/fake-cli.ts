@@ -42,6 +42,8 @@ export interface FakeCli {
   setDocProperties(properties: Record<string, unknown>): void
   /** reply for `merge` commands: the result's `detail` object */
   setMergeDetail(detail: Record<string, unknown>): void
+  /** reply for `sheet links` commands: the result's `detail` object */
+  setSheetLinksDetail(detail: Record<string, unknown>): void
   /** make the next run fail with this CLI error message */
   failNext(message: string): void
 }
@@ -51,6 +53,7 @@ export function fakeCli(): FakeCli {
   let readItems: Array<Record<string, unknown>> = []
   let docProperties: Record<string, unknown> | undefined
   let mergeDetail: Record<string, unknown> | undefined
+  let sheetLinksDetail: Record<string, unknown> | undefined
   let nextError: string | undefined
 
   const readStaged = (args: string[], flag: string): string | undefined => {
@@ -109,6 +112,16 @@ export function fakeCli(): FakeCli {
         }
         return { ok: true, code: 0, json, stdout: JSON.stringify(json), stderr: '' }
       }
+      // `sheet links`: hand back the scripted detail (links report or a mutation result)
+      if (args[0] === 'sheet' && args[1] === 'links') {
+        const json = {
+          status: 'ok' as const,
+          command: 'sheet',
+          summary: 'sheet links',
+          detail: sheetLinksDetail ?? {},
+        }
+        return { ok: true, code: 0, json, stdout: JSON.stringify(json), stderr: '' }
+      }
       // `create ...`: write a stub file at --out so existsSync assertions hold
       const outIndex = args.indexOf('--out')
       const out = outIndex >= 0 ? args[outIndex + 1] : undefined
@@ -140,6 +153,9 @@ export function fakeCli(): FakeCli {
     },
     setMergeDetail: (detail) => {
       mergeDetail = detail
+    },
+    setSheetLinksDetail: (detail) => {
+      sheetLinksDetail = detail
     },
     failNext: (message) => {
       nextError = message

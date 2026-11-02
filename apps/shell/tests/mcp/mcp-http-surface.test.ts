@@ -50,6 +50,7 @@ const DEFAULT_NAMES = [
   'read_pdf',
   'read_sheet',
   'replace_blocks',
+  'sheet_links',
   'save_session',
 ].sort()
 
