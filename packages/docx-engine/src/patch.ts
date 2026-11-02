@@ -1453,6 +1453,7 @@ export async function saveDocx(
     // original XML verbatim — resolve what the original carried so the loop
     // below can tell a kept picture from a new one
     const originalImageBytesOf = new Map<string, string | null>()
+    const keptImageRuns = new Map<string, string>()
     const originalCommentsXml = commentsFile ? await commentsFile.async('string') : null
     if (originalCommentsXml) {
       const origRelsFile = zip.file('word/_rels/comments.xml.rels')
@@ -1468,6 +1469,8 @@ export async function saveDocx(
         const target = rel ? /Target="([^"]+)"/.exec(rel)?.[1] : undefined
         const mediaFile = target ? zip.file(`word/${target.replace(/^\/?(?:word\/)?/, '')}`) : null
         originalImageBytesOf.set(id, mediaFile ? await mediaFile.async('base64') : null)
+        const drawing = /<w:drawing>[\s\S]*?<\/w:drawing>/.exec(m)?.[0]
+        if (drawing) keptImageRuns.set(id, `<w:r>${drawing}</w:r>`)
       }
     }
     if (imageComments.length > 0) {
@@ -1506,6 +1509,7 @@ export async function saveDocx(
       withParaIds,
       commentsFile ? await commentsFile.async('string') : null,
       imageRuns,
+      keptImageRuns,
     )
     if (!zip.file(commentsPath)) {
       commentsIsNew = true
@@ -2721,6 +2725,9 @@ function buildCommentsXml(
   originalXml: string | null,
   /** a comment id -> the picture's run XML; its drawing rides the comment's last paragraph */
   imageRuns?: ReadonlyMap<string, string>,
+  /** a comment id -> the run of the picture it already carries, for when the
+   * text edit cannot be patched in place and the comment regenerates */
+  keptImageRuns?: ReadonlyMap<string, string>,
 ): string {
   const originals = new Map<string, { text: string; xml: string }>()
   if (originalXml) {
@@ -2754,7 +2761,7 @@ function buildCommentsXml(
       })
       // the picture rides inline at the end of the last paragraph, keeping the
       // commentsExtended link key on the final w:p
-      const run = imageRuns?.get(c.id)
+      const run = imageRuns?.get(c.id) ?? keptImageRuns?.get(c.id)
       if (run && paras.length > 0) {
         paras[paras.length - 1] = paras[paras.length - 1]!.replace(/<\/w:p>$/, `${run}</w:p>`)
       }
@@ -2766,7 +2773,7 @@ function buildCommentsXml(
   // picture-bearing rebuild draws with wp:/r: prefixed elements, so those bind too.
   const ns = rootAttributes(originalXml, 'w:comments', COMMENTS_NS, {
     w14: 'http://schemas.microsoft.com/office/word/2010/wordml',
-    ...(imageRuns && imageRuns.size > 0
+    ...((imageRuns && imageRuns.size > 0) || (keptImageRuns && keptImageRuns.size > 0)
       ? {
           wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
           r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',

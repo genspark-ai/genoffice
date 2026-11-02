@@ -140,6 +140,10 @@ interface Ctx {
 }
 
 const MAX_TABLE_DEPTH = 8
+// rowCnt/colCnt/cellAddr are untrusted: the occupancy grid allocates rows × cols
+// slots, so a crafted count would take the process down (Word stops at 63 columns)
+const MAX_TABLE_ROWS = 4096
+const MAX_TABLE_COLS = 63
 
 export async function convertHwpxToDocx(hwpx: Uint8Array): Promise<HwpxToDocxResult> {
   const pack = await loadHwpxPackage(hwpx)
@@ -1021,9 +1025,9 @@ async function tableXml(tbl: XNode, ctx: Ctx, host: TableHost): Promise<string> 
   }
   ctx.tableDepth++
   try {
-    const rowCount = Math.max(1, intAttr(tbl, 'rowCnt', 0))
-    const colCount = Math.max(1, intAttr(tbl, 'colCnt', 0))
-    const cells: CellInfo[] = []
+    const rowCount = Math.min(MAX_TABLE_ROWS, Math.max(1, intAttr(tbl, 'rowCnt', 0)))
+    const colCount = Math.min(MAX_TABLE_COLS, Math.max(1, intAttr(tbl, 'colCnt', 0)))
+    const parsed: CellInfo[] = []
     let rowIndex = 0
     const inMarginNode = firstChild(tbl, 'hp:inMargin')
     const tableMarginHwp = {
@@ -1037,9 +1041,17 @@ async function tableXml(tbl: XNode, ctx: Ctx, host: TableHost): Promise<string> 
       for (const { name: cellName, node: tc } of elements(tr)) {
         if (cellName !== 'hp:tc') continue
         ctx.tableMarginHwp = tableMarginHwp
-        cells.push(await cellInfo(tc, rowIndex, ctx))
+        parsed.push(await cellInfo(tc, rowIndex, ctx))
       }
       rowIndex++
+    }
+    const cells = parsed.filter((cell) => cell.row < MAX_TABLE_ROWS && cell.col < MAX_TABLE_COLS)
+    if (cells.length < parsed.length) {
+      ctx.drops.add('table-cells-out-of-range', parsed.length - cells.length)
+    }
+    for (const cell of cells) {
+      cell.rowSpan = Math.min(cell.rowSpan, MAX_TABLE_ROWS - cell.row)
+      cell.colSpan = Math.min(cell.colSpan, MAX_TABLE_COLS - cell.col)
     }
     const rows = Math.max(rowCount, ...cells.map((cell) => cell.row + cell.rowSpan))
     const cols = Math.max(colCount, ...cells.map((cell) => cell.col + cell.colSpan))

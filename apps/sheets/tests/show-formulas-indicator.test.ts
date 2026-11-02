@@ -46,7 +46,11 @@ describe('formula view indicator', () => {
 
   it('the app tells the shell which sheet is in formula view', () => {
     expect(appSrc).toMatch(/showFormulas=\{activeShowFormulas\}/)
-    expect(appSrc).toMatch(/formulaViewSheets\(state\)\.has\(worksheet\.getSheetId\(\)\)/)
+    expect(appSrc).toMatch(/formulaViewSheets\(state\)\.has\(sheetId\)/)
+    // a sheet switch must re-render the flag even when nothing else changed
+    expect(appSrc).toMatch(
+      /ActiveSheetChanged,[\s\S]{0,200}?setActiveSheetId\(activeSheet\.getSheetId\(\)\)/,
+    )
   })
 
   it('every language carries the wording', () => {

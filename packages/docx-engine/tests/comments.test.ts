@@ -502,4 +502,24 @@ describe('comment pictures', () => {
     expect(reparsed.comments[0]!.text).toBe('pedigree (edited)')
     expect(reparsed.comments[0]!.image?.mime).toBe('image/png')
   })
+
+  it('an edit that changes the paragraph count regenerates the comment with its picture', async () => {
+    const doc = await parseDocx(await buildImageCommentDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      { comments: [{ ...doc.comments[0]!, text: 'line one\nline two' }] },
+    )
+    const out = await JSZip.loadAsync(saved)
+    const xml = await out.file('word/comments.xml')!.async('string')
+    expect(xml).toContain('line two')
+    // the original drawing rides along with its original relationship
+    expect(xml).toMatch(/<w:p[^>]*><w:r><w:t[^>]*>line two<\/w:t><\/w:r><w:r><w:drawing>/)
+    expect(xml).toContain('<a:blip r:embed="rId7"/>')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.comments[0]!.text).toBe('line one\nline two')
+    expect(reparsed.comments[0]!.image?.widthPx).toBe(100)
+  })
 })
