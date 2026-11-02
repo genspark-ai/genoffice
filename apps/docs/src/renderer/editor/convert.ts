@@ -1678,9 +1678,26 @@ export function pmTableToModel(table: PmNode): TableModel {
     let cursor = 0
     for (const cellNode of rowNode.content ?? []) {
       if (cellNode.attrs?.mergeGap) {
-        // the inert stand-in for a merged-away cell: its column belongs to the
-        // original continuation entry injected after this loop
+        // the inert stand-in for a merged-away cell: emit its column as a
+        // vMerge continuation so a formatting edit (which clears the positional
+        // records, see layoutUntouched) can never make the row lose a column
+        // and shift the cells after it. On an untouched layout the original
+        // record restores the orphan's own tcPr and hidden text; after an edit
+        // the empty cell keeps the grid width, as Word keeps the row.
+        while (occupied.has(cursor)) cursor++
         const gap = Math.max(1, Number(cellNode.attrs?.colspan) || 1)
+        const record = continuationCells.get(rowIndex + ':' + cursor)
+        const merged = record && (record.colSpan ?? 1) === gap ? record : undefined
+        entries.push({
+          column: cursor,
+          cell: {
+            ...(merged ?? {}),
+            paras: merged?.paras?.length ? merged.paras : [''],
+            ...(merged?.richParas?.length ? { richParas: merged.richParas } : {}),
+            colSpan: gap > 1 ? gap : undefined,
+            vMerge: 'continue',
+          },
+        })
         for (let i = 0; i < gap; i++) occupied.add(cursor + i)
         cursor += gap
         continue

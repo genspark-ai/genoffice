@@ -156,4 +156,36 @@ describe('orphan vMerge continuation round trip (issue #2381)', () => {
     expect(table.rows[1][1].paras).toEqual(['XOther'])
     editor.destroy()
   })
+
+  it('a formatting edit keeps the orphan column instead of shifting the later cell', async () => {
+    const { editor, parsed } = await openDoc()
+    // A fill edit changes tableStructureSignature, so pmTableToModel clears the
+    // positional continuation records (their row:column keys are stale after a
+    // real edit). The mergeGap placeholder must still emit a vMerge
+    // continuation cell for its column, or the row loses it and "C" shifts left.
+    let filled = false
+    editor.state.doc.descendants((node, pos) => {
+      if (
+        filled ||
+        (node.type.name !== 'docTableCell' && node.type.name !== 'docTableHeader') ||
+        node.textContent !== 'C'
+      )
+        return !filled
+      editor.view.dispatch(
+        editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, fill: 'FF0000' }),
+      )
+      filled = true
+      return false
+    })
+    expect(filled).toBe(true)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.saveBlocks[1].kind).toBe('xml')
+    const saved = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    const row = saved.blocks[1].table!.rows[2]!
+    expect(row).toHaveLength(3)
+    expect(row[0]!.vMerge).toBe('restart')
+    expect(row[1]!.vMerge).toBe('continue')
+    expect(row[2]!.paras).toEqual(['C'])
+    editor.destroy()
+  })
 })
