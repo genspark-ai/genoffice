@@ -435,6 +435,84 @@ describe('initAutoUpdater', () => {
   })
 })
 
+describe('quiet background updates (genoffice#2389)', () => {
+  it('a background check downloads the package instead of opening the card', async () => {
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    expect(checkForUpdates).toHaveBeenCalledTimes(1)
+
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+    expect(downloadUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('a quiet download stays quiet and installs the package on quit', async () => {
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+
+    updaterState.listeners.get('download-progress')!({ percent: 50 })
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+    expect(updaterState.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('a failed quiet download stays quiet too: the next check retries', async () => {
+    downloadUpdate.mockImplementation(() => Promise.reject(new Error('network')))
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+    await flushAsync()
+
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('a manual check after a quiet download shows the package is ready', async () => {
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+
+    void checkForUpdatesNow()
+    await flushAsync()
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+
+    expect(showUpdateWindow).toHaveBeenCalledTimes(1)
+    expect(lastShownState().phase).toBe('downloaded')
+  })
+
+  it('a check the user asked for still reports a failure', async () => {
+    checkForUpdates.mockRejectedValueOnce(new Error('network'))
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    void checkForUpdatesNow()
+    await flushAsync()
+
+    expect(showMessageBox).toHaveBeenCalled()
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('a check the user asked for still opens the card', async () => {
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    void checkForUpdatesNow()
+    await flushAsync()
+
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+
+    expect(showUpdateWindow).toHaveBeenCalledTimes(1)
+    expect(downloadUpdate).not.toHaveBeenCalled()
+  })
+})
+
 describe('manual download fallback', () => {
   const macFiles = [
     { url: 'GenOffice-0.2.0-arm64.zip' },
