@@ -22,6 +22,7 @@ import {
   type AutoOcrStop,
   type OcrPageData,
 } from './ocr-layer'
+import { LayerBoundary } from './layer-boundary'
 import type { CropRect, FileOpCanceled, FileOpResult, PdfAppDeps, RotateDelta } from './ai/tools'
 import {
   MARKUP_COLORS,
@@ -10453,7 +10454,9 @@ export default function App() {
                               {(() => {
                                 const ocr = ocrPages.get(origIdx)
                                 return ocr ? (
-                                  <OcrTextLayer data={ocr} geom={geom} scale={scale} />
+                                  <LayerBoundary>
+                                    <OcrTextLayer data={ocr} geom={geom} scale={scale} />
+                                  </LayerBoundary>
                                 ) : null
                               })()}
                               <MarkupOverlay

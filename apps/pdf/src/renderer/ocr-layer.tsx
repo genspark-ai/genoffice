@@ -136,6 +136,9 @@ export function buildOcrPageData(lines: PdfOcrLine[], geom: PageGeom): OcrPageDa
     for (let i = 0; i < lw.length; i++) {
       const w = lw[i]!
       const rect = dispToPdfRect(geom, boxToDisp(w.box, disp))
+      // a degenerate engine box (a NaN/Infinity coordinate) would poison the
+      // index math and paint an unbounded overlay: drop the word (genoffice#2424)
+      if (!rect.every(Number.isFinite) || rect[2]! <= rect[0]! || rect[3]! <= rect[1]!) continue
       if (i > 0 && realSpace(lw[i - 1]!, w)) text += ' '
       const start = text.length
       text += w.text
@@ -289,10 +292,15 @@ export async function runAutoOcr(opts: {
     }
     if (lines === null) return finish('noEngine', done, attempted, null)
     // an engine call already in flight is kept: the work is paid for
-    const data = buildOcrPageData(lines, geom)
-    if (data) {
-      opts.onPage(queue[at]!, data)
-      done += 1
+    try {
+      const data = buildOcrPageData(lines, geom)
+      if (data) {
+        opts.onPage(queue[at]!, data)
+        done += 1
+      }
+    } catch {
+      // a page whose data refuses to build (degenerate engine output) must not
+      // take the pass — or anything else — down; the next page may still work
     }
     attempted += 1
   }
@@ -313,6 +321,7 @@ export function OcrTextLayer({
   return (
     <div className="pdf-ocr-layer">
       {data.words.map((w, i) => {
+        if (!w.rect.every(Number.isFinite)) return null
         const box = pdfRectToCss(geom, w.rect, scale)
         const fontPx = Math.max(box.height, 1)
         const measured = measurePt(w.text, fontPx, 'sans-serif')

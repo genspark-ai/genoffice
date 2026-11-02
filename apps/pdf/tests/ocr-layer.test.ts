@@ -411,3 +411,70 @@ describe('runAutoOcr', () => {
     expect(engineCalls).toBe(0)
   })
 })
+
+describe('degenerate engine output cannot take the view down (genoffice#2424)', () => {
+  it('drops words whose boxes carry non-finite or inverted geometry', () => {
+    const line: PdfOcrLine = {
+      text: 'good bad nan',
+      confidence: 1,
+      box: box(0.1, 0.9),
+      chars: [
+        { text: 'good', box: box(0.1, 0.3) },
+        { text: 'bad', box: [NaN, 0.8, 0.5, 0.85] },
+        { text: 'nan', box: [0.6, Infinity, 0.9, 0.85] },
+      ],
+    }
+    const data = buildOcrPageData([line], GEOM)
+    // the healthy word survives, the poisoned ones are gone
+    expect(data).not.toBeNull()
+    expect(data!.words.map((w) => w.text)).toEqual(['good'])
+    expect(data!.entry.text).not.toContain('bad')
+    expect(data!.entry.text).not.toContain('nan')
+  })
+
+  it('a page whose data refuses to build skips instead of ending the pass', async () => {
+    let poisoned = false
+    const pages: number[] = []
+    const result = await runAutoOcr({
+      doc: { numPages: 2 } as unknown as PDFDocumentProxy,
+      cache: {
+        get: async () => [
+          { text: '', lower: '', items: [] },
+          { text: '', lower: '', items: [] },
+        ],
+      } as unknown as SearchIndexCache,
+      fromPage: () => 0,
+      signal: new AbortController().signal,
+      geom: () => GEOM,
+      render: async () => 'data:image/png;base64,',
+      ocrPage: async () => {
+        if (!poisoned) {
+          poisoned = true
+          // first page: healthy-looking lines, but the consumer rejects them
+          return [{ text: 'x', confidence: 1, box: box(0.1, 0.5) }]
+        }
+        return [{ text: 'y', confidence: 1, box: box(0.1, 0.5) }]
+      },
+      onPage: (_origIdx, _data) => {
+        throw new Error('the overlay consumer choked')
+      },
+      onProgress: () => undefined,
+    })
+    void pages
+    // the pass walks on: both pages visited, neither counted as recognized
+    expect(result.stop).toBe('complete')
+    expect(result.done).toBe(0)
+    expect(result.total).toBe(2)
+    expect(result.remaining).toBe(0)
+  })
+
+  it('keeps a fully poisoned document from claiming any recognition', () => {
+    const line: PdfOcrLine = {
+      text: 'all bad',
+      confidence: 1,
+      box: [NaN, 0.8, NaN, 0.85],
+      chars: [{ text: 'all bad', box: [NaN, 0.8, NaN, 0.85] }],
+    }
+    expect(buildOcrPageData([line], GEOM)).toBeNull()
+  })
+})
