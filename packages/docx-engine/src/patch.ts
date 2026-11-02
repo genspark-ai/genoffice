@@ -1425,6 +1425,8 @@ export async function saveDocx(
   const commentsExtPath = 'word/commentsExtended.xml'
   let commentsXml: string | null = null
   let commentsIsNew = false
+  let commentsRelsXml: string | null = null
+  let commentsRelsIsNew = false
   let commentsExtXml: string | null = null
   let commentsExtIsNew = false
   if (options.comments) {
@@ -1442,10 +1444,68 @@ export async function saveDocx(
               .padStart(8, '0'),
           },
     )
+    // comment pictures: the bytes land as media parts and their relationships
+    // live in the comments part's own rels file, not the document's (genoffice#2040)
     const commentsFile = zip.file(commentsPath)
+    const imageRuns = new Map<string, string>()
+    const imageComments = withParaIds.filter((c) => c.image)
+    // a comment whose text AND picture bytes are both unchanged keeps its
+    // original XML verbatim — resolve what the original carried so the loop
+    // below can tell a kept picture from a new one
+    const originalImageBytesOf = new Map<string, string | null>()
+    const originalCommentsXml = commentsFile ? await commentsFile.async('string') : null
+    if (originalCommentsXml) {
+      const origRelsFile = zip.file('word/_rels/comments.xml.rels')
+      const origRels = origRelsFile ? await origRelsFile.async('string') : null
+      for (const m of originalCommentsXml.match(/<w:comment\s[^>]*>[\s\S]*?<\/w:comment>/g) ?? []) {
+        const id = /w:id="([^"]+)"/.exec(m)?.[1]
+        if (!id) continue
+        const blipRel = /r:embed="([^"]+)"/.exec(m)?.[1]
+        const rel =
+          blipRel && origRels
+            ? new RegExp(`<Relationship\\b[^>]*Id="${blipRel}"[^>]*/>`).exec(origRels)?.[0]
+            : undefined
+        const target = rel ? /Target="([^"]+)"/.exec(rel)?.[1] : undefined
+        const mediaFile = target ? zip.file(`word/${target.replace(/^\/?(?:word\/)?/, '')}`) : null
+        originalImageBytesOf.set(id, mediaFile ? await mediaFile.async('base64') : null)
+      }
+    }
+    if (imageComments.length > 0) {
+      const commentsRelsPath = 'word/_rels/comments.xml.rels'
+      const relsFile = zip.file(commentsRelsPath)
+      const relsXml: string | null = relsFile ? await relsFile.async('string') : null
+      if (!relsXml) commentsRelsIsNew = true
+      let relSeq = 0
+      for (const m of (relsXml ?? '').matchAll(/Id="rId(\d+)"/g)) {
+        relSeq = Math.max(relSeq, parseInt(m[1]!, 10))
+      }
+      const added: string[] = []
+      for (const c of imageComments) {
+        const image = c.image!
+        if (originalImageBytesOf.get(c.id) === image.base64) continue
+        const mediaPath = landMedia({ base64: image.base64, mime: image.mime })
+        usedExtensions.add(IMAGE_EXT[image.mime])
+        const rId = `rId${++relSeq}`
+        added.push(
+          `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${mediaPath.replace(/^word\//, '')}"/>`,
+        )
+        const drawing = inlinePictureDrawingXml({
+          rId,
+          docPrId: DOCPR_ID_BASE + ++docPrSeq,
+          widthPx: image.widthPx,
+          heightPx: image.heightPx,
+        })
+        imageRuns.set(c.id, `<w:r>${drawing}</w:r>`)
+      }
+      commentsRelsXml = (
+        relsXml ??
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+      ).replace('</Relationships>', `${added.join('')}</Relationships>`)
+    }
     commentsXml = buildCommentsXml(
       withParaIds,
       commentsFile ? await commentsFile.async('string') : null,
+      imageRuns,
     )
     if (!zip.file(commentsPath)) {
       commentsIsNew = true
@@ -2195,6 +2255,8 @@ export async function saveDocx(
       out.file(name, commentsXml, { date: entry.date })
     } else if (name === commentsExtPath && commentsExtXml !== null) {
       out.file(name, commentsExtXml, { date: entry.date })
+    } else if (name === 'word/_rels/comments.xml.rels' && commentsRelsXml !== null) {
+      out.file(name, commentsRelsXml, { date: entry.date })
     } else if (name === numberingPath && numberingXmlOut !== null) {
       out.file(name, numberingXmlOut, { date: entry.date })
     } else if (numberingRelsOut && name === numberingRelsOut.path) {
@@ -2236,6 +2298,9 @@ export async function saveDocx(
   }
   if (commentsExtIsNew && commentsExtXml !== null) {
     out.file(commentsExtPath, commentsExtXml)
+  }
+  if (commentsRelsIsNew && commentsRelsXml !== null) {
+    out.file('word/_rels/comments.xml.rels', commentsRelsXml)
   }
   if (numberingIsNew && numberingXmlOut !== null) {
     out.file(numberingPath, numberingXmlOut)
@@ -2651,7 +2716,12 @@ const COMMENTS_NS =
   'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
   'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"'
 
-function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): string {
+function buildCommentsXml(
+  comments: CommentInfo[],
+  originalXml: string | null,
+  /** a comment id -> the picture's run XML; its drawing rides the comment's last paragraph */
+  imageRuns?: ReadonlyMap<string, string>,
+): string {
   const originals = new Map<string, { text: string; xml: string }>()
   if (originalXml) {
     for (const m of originalXml.match(/<w:comment\s[^>]*>[\s\S]*?<\/w:comment>/g) ?? []) {
@@ -2662,8 +2732,10 @@ function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): 
   const body = comments
     .map((c) => {
       const orig = originals.get(c.id)
-      if (orig && orig.text === c.text) return orig.xml
-      if (orig) {
+      // a picture-bearing comment always regenerates: the byte-preserved and
+      // w:t-patch paths carry no drawing, so the picture would drop
+      if (orig && orig.text === c.text && !imageRuns?.has(c.id)) return orig.xml
+      if (orig && !imageRuns?.has(c.id)) {
         // In-paragraph w:t-level patch: text edits keep the comment's rich formatting,
         // multiple paragraphs, and inline links
         const patched = patchParagraphTexts(orig.xml, c.text)
@@ -2674,21 +2746,32 @@ function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): 
         (c.initials ? ` w:initials="${escapeXmlAttr(c.initials)}"` : '') +
         (c.date ? ` w:date="${escapeXmlAttr(c.date)}"` : '')
       const lines = c.text.split('\n')
-      const paras = lines
-        .map((line, i) => {
-          // The last paragraph carries w14:paraId (the commentsExtended link key)
-          const pid =
-            i === lines.length - 1 && c.paraId ? ` w14:paraId="${escapeXmlAttr(c.paraId)}"` : ''
-          return `<w:p${pid}><w:r><w:t xml:space="preserve">${escapeXmlText(line)}</w:t></w:r></w:p>`
-        })
-        .join('')
-      return `<w:comment ${attrs}>${paras}</w:comment>`
+      const paras = lines.map((line, i) => {
+        // The last paragraph carries w14:paraId (the commentsExtended link key)
+        const pid =
+          i === lines.length - 1 && c.paraId ? ` w14:paraId="${escapeXmlAttr(c.paraId)}"` : ''
+        return `<w:p${pid}><w:r><w:t xml:space="preserve">${escapeXmlText(line)}</w:t></w:r></w:p>`
+      })
+      // the picture rides inline at the end of the last paragraph, keeping the
+      // commentsExtended link key on the final w:p
+      const run = imageRuns?.get(c.id)
+      if (run && paras.length > 0) {
+        paras[paras.length - 1] = paras[paras.length - 1]!.replace(/<\/w:p>$/, `${run}</w:p>`)
+      }
+      return `<w:comment ${attrs}>${paras.join('')}</w:comment>`
     })
     .join('')
   // Rebuilt comments always emit w14:paraId (ensured above), so w14 must be bound even
-  // when the original root — e.g. from a non-Word producer — never declared it.
+  // when the original root — e.g. from a non-Word producer — never declared it. A
+  // picture-bearing rebuild draws with wp:/r: prefixed elements, so those bind too.
   const ns = rootAttributes(originalXml, 'w:comments', COMMENTS_NS, {
     w14: 'http://schemas.microsoft.com/office/word/2010/wordml',
+    ...(imageRuns && imageRuns.size > 0
+      ? {
+          wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
+          r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        }
+      : {}),
   })
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:comments ${ns}>${body}</w:comments>`
 }

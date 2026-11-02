@@ -144,6 +144,7 @@ export const ja = {
   appCommentsTitle: 'コメント ({n})',
   appCommentPlaceholder: 'コメントを入力…',
   appCommentBtn: 'コメント',
+  appAttachImage: '画像を挿入',
   appUnknownAuthor: '(作成者不明)',
   appResolved: '解決済み',
   appResolvedComments: '解決済みのコメント ({n})',
