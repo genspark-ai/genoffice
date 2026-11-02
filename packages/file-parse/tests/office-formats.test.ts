@@ -649,7 +649,7 @@ describe('parseFileToText: xlsx', () => {
     )
     const text = await xlsxToText(await zip.generateAsync({ type: 'uint8array' }))
     expect(text).toBe(
-      '# Calc\n1 | =SUM(A1:A3) | =A1*2\n2 | =A2+1 | 4\n3 | =A2+1 | 30\n |  | =A3*10',
+      '# Calc\n1 | =SUM(A1:A3) | =A1*2\n2 | =A2+1 | 4\n3 | =A3+1 | 30\n |  | =A4*10',
     )
   })
 
