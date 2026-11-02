@@ -237,6 +237,7 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
   const sectionEdits = applySectionEdits(doc, plan)
   const options: SaveOptions = {
     ...sectionEdits.options,
+    trailingSectPrChange: plan.trailingSectPrChange,
     header: hf('header'),
     footer: hf('footer'),
     headerFirst: hf('headerFirst'),
