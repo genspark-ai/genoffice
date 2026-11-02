@@ -694,6 +694,16 @@ const config = {
         from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
         to: 'native/xlsx-sidecar',
       },
+      // Same blank templates the Windows installer registers for Explorer's
+      // "New" menu. The deb/rpm post-install step copies them into
+      // /usr/share/templates, which KDE Plasma's Dolphin "Create New" menu
+      // scans (genoffice#2384). AppImage gets the payload too but runs no
+      // install script, so it adds no templates.
+      {
+        from: 'build/shell-new',
+        to: 'shell-new',
+        filter: ['*.docx', '*.xlsx', '*.pptx'],
+      },
     ],
   },
   // Same "@genoffice/shell" problem as executableName above: the default deb
