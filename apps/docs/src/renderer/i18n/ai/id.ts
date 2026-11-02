@@ -206,4 +206,7 @@ export const id = {
   aiMindMapReset: 'Setel ulang tampilan',
   aiMindMapExpand: 'Bentangkan cabang',
   aiMindMapCollapse: 'Lipat cabang',
+  aiMindMapToggleLayout: 'Ganti tata letak',
+  aiMindMapLayoutTopDown: 'Beralih ke tata letak atas ke bawah',
+  aiMindMapLayoutLeftRight: 'Beralih ke tata letak kiri ke kanan',
 } satisfies Record<keyof typeof zh, string>

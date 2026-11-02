@@ -1,10 +1,17 @@
-import type { AgentToolDef, MindMapTreeNode } from '@genoffice/agent-core'
+import type { AgentToolDef, MindMapTreeNode } from './types'
 
 /**
- * Mind map generation for the docs assistant: the tool definition the model
- * calls with the whole tree in one shot, strict-but-forgiving parsing of that
- * tree, and a pure top-down tidy-tree layout the card component renders.
- * No runtime dependencies — layout is plain arithmetic, rendering is SVG.
+ * Mind map generation shared by the docs and markdown assistants: the tool
+ * definition the model calls with the whole tree in one shot, strict-but-
+ * forgiving parsing of that tree, and a pure tidy-tree layout the card
+ * component renders. No runtime dependencies — layout is plain arithmetic,
+ * rendering is SVG.
+ *
+ * Two orientations are available. `top-down` puts the root on top and lets
+ * the branches fan out below it; `left-right` puts the root in the middle
+ * and splits the branches into a left and a right half, the way a
+ * hand-drawn mind map reads. Both produce the same node boxes, so the card
+ * and the exporters stay orientation-agnostic.
  */
 
 /** Hard limits so a runaway model cannot blow up the card (or the tool call). */
@@ -353,6 +360,20 @@ export interface MindMapLayout {
 }
 
 /**
+ * How the tree is arranged on the canvas.
+ *
+ * - `top-down` — the root on top, the branches fanning out below it.
+ * - `left-right` — the root in the middle, the branches split into a left and
+ *   a right half, the way a hand-drawn mind map reads.
+ */
+export type MindMapOrientation = 'top-down' | 'left-right'
+
+export interface MindMapLayoutOptions {
+  /** defaults to `top-down` */
+  orientation?: MindMapOrientation
+}
+
+/**
  * Vertical connector for the top-down layout: it leaves the parent at the
  * centre of its bottom border and arrives at the centre of the child's top
  * border, with the handles inside the gap so the curve never enters a box.
@@ -367,13 +388,55 @@ function edgePath(parent: { x: number; y: number }, child: { x: number; y: numbe
 }
 
 /**
- * Top-down tidy tree: depth maps to y and leaves take sequential x slots, with
- * parents centered over their children. Collapsed subtrees are skipped entirely
- * (the node keeps a +N badge). Pure — same inputs always lay out the same.
+ * Horizontal connector for the left-right layout: it leaves the parent at the
+ * centre of the border that faces the child and arrives at the centre of the
+ * child's facing border, with the handles inside the gap so the curve never
+ * enters a box.
+ *
+ * `dir` is 1 when the parent sits to the left of the child (the right-hand
+ * half of the map) and -1 when the parent sits to its right (the left half).
+ */
+function horizontalEdgePath(
+  parent: { x: number; y: number },
+  child: { x: number; y: number },
+  dir: 1 | -1,
+): string {
+  const py = parent.y + MIND_MAP_METRICS.nodeHeight / 2
+  const cy = child.y + MIND_MAP_METRICS.nodeHeight / 2
+  const px = dir === 1 ? parent.x + MIND_MAP_METRICS.nodeWidth : parent.x
+  const cx = dir === 1 ? child.x : child.x + MIND_MAP_METRICS.nodeWidth
+  const k = Math.max(0, Math.abs(cx - px) / 2)
+  return dir === 1
+    ? `M ${px} ${py} C ${px + k} ${py}, ${cx - k} ${cy}, ${cx} ${cy}`
+    : `M ${px} ${py} C ${px - k} ${py}, ${cx + k} ${cy}, ${cx} ${cy}`
+}
+
+/**
+ * Lay the tree out. `top-down` maps depth to y and lets the leaves take
+ * sequential x slots, with the parents centred over their children.
+ * `left-right` puts the root in the middle, splits its branches into a left
+ * and a right half, and maps depth to x inside each half while the leaves
+ * take sequential y slots.
+ *
+ * Collapsed subtrees are skipped entirely (the node keeps a +N badge). Pure —
+ * the same inputs always lay out the same.
  */
 export function layoutMindMap(
   root: MindMapTreeNode,
   collapsed: ReadonlySet<string> = new Set(),
+  options: MindMapLayoutOptions = {},
+): MindMapLayout {
+  if (options.orientation === 'left-right') return layoutMindMapLeftRight(root, collapsed)
+  return layoutMindMapTopDown(root, collapsed)
+}
+
+/**
+ * Top-down tidy tree: depth maps to y and leaves take sequential x slots, with
+ * parents centered over their children.
+ */
+function layoutMindMapTopDown(
+  root: MindMapTreeNode,
+  collapsed: ReadonlySet<string>,
 ): MindMapLayout {
   const nodes: MindMapLayoutNode[] = []
   const edges: MindMapLayoutEdge[] = []
@@ -422,6 +485,183 @@ export function layoutMindMap(
     edges,
     width: Math.max(w, nextX - siblingGap - padding) + padding * 2,
     height: (maxDepth + 1) * (h + depthGap) - depthGap + padding * 2,
+  }
+}
+
+/** Which half of the map a branch belongs to. */
+type MindMapHalf = 'left' | 'right'
+
+/**
+ * Left-right tidy tree: the root sits in the middle, its branches are split
+ * into a left and a right half, and inside each half depth maps to x while
+ * the leaves take sequential y slots.
+ *
+ * The halves are balanced by leaf count, so a root with one heavy branch and
+ * one light one does not push the whole map to one side. Each half is laid
+ * out from the top on its own y slots, and the root is centred between the
+ * outermost leaves.
+ */
+function layoutMindMapLeftRight(
+  root: MindMapTreeNode,
+  collapsed: ReadonlySet<string>,
+): MindMapLayout {
+  const { nodeWidth: W, nodeHeight: H, depthGap, siblingGap, padding } = MIND_MAP_METRICS
+  const nodes: MindMapLayoutNode[] = []
+  const edges: MindMapLayoutEdge[] = []
+
+  const rootKids = root.children ?? []
+  const rootCollapsed = collapsed.has('0')
+
+  // ---- 1. split the root's branches into a left and a right half ----
+  /** Leaves a branch contributes to the balance; a collapsed one counts as one. */
+  const leafWeight = (node: MindMapTreeNode, id: string): number => {
+    if (collapsed.has(id)) return 1
+    const kids = node.children ?? []
+    if (kids.length === 0) return 1
+    return kids.reduce((sum, kid, i) => sum + leafWeight(kid, `${id}.${i}`), 0)
+  }
+
+  interface Branch {
+    node: MindMapTreeNode
+    id: string
+    half: MindMapHalf
+  }
+  const left: Branch[] = []
+  const right: Branch[] = []
+  let leftWeight = 0
+  let rightWeight = 0
+  if (!rootCollapsed) {
+    rootKids.forEach((kid, i) => {
+      const id = `0.${i}`
+      const weight = leafWeight(kid, id)
+      // the first branch goes right, like the hand-drawn maps people expect
+      if (leftWeight < rightWeight) {
+        left.push({ node: kid, id, half: 'left' })
+        leftWeight += weight
+      } else {
+        right.push({ node: kid, id, half: 'right' })
+        rightWeight += weight
+      }
+    })
+  }
+
+  // ---- 2. lay each half out on its own y slots ----
+  interface Placed {
+    node: MindMapTreeNode
+    id: string
+    depth: number
+    half: MindMapHalf
+    y: number
+  }
+  const placed: Placed[] = []
+  const boxes = new Map<string, { x: number; y: number }>()
+  const slotY: Record<MindMapHalf, number> = { left: padding, right: padding }
+  const leafCount: Record<MindMapHalf, number> = { left: 0, right: 0 }
+  const leafTop: number[] = []
+  const maxDepth: Record<MindMapHalf, number> = { left: 0, right: 0 }
+
+  const place = (node: MindMapTreeNode, id: string, depth: number, half: MindMapHalf): number => {
+    const kids = node.children ?? []
+    const isCollapsed = collapsed.has(id)
+    const visibleKids = isCollapsed ? [] : kids
+    let y: number
+    if (visibleKids.length === 0) {
+      y = slotY[half]
+      slotY[half] += H + siblingGap
+      leafCount[half] += 1
+      leafTop.push(y)
+    } else {
+      const childYs = visibleKids.map((kid, i) => place(kid, `${id}.${i}`, depth + 1, half))
+      y = (childYs[0] + childYs[childYs.length - 1]) / 2
+    }
+    maxDepth[half] = Math.max(maxDepth[half], depth)
+    placed.push({ node, id, depth, half, y })
+    return y
+  }
+
+  for (const branch of right) place(branch.node, branch.id, 1, 'right')
+  for (const branch of left) place(branch.node, branch.id, 1, 'left')
+
+  // ---- 3. the root sits in the middle, centred on the outermost leaves ----
+  const leftWidth = maxDepth.left * (W + depthGap)
+  const rightWidth = maxDepth.right * (W + depthGap)
+  const rootX = padding + leftWidth
+  const rootY = leafTop.length === 0 ? padding : (Math.min(...leafTop) + Math.max(...leafTop)) / 2
+
+  /** Column of a node: depth 0 is the root, depth d sits d columns out. */
+  const xFor = (depth: number, half: MindMapHalf): number =>
+    half === 'right'
+      ? rootX + W + depthGap + (depth - 1) * (W + depthGap)
+      : rootX - depthGap - W - (depth - 1) * (W + depthGap)
+
+  boxes.set('0', { x: rootX, y: rootY })
+  for (const item of placed) {
+    boxes.set(item.id, { x: xFor(item.depth, item.half), y: item.y })
+  }
+
+  // ---- 4. the node boxes ----
+  nodes.push({
+    id: '0',
+    label: root.label,
+    lines: wrapLabel(root.label, labelBudget(root.block !== undefined, rootKids.length > 0)),
+    block: root.block,
+    depth: 0,
+    x: rootX,
+    y: rootY,
+    hasChildren: rootKids.length > 0,
+    childCount: rootKids.length,
+    descendants: countMindMapNodes(root) - 1,
+    collapsed: rootCollapsed,
+  })
+  for (const item of placed) {
+    const kids = item.node.children ?? []
+    nodes.push({
+      id: item.id,
+      label: item.node.label,
+      lines: wrapLabel(
+        item.node.label,
+        labelBudget(item.node.block !== undefined, kids.length > 0),
+      ),
+      block: item.node.block,
+      depth: item.depth,
+      x: xFor(item.depth, item.half),
+      y: item.y,
+      hasChildren: kids.length > 0,
+      childCount: kids.length,
+      descendants: countMindMapNodes(item.node) - 1,
+      collapsed: collapsed.has(item.id),
+    })
+  }
+
+  // ---- 5. the connectors ----
+  const dirOf = (half: MindMapHalf): 1 | -1 => (half === 'right' ? 1 : -1)
+  for (const item of placed) {
+    const kids = item.node.children ?? []
+    if (collapsed.has(item.id)) continue
+    const parent = boxes.get(item.id)!
+    for (let i = 0; i < kids.length; i++) {
+      const kidId = `${item.id}.${i}`
+      const child = boxes.get(kidId)!
+      edges.push({
+        id: `${item.id}->${kidId}`,
+        d: horizontalEdgePath(parent, child, dirOf(item.half)),
+      })
+    }
+  }
+  for (const branch of [...right, ...left]) {
+    const child = boxes.get(branch.id)!
+    edges.push({
+      id: `0->${branch.id}`,
+      d: horizontalEdgePath(boxes.get('0')!, child, dirOf(branch.half)),
+    })
+  }
+
+  const rows = Math.max(leafCount.left, leafCount.right)
+  return {
+    nodes,
+    edges,
+    width: padding * 2 + leftWidth + W + rightWidth,
+    height: rows > 0 ? rows * (H + siblingGap) - siblingGap + padding * 2 : H + padding * 2,
   }
 }
 

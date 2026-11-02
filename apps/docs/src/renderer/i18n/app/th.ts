@@ -135,6 +135,7 @@ export const th = {
   appCommentsTitle: 'ข้อคิดเห็น ({n})',
   appCommentPlaceholder: 'พิมพ์ข้อคิดเห็น…',
   appCommentBtn: 'ข้อคิดเห็น',
+  appAttachImage: 'แนบรูปภาพ',
   appUnknownAuthor: '(ไม่ทราบผู้เขียน)',
   appResolved: 'แก้ไขแล้ว',
   appResolvedComments: 'ข้อคิดเห็นที่แก้ไขแล้ว ({n})',

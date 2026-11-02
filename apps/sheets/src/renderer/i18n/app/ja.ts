@@ -1226,6 +1226,8 @@ export const ja = {
   appRefreshAll: 'すべて更新',
   appWorkbookNoPivot: 'ブックにピボットテーブルがありません。',
   appRefreshAllTitle: 'すべてのピボットテーブルを更新',
+  appQueriesConnections: 'クエリと接続',
+  appQueriesConnectionsTitle: 'ブックのクエリとデータ接続を一覧表示',
   appErrorCheckingDetail: 'シート内のエラー値をスキャン',
   appErrorsFound: '{count} 件のエラー — {cell}:{value}',
   appCheckingErrors: 'シート全体のエラーをスキャンしています…',

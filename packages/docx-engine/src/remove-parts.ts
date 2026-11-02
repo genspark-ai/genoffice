@@ -29,7 +29,7 @@ const KIND_PREFIXES: Record<RemovePartsKind, string> = {
   webExtensions: 'word/webextensions/',
 }
 
-/** Structural package parts an explicit path may not remove (removal would corrupt the file). */
+/** Structural package parts an explicit path may not remove (removal would corrupt the file); the main document part, its rels and the story parts join at plan time. */
 const PROTECTED_PART_PATHS = new Set(['[Content_Types].xml', '_rels/.rels'])
 
 /** Story parts that can carry a block-level w:sdt with a w:dataBinding. */
@@ -48,7 +48,7 @@ const OVERRIDE_TAG_RE =
 const DEFAULT_TAG_RE =
   /<(?:[A-Za-z_][\w.-]*:)?Default\b[^>]*(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?Default\s*>)/g
 const SDT_PR_RE = /<w:sdtPr\b[^>]*>[\s\S]*?<\/w:sdtPr>/g
-const DATA_BINDING_RE = /<w:dataBinding\b[^>]*(?:\/>|>[\s\S]*?<\/w:dataBinding>)/
+const DATA_BINDING_RE = /<w1?5?:dataBinding\b[^>]*(?:\/>|>[\s\S]*?<\/w1?5?:dataBinding>)/
 
 export interface RemovePartsOptions {
   /** explicit package paths (relative to the package root, no leading slash); unknown paths are reported and ignored */
@@ -158,10 +158,17 @@ function normalizeItemId(value: string): string {
 }
 
 /** The parts an option set selects, plus explicit paths that are not in the package. */
-function wantedParts(
+async function wantedParts(
   zip: JSZip,
   options: RemovePartsOptions,
-): { paths: Set<string>; unknownPaths: string[] } {
+): Promise<{ paths: Set<string>; unknownPaths: string[] }> {
+  const protectedPaths = new Set(PROTECTED_PART_PATHS)
+  const mainPath = await resolveMainDocumentPath(zip)
+  if (mainPath) {
+    protectedPaths.add(mainPath)
+    protectedPaths.add(relationshipPartPath(mainPath))
+    for (const path of STORY_PART_PATHS) protectedPaths.add(path)
+  }
   const paths = new Set<string>()
   for (const kind of options.kinds ?? []) {
     const prefix = KIND_PREFIXES[kind]
@@ -173,7 +180,7 @@ function wantedParts(
   const unknownPaths: string[] = []
   for (const raw of options.paths ?? []) {
     const path = normalizePartPath(String(raw))
-    if (!path || !zip.file(path) || PROTECTED_PART_PATHS.has(path)) {
+    if (!path || !zip.file(path) || protectedPaths.has(path)) {
       unknownPaths.push(String(raw))
       continue
     }
@@ -281,7 +288,7 @@ interface ZipPlan {
 }
 
 async function planInZip(zip: JSZip, options: RemovePartsOptions): Promise<ZipPlan> {
-  const { paths, unknownPaths } = wantedParts(zip, options)
+  const { paths, unknownPaths } = await wantedParts(zip, options)
   const removeSet = withOwnRels(zip, paths)
   const itemIds = await itemIdsOf(zip, removeSet)
   const storyParts = await storyPartsOf(zip)

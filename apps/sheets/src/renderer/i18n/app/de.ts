@@ -1232,6 +1232,8 @@ export const de = {
   appRefreshAll: 'Alle aktualisieren',
   appWorkbookNoPivot: 'Keine Pivot-Tabellen in dieser Arbeitsmappe.',
   appRefreshAllTitle: 'Alle Pivot-Tabellen aktualisieren',
+  appQueriesConnections: 'Abfragen und Verbindungen',
+  appQueriesConnectionsTitle: 'Abfragen und Datenverbindungen der Arbeitsmappe anzeigen',
   appErrorCheckingDetail: 'Blatt auf Fehlerwerte prüfen',
   appErrorsFound: '{count} Fehler — bei {cell}: {value}',
   appCheckingErrors: 'Das ganze Blatt wird auf Fehler gescannt…',

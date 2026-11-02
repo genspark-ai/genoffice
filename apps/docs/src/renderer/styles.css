@@ -4745,6 +4745,32 @@ th[data-rev-fmt] {
   word-break: break-word;
 }
 
+.comment-image {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.comment-image-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.comment-image-preview img {
+  max-width: 120px;
+  max-height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.comment-image-preview button {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
 .comments-empty {
   padding: 12px 14px;
   font-size: 12px;
@@ -13368,21 +13394,17 @@ tr > .page-gap-cut {
   padding-right: var(--markup-w, 0px);
 }
 
-/* percentage-centered wrap overlays must keep centering on the paper, not the widened padding box */
-.page-wrap.has-markup-area .page-hf {
+/* Only wrap-level strips need markup padding compensation. Gap strips are
+   positioned inside the paper and must keep their own centering. */
+.page-wrap.has-markup-area > .page-hf {
   left: calc((100% - var(--markup-w, 0px)) / 2);
 }
 
 /* box-hosting edge strips center by offset (no translate, see .page-hf-has-boxes) on the padded wrap */
-.page-wrap.has-markup-area .page-hf.page-hf-has-boxes {
+.page-wrap.has-markup-area > .page-hf.page-hf-has-boxes {
   left: calc(
     (100% - var(--markup-w, 0px) - var(--section-content-w, calc(var(--page-w, 816px) - 120px))) / 2
   );
-}
-
-/* gap strips position against the unpadded page gap: paper-centered, no markup offset */
-.page-wrap.has-markup-area .page-gap-hf.page-hf-has-boxes {
-  left: calc((100% - var(--section-content-w, calc(var(--page-w, 816px) - 120px))) / 2);
 }
 
 .page-wrap.has-markup-area .page-watermark {
@@ -13399,11 +13421,11 @@ tr > .page-gap-cut {
   left: calc((100% + var(--markup-w, 0px) - var(--page-w, 816px)) / 2);
 }
 
-.page-wrap.has-markup-area.markup-left .page-hf {
+.page-wrap.has-markup-area.markup-left > .page-hf {
   left: calc((100% + var(--markup-w, 0px)) / 2);
 }
 
-.page-wrap.has-markup-area.markup-left .page-hf.page-hf-has-boxes {
+.page-wrap.has-markup-area.markup-left > .page-hf.page-hf-has-boxes {
   left: calc(
     (100% + var(--markup-w, 0px) - var(--section-content-w, calc(var(--page-w, 816px) - 120px))) / 2
   );

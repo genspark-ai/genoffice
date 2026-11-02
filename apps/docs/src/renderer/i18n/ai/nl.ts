@@ -210,4 +210,7 @@ export const nl = {
   aiMindMapReset: 'Weergave opnieuw instellen',
   aiMindMapExpand: 'Tak uitklappen',
   aiMindMapCollapse: 'Tak inklappen',
+  aiMindMapToggleLayout: 'Lay-out wisselen',
+  aiMindMapLayoutTopDown: 'Overschakelen naar de lay-out van boven naar beneden',
+  aiMindMapLayoutLeftRight: 'Overschakelen naar de lay-out van links naar rechts',
 } satisfies Record<keyof typeof zh, string>

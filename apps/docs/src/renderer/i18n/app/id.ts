@@ -138,6 +138,7 @@ export const id = {
   appCommentsTitle: 'Komentar ({n})',
   appCommentPlaceholder: 'Ketik komentar…',
   appCommentBtn: 'Komentar',
+  appAttachImage: 'Sisipkan gambar',
   appUnknownAuthor: '(Penulis tidak dikenal)',
   appResolved: 'Selesai',
   appResolvedComments: 'Komentar yang diselesaikan ({n})',

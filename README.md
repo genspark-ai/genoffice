@@ -524,6 +524,11 @@ sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
 
+The deb and rpm also add blank templates for KDE Plasma's Dolphin: right-click
+in a folder → **Create New** lists _GenOffice Document_, _GenOffice Spreadsheet_
+and _GenOffice Presentation_. They live in `/usr/share/templates` and are
+removed with the package.
+
 The AppImage runs in place: install the FUSE 2 runtime
 (`sudo apt install libfuse2`; on Ubuntu 24.04 the package is `libfuse2t64`),
 make the file executable, then run it:

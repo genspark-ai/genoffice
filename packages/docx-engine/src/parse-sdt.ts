@@ -2,12 +2,98 @@
 // split of an SDT's run/table content.
 import type { SdtShell } from './types'
 
+/** a <w:sdt>…</w:sdt> element's absolute byte ranges inside the scanned xml */
+export interface SdtRange {
+  /** index of the opening <w:sdt> tag */
+  openStart: number
+  /** end of the <w:sdtContent> opening tag (the content starts here) */
+  openEnd: number
+  /** start of the matching </w:sdtContent> closing tag (the content ends here) */
+  closeStart: number
+  /** end of the closing </w:sdt> tag */
+  closeEnd: number
+}
+
+/** one level of a nested block-level control chain, outermost first */
+export interface SdtChainLevel extends SdtRange {
+  /** metadata and this level's own open/close bytes (full slices of the scanned xml) */
+  shell: SdtShell
+}
+
+/**
+ * Every <w:sdt> element inside xml with its own open/close byte ranges,
+ * outermost first. Nested controls keep their own ranges, so a specific level
+ * can be unwrapped later without guessing which closing tag belongs to it.
+ */
+export function sdtRanges(xml: string): SdtRange[] {
+  const ranges: SdtRange[] = []
+  const stack: Array<{ openStart: number; openEnd: number; closeStart: number }> = []
+  const tagRe = /<(\/?)([A-Za-z0-9:._-]+)((?:"[^"]*"|'[^']*'|[^"'>])*)>/g
+  let m: RegExpExecArray | null
+  while ((m = tagRe.exec(xml)) !== null) {
+    const closing = m[1] === '/'
+    const selfClosing = m[3].endsWith('/')
+    const top = stack[stack.length - 1]
+    if (!closing && m[2] === 'w:sdt') {
+      if (!selfClosing) stack.push({ openStart: m.index, openEnd: -1, closeStart: -1 })
+      continue
+    }
+    if (!closing && m[2] === 'w:sdtContent') {
+      if (top) {
+        top.openEnd = m.index + m[0].length
+        if (selfClosing) top.closeStart = top.openEnd
+      }
+      continue
+    }
+    if (closing && m[2] === 'w:sdtContent') {
+      if (top) top.closeStart = m.index
+      continue
+    }
+    if (closing && m[2] === 'w:sdt') {
+      const level = stack.pop()
+      if (level && level.openEnd !== -1 && level.closeStart !== -1) {
+        ranges.push({
+          openStart: level.openStart,
+          openEnd: level.openEnd,
+          closeStart: level.closeStart,
+          closeEnd: m.index + m[0].length,
+        })
+      }
+    }
+  }
+  return ranges.sort((a, b) => a.openStart - b.openStart)
+}
+
+const shellFromRange = (xml: string, range: SdtRange): SdtShell => ({
+  ...sdtMeta(xml.slice(range.openStart, range.closeEnd)),
+  openXml: xml.slice(range.openStart, range.openEnd),
+  closeXml: xml.slice(range.closeStart, range.closeEnd),
+})
+
+/** the controls that enclose [childStart, childEnd), outermost first */
+function chainOf(
+  xml: string,
+  ranges: SdtRange[],
+  childStart: number,
+  childEnd: number,
+): SdtChainLevel[] {
+  const chain: SdtChainLevel[] = []
+  for (const range of ranges) {
+    if (range.openEnd === -1 || range.closeStart === -1) continue
+    if (range.openStart >= childStart || range.closeEnd <= childEnd) continue
+    chain.push({ ...range, shell: shellFromRange(xml, range) })
+  }
+  return chain
+}
+
 /**
  * Extract a SdtShell from a raw <w:sdt>…</w:sdt> XML string.
- * Returns the shell metadata + the first <w:p> found in <w:sdtContent>,
- * or null if no usable paragraph is found.
+ * Returns the outermost shell, the enclosing-control chain, and the first
+ * <w:p> found in <w:sdtContent>, or null if no usable paragraph is found.
  */
-export function parseSdtBlock(sdtXml: string): { shell: SdtShell; pXml: string } | null {
+export function parseSdtBlock(
+  sdtXml: string,
+): { shell: SdtShell; pXml: string; chain: SdtChainLevel[] } | null {
   // --- find the sdtContent region ---
   // sdtContent is a direct child of w:sdt; its content may be a w:p or w:tbl
   const contentOpen = /<w:sdtContent(?:\s[^>]*)?>/.exec(sdtXml)
@@ -51,10 +137,23 @@ export function parseSdtBlock(sdtXml: string): { shell: SdtShell; pXml: string }
   const openXml = sdtXml.slice(0, contentTagEnd)
   const closeXml = sdtXml.slice(contentClose) // "</w:sdtContent></w:sdt>"
 
-  return {
-    shell: { ...sdtMeta(sdtXml), openXml, closeXml },
-    pXml,
+  const ranges = sdtRanges(sdtXml)
+  // the paragraph sits inside the outer control plus any controls nested
+  // around it (single-child path: the outer sdtContent holds only an inner sdt)
+  let chain = chainOf(sdtXml, ranges, contentTagEnd + pStart, contentTagEnd + pEnd)
+  if (chain.length === 0) {
+    chain = [
+      {
+        openStart: 0,
+        openEnd: contentTagEnd,
+        closeStart: contentClose,
+        closeEnd: sdtXml.length,
+        shell: { ...sdtMeta(sdtXml), openXml, closeXml },
+      },
+    ]
   }
+
+  return { shell: chain[0]!.shell, pXml, chain }
 }
 
 export function sdtMeta(
@@ -89,6 +188,8 @@ interface SdtPart {
   /** the w:p / w:tbl child inside [start, end) */
   childStart: number
   childEnd: number
+  /** every control enclosing this child, outermost first (covers nested controls) */
+  chain: SdtChainLevel[]
 }
 
 /**
@@ -131,12 +232,14 @@ export function splitSdtParts(sdtXml: string): SdtPart[] | null {
 
   const parts = children.filter((c) => c.name === 'w:p' || c.name === 'w:tbl')
   if (parts.length < 2) return null
+  const ranges = sdtRanges(sdtXml)
   return parts.map((c, k) => ({
     name: c.name,
     start: k === 0 ? 0 : c.start,
     end: k === parts.length - 1 ? sdtXml.length : parts[k + 1].start,
     childStart: c.start,
     childEnd: c.end,
+    chain: chainOf(sdtXml, ranges, c.start, c.end),
   }))
 }
 

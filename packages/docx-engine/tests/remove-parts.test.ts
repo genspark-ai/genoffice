@@ -257,6 +257,19 @@ describe('remove_parts package scrub', () => {
     expect(contentTypes).not.toContain('webextension')
   })
 
+  it('refuses the main document part, its rels and the story parts', async () => {
+    const bytes = await fixtureDocx()
+    const plan = await planRemoveParts(bytes, {
+      paths: ['word/document.xml', '/word/_rels/document.xml.rels', 'word/footnotes.xml'],
+    })
+    expect(plan.removedPaths).toEqual([])
+    expect(plan.unknownPaths).toEqual([
+      'word/document.xml',
+      '/word/_rels/document.xml.rels',
+      'word/footnotes.xml',
+    ])
+  })
+
   it('reports unknown explicit paths and still applies the kinds', async () => {
     const bytes = await fixtureDocx()
     const plan = await planRemoveParts(bytes, {

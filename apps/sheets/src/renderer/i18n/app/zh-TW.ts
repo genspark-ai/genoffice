@@ -1089,6 +1089,8 @@ export const zhTW = {
   appRefreshAll: '全部重新整理',
   appWorkbookNoPivot: '活頁簿中沒有樞紐分析表。',
   appRefreshAllTitle: '重新整理全部樞紐分析表',
+  appQueriesConnections: '查詢與連線',
+  appQueriesConnectionsTitle: '檢視活頁簿中的查詢與資料連線',
   appErrorCheckingDetail: '掃描目前工作表中的錯誤值',
   appErrorsFound: '發現 {count} 個錯誤,已定位 {cell}:{value}',
   appCheckingErrors: '正在掃描整個工作表的錯誤…',

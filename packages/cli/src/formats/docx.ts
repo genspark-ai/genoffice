@@ -244,6 +244,7 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
   const sectionEdits = applySectionEdits(doc, plan)
   const options: SaveOptions = {
     ...sectionEdits.options,
+    trailingSectPrChange: plan.trailingSectPrChange,
     header: hf('header'),
     footer: hf('footer'),
     headerFirst: hf('headerFirst'),
@@ -327,9 +328,10 @@ function setContentControl(
   if (name === 'unwrap_content_control') {
     const tag = typeof op.tag === 'string' ? op.tag.trim() : ''
     if (!tag) return { error: 'unwrap_content_control needs a tag' }
-    if (!doc.parsed.blocks.some((b) => b.sdtShell?.tag === tag)) {
-      return { error: `no content control is tagged ${tag}` }
-    }
+    const anyShell = doc.parsed.blocks.some((b) =>
+      (b.sdtShells ?? (b.sdtShell ? [b.sdtShell] : [])).some((shell) => shell.tag === tag),
+    )
+    if (!anyShell) return { error: `no content control is tagged ${tag}` }
     side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
     return { output: `unwrap the content control tagged ${tag}` }
   }
@@ -486,8 +488,26 @@ export interface BlockSummary {
   table?: ReturnType<Modules['tableOps']['describeTable']>
   /** the block-level content control this block sits in (w:sdt), when it is in one */
   contentControl?: ContentControlSummary
+  /**
+   * every block-level control wrapping this block, outermost first; set
+   * whenever the block sits in at least one control (so a single-control block
+   * carries a one-element array, and contentControl keeps the outermost)
+   */
+  contentControls?: ContentControlSummary[]
+  /** run-level (inline) controls inside this paragraph, read-only (their bytes stay in place) */
+  inlineContentControls?: InlineContentControlSummary[]
   /** the text was clipped to the preview length; `--full` or `--max-chars` returns the rest */
   truncated?: true
+}
+
+/** a run-level (inline) w:sdt inside a paragraph */
+export interface InlineContentControlSummary {
+  tag: string
+  title: string
+  lock: string
+  id: string
+  /** the plain text inside the control */
+  text: string
 }
 
 /** what a block-level content control (w:sdt) carries */
@@ -504,6 +524,17 @@ export interface ContentControlSummary {
 
 export const PREVIEW_CHARS = 200
 
+/**
+ * Text a non-text leaf contributes to a block's plain text. A soft line break
+ * (Shift+Enter, <w:br/>) reads as "\n" so the two lines never run together;
+ * page/column/wrap breaks and every other leaf keep contributing nothing.
+ */
+function plainLeafText(leaf: { type: { name: string }; attrs: Record<string, unknown> }): string {
+  if (leaf.type.name !== 'hardBreak') return ''
+  const { pageBreak, colBreak, wrapBreak, mathBreak } = leaf.attrs ?? {}
+  return pageBreak || colBreak || wrapBreak || mathBreak ? '' : '\n'
+}
+
 /** Block list an agent targets ops at: index, node type, heading level, text (clipped to `maxChars`). */
 export function describeDocument(
   doc: OpenDocument,
@@ -515,7 +546,11 @@ export function describeDocument(
   const [start, end] = range ?? [0, root.childCount - 1]
   for (let i = start; i <= Math.min(end, root.childCount - 1); i++) {
     const node = root.child(i)
-    const { text, truncated } = clipText(node.textContent, maxChars)
+    // textContent skips leaves without a leafText; read the soft breaks back in
+    const { text, truncated } = clipText(
+      node.textBetween(0, node.content.size, '', plainLeafText),
+      maxChars,
+    )
     out.push({
       index: i,
       type: node.type.name.replace(/^doc/, '').toLowerCase(),
@@ -523,6 +558,12 @@ export function describeDocument(
       ...(node.type.name === 'docProtected' ? { kind: protectedKind(node.attrs) } : {}),
       ...(node.type.name === 'docTable' ? { table: doc.mods.tableOps.describeTable(node) } : {}),
       ...(contentControlOf(doc, node) ? { contentControl: contentControlOf(doc, node)! } : {}),
+      ...(contentControlsOf(doc, node).length > 0
+        ? { contentControls: contentControlsOf(doc, node) }
+        : {}),
+      ...(inlineControlsOf(doc, node).length > 0
+        ? { inlineContentControls: inlineControlsOf(doc, node) }
+        : {}),
       text,
       ...(truncated ? { truncated } : {}),
     })
@@ -537,16 +578,44 @@ export function listTableStyles(doc: OpenDocument): Array<{ id: string; name: st
     .map((s) => ({ id: s.styleId, name: s.name }))
 }
 
+/** the parsed block behind an editor block (the editor block keeps the body index of its original) */
+function parsedBlockOf(doc: OpenDocument, block: Editor['state']['doc']) {
+  const docxIndex = block.attrs.docxIndex
+  if (typeof docxIndex !== 'number') return null
+  return doc.parsed.blocks[docxIndex] ?? null
+}
+
 /** the content control (w:sdt) a block sits in: the editor block keeps the body index of its original, and the shell rides on it */
 function contentControlOf(
   doc: OpenDocument,
   block: Editor['state']['doc'],
 ): ContentControlSummary | null {
-  const docxIndex = block.attrs.docxIndex
-  if (typeof docxIndex !== 'number') return null
-  const shell = doc.parsed.blocks[docxIndex]?.sdtShell
+  const shell = parsedBlockOf(doc, block)?.sdtShell
   if (!shell) return null
   return { tag: shell.tag, title: shell.alias, lock: shell.lock, id: shell.id }
+}
+
+/** every block-level control the block sits in, outermost first (a single control gives a one-element array) */
+function contentControlsOf(
+  doc: OpenDocument,
+  block: Editor['state']['doc'],
+): ContentControlSummary[] {
+  const parsed = parsedBlockOf(doc, block)
+  const chain = parsed?.sdtShells ?? (parsed?.sdtShell ? [parsed.sdtShell] : [])
+  return chain.map((shell) => ({
+    tag: shell.tag,
+    title: shell.alias,
+    lock: shell.lock,
+    id: shell.id,
+  }))
+}
+
+/** run-level controls inside the paragraph (read-only reporting) */
+function inlineControlsOf(
+  doc: OpenDocument,
+  block: Editor['state']['doc'],
+): InlineContentControlSummary[] {
+  return parsedBlockOf(doc, block)?.inlineContentControls ?? []
 }
 
 /** native docx charts are passthrough blocks carrying chartDisplay; edit_chart targets them like AI-made ones */
@@ -715,7 +784,11 @@ const CONTENT_CONTROL_SCHEMAS: Record<(typeof CONTENT_CONTROL_OPS)[number], Json
   unwrap_content_control: {
     type: 'object',
     properties: {
-      tag: { type: 'string', description: 'the tag of the control to unwrap' },
+      tag: {
+        type: 'string',
+        description:
+          'the tag of the control to unwrap (outermost or a nested inner control; the tag may repeat)',
+      },
     },
     required: ['tag'],
   },
@@ -723,9 +796,9 @@ const CONTENT_CONTROL_SCHEMAS: Record<(typeof CONTENT_CONTROL_OPS)[number], Json
 
 const CONTENT_CONTROL_NOTES: Record<(typeof CONTENT_CONTROL_OPS)[number], string> = {
   wrap_content_control:
-    'put a block range into one block-level content control (w:sdt); the blocks stay editable and the control carries the tag/title/lock; `genoffice docs read` shows the control on every block in it',
+    'put a block range into one block-level content control (w:sdt); the blocks stay editable and the control carries the tag/title/lock; `genoffice docs read` shows the control chain on every block in it (contentControls, outermost first) and run-level controls as inlineContentControls',
   unwrap_content_control:
-    'remove the content control with that tag and leave its blocks as plain body blocks',
+    'remove every content control carrying that tag and leave its blocks as plain body blocks; nested controls unwrap level by level (unwrapping an inner tag keeps the outer shell around the content), inline/run-level controls are reported but not unwrapped',
 }
 
 /**
@@ -895,11 +968,9 @@ function mergePropertyChanges(
 ): PropertyChanges {
   if (!current || next.clear) return next
   const merged: PropertyChanges = { ...current }
-  for (const section of ['core', 'app', 'custom'] as const) {
-    const values = next[section]
-    if (!values) continue
-    merged[section] = { ...(current[section] ?? {}), ...values }
-  }
+  if (next.core) merged.core = { ...(current.core ?? {}), ...next.core }
+  if (next.app) merged.app = { ...(current.app ?? {}), ...next.app }
+  if (next.custom) merged.custom = { ...(current.custom ?? {}), ...next.custom }
   return merged
 }
 
@@ -1687,7 +1758,7 @@ const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
   delete_comment:
     'removes the comment and its anchor; a thread root with replies needs withReplies: true, a reply id removes just that reply',
   set_properties:
-    'the document properties of the file: core (title, subject, creator, keywords, description, lastModifiedBy, revision, created, modified, category, contentStatus, identifier, language, version), app (template, totalTime, pages, words, characters, application, docSecurity, lines, paragraphs, scaleCrop, company, linksUpToDate, charactersWithSpaces, sharedDoc, hyperlinksChanged, appVersion, manager) and custom (by name); a string sets the value, null removes the property, clear: "all" empties all three parts; `genoffice docs read --properties` lists the current ones',
+    'the document properties of the file: core (title, subject, creator, keywords, description, lastModifiedBy, revision, created, modified, category, contentStatus, identifier, language, version), app (template, totalTime, pages, words, characters, application, docSecurity, lines, paragraphs, scaleCrop, company, linksUpToDate, charactersWithSpaces, sharedDoc, hyperlinksChanged, appVersion, manager) and custom (by name); a string sets a value, a number or boolean gives a typed custom value (i4/bool; an existing i4/i8/r8/bool/filetime/date property keeps its vt type when the value fits), null removes the property, clear: "all" empties all three parts; `genoffice docs read --properties` lists the current ones with their customTypes',
 }
 
 const AFTER_BLOCK_INDEX =
@@ -1703,10 +1774,16 @@ const INSERT_IMAGE_SCHEMA: JsonSchema = {
   required: ['url'],
 }
 
-/** set_properties: the values of a property part, by key (a string sets, null removes) */
+/** set_properties: the text values of a core/app property, by key (a string sets, null removes) */
 const PROPERTY_VALUES: JsonSchema = {
   type: 'object',
   additionalProperties: { type: ['string', 'null'] },
+}
+
+/** set_properties.custom: text stays lpwstr, a number/boolean keeps or takes a typed vt value */
+const CUSTOM_PROPERTY_VALUES: JsonSchema = {
+  type: 'object',
+  additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
 }
 
 const SET_PROPERTIES_SCHEMA: JsonSchema = {
@@ -1723,9 +1800,9 @@ const SET_PROPERTIES_SCHEMA: JsonSchema = {
         'extended (app) properties by friendly key (company, template, application, manager, …); a string sets the value, null removes the element',
     },
     custom: {
-      ...PROPERTY_VALUES,
+      ...CUSTOM_PROPERTY_VALUES,
       description:
-        'custom properties by name (MatterId, Reviewer, …); a string sets the value, null removes the property',
+        'custom properties by name (MatterId, Reviewer, …): a string stores vt:lpwstr, a number vt:i4 (or i8/r8 when out of int32), a boolean vt:bool; an existing typed property keeps its vt type when the value fits it (i4/i8/r8/ui*/bool/filetime/date); null removes the property',
     },
     clear: {
       type: 'string',
