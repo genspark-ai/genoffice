@@ -145,6 +145,8 @@ interface SideState {
   /** header / footer / footnote / endnote part XML by zip path, loaded on the first accept_changes / reject_changes */
   revisionParts: Map<string, string> | null
   revisionPartsDirty: Set<string>
+  /** post-pass applied to the regenerated body on save: accept/reject the tracked changes the editor does not surface (sectPrChange, move range markers) */
+  bodyRevisionPostPass?: { mode: 'accept' | 'reject'; filter?: RevisionXmlFilter }
   /** set_properties changes; written into the docProps parts on save */
   properties?: PropertyChanges
   /** block-level content controls to write on save: wrap a range of body blocks in one new control, or unwrap the control with a tag */
@@ -257,7 +259,25 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
   for (const path of side.revisionPartsDirty) {
     options.partXml = { ...options.partXml, [path]: side.revisionParts!.get(path)! }
   }
-  return saveDocx(doc.parsed, sectionEdits.saveBlocks, options)
+  let bytes = await saveDocx(doc.parsed, sectionEdits.saveBlocks, options)
+  // The editor does not surface document-level tracked changes (sectPrChange
+  // and move range markers), so they survive the ProseMirror round-trip. Apply
+  // the XML-level accept/reject pass to the regenerated body here.
+  const postPass = side.bodyRevisionPostPass
+  if (postPass) {
+    const zip = await JSZip.loadAsync(bytes)
+    const entry = zip.file('word/document.xml')
+    if (entry) {
+      const xml = await entry.async('string')
+      const r = applyTrackedChangesXml(xml, postPass.mode, postPass.filter)
+      if (r.xml !== xml) {
+        zip.file('word/document.xml', r.xml)
+        bytes = await zip.generateAsync({ type: 'uint8array' })
+      }
+    }
+    side.bodyRevisionPostPass = undefined
+  }
+  return bytes
 }
 
 export interface DocxCompareOptions {
@@ -401,6 +421,7 @@ async function applyRevisionOp(
       ...(sel.type !== undefined ? { type: sel.type } : {}),
       ...(sel.before !== undefined ? { before: sel.before } : {}),
     }
+    doc.side.bodyRevisionPostPass = { mode, filter }
     for (const [path, xml] of await revisionParts(doc)) {
       const r = applyTrackedChangesXml(xml, mode, filter)
       if (r.xml === xml) continue
