@@ -85,6 +85,13 @@ export interface SyntheticDocOptions {
   papxPlcLcb?: number
   /** extra Data stream (sprmPHugePapx property blocks) */
   dataStream?: Uint8Array
+  /** non-body story character counts (FibRgLw97), for the stage-3a honest warnings */
+  ccpFtn?: number
+  ccpHdd?: number
+  ccpAtn?: number
+  ccpEdn?: number
+  ccpTxbx?: number
+  ccpHdrTxbx?: number
 }
 
 /** Windows-1252 high-half punctuation -> byte, for compressed-piece fixtures */
@@ -278,6 +285,12 @@ interface FibValues {
   lcbClx: number
   chpxPlcf?: { fc: number; lcb: number }
   papxPlcf?: { fc: number; lcb: number }
+  ccpFtn?: number
+  ccpHdd?: number
+  ccpAtn?: number
+  ccpEdn?: number
+  ccpTxbx?: number
+  ccpHdrTxbx?: number
 }
 
 function writeFib(target: Uint8Array, values: FibValues): void {
@@ -293,6 +306,17 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   const lwStart = offset
   view.setUint32(lwStart, target.length, true) // cbMac
   view.setUint32(lwStart + 3 * 4, values.ccpText, true) // ccpText
+  const storyCounts: Array<[number, number | undefined]> = [
+    [4, values.ccpFtn], // ccpFtn
+    [5, values.ccpHdd], // ccpHdd
+    [7, values.ccpAtn], // ccpAtn
+    [8, values.ccpEdn], // ccpEdn
+    [9, values.ccpTxbx], // ccpTxbx
+    [10, values.ccpHdrTxbx], // ccpHdrTxbx
+  ]
+  for (const [index, count] of storyCounts) {
+    if (count !== undefined) view.setUint32(lwStart + index * 4, count, true)
+  }
   for (const index of [11, 14, 17]) view.setUint32(lwStart + index * 4, 0xffffff, true) // reserved values Word writes
   offset += 22 * 4
   view.setUint16(offset, TABLE_PAIR_COUNT, true) // cbRgFcLcb
@@ -369,6 +393,12 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       ccpText: options.ccpText ?? charCount,
       fcClx,
       lcbClx: options.lcbClx ?? clx.length,
+      ccpFtn: options.ccpFtn,
+      ccpHdd: options.ccpHdd,
+      ccpAtn: options.ccpAtn,
+      ccpEdn: options.ccpEdn,
+      ccpTxbx: options.ccpTxbx,
+      ccpHdrTxbx: options.ccpHdrTxbx,
       ...(chpxPlcf
         ? { chpxPlcf: { fc: chpxPlcFc, lcb: options.chpxPlcLcb ?? chpxPlcf.length } }
         : {}),

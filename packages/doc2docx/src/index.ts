@@ -126,3 +126,13 @@ export function readLegacyDocModel(bytes: Uint8Array): LegacyDocModel {
   const paragraphs = readFormatting(doc, warnings)
   return { fib: doc.fib, text: doc.text, paragraphs, warnings }
 }
+
+/* stage 3a: .docx writer */
+export {
+  conversionWarnings,
+  convertLegacyDocToDocx,
+  generateBodyParagraphsXml,
+  toDocxRun,
+  toParaFormat,
+  writeLegacyDocx,
+} from './docx-writer'
