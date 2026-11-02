@@ -12,6 +12,10 @@ describe('appForPath', () => {
 
   it('leaves the other apps on their own extensions', () => {
     expect(appForPath('/x/a.docx')).toBe('docs')
+    // legacy Word 97-2003 files open through the docs import filter as copies
+    expect(appForPath('/x/legacy.doc')).toBe('docs')
+    expect(appForPath('/x/TEMPLATE.DOT')).toBe('docs')
+    expect(appForPath('/x/notes.odt')).toBe('docs')
     expect(appForPath('/x/a.xlsx')).toBe('sheets')
     expect(appForPath('/x/a.pptx')).toBe('slides')
     expect(appForPath('/x/a.pdf')).toBe('pdf')
@@ -68,6 +72,10 @@ describe('renameStaysInApp', () => {
   it('keeps a rename inside every other app too', () => {
     expect(renameStaysInApp('/x/a.docx', 'a.docx')).toBe(true)
     expect(renameStaysInApp('/x/a.docx', 'a.pdf')).toBe(false)
+    // .doc/.dot stay in docs: both directions are a docs rename
+    expect(renameStaysInApp('/x/legacy.doc', 'legacy.docx')).toBe(true)
+    expect(renameStaysInApp('/x/a.docx', 'a.doc')).toBe(true)
+    expect(renameStaysInApp('/x/legacy.doc', 'legacy.pdf')).toBe(false)
     expect(renameStaysInApp('/x/a.xlsx', 'a.csv')).toBe(true)
     expect(renameStaysInApp('/x/a.png', 'a.png')).toBe(true)
   })

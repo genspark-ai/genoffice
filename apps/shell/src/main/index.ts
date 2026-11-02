@@ -3875,7 +3875,7 @@ function ensureFileIndexer(): FileIndexer | null {
 }
 
 const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
-  docx: ['docx', 'doc', 'odt', 'ott', 'hwpx', 'hwp'],
+  docx: ['docx', 'doc', 'dot', 'odt', 'ott', 'hwpx', 'hwp'],
   xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
   pptx: ['pptx', 'ppt', 'odp', 'otp'],
   md: ['md', 'markdown', 'txt', 'json'],
@@ -4356,13 +4356,15 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 /**
- * Single source of truth for the open-dialog filter. Includes the
- * legacy .doc/.ppt binaries so they are selectable and surface the explicit
- * "not supported" dialog via openDocumentPath instead of being grayed out.
+ * Single source of truth for the open-dialog filter. Includes the still-legacy
+ * .ppt binary so it is selectable and surfaces the explicit "not supported"
+ * dialog via openDocumentPath instead of being grayed out; .doc/.dot route into
+ * the docs import filter.
  */
 const OPEN_DIALOG_EXTENSIONS = [
   'docx',
   'doc',
+  'dot',
   'xlsx',
   'xlsm',
   'xls',
@@ -5035,7 +5037,7 @@ function registerHomeIpc(): void {
       title: tm('dlgOpenTitle'),
       filters: [
         { name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS },
-        { name: tm('filterWord'), extensions: ['docx', 'doc', 'odt', 'ott', 'hwpx', 'hwp'] },
+        { name: tm('filterWord'), extensions: ['docx', 'doc', 'dot', 'odt', 'ott', 'hwpx', 'hwp'] },
         {
           name: tm('filterExcel'),
           extensions: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],

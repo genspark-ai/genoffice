@@ -1,0 +1,11 @@
+Rich document for legacy .doc conversion
+中文与 English 混排的正文段落。
+    • Bullet item one
+    • Bullet item two
+    1. Numbered item one
+Merged header	R1C3
+R2C1	R2C2	R2C3
+R3C1	R3C2	R3C3
+Image below:
+
+Link: example link
