@@ -1,0 +1,7 @@
+﻿Bold text and italic text plain.
+Large underlined text
+Centered paragraph
+Right aligned paragraph
+Indented paragraph with line spacing
+Spaced paragraph
+中文粗体段落
