@@ -497,6 +497,17 @@ export interface ContentControlSummary {
 
 export const PREVIEW_CHARS = 200
 
+/**
+ * Text a non-text leaf contributes to a block's plain text. A soft line break
+ * (Shift+Enter, <w:br/>) reads as "\n" so the two lines never run together;
+ * page/column/wrap breaks and every other leaf keep contributing nothing.
+ */
+function plainLeafText(leaf: { type: { name: string }; attrs: Record<string, unknown> }): string {
+  if (leaf.type.name !== 'hardBreak') return ''
+  const { pageBreak, colBreak, wrapBreak, mathBreak } = leaf.attrs ?? {}
+  return pageBreak || colBreak || wrapBreak || mathBreak ? '' : '\n'
+}
+
 /** Block list an agent targets ops at: index, node type, heading level, text (clipped to `maxChars`). */
 export function describeDocument(
   doc: OpenDocument,
@@ -508,7 +519,11 @@ export function describeDocument(
   const [start, end] = range ?? [0, root.childCount - 1]
   for (let i = start; i <= Math.min(end, root.childCount - 1); i++) {
     const node = root.child(i)
-    const { text, truncated } = clipText(node.textContent, maxChars)
+    // textContent skips leaves without a leafText; read the soft breaks back in
+    const { text, truncated } = clipText(
+      node.textBetween(0, node.content.size, '', plainLeafText),
+      maxChars,
+    )
     out.push({
       index: i,
       type: node.type.name.replace(/^doc/, '').toLowerCase(),
