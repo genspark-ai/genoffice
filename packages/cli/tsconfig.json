@@ -7,6 +7,7 @@
     "types": ["node"],
     // resolve sibling source packages by path (worktree-safe, see pdf2docx/tsconfig.json)
     "paths": {
+      "@genoffice/doc2docx": ["../doc2docx/src/index.ts"],
       "@genoffice/docx-engine": ["../docx-engine/src/index.ts"],
       "@genoffice/pptx-engine": ["../pptx-engine/src/index.ts"],
       "@genoffice/pdf2docx": ["../pdf2docx/src/index.ts"],
