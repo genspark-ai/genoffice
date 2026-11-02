@@ -145,3 +145,56 @@ describe('saveAsSuggestion', () => {
     })
   })
 })
+
+describe('deferred save dialog directory suggestions', () => {
+  it('resolves the fallback only when no stronger suggestion exists', async () => {
+    const dialog = fakeDialog()
+    const fallback = vi.fn(() => '/default')
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'file.docx' }, fallback)
+    expect(fallback).toHaveBeenCalledOnce()
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith({ defaultPath: '/default/file.docx' })
+  })
+
+  it('does not resolve a fallback for an explicit source folder', async () => {
+    const dialog = fakeDialog()
+    const fallback = vi.fn(() => {
+      throw new Error('unavailable')
+    })
+    await showSaveDialogWithMemory(
+      dialog,
+      undefined,
+      { defaultPath: '/source/file.docx' },
+      fallback,
+    )
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('does not resolve a fallback when the user already chose a directory', async () => {
+    const dialog = fakeDialog({ showSaveDialog: pickedSave('/chosen/first.docx') })
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'first.docx' })
+    const fallback = vi.fn(() => {
+      throw new Error('unavailable')
+    })
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'next.docx' }, fallback)
+    expect(fallback).not.toHaveBeenCalled()
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith({ defaultPath: '/chosen/next.docx' })
+  })
+
+  it('keeps the filename and opens the dialog if its optional fallback fails', async () => {
+    const dialog = fakeDialog()
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'file.docx' }, () => {
+      throw new Error('unavailable')
+    })
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith({ defaultPath: 'file.docx' })
+  })
+
+  it('does not swallow an error from the actual native dialog', async () => {
+    const error = new Error('dialog failed')
+    const dialog = fakeDialog({ showSaveDialog: vi.fn().mockRejectedValue(error) })
+    await expect(
+      showSaveDialogWithMemory(dialog, undefined, {}, () => {
+        throw new Error('unavailable')
+      }),
+    ).rejects.toBe(error)
+  })
+})

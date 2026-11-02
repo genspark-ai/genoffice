@@ -59,18 +59,26 @@ export {
   APP_PROPERTY_KEYS,
   CORE_PROPERTIES_PATH,
   CORE_PROPERTY_KEYS,
+  NEW_DOCUMENT_APPLICATION,
+  NEW_DOCUMENT_APP_VERSION,
+  NEW_DOCUMENT_TEMPLATE,
   applyPropertyChanges,
   emptyDocumentProperties,
+  newDocumentAppPropertiesXml,
+  newDocumentCorePropertiesXml,
   parseAppPropertiesXml,
   parseCorePropertiesXml,
   parseCustomPropertiesXml,
+  parseCustomPropertyTypesXml,
   parsePropertyChanges,
   patchAppPropertiesXml,
   patchCorePropertiesXml,
   patchCustomPropertiesXml,
   readDocumentProperties,
+  w3cdtfStamp,
   type DocumentProperties,
   type PropertyChanges,
+  type PropertyValue,
 } from './doc-properties'
 export {
   saveDocx,
@@ -82,6 +90,16 @@ export {
   type StyleUpsert,
   type ParsedDocFull,
 } from './patch'
+export {
+  REMOVE_PARTS_KINDS,
+  applyRemoveParts,
+  planRemoveParts,
+  removePartsRefusalMessage,
+  type RemovePartsKind,
+  type RemovePartsOptions,
+  type RemovePartsPlan,
+  type RemovedPartBinding,
+} from './remove-parts'
 export {
   TABLE_HEADER_FILL,
   applyImageWrap,
@@ -104,6 +122,8 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  paraMarkRevisionXml,
+  setParaMarkRevision,
   stripParaMarkRevision,
   resolveParaMarkRPrChange,
   paraMarkColor,
@@ -155,7 +175,7 @@ export {
   ommlToLatex,
   ommlToMathML,
 } from './math'
-export { patchRunPictureXml, type RunPictureGeometry } from './run-picture'
+export { patchHfPicturesXml, patchRunPictureXml, type RunPictureGeometry } from './run-picture'
 export { scanBody, type BodyElement, type BodyScan } from './scan'
 export {
   BLANK_BULLET_NUM_ID,
@@ -248,8 +268,14 @@ export {
 
 export { previewFontSettings } from './font-settings'
 export {
+  applyRevisionResolutions,
   applyTrackedChangesXml,
+  cleanMoveRangeMarkers,
   countTrackedChangesXml,
+  readPropChangeXml,
+  resolvePropChangeXml,
+  type PropChangeRecord,
+  type RevisionResolution,
   type RevisionXmlFilter,
   type RevisionXmlMode,
   type RevisionXmlResult,
@@ -279,3 +305,4 @@ export {
   type CompareResult,
   type CompareSummary,
 } from './compare'
+export { keepsHangulKanaSingle } from './parse-block-passes'

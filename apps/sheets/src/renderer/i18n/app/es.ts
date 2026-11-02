@@ -418,6 +418,9 @@ export const es = {
   appTableNameUsed: 'El nombre de tabla "{name}" ya se usó en esta sesión.',
   appTableNameInFile: 'El nombre de tabla "{name}" ya lo usa una tabla del archivo.',
   appTableOverlapsSession: 'El rango se superpone con la tabla "{name}" creada en esta sesión.',
+  appTableOverlapsFile: 'El rango se superpone con la tabla "{name}" del archivo.',
+  appTableAlreadyInTable:
+    'La selección ya está en la tabla "{name}": cambie el estilo desde Diseño de tabla.',
   appTablesNeedFile: 'Abra primero un archivo XLSX — las tablas se escriben en el archivo.',
   appTableSelectRange:
     'Seleccione primero el rango de datos — con los encabezados en su primera fila.',
@@ -507,6 +510,7 @@ export const es = {
   appGridlinesHidden: 'Líneas de cuadrícula ocultas.',
   appGridlinesShown: 'Líneas de cuadrícula mostradas.',
   appShowingFormulas: 'Mostrando fórmulas — vuelva a alternar para ver los valores.',
+  appShowingFormulasActive: 'Mostrando fórmulas',
   appShowingValues: 'Mostrando los valores calculados.',
   appTraceNoFormula: 'Rastrear precedentes: la celda activa no tiene fórmula.',
   appTraceNoRefs: 'Rastrear precedentes: esta fórmula no tiene referencias de celda.',
@@ -1218,6 +1222,8 @@ export const es = {
   appRefreshAll: 'Actualizar todo',
   appWorkbookNoPivot: 'No hay tablas dinámicas en este libro.',
   appRefreshAllTitle: 'Actualizar todas las tablas dinámicas',
+  appQueriesConnections: 'Consultas y conexiones',
+  appQueriesConnectionsTitle: 'Mostrar las consultas y conexiones de datos del libro',
   appErrorCheckingDetail: 'Buscar valores de error en la hoja',
   appErrorsFound: '{count} errores — en {cell}: {value}',
   appCheckingErrors: 'Buscando errores en toda la hoja…',

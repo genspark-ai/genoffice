@@ -55,7 +55,11 @@ const TAB_LEADERS = ['none', 'dot', 'hyphen', 'underscore', 'heavy', 'middleDot'
 
 /** leader of the entry's page-number tab: the last right stop of the direct
  *  w:tabs (a stop without w:leader is a bare tab), else of the style's stops */
-function tocLeaderOf(pPr: string, style?: StyleInfo): TabStop['leader'] | undefined {
+function tocLeaderOf(
+  pPr: string,
+  style?: StyleInfo,
+  inheritedStops: TabStop[] = [],
+): TabStop['leader'] | undefined {
   const tabsXml = /<w:tabs>[\s\S]*?<\/w:tabs>/.exec(pPr)?.[0]
   if (tabsXml) {
     const rights = Array.from(tabsXml.matchAll(/<w:tab\s[^>]*\/>/g), (m) => m[0]).filter((t) =>
@@ -67,7 +71,7 @@ function tocLeaderOf(pPr: string, style?: StyleInfo): TabStop['leader'] | undefi
       return (TAB_LEADERS as readonly string[]).includes(v) ? (v as TabStop['leader']) : 'none'
     }
   }
-  const stop = style?.display?.tabStops?.filter((t) => t.val === 'right').pop()
+  const stop = (style?.display?.tabStops ?? inheritedStops).filter((t) => t.val === 'right').pop()
   return stop ? (stop.leader ?? 'none') : undefined
 }
 
@@ -147,11 +151,14 @@ export function additiveSpacingOf(ctx: ResolveCtx): Pick<FieldDisplay, 'additive
   return ctx.compat.additiveParaSpacing ? { additiveSpacing: true } : {}
 }
 
-/** a TOC entry Word wrote without TOC styles: PAGEREF page number behind a right tab stop */
-function unstyledTocEntry(xml: string, pPr: string): boolean {
+/** a TOC entry Word wrote without TOC styles: PAGEREF page number behind a right tab stop.
+ *  The stop may come from a style that is not named "toc N" (custom or localized TOC
+ *  styles); then a run-level tab must also be there, the one the page number sits behind. */
+function unstyledTocEntry(xml: string, pPr: string, inheritedStops: TabStop[]): boolean {
+  if (!/<w:instrText[^>]*>\s*PAGEREF\s/.test(xml)) return false
+  if (/<w:tabs>[\s\S]*?<w:tab\s[^>]*w:val=(?:"right"|'right')/.test(pPr)) return true
   return (
-    /<w:instrText[^>]*>\s*PAGEREF\s/.test(xml) &&
-    /<w:tabs>[\s\S]*?<w:tab\s[^>]*w:val=(?:"right"|'right')/.test(pPr)
+    inheritedStops.some((t) => t.val === 'right') && /<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>/.test(xml)
   )
 }
 
@@ -203,7 +210,7 @@ export function fieldDisplayOf(
   const additive = additiveSpacingOf(ctx)
   const styledLevel = tocLevelOf(styleId, styles)
   // unstyled entries indent through their own w:ind, styled ones through the level ladder
-  const tocLevel = styledLevel ?? (unstyledTocEntry(xml, pPr) ? 1 : null)
+  const tocLevel = styledLevel ?? (unstyledTocEntry(xml, pPr, eff.tabStops) ? 1 : null)
   if (styledLevel !== null) {
     delete geometry.indentLeftTwips
     delete geometry.indentRightTwips
@@ -247,7 +254,7 @@ export function fieldDisplayOf(
     const anchor = /<w:hyperlink [^>]*w:anchor="([^"]+)"/.exec(xml)?.[1]
     // direct pPr/run metrics: Word sizes TOC lines by them while the style
     // (html2docx exports) often carries nothing
-    const leader = tocLeaderOf(pPr, styles?.get(styleId))
+    const leader = tocLeaderOf(pPr, styles?.get(styleId), eff.tabStops)
     // font size from visible result runs only: field-machinery runs
     // (fldChar/instrText) often carry the target heading's size and would
     // inflate the whole line

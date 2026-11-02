@@ -241,7 +241,19 @@ describe('anchor paragraph line', () => {
     })
   })
 
-  it('adds no anchor line for behind-text or inline pictures', async () => {
+  it('carries the paragraph-mark face so the anchor line paces like its empty neighbours', async () => {
+    const para =
+      `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>` +
+      `<w:sz w:val="40"/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>${pic()}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para, withImage: true }))
+    expect(doc.blocks[0].anchorLine?.format).toMatchObject({
+      emptyRunSizeHalfPoints: 40,
+      emptyRunFontFamily: 'Times New Roman',
+    })
+  })
+
+  it('keeps the anchor line of a behind-text picture but adds none for an inline one', async () => {
     const behind =
       `<w:p><w:r>` +
       picture({ x: 0, y: 0, cx: 914400, cy: 914400, behind: true, wrap: '<wp:wrapNone/>' }) +
@@ -256,7 +268,7 @@ describe('anchor paragraph line', () => {
       `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
       `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
     const doc = await parseDocx(await buildDocx({ bodyXml: behind + inline, withImage: true }))
-    expect(doc.blocks[0].anchorLine).toBeUndefined()
+    expect(doc.blocks[0].anchorLine).toEqual({})
     expect(doc.blocks[1].anchorLine).toBeUndefined()
   })
 

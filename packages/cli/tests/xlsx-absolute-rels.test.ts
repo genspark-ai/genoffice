@@ -14,7 +14,7 @@ const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
  * An openpyxl-shaped workbook: the worksheet's comments and VML drawing
  * relationships use absolute OPC targets (`/xl/comments/comment1.xml`), which
  * are valid (ECMA-376 Part 2: a leading '/' means the package root) but broke
- * the IronCalc import behind `sheet read` (#2306). The formula's cached value
+ * the IronCalc import behind `sheet read` (genoffice#2306). The formula's cached value
  * is stripped so the read has to evaluate it through the engine.
  */
 async function absoluteRelationshipsWorkbook(): Promise<string> {
@@ -50,7 +50,7 @@ async function absoluteRelationshipsWorkbook(): Promise<string> {
   return path
 }
 
-describe('sheet read with absolute OPC relationship targets (#2306)', () => {
+describe('sheet read with absolute OPC relationship targets (genoffice#2306)', () => {
   it.skipIf(!sidecar)('reads cells and evaluates the uncached formula', async () => {
     const path = await absoluteRelationshipsWorkbook()
     // the fixture really does carry the absolute targets openpyxl writes

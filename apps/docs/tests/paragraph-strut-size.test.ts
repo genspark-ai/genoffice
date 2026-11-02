@@ -5,6 +5,9 @@
  * line box (table cells often run smaller than Normal). Any run inheriting the
  * body size keeps the inherited strut.
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -38,7 +41,7 @@ describe('paragraph strut font-size from run sizes', () => {
     editor.destroy()
   })
 
-  it('a run inheriting the body size suppresses the strut override', () => {
+  it('a bare inheriting text node (no element to restore its size) suppresses the strut override', () => {
     const editor = editorWith([
       { type: 'docParagraph', content: [sized('sized ', 17), { type: 'text', text: 'plain' }] },
     ])
@@ -46,7 +49,10 @@ describe('paragraph strut font-size from run sizes', () => {
     editor.destroy()
   })
 
-  it('a docTextStyle mark without sizeHalfPoints counts as inherited', () => {
+  // the inheriting run has an element of its own, so .doc-strut-mixed hands it
+  // --doc-base-fs back while the strut shrinks to the declared size (Word paces
+  // a 9pt sub-line under inherited 11pt text at 9pt)
+  it('an inheriting run inside a mark lets the strut take the smaller declared size', () => {
     const editor = editorWith([
       {
         type: 'docParagraph',
@@ -60,7 +66,18 @@ describe('paragraph strut font-size from run sizes', () => {
         ],
       },
     ])
-    expect(pFontSize(editor)).toBe('')
+    expect(pFontSize(editor)).toBe('min(8.5pt,var(--doc-base-fs,8.5pt))')
+    const p = editor.view.dom.querySelector('p') as HTMLElement
+    expect(p.classList.contains('doc-strut-mixed')).toBe(true)
+    editor.destroy()
+  })
+
+  it('all runs explicit: no mixed class', () => {
+    const editor = editorWith([
+      { type: 'docParagraph', content: [sized('small ', 17), sized('big', 20)] },
+    ])
+    const p = editor.view.dom.querySelector('p') as HTMLElement
+    expect(p.classList.contains('doc-strut-mixed')).toBe(false)
     editor.destroy()
   })
 
@@ -94,6 +111,63 @@ describe('paragraph strut font-size from run sizes', () => {
       expect(p.style.getPropertyValue('--doc-strut')).toBe('')
       expect(p.style.getPropertyValue('--doc-line-factor')).toBe('var(--doc-line-factor-latin,1.2)')
     }
+    editor.destroy()
+  })
+})
+
+// the restore rule sits at zero specificity (:where), so run elements sized by
+// a stylesheet rule keep that size: a footnote mark stays 0.65em and an rtl
+// run keeps the Cs size painted by .doc-cs; both are direct children without
+// an inline font-size, so only specificity keeps --doc-base-fs off them
+describe('.doc-strut-mixed restore rule yields to stylesheet sizes', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+    'utf8',
+  )
+
+  const mountMixed = (extra: unknown) => {
+    const editor = editorWith([
+      {
+        type: 'docParagraph',
+        content: [
+          sized('small ', 17),
+          { type: 'text', text: 'plain', marks: [{ type: 'docTextStyle', attrs: { bold: true } }] },
+          extra,
+        ],
+      },
+    ])
+    const p = editor.view.dom.querySelector('p') as HTMLElement
+    expect(p.classList.contains('doc-strut-mixed')).toBe(true)
+    return { editor, p }
+  }
+
+  it('the restore rule is wrapped in :where; the mark rule carries a class (.doc-cs: doc-cs-gate test)', () => {
+    expect(css).toMatch(
+      /^:where\(:is\(\.doc-page, \.page-hf\) \.doc-strut-mixed > :not\(\[style\*='font-size'\]\)\) \{\n\s*font-size: var\(--doc-base-fs, 11pt\);\n\}/m,
+    )
+    expect(css).toMatch(/^\.doc-note-ref \{[^}]*font-size: 0\.65em;/m)
+  })
+
+  it('a footnote mark is a direct child with no inline size', () => {
+    const { editor, p } = mountMixed({
+      type: 'docNoteRef',
+      attrs: { kind: 'footnote', id: '1', num: 1 },
+    })
+    const mark = p.querySelector('sup.doc-note-ref') as HTMLElement
+    expect(mark.parentElement).toBe(p)
+    expect(mark.getAttribute('style') ?? '').not.toContain('font-size')
+    editor.destroy()
+  })
+
+  it('an rtl run is a direct child with no inline size', () => {
+    const { editor, p } = mountMixed({
+      type: 'text',
+      text: '\u0639\u0631\u0628\u064a',
+      marks: [{ type: 'docTextStyle', attrs: { cs: true } }],
+    })
+    const cs = p.querySelector('span.doc-cs') as HTMLElement
+    expect(cs.parentElement).toBe(p)
+    expect(cs.getAttribute('style') ?? '').not.toContain('font-size')
     editor.destroy()
   })
 })

@@ -2300,22 +2300,20 @@ export async function withDocument<T>(
   m: Pdfium,
   bytes: Uint8Array,
   fn: (doc: number) => Promise<T>,
-  /** the password of an encrypted document; omit for plain bytes */
   password?: string,
 ): Promise<T> {
   const docPtr = m._malloc(bytes.length)
   m.HEAPU8.set(bytes, docPtr)
-  let passPtr = 0
-  if (password !== undefined && password !== '') {
-    // FPDF_LoadMemDocument takes a UTF-8 C string and converts it per revision
-    const encoded = new TextEncoder().encode(password)
-    passPtr = m._malloc(encoded.length + 1)
-    m.HEAPU8.set(encoded, passPtr)
-    m.HEAPU8[passPtr + encoded.length] = 0
+  let pwPtr = 0
+  if (password) {
+    const pw = Buffer.from(password, 'utf8')
+    pwPtr = m._malloc(pw.length + 1)
+    m.HEAPU8.set(pw, pwPtr)
+    m.HEAPU8[pwPtr + pw.length] = 0
   }
-  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, passPtr)
+  const doc = m._FPDF_LoadMemDocument(docPtr, bytes.length, pwPtr)
+  if (pwPtr) m._free(pwPtr)
   if (!doc) {
-    if (passPtr !== 0) m._free(passPtr)
     m._free(docPtr)
     throw new Error('PDFium could not load the document')
   }
@@ -2323,7 +2321,6 @@ export async function withDocument<T>(
     return await fn(doc)
   } finally {
     m._FPDF_CloseDocument(doc)
-    if (passPtr !== 0) m._free(passPtr)
     m._free(docPtr)
   }
 }

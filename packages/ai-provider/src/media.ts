@@ -56,6 +56,7 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     defaultImageModel: 'gpt-image-2',
     analysisProtocol: 'openai-chat',
     analysisModels: [
+      'gpt-6.1-terra',
       'gpt-6-sol',
       'gpt-6-luna',
       'gpt-5.6-sol',
@@ -84,6 +85,7 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     defaultImageModel: 'gemini-3.1-flash-image',
     analysisProtocol: 'gemini',
     analysisModels: [
+      'gemini-4-argon',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.1-pro-preview',

@@ -1,5 +1,5 @@
 /**
- * Width contract of the Aptos aliases (fonts.css): Word renders Aptos with the
+ * Width contract of the Aptos aliases (fonts.generated.css): Word renders Aptos with the
  * real font; the size-adjusted Carlito faces must reproduce its advances so
  * line breaks match. Truth = Word for Mac probe 2026-09-03, sums of per-char
  * origins at 12pt (pymupdf rawdict), expressed in em.
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import * as opentype from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.css'), 'utf8')
+const css = readFileSync(join(__dirname, '../src/renderer/fonts/fonts.generated.css'), 'utf8')
 const FONT_DIR = join(__dirname, '../../../packages/ui/src/fonts')
 const APP_FONT_DIR = join(__dirname, '../src/renderer/fonts')
 

@@ -12,7 +12,7 @@ import {
   mindMapToMermaid,
   parseMindMapTree,
   wrapLabel,
-} from '../src/renderer/ai/mind-map'
+} from '@genoffice/agent-core/mind-map'
 import { AGENT_SYSTEM_PROMPT } from '../src/renderer/ai/protocol'
 import type { MindMapTreeNode } from '@genoffice/agent-core'
 
@@ -449,6 +449,10 @@ describe('mindMapToMermaid', () => {
 
   it('strips node-shape delimiters so mermaid reads labels as plain text', () => {
     expect(mindMapToMermaid({ label: 'Q1 (sales) [draft]' })).toBe('mindmap\n  Q1 sales draft')
+  })
+
+  it('strips fence and directive syntax that would break out of the mermaid block', () => {
+    expect(mindMapToMermaid({ label: '```%% x ::: y' })).toBe('mindmap\n  x y')
   })
 
   it('falls back to Topic when a label is only delimiters', () => {

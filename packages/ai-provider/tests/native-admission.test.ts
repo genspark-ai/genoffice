@@ -8,7 +8,7 @@ const pass = (seconds = Math.floor(Date.now() / 1000)) => `${seconds}-${'A'.repe
 const issued = (token: string, family = 'llm') => Response.json({ data: { token, family } })
 
 beforeEach(() => {
-  process.env.GENOFFICE_NATIVE_WAF = '1'
+  delete process.env.GENOFFICE_NATIVE_WAF
 })
 
 afterEach(() => {
@@ -26,12 +26,40 @@ function recorder(reply: (url: string, init: RequestInit) => Response | Promise<
 }
 
 describe('native admission for Genspark provider requests', () => {
-  it('is off by default: no issuer call and the init passes through untouched', async () => {
-    delete process.env.GENOFFICE_NATIVE_WAF
+  it('GENOFFICE_NATIVE_WAF=0: no issuer call and the init passes through untouched', async () => {
+    process.env.GENOFFICE_NATIVE_WAF = '0'
     const { fetcher } = recorder(() => issued(pass()))
     const init = { headers: { Authorization: 'Bearer gsk-k' } }
     expect(await createNativeAdmission().prepare(OPENAI, init, fetcher)).toBe(init)
     expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('is on by default, and the legacy opt-in value still works', async () => {
+    for (const value of [undefined, '1']) {
+      if (value === undefined) delete process.env.GENOFFICE_NATIVE_WAF
+      else process.env.GENOFFICE_NATIVE_WAF = value
+      const { fetcher } = recorder(() => issued(pass()))
+      const prepared = await createNativeAdmission().prepare(
+        OPENAI,
+        { headers: { Authorization: 'Bearer gsk-k' } },
+        fetcher,
+      )
+      expect(new Headers(prepared.headers).get('x-genspark-token-pass')).toBeTruthy()
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('never runs in an Electron renderer', async () => {
+    const original = (process as { type?: string }).type
+    ;(process as { type?: string }).type = 'renderer'
+    try {
+      const { fetcher } = recorder(() => issued(pass()))
+      const init = { headers: { Authorization: 'Bearer gsk-k' } }
+      expect(await createNativeAdmission().prepare(OPENAI, init, fetcher)).toBe(init)
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      ;(process as { type?: string }).type = original
+    }
   })
 
   it('binds the exact credential header for both protocols and caches per subject', async () => {

@@ -1,0 +1,20 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/empty-mark-ea-hint-ignored/probe.docx",
+  "paragraphs": 6,
+  "hashes": [
+    "f6957aee77b999a8",
+    "d50d51940fa843b1",
+    "e562cf0cf937b7d9",
+    "75743f34a4b7ed1c",
+    "5e15ed19d78a1e63",
+    "96aa037e534b299b"
+  ],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 0,
+  "hfHashes": [],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

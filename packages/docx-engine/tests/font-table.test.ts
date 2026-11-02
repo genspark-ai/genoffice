@@ -14,7 +14,8 @@ const FONT_TABLE_XML =
   '<w:charset w:val="81"/><w:family w:val="modern"/><w:pitch w:val="variable"/></w:font>' +
   '<w:font w:name="汉仪旗黑-50简"><w:altName w:val="黑体"/>' +
   '<w:panose1 w:val="00000000000000000000"/><w:family w:val="auto"/><w:pitch w:val="default"/></w:font>' +
-  '<w:font w:name="Calibri"><w:panose1 w:val="020F0502020204030204"/></w:font>' +
+  '<w:font w:name="Calibri"><w:panose1 w:val="020F0502020204030204"/>' +
+  '<w:sig w:usb0="E4002EFF" w:usb1="C200247B" w:usb2="00000009" w:usb3="00000000" w:csb0="000001FF" w:csb1="00000000"/></w:font>' +
   '</w:fonts>'
 
 const FONT_TABLE_PART = {
@@ -24,7 +25,7 @@ const FONT_TABLE_PART = {
 }
 
 describe('parseFontTable', () => {
-  it('reads name / altName / panose / charset / family / pitch per entry', () => {
+  it('reads name / altName / panose / charset / family / pitch / sig csb0 per entry', () => {
     const entries = parseFontTable(FONT_TABLE_XML)
     expect(entries).toEqual([
       {
@@ -41,7 +42,7 @@ describe('parseFontTable', () => {
         family: 'auto',
         pitch: 'default',
       },
-      { name: 'Calibri', panose: '020F0502020204030204' },
+      { name: 'Calibri', panose: '020F0502020204030204', csb0: '000001FF' },
     ])
   })
 

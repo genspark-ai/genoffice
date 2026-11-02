@@ -1,0 +1,33 @@
+{
+  "family": "Meiryo UI GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-09-03",
+    "probe": "Word probe from meiryo.ttc: Latin Verdana-derived at 0.9705x (bold 0.948x), kana via the bundled GenOffice UI Kana JP faces"
+  },
+  "note": "Meiryo / Meiryo UI (Word-private on macOS; Word renders them real, probe\n2026-09-03 from Word's meiryo.ttc). Meiryo UI kana are proportional\n(text-weighted mean 0.769em, bold 0.820em), U+30FC 0.816/0.882em,\nideographic space and \u3001\u3002 0.664em, corner/angle brackets and \u30fb 0.5em, at\nfull glyph height; kanji and \uff08\uff09\uff1a\uff1b\uff01\uff1f stay 1em and fall through to the\nchain. The bundled GenOffice UI Kana JP faces (tools/build-meiryo-ui-kana-\nfont.py: Noto Sans JP outlines condensed horizontally to Meiryo UI's exact\nper-glyph advances) carry those ranges \u2014 a size-adjust alias would shrink\nthe height too and leave kana at ~77% next to full-size kanji. Latin in\nboth cuts is Verdana-derived at 0.9705x (bold 0.948x); Hiragino W3/W6\nbackstops hosts without Verdana. Installed Meiryo (Windows) still precedes\nthese aliases in the chain.",
+  "faces": [
+    {
+      "src": "url('./GenOfficeUIKanaJP-Regular.woff2') format('woff2')",
+      "unicodeRange": "U+3000-3002, U+3008-3011, U+3014-3015, U+3041-3096, U+3099-30FF"
+    },
+    {
+      "src": "url('./GenOfficeUIKanaJP-Bold.woff2') format('woff2')",
+      "unicodeRange": "U+3000-3002, U+3008-3011, U+3014-3015, U+3041-3096, U+3099-30FF",
+      "weight": "bold"
+    },
+    {
+      "src": "local('Verdana'), local('Hiragino Sans'), local('HiraginoSans-W3')",
+      "sizeAdjust": 97.05,
+      "unicodeRange": "U+0020-007E, U+00A0-024F",
+      "display": null
+    },
+    {
+      "src": "local('Verdana-Bold'), local('Verdana Bold'), local('HiraginoSans-W6')",
+      "sizeAdjust": 94.8,
+      "unicodeRange": "U+0020-007E, U+00A0-024F",
+      "weight": "bold",
+      "display": null
+    }
+  ]
+}

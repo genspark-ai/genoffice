@@ -55,6 +55,25 @@ describe('markTableSeamSlices', () => {
     expect(slices.some((s) => s.leadTable)).toBe(false)
   })
 
+  it('flags a cut on a row seam but not one through a row of cell text', () => {
+    const table = block('table', 100, 500)
+    table.tableRows = [{ height: 200 }, { height: 200 }, { height: 100 }]
+    const blocks = [block('p', 0, 100), table, block('p', 600, 100)]
+    const seam: PageSlice[] = [
+      { start: 0, end: 300, section: 0 },
+      { start: 300.3, end: 600, section: 0 },
+    ]
+    markTableSeamSlices(seam, blocks)
+    expect(seam[1].cutTable).toBe(true)
+    const inRow: PageSlice[] = [
+      { start: 0, end: 350, section: 0 },
+      { start: 350, end: 600, section: 0 },
+    ]
+    markTableSeamSlices(inRow, blocks)
+    expect(inRow[1].cutTable).toBeUndefined()
+    expect(seamWindow(inRow[0], inRow[1])).toEqual({ lift: 0, extend: 0 })
+  })
+
   it('does not flag a break that lands on the table bottom edge or in a column page', () => {
     const blocks = [block('table', 0, 300), block('p', 300, 100), block('table', 400, 300)]
     const slices: PageSlice[] = [

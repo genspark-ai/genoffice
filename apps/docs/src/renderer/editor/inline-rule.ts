@@ -39,7 +39,13 @@ export function parseInlineRuleEl(el: HTMLElement): Record<string, unknown> | fa
   if (!raw || !xml) return false
   try {
     const rule = JSON.parse(raw) as InlineRule
-    return { dataUrl: '', xml, rule, leadRule: el.hasAttribute('data-lead-rule') }
+    return {
+      dataUrl: '',
+      xml,
+      rule,
+      leadRule: el.hasAttribute('data-lead-rule'),
+      leadRuleFull: el.hasAttribute('data-lead-rule-full'),
+    }
   } catch {
     return false
   }

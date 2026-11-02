@@ -57,6 +57,7 @@ export interface DocDirtyState {
   titlePgDirty: boolean
   evenOddHfDirty: boolean
   mirrorMarginsDirty: boolean
+  trackRevisionsDirty: boolean
   watermarkDirty: boolean
   inksDirty: boolean
   notesDirty: boolean
@@ -90,6 +91,7 @@ export function isDocDirty(s: DocDirtyState): boolean {
     s.titlePgDirty ||
     s.evenOddHfDirty ||
     s.mirrorMarginsDirty ||
+    s.trackRevisionsDirty ||
     s.watermarkDirty ||
     s.inksDirty ||
     s.notesDirty ||

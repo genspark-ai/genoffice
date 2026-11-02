@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-nested-float-table/probe.docx",
+  "tables": 1,
+  "hashes": ["72af4fbeb9f99cfe"],
+  "staticTables": 3,
+  "staticHashes": ["1db8d6469d8a1d76", "901290d9a699885c", "901290d9a699885c"]
+}

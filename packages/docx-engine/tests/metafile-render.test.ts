@@ -248,6 +248,109 @@ describe('WMF DIB blts (ole-icon.wmf)', () => {
   })
 })
 
+describe('WMF TA_UPDATECP text (MathType OLE previews)', () => {
+  // MathType writes every run as MOVETO + a zero-coord ExtTextOut while
+  // TA_UPDATECP is set: GDI draws at the current position instead of the
+  // record's (0, 0). genoffice#2316 — the equation preview rendered as its
+  // fraction line only, every glyph stacked at the origin.
+  const rec = (type: number, params: number[]) => {
+    const bytes = new Uint8Array(6 + params.length * 2)
+    const v = new DataView(bytes.buffer)
+    v.setUint32(0, 3 + params.length, true)
+    v.setUint16(4, type, true)
+    params.forEach((p, i) => v.setInt16(6 + i * 2, p, true))
+    return bytes
+  }
+  const createFontIndirect = (height: number, family: string) => {
+    const logfont = new Uint8Array(50)
+    const lv = new DataView(logfont.buffer)
+    lv.setInt16(0, height, true)
+    lv.setInt16(8, 400, true) // weight
+    for (let i = 0; i < family.length; i++) logfont[18 + i] = family.charCodeAt(i)
+    const bytes = new Uint8Array(6 + logfont.length)
+    const v = new DataView(bytes.buffer)
+    v.setUint32(0, (6 + logfont.length) / 2, true) // size in words
+    v.setUint16(4, 0x02fb, true)
+    bytes.set(logfont, 6)
+    return bytes
+  }
+  const buildWmf = (records: Uint8Array[]) => {
+    const body = records.reduce((n, r) => n + r.length, 0)
+    const wmf = new Uint8Array(18 + body)
+    const hv = new DataView(wmf.buffer)
+    hv.setUint16(0, 1, true) // mtType
+    hv.setUint16(2, 9, true) // mtHeaderSize (words)
+    hv.setUint16(4, 0x0300, true) // mtVersion
+    hv.setUint32(6, wmf.length / 2, true) // mtSize (words)
+    let at = 18
+    for (const r of records) {
+      wmf.set(r, at)
+      at += r.length
+    }
+    return wmf.buffer
+  }
+
+  it('TA_UPDATECP draws at the current position and advances it', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]), // SETWINDOWORG (y, x)
+      rec(0x020c, [100, 200]), // SETWINDOWEXT (cy, cx)
+      rec(0x012e, [1]), // SETTEXTALIGN TA_UPDATECP
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]), // SELECTOBJECT slot 0
+      rec(0x0214, [10, 20]), // MOVETO (y, x)
+      rec(0x0a32, [0, 0, 2, 0, 0x6261, 0]), // EXTTEXTOUT (0, 0) 'ab'
+      rec(0x0a32, [0, 0, 2, 0, 0x6463, 0]), // EXTTEXTOUT (0, 0) 'cd'
+      rec(0x0214, [40, 60]), // MOVETO (y, x)
+      rec(0x0a32, [0, 0, 2, 0, 0x6665, 0]), // EXTTEXTOUT (0, 0) 'ef'
+      rec(0, []), // EOF
+    ]
+    const result = await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['ab', 'cd', 'ef'])
+    expect(runs[0]!.args[1]).toBeCloseTo(20)
+    expect(runs[0]!.args[2]).toBeCloseTo(10)
+    // the fake measureText reports 10 px at unit scale: the CP advanced one extent
+    expect(runs[1]!.args[1]).toBeCloseTo(30)
+    expect(runs[1]!.args[2]).toBeCloseTo(10)
+    expect(runs[2]!.args[1]).toBeCloseTo(60)
+    expect(runs[2]!.args[2]).toBeCloseTo(40)
+  })
+
+  it('without TA_UPDATECP the record coords still place the run', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]),
+      rec(0x0214, [10, 20]), // MOVETO must be ignored by the text record
+      rec(0x0a32, [0, 0, 1, 0, 0x78, 0]), // EXTTEXTOUT (0, 0) 'x'
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs).toHaveLength(1)
+    expect(runs[0]!.args[1]).toBeCloseTo(0)
+    expect(runs[0]!.args[2]).toBeCloseTo(0)
+  })
+
+  it('the MathType repro replays every run at its own position', async () => {
+    reset()
+    const result = await convertWmfToDataUrl(loadFixture('mathtype-equation.wmf'), { dpiScale: 2 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    // ρ_L = L_total / A: six text runs plus the fraction line record
+    expect(runs.length).toBeGreaterThanOrEqual(6)
+    for (const run of runs) {
+      const [x, y] = run.args as [number, number]
+      const atOrigin = Math.abs(x) < 0.5 && Math.abs(y) < 0.5
+      expect(atOrigin).toBe(false)
+    }
+  })
+})
+
 describe('EMR_ALPHABLEND (w-icon.emf)', () => {
   it('draws the OLE icon bitmap with its real alpha channel', async () => {
     reset()

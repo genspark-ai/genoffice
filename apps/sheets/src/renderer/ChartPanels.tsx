@@ -409,8 +409,9 @@ export function SelectDataDialog({
       plot: isCombo && (series.plot === 'lineChart' || lineIndices.has(index)) ? 'line' : 'column',
       secondary:
         isCombo &&
-        chart.secondaryYAxis !== undefined &&
-        (series.plot === 'lineChart' || lineIndices.has(index)),
+        (series.secondaryAxis ??
+          (chart.secondaryYAxis !== undefined &&
+            (series.plot === 'lineChart' || lineIndices.has(index)))),
     })),
   )
   const [error, setError] = useState<string | null>(null)

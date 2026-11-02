@@ -98,6 +98,11 @@ export const ko = {
   aiTrackOnTitle:
     '변경 내용 추적 켜짐: AI의 내용 변경은 변경 내용으로 표시됩니다(삽입은 밑줄, 삭제는 취소선). 검토에서 적용하거나 거부하세요',
   aiTrackOffTitle: '변경 내용 추적 꺼짐: AI 변경 사항이 바로 적용됩니다(버전 스냅샷으로 롤백 가능)',
+  aiRevisionBarTitle: '변경 내용',
+  aiRevisionCount: '변경 {count}건',
+  aiRevisionRejectAll: '모두 거부',
+  aiRevisionAcceptAll: '모두 적용',
+  aiRevisionPara: '{n}번째 단락',
   aiTurnLimit:
     '(요청당 도구 호출 한도에 도달하여, 지금까지 완료한 내용을 기반으로 한 답변입니다. 불완전할 수 있습니다.)',
   aiStopped: '(중지됨)',
@@ -199,4 +204,7 @@ export const ko = {
   aiMindMapReset: '보기 초기화',
   aiMindMapExpand: '가지 펼치기',
   aiMindMapCollapse: '가지 접기',
+  aiMindMapToggleLayout: '레이아웃 전환',
+  aiMindMapLayoutTopDown: '위에서 아래로 레이아웃으로 전환',
+  aiMindMapLayoutLeftRight: '왼쪽에서 오른쪽 레이아웃으로 전환',
 } satisfies Record<keyof typeof zh, string>

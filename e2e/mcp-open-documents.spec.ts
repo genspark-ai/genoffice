@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { launchShell, closeAndSaveVideo, waitForPageWithUrl, SHELL_DIR } from './helpers'
+import {
+  launchShell,
+  closeAndSaveVideo,
+  waitForPageWithUrl,
+  SHELL_DIR,
+  freeMcpPort,
+} from './helpers'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import http, { createServer } from 'node:http'
+import http from 'node:http'
 
 /** repository root, for invoking the bundled CLI from a test */
 const APP_ROOT = resolve(SHELL_DIR, '..', '..')
@@ -17,18 +23,6 @@ const APP_ROOT = resolve(SHELL_DIR, '..', '..')
  * file through the app's own routing (as a user open would), then lists, reads
  * and closes it over MCP.
  */
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 interface RpcResponse {
   status: number
@@ -105,7 +99,7 @@ async function waitForHealth(port: number, timeoutMs = 20_000): Promise<void> {
 
 test.describe('MCP open documents', () => {
   test('lists, reads and closes a document the app opened', async () => {
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-open-docs-e2e-'))
     const docPath = join(outDir, 'opened.md')
     await writeFile(docPath, '# Handwritten\n\nA paragraph the agent must see.\n')
@@ -203,7 +197,7 @@ test.describe('MCP open documents', () => {
   })
 
   test('reads a Word document the app opened, through the docs bridge', async () => {
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-open-docs-docx-'))
     const docxPath = join(outDir, 'report.docx')
     // build the .docx with the repo's own CLI, the way a user's file would exist
@@ -290,7 +284,7 @@ test.describe('MCP open documents', () => {
   })
 
   test('saves unsaved edits before closing when asked to close a dirty document', async () => {
-    const port = await freePort()
+    const port = await freeMcpPort()
     const outDir = await mkdtemp(join(tmpdir(), 'genoffice-open-docs-dirty-'))
     const docPath = join(outDir, 'edited.md')
     await writeFile(docPath, '# Original\n\nBefore the edit.\n')

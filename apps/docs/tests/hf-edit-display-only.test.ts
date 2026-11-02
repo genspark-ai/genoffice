@@ -52,6 +52,18 @@ const halves = (paras: HfParagraph[], images?: HfImage[]) => {
   ] as const
 }
 
+describe('strip runs carry their revision classes', () => {
+  it('marks inserted and deleted runs so the Markup view CSS applies', () => {
+    const rev = { author: 'a', date: '2026-01-01T00:00:00Z' }
+    const html = render([
+      { runs: [{ text: 'kept' }, { text: 'gone', del: rev }, { text: 'new', ins: rev }] },
+    ])
+    expect(html).toContain('class="doc-del"')
+    expect(html).toContain('class="doc-ins"')
+    expect(html).toContain('gone')
+  })
+})
+
 describe('display-only strip halves around the header editor', () => {
   it('keeps a paragraph-anchored box whose host paragraph is in the editor', () => {
     const box: HfTextBox = {

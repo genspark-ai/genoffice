@@ -287,6 +287,32 @@ describe('mountHfEditor', () => {
     expect(editor.isDestroyed).toBe(true)
   })
 
+  it('keeps tracked header runs through an edit instead of resurrecting deleted text', () => {
+    const rev = { author: 'Ann', date: '2026-09-29T12:23:00Z' }
+    const value: HeaderFooter = {
+      text: 'Kept goneadded',
+      paras: [
+        {
+          runs: [{ text: 'Kept ' }, { text: 'gone', del: rev }, { text: 'added', ins: rev }],
+        },
+      ],
+    }
+    const commits: HeaderFooter[] = []
+    const { host, handle, editor } = mount(value, (next) => commits.push(next))
+    expect(host.querySelector('.doc-del')?.textContent).toBe('gone')
+    expect(host.querySelector('.doc-ins')?.textContent).toBe('added')
+    editor.commands.focus('end')
+    editor.commands.insertContent('!')
+    handle.exit()
+    expect(commits[0].paras![0].runs.map((r) => [r.text, !!r.del, !!r.ins])).toEqual([
+      ['Kept ', false, false],
+      ['gone', true, false],
+      ['added', false, true],
+      ['!', false, false],
+    ])
+    expect(commits[0].paras![0].runs[1].del).toMatchObject(rev)
+  })
+
   it('does not commit when nothing changed', () => {
     let commits = 0
     const { handle } = mount(RICH, () => commits++)

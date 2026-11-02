@@ -672,7 +672,7 @@ async function settleFormulasBeforePrint(ctx: PageLayoutContext): Promise<void> 
   const formula = runtime.univerAPI.getFormula()
   const ended = new Promise<void>((resolve) => {
     const disposable = formula.calculationEnd(() => {
-      disposable.dispose()
+      disposable?.dispose()
       resolve()
     })
   })

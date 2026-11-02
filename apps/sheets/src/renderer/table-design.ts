@@ -1,11 +1,60 @@
 import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import type { WorkbookFile, WorkbookTableAdd, WorkbookTableEdit } from '../shared/desktop-api'
+import { tableEditFor } from './edit-journal'
 import { expandContiguousRegion, type TableRegion } from './table-actions'
+import type { LazyWorkbookState } from './univer-state'
 
 /// Pure Table Design rules shared by the ribbon echo, the actions and tests.
 
 type FileTable = WorkbookFile['sheets'][number]['tables'][number]
+
+export interface LiveFileTable {
+  readonly index: number
+  readonly table: FileTable
+  readonly originalName: string
+  readonly edit: WorkbookTableEdit | undefined
+}
+
+/// Open-time displayName of every file table, by `${sheetId}:${index}`: the
+/// save locates the part by it after an in-session rename.
+const originalNames = new WeakMap<LazyWorkbookState, Map<string, string>>()
+
+export function originalFileTableName(
+  state: LazyWorkbookState,
+  sheetId: string,
+  index: number,
+  table: FileTable,
+): string {
+  let names = originalNames.get(state)
+  if (!names) {
+    names = new Map()
+    originalNames.set(state, names)
+  }
+  const key = `${sheetId}:${index}`
+  const known = names.get(key)
+  if (known !== undefined) return known
+  const name = table.name ?? ''
+  names.set(key, name)
+  return name
+}
+
+export function fileTableArea(table: FileTable): TableRegion {
+  return table.range
+}
+
+/// File tables on a sheet that are still present after this session's removals.
+export function liveFileTables(state: LazyWorkbookState, sheetId: string): LiveFileTable[] {
+  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+  if (!sheet) return []
+  const live: LiveFileTable[] = []
+  sheet.tables.forEach((table, index) => {
+    const originalName = originalFileTableName(state, sheetId, index, table)
+    const edit = tableEditFor(state.editJournal, sheetId, originalName)
+    if (!edit?.remove) live.push({ index, table, originalName, edit })
+  })
+  return live
+}
 
 export interface TableStyleOptionFlags {
   readonly headerRow: boolean
