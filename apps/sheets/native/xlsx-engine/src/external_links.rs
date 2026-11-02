@@ -364,6 +364,17 @@ fn join_package_path(base: &str, target: &str) -> String {
     format!("{base}/{target}")
 }
 
+/// The link list without touching any source: what `sheet links` prints and
+/// the panel lists.
+pub(crate) fn read_external_link_statuses(
+    workbook: &Path,
+) -> Result<Vec<ExternalLinkStatus>, SidecarError> {
+    Ok(parse_external_links(workbook)?
+        .iter()
+        .map(LinkEntry::status)
+        .collect())
+}
+
 /// The link list without touching any source: no `is_file()` on the targets,
 /// nothing is opened, nothing is evaluated. This is what the editor's links
 /// panel reads when it opens; the explicit update answers reachability.
