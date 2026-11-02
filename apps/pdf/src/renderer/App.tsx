@@ -1269,8 +1269,7 @@ export default function App() {
       saved?: SavedSnapshot,
       waitForPageNos: number[] = [],
     ) => {
-      const data = await readFileBytes(window.pdfApi, path)
-      const bytes = new Uint8Array(data)
+      const bytes = await readFileBytes(window.pdfApi, path)
       setFormHasXfa(hasXfaMarker(bytes))
       if (!saved) {
         setFormCatalog(null)
@@ -1637,7 +1636,7 @@ export default function App() {
           return mapped.every((n, i) => n === i) ? null : mapped
         })
       }
-      setFileSize(data.byteLength)
+      setFileSize(bytes.byteLength)
       setSelected(null)
       setDeleteToast(false)
       setUndoStack([])
@@ -6712,7 +6711,7 @@ export default function App() {
         setPrinting(true)
         try {
           const data = await readFileBytes(window.pdfApi, filePath)
-          const pdoc = await getDocument({ data: new Uint8Array(data), ...DOC_OPTS }).promise
+          const pdoc = await getDocument({ data, ...DOC_OPTS }).promise
           try {
             await printPdf(pdoc, pages, job)
           } finally {

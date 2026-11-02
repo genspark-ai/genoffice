@@ -33,8 +33,6 @@ import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
 import { printJobOptions } from '@genoffice/electron-utils/print-job'
 
-/** the largest slice readFileChunk hands over IPC (the renderer loops) */
-const PDF_READ_CHUNK_MAX_BYTES = 8 * 1024 * 1024
 import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
@@ -112,6 +110,8 @@ import type { ExternalSigner, SignPdfOptions } from './pdf-sign'
 import { readPdfSignatures } from './pdf-signatures'
 import { SystemStoreError, openSystemSigner, listSystemCertificates } from './system-certificates'
 import type { SystemCertificateRef, SystemIdentity } from './system-certificates'
+/** the largest slice readFileChunk hands over IPC (the renderer loops) */
+const PDF_READ_CHUNK_MAX_BYTES = 8 * 1024 * 1024
 
 const tDlg = createI18n({
   zh: {
