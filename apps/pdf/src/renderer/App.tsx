@@ -238,6 +238,7 @@ import {
 import type { PageSize, FitMode } from './view-config'
 import { useVisibleSet, PdfPage, MarkupOverlay } from './PdfPage'
 import { probePageGeometry } from './page-probe'
+import { loadPdfForView } from './open-document'
 import { PdfThumb, ThumbPendingOverlay } from './PdfThumb'
 import type { ThumbMenu } from './PdfThumb'
 import { SignDropOverlay, signPlaceK, imagePlaceK, staticFormFillPlaceK } from './SignDropOverlay'
@@ -1292,11 +1293,7 @@ export default function App() {
         setSelectedFormFieldId(null)
         setFreshFormFieldId(null)
       }
-      const task = getDocument({
-        data: bytes,
-        password: passwordRef.current,
-        ...DOC_OPTS,
-      })
+      const task = loadPdfForView(bytes, passwordRef.current)
       let loaded: PDFDocumentProxy
       try {
         loaded = await task.promise
