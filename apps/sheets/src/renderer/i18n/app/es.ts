@@ -1204,6 +1204,7 @@ export const es = {
   appLinksPanelDetail: 'Enumerar, actualizar y romper vínculos a otros libros',
   appLinksUpdate: 'Actualizar valores',
   appLinksNone: 'Este libro no tiene vínculos a otros libros.',
+  appLinksUnsaved: 'Guarda este libro antes de listar sus vínculos externos.',
   appLinksSource: 'Origen',
   appLinksStatus: 'Estado',
   appLinksSheets: 'Hojas',

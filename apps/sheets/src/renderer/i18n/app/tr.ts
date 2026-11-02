@@ -1191,6 +1191,7 @@ export const tr = {
   appLinksPanelDetail: 'Diğer çalışma kitaplarına bağlantıları listele, güncelle ve kes',
   appLinksUpdate: 'Değerleri güncelle',
   appLinksNone: 'Bu çalışma kitabında diğer çalışma kitaplarına bağlantı yok.',
+  appLinksUnsaved: 'Harici bağlantılarını listelemek için önce bu çalışma kitabını kaydedin.',
   appLinksSource: 'Kaynak',
   appLinksStatus: 'Durum',
   appLinksSheets: 'Sayfalar',

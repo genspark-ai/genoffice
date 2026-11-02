@@ -1125,6 +1125,7 @@ export const ar = {
   appLinksPanelDetail: 'سرد الروابط وتحديثها وفصلها من المصنفات الأخرى',
   appLinksUpdate: 'تحديث القيم',
   appLinksNone: 'لا توجد روابط لهذا المصنف بمصنفات أخرى.',
+  appLinksUnsaved: 'احفظ هذا المصنف قبل سرد ارتباطاته الخارجية.',
   appLinksSource: 'المصدر',
   appLinksStatus: 'الحالة',
   appLinksSheets: 'أوراق العمل',

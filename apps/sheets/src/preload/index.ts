@@ -251,8 +251,9 @@ const desktopApi: DesktopApi = {
     )
     return parseExternalLinksUpdateResult(result)
   },
-  revealPath(path) {
-    ipcRenderer.send(IPC_CHANNELS.revealPath, path)
+  revealLinkSource(request) {
+    const validatedRequest = parseExternalLinkRevealRequest(request)
+    ipcRenderer.send(IPC_CHANNELS.revealLinkSource, validatedRequest)
   },
   async readWorkbookMedia(request) {
     const validatedRequest = parseMediaRequest(request)
@@ -1594,12 +1595,20 @@ function parseRecalcResult(input: unknown): WorkbookRecalcResult {
   return { cells }
 }
 
-/// The links panel's request: the path is the only field.
-function parseExternalLinksRequest(input: unknown): { path: string } {
-  if (!isRecord(input) || !isBoundedString(input.path, 32_768)) {
+/// The links panel's request: a workbook session, never a filesystem path.
+function parseExternalLinksRequest(input: unknown): { sessionId: string } {
+  if (!isRecord(input) || !isUuid(input.sessionId)) {
     throw new Error('Invalid external links request.')
   }
-  return { path: input.path }
+  return { sessionId: input.sessionId }
+}
+
+/// Locate a link source: the session and the link index the panel row names.
+function parseExternalLinkRevealRequest(input: unknown): { sessionId: string; index: number } {
+  if (!isRecord(input) || !isUuid(input.sessionId) || !isPositiveInteger(input.index)) {
+    throw new Error('Invalid external link reveal request.')
+  }
+  return { sessionId: input.sessionId, index: input.index }
 }
 
 const EXTERNAL_LINK_LIMIT = 10_000

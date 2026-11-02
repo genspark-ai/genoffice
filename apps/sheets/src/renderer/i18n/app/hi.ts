@@ -1160,6 +1160,7 @@ export const hi = {
   appLinksPanelDetail: 'अन्य कार्यपुस्तिकाओं के लिंक सूचीबद्ध, अपडेट और तोड़ें',
   appLinksUpdate: 'मान अपडेट करें',
   appLinksNone: 'इस कार्यपुस्तिका में अन्य कार्यपुस्तिकाओं के लिंक नहीं हैं।',
+  appLinksUnsaved: 'इसकी बाहरी लिंक सूचीबद्ध करने से पहले इस कार्यपुस्तिका को सहेजें।',
   appLinksSource: 'स्रोत',
   appLinksStatus: 'स्थिति',
   appLinksSheets: 'शीट',

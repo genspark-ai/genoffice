@@ -2629,8 +2629,15 @@ export type WorkbookRangeResult = z.infer<typeof workbookRangeResultSchema>
 export type WorkbookPagePrintSettings = NonNullable<WorkbookRangeResult['pageSetup']>
 export type WorkbookRecalcRequest = z.infer<typeof workbookRecalcRequestSchema>
 
-export const externalLinksRequestSchema = z.object({ path: z.string().min(1) }).strict()
+export const externalLinksRequestSchema = z.object({ sessionId: z.string().uuid() }).strict()
 export type ExternalLinksRequest = z.infer<typeof externalLinksRequestSchema>
+
+/// Locate a source: the renderer names the link index of its own session, never
+/// a path, so the main process resolves the target from what the sidecar reads.
+export const externalLinkRevealRequestSchema = z
+  .object({ sessionId: z.string().uuid(), index: z.number().int().positive() })
+  .strict()
+export type ExternalLinkRevealRequest = z.infer<typeof externalLinkRevealRequestSchema>
 
 /// One link as the read-only listing carries it. Deliberately no `reachable`:
 /// listing the links must not probe the targets on disk (a dead network share
@@ -3202,7 +3209,7 @@ export interface DesktopApi {
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
   listExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksResult>
   updateExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksUpdateResult>
-  revealPath(path: string): void
+  revealLinkSource(request: ExternalLinkRevealRequest): void
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
   /**

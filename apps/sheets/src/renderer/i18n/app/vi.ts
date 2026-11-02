@@ -1151,6 +1151,7 @@ export const vi = {
   appLinksPanelDetail: 'Liệt kê, cập nhật và ngắt liên kết đến sổ làm việc khác',
   appLinksUpdate: 'Cập nhật giá trị',
   appLinksNone: 'Sổ làm việc này không có liên kết đến sổ làm việc khác.',
+  appLinksUnsaved: 'Hãy lưu sổ làm việc này trước khi liệt kê các liên kết ngoài của nó.',
   appLinksSource: 'Nguồn',
   appLinksStatus: 'Trạng thái',
   appLinksSheets: 'Trang tính',

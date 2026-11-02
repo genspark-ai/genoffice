@@ -11,14 +11,18 @@ import type { ExternalLinkRow } from '../shared/desktop-api'
 export function ExternalLinksPanel({
   links,
   busy,
+  notice,
   onUpdate,
   onReveal,
   onClose,
 }: {
   readonly links: readonly ExternalLinkRow[]
   readonly busy: boolean
+  /** why the listing is empty when it is not simply "no links" */
+  readonly notice?: 'unsaved' | null
   readonly onUpdate: () => void
-  readonly onReveal: (source: string) => void
+  /** the row's link index, not its path: the main process resolves the source */
+  readonly onReveal: (index: number) => void
   readonly onClose: () => void
 }): ReactElement {
   const { t } = useI18n()
@@ -34,7 +38,9 @@ export function ExternalLinksPanel({
         </button>
       </header>
       {links.length === 0 ? (
-        <p className="watch-empty">{t('appLinksNone')}</p>
+        <p className="watch-empty">
+          {notice === 'unsaved' ? t('appLinksUnsaved') : t('appLinksNone')}
+        </p>
       ) : (
         <table className="watch-table">
           <thead>
@@ -67,7 +73,7 @@ export function ExternalLinksPanel({
                     <button
                       className="watch-remove"
                       data-tip={t('appLinksLocate')}
-                      onClick={() => onReveal(link.source!)}
+                      onClick={() => onReveal(link.index)}
                     >
                       📂
                     </button>

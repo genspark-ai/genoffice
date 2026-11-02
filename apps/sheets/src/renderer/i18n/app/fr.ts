@@ -1227,6 +1227,7 @@ export const fr = {
   appLinksPanelDetail: 'Lister, mettre à jour et rompre les liaisons vers d’autres classeurs',
   appLinksUpdate: 'Mettre à jour les valeurs',
   appLinksNone: 'Ce classeur ne contient aucune liaison vers un autre classeur.',
+  appLinksUnsaved: 'Enregistrez ce classeur avant de lister ses liens externes.',
   appLinksSource: 'Source',
   appLinksStatus: 'État',
   appLinksSheets: 'Feuilles',

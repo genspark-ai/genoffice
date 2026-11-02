@@ -2,11 +2,13 @@ import type { ExternalLinksUpdateResult } from '../shared/desktop-api'
 
 /** What the links panel's Update action needs from the editor. */
 export interface ExternalLinksUpdateDeps {
-  /** the workbook path the sidecar reads */
-  readonly path: string
-  /** the ordinary save; its outcome gates the update */
-  readonly save: () => Promise<{ readonly ok: boolean }>
-  readonly update: (path: string) => Promise<ExternalLinksUpdateResult>
+  /**
+   * The ordinary save. `reason: 'no-edits'` is a benign no-op (nothing was
+   * pending, so the disk already matches the grid); any other failure aborts.
+   */
+  readonly save: () => Promise<{ readonly ok: boolean; readonly reason?: string }>
+  /** Re-reads the reachable sources of the session's workbook. */
+  readonly update: () => Promise<ExternalLinksUpdateResult>
   /** installs the report's values into the recalc overlay */
   readonly apply: (report: ExternalLinksUpdateResult) => void
   /** the report's links are the first reachability verdict */
@@ -20,12 +22,15 @@ export interface ExternalLinksUpdateDeps {
  * insert would shift them), update, apply the overlay, then save again so the
  * applied values become the formulas' cached `<v>`.
  *
- * A failed first save aborts before the update: the report would describe a
- * file the grid no longer matches.
+ * The first save is allowed to be a no-op: with nothing edited it reports
+ * `no-edits` and the disk already matches the grid. A failed first save aborts
+ * before the update: the report would describe a file the grid no longer
+ * matches.
  */
 export async function updateExternalLinksFlow(deps: ExternalLinksUpdateDeps): Promise<boolean> {
-  if (!(await deps.save()).ok) return false
-  const report = await deps.update(deps.path)
+  const saved = await deps.save()
+  if (!saved.ok && saved.reason !== 'no-edits') return false
+  const report = await deps.update()
   deps.apply(report)
   deps.onStatuses(report)
   await deps.save()

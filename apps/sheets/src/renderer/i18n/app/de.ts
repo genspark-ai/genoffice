@@ -1215,6 +1215,7 @@ export const de = {
   appLinksPanelDetail: 'Verknüpfungen zu anderen Arbeitsmappen anzeigen, aktualisieren und trennen',
   appLinksUpdate: 'Werte aktualisieren',
   appLinksNone: 'Diese Arbeitsmappe hat keine Verknüpfungen zu anderen Arbeitsmappen.',
+  appLinksUnsaved: 'Speichern Sie diese Arbeitsmappe, bevor Sie ihre externen Links auflisten.',
   appLinksSource: 'Quelle',
   appLinksStatus: 'Status',
   appLinksSheets: 'Blätter',

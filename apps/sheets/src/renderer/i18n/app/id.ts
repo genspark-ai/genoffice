@@ -1161,6 +1161,7 @@ export const id = {
   appLinksPanelDetail: 'Menampilkan, memperbarui, dan memutus tautan ke buku kerja lain',
   appLinksUpdate: 'Perbarui nilai',
   appLinksNone: 'Buku kerja ini tidak memiliki tautan ke buku kerja lain.',
+  appLinksUnsaved: 'Simpan buku kerja ini sebelum menampilkan tautan eksternalnya.',
   appLinksSource: 'Sumber',
   appLinksStatus: 'Status',
   appLinksSheets: 'Lembar',

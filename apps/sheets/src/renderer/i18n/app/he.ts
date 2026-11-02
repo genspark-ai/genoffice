@@ -1103,6 +1103,7 @@ export const he = {
   appLinksPanelDetail: 'רישום, עדכון וניתוק קישורים לחוברות עבודה אחרות',
   appLinksUpdate: 'עדכון ערכים',
   appLinksNone: 'לחוברת זו אין קישורים לחוברות עבודה אחרות.',
+  appLinksUnsaved: 'שמור את חוברת העבודה הזו לפני הצגת הקישורים החיצוניים שלה.',
   appLinksSource: 'מקור',
   appLinksStatus: 'מצב',
   appLinksSheets: 'גיליונות',

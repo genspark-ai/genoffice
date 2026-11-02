@@ -1200,6 +1200,7 @@ export const it = {
   appLinksPanelDetail: 'Elenca, aggiorna e interrompe i collegamenti ad altre cartelle di lavoro',
   appLinksUpdate: 'Aggiorna valori',
   appLinksNone: 'Questa cartella di lavoro non contiene collegamenti ad altre cartelle di lavoro.',
+  appLinksUnsaved: 'Salva questa cartella di lavoro prima di elencare i suoi collegamenti esterni.',
   appLinksSource: 'Origine',
   appLinksStatus: 'Stato',
   appLinksSheets: 'Fogli',

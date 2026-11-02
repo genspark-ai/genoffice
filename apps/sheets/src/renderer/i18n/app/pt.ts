@@ -1200,6 +1200,7 @@ export const pt = {
   appLinksPanelDetail: 'Listar, atualizar e interromper vínculos a outras pastas de trabalho',
   appLinksUpdate: 'Atualizar valores',
   appLinksNone: 'Esta pasta de trabalho não tem vínculos para outras pastas de trabalho.',
+  appLinksUnsaved: 'Guarde esta pasta de trabalho antes de listar as suas ligações externas.',
   appLinksSource: 'Origem',
   appLinksStatus: 'Estado',
   appLinksSheets: 'Planilhas',

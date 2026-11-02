@@ -1125,6 +1125,7 @@ export const th = {
   appLinksPanelDetail: 'แสดงรายการ อัปเดต และตัดขาดลิงก์ไปยังสมุดงานอื่น',
   appLinksUpdate: 'อัปเดตค่า',
   appLinksNone: 'สมุดงานนี้ไม่มีลิงก์ไปยังสมุดงานอื่น',
+  appLinksUnsaved: 'บันทึกสมุดงานนี้ก่อนแสดงรายการลิงก์ภายนอก',
   appLinksSource: 'ต้นทาง',
   appLinksStatus: 'สถานะ',
   appLinksSheets: 'แผ่นงาน',

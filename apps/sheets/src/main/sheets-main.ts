@@ -150,6 +150,10 @@ import {
   workbookFindCellsResultSchema,
   workbookRecalcRequestSchema,
   workbookRecalcResultSchema,
+  externalLinksRequestSchema,
+  externalLinksResultSchema,
+  externalLinksUpdateResultSchema,
+  externalLinkRevealRequestSchema,
   workbookMediaRequestSchema,
   workbookMediaResultSchema,
   workbookPivotRequestSchema,
@@ -3234,28 +3238,47 @@ export function registerSheetsIpc(): void {
       cached: z.boolean().optional(),
     })
     .strict()
+  // The external-links handlers are session-bound like the other workbook
+  // handlers: the renderer names a session, never a filesystem path, and main
+  // resolves the path the session was opened from.
   ipcMain.handle(IPC_CHANNELS.listExternalLinks, async (event, input: unknown) => {
     const entry = sessionFor(event)
-    const { path } = z
-      .object({ path: z.string().min(1) })
-      .strict()
-      .parse(input)
-    return entry.client.listExternalLinks({ path })
+    const request = externalLinksRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    const result = await entry.client.listExternalLinks({ path: session.path })
+    return externalLinksResultSchema.parse(result)
   })
   ipcMain.handle(IPC_CHANNELS.updateExternalLinks, async (event, input: unknown) => {
     const entry = sessionFor(event)
-    const { path } = z
-      .object({ path: z.string().min(1) })
-      .strict()
-      .parse(input)
-    return entry.client.updateExternalLinks({ path })
+    const request = externalLinksRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // The saved file is what the update must read: the panel saves before it
+    // asks, so the on-disk bytes match the grid the values are applied to.
+    const result = await entry.client.updateExternalLinks({ path: session.path })
+    return externalLinksUpdateResultSchema.parse(result)
   })
   // The preload sends this one (fire-and-forget): handle() would make the
-  // renderer's send() a no-op and Locate would never open the file manager.
-  ipcMain.on(IPC_CHANNELS.revealPath, (_event, path: unknown) => {
-    // Reveal only real files: a missing or forged path is a silent no-op.
-    if (typeof path !== 'string' || !existsSync(path)) return
-    shell.showItemInFolder(path)
+  // renderer's send() a no-op. The renderer names a link index of its session,
+  // never a path, so Locate resolves the source from the session's own listing.
+  ipcMain.on(IPC_CHANNELS.revealLinkSource, (event, input: unknown) => {
+    void (async () => {
+      const request = externalLinkRevealRequestSchema.safeParse(input)
+      const entry = sheetsTabs.get(event.sender.id)
+      if (!request.success || !entry) return
+      const session = entry.sessions.get(request.data.sessionId)
+      if (!session) return
+      try {
+        const listing = await entry.client.listExternalLinks({ path: session.path })
+        const source = listing.links.find((link) => link.index === request.data.index)?.source
+        // Reveal only real files: a missing source is a silent no-op.
+        if (source === null || source === undefined || !existsSync(source)) return
+        shell.showItemInFolder(source)
+      } catch {
+        // Locate is best-effort: a sidecar failure changes nothing on disk
+      }
+    })()
   })
   ipcMain.handle(IPC_CHANNELS.recalcWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)

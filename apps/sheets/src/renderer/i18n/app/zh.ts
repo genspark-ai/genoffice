@@ -1097,6 +1097,7 @@ export const zh = {
   appLinksPanelDetail: '列出、更新和断开到其他工作簿的链接',
   appLinksUpdate: '更新值',
   appLinksNone: '此工作簿没有指向其他工作簿的链接。',
+  appLinksUnsaved: '请先保存此工作簿，再列出它的外部链接。',
   appLinksSource: '源',
   appLinksStatus: '状态',
   appLinksSheets: '工作表',

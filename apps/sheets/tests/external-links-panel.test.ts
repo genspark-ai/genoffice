@@ -95,6 +95,12 @@ describe('external links panel', () => {
     expect(host.textContent).toContain('没有指向其他工作簿的链接')
   })
 
+  it('a never-saved workbook explains why the panel is empty', async () => {
+    const host = await mount(panel([], { notice: 'unsaved' }))
+    expect(host.textContent).toContain('请先保存此工作簿')
+    expect(host.textContent).not.toContain('没有指向其他工作簿的链接')
+  })
+
   it('a busy panel ignores update clicks', async () => {
     const onUpdate = vi.fn()
     const host = await mount(panel(LISTED, { busy: true, onUpdate }))
@@ -116,11 +122,12 @@ describe('external links panel', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('a reachable row locates its source', async () => {
+  it('a reachable row asks to locate its link index, not a path', async () => {
     const onReveal = vi.fn()
     const host = await mount(panel(UPDATED, { onReveal }))
     const locate = host.querySelector('[data-tip="定位源文件"]')!
     click(locate)
-    expect(onReveal).toHaveBeenCalledWith('/tmp/data/source.xlsx')
+    // the main process resolves the source from the session's own listing
+    expect(onReveal).toHaveBeenCalledWith(2)
   })
 })

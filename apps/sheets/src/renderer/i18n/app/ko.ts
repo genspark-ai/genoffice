@@ -1179,6 +1179,7 @@ export const ko = {
   appLinksPanelDetail: '다른 통합 문서 링크 보기, 업데이트, 끊기',
   appLinksUpdate: '값 업데이트',
   appLinksNone: '이 통합 문서에 다른 통합 문서로의 링크가 없습니다.',
+  appLinksUnsaved: '외부 링크를 나열하려면 먼저 이 통합 문서를 저장하세요.',
   appLinksSource: '원본',
   appLinksStatus: '상태',
   appLinksSheets: '시트',

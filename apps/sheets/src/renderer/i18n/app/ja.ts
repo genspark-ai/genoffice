@@ -1208,6 +1208,7 @@ export const ja = {
   appLinksPanelDetail: '他のブックへのリンクの表示・更新・切断',
   appLinksUpdate: '値の更新',
   appLinksNone: 'このブックに他のブックへのリンクはありません。',
+  appLinksUnsaved: '外部リンクを一覧する前に、このブックを保存してください。',
   appLinksSource: 'ソース',
   appLinksStatus: '状態',
   appLinksSheets: 'シート',

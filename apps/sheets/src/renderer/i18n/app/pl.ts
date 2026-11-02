@@ -1187,6 +1187,7 @@ export const pl = {
   appLinksPanelDetail: 'Wyświetlanie, aktualizowanie i zrywanie łączy do innych skoroszytów',
   appLinksUpdate: 'Aktualizuj wartości',
   appLinksNone: 'Ten skoroszyt nie ma łączy do innych skoroszytów.',
+  appLinksUnsaved: 'Zapisz ten skoroszyt, zanim wyświetlisz jego łącza zewnętrzne.',
   appLinksSource: 'Źródło',
   appLinksStatus: 'Stan',
   appLinksSheets: 'Arkusze',

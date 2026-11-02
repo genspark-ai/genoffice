@@ -918,21 +918,24 @@ export function App({
   const [linksOpen, setLinksOpen] = useState(false)
   const [linkStatuses, setLinkStatuses] = useState<ExternalLinkRow[]>([])
   const [linksBusy, setLinksBusy] = useState(false)
+  const [linksNotice, setLinksNotice] = useState<'unsaved' | null>(null)
   // Load the workbook's links when the panel opens: the listing carries
   // identity fields only and never probes the sources on disk, so it is cheap
   // and reachability stays unknown (the panel's "—") until Update answers it.
   useEffect(() => {
     if (!linksOpen) return
     const file = lazyWorkbookRef.current?.file
-    const path = file !== undefined && !file.needsSaveAs ? (file.path ?? null) : null
-    if (path === null) {
+    if (file === undefined || file.needsSaveAs) {
+      // a never-saved workbook has no file for the sidecar to list
       setLinkStatuses([])
+      setLinksNotice('unsaved')
       return
     }
+    setLinksNotice(null)
     let cancelled = false
     void (async () => {
       try {
-        const result = await window.desktopApi.listExternalLinks({ path })
+        const result = await window.desktopApi.listExternalLinks({ sessionId: file.sessionId })
         if (!cancelled) setLinkStatuses(result.links)
       } catch {
         // an unreadable workbook keeps the panel empty instead of throwing
@@ -4833,6 +4836,7 @@ export function App({
         engineOverBudget: recalcOverBudgetAtOpen(selected.fileBytes, cellCounts.gridCells),
         formulaCells: new Map(),
         overlay: new Map(),
+        externalOverlay: new Map(),
         incompleteRuns: new Set(),
         follow: new Map(),
         running: false,
@@ -6017,17 +6021,26 @@ export function App({
         <ExternalLinksPanel
           links={linkStatuses}
           busy={linksBusy}
+          notice={linksNotice}
           onUpdate={() => {
             void (async () => {
               const file = lazyWorkbookRef.current?.file
-              const path = file && !file.needsSaveAs ? file.path : null
-              if (!path || linksBusy) return
+              if (!file || file.needsSaveAs || linksBusy) return
               setLinksBusy(true)
               try {
                 await updateExternalLinksFlow({
-                  path,
-                  save: () => handleSave('save'),
-                  update: (target) => window.desktopApi.updateExternalLinks({ path: target }),
+                  // quiet: a no-op first save is expected here, not a toast.
+                  // Real failures still land in the message bar.
+                  save: () => handleSave('save', true),
+                  update: () => {
+                    // the first save swaps the workbook session, so the id is
+                    // read here rather than captured before the flow ran
+                    const current = lazyWorkbookRef.current?.file
+                    if (!current) return Promise.reject(new Error('Workbook is not open.'))
+                    return window.desktopApi.updateExternalLinks({
+                      sessionId: current.sessionId,
+                    })
+                  },
                   apply: (report) => {
                     const linkRuntime = univerRef.current
                     const linkState = lazyWorkbookRef.current
@@ -6035,14 +6048,20 @@ export function App({
                       applyExternalLinkValues(linkState, linkRuntime, report)
                     }
                   },
-                  onStatuses: (report) => setLinkStatuses(report.links),
+                  onStatuses: (report) => {
+                    setLinksNotice(null)
+                    setLinkStatuses(report.links)
+                  },
                 })
               } finally {
                 setLinksBusy(false)
               }
             })()
           }}
-          onReveal={(source) => void window.desktopApi.revealPath(source)}
+          onReveal={(index) => {
+            const file = lazyWorkbookRef.current?.file
+            if (file) window.desktopApi.revealLinkSource({ sessionId: file.sessionId, index })
+          }}
           onClose={() => setLinksOpen(false)}
         />
       )}

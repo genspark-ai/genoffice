@@ -8243,14 +8243,14 @@ export function applyExternalLinkValues(
     bySheet.set(sheetId, overlay)
     applied += 1
   }
+  // The values go to a map of their own: they are a fresh sidecar
+  // computation, so an incomplete engine run must not release them (the
+  // incompleteRuns flag only qualifies engine-derived values), and a save
+  // counts them as pending work of its own. A report is complete for the
+  // workbook, so it replaces the previous external values.
+  state.recalc.externalOverlay.clear()
   for (const [sheetId, overlay] of bySheet) {
-    // merge into the sheet's existing overlay: a recalculation may already
-    // have pinned other formula cells there, and dropping them would lose the
-    // values the next save refreshes from
-    const merged = new Map(state.recalc.overlay.get(sheetId) ?? [])
-    for (const [key, value] of overlay) merged.set(key, value)
-    state.recalc.overlay.set(sheetId, merged)
-    state.recalc.incompleteRuns.delete(sheetId)
+    state.recalc.externalOverlay.set(sheetId, overlay)
     const loaded = state.loadedRanges.get(sheetId)
     const worksheet = workbook.getSheets().find((sheet) => sheet.getSheetId() === sheetId)
     if (worksheet && loaded && overlay.size > 0) {

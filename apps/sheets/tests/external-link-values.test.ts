@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { externalLinkOverlayCell } from '../src/renderer/external-link-values'
-import { recalculatedFormulaValues } from '../src/renderer/save-actions'
+import {
+  externalLinkFormulaValueCount,
+  recalculatedFormulaValues,
+} from '../src/renderer/save-actions'
 import { applyExternalLinkValues } from '../src/renderer/univer-sync'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 import type { ExternalLinkCell } from '../src/shared/desktop-api'
@@ -11,7 +14,7 @@ import type { ExternalLinkCell } from '../src/shared/desktop-api'
 function emptyState(): LazyWorkbookState {
   return {
     editJournal: { cells: new Map(), sheets: { removed: new Set() } },
-    recalc: { overlay: new Map(), incompleteRuns: new Set() },
+    recalc: { overlay: new Map(), externalOverlay: new Map(), incompleteRuns: new Set() },
     loadedRanges: new Map(),
   } as unknown as LazyWorkbookState
 }
@@ -92,15 +95,54 @@ describe('applying the report into a save request', () => {
     ])
   })
 
-  it('counts the cells it applied and keeps existing overlay cells', () => {
+  it('keeps the engine overlay apart and counts the values as pending save work', () => {
     const state = emptyState()
     state.recalc.overlay.set('sheet-1', new Map([['9:9', { v: 1 }]]))
     const result = applyExternalLinkValues(state, runtime, {
       cells: [cell({ row: 0, column: 0, kind: 'boolean', formatted: 'TRUE' })],
     })
     expect(result).toEqual({ applied: 1, sheets: 1 })
-    const overlay = state.recalc.overlay.get('sheet-1')!
-    expect(overlay.get('9:9')).toEqual({ v: 1 })
-    expect(overlay.get('0:0')).toEqual({ v: true })
+    // the panel's values live in their own map; the engine's overlay is intact
+    expect(state.recalc.externalOverlay.get('sheet-1')).toEqual(new Map([['0:0', { v: true }]]))
+    expect(state.recalc.overlay.get('sheet-1')).toEqual(new Map([['9:9', { v: 1 }]]))
+    // a save with only these pending must not be skipped as "no edits"
+    expect(externalLinkFormulaValueCount(state)).toBe(1)
+  })
+
+  it('an incomplete engine run does not release the external-link values', () => {
+    const state = emptyState()
+    // the engine's sheet is suspect: its own overlay must not be saved…
+    state.recalc.overlay.set('sheet-1', new Map([['1:1', { v: 'wrong' }]]))
+    state.recalc.incompleteRuns.add('sheet-1')
+    applyExternalLinkValues(state, runtime, {
+      cells: [cell({ row: 0, column: 0, kind: 'number', number: 20, formatted: '20' })],
+    })
+    // …while the panel's fresh sidecar computation still is (and the flag stays:
+    // it qualifies engine values, not these)
+    expect(state.recalc.incompleteRuns.has('sheet-1')).toBe(true)
+    expect(recalculatedFormulaValues(state)).toEqual([
+      { sheetId: 'sheet-1', row: 0, column: 0, value: 20 },
+    ])
+  })
+
+  it('an external-link value overrides an engine value for the same cell', () => {
+    const state = emptyState()
+    state.recalc.overlay.set('sheet-1', new Map([['0:0', { v: 'engine' }]]))
+    applyExternalLinkValues(state, runtime, {
+      cells: [cell({ row: 0, column: 0, kind: 'number', number: 20, formatted: '20' })],
+    })
+    expect(recalculatedFormulaValues(state)).toEqual([
+      { sheetId: 'sheet-1', row: 0, column: 0, value: 20 },
+    ])
+  })
+
+  it('a journaled formula drops the stale external value from the save', () => {
+    const state = emptyState()
+    applyExternalLinkValues(state, runtime, {
+      cells: [cell({ row: 0, column: 0, kind: 'number', number: 20, formatted: '20' })],
+    })
+    state.editJournal.cells.set('sheet-1', new Map([['0:0', { formula: '=1+1' } as never]]))
+    expect(recalculatedFormulaValues(state)).toEqual([])
+    expect(externalLinkFormulaValueCount(state)).toBe(0)
   })
 })

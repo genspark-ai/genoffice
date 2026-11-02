@@ -1198,6 +1198,7 @@ export const nl = {
   appLinksPanelDetail: 'Koppelingen naar andere werkmappen tonen, bijwerken en verbreken',
   appLinksUpdate: 'Waarden bijwerken',
   appLinksNone: 'Deze werkmap heeft geen koppelingen naar andere werkmappen.',
+  appLinksUnsaved: 'Sla deze werkmap op voordat u de externe koppelingen toont.',
   appLinksSource: 'Bron',
   appLinksStatus: 'Status',
   appLinksSheets: 'Bladen',

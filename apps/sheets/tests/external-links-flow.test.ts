@@ -33,8 +33,8 @@ describe('updateExternalLinksFlow', () => {
       order.push('save')
       return { ok: true }
     })
-    const update = vi.fn(async (path: string) => {
-      order.push('update:' + path)
+    const update = vi.fn(async () => {
+      order.push('update')
       return REPORT
     })
     const apply = vi.fn((report: ExternalLinksUpdateResult) => {
@@ -42,7 +42,6 @@ describe('updateExternalLinksFlow', () => {
     })
     const statuses: ExternalLinksUpdateResult[] = []
     const updated = await updateExternalLinksFlow({
-      path: '/tmp/book.xlsx',
       save,
       update,
       apply,
@@ -54,15 +53,33 @@ describe('updateExternalLinksFlow', () => {
     expect(updated).toBe(true)
     // the disk write precedes the read the report is computed from, and the
     // second save persists the applied values — never update-then-save-then-apply
-    expect(order).toEqual(['save', 'update:/tmp/book.xlsx', 'apply:1', 'statuses', 'save'])
+    expect(order).toEqual(['save', 'update', 'apply:1', 'statuses', 'save'])
     expect(statuses).toHaveLength(1)
+  })
+
+  it('treats a no-edits first save as a no-op and still updates', async () => {
+    // the panel's common case: an untouched linked workbook. handleSave
+    // answers { ok: false, reason: 'no-edits' } because the recalc overlay is
+    // not journal work — the disk already matches the grid, so proceed.
+    const save = vi.fn(async () => ({ ok: false, reason: 'no-edits' }))
+    const update = vi.fn(async () => REPORT)
+    const apply = vi.fn()
+    const updated = await updateExternalLinksFlow({
+      save,
+      update,
+      apply,
+      onStatuses: vi.fn(),
+    })
+    expect(updated).toBe(true)
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(apply).toHaveBeenCalledWith(REPORT)
+    expect(save).toHaveBeenCalledTimes(2)
   })
 
   it('aborts before the update when the first save fails', async () => {
     const update = vi.fn(async () => REPORT)
     const apply = vi.fn()
     const updated = await updateExternalLinksFlow({
-      path: '/tmp/book.xlsx',
       save: vi.fn(async () => ({ ok: false })),
       update,
       apply,
@@ -77,7 +94,6 @@ describe('updateExternalLinksFlow', () => {
     const save = vi.fn(async () => ({ ok: true }))
     const apply = vi.fn()
     const updated = await updateExternalLinksFlow({
-      path: '/tmp/book.xlsx',
       save,
       update: vi.fn(async () => ({ links: [], cells: [] })),
       apply,

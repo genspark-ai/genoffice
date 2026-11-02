@@ -1161,6 +1161,7 @@ export const ms = {
   appLinksPanelDetail: 'Senaraikan, kemas kini dan putuskan pautan ke buku kerja lain',
   appLinksUpdate: 'Kemas kini nilai',
   appLinksNone: 'Buku kerja ini tiada pautan ke buku kerja lain.',
+  appLinksUnsaved: 'Simpan buku kerja ini sebelum menyenaraikan pautan luarnya.',
   appLinksSource: 'Sumber',
   appLinksStatus: 'Status',
   appLinksSheets: 'Helaian',

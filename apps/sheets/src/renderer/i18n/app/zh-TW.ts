@@ -1073,6 +1073,7 @@ export const zhTW = {
   appLinksPanelDetail: '列出、更新和斷開到其他活頁簿的連結',
   appLinksUpdate: '更新值',
   appLinksNone: '此活頁簿沒有指向其他活頁簿的連結。',
+  appLinksUnsaved: '請先儲存此活頁簿，再列出它的外部連結。',
   appLinksSource: '來源',
   appLinksStatus: '狀態',
   appLinksSheets: '工作表',

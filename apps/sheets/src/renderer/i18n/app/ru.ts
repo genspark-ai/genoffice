@@ -1179,6 +1179,7 @@ export const ru = {
   appLinksPanelDetail: 'Просмотр, обновление и разрыв связей с другими книгами',
   appLinksUpdate: 'Обновить значения',
   appLinksNone: 'В этой книге нет связей с другими книгами.',
+  appLinksUnsaved: 'Сохраните эту книгу, прежде чем показывать её внешние ссылки.',
   appLinksSource: 'Источник',
   appLinksStatus: 'Состояние',
   appLinksSheets: 'Листы',

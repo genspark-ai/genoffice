@@ -1162,6 +1162,7 @@ export const cs = {
   appLinksPanelDetail: 'Zobrazení, aktualizace a přerušení odkazů na jiné sešity',
   appLinksUpdate: 'Aktualizovat hodnoty',
   appLinksNone: 'Tento sešit neobsahuje odkazy na jiné sešity.',
+  appLinksUnsaved: 'Než vypíšete externí odkazy, uložte tento sešit.',
   appLinksSource: 'Zdroj',
   appLinksStatus: 'Stav',
   appLinksSheets: 'Listy',

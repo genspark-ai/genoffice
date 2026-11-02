@@ -1137,6 +1137,7 @@ export const en = {
   appLinksPanelDetail: 'List, update and break links to other workbooks',
   appLinksUpdate: 'Update Values',
   appLinksNone: 'This workbook has no links to other workbooks.',
+  appLinksUnsaved: 'Save this workbook before listing its external links.',
   appLinksSource: 'Source',
   appLinksStatus: 'Status',
   appLinksSheets: 'Sheets',
