@@ -22,6 +22,15 @@ describe('isEastAsianFontName', () => {
       'PMingLiU',
       'Noto Sans CJK SC',
       'Source Han Serif',
+      'MiSans',
+      'MiSans Heavy',
+      'LXGW WenKai GB Screen',
+      'LXGW WenKai Mono',
+      'AR PL UMing CN',
+      'AR PL UKai TW MBE',
+      'Droid Sans Fallback',
+      'Noto Sans Mono CJK SC',
+      'Noto Sans Mono CJK JP',
     ]) {
       expect(isEastAsianFontName(f), f).toBe(true)
     }
@@ -38,6 +47,10 @@ describe('isEastAsianFontName', () => {
       'Segoe UI',
       'Consolas',
       'Garamond',
+      'MiSans Latin',
+      'MiSans Arabic',
+      'Noto Sans Mono',
+      'Droid Sans',
     ]) {
       expect(isEastAsianFontName(f), f).toBe(false)
     }
