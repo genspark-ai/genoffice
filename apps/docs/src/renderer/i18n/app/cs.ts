@@ -136,6 +136,7 @@ export const cs = {
   appCommentsTitle: 'Komentáře ({n})',
   appCommentPlaceholder: 'Napište komentář…',
   appCommentBtn: 'Komentovat',
+  appAttachImage: 'Připojit obrázek',
   appUnknownAuthor: '(Neznámý autor)',
   appResolved: 'Vyřešeno',
   appResolvedComments: 'Vyřešené komentáře ({n})',

@@ -9,6 +9,8 @@ const FILE_ICONS: Record<string, string> = {
   docx: iconDocx,
   odt: iconDocx,
   ott: iconDocx,
+  hwp: iconDocx,
+  hwpx: iconDocx,
   xlsx: iconXlsx,
   xlsm: iconXlsx,
   ods: iconXlsx,

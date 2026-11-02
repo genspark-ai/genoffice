@@ -136,6 +136,7 @@ export const hi = {
   appCommentsTitle: 'टिप्पणियाँ ({n})',
   appCommentPlaceholder: 'टिप्पणी लिखें…',
   appCommentBtn: 'टिप्पणी',
+  appAttachImage: 'चित्र जोड़ें',
   appUnknownAuthor: '(अज्ञात लेखक)',
   appResolved: 'हल हो गया',
   appResolvedComments: 'हल की गई टिप्पणियाँ ({n})',

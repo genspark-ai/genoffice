@@ -40,6 +40,55 @@ const p = (text: string, pPr = '') =>
   `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
 
 describe('docxToText (XML scan)', () => {
+  it('lets derived styles explicitly cancel inherited numbering and outline levels', async () => {
+    const styles =
+      `<w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:styleId="Base"><w:pPr><w:outlineLvl w:val="0"/><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Reset"><w:basedOn w:val="Base"/><w:pPr><w:outlineLvl w:val="9"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Child"><w:basedOn w:val="Reset"/></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Inherited"><w:basedOn w:val="Base"/></w:style></w:styles>'
+    const bytes = await docx(
+      p('Plain', '<w:pStyle w:val="Reset"/>') +
+        p('Plain child', '<w:pStyle w:val="Child"/>') +
+        p('Heading', '<w:pStyle w:val="Inherited"/>'),
+      {},
+      { styles },
+    )
+    expect(await docxToText(bytes)).toBe('Plain\nPlain child\n# Heading')
+  })
+
+  it('uses the nearest numbering value rather than any numbered ancestor', async () => {
+    const styles =
+      `<w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:styleId="List"><w:pPr><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Off"><w:basedOn w:val="List"/><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="LevelOnly"><w:basedOn w:val="Off"/><w:pPr><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="On"><w:basedOn w:val="Off"/><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style></w:styles>'
+    expect(
+      await docxToText(
+        await docx(
+          p('Off', '<w:pStyle w:val="Off"/>') +
+            p('Still off', '<w:pStyle w:val="LevelOnly"/>') +
+            p('On', '<w:pStyle w:val="On"/>'),
+          {},
+          { styles },
+        ),
+      ),
+    ).toBe('Off\nStill off\n- On')
+  })
+
+  it('lets direct outline levels override a heading style, including Body Text', async () => {
+    expect(
+      await docxToText(
+        await docx(
+          p('Body', '<w:pStyle w:val="1"/><w:outlineLvl w:val="9"/>') +
+            p('Deeper', '<w:pStyle w:val="1"/><w:outlineLvl w:val="2"/>') +
+            p('Body without style', '<w:outlineLvl w:val="9"/>'),
+        ),
+      ),
+    ).toBe('Body\n### Deeper\nBody without style')
+  })
+
   it('marks headings by style name, outline level and Heading<N> id; lists by numPr', async () => {
     const text = await docxToText(
       await docx(
@@ -177,5 +226,35 @@ describe('docxToText (XML scan)', () => {
     await expect(docxToText(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow(
       /main document/,
     )
+  })
+})
+
+describe('docxToText tracked formatting', () => {
+  it('reads visible text whose previous run properties were hidden', async () => {
+    const bytes = await docx(
+      '<w:p><w:r><w:rPr><w:rPrChange w:id="1" w:author="Editor"><w:rPr><w:vanish/></w:rPr></w:rPrChange></w:rPr><w:t>Visible now</w:t></w:r></w:p>',
+    )
+    expect(await docxToText(bytes)).toBe('Visible now')
+  })
+
+  it('keeps current paragraph formatting instead of historical heading and numbering', async () => {
+    const bytes = await docx(
+      p(
+        'Current body',
+        '<w:pPrChange w:id="2" w:author="Editor"><w:pPr><w:pStyle w:val="Heading1"/><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:pPrChange>',
+      ) +
+        p(
+          'Current list',
+          '<w:numPr><w:numId w:val="3"/></w:numPr><w:pPrChange w:id="3" w:author="Editor"><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:pPrChange>',
+        ),
+    )
+    expect(await docxToText(bytes)).toBe('Current body\n- Current list')
+  })
+
+  it('still excludes currently hidden text with a visible historical format', async () => {
+    const bytes = await docx(
+      '<w:p><w:r><w:rPr><w:vanish/><w:rPrChange w:id="4" w:author="Editor"><w:rPr/></w:rPrChange></w:rPr><w:t>Hidden now</w:t></w:r><w:r><w:t>Visible control</w:t></w:r></w:p>',
+    )
+    expect(await docxToText(bytes)).toBe('Visible control')
   })
 })

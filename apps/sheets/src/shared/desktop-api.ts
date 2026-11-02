@@ -2432,6 +2432,35 @@ export const workbookPivotRequestSchema = z
   })
   .strict()
 
+export const workbookQueriesRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+  })
+  .strict()
+
+/** Data › Queries & Connections (read-only): one entry per connection in xl/connections.xml */
+export const workbookQueriesResultSchema = z
+  .array(
+    z
+      .object({
+        name: z.string().max(1_000),
+        kind: z.enum(['powerQuery', 'web', 'text', 'database', 'other']),
+        source: z.string().max(4_000).optional(),
+        description: z.string().max(4_000).optional(),
+        destination: z
+          .object({
+            sheet: z.string().max(1_000),
+            table: z.string().max(1_000).optional(),
+            range: z.string().max(100),
+            rows: z.number().int().min(0),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+  )
+  .max(1_000)
+
 export const workbookRedactionsRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -2628,11 +2657,54 @@ export type WorkbookRangeResult = z.infer<typeof workbookRangeResultSchema>
 /// The sheet's saved print settings as parsed from the file.
 export type WorkbookPagePrintSettings = NonNullable<WorkbookRangeResult['pageSetup']>
 export type WorkbookRecalcRequest = z.infer<typeof workbookRecalcRequestSchema>
+
+export const externalLinksRequestSchema = z.object({ path: z.string().min(1) }).strict()
+export type ExternalLinksRequest = z.infer<typeof externalLinksRequestSchema>
+
+export const externalLinkStatusSchema = z
+  .object({
+    index: z.number().int().positive(),
+    rawTarget: z.string(),
+    source: z.string().nullable(),
+    reachable: z.boolean(),
+    sheetNames: z.array(z.string()),
+  })
+  .strict()
+export type ExternalLinkStatus = z.infer<typeof externalLinkStatusSchema>
+
+export const externalLinksResultSchema = z
+  .object({ links: z.array(externalLinkStatusSchema) })
+  .strict()
+export type ExternalLinksResult = z.infer<typeof externalLinksResultSchema>
+
+// One external-formula cell of an update report. `row` and `column` are
+// 0-based in the report; IronCalc, which computed the value, addresses the
+// same cells 1-based.
+export const externalLinkCellSchema = z
+  .object({
+    sheet: z.string(),
+    row: z.number().int().nonnegative(),
+    column: z.number().int().nonnegative(),
+    formatted: z.string(),
+    number: z.number().nullable().optional(),
+    formula: z.string(),
+  })
+  .strict()
+
+export const externalLinksUpdateResultSchema = z
+  .object({
+    links: z.array(externalLinkStatusSchema),
+    cells: z.array(externalLinkCellSchema),
+  })
+  .strict()
+export type ExternalLinksUpdateResult = z.infer<typeof externalLinksUpdateResultSchema>
 export type WorkbookRecalcResult = z.infer<typeof workbookRecalcResultSchema>
 export type WorkbookMediaRequest = z.infer<typeof workbookMediaRequestSchema>
 export type WorkbookMediaResult = z.infer<typeof workbookMediaResultSchema>
 export type WorkbookPivotRequest = z.infer<typeof workbookPivotRequestSchema>
 export type WorkbookPivotDefinition = z.infer<typeof workbookPivotDefinitionSchema>
+export type WorkbookQueriesRequest = z.infer<typeof workbookQueriesRequestSchema>
+export type WorkbookQueriesResult = z.infer<typeof workbookQueriesResultSchema>
 export type WorkbookRedactionsRequest = z.infer<typeof workbookRedactionsRequestSchema>
 export type WorkbookRedactionsResult = z.infer<typeof workbookRedactionsResultSchema>
 export type LocalImageRequest = z.infer<typeof localImageRequestSchema>
@@ -3146,6 +3218,8 @@ export interface DesktopApi {
    * see `workbookRedactionsResultSchema`.
    */
   readWorkbookRedactions(request: WorkbookRedactionsRequest): Promise<WorkbookRedactionsResult>
+  /** Data › Queries & Connections: the workbook's connections and where each loads (read-only) */
+  readWorkbookQueries(request: WorkbookQueriesRequest): Promise<WorkbookQueriesResult>
   readLocalImage(request: LocalImageRequest): Promise<LocalImageResult>
   captureScreenSources(): Promise<ScreenSourcesResult>
   /// null when the source vanished between listing and capture.

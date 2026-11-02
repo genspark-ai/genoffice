@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx, type SaveBlock } from '../src/index'
-import { buildDocx } from './helpers/build-docx'
+import { buildDocx, TINY_PNG_BASE64 } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
 
@@ -357,5 +357,169 @@ describe('reference-only comments (bare w:commentReference, no range markers)', 
   it('does not anchor a reference whose id has range markers elsewhere', async () => {
     const doc = await parseDocx(await refDocx(CROSS_P_A + CROSS_P_B))
     expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here' }])
+  })
+})
+
+// ---- comment pictures (genoffice#2040) ----
+
+const IMAGE_COMMENT_XML =
+  XML_DECL +
+  '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+  ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+  ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+  '<w:comment w:id="1" w:author="Alice" w:date="2026-07-01T10:00:00Z">' +
+  '<w:p><w:r><w:t xml:space="preserve">pedigree: </w:t></w:r>' +
+  '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+  '<wp:extent cx="952500" cy="762000"/>' +
+  '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+  '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:nvPicPr><pic:cNvPr id="1" name="p"/><pic:cNvPicPr/></pic:nvPicPr>' +
+  '<pic:blipFill><a:blip r:embed="rId7"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+  '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="762000"/></a:xfrm>' +
+  '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+  '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>' +
+  '</w:comment>' +
+  '</w:comments>'
+
+const COMMENTS_RELS_XML =
+  XML_DECL +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/comment1.png"/>' +
+  '</Relationships>'
+
+async function buildImageCommentDocx(): Promise<Uint8Array> {
+  return buildDocx({
+    bodyXml: COMMENTED_P,
+    extraParts: [
+      {
+        path: 'word/comments.xml',
+        xml: IMAGE_COMMENT_XML,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+      },
+      {
+        path: 'word/_rels/comments.xml.rels',
+        xml: COMMENTS_RELS_XML,
+        contentType: 'application/vnd.openxmlformats-package.relationships+xml',
+      },
+    ],
+    binaryParts: [
+      {
+        path: 'word/media/comment1.png',
+        base64: TINY_PNG_BASE64,
+        extension: 'png',
+        contentType: 'image/png',
+      },
+    ],
+  })
+}
+
+describe('comment pictures', () => {
+  it('parses the picture: bytes from the comments rels, extent from wp:extent', async () => {
+    const doc = await parseDocx(await buildImageCommentDocx())
+    expect(doc.comments).toHaveLength(1)
+    expect(doc.comments[0]!.image).toEqual({
+      mime: 'image/png',
+      base64: TINY_PNG_BASE64,
+      widthPx: 100,
+      heightPx: 80,
+    })
+  })
+
+  it('an untouched picture comment survives a sibling save byte-verbatim', async () => {
+    const doc = await parseDocx(await buildImageCommentDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      { comments: doc.comments },
+    )
+    const out = await JSZip.loadAsync(saved)
+    const xml = await out.file('word/comments.xml')!.async('string')
+    expect(xml).toContain('<a:blip r:embed="rId7"/>')
+    expect(await out.file('word/media/comment1.png')!.async('base64')).toBe(TINY_PNG_BASE64)
+  })
+
+  it('attaching a picture lands the media part, the comments rels and the drawing run', async () => {
+    const doc = await parseDocx(await buildCommentedDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      {
+        comments: [
+          {
+            id: '1',
+            author: 'Alice',
+            text: '第一条批注',
+            image: { mime: 'image/png', base64: TINY_PNG_BASE64, widthPx: 100, heightPx: 80 },
+          },
+          { id: '2', author: 'Bob', text: 'cross-para note' },
+        ],
+      },
+    )
+    const out = await JSZip.loadAsync(saved)
+    const relsXml = await out.file('word/_rels/comments.xml.rels')!.async('string')
+    const target = /Target="(media\/[^"]+)"/.exec(relsXml)![1]!
+    expect(await out.file(`word/${target}`)!.async('base64')).toBe(TINY_PNG_BASE64)
+    const xml = await out.file('word/comments.xml')!.async('string')
+    // the drawing rides the comment's last paragraph, inline after its text
+    expect(xml).toMatch(/<\/w:t><\/w:r><w:r><w:drawing><wp:inline distT=/)
+    expect(xml).toContain('r:embed="rId1"')
+    // the root binds the drawing namespaces the generated root never had
+    expect(xml).toContain('xmlns:wp=')
+    expect(xml).toContain('xmlns:r=')
+    // and the file round-trips: the picture parses back out
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.comments[0]!.image?.mime).toBe('image/png')
+    expect(reparsed.comments[0]!.image?.widthPx).toBe(100)
+  })
+
+  it('an edited text keeps the comment and drops nothing but rebuilds around the picture', async () => {
+    const doc = await parseDocx(await buildImageCommentDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      {
+        comments: [
+          {
+            ...doc.comments[0]!,
+            text: 'pedigree (edited)',
+            image: { mime: 'image/png', base64: TINY_PNG_BASE64, widthPx: 100, heightPx: 80 },
+          },
+        ],
+      },
+    )
+    const out = await JSZip.loadAsync(saved)
+    const xml = await out.file('word/comments.xml')!.async('string')
+    expect(xml).toContain('pedigree (edited)')
+    expect(xml).toContain('<w:drawing>')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.comments[0]!.text).toBe('pedigree (edited)')
+    expect(reparsed.comments[0]!.image?.mime).toBe('image/png')
+  })
+
+  it('an edit that changes the paragraph count regenerates the comment with its picture', async () => {
+    const doc = await parseDocx(await buildImageCommentDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      { comments: [{ ...doc.comments[0]!, text: 'line one\nline two' }] },
+    )
+    const out = await JSZip.loadAsync(saved)
+    const xml = await out.file('word/comments.xml')!.async('string')
+    expect(xml).toContain('line two')
+    // the original drawing rides along with its original relationship
+    expect(xml).toMatch(/<w:p[^>]*><w:r><w:t[^>]*>line two<\/w:t><\/w:r><w:r><w:drawing>/)
+    expect(xml).toContain('<a:blip r:embed="rId7"/>')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.comments[0]!.text).toBe('line one\nline two')
+    expect(reparsed.comments[0]!.image?.widthPx).toBe(100)
   })
 })

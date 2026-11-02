@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { parseDocx, type Run } from '@genoffice/docx-engine'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -13,6 +13,14 @@ const BODY =
   '<w:p><w:r><w:rPr><w:rtl/><w:bCs/></w:rPr><w:t>مرحبا بالعالم</w:t></w:r>' +
   '<w:r><w:t xml:space="preserve"> plain tail</w:t></w:r></w:p>'
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function openDoc() {
   const source = await buildDocx({ bodyXml: BODY })
   const parsed = await parseDocx(source)
@@ -21,6 +29,7 @@ async function openDoc() {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   return { editor, parsed }
 }
 

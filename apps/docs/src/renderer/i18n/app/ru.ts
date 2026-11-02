@@ -138,6 +138,7 @@ export const ru = {
   appCommentsTitle: 'Примечания ({n})',
   appCommentPlaceholder: 'Введите примечание…',
   appCommentBtn: 'Примечание',
+  appAttachImage: 'Прикрепить картинку',
   appUnknownAuthor: '(Неизвестный автор)',
   appResolved: 'Решено',
   appResolvedComments: 'Решенные примечания ({n})',

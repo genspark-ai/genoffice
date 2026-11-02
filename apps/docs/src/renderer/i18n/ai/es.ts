@@ -211,4 +211,7 @@ export const es = {
   aiMindMapReset: 'Restablecer vista',
   aiMindMapExpand: 'Expandir rama',
   aiMindMapCollapse: 'Contraer rama',
+  aiMindMapToggleLayout: 'Cambiar diseño',
+  aiMindMapLayoutTopDown: 'Cambiar al diseño de arriba abajo',
+  aiMindMapLayoutLeftRight: 'Cambiar al diseño de izquierda a derecha',
 } satisfies Record<keyof typeof zh, string>

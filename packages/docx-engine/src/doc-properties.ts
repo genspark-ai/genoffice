@@ -105,21 +105,31 @@ export const CORE_PROPERTY_KEYS = Object.keys(CORE_PROPERTIES)
 /** the extended (app) property keys */
 export const APP_PROPERTY_KEYS = Object.keys(APP_PROPERTIES)
 
+/** a custom-property value of a set_properties op: text, or a typed number/boolean */
+export type PropertyValue = string | number | boolean
+
 /** the document properties of a .docx, read from its three docProps parts */
 export interface DocumentProperties {
   /** docProps/core.xml by friendly key (title, creator, lastModifiedBy, …) */
   core: Record<string, string>
   /** docProps/app.xml by friendly key (company, template, application, …) */
   app: Record<string, string>
-  /** docProps/custom.xml by property name */
+  /** docProps/custom.xml by property name (a typed value is its vt text: "42", "true", …) */
   custom: Record<string, string>
+  /**
+   * docProps/custom.xml by property name: the vt type the value is stored as
+   * (lpwstr, i4, i8, r8, bool, filetime, date, …). A set_properties op that
+   * updates such a property keeps its type while the new value fits it.
+   */
+  customTypes: Record<string, string>
 }
 
 /** what a set_properties op asks for: a value per key, or null to remove it */
 export interface PropertyChanges {
   core?: Record<string, string | null>
   app?: Record<string, string | null>
-  custom?: Record<string, string | null>
+  /** custom values: text stays lpwstr, a number/boolean takes a typed vt value */
+  custom?: Record<string, PropertyValue | null>
   /** remove every property of all three parts (a full metadata scrub) */
   clear?: 'all'
 }
@@ -181,6 +191,10 @@ export function parseAppPropertiesXml(xml: string): Record<string, string> {
 const VT_VALUE_RE =
   /<(?:[A-Za-z_][\w.-]*:)?(lpwstr|lpstr|bstr|i1|i2|i4|i8|ui1|ui2|ui4|ui8|int|uint|r4|r8|bool|filetime|date|decimal)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1\s*>/
 
+/** the vt element a custom property carries; unknown value elements stay untyped */
+const VT_TYPE_RE =
+  /<(?:[A-Za-z_][\w.-]*:)?(lpwstr|lpstr|bstr|i1|i2|i4|i8|ui1|ui2|ui4|ui8|int|uint|r4|r8|bool|filetime|date|decimal|cy|error|null|clsid|blob|stream|storage|variant|vector)\b/
+
 function customPropertyValue(property: string): string {
   const match = VT_VALUE_RE.exec(property)
   return match ? decodeXmlText(match[2]) : propertyText(property)
@@ -196,21 +210,34 @@ export function parseCustomPropertiesXml(xml: string): Record<string, string> {
   return out
 }
 
+/** the vt types of a custom.xml part's properties, by property name */
+export function parseCustomPropertyTypesXml(xml: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const property of xml.match(PROPERTY_RE) ?? []) {
+    const name = attrValue(property, 'name')
+    const type = VT_TYPE_RE.exec(property)?.[1]
+    if (name && type) out[name] = type
+  }
+  return out
+}
+
 /** the three docProps parts of a package, empty when the part is missing */
 export async function readDocumentProperties(zip: JSZip): Promise<DocumentProperties> {
   const core = zip.file(CORE_PROPERTIES_PATH)
   const app = zip.file(APP_PROPERTIES_PATH)
   const custom = zip.file(CUSTOM_PROPERTIES_PATH)
+  const customXml = custom ? await custom.async('string') : ''
   return {
     core: core ? parseCorePropertiesXml(await core.async('string')) : {},
     app: app ? parseAppPropertiesXml(await app.async('string')) : {},
-    custom: custom ? parseCustomPropertiesXml(await custom.async('string')) : {},
+    custom: custom ? parseCustomPropertiesXml(customXml) : {},
+    customTypes: custom ? parseCustomPropertyTypesXml(customXml) : {},
   }
 }
 
 /** the properties of a package that carries no docProps part at all */
 export function emptyDocumentProperties(): DocumentProperties {
-  return { core: {}, app: {}, custom: {} }
+  return { core: {}, app: {}, custom: {}, customTypes: {} }
 }
 
 function blankCorePropertiesXml(): string {
@@ -228,6 +255,59 @@ function blankAppPropertiesXml(): string {
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"' +
     ' xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+    '</Properties>'
+  )
+}
+
+/** Application a new GenOffice document records in docProps/app.xml */
+export const NEW_DOCUMENT_APPLICATION = 'GenOffice'
+/** Template a new GenOffice document records (Word's own default) */
+export const NEW_DOCUMENT_TEMPLATE = 'Normal.dotm'
+/**
+ * AppVersion of a new document. The docx-engine package version at release
+ * time; a blank-template test pins it to package.json so a version bump fails
+ * loudly instead of shipping a stale stamp.
+ */
+export const NEW_DOCUMENT_APP_VERSION = '0.1.0'
+
+/** the W3CDTF stamp Word writes into core properties (seconds, Z) */
+export function w3cdtfStamp(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
+}
+
+/**
+ * Word-like core part of a freshly created document: no creator or other
+ * people data, just the creation/modification stamp and revision 1, so later
+ * property sets (and the save path's modified/revision update) have a home.
+ */
+export function newDocumentCorePropertiesXml(created: Date = new Date()): string {
+  const stamp = w3cdtfStamp(created)
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"' +
+    ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"' +
+    ' xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+    `<dcterms:created xsi:type="dcterms:W3CDTF">${stamp}</dcterms:created>` +
+    `<dcterms:modified xsi:type="dcterms:W3CDTF">${stamp}</dcterms:modified>` +
+    '<cp:revision>1</cp:revision>' +
+    '</cp:coreProperties>'
+  )
+}
+
+/** Word-like extended part of a freshly created document (no company/manager) */
+export function newDocumentAppPropertiesXml(
+  opts: { application?: string; appVersion?: string; template?: string } = {},
+): string {
+  const application = opts.application ?? NEW_DOCUMENT_APPLICATION
+  const appVersion = opts.appVersion ?? NEW_DOCUMENT_APP_VERSION
+  const template = opts.template ?? NEW_DOCUMENT_TEMPLATE
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"' +
+    ' xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+    `<Template>${escapeXmlText(template)}</Template>` +
+    `<Application>${escapeXmlText(application)}</Application>` +
+    `<AppVersion>${escapeXmlText(appVersion)}</AppVersion>` +
     '</Properties>'
   )
 }
@@ -324,10 +404,121 @@ function setAppElement(xml: string, local: string, value: string): string {
   return insertElement(xml, element)
 }
 
-/** set or remove the custom properties of a custom.xml part */
+/** the type a new custom property gets when the value cannot be typed */
+const CUSTOM_PROPERTY_DEFAULT_TYPE = 'lpwstr'
+
+/** vt integer types and the range each can hold */
+const VT_INT_RANGES: Record<string, readonly [number, number]> = {
+  i1: [-128, 127],
+  i2: [-32768, 32767],
+  i4: [-2147483648, 2147483647],
+  i8: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  ui1: [0, 255],
+  ui2: [0, 65535],
+  ui4: [0, 4294967295],
+  ui8: [0, Number.MAX_SAFE_INTEGER],
+  int: [-2147483648, 2147483647],
+  uint: [0, 4294967295],
+}
+const VT_FLOAT_TYPES = new Set(['r4', 'r8', 'decimal', 'cy'])
+const VT_TIME_TYPES = new Set(['filetime', 'date'])
+const VT_TEXT_TYPES = new Set(['lpwstr', 'lpstr', 'bstr'])
+
+/** the text form of a scalar op value (used for text fallbacks) */
+function scalarText(value: PropertyValue): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return String(value)
+}
+
+/** Word's W3CDTF text (a bare date fills the day start, no zone means Z) */
+function w3cdtfValue(value: string): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/.exec(
+    value.trim(),
+  )
+  if (!match) return null
+  return match[2] ? `${match[1]}T${match[2]}${match[3] ?? 'Z'}` : `${match[1]}T00:00:00Z`
+}
+
+/**
+ * The text a value carries in an existing vt type, null when the value does
+ * not fit it: numbers for the integer/float types, true/false for bool, an
+ * ISO-8601 stamp for filetime/date, anything for the text types.
+ */
+function typedCustomText(type: string, value: PropertyValue): string | null {
+  if (VT_TEXT_TYPES.has(type)) return scalarText(value)
+  if (type === 'bool') {
+    if (typeof value === 'boolean') return value ? 'true' : 'false'
+    if (typeof value === 'number') {
+      if (value === 1) return 'true'
+      if (value === 0) return 'false'
+    }
+    if (typeof value === 'string') {
+      const text = value.trim().toLowerCase()
+      if (text === 'true' || text === '1') return 'true'
+      if (text === 'false' || text === '0') return 'false'
+    }
+    return null
+  }
+  const range = VT_INT_RANGES[type]
+  if (range) {
+    const number =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && /^[+-]?\d+$/.test(value.trim())
+          ? Number(value.trim())
+          : null
+    if (number === null || !Number.isInteger(number)) return null
+    if (number < range[0] || number > range[1]) return null
+    return String(number)
+  }
+  if (VT_FLOAT_TYPES.has(type)) {
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null
+    if (
+      typeof value === 'string' &&
+      /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim())
+    )
+      return value.trim()
+    return null
+  }
+  if (VT_TIME_TYPES.has(type)) return typeof value === 'string' ? w3cdtfValue(value) : null
+  return null
+}
+
+/**
+ * The vt type and text of a set value: an existing property keeps its type
+ * while the value fits it, otherwise (and for a new property) the type comes
+ * from the value — text stays lpwstr, a boolean is bool, an integer i4/i8 and
+ * a fraction r8.
+ */
+function resolveCustomValue(
+  existingType: string | null,
+  value: PropertyValue,
+): { type: string; text: string } {
+  if (existingType) {
+    const text = typedCustomText(existingType, value)
+    if (text !== null) return { type: existingType, text }
+    return { type: CUSTOM_PROPERTY_DEFAULT_TYPE, text: scalarText(value) }
+  }
+  if (typeof value === 'boolean') return { type: 'bool', text: value ? 'true' : 'false' }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return { type: CUSTOM_PROPERTY_DEFAULT_TYPE, text: String(value) }
+    if (Number.isInteger(value) && value >= -2147483648 && value <= 2147483647)
+      return { type: 'i4', text: String(value) }
+    if (Number.isSafeInteger(value)) return { type: 'i8', text: String(value) }
+    return { type: 'r8', text: String(value) }
+  }
+  return { type: CUSTOM_PROPERTY_DEFAULT_TYPE, text: value }
+}
+
+/** the prefix a custom.xml part binds the docPropsVTypes namespace to */
+function vTypesPrefix(xml: string): string {
+  return /xmlns:([A-Za-z_][\w.-]*)="[^"]*docPropsVTypes"/.exec(xml)?.[1] ?? 'vt'
+}
+
+/** set or remove the custom properties of a custom.xml part, keeping stored vt types */
 export function patchCustomPropertiesXml(
   xml: string,
-  changes: Record<string, string | null>,
+  changes: Record<string, PropertyValue | null>,
 ): string {
   let out = xml
   let maxPid = 1
@@ -335,6 +526,8 @@ export function patchCustomPropertiesXml(
     const pid = Number(attrValue(property, 'pid'))
     if (Number.isSafeInteger(pid)) maxPid = Math.max(maxPid, pid)
   }
+  const existingTypes = parseCustomPropertyTypesXml(out)
+  const prefix = vTypesPrefix(out)
   for (const [name, value] of Object.entries(changes)) {
     if (value === null) {
       out = out.replace(PROPERTY_RE, (property) =>
@@ -342,6 +535,8 @@ export function patchCustomPropertiesXml(
       )
       continue
     }
+    const { type, text } = resolveCustomValue(existingTypes[name] ?? null, value)
+    const valueXml = `<${prefix}:${type}>${escapeXmlText(text)}</${prefix}:${type}>`
     let replaced = false
     out = out.replace(PROPERTY_RE, (property) => {
       if (attrValue(property, 'name') !== name) return property
@@ -350,7 +545,7 @@ export function patchCustomPropertiesXml(
       const pid = attrValue(property, 'pid') ?? String(maxPid + 1)
       return (
         `<property fmtid="${escapeXmlAttr(fmtid)}" pid="${escapeXmlAttr(pid)}"` +
-        ` name="${escapeXmlAttr(name)}"><vt:lpwstr>${escapeXmlText(value)}</vt:lpwstr></property>`
+        ` name="${escapeXmlAttr(name)}">${valueXml}</property>`
       )
     })
     if (replaced) continue
@@ -358,7 +553,7 @@ export function patchCustomPropertiesXml(
     out = insertElement(
       out,
       `<property fmtid="${CUSTOM_PROPERTIES_FMTID}" pid="${maxPid}"` +
-        ` name="${escapeXmlAttr(name)}"><vt:lpwstr>${escapeXmlText(value)}</vt:lpwstr></property>`,
+        ` name="${escapeXmlAttr(name)}">${valueXml}</property>`,
     )
   }
   return out
@@ -426,7 +621,7 @@ async function writePropertiesPart(
   await addRootRelationship(zip, relType, path)
 }
 
-const hasSetValue = (values: Record<string, string | null> | undefined): boolean =>
+const hasSetValue = (values: Record<string, unknown> | undefined): boolean =>
   !!values && Object.values(values).some((value) => value !== null)
 
 /**
@@ -491,7 +686,9 @@ export async function applyPropertyChanges(zip: JSZip, changes: PropertyChanges)
 
 /**
  * The set_properties op: core / app / custom hold the values to set (null
- * removes), clear: "all" empties every part. Throws on anything else.
+ * removes), clear: "all" empties every part. Custom values may be strings,
+ * numbers or booleans (a typed value keeps an existing property's vt type);
+ * core/app stay strings. Throws on anything else.
  */
 export function parsePropertyChanges(input: Record<string, unknown>): PropertyChanges {
   const changes: PropertyChanges = {}
@@ -507,7 +704,7 @@ export function parsePropertyChanges(input: Record<string, unknown>): PropertyCh
     }
     const known =
       section === 'core' ? CORE_PROPERTY_KEYS : section === 'app' ? APP_PROPERTY_KEYS : []
-    const out: Record<string, string | null> = {}
+    const out: Record<string, PropertyValue | null> = {}
     for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
       if (known.length > 0 && !known.includes(key)) {
         throw new Error(
@@ -518,12 +715,18 @@ export function parsePropertyChanges(input: Record<string, unknown>): PropertyCh
         out[key] = null
         continue
       }
-      if (typeof value !== 'string') {
-        throw new Error(`set_properties: ${section}.${key} must be a string or null`)
+      const typed = typeof value === 'number' || typeof value === 'boolean'
+      if (typeof value !== 'string' && !(section === 'custom' && typed)) {
+        throw new Error(
+          section === 'custom'
+            ? `set_properties: custom.${key} must be a string, number, boolean or null`
+            : `set_properties: ${section}.${key} must be a string or null`,
+        )
       }
       out[key] = value
     }
-    changes[section] = out
+    if (section === 'custom') changes.custom = out as Record<string, PropertyValue | null>
+    else changes[section] = out as Record<string, string | null>
   }
   if (!changes.clear && isEmpty(changes.core) && isEmpty(changes.app) && isEmpty(changes.custom)) {
     throw new Error('set_properties: nothing to change (give core, app, custom or clear)')
@@ -531,6 +734,6 @@ export function parsePropertyChanges(input: Record<string, unknown>): PropertyCh
   return changes
 }
 
-function isEmpty(values: Record<string, string | null> | undefined): boolean {
+function isEmpty(values: Record<string, unknown> | undefined): boolean {
   return !values || Object.keys(values).length === 0
 }

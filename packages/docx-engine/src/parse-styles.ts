@@ -121,6 +121,9 @@ function applyNormalTemplate(dd: DocDefaults): DocDefaults {
     italic: _it,
     color: _c,
     borderSides: _bs,
+    indentLeftTwips: _il,
+    indentRightTwips: _ir,
+    indentFirstLineTwips: _if,
     widowControl: _w,
     suppressAutoHyphens: _h,
     ...kept

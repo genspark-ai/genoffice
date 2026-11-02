@@ -147,7 +147,10 @@ describe('wrapTopAndBottom band reservation', () => {
     expect(box.bandBottomPx).toBe(40)
   })
 
-  it('leaves page-relative topAndBottom anchors on their previous path', async () => {
+  // IeumOffice divergence (genoffice #2331): the box floats at its page
+  // position; a 1in page offset is the body top under 1in margins, so the band
+  // starts at the anchor and following text resumes below the box
+  it('floats a page-relative topAndBottom box and bands it from the body top', async () => {
     const para =
       `<w:p><w:r>` +
       drawing({
@@ -156,6 +159,29 @@ describe('wrapTopAndBottom band reservation', () => {
         cx: 1905000,
         cy: 476250,
         text: 'pagebox',
+        wrap: '<wp:wrapTopAndBottom/>',
+        relV: 'page',
+      }) +
+      `</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    const [box] = doc.blocks[0].textboxes!
+    expect(box.floating).toBe(true)
+    expect(box.offsetYEmu).toBe(0)
+    expect(box.pageRelV).toBe(true)
+    expect(box.bandTopPx).toBe(0)
+    expect(box.bandBottomPx).toBe(50)
+  })
+
+  // no exact band at an unknown anchor: floating would lay text over the box
+  it('keeps a narrow page-relative topAndBottom box low on the page in the flow', async () => {
+    const para =
+      `<w:p><w:r>` +
+      drawing({
+        offXEmu: 0,
+        offYEmu: 914400 * 8,
+        cx: 1905000,
+        cy: 476250,
+        text: 'low',
         wrap: '<wp:wrapTopAndBottom/>',
         relV: 'page',
       }) +

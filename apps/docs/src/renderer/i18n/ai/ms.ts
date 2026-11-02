@@ -207,4 +207,7 @@ export const ms = {
   aiMindMapReset: 'Set semula pandangan',
   aiMindMapExpand: 'Kembangkan cabang',
   aiMindMapCollapse: 'Lipat cabang',
+  aiMindMapToggleLayout: 'Tukar susun atur',
+  aiMindMapLayoutTopDown: 'Tukar kepada susun atur atas ke bawah',
+  aiMindMapLayoutLeftRight: 'Tukar kepada susun atur kiri ke kanan',
 } satisfies Record<keyof typeof zh, string>

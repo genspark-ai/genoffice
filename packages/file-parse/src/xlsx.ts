@@ -1,4 +1,6 @@
 import JSZip from 'jszip'
+import { parseAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { offsetFormulaRefs } from '@genoffice/xlsx-gateway/domain/formula-shift'
 import { assertZipInflatesWithinLimits, assertZipWithinLimits } from '@genoffice/docx-engine'
 import { resolveTarget } from './opc'
 import { XMLParser } from 'fast-xml-parser'
@@ -8,6 +10,7 @@ import {
   formatSerial,
   type DateFormatParts,
 } from './xlsx-dates'
+import { decodeXlsxEscapes } from '@genoffice/xlsx-gateway/gateway/xlsx-escapes'
 
 function stripNamespacePrefix(name: string): string {
   const separator = name.indexOf(':')
@@ -53,11 +56,11 @@ function sharedStringText(si: Record<string, unknown>): string {
   let out = ''
   for (const key of Object.keys(si)) {
     if (key === 't') {
-      for (const node of asArray(si[key] as unknown)) out += textOf(node)
+      for (const node of asArray(si[key] as unknown)) out += decodeXlsxEscapes(textOf(node))
     } else if (key === 'r') {
       for (const run of asArray(si[key] as unknown)) {
         const r = run as Record<string, unknown>
-        for (const node of asArray(r['t'] as unknown)) out += textOf(node)
+        for (const node of asArray(r['t'] as unknown)) out += decodeXlsxEscapes(textOf(node))
       }
     }
   }
@@ -86,7 +89,7 @@ interface Cell {
   is?: Record<string, unknown>
 }
 
-type SharedFormulas = Map<string, string>
+type SharedFormulas = Map<string, { formula: string; ref: string | undefined }>
 
 function sharedIndex(cell: Cell): string | undefined {
   const si =
@@ -100,13 +103,26 @@ function sharedIndex(cell: Cell): string | undefined {
 function recordSharedFormula(cell: Cell, sharedFormulas: SharedFormulas): void {
   const si = sharedIndex(cell)
   const own = textOf(cell.f).trim()
-  if (si !== undefined && own) sharedFormulas.set(si, own)
+  if (si !== undefined && own) sharedFormulas.set(si, { formula: own, ref: cell['@_r'] })
 }
 
 /** openpyxl/ExcelJS write formulas with no cached <v>; the formula text is all there is until Excel recalculates */
 function formulaText(cell: Cell, sharedFormulas: SharedFormulas): string {
   const si = sharedIndex(cell)
-  const text = textOf(cell.f).trim() || (si !== undefined ? (sharedFormulas.get(si) ?? '') : '')
+  const own = textOf(cell.f).trim()
+  const master = si !== undefined ? sharedFormulas.get(si) : undefined
+  let text = own || master?.formula || ''
+  const ref = cell['@_r']
+  if (
+    !own &&
+    master?.ref &&
+    ref &&
+    [master.ref, ref].every((address) => /^\$?[A-Z]+\$?[1-9]\d*$/i.test(address))
+  ) {
+    const source = parseAddress(master.ref.toUpperCase())
+    const target = parseAddress(ref.toUpperCase())
+    text = offsetFormulaRefs(master.formula, target.row - source.row, target.column - source.column)
+  }
   return text ? `=${text}` : ''
 }
 
@@ -117,9 +133,9 @@ type DateStyles = Map<number, DateFormatParts>
  * A date cell is stored as a plain serial; without its style the model sees 45292 where the
  * sheet shows 1-Jan-24. Resolve each cellXfs entry's numFmt once per workbook.
  */
-async function loadDateStyles(zip: JSZip): Promise<DateStyles> {
+async function loadDateStyles(zip: JSZip, path: string): Promise<DateStyles> {
   const styles: DateStyles = new Map()
-  const xml = await zipText(zip, 'xl/styles.xml')
+  const xml = await zipText(zip, path)
   if (!xml) return styles
   const sheet = (parser.parse(xml) as Record<string, any>).styleSheet
   const custom = new Map<number, DateFormatParts | null>()
@@ -153,7 +169,6 @@ function cellText(
   const type = cell['@_t'] ?? ''
   if (type === 'inlineStr') return cell.is ? sharedStringText(cell.is) : ''
   if (cell.f !== undefined) {
-    recordSharedFormula(cell, sharedFormulas)
     if (textOf(cell.v).trim() === '') return formulaText(cell, sharedFormulas)
   }
   // <v> is ST_Xstring so it reaches the caller verbatim; the two reads that need it as a
@@ -177,6 +192,7 @@ function cellText(
     return shared[index] ?? ''
   }
   if (type === 'b') return value.trim() === '1' ? 'TRUE' : 'FALSE'
+  if (type === 'str') return decodeXlsxEscapes(value)
   return value
 }
 
@@ -315,11 +331,12 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
   // Sheet order and names come from workbook.xml; r:id maps to the actual sheet path via the workbook rels
   const workbook = parser.parse(workbookXml) as Record<string, any>
   const sheets = asArray(workbook.workbook?.sheets?.sheet) as Array<Record<string, unknown>>
-  const dateStyles = await loadDateStyles(zip)
   const date1904 = isDate1904(workbook)
 
   const relsXml = await zipText(zip, 'xl/_rels/workbook.xml.rels')
   const relTargets = new Map<string, string>()
+  let stylesPath = 'xl/styles.xml'
+  let sharedStringsPath = 'xl/sharedStrings.xml'
   if (relsXml) {
     const rels = parser.parse(relsXml) as Record<string, any>
     for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
@@ -327,11 +344,17 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
       const target = String(rel['@_Target'] ?? '')
       const resolved = target.trim() === '' ? '' : resolveTarget('xl/workbook.xml', target)
       if (id !== '' && resolved !== '') relTargets.set(id, resolved)
+      if (resolved && String(rel['@_TargetMode'] ?? '').toLowerCase() !== 'external') {
+        const type = String(rel['@_Type'] ?? '')
+        if (type.endsWith('/styles')) stylesPath = resolved
+        if (type.endsWith('/sharedStrings')) sharedStringsPath = resolved
+      }
     }
   }
 
+  const dateStyles = await loadDateStyles(zip, stylesPath)
   const shared: string[] = []
-  const sharedXml = await zipText(zip, 'xl/sharedStrings.xml')
+  const sharedXml = await zipText(zip, sharedStringsPath)
   if (sharedXml) {
     const sst = parser.parse(sharedXml) as Record<string, any>
     for (const si of asArray(sst.sst?.si) as Array<Record<string, unknown>>) {
@@ -356,6 +379,9 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
     const rows = asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>
     let hasData = false
     const sharedFormulas: SharedFormulas = new Map()
+    for (const row of rows) {
+      for (const cell of asArray(row.c as Cell | Cell[])) recordSharedFormula(cell, sharedFormulas)
+    }
     for (const row of rows) {
       // Sparse by column; a slot holds several values only when refs collide.
       const slots: string[][] = []

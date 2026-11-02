@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import JSZip from 'jszip'
 import { buildBlankDocx, parseDocx, saveDocx } from '@genoffice/docx-engine'
@@ -24,6 +24,14 @@ const picture = {
   label: 'Picture',
 }
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function openBlank() {
   const source = await buildBlankDocx()
   const parsed = await parseDocx(source)
@@ -32,6 +40,7 @@ async function openBlank() {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   return { editor, parsed }
 }
 
@@ -100,6 +109,7 @@ describe('insert picture in a table cell', () => {
       extensions: editorExtensions,
       content: blocksToPmDoc(parsed.blocks) as never,
     })
+    liveEditors.push(editor)
     selectFirstCellParagraph(editor)
     expect(insertPictureAtSelection(editor, picture)).toBe(true)
     const { xml, zip } = await save(editor, parsed)

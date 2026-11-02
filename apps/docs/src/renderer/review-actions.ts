@@ -6,7 +6,13 @@
  */
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { nextNoteId, parseDocx, type CommentInfo, type NoteInfo } from '@genoffice/docx-engine'
+import {
+  nextNoteId,
+  parseDocx,
+  type CommentImage,
+  type CommentInfo,
+  type NoteInfo,
+} from '@genoffice/docx-engine'
 import type { Dispatch, SetStateAction } from 'react'
 import { authorName } from './author-name'
 import { fetchDocBytes } from './doc-bytes'
@@ -184,7 +190,7 @@ export function startNewComment(ctx: ReviewContext): void {
   ctx.setCommentComposing(true)
 }
 
-export function submitNewComment(ctx: ReviewContext, text: string): void {
+export function submitNewComment(ctx: ReviewContext, text: string, image?: CommentImage): void {
   if (!ctx.editor) return
   setPendingCommentRange(ctx, null)
   const id = nextCommentId(ctx.comments)
@@ -194,7 +200,10 @@ export function submitNewComment(ctx: ReviewContext, text: string): void {
     return
   }
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-  ctx.setComments((prev) => [...prev, { id, author: authorName(), date: now, text }])
+  ctx.setComments((prev) => [
+    ...prev,
+    { id, author: authorName(), date: now, text, ...(image ? { image } : {}) },
+  ])
   ctx.setCommentsDirty(true)
   ctx.setCommentComposing(false)
   ctx.dirtyRef.current = true
@@ -472,5 +481,43 @@ export async function compareWithFile(ctx: ReviewContext): Promise<void> {
     ctx.setCompareResult({ otherName: other.name, entries })
   } catch (err) {
     ctx.setStatus(t('appCompareFailed', { error: String(err) }))
+  }
+}
+
+/** A comment picture is shown at most this wide; larger ones scale down keeping the aspect */
+const MAX_COMMENT_IMAGE_PX = 320
+
+const COMMENT_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif'])
+
+/**
+ * The picture a comment carries, from a picked or pasted file: the bytes ride
+ * along base64 and the display size scales the natural size into the cap.
+ * null for anything that is not a png/jpeg/gif or does not decode.
+ */
+export async function commentImageFromFile(file: File): Promise<CommentImage | null> {
+  if (!COMMENT_IMAGE_MIMES.has(file.type)) return null
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () =>
+      resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(new Blob([file], { type: file.type }))
+  } catch {
+    return null
+  }
+  const width = bitmap.width
+  const height = bitmap.height
+  bitmap.close()
+  if (width <= 0 || height <= 0) return null
+  const scale = Math.min(1, MAX_COMMENT_IMAGE_PX / Math.max(width, height))
+  return {
+    mime: file.type as CommentImage['mime'],
+    base64,
+    widthPx: Math.max(1, Math.round(width * scale)),
+    heightPx: Math.max(1, Math.round(height * scale)),
   }
 }
