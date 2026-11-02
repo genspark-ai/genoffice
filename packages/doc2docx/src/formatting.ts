@@ -81,9 +81,18 @@ export interface ParagraphFormatting {
   tableRowEnd?: boolean
 }
 
+/** A run that belongs to a hyperlink; the writer emits a w:hyperlink around it. */
+export interface FormattedLink {
+  /** external URL, or '#bookmark' for an internal anchor */
+  href: string
+  tooltip?: string
+}
+
 export interface FormattedRun {
   text: string
   formatting: CharacterFormatting
+  /** set when the run's text sits inside a hyperlink field result */
+  link?: FormattedLink
 }
 
 export interface FormattedParagraph {

@@ -14,6 +14,8 @@ import { readResolvedFormatting } from './resolve'
 import { parseSections, type SectionInfo } from './sections'
 import { parseHeaderStories, type SectionHeaderFooter } from './headers'
 import { parseInlineImages } from './images'
+import { parseListTables } from './lists'
+import { parseFields } from './fields'
 import { readLegacyDocBody as readBodyFromSource, type LegacyDocBody } from './tables'
 import { LegacyDocError } from './errors'
 
@@ -73,6 +75,10 @@ export type {
 } from './formatting'
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
+export { isBulletLevel, levelTextForWriter, parseListTables } from './lists'
+export type { ListDefinition, ListLevel, ListTables } from './lists'
+export { parseFields } from './fields'
+export type { FieldParseResult, HyperlinkField } from './fields'
 export { DEFAULT_SECTION_GEOMETRY, parseSections } from './sections'
 export { EMU_PER_TWIP, imageExtentEmu, parseInlineImages } from './images'
 export type { ImageBlock, InlineImageResult } from './images'
@@ -92,7 +98,7 @@ export {
   resolveParagraphFormattingFor,
   resolveRunsForRange,
 } from './resolve'
-export type { ParagraphRunRequest } from './resolve'
+export type { FormattedLinkRange, ParagraphRunRequest } from './resolve'
 export { buildLegacyDocBody } from './tables'
 export type {
   BodyBlock,
@@ -209,10 +215,19 @@ export interface LegacyDocLayout {
 export function readLegacyDocBody(bytes: Uint8Array): LegacyDocBody {
   const doc = openLegacyDoc(bytes)
   const images = parseInlineImages(doc)
-  const body = readBodyFromSource(doc, { images: images.images })
+  const lists = parseListTables(doc.fib, doc.table)
+  const fields = parseFields(doc.rawText)
+  const body = readBodyFromSource(doc, {
+    images: images.images,
+    lists,
+    fields,
+  })
   return {
     blocks: body.blocks,
-    warnings: [...new Set([...body.warnings, ...images.warnings])],
+    warnings: [
+      ...new Set([...body.warnings, ...images.warnings, ...lists.warnings, ...fields.warnings]),
+    ],
+    ...(body.lists ? { lists: body.lists } : {}),
   }
 }
 

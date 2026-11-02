@@ -177,25 +177,62 @@ stream and writes them as real .docx media parts with inline drawings:
   footnotes or table cells are not handled yet, and picture metadata
   (alt text, borders, hyperlinks) is not carried over.
 
+## Stage 3c-4 — lists/numbering and HYPERLINK fields
+
+Internal only. Reads the Word 97-2003 list tables and HYPERLINK fields and
+writes real numbering definitions plus hyperlink runs:
+
+- **parseListTables** — PlfLst (FIB pair 73): cLst 28-byte LSTF records and the
+  LVL array that follows them (one level for fSimpleList lists, nine
+  otherwise). Each LVL gives start value, nfc numbering format, level text,
+  indents from grpprlPapx and the character properties; placeholders in the
+  Xst become %1..%9 and symbol-font bullet glyphs are mapped to text bullets.
+  PlfLfo (pair 74) maps 1-based ilfo values to lsids; per-level overrides are
+  reported and the base definition is used. Malformed tables raise
+  `bad_list`.
+- **Formatting model** — sprmPIlfo/sprmPIlvl already flow through the direct
+  PAPX and style resolution, so resolved paragraphs carry `listId` and
+  `listLevel`; the body builder turns them into `{ kind, numId: 100 + ilfo,
+ilvl }` list items (a missing list definition is reported and the paragraph
+  stays plain).
+- **parseFields** — walks the body text field ranges (\x13 instruction
+  \x14 result \x15) with a stack for nested fields, parses HYPERLINK
+  instructions (quoted/bare URL, \l anchors, \o tooltips) into result CP
+  ranges, and reports unsupported field types or malformed/unclosed fields as
+  warnings while keeping the result as plain text.
+- **Writer** — appends one `w:abstractNum` per used lsid (ids from 10, levels
+  with w:start/w:numFmt/w:lvlText/w:lvlJc and the level indents) and one
+  `w:num` per used ilfo (ids 100 + ilfo) to the blank template numbering.xml
+  (CT_Numbering keeps abstractNum* before num*); numbered paragraphs get
+  `w:numPr` with their direct formatting. Hyperlink result runs are wrapped in
+  `w:hyperlink`: external URLs get a relationship with
+  `TargetMode="External"`, bookmark links use `w:anchor`; the field
+  instruction text never reaches the output, and documents without lists or
+  fields keep the previous writer output.
+- **Limitations** — unsupported field types and per-level list overrides are
+  warned and left as plain text/base definitions; EMF/WMF pictures, floating
+  images, footnotes and emitted real .docx styles are still later stages.
+
 ## Roadmap
 
-- **Stage 3c-4**: lists and hyperlinks, EMF/WMF conversion, floating images,
-  pictures in headers/cells, emitted real .docx styles instead of resolved
-  direct formatting, richer header/footer formatting, real multi-section
-  output and table cell padding/shading/styles; tighter paragraph-count
-  parity.
+- **Stage 3c-5**: EMF/WMF conversion, floating images and pictures in
+  headers/cells, footnotes/endnotes, emitted real .docx styles instead of
+  resolved direct formatting, richer header/footer formatting, real
+  multi-section output and table cell padding/shading/styles; tighter
+  paragraph-count parity.
 - **Stage 3d**: docs import wiring (`.doc` files through File → Open /
   drag-and-drop and the CLI), as core + UI PRs.
 
 ## Format coverage
 
 Word 97-2003 (nFib 0x00C1–0x0112), main document story with section geometry,
-header/footer stories, real tables and inline PNG/JPEG pictures;
-paragraph/character styles are resolved into direct formatting. Footnotes,
-textboxes, lists, emitted .docx styles, nested tables and EMF/WMF pictures are
-later stages, and multi-section documents are flattened to one section.
-Encrypted files and Word 6/95 documents are rejected with actionable
-`LegacyDocError` codes (`not_cfb`, `truncated`, `bad_fib`,
+header/footer stories, real tables, inline PNG/JPEG pictures, lists/numbering
+and HYPERLINK fields; paragraph/character styles are resolved into direct
+formatting. Footnotes, textboxes, EMF/WMF pictures, floating images and
+emitted .docx styles are later stages, and multi-section documents are
+flattened to one section. Encrypted files and Word 6/95 documents are rejected
+with actionable `LegacyDocError` codes (`not_cfb`, `truncated`, `bad_fib`,
 `unsupported_version`, `encrypted`, `missing_stream`, `bad_clx`,
 `bad_piece_table`, `bad_fkp`, `bad_sprm`, `bad_stsh`, `bad_section`,
-`bad_hdd`, `bad_table`, `bad_picture`, `limits_exceeded`, `corrupt`).
+`bad_hdd`, `bad_table`, `bad_picture`, `bad_list`, `limits_exceeded`,
+`corrupt`).
