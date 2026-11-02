@@ -359,6 +359,44 @@ export interface SdtShell {
    * sdt; only the first carries openXml and only the last carries closeXml.
    */
   group?: number
+  /**
+   * 0-based nesting depth of this wrapper inside the block's control chain
+   * (0 = outermost). Only set on Block.sdtShells entries: sdtShell keeps just
+   * the outermost wrapper for compatibility.
+   */
+  level?: number
+  /**
+   * docxIndex of the block whose original xml physically owns this level's
+   * opening bytes. A control split into several blocks keeps its open bytes on
+   * the first block and its close bytes on the last, so a level can be
+   * unwrapped without guessing which identical </w:sdtContent></w:sdt> slice
+   * belongs to it.
+   */
+  openBlock?: number
+  /** byte offset of openXml inside that block's original xml */
+  openOffset?: number
+  /** docxIndex of the block owning this level's closing bytes */
+  closeBlock?: number
+  /** byte offset of closeXml inside that block's original xml */
+  closeOffset?: number
+}
+
+/**
+ * A run-level (inline) content control inside a paragraph, read-only: its
+ * bytes stay in the paragraph's original xml, so reading never changes the
+ * run text or the model of the paragraph.
+ */
+export interface InlineContentControl {
+  /** programmatic tag (w:sdtPr/w:tag), may be empty */
+  tag: string
+  /** human-visible title (w:sdtPr/w:alias), may be empty */
+  title: string
+  /** lock state (w:sdtPr/w:lock), empty when the control carries none */
+  lock: string
+  /** control id (w:sdtPr/w:id), empty when the control carries none */
+  id: string
+  /** the plain text that sits inside the control */
+  text: string
 }
 
 /** One custom tab stop from w:tabs/w:tab. Positions are in twips. */
@@ -1851,8 +1889,22 @@ export interface Block {
    * original sdtPr + shell bytes are stored here for save-time re-wrapping.
    * The block's runs/format are from sdtContent and are fully editable;
    * saving patches only those runs while keeping the sdt shell verbatim.
+   * Holds only the outermost wrapper; read sdtShells for the whole chain.
    */
   sdtShell?: SdtShell
+  /**
+   * Every block-level control wrapping this block, outermost first (nested
+   * controls are captured level by level; sdtShell keeps the outermost for
+   * compatibility). Each entry carries its own metadata and open/close bytes,
+   * plus the block that owns those bytes, so a specific level can be unwrapped.
+   */
+  sdtShells?: SdtShell[]
+  /**
+   * Run-level (inline) content controls inside a paragraph, read-only: they
+   * are reported with their tag/title/lock/id and inner text, while their
+   * bytes stay untouched in the paragraph's original xml.
+   */
+  inlineContentControls?: InlineContentControl[]
   /**
    * Move revision: 'from' = content was moved away (shown with strikethrough + red bg),
    * 'to' = content was moved here (shown with green bg). Accept/reject via del/ins marks.
