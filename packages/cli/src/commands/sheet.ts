@@ -31,6 +31,10 @@ import type { OpFailure } from '../op-errors'
 
 const FORMULAS_NOT_CACHED = (message: string): Warning => ({ code: 'formulas_not_cached', message })
 const FORMULA_ERRORS = (message: string): Warning => ({ code: 'formula_errors', message })
+const DEPENDENTS_NOT_RECALCULATED = (message: string): Warning => ({
+  code: 'dependents_not_recalculated',
+  message,
+})
 
 export const sheetCommand: CommandDef = {
   name: 'sheet',
@@ -417,12 +421,18 @@ async function applyCells(
   }
 }
 
-function writeWarnings(w: { warning?: string; formulaError?: string; notes?: Warning[] }): {
+function writeWarnings(w: {
+  warning?: string
+  formulaError?: string
+  dependentsWarning?: string
+  notes?: Warning[]
+}): {
   warnings?: Warning[]
 } {
   const warnings = [
     ...(w.warning ? [FORMULAS_NOT_CACHED(w.warning)] : []),
     ...(w.formulaError ? [FORMULA_ERRORS(w.formulaError)] : []),
+    ...(w.dependentsWarning ? [DEPENDENTS_NOT_RECALCULATED(w.dependentsWarning)] : []),
     ...(w.notes ?? []),
   ]
   return warnings.length ? { warnings } : {}
