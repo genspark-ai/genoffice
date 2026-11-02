@@ -19,6 +19,8 @@ import {
   MINIMAX_BASE_URL,
   OPENAI_IMAGES_BASE_URL,
   getMediaProviderMeta,
+  STABILITY_BASE_URL,
+  BFL_BASE_URL,
 } from './media'
 import type { AiMediaProviderConfig, AiMediaProviderId, AiMediaProviderMeta } from './types'
 
@@ -681,6 +683,130 @@ async function analyzeMediaGemini(
 
 // ── dispatch ────────────────────────────────────────────────────────
 
+/** Stability's generation endpoint per model id; sd3.5 ids pick the model inside /sd3 */
+function stabilityEndpointOf(model: string): { path: string; sd3Model?: string } {
+  switch (model) {
+    case 'stable-image-ultra':
+      return { path: 'ultra' }
+    case 'stable-image-core':
+      return { path: 'core' }
+    case 'sd3.5-large':
+    case 'sd3.5-large-turbo':
+    case 'sd3.5-medium':
+      return { path: 'sd3', sd3Model: model }
+  }
+  throw new Error(`Unknown Stability AI image model: ${model}`)
+}
+
+/** Stability serves these aspect ratios on the generate endpoints; anything else omits the field */
+const STABILITY_ASPECT_RATIOS = new Set(['1:1', '4:3', '3:4', '16:9', '9:16', '2:3', '3:2'])
+
+async function generateImageStability(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  if (input.references?.length) {
+    throw new Error(
+      'Stability AI cannot edit or reference images here; generate from the prompt alone or pick another image provider.',
+    )
+  }
+  const endpoint = stabilityEndpointOf(model)
+  const form = new FormData()
+  form.set('prompt', input.prompt)
+  form.set('output_format', 'png')
+  if (endpoint.sd3Model !== undefined) form.set('model', endpoint.sd3Model)
+  if (
+    input.aspectRatio &&
+    input.aspectRatio !== 'auto' &&
+    STABILITY_ASPECT_RATIOS.has(input.aspectRatio)
+  ) {
+    form.set('aspect_ratio', input.aspectRatio)
+  }
+  // Accept: image/* makes the API answer the rendered bytes directly instead of
+  // a base64 JSON envelope
+  const resp = await aiFetch(
+    `${trimSlash(config.baseUrl || STABILITY_BASE_URL)}/v2beta/stable-image/generate/${endpoint.path}`,
+    {
+      method: 'POST',
+      headers: { Accept: 'image/*', Authorization: `Bearer ${config.apiKey}` },
+      body: form,
+      signal,
+    },
+  )
+  if (!resp.ok) return failFrom('Stable Image generation failed:', resp)
+  const bytes = await readCapped(resp, 'Stable Image')
+  return { bytes, mime: sniffImageMime(bytes, resp.headers.get('content-type') ?? 'image/png') }
+}
+
+/** BFL serves one endpoint per model; the job is async and polled to a URL */
+function bflPollSleep(guard: AbortSignal, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    guard.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(new Error('FLUX generation timed out or was cancelled'))
+      },
+      { once: true },
+    )
+  })
+}
+
+async function generateImageBfl(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  if (input.references?.length) {
+    throw new Error(
+      'FLUX cannot edit or reference images here; generate from the prompt alone or pick another image provider.',
+    )
+  }
+  const base = trimSlash(config.baseUrl || BFL_BASE_URL)
+  const headers = {
+    'x-key': config.apiKey,
+    'Content-Type': 'application/json',
+    accept: 'application/json',
+  }
+  const submit = await aiFetch(`${base}/v1/${model}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      prompt: input.prompt,
+      ...(input.aspectRatio && input.aspectRatio !== 'auto'
+        ? { aspect_ratio: input.aspectRatio }
+        : {}),
+    }),
+    signal,
+  })
+  if (!submit.ok) return failFrom('FLUX generation failed:', submit)
+  const queued = await readJson('FLUX', submit)
+  const pollUrl =
+    typeof queued.polling_url === 'string' && queued.polling_url
+      ? queued.polling_url
+      : `${base}/v1/get_result?id=${encodeURIComponent(String(queued.id ?? ''))}`
+  // the job is queued server-side; results come as status Ready + sample_url
+  for (;;) {
+    await bflPollSleep(signal, 1_500)
+    const poll = await aiFetch(pollUrl, { headers: { 'x-key': config.apiKey }, signal })
+    const json = await readJson('FLUX result', poll)
+    const status = String(json.status ?? '')
+    if (status === 'Ready') {
+      if (typeof json.sample_url !== 'string' || !json.sample_url) {
+        throw new Error(`FLUX returned no image URL: ${JSON.stringify(json).slice(0, 200)}`)
+      }
+      return downloadImage('FLUX', json.sample_url, signal)
+    }
+    if (status === 'Error' || status === 'Content Moderated' || status === 'Request Moderated') {
+      throw new Error(`FLUX generation failed: ${status}`)
+    }
+  }
+}
+
 function modelOf(
   meta: AiMediaProviderMeta,
   config: AiMediaProviderConfig,
@@ -720,6 +846,10 @@ export async function generateImageWithProvider(
       return generateImageDashscope(config, model, input, guard)
     case 'minimax':
       return generateImageMinimax(config, model, input, guard)
+    case 'stability':
+      return generateImageStability(config, model, input, guard)
+    case 'bfl':
+      return generateImageBfl(config, model, input, guard)
     case 'openai-images':
       return generateImageOpenAi(provider, config, model, input, guard)
   }

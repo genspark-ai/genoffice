@@ -845,3 +845,89 @@ describe('a failed media request does not buffer the whole error body', () => {
     expect(pulled()).toBeLessThanOrEqual(128 * 1024)
   })
 })
+describe('generateImageWithProvider (stability & bfl)', () => {
+  const cfg = (imageModel: string, baseUrl?: string) => ({
+    apiKey: 'k',
+    imageModel,
+    analysisModel: '',
+    ...(baseUrl ? { baseUrl } : {}),
+  })
+  const pngResponse = () =>
+    new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('Stability: multipart to the model endpoint, image bytes back', async () => {
+    const fetchMock = vi.fn(async () => pngResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('stability', cfg('stable-image-ultra'), {
+      prompt: 'a fox',
+      aspectRatio: '16:9',
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.stability.ai/v2beta/stable-image/generate/ultra')
+    expect((init.headers as Record<string, string>).Accept).toBe('image/*')
+    const form = init.body as FormData
+    expect(form.get('prompt')).toBe('a fox')
+    expect(form.get('output_format')).toBe('png')
+    expect(form.get('aspect_ratio')).toBe('16:9')
+    expect(form.get('model')).toBeNull()
+  })
+
+  it('Stability: an sd3.5 id rides the sd3 endpoint with a model field; unknown ids refuse', async () => {
+    const fetchMock = vi.fn(async () => pngResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('stability', cfg('sd3.5-large'), { prompt: 'a fox' })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.stability.ai/v2beta/stable-image/generate/sd3')
+    expect((init.body as FormData).get('model')).toBe('sd3.5-large')
+    await expect(
+      generateImageWithProvider('stability', cfg('sd-1.x'), { prompt: 'x' }),
+    ).rejects.toThrow(/Unknown Stability/)
+  })
+
+  it('BFL: submit, poll to Ready, download the sample', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : url.includes('get_result')
+          ? jsonResponse({ status: 'Ready', sample_url: 'https://cdn.bfl.example/out.png' })
+          : pngResponse(),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('bfl', cfg('flux-2-pro'), {
+      prompt: 'a fox',
+      aspectRatio: '9:16',
+    })
+    expect(out.mime).toBe('image/png')
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(submitUrl).toBe('https://api.bfl.ai/v1/flux-2-pro')
+    expect((submitInit.headers as Record<string, string>)['x-key']).toBe('k')
+    expect(JSON.parse(submitInit.body as string)).toEqual({ prompt: 'a fox', aspect_ratio: '9:16' })
+    const pollInit = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(pollInit[0]).toBe('https://api.bfl.ai/v1/get_result?id=job-1')
+    expect((pollInit[1].headers as Record<string, string>)['x-key']).toBe('k')
+    expect(fetchMock.mock.calls[2]![0]).toBe('https://cdn.bfl.example/out.png')
+  })
+
+  it('BFL: a moderated or errored job surfaces as a failure', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : jsonResponse({ status: 'Content Moderated' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('bfl', cfg('flux-2-pro'), { prompt: 'a fox' }),
+    ).rejects.toThrow(/Content Moderated/)
+    await expect(
+      generateImageWithProvider('bfl', cfg('flux-2-pro'), {
+        prompt: 'x',
+        references: [{ bytes: PNG, mime: 'image/png' }],
+      }),
+    ).rejects.toThrow(/cannot edit/)
+  })
+})

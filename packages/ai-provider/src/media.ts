@@ -14,6 +14,8 @@ export const XAI_BASE_URL = 'https://api.x.ai/v1'
 /** DashScope root: images ride /api/v1/services/aigc/..., understanding rides /compatible-mode/v1 */
 export const DASHSCOPE_BASE_URL = 'https://dashscope.aliyuncs.com'
 export const MINIMAX_BASE_URL = 'https://api.minimax.io/v1'
+export const STABILITY_BASE_URL = 'https://api.stability.ai'
+export const BFL_BASE_URL = 'https://api.bfl.ai'
 /** DeepSeek's OpenAI-compatible root; the Vision + Files API live at https://api.deepseek.com */
 export const DEEPSEEK_MEDIA_BASE_URL = 'https://api.deepseek.com/v1'
 
@@ -72,17 +74,20 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     id: 'gemini',
     label: 'Gemini',
     description:
-      'Gemini native image output (Nano Banana) and Imagen; Gemini reads images, video and audio',
+      'Gemini native image output (the Nano Banana family); Gemini reads images, video and audio',
     keyPlaceholder: 'AIza...',
     defaultBaseUrl: GEMINI_MEDIA_BASE_URL,
     imageProtocol: 'gemini',
+    // per the Google models page 2026-10-28: Nano Banana 2.1 leads the family
+    // and Imagen 4 is shut down, so no Imagen id is listed
     imageModels: [
+      'gemini-nano-banana-2.1',
       'gemini-3.1-flash-image',
       'gemini-3-pro-image',
       'gemini-3.1-flash-lite-image',
       'gemini-2.5-flash-image',
     ],
-    defaultImageModel: 'gemini-3.1-flash-image',
+    defaultImageModel: 'gemini-nano-banana-2.1',
     analysisProtocol: 'gemini',
     analysisModels: [
       'gemini-4-argon',
@@ -113,8 +118,12 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     ],
     defaultImageModel: 'doubao-seedream-5-0-pro-260628',
     analysisProtocol: 'openai-chat',
-    analysisModels: ['doubao-seed-2-1-pro-260628', 'doubao-seed-2-1-turbo-260628'],
-    defaultAnalysisModel: 'doubao-seed-2-1-pro-260628',
+    analysisModels: [
+      'doubao-seed-2-1-pro-260915',
+      'doubao-seed-2-1-pro-260628',
+      'doubao-seed-2-1-turbo-260628',
+    ],
+    defaultAnalysisModel: 'doubao-seed-2-1-pro-260915',
     videoAnalysis: true,
   },
   {
@@ -124,8 +133,10 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'xxxxxxxx.xxxxxxxx',
     defaultBaseUrl: ZHIPU_BASE_URL,
     imageProtocol: 'openai-images',
-    imageModels: ['cogview-4-250304', 'cogview-3-flash'],
-    defaultImageModel: 'cogview-4-250304',
+    // per the Zhipu API reference 2026-11-02: the image flagship is GLM-Image
+    // (CogView stays at 4 — there is no CogView 4.5 or 5)
+    imageModels: ['glm-image', 'cogview-4-250304', 'cogview-3-flash'],
+    defaultImageModel: 'glm-image',
     analysisProtocol: 'openai-chat',
     analysisModels: ['glm-4.6v', 'glm-4.6v-flash'],
     defaultAnalysisModel: 'glm-4.6v',
@@ -152,8 +163,18 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'sk-...',
     defaultBaseUrl: DASHSCOPE_BASE_URL,
     imageProtocol: 'dashscope',
-    imageModels: ['qwen-image-plus', 'qwen-image'],
-    defaultImageModel: 'qwen-image-plus',
+    // per the Model Studio text-to-image docs 2026-11-02: qwen-image 3.0/2.1
+    // ids are the current family (3.0 pro flagship, 2.1 pro balanced); the
+    // older qwen-image-plus/qwen-image ids stay listed, not seen retired
+    imageModels: [
+      'qwen-image-3.0-pro',
+      'qwen-image-3.0',
+      'qwen-image-2.1-pro',
+      'qwen-image-2.1-turbo',
+      'qwen-image-plus',
+      'qwen-image',
+    ],
+    defaultImageModel: 'qwen-image-3.0-pro',
     analysisProtocol: 'openai-chat',
     analysisModels: ['qwen3-vl-plus', 'qwen3-vl-flash', 'qwen3.8-max', 'qwen3.7-plus'],
     defaultAnalysisModel: 'qwen3-vl-plus',
@@ -173,6 +194,37 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     analysisModels: ['MiniMax-M3'],
     defaultAnalysisModel: 'MiniMax-M3',
     videoAnalysis: true,
+  },
+  {
+    id: 'stability',
+    label: 'Stability AI',
+    description: 'Stable Image Ultra/Core and Stable Diffusion 3.5 through the Stability REST API',
+    keyPlaceholder: 'sk-...',
+    defaultBaseUrl: STABILITY_BASE_URL,
+    imageProtocol: 'stability',
+    // per docs.stability.ai 2026-11-02: generation lives at
+    // /v2beta/stable-image/generate/{ultra|core|sd3}; sd3.5 ids pick the model
+    // inside the sd3 endpoint
+    imageModels: ['stable-image-ultra', 'stable-image-core', 'sd3.5-large', 'sd3.5-medium'],
+    defaultImageModel: 'stable-image-ultra',
+    analysisModels: [],
+    defaultAnalysisModel: '',
+    videoAnalysis: false,
+  },
+  {
+    id: 'bfl',
+    label: 'FLUX (Black Forest Labs)',
+    description: 'FLUX image generation through the Black Forest Labs API',
+    keyPlaceholder: 'API key',
+    defaultBaseUrl: BFL_BASE_URL,
+    imageProtocol: 'bfl',
+    // per docs.bfl.ai 2026-11-02: the endpoint is /v1/<id>; FLUX.2 Pro is the
+    // production-recommended default, FLUX 3 Image is the newest generation
+    imageModels: ['flux-2-pro', 'flux-3-image', 'flux-1.1-pro'],
+    defaultImageModel: 'flux-2-pro',
+    analysisModels: [],
+    defaultAnalysisModel: '',
+    videoAnalysis: false,
   },
   {
     id: 'deepseek',
