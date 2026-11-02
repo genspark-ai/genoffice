@@ -1,5 +1,6 @@
 import {
   PAGE_MARK,
+  SECTION_PAGES_MARK,
   TOTAL_PAGES_MARK,
   type HeaderFooter,
   type HfCellParaProps,
@@ -1660,6 +1661,8 @@ export function makeGapHfEl(opts: {
   pageNo: number | string
   /** total page count shown for the NUMPAGES marker */
   pageTotal: number
+  /** page count of the page's section shown for the SECTIONPAGES marker (absent: pageTotal) */
+  sectionPages?: number
   /** page geometry: floating textboxes render at their anchor position (absent: stacked) */
   geom?: HfStripGeom
   /** text-column width tab tails wrap at when no geom is given (the height probe) */
@@ -1667,7 +1670,7 @@ export function makeGapHfEl(opts: {
   /** positioned-row geometry when only part of the page geometry is known (the height probe) */
   rowGeom?: HfRowGeom
 }): HTMLElement {
-  const { kind, images, pageNo, pageTotal, geom } = opts
+  const { kind, images, pageNo, pageTotal, sectionPages, geom } = opts
   const value = hfValueInView(opts.value)!
   const columnPx = opts.columnPx ?? hfStripColumnPx(geom)
   const rowGeom = opts.rowGeom ?? hfRowGeomOf(kind, geom, columnPx)
@@ -1675,6 +1678,7 @@ export function makeGapHfEl(opts: {
   const display = (text: string) => {
     const substituted = text
       .replaceAll(TOTAL_PAGES_MARK, String(pageTotal))
+      .replaceAll(SECTION_PAGES_MARK, String(sectionPages ?? pageTotal))
       .replaceAll(PAGE_MARK, String(pageNo))
     return legacyHash ? substituted.replace('#', String(pageNo)) : substituted
   }
