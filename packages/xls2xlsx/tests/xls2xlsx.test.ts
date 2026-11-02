@@ -118,8 +118,8 @@ describe('convertXlsToXlsx: the values foundation', () => {
     const zip = await JSZip.loadAsync(out.bytes)
     const shared = await zip.file('xl/sharedStrings.xml')!.async('string')
     expect(shared).toContain('结果')
-    // '中文标签' lives in the source SST but no cell references it, so the
-    // converted workbook carries only what the sheets show
+    // the unreferenced CJK label below lives in the source SST but no cell
+    // points at it, so the converted workbook carries only what the sheets show
     expect(shared).not.toContain('中文标签')
     // the CJK sheet name survived the round trip
     const wbx = await zip.file('xl/workbook.xml')!.async('string')
