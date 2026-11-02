@@ -49,7 +49,7 @@ Always add `--json` when a program reads the output: one JSON object on stdout, 
 - The op references are resources: `genoffice://guide/docs`, `…/sheets`, `…/slides`, `…/slides/design`, `…/slides/spec`.
 - `ops`, `cells` and `data` carry the per-op schema of `guide <domain> --json` (one variant per op: `op`, fields, required); `mcp --compact-schemas` (or `GENOFFICE_MCP_COMPACT_SCHEMAS=1`) advertises plain arrays for clients with a small context budget.
 - `--http`: files travel with the calls (`PUT /files/<name>` uploads one and returns a URL, every path parameter also takes an http(s) URL, `out` omitted returns the file as a download URL).
-- The GenOffice app runs its own MCP server on `127.0.0.1:3093` (Settings → Integrations) whose tools (`create_session`, `read_document`, `apply_ops`, `apply_slide_ops`, `apply_sheet_ops`, `read_pdf`, `open_documents`) edit the documents already open in the visible editor; `genoffice mcp` works on files on disk.
+- The GenOffice app runs its own MCP server on `127.0.0.1:3093` (Settings → Integrations) whose tools (`create_session`, `read_document`, `apply_ops`, `apply_slide_ops`, `apply_sheet_ops`, `read_pdf`, `read_docx_properties`, `open_documents`) edit the documents already open in the visible editor; `genoffice mcp` works on files on disk.
 
 ## Which command
 
