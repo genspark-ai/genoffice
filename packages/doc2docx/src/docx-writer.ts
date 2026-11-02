@@ -6,9 +6,9 @@
  * with run-level direct formatting and paragraph formatting. Stage 3b resolves
  * the stylesheet into that formatting; stage 3c-1 replaces the template's
  * trailing sectPr with the document's section geometry and adds header/footer
- * parts (plus settings.xml when even/odd headers are used). Tables, images,
- * footnotes and text boxes are still flattened or omitted and reported in the
- * honest warnings list.
+ * parts (plus settings.xml when even/odd headers are used), tables as
+ * <w:tbl> and inline PNG/JPEG pictures as <w:drawing>. Footnotes and text
+ * boxes are still omitted and reported in the honest warnings list.
  */
 import JSZip from 'jszip'
 import {
@@ -21,7 +21,24 @@ import {
 } from '@genoffice/docx-engine'
 import type { FormattedParagraph, FormattedRun, ParagraphFormatting } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
+import { EMU_PER_TWIP, type ImageBlock } from './images'
+import {
+  isBulletLevel,
+  levelTextForWriter,
+  NUMBER_FORMATS,
+  type ListDefinition,
+  type ListLevel,
+} from './lists'
 import type { SectionInfo } from './sections'
+import type {
+  BodyBlock,
+  LegacyDocBody,
+  ParagraphListInfo,
+  TableBorders,
+  TableCell,
+  TableModel,
+  TableRow,
+} from './tables'
 import type { LegacyDocLayout, LegacyDocModel } from './index'
 
 /** Word color index (sprmCIco 1..16) -> OOXML hex value */
@@ -111,6 +128,12 @@ export function toDocxRun(run: FormattedRun): Run {
     const color = COLOR_BY_INDEX[formatting.colorIndex]
     if (color !== undefined) out.color = color
   }
+  if (run.link) {
+    out.link = {
+      href: run.link.href,
+      ...(run.link.tooltip ? { tooltip: run.link.tooltip } : {}),
+    }
+  }
   return out
 }
 
@@ -139,11 +162,16 @@ export function toParaFormat(formatting: ParagraphFormatting): ParaFormat | unde
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function paragraphBlock(paragraph: FormattedParagraph): GeneratedBlock {
+function paragraphBlock(entry: {
+  paragraph: FormattedParagraph
+  list?: ParagraphListInfo
+}): GeneratedBlock {
+  const paragraph = entry.paragraph
   const block: GeneratedBlock = {
-    type: 'paragraph',
+    type: entry.list ? 'listItem' : 'paragraph',
     runs: paragraph.runs.map(toDocxRun),
   }
+  if (entry.list) block.list = { ...entry.list }
   const format = toParaFormat(paragraph.formatting)
   if (format) block.format = format
   return block
@@ -160,6 +188,8 @@ const SETTINGS_CONTENT_TYPE =
 const HEADER_REL_TYPE = `${WORD_REL_NAMESPACE}/header`
 const FOOTER_REL_TYPE = `${WORD_REL_NAMESPACE}/footer`
 const SETTINGS_REL_TYPE = `${WORD_REL_NAMESPACE}/settings`
+const IMAGE_REL_TYPE = `${WORD_REL_NAMESPACE}/image`
+const DRAWING_URI = 'http://schemas.openxmlformats.org/drawingml/2006/picture'
 const CONTENT_TYPES_PATH = '[Content_Types].xml'
 const DOCUMENT_RELS_PATH = 'word/_rels/document.xml.rels'
 const SETTINGS_PATH = 'word/settings.xml'
@@ -263,6 +293,147 @@ function sectPrXml(section: SectionInfo, references: string): string {
   )
 }
 
+const W_BORDER_SIDES = ['top', 'left', 'bottom', 'right'] as const
+
+/** one single-line border element; table borders always use a 4-eighth-point line */
+function borderXml(side: string): string {
+  return '<w:' + side + ' w:val="single" w:sz="4" w:space="0" w:color="auto"/>'
+}
+
+/** the table border set: any visible border becomes the full single-line set (stage 3c-2) */
+function tableBordersXml(borders: TableBorders): string {
+  const visible =
+    borders.top ||
+    borders.left ||
+    borders.bottom ||
+    borders.right ||
+    borders.insideHorizontal ||
+    borders.insideVertical
+  if (!visible) return ''
+  const sides = W_BORDER_SIDES.map(borderXml).join('') + borderXml('insideH') + borderXml('insideV')
+  return '<w:tblBorders>' + sides + '</w:tblBorders>'
+}
+
+function cellBordersXml(cell: TableCell): string {
+  if (!cell.borders) return ''
+  const visible = W_BORDER_SIDES.filter((side) => cell.borders![side])
+  if (visible.length === 0) return ''
+  return '<w:tcBorders>' + visible.map(borderXml).join('') + '</w:tcBorders>'
+}
+
+function tableCellXml(cell: TableCell, context: GenerateContext): string {
+  const properties = ['<w:tcW w:w="' + cell.widthTwips + '" w:type="dxa"/>']
+  if (cell.gridSpan > 1) properties.push('<w:gridSpan w:val="' + cell.gridSpan + '"/>')
+  if (cell.verticalMerge === 'restart') properties.push('<w:vMerge w:val="restart"/>')
+  else if (cell.verticalMerge === 'continue') properties.push('<w:vMerge/>')
+  const borders = cellBordersXml(cell)
+  if (borders !== '') properties.push(borders)
+  const paragraphs =
+    cell.paragraphs.length === 0
+      ? '<w:p/>'
+      : cell.paragraphs
+          .map((paragraph) => generateParagraphXml(paragraphBlock({ paragraph }), context))
+          .join('')
+  return '<w:tc><w:tcPr>' + properties.join('') + '</w:tcPr>' + paragraphs + '</w:tc>'
+}
+
+function tableRowXml(row: TableRow, context: GenerateContext): string {
+  const properties: string[] = []
+  if (row.cantSplit) properties.push('<w:cantSplit/>')
+  if (row.heightTwips !== undefined)
+    properties.push(
+      '<w:trHeight w:val="' +
+        row.heightTwips +
+        '" w:hRule="' +
+        (row.heightExact ? 'exact' : 'atLeast') +
+        '"/>',
+    )
+  if (row.header) properties.push('<w:tblHeader/>')
+  const trPr = properties.length > 0 ? '<w:trPr>' + properties.join('') + '</w:trPr>' : ''
+  return '<w:tr>' + trPr + row.cells.map((cell) => tableCellXml(cell, context)).join('') + '</w:tr>'
+}
+
+/** a complete <w:tbl> for one reconstructed table (fixed layout, explicit grid) */
+export function generateTableXml(
+  table: TableModel,
+  context: GenerateContext = GENERATE_CONTEXT,
+): string {
+  const tableProperties = [
+    '<w:tblW w:w="0" w:type="auto"/>',
+    ...(table.alignment ? ['<w:jc w:val="' + table.alignment + '"/>'] : []),
+    tableBordersXml(table.borders),
+    '<w:tblLayout w:type="fixed"/>',
+  ].filter((part) => part !== '')
+  const grid =
+    '<w:tblGrid>' +
+    table.gridWidths.map((width) => '<w:gridCol w:w="' + width + '"/>').join('') +
+    '</w:tblGrid>'
+  const rows = table.rows.map((row) => tableRowXml(row, context)).join('')
+  return '<w:tbl><w:tblPr>' + tableProperties.join('') + '</w:tblPr>' + grid + rows + '</w:tbl>'
+}
+
+/** an inline picture paragraph; the blank template declares the wp/a/pic/r namespaces */
+function generateImageParagraphXml(image: ImageBlock, rId: string, pictureNumber: number): string {
+  const cx = image.widthTwips * EMU_PER_TWIP
+  const cy = image.heightTwips * EMU_PER_TWIP
+  const name = 'Picture ' + pictureNumber
+  return (
+    '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    '<wp:extent cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '"/>' +
+    '<wp:docPr id="' +
+    pictureNumber +
+    '" name="' +
+    name +
+    '"/>' +
+    '<a:graphic><a:graphicData uri="' +
+    DRAWING_URI +
+    '">' +
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="' +
+    pictureNumber +
+    '" name="' +
+    name +
+    '"/>' +
+    '<pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="' +
+    rId +
+    '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+  )
+}
+
+/** Generated XML for the reconstructed body (paragraphs, tables and images in CP order). */
+export function generateBodyBlocksXml(
+  blocks: BodyBlock[],
+  imageRelIds: Map<number, string> = new Map(),
+  context: GenerateContext = GENERATE_CONTEXT,
+): string {
+  let pictureNumber = 0
+  return blocks
+    .map((block) => {
+      if (block.type === 'table') return generateTableXml(block.table, context)
+      if (block.type === 'image') {
+        pictureNumber++
+        return generateImageParagraphXml(
+          block.image,
+          imageRelIds.get(block.image.cp) ?? '',
+          pictureNumber,
+        )
+      }
+      return generateParagraphXml(paragraphBlock(block), context)
+    })
+    .join('')
+}
+
 const BODY_OPEN = '<w:body>'
 const BODY_PLACEHOLDER = '<w:p/>'
 const DOCUMENT_PATH = 'word/document.xml'
@@ -270,10 +441,98 @@ const DOCUMENT_PATH = 'word/document.xml'
 /** Generated <w:p> XML for every model paragraph. */
 export function generateBodyParagraphsXml(paragraphs: FormattedParagraph[]): string {
   return paragraphs
-    .map((paragraph) => generateParagraphXml(paragraphBlock(paragraph), GENERATE_CONTEXT))
+    .map((paragraph) => generateParagraphXml(paragraphBlock({ paragraph }), GENERATE_CONTEXT))
     .join('')
 }
 
+const NUMBERING_PATH = 'word/numbering.xml'
+const HYPERLINK_REL_TYPE = `${WORD_REL_NAMESPACE}/hyperlink`
+
+/** the w:ind of one numbering level (level props come from the LVL grpprlPapx) */
+function numberingIndentXml(level: ListLevel): string {
+  const attributes: string[] = []
+  if (level.indentLeftTwips !== undefined) attributes.push('w:left="' + level.indentLeftTwips + '"')
+  if (level.indentRightTwips !== undefined)
+    attributes.push('w:right="' + level.indentRightTwips + '"')
+  if (level.indentFirstLineTwips !== undefined) {
+    if (level.indentFirstLineTwips >= 0)
+      attributes.push('w:firstLine="' + level.indentFirstLineTwips + '"')
+    else attributes.push('w:hanging="' + Math.abs(level.indentFirstLineTwips) + '"')
+  }
+  return attributes.length > 0 ? '<w:ind ' + attributes.join(' ') + '/>' : ''
+}
+
+/** one w:lvl of a reconstructed list definition */
+function numberingLevelXml(level: ListLevel, ilvl: number): string {
+  const bullet = isBulletLevel(level)
+  const numberFormat = bullet ? 'bullet' : (NUMBER_FORMATS[level.numberFormat] ?? 'decimal')
+  const levelText = escapeXmlText(levelTextForWriter(level))
+  const indent = numberingIndentXml(level)
+  return (
+    '<w:lvl w:ilvl="' +
+    ilvl +
+    '"><w:start w:val="' +
+    level.startAt +
+    '"/><w:numFmt w:val="' +
+    numberFormat +
+    '"/>' +
+    (level.legal ? '<w:isLgl/>' : '') +
+    '<w:suff w:val="' +
+    level.follow +
+    '"/><w:lvlText w:val="' +
+    levelText +
+    '"/><w:lvlJc w:val="' +
+    level.alignment +
+    '"/>' +
+    (indent !== '' ? '<w:pPr>' + indent + '</w:pPr>' : '') +
+    '</w:lvl>'
+  )
+}
+
+/**
+ * Insert the reconstructed list definitions into the blank template's
+ * numbering.xml: new abstractNum definitions (ids from 10) after the existing
+ * abstract numbers and the w:num entries (ids 100 + ilfo) before the closing
+ * tag, keeping the CT_Numbering abstractNum* -> num* order.
+ */
+function reconstructNumberingXml(
+  numbering: string,
+  used: Array<{ numId: number; ilfo: number }>,
+  lists: Map<number, number>,
+  definitions: Map<number, ListDefinition>,
+): string {
+  const abstractIdByLsid = new Map<number, number>()
+  const abstractXml: string[] = []
+  const numXml: string[] = []
+  for (const entry of used) {
+    const lsid = lists.get(entry.ilfo)
+    const definition = lsid !== undefined ? definitions.get(lsid) : undefined
+    if (!definition) continue
+    let abstractId = abstractIdByLsid.get(definition.lsid)
+    if (abstractId === undefined) {
+      abstractId = 10 + abstractIdByLsid.size
+      abstractIdByLsid.set(definition.lsid, abstractId)
+      abstractXml.push(
+        '<w:abstractNum w:abstractNumId="' +
+          abstractId +
+          '"><w:multiLevelType w:val="hybridMultilevel"/>' +
+          definition.levels.map(numberingLevelXml).join('') +
+          '</w:abstractNum>',
+      )
+    }
+    numXml.push(
+      '<w:num w:numId="' + entry.numId + '"><w:abstractNumId w:val="' + abstractId + '"/></w:num>',
+    )
+  }
+  if (abstractXml.length === 0) return numbering
+  const firstNum = numbering.indexOf('<w:num ')
+  let out =
+    firstNum >= 0
+      ? numbering.slice(0, firstNum) + abstractXml.join('') + numbering.slice(firstNum)
+      : numbering.replace('</w:numbering>', abstractXml.join('') + '</w:numbering>')
+  out = out.replace('</w:numbering>', numXml.join('') + '</w:numbering>')
+  return out
+}
 /**
  * Write the formatting model as a .docx: start from docx-engine's blank
  * template, replace its single placeholder paragraph inside <w:body> with the
@@ -284,6 +543,7 @@ export function generateBodyParagraphsXml(paragraphs: FormattedParagraph[]): str
 export async function writeLegacyDocx(
   model: LegacyDocModel,
   layout?: LegacyDocLayout,
+  body?: LegacyDocBody,
 ): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(await buildBlankDocx())
   const documentFile = zip.file(DOCUMENT_PATH)
@@ -294,16 +554,12 @@ export async function writeLegacyDocx(
   const placeholderStart = template.indexOf(BODY_PLACEHOLDER, bodyStart)
   if (placeholderStart < 0)
     throw new Error('the blank docx template has no placeholder paragraph in <w:body>')
-  let documentXml =
-    template.slice(0, placeholderStart) +
-    generateBodyParagraphsXml(model.paragraphs) +
-    template.slice(placeholderStart + BODY_PLACEHOLDER.length)
 
   const parts: HeaderFooterPart[] = []
   let settingsNeeded = false
   let nextRelId = 3
+  let generatedSectPr: string | undefined
   if (layout && layout.sections.length > 0) {
-    // single-section output: flatten the document to its last section
     const section = layout.sections[layout.sections.length - 1]!
     const stories = layout.headerFooter[layout.headerFooter.length - 1] ?? {}
     const collected = collectHeaderFooterParts(stories, section)
@@ -316,24 +572,108 @@ export async function writeLegacyDocx(
         return `<w:${element} w:type="${part.referenceType}" r:id="${part.rId}"/>`
       })
       .join('')
-    const generated = sectPrXml(section, references)
+    generatedSectPr = sectPrXml(section, references)
+  }
+
+  interface MediaPart {
+    path: string
+    extension: 'png' | 'jpeg'
+    contentType: string
+    bytes: Uint8Array
+    rId: string
+  }
+  const mediaParts: MediaPart[] = []
+  const imageRelIds = new Map<number, string>()
+  if (body) {
+    let mediaIndex = 0
+    for (const block of body.blocks) {
+      if (block.type !== 'image') continue
+      mediaIndex++
+      const extension = block.image.mediaType === 'image/png' ? 'png' : 'jpeg'
+      const mediaPart: MediaPart = {
+        path: `word/media/image${mediaIndex}.${extension}`,
+        extension,
+        contentType: block.image.mediaType,
+        bytes: block.image.bytes,
+        rId: `rId${nextRelId++}`,
+      }
+      imageRelIds.set(block.image.cp, mediaPart.rId)
+      mediaParts.push(mediaPart)
+    }
+  }
+
+  // numbered paragraphs: one w:num per used ilfo, definitions patched into numbering.xml
+  const usedNumbering: Array<{ numId: number; ilfo: number }> = []
+  if (body) {
+    const seenNumIds = new Set<number>()
+    for (const block of body.blocks) {
+      if (block.type !== 'paragraph' || !block.list) continue
+      const numId = Number(block.list.numId)
+      if (!Number.isFinite(numId) || seenNumIds.has(numId)) continue
+      seenNumIds.add(numId)
+      usedNumbering.push({ numId, ilfo: numId - 100 })
+    }
+  }
+
+  // external hyperlink relationships get rIds while the body runs are generated
+  const hyperlinkRels: Array<{ rId: string; href: string }> = []
+  const generateContext: GenerateContext = {
+    headingStyleIds: new Map(),
+    allocateHyperlinkRel: (href: string) => {
+      const rId = `rId${nextRelId++}`
+      hyperlinkRels.push({ rId, href })
+      return rId
+    },
+  }
+
+  const usesBodyBlocks =
+    body !== undefined &&
+    body.blocks.some(
+      (block) =>
+        block.type === 'table' ||
+        block.type === 'image' ||
+        (block.type === 'paragraph' &&
+          (block.list !== undefined || block.paragraph.runs.some((run) => run.link !== undefined))),
+    )
+  const bodyXml = usesBodyBlocks
+    ? generateBodyBlocksXml(body!.blocks, imageRelIds, generateContext)
+    : generateBodyParagraphsXml(model.paragraphs)
+  let documentXml =
+    template.slice(0, placeholderStart) +
+    bodyXml +
+    template.slice(placeholderStart + BODY_PLACEHOLDER.length)
+  if (generatedSectPr) {
     const sectStart = documentXml.lastIndexOf('<w:sectPr')
     if (sectStart >= 0) {
       const sectEnd = documentXml.indexOf('</w:sectPr>', sectStart)
       if (sectEnd >= 0) {
         documentXml =
           documentXml.slice(0, sectStart) +
-          generated +
+          generatedSectPr +
           documentXml.slice(sectEnd + '</w:sectPr>'.length)
       }
     }
   }
   zip.file(DOCUMENT_PATH, documentXml)
 
-  if (parts.length > 0 || settingsNeeded) {
+  if (
+    parts.length > 0 ||
+    settingsNeeded ||
+    mediaParts.length > 0 ||
+    hyperlinkRels.length > 0 ||
+    usedNumbering.length > 0
+  ) {
     const contentTypesFile = zip.file(CONTENT_TYPES_PATH)
     if (!contentTypesFile) throw new Error('the blank docx template has no [Content_Types].xml')
     let contentTypes = await contentTypesFile.async('string')
+    const extensions = [...new Set(mediaParts.map((part) => part.extension))]
+    const defaults = extensions
+      .map((extension) => {
+        const contentType =
+          mediaParts.find((part) => part.extension === extension)?.contentType ?? 'image/png'
+        return `<Default Extension="${extension}" ContentType="${contentType}"/>`
+      })
+      .join('')
     const overrides =
       parts
         .map(
@@ -346,6 +686,13 @@ export async function writeLegacyDocx(
       (settingsNeeded
         ? `<Override PartName="/${SETTINGS_PATH}" ContentType="${SETTINGS_CONTENT_TYPE}"/>`
         : '')
+    if (defaults !== '') {
+      const firstOverride = contentTypes.indexOf('<Override')
+      contentTypes =
+        firstOverride >= 0
+          ? contentTypes.slice(0, firstOverride) + defaults + contentTypes.slice(firstOverride)
+          : contentTypes.replace('</Types>', `${defaults}</Types>`)
+    }
     contentTypes = contentTypes.replace('</Types>', `${overrides}</Types>`)
     zip.file(CONTENT_TYPES_PATH, contentTypes)
 
@@ -361,17 +708,47 @@ export async function writeLegacyDocx(
             }" Target="${part.path.slice('word/'.length)}"/>`,
         )
         .join('') +
+      mediaParts
+        .map(
+          (part) =>
+            `<Relationship Id="${part.rId}" Type="${IMAGE_REL_TYPE}" Target="${part.path.slice(
+              'word/'.length,
+            )}"/>`,
+        )
+        .join('') +
+      hyperlinkRels
+        .map(
+          (rel) =>
+            `<Relationship Id="${rel.rId}" Type="${HYPERLINK_REL_TYPE}" Target="${escapeXmlText(
+              rel.href,
+            )}" TargetMode="External"/>`,
+        )
+        .join('') +
       (settingsNeeded
         ? `<Relationship Id="rId${nextRelId}" Type="${SETTINGS_REL_TYPE}" Target="settings.xml"/>`
         : '')
     relationships = relationships.replace('</Relationships>', `${newRelationships}</Relationships>`)
     zip.file(DOCUMENT_RELS_PATH, relationships)
     for (const part of parts) zip.file(part.path, storyPartXml(part.kind, part.story))
+    for (const part of mediaParts) zip.file(part.path, part.bytes)
     if (settingsNeeded)
       zip.file(
         SETTINGS_PATH,
         `${STORY_XML_DECL}<w:settings xmlns:w="${W_NAMESPACE}"><w:evenAndOddHeaders/></w:settings>`,
       )
+    if (usedNumbering.length > 0 && body?.lists) {
+      const numberingFile = zip.file(NUMBERING_PATH)
+      if (numberingFile) {
+        const numbering = await numberingFile.async('string')
+        const patched = reconstructNumberingXml(
+          numbering,
+          usedNumbering,
+          body.lists.overrides,
+          body.lists.lists,
+        )
+        if (patched !== numbering) zip.file(NUMBERING_PATH, patched)
+      }
+    }
   }
 
   return zip.generateAsync({
@@ -380,12 +757,13 @@ export async function writeLegacyDocx(
     compressionOptions: { level: 6 },
   })
 }
-
 export interface ConversionWarningOptions {
   /** the model was read through the style resolver, so styles are applied (not a gap) */
   stylesResolved?: boolean
   /** section geometry and header/footer stories read from the document */
   layout?: LegacyDocLayout
+  /** tables were reconstructed and written as w:tbl (stage 3c-2) */
+  tablesHandled?: boolean
 }
 
 /**
@@ -410,7 +788,7 @@ export function conversionWarnings(
     (paragraph) =>
       paragraph.formatting.inTable === true || paragraph.formatting.tableRowEnd === true,
   )
-  if (flattensTables)
+  if (flattensTables && !options.tablesHandled)
     warnings.push('tables are flattened to paragraphs (stage 3a); cell structure is not preserved')
   const { fib } = model
   if (fib.ccpFtn > 0) warnings.push('footnotes are not converted yet; their text is omitted')
@@ -442,12 +820,16 @@ export async function convertLegacyDocToDocx(
   bytes: Uint8Array,
 ): Promise<{ docx: Uint8Array; warnings: string[] }> {
   // dynamic import keeps the module graph acyclic: index.ts re-exports this file
-  const { readLegacyDocLayout, readLegacyDocModel, readResolvedLegacyDocModel } =
+  const { readLegacyDocBody, readLegacyDocLayout, readLegacyDocModel, readResolvedLegacyDocModel } =
     await import('./index')
   const layout = readLegacyDocLayout(bytes)
   const base = readLegacyDocModel(bytes)
   const stylesResolved = base.fib.lcbStshf > 0
   const model = stylesResolved ? readResolvedLegacyDocModel(bytes) : base
-  const docx = await writeLegacyDocx(model, layout)
-  return { docx, warnings: conversionWarnings(model, { stylesResolved, layout }) }
+  const body = readLegacyDocBody(bytes)
+  const tablesHandled = body.blocks.some((block) => block.type === 'table')
+  const docx = await writeLegacyDocx(model, layout, body)
+  const warnings = conversionWarnings(model, { stylesResolved, layout, tablesHandled })
+  for (const warning of body.warnings) if (!warnings.includes(warning)) warnings.push(warning)
+  return { docx, warnings }
 }

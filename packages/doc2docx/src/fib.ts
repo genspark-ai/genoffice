@@ -48,6 +48,12 @@ export interface FibInfo {
   /** header/footer story table (stage 3c) */
   fcPlcfhdd: number
   lcbPlcfhdd: number
+  /** list definitions (stage 3c-4 PlfLst; the level array follows the LSTFs) */
+  fcPlfLst: number
+  lcbPlfLst: number
+  /** list format overrides (stage 3c-4 PlfLfo) */
+  fcPlfLfo: number
+  lcbPlfLfo: number
   /** CHPX / PAPX bin tables (stage 2) */
   fcPlcfbteChpx: number
   lcbPlcfbteChpx: number
@@ -72,6 +78,8 @@ const PAIR_STSHF = 1
 const PAIR_PLCFSED = 6
 const PAIR_PLCFHDD = 11
 const PAIR_PLCFBTE_CHPX = 12
+const PAIR_PLFLST = 73
+const PAIR_PLFLFO = 74
 const PAIR_PLCFBTE_PAPX = 13
 const PAIR_DOP = 31
 const PAIR_CLX = 33
@@ -196,6 +204,11 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
   const stshf = fibPair(reader, pairsStart, pairCount, PAIR_STSHF)
   const plcfsed = fibPair(reader, pairsStart, pairCount, PAIR_PLCFSED)
   const plcfhdd = fibPair(reader, pairsStart, pairCount, PAIR_PLCFHDD)
+  // lists are Word 97+ pairs 73/74; shorter synthetic headers simply have none
+  const optionalPair = (index: number): FibPair =>
+    index < pairCount ? fibPair(reader, pairsStart, pairCount, index) : { fc: 0, lcb: 0 }
+  const plflst = optionalPair(PAIR_PLFLST)
+  const plflfo = optionalPair(PAIR_PLFLFO)
   const chpx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_CHPX)
   const papx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_PAPX)
   const dop = fibPair(reader, pairsStart, pairCount, PAIR_DOP)
@@ -223,6 +236,10 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
     lcbPlcfsed: plcfsed.lcb,
     fcPlcfhdd: plcfhdd.fc,
     lcbPlcfhdd: plcfhdd.lcb,
+    fcPlfLst: plflst.fc,
+    lcbPlfLst: plflst.lcb,
+    fcPlfLfo: plflfo.fc,
+    lcbPlfLfo: plflfo.lcb,
     fcPlcfbteChpx: chpx.fc,
     lcbPlcfbteChpx: chpx.lcb,
     fcPlcfbtePapx: papx.fc,
@@ -248,6 +265,12 @@ export function validateFibTableRanges(fib: FibInfo, tableLength: number): void 
     { fc: fib.fcPlcfhdd, lcb: fib.lcbPlcfhdd },
     tableLength,
     'header/footer table (fcPlcfhdd)',
+  )
+  validatePairRange({ fc: fib.fcPlfLst, lcb: fib.lcbPlfLst }, tableLength, 'list table (fcPlfLst)')
+  validatePairRange(
+    { fc: fib.fcPlfLfo, lcb: fib.lcbPlfLfo },
+    tableLength,
+    'list override table (fcPlfLfo)',
   )
   validatePairRange(
     { fc: fib.fcPlcfbteChpx, lcb: fib.lcbPlcfbteChpx },

@@ -153,6 +153,8 @@ const SKIP_SUBTREES = new Set([
   'w:instrText',
   'w:delInstrText',
   'w:delText',
+  'w:rPrChange',
+  'w:pPrChange',
   'w:tabs',
   'w:tblPr',
   'w:tblGrid',
