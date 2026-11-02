@@ -9,7 +9,10 @@ import * as CFB from 'cfb'
  */
 
 /** piece text starts after the FIB (1242 bytes) and is 4-byte aligned */
-const TEXT_OFFSET = 2048
+export const SYNTHETIC_TEXT_OFFSET = 2048
+const TEXT_OFFSET = SYNTHETIC_TEXT_OFFSET
+/** FKP pages are 512-byte pages of the WordDocument stream */
+export const SYNTHETIC_FKP_PAGE_BYTES = 512
 const TABLE_PAIR_COUNT = 136
 const CLX_PAIR_INDEX = 33
 const DEFAULT_WIDENT = 0xa5ec
@@ -29,6 +32,21 @@ export interface SyntheticPcd {
   fc: number
   compressed?: boolean
   flags?: number
+}
+
+export interface SyntheticChpxRun {
+  fcStart: number
+  fcEnd: number
+  grpprl?: Uint8Array
+}
+
+export interface SyntheticPapxEntry {
+  fcStart: number
+  fcEnd: number
+  istd?: number
+  grpprl?: Uint8Array
+  /** true -> BxPap.bOffset 0: the paragraph has no PAPX (default properties) */
+  defaults?: boolean
 }
 
 export interface SyntheticDocOptions {
@@ -54,6 +72,19 @@ export interface SyntheticDocOptions {
   lcbClx?: number
   omitWordDocument?: boolean
   omitTableStream?: boolean
+  /** extra 512-byte CHPX FKP pages appended to the WordDocument stream (raw for corrupt cases) */
+  chpxFkpPages?: Uint8Array[]
+  /** extra 512-byte PAPX FKP pages appended to the WordDocument stream (raw for corrupt cases) */
+  papxFkpPages?: Uint8Array[]
+  /** raw PlcBteChpx override (appended to the table stream; takes precedence over chpxFkpPages) */
+  chpxPlcf?: Uint8Array
+  /** raw PlcBtePapx override (appended to the table stream; takes precedence over papxFkpPages) */
+  papxPlcf?: Uint8Array
+  /** pair-12/13 lcb overrides, for malformed-table tests */
+  chpxPlcLcb?: number
+  papxPlcLcb?: number
+  /** extra Data stream (sprmPHugePapx property blocks) */
+  dataStream?: Uint8Array
 }
 
 /** Windows-1252 high-half punctuation -> byte, for compressed-piece fixtures */
@@ -134,6 +165,102 @@ export function encodeClx(cps: number[], pcds: SyntheticPcd[]): Uint8Array {
   return out
 }
 
+/**
+ * A 512-byte CHPX FKP page from runs: rgfc (crun+1 FCs), rgb (offset/2 per run)
+ * and the CHPX records packed after them; crun is the last byte. A run without
+ * a grpprl gets rgb entry 0 (no explicit properties).
+ */
+export function encodeChpxFkp(runs: SyntheticChpxRun[]): Uint8Array {
+  if (runs.length > 101) throw new Error('test fixture: too many CHPX runs for one FKP page')
+  const page = new Uint8Array(SYNTHETIC_FKP_PAGE_BYTES)
+  const view = new DataView(page.buffer)
+  const rgbStart = 4 * (runs.length + 1)
+  const fcs = runs.map((run) => run.fcStart)
+  if (runs.length > 0) fcs.push(runs[runs.length - 1]!.fcEnd)
+  fcs.forEach((fc, index) => view.setUint32(index * 4, fc >>> 0, true))
+  let data = rgbStart + runs.length
+  if (data % 2 !== 0) data++
+  runs.forEach((run, index) => {
+    const grpprl = run.grpprl ?? new Uint8Array(0)
+    if (grpprl.length === 0) return
+    if (data + 1 + grpprl.length > 511)
+      throw new Error('test fixture: CHPX records overflow the FKP page')
+    page[data] = grpprl.length
+    page.set(grpprl, data + 1)
+    page[rgbStart + index] = data / 2
+    data += 1 + grpprl.length
+    if (data % 2 !== 0) data++
+  })
+  page[511] = runs.length
+  return page
+}
+
+/**
+ * A 512-byte PAPX FKP page from paragraph entries: rgfc (paragraph start FCs +
+ * the last paragraph end), BxPap records (bOffset + 12 reserved bytes) and the
+ * PapxInFkp records packed after them. An istd + sprms block of odd length uses
+ * the short form (cb = words), an even one the long form (cb 0 + word count).
+ */
+export function encodePapxFkp(entries: SyntheticPapxEntry[]): Uint8Array {
+  if (entries.length > 29) throw new Error('test fixture: too many PAPX entries for one FKP page')
+  const page = new Uint8Array(SYNTHETIC_FKP_PAGE_BYTES)
+  const view = new DataView(page.buffer)
+  const rgbxStart = 4 * (entries.length + 1)
+  const fcs = entries.map((entry) => entry.fcStart)
+  if (entries.length > 0) fcs.push(entries[entries.length - 1]!.fcEnd)
+  fcs.forEach((fc, index) => view.setUint32(index * 4, fc >>> 0, true))
+  let data = rgbxStart + entries.length * 13
+  if (data % 2 !== 0) data++
+  entries.forEach((entry, index) => {
+    const offsetAt = rgbxStart + index * 13
+    if (entry.defaults) {
+      page[offsetAt] = 0
+      return
+    }
+    const istd = entry.istd ?? 0
+    const sprms = entry.grpprl ?? new Uint8Array(0)
+    const raw = new Uint8Array(2 + sprms.length)
+    raw[0] = istd & 0xff
+    raw[1] = (istd >> 8) & 0xff
+    raw.set(sprms, 2)
+    let encoded: Uint8Array
+    if (raw.length % 2 === 1) {
+      const cb = (raw.length + 1) / 2
+      if (cb > 255) throw new Error('test fixture: PAPX grpprl too long for the short form')
+      encoded = new Uint8Array(1 + raw.length)
+      encoded[0] = cb
+      encoded.set(raw, 1)
+    } else {
+      const words = raw.length / 2
+      if (words > 255) throw new Error('test fixture: PAPX grpprl too long for the long form')
+      encoded = new Uint8Array(2 + raw.length)
+      encoded[0] = 0
+      encoded[1] = words
+      encoded.set(raw, 2)
+    }
+    if (data + encoded.length > 511)
+      throw new Error('test fixture: PAPX records overflow the FKP page')
+    page.set(encoded, data)
+    page[offsetAt] = data / 2
+    data += encoded.length
+    if (data % 2 !== 0) data++
+  })
+  page[511] = entries.length
+  return page
+}
+
+/** a PlcBte table: n+1 FCs followed by n PnFkp page numbers */
+export function encodePlcBte(fcs: number[], pages: number[]): Uint8Array {
+  if (fcs.length !== pages.length + 1)
+    throw new Error('test fixture: encodePlcBte needs pages.length + 1 FCs')
+  const out = new Uint8Array(4 * (fcs.length + pages.length))
+  const view = new DataView(out.buffer)
+  fcs.forEach((fc, index) => view.setUint32(index * 4, fc >>> 0, true))
+  const pagesStart = 4 * fcs.length
+  pages.forEach((page, index) => view.setUint32(pagesStart + index * 4, page >>> 0, true))
+  return out
+}
+
 /** wrap streams in an OLE2 compound file (cfb seeds its own producer marker, ignored on read) */
 export function buildCompound(streams: Array<[string, Uint8Array]>): Uint8Array {
   const container = CFB.utils.cfb_new()
@@ -149,6 +276,8 @@ interface FibValues {
   ccpText: number
   fcClx: number
   lcbClx: number
+  chpxPlcf?: { fc: number; lcb: number }
+  papxPlcf?: { fc: number; lcb: number }
 }
 
 function writeFib(target: Uint8Array, values: FibValues): void {
@@ -170,6 +299,16 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   offset += 2
   view.setUint32(offset + CLX_PAIR_INDEX * 8, values.fcClx, true)
   view.setUint32(offset + CLX_PAIR_INDEX * 8 + 4, values.lcbClx, true)
+  const CHPX_PAIR_INDEX = 12
+  const PAPX_PAIR_INDEX = 13
+  if (values.chpxPlcf) {
+    view.setUint32(offset + CHPX_PAIR_INDEX * 8, values.chpxPlcf.fc, true)
+    view.setUint32(offset + CHPX_PAIR_INDEX * 8 + 4, values.chpxPlcf.lcb, true)
+  }
+  if (values.papxPlcf) {
+    view.setUint32(offset + PAPX_PAIR_INDEX * 8, values.papxPlcf.fc, true)
+    view.setUint32(offset + PAPX_PAIR_INDEX * 8 + 4, values.papxPlcf.lcb, true)
+  }
 }
 
 /** build a .doc from FIB fields + text pieces (or raw stream overrides for corrupt cases) */
@@ -187,6 +326,8 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
   // piece text + CP ranges, unless the caller supplies raw streams
   let clx = options.clx
   let wordDocument = options.wordDocument
+  let chpxPlcf = options.chpxPlcf
+  let papxPlcf = options.papxPlcf
   if (!wordDocument) {
     const cps = [0]
     const pcds: SyntheticPcd[] = []
@@ -202,7 +343,25 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       cps.push(charCount)
     }
     clx ??= encodeClx(cps, pcds)
-    const word = new Uint8Array(byteCursor)
+    // FKP pages follow the text, one page per 512-byte block
+    let nextPage = Math.ceil(byteCursor / SYNTHETIC_FKP_PAGE_BYTES)
+    const chpxPages: number[] = []
+    const papxPages: number[] = []
+    for (const _page of options.chpxFkpPages ?? []) {
+      chpxPages.push(nextPage)
+      nextPage++
+    }
+    for (const _page of options.papxFkpPages ?? []) {
+      papxPages.push(nextPage)
+      nextPage++
+    }
+    chpxPlcf ??= chpxPages.length ? encodePlcBte([TEXT_OFFSET, ...chpxPages], chpxPages) : undefined
+    papxPlcf ??= papxPages.length ? encodePlcBte([TEXT_OFFSET, ...papxPages], papxPages) : undefined
+    // table layout: CLX, then the two formatting tables
+    const baseTableLength = fcClx + clx.length
+    const chpxPlcFc = baseTableLength
+    const papxPlcFc = baseTableLength + (chpxPlcf?.length ?? 0)
+    const word = new Uint8Array(nextPage * SYNTHETIC_FKP_PAGE_BYTES)
     writeFib(word, {
       wIdent,
       nFib,
@@ -210,22 +369,36 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       ccpText: options.ccpText ?? charCount,
       fcClx,
       lcbClx: options.lcbClx ?? clx.length,
+      ...(chpxPlcf
+        ? { chpxPlcf: { fc: chpxPlcFc, lcb: options.chpxPlcLcb ?? chpxPlcf.length } }
+        : {}),
+      ...(papxPlcf
+        ? { papxPlcf: { fc: papxPlcFc, lcb: options.papxPlcLcb ?? papxPlcf.length } }
+        : {}),
     })
     let textOffset = TEXT_OFFSET
     for (const bytes of encoded) {
       word.set(bytes, textOffset)
       textOffset += bytes.length
     }
+    ;[...(options.chpxFkpPages ?? []), ...(options.papxFkpPages ?? [])].forEach((page, index) => {
+      const pageNumber = [...chpxPages, ...papxPages][index]!
+      word.set(page, pageNumber * SYNTHETIC_FKP_PAGE_BYTES)
+    })
     wordDocument = word
   }
   let table = options.table
   if (!table) {
-    table = new Uint8Array(fcClx + (clx?.length ?? 0))
+    const baseTableLength = fcClx + (clx?.length ?? 0)
+    table = new Uint8Array(baseTableLength + (chpxPlcf?.length ?? 0) + (papxPlcf?.length ?? 0))
     if (clx) table.set(clx, fcClx)
+    if (chpxPlcf) table.set(chpxPlcf, baseTableLength)
+    if (papxPlcf) table.set(papxPlcf, baseTableLength + (chpxPlcf?.length ?? 0))
   }
 
   const streams: Array<[string, Uint8Array]> = []
   if (!options.omitWordDocument) streams.push(['WordDocument', wordDocument])
   if (!options.omitTableStream) streams.push([tableStream, table])
+  if (options.dataStream) streams.push(['Data', options.dataStream])
   return buildCompound(streams)
 }

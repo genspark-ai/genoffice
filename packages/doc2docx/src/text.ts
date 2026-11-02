@@ -73,57 +73,74 @@ const FIELD_INSTRUCTION_START = '\u0013'
 const FIELD_SEPARATOR = '\u0014'
 const FIELD_END = '\u0015'
 
+export interface WordControlMapper {
+  /** map the next slice of one paragraph; field state carries across calls */
+  map(text: string): string
+}
+
 /**
- * Map one paragraph's Word text to display text (MS-DOC control marks):
- * cell mark -> tab, vertical tab / form feed -> newline, optional hyphen ->
- * '-', non-breaking hyphen and friends -> '', other C0 controls dropped.
- * Field markup keeps the field result and drops the instruction:
+ * Map Word text to display text (MS-DOC control marks): cell mark -> tab,
+ * vertical tab / form feed -> newline, non-breaking hyphen -> '-', optional
+ * hyphen and friends -> '', other C0 controls dropped. Field markup keeps the
+ * field result and drops the instruction:
  * \x13 instruction \x14 result \x15 -> result.
+ *
+ * Text is passed in consecutive slices (one per CHPX run); field state carries
+ * across them so a field split by a formatting run still maps correctly.
  */
-export function mapWordControlChars(paragraph: string): string {
+export function createWordControlMapper(): WordControlMapper {
   const fields: Array<'instruction' | 'result'> = []
-  let out = ''
-  for (const char of paragraph) {
-    if (char === FIELD_INSTRUCTION_START) {
-      fields.push('instruction')
-      continue
-    }
-    if (char === FIELD_SEPARATOR) {
-      if (fields.length > 0) fields[fields.length - 1] = 'result'
-      continue
-    }
-    if (char === FIELD_END) {
-      fields.pop()
-      continue
-    }
-    if (fields.includes('instruction')) continue
-    switch (char) {
-      case '\t': // a literal tab inside the text is kept
-      case '\n':
-        out += char
-        break
-      case '\u0007': // cell mark / table column separator
-        out += '\t'
-        break
-      case '\u000b': // vertical tab / line break
-      case '\u000c': // form feed / page break
-        out += '\n'
-        break
-      case '\u001e': // non-breaking hyphen
-        out += '-'
-        break
-      case '\u001f': // optional hyphen
-      case '\u0001':
-      case '\u0002':
-      case '\u0005':
-      case '\u0008':
-        break
-      default:
-        if (char.charCodeAt(0) < 0x20) break
-        out += char
-    }
+  return {
+    map(text: string): string {
+      let out = ''
+      for (const char of text) {
+        if (char === FIELD_INSTRUCTION_START) {
+          fields.push('instruction')
+          continue
+        }
+        if (char === FIELD_SEPARATOR) {
+          if (fields.length > 0) fields[fields.length - 1] = 'result'
+          continue
+        }
+        if (char === FIELD_END) {
+          fields.pop()
+          continue
+        }
+        if (fields.includes('instruction')) continue
+        switch (char) {
+          case '\t': // a literal tab inside the text is kept
+          case '\n':
+            out += char
+            break
+          case '\u0007': // cell mark / table column separator
+            out += '\t'
+            break
+          case '\u000b': // vertical tab / line break
+          case '\u000c': // form feed / page break
+            out += '\n'
+            break
+          case '\u001e': // non-breaking hyphen
+            out += '-'
+            break
+          case '\u001f': // optional hyphen
+          case '\u0001':
+          case '\u0002':
+          case '\u0005':
+          case '\u0008':
+            break
+          default:
+            if (char.charCodeAt(0) < 0x20) break
+            out += char
+        }
+      }
+      return out
+    },
   }
-  return out
+}
+
+/** Map one paragraph's Word control marks (a fresh field state for each paragraph). */
+export function mapWordControlChars(paragraph: string): string {
+  return createWordControlMapper().map(paragraph)
 }
 
 /**

@@ -13,6 +13,7 @@ const EXPECTED_CCP_TEXT: Record<FixtureName, number> = {
   'text-basic': 163,
   'text-long': 8817,
   'word97-sample': 71,
+  formatting: 159,
 }
 
 describe('real Word 97-2003 fixtures', () => {
