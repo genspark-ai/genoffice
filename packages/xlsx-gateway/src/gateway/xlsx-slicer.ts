@@ -4,7 +4,8 @@
 ///
 /// Write side: session slicer panels are materialized as
 ///   xl/slicerCaches/slicerCacheN.xml   (pivot binding + member selection)
-///   xl/slicers/slicerN.xml             (the control: name/caption/geometry)
+///   xl/slicers/slicerN.xml             (the controls: name/caption/geometry;
+///     one part per worksheet, several controls can share it)
 /// wired up by
 ///   worksheet rels (…/2007/relationships/slicer) + worksheet extLst
 ///     x14:slicerList ext entries,
@@ -14,7 +15,8 @@
 ///     slicer-space id — not the workbook cacheId) — tabular@pivotCacheId
 ///     must equal it or Excel drops the whole slicerCache part as
 ///     'Removed Part: slicerCache',
-///   a hidden Slicer_<name> definedName in the workbook,
+///   a Slicer_<name> definedName in the workbook (Excel writes #N/A with no
+///     hidden attribute; hidden="1" makes Excel repair the slicer cache),
 ///   [Content_Types].xml overrides per part.
 ///
 /// Read side mirrors the writer (the reader keys on container element names
@@ -292,15 +294,62 @@ function rawAttributes(startTag: string): RawAttribute[] {
   return attributes
 }
 
-/// Everything an Excel-authored slicer part carries beyond the identity and
-/// selection the session owns: namespace declarations and flags on the
-/// container, the control's layout/style attributes (rowHeight, columnCount,
-/// style, showCaption, startItem, lockedPosition, xr10:uid, …), and its child
-/// content (an extLst).
-interface CarriedSlicerPart {
-  readonly root: string
+/// One control inside a slicers part. Excel keeps every slicer of a worksheet
+/// in one xl/slicers/slicerN.xml part, so a rewrite of one control must carry
+/// the others through; the identity attributes (name/cache/caption) belong to
+/// the session, every other attribute and the child content stay verbatim.
+interface CarriedSlicerControl {
+  readonly name: string
+  readonly cacheName: string
+  readonly caption: string
   readonly attributes: string
   readonly inner: string
+  /// The session owns this control: a missing rowHeight gets Excel's default.
+  /// Preserved controls keep exactly the attributes the file carried.
+  readonly requireRowHeight?: boolean
+}
+
+interface CarriedSlicerPart {
+  readonly root: string
+  readonly controls: readonly CarriedSlicerControl[]
+}
+
+/// Every <slicer> in a part, self-closing or with children (an Excel slicer
+/// with an extLst is the paired form). Names/cache/caption are decoded;
+/// attributes keep the raw start-tag escapes of everything else.
+function parseSlicerControls(xml: string): CarriedSlicerControl[] {
+  const controls: CarriedSlicerControl[] = []
+  const tag = /<slicer\b[^>]*?(\/?)>/g
+  let match: RegExpExecArray | null
+  while ((match = tag.exec(xml)) !== null) {
+    const start = match[0]
+    const startAt = match.index
+    let inner = ''
+    if (match[1] !== '/') {
+      const close = xml.indexOf('</slicer>', startAt + start.length)
+      if (close === -1) break
+      inner = xml.slice(startAt + start.length, close)
+      tag.lastIndex = close + '</slicer>'.length
+    }
+    const name = attr(start, 'name')
+    const cache = attr(start, 'cache')
+    if (name === undefined || cache === undefined) continue
+    let attributes = ''
+    for (const attribute of rawAttributes(start)) {
+      if (attribute.name === 'name' || attribute.name === 'cache' || attribute.name === 'caption') {
+        continue
+      }
+      attributes += ' ' + attribute.raw
+    }
+    controls.push({
+      name: decodeAttribute(name),
+      cacheName: decodeAttribute(cache),
+      caption: decodeAttribute(attr(start, 'caption') ?? name),
+      attributes,
+      inner,
+    })
+  }
+  return controls
 }
 
 function carryOverSlicerPart(existingXml: string | null): CarriedSlicerPart {
@@ -311,42 +360,59 @@ function carryOverSlicerPart(existingXml: string | null): CarriedSlicerPart {
     // We state the slicer namespace ourselves; every other declaration (and
     // mc:Ignorable) belongs to the file.
     if (attribute.name === 'xmlns') continue
-    root += ` ${attribute.raw}`
+    root += ' ' + attribute.raw
   }
-  const control = /<slicer\b[^>]*?(\/?)>/.exec(xml)
-  if (control === null) return { root, attributes: '', inner: '' }
-  const start = control[0]
-  let attributes = ''
-  for (const attribute of rawAttributes(start)) {
-    // name/cache/caption are the session's; rowHeight is re-added below when
-    // the file carried none.
-    if (['name', 'cache', 'caption'].includes(attribute.name)) continue
-    attributes += ` ${attribute.raw}`
-  }
-  let inner = ''
-  if (!start.endsWith('/>')) {
-    const startEnd = control.index + start.length
-    const close = xml.indexOf('</slicer>', startEnd)
-    if (close !== -1) inner = xml.slice(startEnd, close)
-  }
-  return { root, attributes, inner }
+  return { root, controls: parseSlicerControls(xml) }
 }
 
-function buildSlicerPartXml(
-  name: string,
-  cacheName: string,
-  caption: string,
-  carried: CarriedSlicerPart,
-) {
-  // rowHeight is required for Excel to lay the control out; a fresh control
-  // gets Excel's own default (241300 EMU ≈ a quarter inch), an updated one
-  // keeps whatever the file carried.
-  const rowHeight = carried.attributes.includes('rowHeight=') ? '' : ' rowHeight="241300"'
+/// One <slicer> of the rebuilt part. A session control that carried no
+/// Excel-authored rowHeight gets Excel's own default (241300 EMU, about a
+/// quarter inch); preserved controls keep exactly their file attributes.
+function slicerControlXml(control: CarriedSlicerControl): string {
+  const rowHeight =
+    control.requireRowHeight === true && !control.attributes.includes('rowHeight=')
+      ? ' rowHeight="241300"'
+      : ''
   const element =
-    `<slicer name="${escapeAttribute(name)}" cache="${escapeAttribute(cacheName)}"` +
-    ` caption="${escapeAttribute(caption)}"${carried.attributes}${rowHeight}`
-  const control = carried.inner === '' ? `${element}/>` : `${element}>${carried.inner}</slicer>`
-  return `${XML_DECL}<slicers xmlns="${X14_NS}"${carried.root}>${control}</slicers>`
+    '<slicer name="' +
+    escapeAttribute(control.name) +
+    '" cache="' +
+    escapeAttribute(control.cacheName) +
+    '" caption="' +
+    escapeAttribute(control.caption) +
+    '"' +
+    control.attributes +
+    rowHeight
+  return control.inner === '' ? element + '/>' : element + '>' + control.inner + '</slicer>'
+}
+
+function buildSlicerPartXml(carried: CarriedSlicerPart): string {
+  const controls = carried.controls.map(slicerControlXml).join('')
+  return XML_DECL + '<slicers xmlns="' + X14_NS + '"' + carried.root + '>' + controls + '</slicers>'
+}
+
+/// Replace the control named by the session, appending it when the shared part
+/// does not carry it yet; every other control rides through untouched.
+function upsertSlicerControl(
+  carried: CarriedSlicerPart,
+  updated: CarriedSlicerControl,
+): CarriedSlicerPart {
+  const found = carried.controls.some((control) => control.name === updated.name)
+  return {
+    root: carried.root,
+    controls: found
+      ? carried.controls.map((control) => (control.name === updated.name ? updated : control))
+      : [...carried.controls, updated],
+  }
+}
+
+/// Strip one control by name. The part and its worksheet rel/ext only go away
+/// when no control is left in it.
+function withoutSlicerControl(carried: CarriedSlicerPart, name: string): CarriedSlicerPart {
+  return {
+    root: carried.root,
+    controls: carried.controls.filter((control) => control.name !== name),
+  }
 }
 
 function buildSlicerCacheXml(
@@ -787,6 +853,23 @@ async function appendOrReuseRelationship(
   return id
 }
 
+/// A worksheet that already owns a slicer part (Excel keeps every control of
+/// a sheet in one part) takes a new control into that part instead of gaining
+/// a second part Excel would never author.
+async function slicerPartPathForWorksheet(
+  pkg: MutablePackage,
+  worksheetPath: string,
+): Promise<string | null> {
+  const relsPath = relsPathFor(worksheetPath)
+  if (!(await pkg.has(relsPath))) return null
+  for (const entry of parseRelationships(await pkg.readText(relsPath))) {
+    if (entry.type !== SLICER_REL_TYPE) continue
+    const target = resolveRelTarget(worksheetPath, entry.target)
+    if (await pkg.has(target)) return target
+  }
+  return null
+}
+
 async function ensureWorksheetRef(
   pkg: MutablePackage,
   worksheetPath: string,
@@ -875,22 +958,26 @@ async function collectCacheNames(pkg: MutablePackage, directory: string): Promis
   return names
 }
 
-async function collectControlNames(
-  pkg: MutablePackage,
-  directory: string,
-  tag: 'slicer' | 'timeline',
-): Promise<Set<string>> {
+async function collectControlNames(pkg: MutablePackage, directory: string): Promise<Set<string>> {
   const names = new Set<string>()
   for (const path of await pkg.paths()) {
     if (!path.startsWith(directory) || !path.endsWith('.xml')) continue
-    for (const match of (await pkg.readText(path)).matchAll(
-      new RegExp(`<${tag}(?:\\s[^>]*)?/>`, 'g'),
-    )) {
-      const name = attr(match[0], 'name')
-      if (name !== undefined) names.add(decodeAttribute(name))
-    }
+    for (const control of parseSlicerControls(await pkg.readText(path))) names.add(control.name)
   }
   return names
+}
+
+/// True when a control still in the package (after the target was pruned)
+/// references cacheName: its slicerCache part and workbook wiring must stay.
+async function otherControlUsesCache(pkg: MutablePackage, cacheName: string): Promise<boolean> {
+  for (const path of await pkg.paths()) {
+    if (!/^xl\/slicers\/[^/]+\.xml$/.test(path)) continue
+    if (!(await pkg.has(path))) continue
+    for (const control of parseSlicerControls(await pkg.readText(path))) {
+      if (control.cacheName === cacheName) return true
+    }
+  }
+  return false
 }
 
 /// Which worksheet parts carry a rel to `partPath`. Our own files reference a
@@ -931,12 +1018,12 @@ const AFTER_DEFINED_NAMES = [
   '<extLst',
 ] as const
 
-/// The hidden `Slicer_<name>` definedName Excel writes per control: it keeps
-/// slicer names inside the workbook's name space. Excel writes `#N/A` as the
-/// value — the name is a marker, not a reference — and a restore-then-save
-/// must refresh the existing entry rather than add a second one.
+/// The `Slicer_<name>` definedName Excel writes per control (no hidden
+/// attribute): it keeps slicer names inside the workbook's name space. Excel
+/// writes `#N/A` as the value — the name is a marker, not a reference — and a
+/// restore-then-save must refresh the existing entry rather than add a second one.
 function addSlicerDefinedName(workbookXml: string, name: string): string {
-  const element = `<definedName name="Slicer_${escapeAttribute(name)}" hidden="1">#N/A</definedName>`
+  const element = `<definedName name="Slicer_${escapeAttribute(name)}">#N/A</definedName>`
   const existing = new RegExp(
     `<definedName\\b[^>]*\\bname="Slicer_${escapeRegExp(escapeAttribute(name))}"[^>]*>[^<]*</definedName>`,
   )
@@ -1014,7 +1101,11 @@ async function writeControl(
 
   // Identity: reuse the restored part paths / names, else allocate fresh ones
   // that do not collide with anything already in the package.
-  const partPath = control.partPath ?? (await allocatePartPath(pkg, 'xl/slicers/slicer', '.xml'))
+  const partPath =
+    control.partPath ??
+    (await slicerPartPathForWorksheet(pkg, control.worksheetPath)) ??
+    (await allocatePartPath(pkg, 'xl/slicers/slicer', '.xml'))
+
   const cachePath =
     control.cachePath ?? (await allocatePartPath(pkg, 'xl/slicerCaches/slicerCache', '.xml'))
   const cacheName =
@@ -1041,7 +1132,7 @@ async function writeControl(
   touchedEntries.add(cachePath)
   await registerContentTypeOverride(pkg, cachePath, SLICER_CACHE_CONTENT_TYPE, touchedEntries)
 
-  // The workbook rel + ext entry point at the cache part, and the hidden
+  // The workbook rel + ext entry point at the cache part, and the
   // Slicer_<name> definedName joins the workbook's name space.
   const relId = await appendOrReuseRelationship(
     pkg,
@@ -1054,14 +1145,22 @@ async function writeControl(
   let wiredWorkbook = addExtRef(workbookXml, WORKBOOK_SLICER_WIRING, relId, '</workbook>')
   wiredWorkbook = addSlicerDefinedName(wiredWorkbook, name)
 
-  // The control part (rewrites an existing one, preserving its geometry,
-  // style, and child content).
+  // The control part: Excel keeps every slicer of a worksheet in one part, so
+  // a rewrite replaces only the control keyed by its name (appending it when
+  // the part does not carry it) and preserves the other controls verbatim.
+  const carried = carryOverSlicerPart(existingPart)
+  const previous = carried.controls.find((control) => control.name === name)
   const partXml = buildSlicerPartXml(
-    name,
-    cacheName,
-    control.caption,
-    carryOverSlicerPart(existingPart),
+    upsertSlicerControl(carried, {
+      name,
+      cacheName,
+      caption: control.caption,
+      attributes: previous?.attributes ?? '',
+      inner: previous?.inner ?? '',
+      requireRowHeight: true,
+    }),
   )
+
   if (existingPart === null) pkg.add(partPath, partXml)
   else pkg.write(partPath, partXml)
   touchedEntries.add(partPath)
@@ -1088,74 +1187,87 @@ export async function applySlicerState(
   workbookXml: string,
   touchedEntries: Set<string>,
 ): Promise<string> {
-  const written = new Set(
+  // A removal and a write may share the slicer part (several controls live in
+  // one part); only the cache part is exclusive to one control.
+  const writtenCachePaths = new Set(
     state.slicers.flatMap((control) =>
-      [
-        ...(control.partPath ? [control.partPath] : []),
-        ...(control.cachePath ? [control.cachePath] : []),
-      ].filter((path) =>
-        state.removals.some((removal) => removal.partPath === path || removal.cachePath === path),
-      ),
+      control.cachePath === undefined ? [] : [control.cachePath],
     ),
   )
-  if (written.size > 0) {
-    throw new SlicerAddError('A removed slicer part cannot also be written in the same save.')
-  }
-
   for (const removal of state.removals) {
-    // the control's name keys the drawing anchor and the definedName; the
-    // cache's tabular@pivotCacheId IS the pivot cache definition's x14 ext
-    // slicer id (its own id space, not the workbook cacheId)
+    if (writtenCachePaths.has(removal.cachePath)) {
+      throw new SlicerAddError('A removed slicer cache cannot also be written in the same save.')
+    }
+    // Removal is keyed by the control's cache part: the shared slicers part may
+    // carry other controls (Excel keeps all slicers of a sheet together), and
+    // only the part's last control takes the part/rel/ext with it.
     const partXml = (await pkg.has(removal.partPath)) ? await pkg.readText(removal.partPath) : null
-    const rawName =
-      partXml === null ? undefined : attr(/<slicer\b[^>]*?\/?>/.exec(partXml)?.[0] ?? '', 'name')
-    const name = rawName === undefined ? null : decodeAttribute(rawName)
     const cacheXml = (await pkg.has(removal.cachePath))
       ? await pkg.readText(removal.cachePath)
       : null
+    const cacheNameRaw = attr(
+      /<slicerCacheDefinition\b[^>]*>/.exec(cacheXml ?? '')?.[0] ?? '',
+      'name',
+    )
+    const cacheName = cacheNameRaw === undefined ? undefined : decodeAttribute(cacheNameRaw)
+    const carried = carryOverSlicerPart(partXml)
+    const target =
+      (cacheName === undefined
+        ? undefined
+        : carried.controls.find((control) => control.cacheName === cacheName)) ??
+      carried.controls[0]
+    const name = target?.name ?? null
+    const remaining = name === null ? carried : withoutSlicerControl(carried, name)
     const boundX14CacheId = Number(
       attr(/<tabular\b[^>]*>/.exec(cacheXml ?? '')?.[0] ?? '', 'pivotCacheId') ?? NaN,
     )
     for (const host of await worksheetsReferencing(pkg, removal.partPath, SLICER_REL_TYPE)) {
-      await removeWorksheetRef(
-        pkg,
-        host,
-        removal.partPath,
-        SLICER_REL_TYPE,
-        WORKSHEET_SLICER_WIRING,
-        touchedEntries,
-      )
-      if (name !== null) {
-        await removeControlFrame(pkg, host, name, touchedEntries)
+      if (name !== null) await removeControlFrame(pkg, host, name, touchedEntries)
+      if (remaining.controls.length === 0) {
+        await removeWorksheetRef(
+          pkg,
+          host,
+          removal.partPath,
+          SLICER_REL_TYPE,
+          WORKSHEET_SLICER_WIRING,
+          touchedEntries,
+        )
       }
     }
-    const relsPath = 'xl/_rels/workbook.xml.rels'
-    if (await pkg.has(relsPath)) {
-      const relsXml = await pkg.readText(relsPath)
-      const existing = findRelationshipTo(
-        relsXml,
-        SLICER_CACHE_REL_TYPE,
-        'xl/workbook.xml',
-        removal.cachePath,
-      )
-      if (existing) {
-        pkg.write(relsPath, removeRelationshipById(relsXml, existing.id))
-        touchedEntries.add(relsPath)
-        workbookXml = removeExtRef(workbookXml, WORKBOOK_SLICER_WIRING, existing.id)
+    if (remaining.controls.length > 0) {
+      pkg.write(removal.partPath, buildSlicerPartXml(remaining))
+      touchedEntries.add(removal.partPath)
+    } else {
+      await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
+    }
+    if (name !== null) workbookXml = removeSlicerDefinedName(workbookXml, name)
+    // Another slicer can share this cache; its part and workbook wiring stay.
+    const cacheStillUsed = cacheName !== undefined && (await otherControlUsesCache(pkg, cacheName))
+    if (!cacheStillUsed) {
+      const relsPath = 'xl/_rels/workbook.xml.rels'
+      if (await pkg.has(relsPath)) {
+        const relsXml = await pkg.readText(relsPath)
+        const existing = findRelationshipTo(
+          relsXml,
+          SLICER_CACHE_REL_TYPE,
+          'xl/workbook.xml',
+          removal.cachePath,
+        )
+        if (existing) {
+          pkg.write(relsPath, removeRelationshipById(relsXml, existing.id))
+          touchedEntries.add(relsPath)
+          workbookXml = removeExtRef(workbookXml, WORKBOOK_SLICER_WIRING, existing.id)
+        }
       }
-    }
-    if (name !== null) {
-      workbookXml = removeSlicerDefinedName(workbookXml, name)
-    }
-    await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
-    await removePartWithSatellites(pkg, removal.cachePath, touchedEntries)
-    if (Number.isInteger(boundX14CacheId)) {
-      await removePivotCacheSlicerExt(pkg, workbookXml, boundX14CacheId, touchedEntries)
+      await removePartWithSatellites(pkg, removal.cachePath, touchedEntries)
+      if (Number.isInteger(boundX14CacheId)) {
+        await removePivotCacheSlicerExt(pkg, workbookXml, boundX14CacheId, touchedEntries)
+      }
     }
   }
 
   if (state.slicers.length > 0) {
-    const takenNames = await collectControlNames(pkg, 'xl/slicers/', 'slicer')
+    const takenNames = await collectControlNames(pkg, 'xl/slicers/')
     const takenCaches = await collectCacheNames(pkg, 'xl/slicerCaches/')
     for (const slicer of state.slicers) {
       workbookXml = await writeControl(
@@ -1332,12 +1444,8 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
   const states: SlicerPartState[] = []
   for (const partPath of slicerParts) {
     const xml = await reader.readText(partPath)
-    for (const match of xml.matchAll(/<slicer(?:\s[^>]*)?\/>/g)) {
-      const control = match[0]
-      const name = attr(control, 'name')
-      const cacheName = attr(control, 'cache')
-      if (name === undefined || cacheName === undefined) continue
-      const cache = cachesByName.get(decodeAttribute(cacheName))
+    for (const control of parseSlicerControls(xml)) {
+      const cache = cachesByName.get(control.cacheName)
       const host = hostByPart.get(partPath)
       if (cache === undefined || host === undefined) continue
       if (!cache.tabular) continue // OLAP caches: skip
@@ -1356,10 +1464,10 @@ export async function parseSlicerState(reader: SlicerPartReader): Promise<Slicer
         worksheetPath: host,
         partPath,
         cachePath: cache.path,
-        name: decodeAttribute(name),
+        name: control.name,
         cacheName: cache.name,
         sourceName: cache.sourceName,
-        caption: decodeAttribute(attr(control, 'caption') ?? name),
+        caption: control.caption,
         pivotCacheDefinitionPath,
         selectedItems: cache.selectedItems,
       })

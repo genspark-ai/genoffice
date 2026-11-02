@@ -1189,6 +1189,7 @@ export function restoreSlicerPanels(
       pivotPath: host.pivot.path,
       field,
       fieldName,
+      caption: entry.caption,
       members,
       // A cache with no readable selection (or an all-empty one) restores
       // unfiltered rather than hiding everything.

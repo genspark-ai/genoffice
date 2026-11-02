@@ -1149,7 +1149,7 @@ export function App({
             sheetId: slicer.sheetId,
             pivotPath: slicer.pivotPath,
             sourceName: slicer.fieldName,
-            caption: slicer.fieldName,
+            caption: slicer.caption ?? slicer.fieldName,
             ...(slicer.name === undefined ? {} : { name: slicer.name }),
             ...(slicer.partPath === undefined ? {} : { partPath: slicer.partPath }),
             ...(slicer.cachePath === undefined ? {} : { cachePath: slicer.cachePath }),

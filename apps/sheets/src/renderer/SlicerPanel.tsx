@@ -28,6 +28,10 @@ export interface SlicerUiState {
   /// Cache-field index and display name of the sliced field.
   readonly field: number
   readonly fieldName: string
+  /// Header caption from the file: an Excel-authored caption can differ from
+  /// the field name, and a rewrite must keep it. Absent for session controls
+  /// (the field name is the default caption).
+  readonly caption?: string
   readonly members: readonly SlicerMember[]
   /// Selected members (fieldItems indices); all selected = unfiltered.
   readonly selected: readonly number[]

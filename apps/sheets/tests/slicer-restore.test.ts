@@ -75,6 +75,8 @@ describe('restoreSlicerPanels', () => {
     expect(slicer.pivotPath).toBe(PIVOT_PATH)
     expect(slicer.field).toBe(0)
     expect(slicer.fieldName).toBe('Region')
+    // the file's caption rides the UI state so a rewrite keeps it
+    expect(slicer.caption).toBe('Region')
     expect(slicer.members.map((member) => member.label)).toEqual(['East', 'West', 'South'])
     // selectedItems are sharedItems indices; members carry both indices.
     expect(slicer.members.map((member) => member.x)).toEqual([0, 1, 2])
@@ -83,6 +85,12 @@ describe('restoreSlicerPanels', () => {
     expect(slicer.partPath).toBe('xl/slicers/slicer1.xml')
     expect(slicer.cachePath).toBe('xl/slicerCaches/slicerCache1.xml')
     expect(slicer.cacheName).toBe('Slicer_Region')
+  })
+
+  it('keeps an Excel-authored caption that differs from the field name', () => {
+    const restored = restoreSlicerPanels(state(), [slicerEntry({ caption: 'Sales region filter' })])
+    expect(restored[0]!.caption).toBe('Sales region filter')
+    expect(restored[0]!.fieldName).toBe('Region')
   })
 
   it('puts the panel on the control sheet when it sits away from its pivot', () => {

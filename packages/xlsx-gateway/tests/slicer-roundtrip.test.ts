@@ -293,7 +293,7 @@ describe('slicer write + read round trip', () => {
       '<x14:slicerCaches><x14:slicerCache r:id="rId3"/></x14:slicerCaches>',
     )
     // Excel writes #N/A as the value: the name is a marker, not a range.
-    expect(workbook).toContain('<definedName name="Slicer_Region" hidden="1">#N/A</definedName>')
+    expect(workbook).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
 
     // Content types.
     const contentTypes = await pkg.readText('[Content_Types].xml')
@@ -524,7 +524,7 @@ it('opens up a self-closing <definedNames/> instead of appending a second contai
   expect(workbook.match(/<\/definedNames>/g) ?? []).toHaveLength(1)
   expect(workbook).not.toContain('<definedNames/>')
   expect(workbook).toContain(
-    '<definedNames><definedName name="Slicer_Region" hidden="1">#N/A</definedName></definedNames>',
+    '<definedNames><definedName name="Slicer_Region">#N/A</definedName></definedNames>',
   )
   // schema position: before pivotCaches
   expect(workbook.indexOf('<definedNames>')).toBeLessThan(workbook.indexOf('<pivotCaches>'))
@@ -556,7 +556,7 @@ it('keeps one definedName per control across saves and refreshes its value', asy
     new Set(),
   )
   expect(saved.match(/<definedName\b/g) ?? []).toHaveLength(1)
-  expect(saved).toContain('<definedName name="Slicer_Region" hidden="1">#N/A</definedName>')
+  expect(saved).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
 })
 
 it('preserves Excel-authored slicer part and slicerCache bits on rewrite', async () => {
@@ -934,9 +934,7 @@ describe('slicer state through the save planner', () => {
       '<x14:slicerCaches><x14:slicerCache r:id="rId3"/></x14:slicerCaches>',
     )
     expect(savedWorkbook.match(/<definedNames\b/g) ?? []).toHaveLength(1)
-    expect(savedWorkbook).toContain(
-      '<definedName name="Slicer_Region" hidden="1">#N/A</definedName>',
-    )
+    expect(savedWorkbook).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
     expect(savedWorkbook.indexOf('<definedNames>')).toBeLessThan(
       savedWorkbook.indexOf('<pivotCaches>'),
     )
@@ -961,5 +959,209 @@ describe('slicer state through the save planner', () => {
     const savedContentTypes = await saved.file('[Content_Types].xml')!.async('string')
     expect(savedContentTypes).toContain('application/vnd.ms-excel.slicer+xml')
     expect(savedContentTypes).toContain('application/vnd.ms-excel.slicerCache+xml')
+  })
+})
+
+// ─── Shared slicers parts: Excel keeps every slicer of a worksheet in one part
+
+const SHARED_SLICERS_PART =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+  '<slicer name="Region" cache="Slicer_Region" caption="Region" rowHeight="300000">' +
+  '<extLst><ext uri="{11111111-1111-1111-1111-111111111111}" ' +
+  'xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+  '<x14:slicer name="Region"/></ext></extLst></slicer>' +
+  '<slicer name="Country" cache="Slicer_Country" caption="Country" columnCount="2"/>' +
+  '</slicers>'
+
+const COUNTRY_CACHE_PART =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" ' +
+  'name="Slicer_Country" sourceName="Country">' +
+  '<pivotTables><pivotTable tabId="1" name="Pivot1"/></pivotTables>' +
+  '<data><tabular pivotCacheId="7"><items count="2"><i x="0" s="1"/><i x="1"/></items></tabular></data>' +
+  '</slicerCacheDefinition>'
+
+const SHEET_RELS_WITH_SLICER_AND_DRAWING =
+  '<?xml version="1.0" encoding="UTF-8"?>\n' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>' +
+  '<Relationship Id="sRel1" Type="' +
+  SLICER_REL_TYPE +
+  '" Target="../slicers/slicer1.xml"/>' +
+  '<Relationship Id="dRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>' +
+  '</Relationships>'
+
+const TWO_CONTROL_DRAWING =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+  'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+  '<xdr:twoCellAnchor><xdr:from><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff>' +
+  '<xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>' +
+  '<xdr:to><xdr:col>11</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row>' +
+  '<xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+  '<xdr:graphicFrame><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">' +
+  '<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" name="Region"/>' +
+  '</a:graphicData></a:graphic></xdr:graphicFrame></xdr:twoCellAnchor>' +
+  '<xdr:twoCellAnchor><xdr:from><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff>' +
+  '<xdr:row>12</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>' +
+  '<xdr:to><xdr:col>11</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>20</xdr:row>' +
+  '<xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+  '<xdr:graphicFrame><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer">' +
+  '<sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" name="Country"/>' +
+  '</a:graphicData></a:graphic></xdr:graphicFrame></xdr:twoCellAnchor>' +
+  '</xdr:wsDr>'
+
+function sharedPartPackage(): MutablePackage {
+  const pkg = fixture()
+  pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
+  pkg.add('xl/slicers/slicer1.xml', SHARED_SLICERS_PART)
+  pkg.add('xl/slicerCaches/slicerCache1.xml', EXCEL_SLICER_CACHE_PART)
+  pkg.add('xl/slicerCaches/slicerCache2.xml', COUNTRY_CACHE_PART)
+  return pkg
+}
+
+const SHARED_REGION_INPUT = {
+  ...SLICER_INPUT,
+  name: 'Region',
+  partPath: 'xl/slicers/slicer1.xml',
+  cachePath: 'xl/slicerCaches/slicerCache1.xml',
+  cacheName: 'Slicer_Region',
+}
+
+const SHARED_COUNTRY_INPUT = {
+  ...SLICER_INPUT,
+  sourceName: 'Country',
+  caption: 'Country',
+  name: 'Country',
+  partPath: 'xl/slicers/slicer1.xml',
+  cachePath: 'xl/slicerCaches/slicerCache2.xml',
+  cacheName: 'Slicer_Country',
+}
+
+describe('shared slicers parts (one part, several controls)', () => {
+  it('rewrites only the matching control and preserves the other one verbatim', async () => {
+    const pkg = sharedPartPackage()
+    await applySlicerState(
+      pkg,
+      { slicers: [{ ...SHARED_REGION_INPUT, caption: 'Region!' }], removals: [] },
+      WORKBOOK,
+      new Set(),
+    )
+    const part = await pkg.readText('xl/slicers/slicer1.xml')
+    expect(part.match(/<slicer\b/g) ?? []).toHaveLength(2)
+    expect(part).toContain('<slicer name="Region" cache="Slicer_Region" caption="Region!"')
+    // Excel-authored layout and extLst of the rewritten control survive
+    expect(part).toContain('rowHeight="300000"')
+    expect(part).toContain('{11111111-1111-1111-1111-111111111111}')
+    // the untouched control keeps every attribute
+    expect(part).toContain(
+      '<slicer name="Country" cache="Slicer_Country" caption="Country" columnCount="2"/>',
+    )
+    const restored = await parseSlicerState(readerOf(pkg))
+    expect(restored.map((entry) => entry.name).sort()).toEqual(['Country', 'Region'])
+    expect(restored.find((entry) => entry.name === 'Region')?.caption).toBe('Region!')
+  })
+
+  it('updates every restored control of a shared part without dropping one', async () => {
+    const pkg = sharedPartPackage()
+    await applySlicerState(
+      pkg,
+      {
+        slicers: [
+          { ...SHARED_REGION_INPUT, caption: 'Region 2' },
+          { ...SHARED_COUNTRY_INPUT, caption: 'Country 2' },
+        ],
+        removals: [],
+      },
+      WORKBOOK,
+      new Set(),
+    )
+    const part = await pkg.readText('xl/slicers/slicer1.xml')
+    expect(part.match(/<slicer\b/g) ?? []).toHaveLength(2)
+    expect(part).toContain('caption="Region 2"')
+    expect(part).toContain('caption="Country 2"')
+    const restored = await parseSlicerState(readerOf(pkg))
+    expect(restored.map((entry) => entry.caption).sort()).toEqual(['Country 2', 'Region 2'])
+  })
+
+  it('appends a new control to the worksheet part instead of creating a second part', async () => {
+    const pkg = fixture()
+    pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
+    pkg.write('xl/worksheets/_rels/sheet1.xml.rels', SHEET_RELS_WITH_SLICER_AND_DRAWING)
+    pkg.add(
+      'xl/slicers/slicer1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+        '<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+        '<slicer name="Country" cache="Slicer_Country" caption="Country" columnCount="2"/>' +
+        '</slicers>',
+    )
+    pkg.add('xl/slicerCaches/slicerCache1.xml', COUNTRY_CACHE_PART)
+    pkg.add('xl/drawings/drawing1.xml', TWO_CONTROL_DRAWING)
+    await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+    const slicerPaths = (await pkg.paths()).filter((path) => /^xl\/slicers\//.test(path))
+    expect(slicerPaths).toEqual(['xl/slicers/slicer1.xml'])
+    const part = await pkg.readText('xl/slicers/slicer1.xml')
+    expect(part.match(/<slicer\b/g) ?? []).toHaveLength(2)
+    expect(part).toContain('name="Country"')
+    expect(part).toContain('name="Region"')
+  })
+
+  it('removes one shared-part control but keeps the part, its wiring and the other control', async () => {
+    const pkg = sharedPartPackage()
+    pkg.write('xl/worksheets/_rels/sheet1.xml.rels', SHEET_RELS_WITH_SLICER_AND_DRAWING)
+    pkg.add('xl/drawings/drawing1.xml', TWO_CONTROL_DRAWING)
+    await applySlicerState(
+      pkg,
+      {
+        slicers: [],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache1.xml' },
+        ],
+      },
+      WORKBOOK,
+      new Set(),
+    )
+    const part = await pkg.readText('xl/slicers/slicer1.xml')
+    expect(part.match(/<slicer\b/g) ?? []).toHaveLength(1)
+    expect(part).toContain('name="Country"')
+    expect(part).not.toContain('name="Region"')
+    // the part stays referenced from the sheet; only the removed control's frame goes
+    const sheetRels = await pkg.readText('xl/worksheets/_rels/sheet1.xml.rels')
+    expect(sheetRels).toContain(SLICER_REL_TYPE)
+    const drawing = await pkg.readText('xl/drawings/drawing1.xml')
+    expect(drawing).toContain('name="Country"')
+    expect(drawing).not.toContain('name="Region"')
+    // the removed control's cache is gone; the other one is still there
+    expect(await pkg.has('xl/slicerCaches/slicerCache1.xml')).toBe(false)
+    expect(await pkg.has('xl/slicerCaches/slicerCache2.xml')).toBe(true)
+    const restored = await parseSlicerState(readerOf(pkg))
+    expect(restored.map((entry) => entry.name)).toEqual(['Country'])
+  })
+
+  it('restores a paired <slicer> with an extLst child (Excel form)', async () => {
+    const pkg = fixture()
+    pkg.add('xl/slicers/slicer1.xml', EXCEL_SLICER_PART)
+    pkg.add('xl/slicerCaches/slicerCache1.xml', EXCEL_SLICER_CACHE_PART)
+    pkg.write(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>' +
+        '<Relationship Id="sRel1" Type="' +
+        SLICER_REL_TYPE +
+        '" Target="../slicers/slicer1.xml"/>' +
+        '</Relationships>',
+    )
+    const restored = await parseSlicerState(readerOf(pkg))
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({ name: 'Region', caption: 'Region' })
+  })
+
+  it('writes the Slicer_ definedName without the hidden attribute Excel repairs on', async () => {
+    const { pkg } = await writeInitial()
+    const workbook = await pkg.readText('xl/workbook.xml')
+    expect(workbook).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
+    expect(workbook).not.toContain('hidden="1"')
   })
 })
