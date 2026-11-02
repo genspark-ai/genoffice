@@ -1026,11 +1026,13 @@ fn workbook_has_formulas(path: &Path) -> Result<bool, SidecarError> {
     Ok(false)
 }
 
-/// Streaming `<f` scan: a worksheet XML can be hundreds of MB, and only the
-/// presence of a formula matters. The two-byte match can straddle a chunk.
+/// Streaming `<f>` / `<f ` / `<f/` scan: a worksheet XML can be hundreds of
+/// MB, and only the presence of a formula matters. The three-byte window
+/// carries across chunks and does not match `<filter`, `<formula1` or
+/// `<firstFooter`.
 fn part_has_formula(part: &mut impl Read) -> Result<bool, SidecarError> {
     let mut buffer = [0u8; 64 * 1024];
-    let mut previous_was_lt = false;
+    let mut window = [0u8; 3];
     loop {
         let read = part
             .read(&mut buffer)
@@ -1038,14 +1040,12 @@ fn part_has_formula(part: &mut impl Read) -> Result<bool, SidecarError> {
         if read == 0 {
             return Ok(false);
         }
-        let chunk = &buffer[..read];
-        if previous_was_lt && chunk[0] == b'f' {
-            return Ok(true);
+        for &byte in &buffer[..read] {
+            window = [window[1], window[2], byte];
+            if window[0] == b'<' && window[1] == b'f' && matches!(window[2], b'>' | b' ' | b'/') {
+                return Ok(true);
+            }
         }
-        if chunk.windows(2).any(|pair| pair == b"<f") {
-            return Ok(true);
-        }
-        previous_was_lt = chunk.last() == Some(&b'<');
     }
 }
 
@@ -1853,8 +1853,9 @@ mod tests {
         writer
             .start_file("xl/worksheets/sheet1.xml", options)
             .unwrap();
+        // filters, validation formulas and footers start with "<f" too
         writer.write_all(
-            b"<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData></worksheet>",
+            b"<worksheet><sheetData><row r=\"1\"><c r=\"A1\"><v>1</v></c></row></sheetData><autoFilter ref=\"A1\"><filterColumn colId=\"0\"><filters><filter val=\"1\"/></filters></filterColumn></autoFilter><dataValidations><dataValidation sqref=\"A1\"><formula1>1</formula1></dataValidation></dataValidations><headerFooter><firstFooter>x</firstFooter></headerFooter></worksheet>",
         )
         .unwrap();
         writer.finish().unwrap();

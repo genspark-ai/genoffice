@@ -6640,13 +6640,18 @@ export interface ImageDropPage {
  * paper's edge; bodyHeight places a page's text-area bottom from its body top
  * (else the gap's top, where the content ended, plus the unused bodyPad).
  * Measured in the real layout (a page's place on the canvas does not depend on
- * what it holds); the last page has no gap below it and takes the extents of
- * the one before.
+ * what it holds); the last page has no gap below it and ends at the paper's
+ * bottom edge.
  */
 export function imageDropPages(pm: HTMLElement, zoom: number): ImageDropPage[] {
   const pages: ImageDropPage[] = []
-  let paperTop = -Infinity
-  let bodyTop = -Infinity
+  // the paper is the editor root: its padding is the page margin
+  const paper = pm.closest<HTMLElement>('.doc-page')
+  const paperRect = paper?.getBoundingClientRect()
+  const pad = paper ? getComputedStyle(paper) : null
+  const padPx = (v: string | undefined) => (parseFloat(v ?? '') || 0) * zoom
+  let paperTop = paperRect?.top ?? -Infinity
+  let bodyTop = paperRect ? paperRect.top + padPx(pad?.paddingTop) : -Infinity
   for (const gap of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))) {
     // a split floating table's gap rows grow only the table's own box
     if (insideFloatTable(gap)) continue
@@ -6669,14 +6674,25 @@ export function imageDropPages(pm: HTMLElement, zoom: number): ImageDropPage[] {
     bodyTop = r.bottom
     paperTop = nextPaperTop
   }
+  // the paper's own bottom edge with its padding above it; off the DOM, the
+  // extents of the page before
   const prev = pages.at(-1)
-  const known = prev && Number.isFinite(prev.bodyTop)
-  pages.push({
-    paperTop,
-    bodyTop,
-    bodyBottom: known ? bodyTop + (prev.bodyBottom - prev.bodyTop) : Infinity,
-    paperBottom: known ? bodyTop + (prev.paperBottom - prev.bodyTop) : Infinity,
-  })
+  if (paperRect) {
+    pages.push({
+      paperTop,
+      bodyTop,
+      bodyBottom: paperRect.bottom - padPx(pad?.paddingBottom),
+      paperBottom: paperRect.bottom,
+    })
+  } else {
+    const known = prev && Number.isFinite(prev.bodyTop)
+    pages.push({
+      paperTop,
+      bodyTop,
+      bodyBottom: known ? bodyTop + (prev.bodyBottom - prev.bodyTop) : Infinity,
+      paperBottom: known ? bodyTop + (prev.paperBottom - prev.bodyTop) : Infinity,
+    })
+  }
   return pages
 }
 

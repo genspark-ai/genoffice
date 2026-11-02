@@ -56,8 +56,58 @@ describe('imageDropPages', () => {
       bodyBottom: 2300,
       paperBottom: 2600 - 96 - GAP_BAND,
     })
-    // the last page has no gap below it: it takes the extents of the one before
+    // off the DOM (no paper element) the last page takes the extents of the one before
     expect(p3).toEqual({ paperTop: 2504, bodyTop: 2600, bodyBottom: 3600, paperBottom: 3776 })
+  })
+})
+
+describe('imageDropPages on the first paper', () => {
+  it('reads the first page top off the paper so a drop near its foot is pulled up', () => {
+    const paper = document.createElement('div')
+    paper.className = 'doc-page'
+    paper.getBoundingClientRect = () => rect(0, 1204)
+    const pm = document.createElement('div')
+    paper.append(pm)
+    pm.append(gapEl(1000, 1300, { bodyPad: 40 }))
+    const pages = imageDropPages(pm, 1)
+    expect(pages[0].paperTop).toBe(0)
+    const placed = placeImageDrop(
+      [anchor(400), anchor(900)],
+      300,
+      pages[0].paperBottom - 20,
+      100,
+      pages,
+      1,
+    )
+    expect(placed.top).toBe(pages[0].paperBottom - 100)
+  })
+})
+
+describe('imageDropPages without a gap below the last paper', () => {
+  // the editor root is the paper: its padding is the page margin
+  const paperEl = (bottom: number) => {
+    const pm = document.createElement('div')
+    pm.className = 'doc-page'
+    pm.style.paddingTop = '96px'
+    pm.style.paddingBottom = '120px'
+    pm.getBoundingClientRect = () => rect(0, bottom)
+    return { pm }
+  }
+
+  it('a single page takes its extents off the paper itself', () => {
+    const { pm } = paperEl(1204)
+    expect(imageDropPages(pm, 1)).toEqual([
+      { paperTop: 0, bodyTop: 96, bodyBottom: 1084, paperBottom: 1204 },
+    ])
+  })
+
+  it('a second page ends at the paper bottom', () => {
+    const { pm } = paperEl(2408)
+    pm.append(gapEl(1000, 1300, { bodyPad: 40 }))
+    const [, p2] = imageDropPages(pm, 1)
+    expect(p2).toEqual({ paperTop: 1204, bodyTop: 1300, bodyBottom: 2288, paperBottom: 2408 })
+    const placed = placeImageDrop([anchor(1400)], 300, p2.paperBottom - 20, 100, [p2], 1)
+    expect(placed.top).toBe(p2.paperBottom - 100)
   })
 })
 
