@@ -390,6 +390,44 @@ describe('parseFileToText: pptx', () => {
     )
   })
 
+  it.each([1, 2])(
+    'reads notes inside %i nested shape groups without reading page numbers',
+    async (depth) => {
+      const zip = await JSZip.loadAsync(await buildPptxFixture())
+      zip.file(
+        'ppt/slides/_rels/slide1.xml.rels',
+        notesRelationship('../notesSlides/notesSlide1.xml'),
+      )
+      const xml = notesSlideXml(['Grouped note 0042', 'Second paragraph'], '99')
+        .replace('<p:spTree>', `<p:spTree>${'<p:grpSp>'.repeat(depth)}`)
+        .replace('</p:spTree>', `${'</p:grpSp>'.repeat(depth)}</p:spTree>`)
+      zip.file('ppt/notesSlides/notesSlide1.xml', xml)
+      const text = await pptxToText(await zip.generateAsync({ type: 'uint8array' }))
+      expect(text).toContain('### Notes\nGrouped note 0042\nSecond paragraph')
+      expect(text).not.toContain('99')
+      expect(text.match(/Grouped note 0042/g)).toHaveLength(1)
+    },
+  )
+
+  it('reads one compatibility branch of grouped notes', async () => {
+    const zip = await JSZip.loadAsync(await buildPptxFixture())
+    zip.file(
+      'ppt/slides/_rels/slide1.xml.rels',
+      notesRelationship('../notesSlides/notesSlide1.xml'),
+    )
+    const xml = notesSlideXml(['Fallback notes'], '99')
+      .replace(
+        '<p:spTree>',
+        '<p:spTree><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="p"><p:grpSp/></mc:Choice><mc:Fallback><p:grpSp>',
+      )
+      .replace('</p:spTree>', '</p:grpSp></mc:Fallback></mc:AlternateContent></p:spTree>')
+    zip.file('ppt/notesSlides/notesSlide1.xml', xml)
+    const text = await pptxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text).toContain('### Notes\nFallback notes')
+    expect(text).not.toContain('99')
+    expect(text.match(/Fallback notes/g)).toHaveLength(1)
+  })
+
   it.each(['single quotes', 'shape attributes', 'alternate prefixes'])(
     'reads speaker notes with %s',
     async (variant) => {
