@@ -81,9 +81,18 @@ export interface ParagraphFormatting {
   tableRowEnd?: boolean
 }
 
+/** A run that belongs to a hyperlink; the writer emits a w:hyperlink around it. */
+export interface FormattedLink {
+  /** external URL, or '#bookmark' for an internal anchor */
+  href: string
+  tooltip?: string
+}
+
 export interface FormattedRun {
   text: string
   formatting: CharacterFormatting
+  /** set when the run's text sits inside a hyperlink field result */
+  link?: FormattedLink
 }
 
 export interface FormattedParagraph {
@@ -316,7 +325,8 @@ export function applyCharacterGrpprl(
   for (const sprm of iterateSprms(grpprl)) applyCharacterSprm(format, sprm, mode)
 }
 
-function characterFormattingOf(grpprl: Uint8Array): CharacterFormatting {
+/** Direct character formatting of one CHPX grpprl (no style resolution). */
+export function characterFormattingOf(grpprl: Uint8Array): CharacterFormatting {
   const format: CharacterFormatting = {}
   applyCharacterGrpprl(format, grpprl)
   return format
@@ -614,9 +624,13 @@ function collectParagraphFormatting(
       const cp = cpAtFc(source, entry.fcStart, 'a PAPX paragraph start')
       const index = spanIndexByStartCp.get(cp)
       if (index === undefined) {
-        warnings.push(
-          `a paragraph formatting record starts at CP ${cp}, which is not a paragraph start; it was ignored`,
-        )
+        // a cell/row-end paragraph (after a \x07 mark) is a table unit, read by
+        // stage 3c-2; anything else is a genuinely misplaced record
+        const afterMark = cp > 0 && source.rawText[cp - 1] === '\u0007'
+        if (!afterMark)
+          warnings.push(
+            `a paragraph formatting record starts at CP ${cp}, which is not a paragraph start; it was ignored`,
+          )
         continue
       }
       formats.set(index, paragraphFormattingOf(entry, context))
