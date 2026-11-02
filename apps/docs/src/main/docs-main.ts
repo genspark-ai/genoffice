@@ -83,9 +83,11 @@ import type {
   WebContents,
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
+import { convertLegacyDocToDocx } from '../../../../packages/doc2docx/src'
 import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
 import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
 import { convertOdtToDocx } from '../../../../packages/odf2ooxml/src'
+import { convertHwpToDocx } from '../../../../packages/hwp2docx/src'
 import {
   AiCreditsError,
   AiTimeoutError,
@@ -153,6 +155,7 @@ import { mergeOutputFileName, mergeOutputPath } from './merge-output'
 import { ClickClaims } from '../shared/context-menu-claims'
 import {
   OPENABLE_DOC_EXTENSIONS,
+  docImportKindForPath,
   findOpenableDocPath,
   isOpenableDocPath,
 } from '../shared/open-file'
@@ -188,7 +191,14 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
-import { printJobOptions, printScaleOption, validPrintGeometry } from './print-args'
+import {
+  printJobOptions,
+  printScaleOption,
+  validPrintGeometry,
+  validPrintPaper,
+} from './print-args'
+import { printPdfViaCups } from '@genoffice/electron-utils/print-cups'
+import { printOutcome } from '@genoffice/electron-utils/print-job'
 import { addPdfInternalLinks } from './pdf-links'
 import {
   assignStarredGroup,
@@ -219,7 +229,13 @@ const tMain = createI18n({
     odtImportMsg: '转换 .{ext} 文档？',
     odtImportDetail:
       'GenOffice 只编辑 .docx，不编辑 ODF。正文、标题、列表、表格和图片会转换过来；脚注、批注和文本框不会完整保留。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
+    hwpImportDetail:
+      'GenOffice 只编辑 .docx，不编辑 HWP。正文、表格、图片、页眉和页脚会转换过来；公式、脚注和嵌入对象不会转换，自动编号会变成普通文本。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
     odtImportConvertBtn: '转换并打开',
+    docImportMsg: '转换 .{ext} 文档？',
+    docImportDetail:
+      'GenOffice 只编辑 .docx，不编辑 Word 97-2003 旧版 .doc。正文、标题、列表、表格和图片会转换过来；脚注、批注和文本框不会完整保留。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
+    docImportConvertBtn: '转换并打开',
     dlgSaveAs: '另存为',
     closeUnsavedMsg: '此文档有未保存的更改。',
     closeUnsavedDetail: '关闭前是否保存？',
@@ -359,7 +375,13 @@ const tMain = createI18n({
     odtImportMsg: 'Convert this .{ext} document?',
     odtImportDetail:
       'GenOffice edits .docx, not ODF. Body text, headings, lists, tables and images carry over; footnotes, comments and text boxes are not fully preserved. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
+    hwpImportDetail:
+      'GenOffice edits .docx, not HWP. Body text, tables, images, headers and footers carry over; equations, footnotes and embedded objects are not converted, and automatic numbering becomes plain text. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
     odtImportConvertBtn: 'Convert and open',
+    docImportMsg: 'Convert this .{ext} document?',
+    docImportDetail:
+      'GenOffice edits .docx, not Word 97-2003 documents. Body text, headings, lists, tables and images carry over; footnotes, comments and text boxes are not fully preserved. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
+    docImportConvertBtn: 'Convert and open',
     dlgSaveAs: 'Save As',
     closeUnsavedMsg: 'This document has unsaved changes.',
     closeUnsavedDetail: 'Do you want to save them before closing?',
@@ -503,7 +525,13 @@ const tMain = createI18n({
     odtImportMsg: 'Chuyển đổi tài liệu .{ext} này?',
     odtImportDetail:
       'GenOffice chỉnh sửa .docx chứ không chỉnh sửa ODF. Nội dung, tiêu đề, danh sách, bảng và hình ảnh được chuyển đổi; chú thích cuối trang, bình luận và hộp văn bản không được giữ đầy đủ. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
+    hwpImportDetail:
+      'GenOffice chỉnh sửa .docx chứ không chỉnh sửa HWP. Nội dung, bảng, hình ảnh, đầu trang và chân trang được chuyển đổi; công thức, chú thích cuối trang và đối tượng nhúng không được chuyển đổi, còn đánh số tự động trở thành văn bản thường. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
     odtImportConvertBtn: 'Chuyển đổi và mở',
+    docImportMsg: 'Chuyển đổi tài liệu .{ext} này?',
+    docImportDetail:
+      'GenOffice chỉnh sửa .docx chứ không chỉnh sửa tài liệu Word 97-2003 (.doc). Nội dung, tiêu đề, danh sách, bảng và hình ảnh được chuyển đổi; chú thích cuối trang, bình luận và hộp văn bản không được giữ đầy đủ. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
+    docImportConvertBtn: 'Chuyển đổi và mở',
     dlgSaveAs: 'Lưu dưới dạng',
     closeUnsavedMsg: 'Tài liệu này có những thay đổi chưa được lưu.',
     closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
@@ -648,7 +676,13 @@ const tMain = createI18n({
     odtImportMsg: 'Bu .{ext} belgesi dönüştürülsün mü?',
     odtImportDetail:
       'GenOffice ODF değil .docx düzenler. Gövde metni, başlıklar, listeler, tablolar ve resimler aktarılır; dipnotlar, açıklamalar ve metin kutuları tam olarak korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
+    hwpImportDetail:
+      'GenOffice HWP değil .docx düzenler. Gövde metni, tablolar, resimler, üst bilgiler ve alt bilgiler aktarılır; denklemler, dipnotlar ve gömülü nesneler dönüştürülmez, otomatik numaralandırma düz metne dönüşür. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
     odtImportConvertBtn: 'Dönüştür ve aç',
+    docImportMsg: 'Bu .{ext} belgesi dönüştürülsün mü?',
+    docImportDetail:
+      'GenOffice Word 97-2003 (.doc) belgelerini değil .docx düzenler. Gövde metni, başlıklar, listeler, tablolar ve resimler aktarılır; dipnotlar, açıklamalar ve metin kutuları tam olarak korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
+    docImportConvertBtn: 'Dönüştür ve aç',
     dlgSaveAs: 'Farklı Kaydet',
     closeUnsavedMsg: 'Bu belgede kaydedilmemiş değişiklikler var.',
     closeUnsavedDetail: 'Kapatmadan önce kaydetmek ister misiniz?',
@@ -792,7 +826,13 @@ const tMain = createI18n({
     odtImportMsg: 'この .{ext} 文書を変換しますか？',
     odtImportDetail:
       'GenOffice は ODF ではなく .docx を編集します。本文・見出し・リスト・表・画像は変換されますが、脚注・コメント・テキストボックスは完全には保持されません。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
+    hwpImportDetail:
+      'GenOffice は HWP ではなく .docx を編集します。本文・表・画像・ヘッダー・フッターは変換されますが、数式・脚注・埋め込みオブジェクトは変換されず、自動番号は通常のテキストになります。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
     odtImportConvertBtn: '変換して開く',
+    docImportMsg: 'この .{ext} 文書を変換しますか？',
+    docImportDetail:
+      'GenOffice は Word 97-2003 形式（.doc）ではなく .docx を編集します。本文・見出し・リスト・表・画像は変換されますが、脚注・コメント・テキストボックスは完全には保持されません。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
+    docImportConvertBtn: '変換して開く',
     dlgSaveAs: '名前を付けて保存',
     closeUnsavedMsg: 'このドキュメントに未保存の変更があります。',
     closeUnsavedDetail: '閉じる前に保存しますか？',
@@ -936,7 +976,13 @@ const tMain = createI18n({
     odtImportMsg: '이 .{ext} 문서를 변환할까요?',
     odtImportDetail:
       'GenOffice은 ODF가 아니라 .docx를 편집합니다. 본문, 제목, 목록, 표, 이미지는 변환되지만 각주, 메모, 텍스트 상자는 완전히 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
+    hwpImportDetail:
+      'GenOffice은 HWP가 아니라 .docx를 편집합니다. 본문, 표, 그림, 머리말, 꼬리말은 변환되지만 수식, 각주, 삽입 개체는 변환되지 않으며 자동 번호는 일반 텍스트로 바뀝니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
     odtImportConvertBtn: '변환 후 열기',
+    docImportMsg: '이 .{ext} 문서를 변환할까요?',
+    docImportDetail:
+      'GenOffice은 Word 97-2003(.doc) 문서가 아니라 .docx를 편집합니다. 본문, 제목, 목록, 표, 이미지는 변환되지만 각주, 메모, 텍스트 상자는 완전히 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
+    docImportConvertBtn: '변환 후 열기',
     dlgSaveAs: '다른 이름으로 저장',
     closeUnsavedMsg: '이 문서에 저장하지 않은 변경 사항이 있습니다.',
     closeUnsavedDetail: '닫기 전에 저장하시겠습니까?',
@@ -1081,7 +1127,13 @@ const tMain = createI18n({
     odtImportMsg: 'Convertir ce document .{ext} ?',
     odtImportDetail:
       'GenOffice modifie des .docx, pas de l’ODF. Le texte, les titres, les listes, les tableaux et les images sont convertis ; les notes de bas de page, les commentaires et les zones de texte ne sont pas entièrement conservés. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
+    hwpImportDetail:
+      'GenOffice modifie des .docx, pas des fichiers HWP. Le texte, les tableaux, les images, les en-têtes et les pieds de page sont convertis ; les équations, les notes de bas de page et les objets incorporés ne le sont pas, et la numérotation automatique devient du texte simple. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
     odtImportConvertBtn: 'Convertir et ouvrir',
+    docImportMsg: 'Convertir ce document .{ext} ?',
+    docImportDetail:
+      'GenOffice modifie des .docx, pas de documents Word 97-2003 (.doc). Le texte, les titres, les listes, les tableaux et les images sont convertis ; les notes de bas de page, les commentaires et les zones de texte ne sont pas entièrement conservés. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
+    docImportConvertBtn: 'Convertir et ouvrir',
     dlgSaveAs: 'Enregistrer sous',
     closeUnsavedMsg: 'Ce document contient des modifications non enregistrées.',
     closeUnsavedDetail: 'Voulez-vous les enregistrer avant de fermer ?',
@@ -1227,7 +1279,13 @@ const tMain = createI18n({
     odtImportMsg: 'Dieses .{ext}-Dokument konvertieren?',
     odtImportDetail:
       'GenOffice bearbeitet .docx, nicht ODF. Text, Überschriften, Listen, Tabellen und Bilder werden übernommen; Fußnoten, Kommentare und Textfelder werden nicht vollständig bewahrt. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
+    hwpImportDetail:
+      'GenOffice bearbeitet .docx, nicht HWP. Text, Tabellen, Bilder sowie Kopf- und Fußzeilen werden übernommen; Formeln, Fußnoten und eingebettete Objekte werden nicht konvertiert, und automatische Nummerierung wird zu normalem Text. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
     odtImportConvertBtn: 'Konvertieren und öffnen',
+    docImportMsg: 'Dieses .{ext}-Dokument konvertieren?',
+    docImportDetail:
+      'GenOffice bearbeitet .docx, nicht Word 97-2003-Dokumente (.doc). Text, Überschriften, Listen, Tabellen und Bilder werden übernommen; Fußnoten, Kommentare und Textfelder werden nicht vollständig bewahrt. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
+    docImportConvertBtn: 'Konvertieren und öffnen',
     dlgSaveAs: 'Speichern unter',
     closeUnsavedMsg: 'Dieses Dokument enthält ungespeicherte Änderungen.',
     closeUnsavedDetail: 'Vor dem Schließen speichern?',
@@ -1373,7 +1431,13 @@ const tMain = createI18n({
     odtImportMsg: '¿Convertir este documento .{ext}?',
     odtImportDetail:
       'GenOffice edita .docx, no ODF. El texto, los títulos, las listas, las tablas y las imágenes se convierten; las notas al pie, los comentarios y los cuadros de texto no se conservan por completo. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
+    hwpImportDetail:
+      'GenOffice edita .docx, no HWP. El texto, las tablas, las imágenes, los encabezados y los pies de página se convierten; las ecuaciones, las notas al pie y los objetos incrustados no, y la numeración automática pasa a ser texto normal. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
     odtImportConvertBtn: 'Convertir y abrir',
+    docImportMsg: '¿Convertir este documento .{ext}?',
+    docImportDetail:
+      'GenOffice edita .docx, no documentos de Word 97-2003 (.doc). El texto, los títulos, las listas, las tablas y las imágenes se convierten; las notas al pie, los comentarios y los cuadros de texto no se conservan por completo. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
+    docImportConvertBtn: 'Convertir y abrir',
     dlgSaveAs: 'Guardar como',
     closeUnsavedMsg: 'Este documento tiene cambios sin guardar.',
     closeUnsavedDetail: '¿Desea guardarlos antes de cerrar?',
@@ -1519,7 +1583,13 @@ const tMain = createI18n({
     odtImportMsg: 'แปลงเอกสาร .{ext} นี้ไหม?',
     odtImportDetail:
       'GenOffice แก้ไข .docx ไม่ใช่ ODF ข้อความ หัวข้อ รายการ ตาราง และรูปภาพจะถูกแปลง ส่วนเชิงอรรถ ความคิดเห็น และกล่องข้อความจะไม่ถูกเก็บไว้ทั้งหมด ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
+    hwpImportDetail:
+      'GenOffice แก้ไข .docx ไม่ใช่ HWP ข้อความ ตาราง รูปภาพ หัวกระดาษ และท้ายกระดาษจะถูกแปลง ส่วนสมการ เชิงอรรถ และวัตถุที่ฝังไว้จะไม่ถูกแปลง และลำดับเลขอัตโนมัติจะกลายเป็นข้อความธรรมดา ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
     odtImportConvertBtn: 'แปลงแล้วเปิด',
+    docImportMsg: 'แปลงเอกสาร .{ext} นี้ไหม?',
+    docImportDetail:
+      'GenOffice แก้ไข .docx ไม่ใช่เอกสาร Word 97-2003 (.doc) ข้อความ หัวข้อ รายการ ตาราง และรูปภาพจะถูกแปลง ส่วนเชิงอรรถ ความคิดเห็น และกล่องข้อความจะไม่ถูกเก็บไว้ทั้งหมด ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
+    docImportConvertBtn: 'แปลงแล้วเปิด',
     dlgSaveAs: 'บันทึกเป็น',
     closeUnsavedMsg: 'เอกสารนี้มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก',
     closeUnsavedDetail: 'ต้องการบันทึกก่อนปิดหรือไม่?',
@@ -1663,7 +1733,13 @@ const tMain = createI18n({
     odtImportMsg: 'Konversi dokumen .{ext} ini?',
     odtImportDetail:
       'GenOffice mengedit .docx, bukan ODF. Teks isi, judul, daftar, tabel, dan gambar ikut dikonversi; catatan kaki, komentar, dan kotak teks tidak sepenuhnya dipertahankan. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
+    hwpImportDetail:
+      'GenOffice mengedit .docx, bukan HWP. Teks isi, tabel, gambar, header, dan footer ikut dikonversi; persamaan, catatan kaki, dan objek tersemat tidak dikonversi, dan penomoran otomatis menjadi teks biasa. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
     odtImportConvertBtn: 'Konversi dan buka',
+    docImportMsg: 'Konversi dokumen .{ext} ini?',
+    docImportDetail:
+      'GenOffice mengedit .docx, bukan dokumen Word 97-2003 (.doc). Teks isi, judul, daftar, tabel, dan gambar ikut dikonversi; catatan kaki, komentar, dan kotak teks tidak sepenuhnya dipertahankan. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
+    docImportConvertBtn: 'Konversi dan buka',
     dlgSaveAs: 'Simpan Sebagai',
     closeUnsavedMsg: 'Dokumen ini memiliki perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -1807,7 +1883,13 @@ const tMain = createI18n({
     odtImportMsg: 'Преобразовать этот документ .{ext}?',
     odtImportDetail:
       'GenOffice редактирует .docx, а не ODF. Текст, заголовки, списки, таблицы и изображения переносятся; сноски, примечания и надписи сохраняются не полностью. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
+    hwpImportDetail:
+      'GenOffice редактирует .docx, а не HWP. Текст, таблицы, изображения и колонтитулы переносятся; формулы, сноски и внедрённые объекты не преобразуются, а автоматическая нумерация становится обычным текстом. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
     odtImportConvertBtn: 'Преобразовать и открыть',
+    docImportMsg: 'Преобразовать этот документ .{ext}?',
+    docImportDetail:
+      'GenOffice редактирует .docx, а не документы Word 97-2003 (.doc). Текст, заголовки, списки, таблицы и изображения переносятся; сноски, примечания и надписи сохраняются не полностью. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
+    docImportConvertBtn: 'Преобразовать и открыть',
     dlgSaveAs: 'Сохранить как',
     closeUnsavedMsg: 'В этом документе есть несохранённые изменения.',
     closeUnsavedDetail: 'Сохранить их перед закрытием?',
@@ -1952,7 +2034,13 @@ const tMain = createI18n({
     odtImportMsg: 'تحويل مستند .{ext} هذا؟',
     odtImportDetail:
       'يحرّر GenOffice ملفات ‎.docx ولا يحرّر ODF. يُحوَّل النص والعناوين والقوائم والجداول والصور؛ أما الحواشي السفلية والتعليقات ومربعات النص فلا تُحفظ بالكامل. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
+    hwpImportDetail:
+      'يحرّر GenOffice ملفات ‎.docx ولا يحرّر HWP. يُحوَّل النص والجداول والصور والرؤوس والتذييلات؛ أما المعادلات والحواشي السفلية والكائنات المضمّنة فلا تُحوَّل، ويصبح الترقيم التلقائي نصًا عاديًا. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
     odtImportConvertBtn: 'تحويل وفتح',
+    docImportMsg: 'تحويل مستند .{ext} هذا؟',
+    docImportDetail:
+      'يحرّر GenOffice ملفات ‎.docx ولا يحرّر مستندات Word 97-2003 (‎.doc). يُحوَّل النص والعناوين والقوائم والجداول والصور؛ أما الحواشي السفلية والتعليقات ومربعات النص فلا تُحفظ بالكامل. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
+    docImportConvertBtn: 'تحويل وفتح',
     dlgSaveAs: 'حفظ باسم',
     closeUnsavedMsg: 'يحتوي هذا المستند على تغييرات غير محفوظة.',
     closeUnsavedDetail: 'هل تريد حفظها قبل الإغلاق؟',
@@ -2097,7 +2185,13 @@ const tMain = createI18n({
     odtImportMsg: 'Converter este documento .{ext}?',
     odtImportDetail:
       'O GenOffice edita .docx, não ODF. Texto, títulos, listas, tabelas e imagens são convertidos; notas de rodapé, comentários e caixas de texto não são preservados por completo. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
+    hwpImportDetail:
+      'O GenOffice edita .docx, não HWP. Texto, tabelas, imagens, cabeçalhos e rodapés são convertidos; equações, notas de rodapé e objetos incorporados não são, e a numeração automática vira texto comum. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
     odtImportConvertBtn: 'Converter e abrir',
+    docImportMsg: 'Converter este documento .{ext}?',
+    docImportDetail:
+      'O GenOffice edita .docx, não documentos do Word 97-2003 (.doc). Texto, títulos, listas, tabelas e imagens são convertidos; notas de rodapé, comentários e caixas de texto não são preservados por completo. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
+    docImportConvertBtn: 'Converter e abrir',
     dlgSaveAs: 'Salvar Como',
     closeUnsavedMsg: 'Este documento tem alterações não salvas.',
     closeUnsavedDetail: 'Deseja salvá-las antes de fechar?',
@@ -2242,7 +2336,13 @@ const tMain = createI18n({
     odtImportMsg: 'Convertire questo documento .{ext}?',
     odtImportDetail:
       'GenOffice modifica .docx, non ODF. Testo, titoli, elenchi, tabelle e immagini vengono convertiti; note a piè di pagina, commenti e caselle di testo non sono conservati completamente. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
+    hwpImportDetail:
+      'GenOffice modifica .docx, non HWP. Testo, tabelle, immagini, intestazioni e piè di pagina vengono convertiti; equazioni, note a piè di pagina e oggetti incorporati no, e la numerazione automatica diventa testo semplice. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
     odtImportConvertBtn: 'Converti e apri',
+    docImportMsg: 'Convertire questo documento .{ext}?',
+    docImportDetail:
+      'GenOffice modifica .docx, non documenti Word 97-2003 (.doc). Testo, titoli, elenchi, tabelle e immagini vengono convertiti; note a piè di pagina, commenti e caselle di testo non sono conservati completamente. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
+    docImportConvertBtn: 'Converti e apri',
     dlgSaveAs: 'Salva con nome',
     closeUnsavedMsg: 'Questo documento contiene modifiche non salvate.',
     closeUnsavedDetail: 'Salvarle prima di chiudere?',
@@ -2387,7 +2487,13 @@ const tMain = createI18n({
     odtImportMsg: 'Skonwertować ten dokument .{ext}?',
     odtImportDetail:
       'GenOffice edytuje .docx, a nie ODF. Tekst, nagłówki, listy, tabele i obrazy są konwertowane; przypisy, komentarze i pola tekstowe nie są zachowywane w całości. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
+    hwpImportDetail:
+      'GenOffice edytuje .docx, a nie HWP. Tekst, tabele, obrazy, nagłówki i stopki są konwertowane; równania, przypisy i obiekty osadzone nie są, a automatyczna numeracja staje się zwykłym tekstem. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
     odtImportConvertBtn: 'Konwertuj i otwórz',
+    docImportMsg: 'Skonwertować ten dokument .{ext}?',
+    docImportDetail:
+      'GenOffice edytuje .docx, a nie dokumenty Word 97-2003 (.doc). Tekst, nagłówki, listy, tabele i obrazy są konwertowane; przypisy, komentarze i pola tekstowe nie są zachowywane w całości. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
+    docImportConvertBtn: 'Konwertuj i otwórz',
     dlgSaveAs: 'Zapisz jako',
     closeUnsavedMsg: 'Ten dokument zawiera niezapisane zmiany.',
     closeUnsavedDetail: 'Czy zapisać je przed zamknięciem?',
@@ -2532,7 +2638,13 @@ const tMain = createI18n({
     odtImportMsg: 'Převést tento dokument .{ext}?',
     odtImportDetail:
       'GenOffice upravuje .docx, nikoli ODF. Text, nadpisy, seznamy, tabulky a obrázky se převedou; poznámky pod čarou, komentáře a textová pole se nepřevezmou úplně. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
+    hwpImportDetail:
+      'GenOffice upravuje .docx, nikoli HWP. Text, tabulky, obrázky, záhlaví a zápatí se převedou; rovnice, poznámky pod čarou a vložené objekty se nepřevedou a automatické číslování se změní na prostý text. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
     odtImportConvertBtn: 'Převést a otevřít',
+    docImportMsg: 'Převést tento dokument .{ext}?',
+    docImportDetail:
+      'GenOffice upravuje .docx, nikoli dokumenty Word 97-2003 (.doc). Text, nadpisy, seznamy, tabulky a obrázky se převedou; poznámky pod čarou, komentáře a textová pole se nepřevezmou úplně. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
+    docImportConvertBtn: 'Převést a otevřít',
     dlgSaveAs: 'Uložit jako',
     closeUnsavedMsg: 'Tento dokument obsahuje neuložené změny.',
     closeUnsavedDetail: 'Chcete je před zavřením uložit?',
@@ -2677,7 +2789,13 @@ const tMain = createI18n({
     odtImportMsg: 'Dit .{ext}-document converteren?',
     odtImportDetail:
       'GenOffice bewerkt .docx, niet ODF. Tekst, koppen, lijsten, tabellen en afbeeldingen worden omgezet; voetnoten, opmerkingen en tekstvakken niet volledig. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
+    hwpImportDetail:
+      'GenOffice bewerkt .docx, niet HWP. Tekst, tabellen, afbeeldingen, kop- en voetteksten worden omgezet; vergelijkingen, voetnoten en ingesloten objecten niet, en automatische nummering wordt gewone tekst. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
     odtImportConvertBtn: 'Converteren en openen',
+    docImportMsg: 'Dit .{ext}-document converteren?',
+    docImportDetail:
+      'GenOffice bewerkt .docx, geen Word 97-2003-documenten (.doc). Tekst, koppen, lijsten, tabellen en afbeeldingen worden omgezet; voetnoten, opmerkingen en tekstvakken niet volledig. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
+    docImportConvertBtn: 'Converteren en openen',
     dlgSaveAs: 'Opslaan als',
     closeUnsavedMsg: 'Dit document bevat niet-opgeslagen wijzigingen.',
     closeUnsavedDetail: 'Wilt u ze opslaan voordat u sluit?',
@@ -2822,7 +2940,13 @@ const tMain = createI18n({
     odtImportMsg: 'Tukar dokumen .{ext} ini?',
     odtImportDetail:
       'GenOffice menyunting .docx, bukan ODF. Teks kandungan, tajuk, senarai, jadual dan imej ditukar; nota kaki, komen dan kotak teks tidak dikekalkan sepenuhnya. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
+    hwpImportDetail:
+      'GenOffice menyunting .docx, bukan HWP. Teks kandungan, jadual, imej, pengepala dan pengaki ditukar; persamaan, nota kaki dan objek terbenam tidak ditukar, dan penomboran automatik menjadi teks biasa. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
     odtImportConvertBtn: 'Tukar dan buka',
+    docImportMsg: 'Tukar dokumen .{ext} ini?',
+    docImportDetail:
+      'GenOffice menyunting .docx, bukan dokumen Word 97-2003 (.doc). Teks kandungan, tajuk, senarai, jadual dan imej ditukar; nota kaki, komen dan kotak teks tidak dikekalkan sepenuhnya. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
+    docImportConvertBtn: 'Tukar dan buka',
     dlgSaveAs: 'Simpan Sebagai',
     closeUnsavedMsg: 'Dokumen ini mempunyai perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Adakah anda mahu menyimpannya sebelum menutup?',
@@ -2967,7 +3091,13 @@ const tMain = createI18n({
     odtImportMsg: 'להמיר את מסמך ה‑.{ext} הזה?',
     odtImportDetail:
       'GenOffice עורך קבצי ‎.docx ולא ODF. טקסט, כותרות, רשימות, טבלאות ותמונות מומרים; הערות שוליים, תגובות ותיבות טקסט לא נשמרים במלואם. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
+    hwpImportDetail:
+      'GenOffice עורך קבצי ‎.docx ולא HWP. טקסט, טבלאות, תמונות, כותרות עליונות ותחתונות מומרים; משוואות, הערות שוליים ואובייקטים מוטמעים אינם מומרים, ומספור אוטומטי הופך לטקסט רגיל. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
     odtImportConvertBtn: 'המר ופתח',
+    docImportMsg: 'להמיר את מסמך ה‑.{ext} הזה?',
+    docImportDetail:
+      'GenOffice עורך קבצי ‎.docx ולא מסמכי Word 97-2003 (‎.doc). טקסט, כותרות, רשימות, טבלאות ותמונות מומרים; הערות שוליים, תגובות ותיבות טקסט לא נשמרים במלואם. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
+    docImportConvertBtn: 'המר ופתח',
     dlgSaveAs: 'שמירה בשם',
     closeUnsavedMsg: 'במסמך זה יש שינויים שלא נשמרו.',
     closeUnsavedDetail: 'האם לשמור אותם לפני הסגירה?',
@@ -3109,7 +3239,13 @@ const tMain = createI18n({
     odtImportMsg: 'इस .{ext} दस्तावेज़ को बदलें?',
     odtImportDetail:
       'GenOffice .docx संपादित करता है, ODF नहीं। मुख्य पाठ, शीर्षक, सूचियाँ, तालिकाएँ और चित्र बदल दिए जाते हैं; फुटनोट, टिप्पणियाँ और टेक्स्ट बॉक्स पूरी तरह नहीं रखे जाते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
+    hwpImportDetail:
+      'GenOffice .docx संपादित करता है, HWP नहीं। मुख्य पाठ, तालिकाएँ, चित्र, हेडर और फुटर बदल दिए जाते हैं; समीकरण, फुटनोट और एम्बेड किए गए ऑब्जेक्ट नहीं बदले जाते, और स्वचालित क्रमांकन सामान्य पाठ बन जाता है। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
     odtImportConvertBtn: 'बदलकर खोलें',
+    docImportMsg: 'इस .{ext} दस्तावेज़ को बदलें?',
+    docImportDetail:
+      'GenOffice Word 97-2003 (.doc) दस्तावेज़ नहीं, .docx संपादित करता है। मुख्य पाठ, शीर्षक, सूचियाँ, तालिकाएँ और चित्र बदल दिए जाते हैं; फुटनोट, टिप्पणियाँ और टेक्स्ट बॉक्स पूरी तरह नहीं रखे जाते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
+    docImportConvertBtn: 'बदलकर खोलें',
     dlgSaveAs: 'इस रूप में सहेजें',
     closeUnsavedMsg: 'इस दस्तावेज़ में सहेजे नहीं गए परिवर्तन हैं।',
     closeUnsavedDetail: 'क्या आप बंद करने से पहले उन्हें सहेजना चाहते हैं?',
@@ -3254,7 +3390,13 @@ const tMain = createI18n({
     odtImportMsg: '轉換這個 .{ext} 文件？',
     odtImportDetail:
       'GenOffice 只編輯 .docx，不編輯 ODF。內文、標題、清單、表格與圖片會轉換過來；註腳、註解與文字方塊不會完整保留。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
+    hwpImportDetail:
+      'GenOffice 只編輯 .docx，不編輯 HWP。內文、表格、圖片、頁首與頁尾會轉換過來；方程式、註腳與內嵌物件不會轉換，自動編號會變成一般文字。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
     odtImportConvertBtn: '轉換並開啟',
+    docImportMsg: '轉換這個 .{ext} 文件？',
+    docImportDetail:
+      'GenOffice 只編輯 .docx，不編輯 Word 97-2003 舊版 .doc。內文、標題、清單、表格與圖片會轉換過來；註腳、註解與文字方塊不會完整保留。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
+    docImportConvertBtn: '轉換並開啟',
     dlgSaveAs: '另存新檔',
     closeUnsavedMsg: '此文件有未儲存的變更。',
     closeUnsavedDetail: '關閉前是否要儲存？',
@@ -3484,7 +3626,7 @@ async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions)
 async function saveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
   // before any pick is remembered, bare-name suggestions anchor in the
   // configurable default save folder instead of Electron's Downloads pin
-  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir())
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir)
 }
 
 /** default folder where new files land on their first (silent) save; shared with the other editors via shell. User-configurable (app-settings.json), falls back to <Documents>/GenOffice. */
@@ -3520,7 +3662,8 @@ async function opensAsPasswordPrompt(filePath: string, wcId: number): Promise<bo
 
 export function openExternalDocx(filePath: string | null): void {
   if (!filePath) return
-  // .odt/.ott join the flow as an import (converted .docx copy), like the shell route
+  // .odt/.ott and legacy Word .doc/.dot join the flow as an import (converted
+  // .docx copy), like the shell route
   if (!isOpenableDocPath(filePath)) return
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow
   if (!rendererReady || !win) {
@@ -3953,23 +4096,29 @@ async function showOpenError(wcId: number, detail: string): Promise<void> {
 }
 
 /**
- * An .odt opens only as a converted .docx copy: confirm the lossy import,
- * pick the destination (the sibling .docx by default), convert, write the
- * file and open it — the explicit-destination flow the PDF "Export as Word"
- * path already uses, so every later Save lands in the copy the user chose.
- * Anything that is not an .odt passes through unchanged; null cancels the open.
+ * An .odt/.ott, a legacy Word .doc/.dot or an .hwp/.hwpx opens only as a
+ * converted .docx copy: confirm the lossy import, pick the destination (the
+ * sibling .docx by default), convert, write the file and open it — the
+ * explicit-destination flow the PDF "Export as Word" path already uses, so
+ * every later Save lands in the copy the user chose and the original is never
+ * written. Anything that is not an import format passes through unchanged;
+ * null cancels the open.
  */
 async function prepareDocumentForOpen(
   filePath: string,
   parent?: BrowserWindow | undefined,
 ): Promise<string | null> {
+  const importKind = docImportKindForPath(filePath)
+  if (!importKind) return filePath
   const extension = filePath.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
-  if (extension !== 'odt' && extension !== 'ott') return filePath
+  // .hwp and .hwpx route by content: sites serve each under the other's name
+  const isHwp = importKind === 'hwp'
+  const word97 = importKind === 'word97'
   const options = {
     type: 'warning' as const,
-    message: tm('odtImportMsg', { ext: extension }),
-    detail: tm('odtImportDetail'),
-    buttons: [tm('odtImportConvertBtn'), tm('btnCancel')],
+    message: tm(word97 ? 'docImportMsg' : 'odtImportMsg', { ext: extension }),
+    detail: tm(word97 ? 'docImportDetail' : isHwp ? 'hwpImportDetail' : 'odtImportDetail'),
+    buttons: [tm(word97 ? 'docImportConvertBtn' : 'odtImportConvertBtn'), tm('btnCancel')],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
@@ -3983,14 +4132,22 @@ async function prepareDocumentForOpen(
     parent,
     {
       title: tm('dlgSaveAs'),
-      defaultPath: join(dirname(filePath), basename(filePath).replace(/\.(odt|ott)$/i, '.docx')),
+      defaultPath: join(
+        dirname(filePath),
+        basename(filePath).replace(/\.(odt|ott|hwpx?|doc|dot)$/i, '.docx'),
+      ),
       filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
     },
     defaultSaveDir(),
   )
   if (picked.canceled || !picked.filePath) return null
   try {
-    const result = await convertOdtToDocx(new Uint8Array(await readFile(filePath)))
+    const source = new Uint8Array(await readFile(filePath))
+    const result = word97
+      ? await convertLegacyDocToDocx(source)
+      : isHwp
+        ? await convertHwpToDocx(source)
+        : await convertOdtToDocx(source)
     await atomicWriteFile(picked.filePath, Buffer.from(result.docx))
   } catch {
     if (parent && !parent.isDestroyed()) {
@@ -5638,20 +5795,41 @@ export function registerDocsIpc(): void {
     return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
   })
 
-  ipcMain.handle('docs:print', async (event, scale?: number, job?: unknown) => {
+  ipcMain.handle('docs:print', async (event, scale?: number, job?: unknown, paper?: unknown) => {
     // print the calling tab's own content; zero margins — the docx page padding provides them.
     // Resolves when the system dialog is dismissed (or the silent job is queued); the print
     // dialog stays open on cancel (ok=false without error) and surfaces real failures.
+    const printOpts = {
+      margins: { marginType: 'none' as const },
+      ...printScale(scale),
+      ...printJobOptions(job),
+    }
+    // A named printer prints silently, and Chromium's silent print on macOS
+    // can drop the job outright — no queue entry, no callback error
+    // (genoffice#2347). Route those jobs through CUPS instead: printToPDF
+    // bakes the pages at the document's own paper size, and lp spools a
+    // real job whose queue state and failures are diagnosable.
+    if (process.platform === 'darwin' && printOpts.silent) {
+      const geometry = validPrintPaper(paper)
+      const printed = await event.sender.printToPDF({
+        printBackground: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        ...(geometry
+          ? {
+              pageSize: {
+                width: geometry.widthTwips / TWIPS_PER_INCH,
+                height: geometry.heightTwips / TWIPS_PER_INCH,
+              },
+            }
+          : {}),
+        ...printScaleOption(scale),
+      })
+      return printPdfViaCups(printed, printOpts)
+    }
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      event.sender.print(
-        { margins: { marginType: 'none' }, ...printScale(scale), ...printJobOptions(job) },
-        (success, failureReason) => {
-          resolve({
-            ok: success,
-            ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
-          })
-        },
-      )
+      event.sender.print(printOpts, (success, failureReason) => {
+        resolve(printOutcome(success, failureReason, printOpts.silent))
+      })
     })
   })
 

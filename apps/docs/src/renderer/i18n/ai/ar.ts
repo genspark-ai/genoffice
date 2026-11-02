@@ -204,4 +204,7 @@ export const ar = {
   aiMindMapReset: 'إعادة ضبط العرض',
   aiMindMapExpand: 'توسيع الفرع',
   aiMindMapCollapse: 'طي الفرع',
+  aiMindMapToggleLayout: 'تبديل التخطيط',
+  aiMindMapLayoutTopDown: 'التبديل إلى التخطيط من أعلى إلى أسفل',
+  aiMindMapLayoutLeftRight: 'التبديل إلى التخطيط من اليسار إلى اليمين',
 } satisfies Record<keyof typeof zh, string>

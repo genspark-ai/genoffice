@@ -113,12 +113,25 @@ export async function printPdf(
   // Stream one page at a time so no PDFPageProxy outlives its render — the
   // previous two-pass held all pages alive plus 2× viewports.
   const areas: number[] = []
+  // the document's own paper for the CUPS print route: the first target
+  // page's size in inches (printToPDF bakes its pages at it instead of
+  // Chromium's Letter default, which would rescale every sheet)
+  let firstPageSizeIn: { width: number; height: number } | undefined
   for (const n of targets) {
     const page = await doc.getPage(n)
     try {
       const unit = page.getViewport({ scale: 1 })
       const area = unit.width * unit.height
       areas.push(Number.isFinite(area) && area > 0 ? area : 0)
+      if (
+        firstPageSizeIn === undefined &&
+        Number.isFinite(unit.width) &&
+        unit.width > 0 &&
+        Number.isFinite(unit.height) &&
+        unit.height > 0
+      ) {
+        firstPageSizeIn = { width: unit.width / 72, height: unit.height / 72 }
+      }
     } finally {
       try {
         page.cleanup()
@@ -173,7 +186,10 @@ export async function printPdf(
   try {
     await Promise.all([...root.querySelectorAll('img')].map((img) => img.decode()))
     if (job) {
-      const r = await window.pdfApi.print(job)
+      const r = await window.pdfApi.print({
+        ...job,
+        ...(firstPageSizeIn ? { pageSizeIn: firstPageSizeIn } : {}),
+      })
       if (!r.ok && r.error) throw new Error(r.error)
     } else {
       await waitForPrintDialog(PRINT_DIALOG_TIMEOUT_MS)

@@ -206,4 +206,7 @@ export const hi = {
   aiMindMapReset: 'दृश्य रीसेट करें',
   aiMindMapExpand: 'शाखा खोलें',
   aiMindMapCollapse: 'शाखा समेटें',
+  aiMindMapToggleLayout: 'लेआउट बदलें',
+  aiMindMapLayoutTopDown: 'ऊपर से नीचे वाले लेआउट पर स्विच करें',
+  aiMindMapLayoutLeftRight: 'बाएँ से दाएँ वाले लेआउट पर स्विच करें',
 } satisfies Record<keyof typeof zh, string>

@@ -208,4 +208,7 @@ export const ja = {
   aiMindMapReset: '表示をリセット',
   aiMindMapExpand: 'ブランチを展開',
   aiMindMapCollapse: 'ブランチを折りたたむ',
+  aiMindMapToggleLayout: 'レイアウトを切り替え',
+  aiMindMapLayoutTopDown: '上から下のレイアウトに切り替える',
+  aiMindMapLayoutLeftRight: '左右のレイアウトに切り替える',
 } satisfies Record<keyof typeof zh, string>

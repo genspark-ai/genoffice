@@ -30,6 +30,7 @@ mod visuals;
 
 mod cell_images;
 mod escher;
+mod external_links;
 mod refs;
 mod sparklines;
 mod table_styles;

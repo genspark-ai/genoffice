@@ -19,6 +19,19 @@ describe('collectLaunchPaths', () => {
     ).toEqual(['/data/variants.tsv'])
   })
 
+  it('accepts the legacy Word .doc/.dot documents in either case', () => {
+    expect(
+      collectLaunchPaths(
+        ['GenOffice.app', '/tmp/legacy.doc', '/tmp/TEMPLATE.DOT'],
+        undefined,
+        () => true,
+      ),
+    ).toEqual(['/tmp/legacy.doc', '/tmp/TEMPLATE.DOT'])
+    expect(
+      collectLaunchPaths(['GenOffice.exe'], { launchPaths: ['/tmp/letter.Doc'] }, () => true),
+    ).toEqual(['/tmp/letter.Doc'])
+  })
+
   /**
    * A `.txt` or `.json` is now a document the text app opens, so dropping one
    * from argv (or from a second-instance payload, or from a Finder open-file)
@@ -79,5 +92,14 @@ describe('collectLaunchPaths', () => {
         (path) => path === 'legacy.rtf',
       ),
     ).toEqual(['legacy.rtf'])
+    // .doc is no longer unsupported: an existing one is collected through the
+    // docs route instead of the fallback
+    expect(
+      collectLaunchPaths(
+        ['GenOffice.exe', 'legacy.doc', 'unsupported.rtf'],
+        undefined,
+        (path) => path === 'legacy.doc' || path === 'unsupported.rtf',
+      ),
+    ).toEqual(['legacy.doc'])
   })
 })

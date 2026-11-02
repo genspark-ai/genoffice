@@ -5,7 +5,8 @@ import {
   layoutMindMap,
   MIND_MAP_EXPORT_COLORS,
   MIND_MAP_METRICS,
-} from './mind-map'
+  type MindMapOrientation,
+} from '@genoffice/agent-core/mind-map'
 import { useI18n } from '../i18n/locale'
 
 /**
@@ -36,6 +37,7 @@ interface MindMapCardProps {
 export function MindMapCard({ tree, onAsk, onJumpBlock, onInsert }: MindMapCardProps) {
   const { t } = useI18n()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const [orientation, setOrientation] = useState<MindMapOrientation>('top-down')
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 8, y: 8 })
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -43,7 +45,10 @@ export function MindMapCard({ tree, onAsk, onJumpBlock, onInsert }: MindMapCardP
   const zoomRef = useRef(1)
   const dragRef = useRef<{ id: number; x: number; y: number } | null>(null)
 
-  const layout = useMemo(() => layoutMindMap(tree, collapsed), [tree, collapsed])
+  const layout = useMemo(
+    () => layoutMindMap(tree, collapsed, { orientation }),
+    [tree, collapsed, orientation],
+  )
   const totalNodes = useMemo(() => countMindMapNodes(tree), [tree])
 
   const fitView = useCallback(() => {
@@ -207,6 +212,48 @@ export function MindMapCard({ tree, onAsk, onJumpBlock, onInsert }: MindMapCardP
         <span className="ai-mindmap-title">{t('aiMindMapTitle')}</span>
         <span className="ai-mindmap-count">{t('aiMindMapNodes', { count: totalNodes })}</span>
         <span className="ai-mindmap-actions">
+          <button
+            type="button"
+            className="ai-mindmap-btn ai-mindmap-layout-btn"
+            onClick={() =>
+              setOrientation((prev) => (prev === 'top-down' ? 'left-right' : 'top-down'))
+            }
+            data-tip={
+              orientation === 'top-down'
+                ? t('aiMindMapLayoutLeftRight')
+                : t('aiMindMapLayoutTopDown')
+            }
+            aria-label={t('aiMindMapToggleLayout')}
+          >
+            {/* the glyph shows the layout in use: root on top, or root in the middle */}
+            <svg
+              viewBox="0 0 20 20"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              {orientation === 'top-down' ? (
+                <>
+                  <path d="M10 5v3.5M10 8.5H5.5v3M10 8.5h4.5v3" />
+                  <circle cx="10" cy="3.5" r="1.5" />
+                  <circle cx="5.5" cy="13" r="1.5" />
+                  <circle cx="14.5" cy="13" r="1.5" />
+                </>
+              ) : (
+                <>
+                  <path d="M10 10H4M10 10h6" />
+                  <circle cx="10" cy="10" r="1.5" />
+                  <circle cx="2.5" cy="10" r="1.5" />
+                  <circle cx="17.5" cy="10" r="1.5" />
+                </>
+              )}
+            </svg>
+          </button>
           <button
             type="button"
             className="ai-mindmap-btn"

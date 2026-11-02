@@ -207,4 +207,7 @@ export const en = {
   aiMindMapReset: 'Reset view',
   aiMindMapExpand: 'Expand branch',
   aiMindMapCollapse: 'Collapse branch',
+  aiMindMapToggleLayout: 'Switch layout',
+  aiMindMapLayoutTopDown: 'Switch to the top-down layout',
+  aiMindMapLayoutLeftRight: 'Switch to the left-right layout',
 } satisfies Record<keyof typeof zh, string>

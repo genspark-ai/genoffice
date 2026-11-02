@@ -254,7 +254,8 @@ describe('genoffice merge', () => {
     expect(r.json().detail.used_keys).toEqual(['addr', 'name'])
     const read = await run(['docs', 'read', out, '--full', '--json'])
     const texts = read.json().detail.items.map((b: { text: string }) => b.text)
-    expect(texts[0]).toMatch(/^A.?B \{\{name\}\}$/)
+    // the value's line break round-trips as a <w:br/>, read back as a plain newline
+    expect(texts[0]).toBe('A\nB {{name}}')
     expect(texts[1]).toBe('X')
     expect(await documentXml(out)).toContain('<w:br/>')
   })

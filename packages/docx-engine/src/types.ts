@@ -300,6 +300,16 @@ export interface Run {
 }
 
 /** One comment from word/comments.xml (read-only display model). */
+/** a picture inside a comment: shown under the comment's text and saved back into it (genoffice#2040) */
+export interface CommentImage {
+  mime: NewImage['mime']
+  /** the picture bytes, base64 */
+  base64: string
+  /** the display size, px (the drawing's extent) */
+  widthPx: number
+  heightPx: number
+}
+
 export interface CommentInfo {
   id: string
   author: string
@@ -308,6 +318,8 @@ export interface CommentInfo {
   date?: string
   /** plain text, paragraphs joined with \n */
   text: string
+  /** the picture the comment carries; absent for a text-only comment */
+  image?: CommentImage
   /** Reply: the parent comment's w:id (resolved via the paraId relation in commentsExtended) */
   parentId?: string
   /** Resolved (w15:done) */
@@ -359,6 +371,44 @@ export interface SdtShell {
    * sdt; only the first carries openXml and only the last carries closeXml.
    */
   group?: number
+  /**
+   * 0-based nesting depth of this wrapper inside the block's control chain
+   * (0 = outermost). Only set on Block.sdtShells entries: sdtShell keeps just
+   * the outermost wrapper for compatibility.
+   */
+  level?: number
+  /**
+   * docxIndex of the block whose original xml physically owns this level's
+   * opening bytes. A control split into several blocks keeps its open bytes on
+   * the first block and its close bytes on the last, so a level can be
+   * unwrapped without guessing which identical </w:sdtContent></w:sdt> slice
+   * belongs to it.
+   */
+  openBlock?: number
+  /** byte offset of openXml inside that block's original xml */
+  openOffset?: number
+  /** docxIndex of the block owning this level's closing bytes */
+  closeBlock?: number
+  /** byte offset of closeXml inside that block's original xml */
+  closeOffset?: number
+}
+
+/**
+ * A run-level (inline) content control inside a paragraph, read-only: its
+ * bytes stay in the paragraph's original xml, so reading never changes the
+ * run text or the model of the paragraph.
+ */
+export interface InlineContentControl {
+  /** programmatic tag (w:sdtPr/w:tag), may be empty */
+  tag: string
+  /** human-visible title (w:sdtPr/w:alias), may be empty */
+  title: string
+  /** lock state (w:sdtPr/w:lock), empty when the control carries none */
+  lock: string
+  /** control id (w:sdtPr/w:id), empty when the control carries none */
+  id: string
+  /** the plain text that sits inside the control */
+  text: string
 }
 
 /** One custom tab stop from w:tabs/w:tab. Positions are in twips. */
@@ -978,6 +1028,10 @@ export interface HeaderFooter {
   /** editor-side: bytes of pictures inserted into the part, keyed by the
    *  placeholder token their drawing XML carries (see SaveOptions.newPictures) */
   newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
+  /** floating pictures moved or resized in the strip, keyed by HfImage.drawing */
+  pictureEdits?: Record<number, HfPictureEdit>
+  /** only pictureEdits changed: the part's text paragraphs keep their bytes */
+  pictureOnly?: boolean
   /** tracked changes the editor accepted / rejected in the part: replayed on the
    *  original bytes before the paragraphs regenerate */
   revisionsResolved?: RevisionResolution[]
@@ -986,10 +1040,22 @@ export interface HeaderFooter {
   keepContent?: true
 }
 
+/** a floating header/footer picture's new box: its top-left corner page-relative
+ *  px on each axis it moved along; an axis left out keeps its own base and
+ *  offset (a resize from the far edge) */
+export interface HfPictureEdit {
+  posXPx?: number
+  posYPx?: number
+  widthPx: number
+  heightPx: number
+}
+
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
 export const TOTAL_PAGES_MARK = '\uE000'
 /** Placeholder for PAGE fields in headers/footers; a private-use character so literal '#' text in the part can never be mistaken for the field position */
 export const PAGE_MARK = '\uE001'
+/** Placeholder for SECTIONPAGES fields in headers/footers: the renderer substitutes the page count of the page's section, saving writes the field back */
+export const SECTION_PAGES_MARK = '\uE002'
 
 /** display-only image in a header/footer part (logos etc.; saving preserves the part's bytes) */
 export interface HfImage {
@@ -1039,11 +1105,14 @@ export interface HfImage {
   anchorPara?: number
   /** source crop (a:srcRect) as fractions of the source picture (display-only) */
   crop?: { l: number; t: number; r: number; b: number }
+  /** ordinal of its <w:drawing> in the part XML: set on single-picture anchors,
+   *  the ones the strip can move and resize (HeaderFooter.pictureEdits keys) */
+  drawing?: number
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
 export interface HfPartInfo {
-  /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK */
+  /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK, SECTIONPAGES as SECTION_PAGES_MARK */
   text: string
   hasPageNumber: boolean
   paras: HfParagraph[]
@@ -1851,8 +1920,22 @@ export interface Block {
    * original sdtPr + shell bytes are stored here for save-time re-wrapping.
    * The block's runs/format are from sdtContent and are fully editable;
    * saving patches only those runs while keeping the sdt shell verbatim.
+   * Holds only the outermost wrapper; read sdtShells for the whole chain.
    */
   sdtShell?: SdtShell
+  /**
+   * Every block-level control wrapping this block, outermost first (nested
+   * controls are captured level by level; sdtShell keeps the outermost for
+   * compatibility). Each entry carries its own metadata and open/close bytes,
+   * plus the block that owns those bytes, so a specific level can be unwrapped.
+   */
+  sdtShells?: SdtShell[]
+  /**
+   * Run-level (inline) content controls inside a paragraph, read-only: they
+   * are reported with their tag/title/lock/id and inner text, while their
+   * bytes stay untouched in the paragraph's original xml.
+   */
+  inlineContentControls?: InlineContentControl[]
   /**
    * Move revision: 'from' = content was moved away (shown with strikethrough + red bg),
    * 'to' = content was moved here (shown with green bg). Accept/reject via del/ins marks.

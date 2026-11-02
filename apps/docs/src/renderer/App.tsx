@@ -77,6 +77,7 @@ import {
   PAGE_MARK,
   placeholderText,
   type HeaderFooter,
+  type HfPictureEdit,
   type HfImage,
   type NoteInfo,
   type TextboxDisplay,
@@ -94,6 +95,7 @@ import {
   type ThemeFonts,
   type PictureWatermarkSpec,
   type WatermarkSpec,
+  type CommentImage,
 } from '@genoffice/docx-engine'
 import type {
   AiDocContent,
@@ -127,11 +129,14 @@ import type { HfAction, HfEditingInfo } from './components/ribbon-hf-tab'
 import {
   hfCommitTarget,
   hfLinked,
+  hfTextCommit,
   ownHf,
   resolveHf,
   withHfLink,
+  withHfPictureEdit,
   type HfSectionState,
 } from './hf-sections'
+import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
 import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
@@ -226,6 +231,7 @@ import {
   effectiveBottomPx,
   singleVariantGeomOf,
   formatPageNumber,
+  sectionPageCounts,
   visiblePageCount,
   type SectionGeom,
   type SectionHfHeights,
@@ -870,6 +876,10 @@ export function App() {
   // last page's number for the document-end footer: text for the page marker, num for
   // even/odd parity (section restarts / pageNumberFmt make both differ from the physical count)
   const [lastPageNo, setLastPageNo] = useState<{ text: string; num: number } | null>(null)
+  /** SECTIONPAGES of the first and last pages (the canvas's own header and footer strips) */
+  const [edgeSectionPages, setEdgeSectionPages] = useState<{ first: number; last: number } | null>(
+    null,
+  )
   /** Page-number-format dialog + pending final-section pgNumType write (non-final sections rewrite sectPr via pgNumDirtySections) */
   const [pgNumModal, setPgNumModal] = useState<{ fmt: string; start: string } | null>(null)
   const [pgNumEdit, setPgNumEdit] = useState<{ fmt?: string; start?: number } | null>(null)
@@ -1578,7 +1588,23 @@ export function App() {
     if (!target) return false
     // functional: two commits in one turn (Remove Page Numbers on both strips, an
     // editor exit racing an AI set) must both land
-    setSectionHfEdits((m) => ({ ...m, [target.key]: next }))
+    setSectionHfEdits((m) => ({ ...m, [target.key]: hfTextCommit(m[target.key], next) }))
+    return true
+  }
+  /** a floating header picture moved or resized on section `si`'s strip
+   *  (hf-float-edit); false when the strip has no part to take it */
+  const commitHfPictureAt = (
+    si: number,
+    kind: 'header' | 'footer',
+    variant: HfView,
+    drawing: number,
+    edit: HfPictureEdit,
+  ): boolean => {
+    if (!hfCommitTarget(hfState, si, kind, variant)) return false
+    setSectionHfEdits(
+      (m) =>
+        withHfPictureEdit({ ...hfState, edits: m }, si, kind, variant, drawing, edit)?.edits ?? m,
+    )
     return true
   }
   /** pending changes outside the body, refreshed with the revision badge (see storyRevisions memo) */
@@ -3193,7 +3219,7 @@ export function App() {
   }, [editor])
 
   const submitNewComment = useCallback(
-    (text: string) => submitNewCommentImpl(reviewCtxRef.current, text),
+    (text: string, image?: CommentImage) => submitNewCommentImpl(reviewCtxRef.current, text, image),
     [],
   )
   const replyToComment = useCallback(
@@ -3918,6 +3944,7 @@ export function App() {
     if (!doc || !section) {
       setPageInfo({ current: 1, total: 1 })
       setLastPageNo(null)
+      setEdgeSectionPages(null)
       pageLayoutRef.current = null
       return
     }
@@ -4394,6 +4421,12 @@ export function App() {
               )
             : String(num),
         })
+        const counts = sectionPageCounts(slices)
+        const first = counts[0]
+        const last = counts[lastIdx]
+        setEdgeSectionPages((prev) =>
+          prev?.first === first && prev.last === last ? prev : { first, last },
+        )
       }
       // Auto-refresh TOC page numbers from the fresh slicing, like Word's field
       // update. Gated on dirtyRef — our pagination approximates Word's, so a
@@ -4545,6 +4578,7 @@ export function App() {
               )
               .join('|')
           const visiblePages = visiblePageCount(slices)
+          const sectionPages = sectionPageCounts(slices)
           const canvasPaperW = pmRect.width / factor
           const canvasSet = secList?.[0]?.settings ?? section
           const canvasContentWPx = canvasSet
@@ -4659,6 +4693,7 @@ export function App() {
                 images: gapFooter.images,
                 pageNo: pageNoTextOf(k),
                 pageTotal: visiblePages,
+                sectionPages: sectionPages[k],
                 geom: {
                   ...hfStripGeom(prevSec),
                   stripLeft: gapStripLeft(prevSec, box, k),
@@ -4672,6 +4707,7 @@ export function App() {
                 hfPageIdx: String(k),
                 hfPage: pageNoTextOf(k),
                 hfTotal: String(visiblePages),
+                hfSectionPages: String(sectionPages[k]),
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
@@ -4689,6 +4725,7 @@ export function App() {
                 images: gapHeader.images,
                 pageNo: pageNoTextOf(k + 1),
                 pageTotal: visiblePages,
+                sectionPages: sectionPages[k + 1],
                 geom: {
                   ...hfStripGeom(nextSec),
                   stripLeft: gapStripLeft(nextSec, box, k + 1),
@@ -4702,6 +4739,7 @@ export function App() {
                 hfPageIdx: String(k + 1),
                 hfPage: pageNoTextOf(k + 1),
                 hfTotal: String(visiblePages),
+                hfSectionPages: String(sectionPages[k + 1]),
               })
               el.style.bottom = 'auto'
               // the strip sits at w:headerDist even under a fixed top margin above it: Word lets
@@ -4715,7 +4753,9 @@ export function App() {
             // positioned from that page's origin (the gap's bottom edge is marginTop
             // above it), like PaginationPreview's per-page watermark layer
             for (const img of gapHeader.floats) {
-              hfEls.push(makeHfFloatImgEl(img, floatBoxOf(k + 1), 'gap'))
+              hfEls.push(
+                tagHfFloatEl(makeHfFloatImgEl(img, floatBoxOf(k + 1), 'gap'), gapHeader, k + 1),
+              )
             }
             const hfProps =
               hfEls.length > 0
@@ -4727,14 +4767,19 @@ export function App() {
                     // Page / Odd & Even toggle can swap the variant behind identical
                     // text), or stale PAGE/NUMPAGES / strip insets / edit targets
                     // survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${sectionPages[k]}/${sectionPages[k + 1]}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
             // in-table gaps carry no footnote area (absolute positioning inside a table-row is unreliable); footnotes stay in the end-of-document list
             let notes: HTMLElement | undefined
             let notesKey: string | undefined
-            let notesMetrics = metrics
+            // the page's text area (footnotes excluded): dropped pictures fit above its bottom
+            const prevContentH =
+              twipsToPx(prevSec.pageHeight) -
+              effectiveTopPx(prevSec, prevHf.headerPx) -
+              metrics.marginBottom
+            let notesMetrics = { ...metrics, bodyHeight: prevContentH - fnH }
             if (items.length > 0) {
               const contentW = twipsToPx(
                 prevSec.pageWidth - prevSec.marginLeft - prevSec.marginRight,
@@ -4749,7 +4794,7 @@ export function App() {
                 (id) => editNote('footnote', id),
               )
               notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
-              notesMetrics = { ...metrics, marginBottom: metrics.marginBottom + fnH }
+              notesMetrics = { ...notesMetrics, marginBottom: metrics.marginBottom + fnH }
             }
             const markShown = () => items.forEach((n) => gapIds.add(n.id))
             // the page lead comes from the PageCut (I11); the DOM only resolves the
@@ -4773,7 +4818,11 @@ export function App() {
                 boundaryY: slice.start,
                 metrics:
                   pad > 0
-                    ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                    ? {
+                        ...notesMetrics,
+                        marginBottom: notesMetrics.marginBottom + pad,
+                        bodyPad: pad,
+                      }
                     : notesMetrics,
                 ...(pullUp > 0.5 ? { pullUp } : {}),
                 ...(cut.leadDropsSpaceBefore ? { suppressLeadMt: true } : {}),
@@ -4794,7 +4843,11 @@ export function App() {
                   boundaryY: slice.start,
                   metrics:
                     pad > 0
-                      ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                      ? {
+                          ...notesMetrics,
+                          marginBottom: notesMetrics.marginBottom + pad,
+                          bodyPad: pad,
+                        }
                       : notesMetrics,
                   ...(pullUp > 0.5 ? { pullUp } : {}),
                   ...hfProps,
@@ -4995,11 +5048,14 @@ export function App() {
           // first page has no gap widget; its floating header images ride a
           // dedicated zero-height widget at the document start
           if (slices.length > 0) {
-            const floats = pageHfOf(0, 'header').floats
+            const firstHeader = pageHfOf(0, 'header')
+            const floats = firstHeader.floats
             if (floats.length > 0) {
               const box = floatBoxOf(0)
               firstPageFloats = {
-                els: floats.map((img) => makeHfFloatImgEl(img, box, 'lead')),
+                els: floats.map((img) =>
+                  tagHfFloatEl(makeHfFloatImgEl(img, box, 'lead'), firstHeader, 0),
+                ),
                 key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginLeft)}·${Math.round(box.hostLeft ?? 0)}·${Math.round(box.marginTop)}·${Math.round(box.sectMarginTop)}·${Math.round(box.paperX ?? 0)}`,
               }
             }
@@ -6543,6 +6599,7 @@ export function App() {
       value,
       pageNo: page,
       pageTotal: el.dataset.hfTotal ?? '1',
+      sectionPages: el.dataset.hfSectionPages,
       spellcheck: spellcheckActive,
       onCommit: (next) => {
         committed = true
@@ -6607,6 +6664,26 @@ export function App() {
   }
   const openHfEditorRef = useRef(openHfEditor)
   openHfEditorRef.current = openHfEditor
+  // floating header pictures: moved and resized in header editing, reached from
+  // the body by a double-click (Word)
+  const hfFloatEditRef = useRef({ open: openHfEditor, commit: commitHfPictureAt, editable: false })
+  hfFloatEditRef.current = {
+    open: openHfEditor,
+    commit: commitHfPictureAt,
+    editable: !readMode && !isProtected,
+  }
+  useEffect(() => {
+    const root = scrollContainerRef.current
+    if (!root) return
+    return installHfFloatEdit({
+      root,
+      editing: () => hfEditingRef.current != null,
+      editable: () => hfFloatEditRef.current.editable,
+      open: (pageIdx) => hfFloatEditRef.current.open('header', pageIdx),
+      commit: (t, edit) =>
+        hfFloatEditRef.current.commit(t.section, 'header', t.variant, t.drawing, edit),
+    })
+  }, [])
   const toggleEvenOddHf = (on: boolean) => {
     hfEditorRef.current?.exit()
     setEvenOddHf(on)
@@ -8213,6 +8290,7 @@ export function App() {
                             }}
                             pageNo={firstPageNoText}
                             pageTotal={pageInfo.total}
+                            sectionPages={edgeSectionPages?.first}
                             sectionLabel={hfSectionLabel('header', 0)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
@@ -8284,6 +8362,7 @@ export function App() {
                             }}
                             pageNo={lastPageNoText}
                             pageTotal={pageInfo.total}
+                            sectionPages={edgeSectionPages?.last}
                             linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
                             sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
                             editRequest={
