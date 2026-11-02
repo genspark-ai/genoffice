@@ -72,7 +72,7 @@ interface StyleFacts {
 function paragraphStyleFacts(stylesXml: string | undefined): Map<string, StyleFacts> {
   const facts = new Map<string, StyleFacts>()
   if (!stylesXml) return facts
-  const raw = new Map<string, { heading: number; list: boolean; basedOn?: string }>()
+  const raw = new Map<string, { heading?: number; list?: boolean; basedOn?: string }>()
   for (const m of stylesXml.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
     if (!/w:type="paragraph"/.test(m[1]!)) continue
     const id = /w:styleId="([^"]+)"/.exec(m[1]!)?.[1]
@@ -86,27 +86,30 @@ function paragraphStyleFacts(stylesXml: string | undefined): Map<string, StyleFa
       : /^title$/i.test(name)
         ? 1
         : outline
-          ? Number(outline[1]) + 1
-          : 0
+          ? Number(outline[1]) === 9
+            ? 0
+            : Number(outline[1]) + 1
+          : undefined
+    const numId = /<w:numId\b[^>]*w:val="([^"]+)"/.exec(body)?.[1]
     raw.set(id, {
       heading,
       // numId 0 is Word's "no numbering" override, not a list
-      list: /<w:numPr\b/.test(body) && !/<w:numId\b[^>]*w:val="0"/.test(body),
+      list: numId !== undefined ? numId !== '0' : undefined,
       basedOn: /<w:basedOn\b[^>]*w:val="([^"]*)"/.exec(body)?.[1],
     })
   }
   for (const id of raw.keys()) {
-    let heading = 0
-    let list = false
+    let heading: number | undefined
+    let list: boolean | undefined
     const seen = new Set<string>()
     for (let cur: string | undefined = id; cur && !seen.has(cur); cur = raw.get(cur)?.basedOn) {
       seen.add(cur)
       const r = raw.get(cur)
       if (!r) break
-      if (!heading && r.heading) heading = r.heading
-      if (r.list) list = true
+      heading ??= r.heading
+      list ??= r.list
     }
-    facts.set(id, { heading, list })
+    facts.set(id, { heading: heading ?? 0, list: list ?? false })
   }
   return facts
 }
@@ -251,7 +254,7 @@ function scanBody(
           const p = paras.at(-1)
           if (p && val) {
             const facts = styleFacts.get(val)
-            const level = facts?.heading || Number(/^Heading(\d)$/.exec(val)?.[1] ?? 0)
+            const level = facts?.heading ?? Number(/^Heading(\d)$/.exec(val)?.[1] ?? 0)
             if (level) p.heading = level
             if (facts?.list) p.list = true
           }
@@ -273,7 +276,7 @@ function scanBody(
         if (opening) {
           const p = paras.at(-1)
           const val = /w:val="(\d)"/.exec(attrs!)?.[1]
-          if (p && val && !p.heading) p.heading = Number(val) + 1
+          if (p && val) p.heading = Number(val) === 9 ? 0 : Number(val) + 1
         }
         break
       case 'w:r':

@@ -40,6 +40,55 @@ const p = (text: string, pPr = '') =>
   `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
 
 describe('docxToText (XML scan)', () => {
+  it('lets derived styles explicitly cancel inherited numbering and outline levels', async () => {
+    const styles =
+      `<w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:styleId="Base"><w:pPr><w:outlineLvl w:val="0"/><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Reset"><w:basedOn w:val="Base"/><w:pPr><w:outlineLvl w:val="9"/><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Child"><w:basedOn w:val="Reset"/></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Inherited"><w:basedOn w:val="Base"/></w:style></w:styles>'
+    const bytes = await docx(
+      p('Plain', '<w:pStyle w:val="Reset"/>') +
+        p('Plain child', '<w:pStyle w:val="Child"/>') +
+        p('Heading', '<w:pStyle w:val="Inherited"/>'),
+      {},
+      { styles },
+    )
+    expect(await docxToText(bytes)).toBe('Plain\nPlain child\n# Heading')
+  })
+
+  it('uses the nearest numbering value rather than any numbered ancestor', async () => {
+    const styles =
+      `<w:styles ${W}>` +
+      '<w:style w:type="paragraph" w:styleId="List"><w:pPr><w:numPr><w:numId w:val="3"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Off"><w:basedOn w:val="List"/><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="LevelOnly"><w:basedOn w:val="Off"/><w:pPr><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="On"><w:basedOn w:val="Off"/><w:pPr><w:numPr><w:numId w:val="4"/></w:numPr></w:pPr></w:style></w:styles>'
+    expect(
+      await docxToText(
+        await docx(
+          p('Off', '<w:pStyle w:val="Off"/>') +
+            p('Still off', '<w:pStyle w:val="LevelOnly"/>') +
+            p('On', '<w:pStyle w:val="On"/>'),
+          {},
+          { styles },
+        ),
+      ),
+    ).toBe('Off\nStill off\n- On')
+  })
+
+  it('lets direct outline levels override a heading style, including Body Text', async () => {
+    expect(
+      await docxToText(
+        await docx(
+          p('Body', '<w:pStyle w:val="1"/><w:outlineLvl w:val="9"/>') +
+            p('Deeper', '<w:pStyle w:val="1"/><w:outlineLvl w:val="2"/>') +
+            p('Body without style', '<w:outlineLvl w:val="9"/>'),
+        ),
+      ),
+    ).toBe('Body\n### Deeper\nBody without style')
+  })
+
   it('marks headings by style name, outline level and Heading<N> id; lists by numPr', async () => {
     const text = await docxToText(
       await docx(
