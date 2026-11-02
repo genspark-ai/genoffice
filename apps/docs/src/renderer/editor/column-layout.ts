@@ -6,6 +6,7 @@ import { splitFloatStyle } from '../pagination-lines'
 import type { ColumnSplitShape, VerticalBlockSpec } from '../pagination-types'
 import { TopLevelPositions } from './top-level-pos'
 import type { LayoutBatch } from './pagination-gaps'
+import { columnDecoration, mapColumnDecorations } from './column-layout-recovery'
 
 const key = new PluginKey<DecorationSet>('columnLayout')
 
@@ -34,10 +35,10 @@ export const ColumnLayoutExtension = Extension.create({
         key,
         state: {
           init: () => DecorationSet.empty,
-          apply(tr, set) {
+          apply(tr, set, oldState) {
             const next = tr.getMeta(key) as DecorationSet | undefined
             if (next) return next
-            return set.map(tr.mapping, tr.doc)
+            return mapColumnDecorations(set, tr, oldState.doc)
           },
         },
         props: {
@@ -128,7 +129,7 @@ const PATCH_CLASSES = [
  *  CSS as doc-nosnap): reusing doc-nosnap would trip sectionGridPitchSpecs'
  *  own-opt-out skip on the next pass and let patch cleanup strip a node's own
  *  snapToGrid=0 class. */
-function specClass(spec: ColumnBlockSpec): string {
+function specClass(spec: ColumnBlockSpec, leading = true): string {
   const varsOnly =
     (spec.gridPitchPt !== undefined ||
       spec.charSpacePt !== undefined ||
@@ -142,10 +143,10 @@ function specClass(spec: ColumnBlockSpec): string {
   let cls = varsOnly ? 'doc-grid-block' : 'doc-col-block'
   if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
   if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
-  if (spec.sectionPageStart) cls += ' doc-sect-page-start'
+  if (leading && spec.sectionPageStart) cls += ' doc-sect-page-start'
   if (spec.vertical) {
     cls += ` doc-vert-block doc-vert-${spec.vertical.mode}`
-    if (spec.vertical.firstOnPage) cls += ' doc-vert-first'
+    if (leading && spec.vertical.firstOnPage) cls += ' doc-vert-first'
   }
   return cls
 }
@@ -192,7 +193,12 @@ export function setColumnLayout(
     const range = positions.of(spec.el)
     if (!range) continue
     const { from, to } = range
-    decos.push(Decoration.node(from, to, { class: cls, style }, { key: `col-${cls}-${style}` }))
+    // Vertical placements and split-column floats depend on measured block
+    // extents. Leave them on the existing mapping/pagination path instead of
+    // copying stale coordinates or a float shape onto newly split paragraphs.
+    const continuation =
+      spec.vertical || spec.split ? undefined : { class: specClass(spec, false), style }
+    decos.push(columnDecoration(from, to, { class: cls, style }, continuation))
     const split = splitOf.get(spec.el)
     if (split)
       decos.push(
