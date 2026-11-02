@@ -56,7 +56,7 @@ describe('imageDropPages', () => {
       bodyBottom: 2300,
       paperBottom: 2600 - 96 - GAP_BAND,
     })
-    // the last page has no gap below it: it takes the extents of the one before
+    // off the DOM (no paper element) the last page takes the extents of the one before
     expect(p3).toEqual({ paperTop: 2504, bodyTop: 2600, bodyBottom: 3600, paperBottom: 3776 })
   })
 })
@@ -80,6 +80,35 @@ describe('imageDropPages on the first paper', () => {
       1,
     )
     expect(placed.top).toBe(pages[0].paperBottom - 100)
+  })
+})
+
+describe('imageDropPages without a gap below the last paper', () => {
+  const paperEl = (bottom: number) => {
+    const paper = document.createElement('div')
+    paper.className = 'doc-page'
+    paper.style.paddingBottom = '120px'
+    paper.getBoundingClientRect = () => rect(0, bottom)
+    const pm = document.createElement('div')
+    pm.getBoundingClientRect = () => rect(96, bottom - 120)
+    paper.append(pm)
+    return { paper, pm }
+  }
+
+  it('a single page takes its extents off the paper itself', () => {
+    const { pm } = paperEl(1204)
+    expect(imageDropPages(pm, 1)).toEqual([
+      { paperTop: 0, bodyTop: 96, bodyBottom: 1084, paperBottom: 1204 },
+    ])
+  })
+
+  it('a second page ends at the paper bottom', () => {
+    const { pm } = paperEl(2408)
+    pm.append(gapEl(1000, 1300, { bodyPad: 40 }))
+    const [, p2] = imageDropPages(pm, 1)
+    expect(p2).toEqual({ paperTop: 1204, bodyTop: 1300, bodyBottom: 2288, paperBottom: 2408 })
+    const placed = placeImageDrop([anchor(1400)], 300, p2.paperBottom - 20, 100, [p2], 1)
+    expect(placed.top).toBe(p2.paperBottom - 100)
   })
 })
 
