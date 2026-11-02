@@ -20,6 +20,7 @@ export const LEGACY_DOC_ERROR_CODES = [
   'bad_stsh',
   'bad_section',
   'bad_hdd',
+  'bad_table',
 ] as const
 
 export type LegacyDocErrorCode = (typeof LEGACY_DOC_ERROR_CODES)[number]
@@ -54,6 +55,8 @@ const HINTS: Record<LegacyDocErrorCode, string> = {
     'the document section table is invalid; open the file in Word or LibreOffice and save it again',
   bad_hdd:
     'the document header/footer table is invalid; open the file in Word or LibreOffice and save it again',
+  bad_table:
+    'the document table properties are invalid; open the file in Word or LibreOffice and save it again',
 }
 
 /** A legacy .doc that cannot be read, with a machine-readable reason code. */

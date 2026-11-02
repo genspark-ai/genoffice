@@ -113,22 +113,55 @@ generated package:
   separator stories are not written; header/footer runs carry no bold/size
   etc. yet.
 
+## Stage 3c-2 — tables
+
+Internal only. Reconstructs Word 97-2003 tables from the body text marks (a
+cell ends with a cell mark, a row with an extra empty cell mark) and the TAP
+sprms of each row-end PAPX, and writes real `w:tbl` tables:
+
+- **sprm sizing** — sprmTDefTable / sprmPChgTabs (spra 6) carry a u16 length
+  that counts one of its own bytes, so the payload is the declared value minus
+  one (POI-compatible); the generic spra-6 sprms keep their u8 length.
+- **readLegacyDocBody** — splits the body at paragraph and cell marks into CP
+  units, maps each unit to its PAPX entry, parses sprmTDefTable (rgdxaCenter
+  cell boundaries plus 20-byte TC descriptors: merge flags, width, four
+  BorderCodes) and the other TAP sprms (alignment, cantSplit, table header,
+  row height, table borders, cell padding). Rows share one grid derived from
+  the union of their cell boundaries; fMerged continuation cells fold into the
+  first cell gridSpan (LibreOffice-flattened merged rows are recovered from
+  their wider boundary span), vertical merges map to vMerge restart/continue,
+  and multi-paragraph cells keep all their paragraphs. Cell character
+  formatting is resolved from the CHPX runs by CP; cell paragraph formatting
+  stays plain and is reported once. Malformed TAP/TDefTable data raises
+  `bad_table`.
+- **Writer** — emits `<w:tbl>` with tblW auto, tblBorders (a single 4-eighth
+  point line set when any border is visible), tblLayout fixed, a tblGrid with
+  gridCol widths, trPr (cantSplit, trHeight, tblHeader), tcPr (tcW dxa,
+  gridSpan, vMerge, tcBorders) and the cell paragraphs with their resolved
+  runs; tables interleave with body paragraphs in CP order. Table cell
+  padding, cell shading and table styles (e.g. "Table Grid") are parsed but
+  not written (borders come from the TC descriptors); nested tables are
+  flattened with a warning.
+- **Warnings** — table cell paragraph formatting is flattened, and images,
+  lists and hyperlinks are still omitted (reported once per document).
+
 ## Roadmap
 
-- **Stage 3c-2**: tables (TAP), images, lists and hyperlinks, emitted real
-  .docx styles instead of resolved direct formatting, richer header/footer
-  formatting and real multi-section output; tighter paragraph-count parity.
-- **Stage 3d**: docs import wiring (\`.doc\` → \`.docx\` in File → Open /
+- **Stage 3c-3**: images, lists and hyperlinks, emitted real .docx styles
+  instead of resolved direct formatting, richer header/footer formatting,
+  real multi-section output, and table cell padding/shading/styles plus
+  nested tables; tighter paragraph-count parity.
+- **Stage 3d**: docs import wiring (`.doc` files through File → Open /
   drag-and-drop and the CLI), as core + UI PRs.
 
 ## Format coverage
 
-Word 97-2003 (nFib 0x00C1–0x0112), main document story with section geometry
-and header/footer stories; paragraph/character styles are resolved into direct
-formatting. Footnotes, textboxes, tables, images, lists and emitted .docx
-styles are later stages, and multi-section documents are flattened to one
-section. Encrypted files and Word 6/95 documents are rejected with actionable
-\`LegacyDocError\` codes (\`not_cfb\`, \`truncated\`, \`bad_fib\`,
-\`unsupported_version\`, \`encrypted\`, \`missing_stream\`, \`bad_clx\`,
-\`bad_piece_table\`, \`bad_fkp\`, \`bad_sprm\`, \`bad_stsh\`, \`bad_section\`,
-\`bad_hdd\`, \`limits_exceeded\`, \`corrupt\`).
+Word 97-2003 (nFib 0x00C1–0x0112), main document story with section geometry,
+header/footer stories and real tables; paragraph/character styles are resolved
+into direct formatting. Footnotes, textboxes, images, lists, emitted .docx
+styles and nested tables are later stages, and multi-section documents are
+flattened to one section. Encrypted files and Word 6/95 documents are rejected
+with actionable `LegacyDocError` codes (`not_cfb`, `truncated`, `bad_fib`,
+`unsupported_version`, `encrypted`, `missing_stream`, `bad_clx`,
+`bad_piece_table`, `bad_fkp`, `bad_sprm`, `bad_stsh`, `bad_section`,
+`bad_hdd`, `bad_table`, `limits_exceeded`, `corrupt`).
