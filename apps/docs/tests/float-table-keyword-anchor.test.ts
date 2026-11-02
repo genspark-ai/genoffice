@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   computeSectionedSlicesF2,
@@ -10,9 +10,26 @@ import {
 
 const cell = { type: 'docTableCell', content: [{ type: 'docParagraph' }] }
 const row = { type: 'docTableRow', content: [cell] }
-const editor = new Editor({ element: document.createElement('div'), extensions: editorExtensions })
+
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+function makeEditor(): Editor {
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+  })
+  liveEditors.push(editor)
+  return editor
+}
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
 
 function tableAttrs(attrs: Record<string, unknown>): Record<string, string> {
+  const editor = makeEditor()
   const table = editor.schema.nodeFromJSON({ type: 'docTable', attrs, content: [row] })
   return (editor.schema.nodes.docTable.spec.toDOM!(table) as [string, Record<string, string>])[1]
 }

@@ -1,12 +1,13 @@
 /**
  * Plain-text view of a header/footer part, shared by the on-canvas editing
  * surface and the AI set_header_footer tool: paragraphs edit as lines, the
- * invisible PAGE / NUMPAGES field sentinels as visible {PAGE} / {NUMPAGES}
- * tokens. Layout-table rows (cells) and images stay out of the text flow and
+ * invisible PAGE / NUMPAGES / SECTIONPAGES field sentinels as visible {PAGE} /
+ * {NUMPAGES} / {SECTIONPAGES} tokens. Layout-table rows (cells) and images stay out of the text flow and
  * keep their original content.
  */
 import {
   PAGE_MARK,
+  SECTION_PAGES_MARK,
   TOTAL_PAGES_MARK,
   type HeaderFooter,
   type HfImage,
@@ -16,6 +17,7 @@ import {
 
 export const PAGE_TOKEN = '{PAGE}'
 export const TOTAL_TOKEN = '{NUMPAGES}'
+export const SECTION_TOKEN = '{SECTIONPAGES}'
 
 /** effective paragraphs: rich paras when present, else the legacy single line */
 export function hfParasOf(value: HeaderFooter, images?: HfImage[] | null): HfParagraph[] {
@@ -59,6 +61,7 @@ export function hfEditText(value: HeaderFooter): string {
     .join('\n')
     .replaceAll(PAGE_MARK, PAGE_TOKEN)
     .replaceAll(TOTAL_PAGES_MARK, TOTAL_TOKEN)
+    .replaceAll(SECTION_PAGES_MARK, SECTION_TOKEN)
 }
 
 /**
@@ -73,6 +76,7 @@ export function applyHfText(value: HeaderFooter | null, text: string): HeaderFoo
     .replace(/\n+$/, '')
     .replaceAll(PAGE_TOKEN, PAGE_MARK)
     .replaceAll(TOTAL_TOKEN, TOTAL_PAGES_MARK)
+    .replaceAll(SECTION_TOKEN, SECTION_PAGES_MARK)
     .split('\n')
   const textParas = paras.filter((p) => !p.cells)
   const templates: HfParagraph[] =

@@ -72,6 +72,15 @@ const NOTE = {
     'Copyright (c) Genspark. Licensed under the MIT License.\nhttps://www.npmjs.com/package/@genspark/cli',
 }
 
+/**
+ * Notices a package's own files leave out: rhwp publishes only its MIT
+ * license, while its WebAssembly build carries Rust crates and a BSD-3-Clause
+ * port that its repository documents separately.
+ */
+const EXTRA_NOTICE = {
+  '@rhwp/core': 'tools/notices/rhwp-core.txt',
+}
+
 /** SPDX strings that need a word on which side of a dual license we take */
 const SPDX_NOTE = {
   jszip: 'MIT (dual MIT/GPL-3.0-or-later, used under MIT)',
@@ -180,11 +189,16 @@ function closure(seed) {
   return { resolved: [...seen].filter(([, v]) => v !== null), missing }
 }
 
-function noticeText(dir) {
+function noticeText(name, dir) {
+  const parts = []
   for (const f of ['NOTICE', 'NOTICE.txt', 'NOTICE.md']) {
-    if (existsSync(join(dir, f))) return readFileSync(join(dir, f), 'utf8').trim()
+    if (existsSync(join(dir, f))) {
+      parts.push(readFileSync(join(dir, f), 'utf8').trim())
+      break
+    }
   }
-  return null
+  if (EXTRA_NOTICE[name]) parts.push(readFileSync(join(ROOT, EXTRA_NOTICE[name]), 'utf8').trim())
+  return parts.length > 0 ? parts.join('\n\n') : null
 }
 
 function spdxOf(name, pkg) {
@@ -253,7 +267,7 @@ for (const [name, { dir, pkg }] of resolved) {
     const repo = repoOf(pkg)
     out += `Licensed under ${spdxOf(name, pkg)}.${repo ? `\n${repo}` : ''}\n`
   }
-  const notice = noticeText(dir)
+  const notice = noticeText(name, dir)
   if (notice) out += `\nNOTICE:\n${notice}\n`
 }
 

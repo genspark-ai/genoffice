@@ -130,6 +130,7 @@ export const zhTW = {
   appCommentsTitle: '註解 ({n})',
   appCommentPlaceholder: '輸入註解內容…',
   appCommentBtn: '註解',
+  appAttachImage: '插入圖片',
   appUnknownAuthor: '(未知作者)',
   appResolved: '已解決',
   appResolvedComments: '已解決的註解 ({n})',

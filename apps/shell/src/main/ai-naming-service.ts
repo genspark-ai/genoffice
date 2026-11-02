@@ -4,14 +4,16 @@ import { readFileSync } from 'node:fs'
 import type { AgentMessage } from '@genoffice/agent-core'
 import { streamForProvider } from '@genoffice/ai-provider'
 import { gskApiKey } from '@genoffice/ai-search'
-import { buildNamingInstruction, excerptForNaming, sanitizeFileStem } from './ai-naming'
+import {
+  buildNamingInstruction,
+  excerptForNaming,
+  NAMING_MAX_TOKENS,
+  sanitizeFileStem,
+} from './ai-naming'
 import { resolveNamingProvider } from './ai-naming-provider'
 
 /** The channel the renderer's "Name with AI…" button calls. */
 export const AI_NAMING_SUGGEST_CHANNEL = 'ai:suggest-file-name'
-
-/** A name is a few words, not an essay; anything longer is a model that ignored the brief. */
-const MAX_TOKENS = 64
 
 /**
  * The AI settings, read the same way `registerAiIpc` reads them: a plain
@@ -49,7 +51,7 @@ async function askModel(content: string, lang: string): Promise<string> {
   // a naming call that has not answered in 30s is not going to
   const timer = setTimeout(() => controller.abort(), 30_000)
   try {
-    await streamForProvider(target.provider, target.config, '', messages, [], MAX_TOKENS, {
+    await streamForProvider(target.provider, target.config, '', messages, [], NAMING_MAX_TOKENS, {
       onDelta: (text) => {
         out += text
       },

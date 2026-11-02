@@ -4,7 +4,7 @@ import type { ChartDisplay, CommentInfo, NewChart, NoteInfo } from '@genoffice/d
 import type { ToolDisplay } from '@genoffice/agent-core'
 import type { AgentToolCall, AgentToolDef, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
-import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from './mind-map'
+import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from '@genoffice/agent-core/mind-map'
 import { executeOps, opNames } from './ops'
 import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { redactTextBetween } from './redact-view'

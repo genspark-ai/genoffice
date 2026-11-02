@@ -207,4 +207,7 @@ export const vi = {
   aiMindMapReset: 'Đặt lại khung nhìn',
   aiMindMapExpand: 'Mở rộng nhánh',
   aiMindMapCollapse: 'Thu gọn nhánh',
+  aiMindMapToggleLayout: 'Đổi bố cục',
+  aiMindMapLayoutTopDown: 'Chuyển sang bố cục từ trên xuống dưới',
+  aiMindMapLayoutLeftRight: 'Chuyển sang bố cục từ trái sang phải',
 } satisfies Record<keyof typeof zh, string>

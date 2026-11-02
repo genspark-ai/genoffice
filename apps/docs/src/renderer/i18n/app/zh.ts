@@ -137,6 +137,7 @@ export const zh = {
   appCommentsTitle: '批注 ({n})',
   appCommentPlaceholder: '输入批注内容…',
   appCommentBtn: '批注',
+  appAttachImage: '插入图片',
   appUnknownAuthor: '(未知作者)',
   appResolved: '已解决',
   appResolvedComments: '已解决的批注 ({n})',

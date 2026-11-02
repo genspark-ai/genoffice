@@ -200,4 +200,7 @@ export const he = {
   aiMindMapReset: 'איפוס תצוגה',
   aiMindMapExpand: 'הרחב ענף',
   aiMindMapCollapse: 'כווץ ענף',
+  aiMindMapToggleLayout: 'החלף פריסה',
+  aiMindMapLayoutTopDown: 'החלף לפריסה מלמעלה למטה',
+  aiMindMapLayoutLeftRight: 'החלף לפריסה משמאל לימין',
 } satisfies Record<keyof typeof zh, string>

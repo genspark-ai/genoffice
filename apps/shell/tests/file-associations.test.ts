@@ -42,10 +42,25 @@ describe('packaged file associations', () => {
     }
   })
 
-  it('keeps plain text and JSON off the Windows list, where NSIS would make the app their default', () => {
+  it('gives the legacy Word associations the Word mimeType', () => {
+    for (const ext of ['doc', 'dot']) {
+      const association = config.fileAssociations.find(
+        (entry: { ext: string }) => entry.ext === ext,
+      )
+      expect(association, `no file association declared for .${ext}`).toBeTruthy()
+      expect(
+        association.mimeType,
+        `.${ext} must declare application/msword for the Linux desktop entry`,
+      ).toBe('application/msword')
+      expect(association.icon).toBe('docx')
+    }
+  })
+
+  it('keeps plain text, JSON and legacy .doc/.dot off the Windows default list', () => {
     const winExts = config.win.fileAssociations.map((entry: { ext: string }) => entry.ext)
-    expect(winExts).not.toContain('txt')
-    expect(winExts).not.toContain('json')
+    for (const ext of ['txt', 'json', 'doc', 'dot']) {
+      expect(winExts, `.${ext} must not become a Windows default opener`).not.toContain(ext)
+    }
     for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'md', 'html']) {
       expect(winExts, `.${ext} missing from the Windows associations`).toContain(ext)
     }

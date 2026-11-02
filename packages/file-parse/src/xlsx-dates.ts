@@ -145,7 +145,7 @@ export function formatSerial(
   }
   if (serial < 0) return null
   let days = Math.floor(serial)
-  let secs = Math.round((serial - days) * 86400)
+  let secs = parts.time ? Math.round((serial - days) * 86400) : 0
   if (secs >= 86400) {
     days += 1
     secs = 0

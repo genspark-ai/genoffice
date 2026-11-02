@@ -99,6 +99,7 @@ function assertExtraResourceSources() {
     '../../node_modules/electron/dist/LICENSES.chromium.html',
     '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
     '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
+    '../../node_modules/@rhwp/core/rhwp_bg.wasm',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -310,10 +311,11 @@ function ensureThirdPartyNotices() {
 
 /** @type {import('electron-builder').Configuration} */
 // NSIS makes every declared ProgId the extension's default opener; for the
-// office types that is the point, for plain text and JSON it would hijack the
-// system editor, so Windows leaves those two out (mac/Linux only offer them
-// in Open With).
-const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json'])
+// office types that is the point, for plain text/JSON and the legacy Word
+// 97-2003 .doc/.dot it would hijack the system editor, so Windows leaves those
+// out (mac/Linux still declare them for Open With). GenOffice opens .doc/.dot
+// through its own Open dialog on every platform.
+const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json', 'doc', 'dot'])
 const FILE_ASSOCIATIONS = [
   {
     ext: 'docx',
@@ -322,6 +324,22 @@ const FILE_ASSOCIATIONS = [
     role: 'Editor',
     icon: 'docx',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes .doc
+    ext: 'doc',
+    name: 'Word 97-2003 Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
+  },
+  {
+    // import-only: the template opens as a converted .docx copy
+    ext: 'dot',
+    name: 'Word 97-2003 Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/msword',
   },
   {
     ext: 'xlsx',
@@ -397,6 +415,22 @@ const FILE_ASSOCIATIONS = [
     role: 'Editor',
     icon: 'docx',
     mimeType: 'application/vnd.oasis.opendocument.text-template',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes HWPX
+    ext: 'hwpx',
+    name: 'Hancom HWPX Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/hwp+zip',
+  },
+  {
+    // import-only, like .hwpx: HWP binaries are read through rhwp into HWPX first
+    ext: 'hwp',
+    name: 'Hancom HWP Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/x-hwp',
   },
   {
     // import-only: opens as a converted .pptx copy, GenOffice never writes ODF
@@ -519,6 +553,11 @@ const config = {
     {
       from: '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
       to: 'wasm/hb-subset.wasm',
+    },
+    // .hwp import (packages/hwp2docx/src/hwp.ts): rhwp reads HWP binaries into HWPX
+    {
+      from: '../../node_modules/@rhwp/core/rhwp_bg.wasm',
+      to: 'wasm/rhwp_bg.wasm',
     },
     // platform system-OCR helpers for scanned-page recovery (each exists only
     // on its own build platform; electron-builder skips absent sources and the
@@ -693,6 +732,16 @@ const config = {
       {
         from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
         to: 'native/xlsx-sidecar',
+      },
+      // Same blank templates the Windows installer registers for Explorer's
+      // "New" menu. The deb/rpm post-install step copies them into
+      // /usr/share/templates, which KDE Plasma's Dolphin "Create New" menu
+      // scans (genoffice#2384). AppImage gets the payload too but runs no
+      // install script, so it adds no templates.
+      {
+        from: 'build/shell-new',
+        to: 'shell-new',
+        filter: ['*.docx', '*.xlsx', '*.pptx'],
       },
     ],
   },

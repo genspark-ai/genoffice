@@ -40,6 +40,7 @@ import { AllowEditRangesDialog } from './AllowEditRangesDialog'
 import { ProtectSheetDialog } from './ProtectSheetDialog'
 import type { SheetProtectionAllow } from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
 import { GoToDialog } from './GoToDialog'
+import { QueriesDialog } from './QueriesDialog'
 import { SheetTabContextMenu } from './SheetTabContextMenu'
 import type { SheetTabActions } from './sheet-tab-actions'
 import { PasteSpecialDialog } from './PasteSpecialDialog'
@@ -73,10 +74,11 @@ import {
 } from './excel-format-shortcuts'
 import { isModalOpen, resolveGlobalShortcut } from './global-shortcuts'
 import { stepFontSize } from './font-size-ladder'
+import { scrollRibbonOnWheel } from './ribbon-wheel'
 
 import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
-import type { AttachmentMeta, WorkbookConnection as QueryConnection } from '../shared/desktop-api'
+import type { AttachmentMeta, WorkbookConnection as QueryConnection, WorkbookQueriesResult } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
 import type { SelectionAskAnchor } from './ai/selection-ask'
@@ -393,6 +395,8 @@ interface ExcelShellProps {
   /// Name Box / Go To jump; returns an error message, or null on success.
   readonly onGoToReference: (ref: string) => string | null
   readonly onListDefinedNames: () => readonly { name: string; ref: string }[]
+  /// Data › Queries & Connections: the open workbook's connections (read-only).
+  readonly onReadWorkbookQueries: () => Promise<WorkbookQueriesResult>
   readonly onReadPasteSpecialSource: () => Promise<PasteSpecialSource>
   /// Resolves to an error message, or null on success.
   readonly onPasteSpecial: (
@@ -418,6 +422,9 @@ interface ExcelShellProps {
   readonly calcManual: boolean
   /// The workbook's refreshable web queries.
   readonly queryConnections: readonly QueryConnection[]
+  /// Formula view (sheetView/@showFormulas) of the active sheet: the sheet
+  /// renders formulas instead of their values.
+  readonly showFormulas: boolean
   /// Goal Seek solve; rejects with a user-facing Error message.
   readonly onGoalSeek: (setCell: string, toValue: number, byCell: string) => Promise<GoalSeekResult>
   /// Data Table (What-If) run; rejects with a user-facing Error message.
@@ -517,6 +524,7 @@ export function ExcelShell({
   activeCellA1,
   onGoToReference,
   onListDefinedNames,
+  onReadWorkbookQueries,
   onReadPasteSpecialSource,
   onPasteSpecial,
   functionArguments,
@@ -569,6 +577,7 @@ export function ExcelShell({
   pageLayout,
   calcManual,
   queryConnections,
+  showFormulas,
   onGoalSeek,
   onDataTable,
   onGetDataTableRange,
@@ -590,6 +599,12 @@ export function ExcelShell({
   )
   // the sidebar switch is a soft hide; it closes the panel when it turns off
   const aiSidebarEnabled = useAiSidebarEnabled(setIsCopilotOpen)
+  // Native listener, delegated because each ribbon tab mounts its own `.ribbon`,
+  // and because React registers wheel as passive, which forbids preventDefault.
+  useEffect(() => {
+    window.addEventListener('wheel', scrollRibbonOnWheel, { passive: false })
+    return () => window.removeEventListener('wheel', scrollRibbonOnWheel)
+  }, [])
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])
@@ -663,6 +678,7 @@ export function ExcelShell({
   const [showFillSeries, setShowFillSeries] = useState(false)
   const [showConsolidateDialog, setShowConsolidateDialog] = useState(false)
   const [showGoTo, setShowGoTo] = useState(false)
+  const [showQueries, setShowQueries] = useState(false)
   const [pasteSpecialSource, setPasteSpecialSource] = useState<PasteSpecialSource | null>(null)
   const [showZoomDialog, setShowZoomDialog] = useState(false)
   const [statsMenuAt, setStatsMenuAt] = useState<{ x: number; y: number } | null>(null)
@@ -717,6 +733,7 @@ export function ExcelShell({
     else if (command === 'subtotal-open') setShowSubtotalDialog(true)
     else if (command === 'consolidate-open') setShowConsolidateDialog(true)
     else if (command === 'goto-open') setShowGoTo(true)
+    else if (command === 'queries-open') setShowQueries(true)
     else if (command === PASTE_SPECIAL_OPEN_SHELL_COMMAND) {
       void onReadPasteSpecialSource().then((source) => setPasteSpecialSource(source))
     } else if (command === 'header-footer-open') setShowHeaderFooter(true)
@@ -995,6 +1012,7 @@ export function ExcelShell({
           }}
           calcManual={calcManual}
           queryConnections={queryConnections}
+          showFormulas={showFormulas}
           onRefreshPivot={onRefreshPivot}
           onIsSelectionInPivot={onIsSelectionInPivot}
           onCommand={dispatchCommand}
@@ -1080,6 +1098,15 @@ export function ExcelShell({
           {/* Status bar spans the sheet column only — the AI dock keeps the full window height (unified with docs/slides). */}
           <footer className="status-bar" onContextMenu={openStatsMenu}>
             <div className="status-left">
+              {/* Formula view is per sheet and survives a save, so a sheet can
+                  open showing formulas instead of values. Say so in the status
+                  bar: the one-off toast that announced the switch is gone by
+                  the time anyone notices, and the sheet looks broken. */}
+              {showFormulas && (
+                <span className="status-flag" role="status" title={t('appShowingFormulas')}>
+                  {t('appShowingFormulasActive')}
+                </span>
+              )}
               <span className="status-msg">{statusMessage}</span>
             </div>
             <div className="status-right">
@@ -1339,6 +1366,13 @@ export function ExcelShell({
           source={pasteSpecialSource}
           onApply={(options) => onPasteSpecial(pasteSpecialSource, options)}
           onClose={() => setPasteSpecialSource(null)}
+        />
+      )}
+      {showQueries && (
+        <QueriesDialog
+          load={onReadWorkbookQueries}
+          onGo={onGoToReference}
+          onClose={() => setShowQueries(false)}
         />
       )}
       {showGoTo && (
@@ -1961,6 +1995,7 @@ function Ribbon({
   onListNames,
   calcManual,
   queryConnections,
+  showFormulas,
   onRefreshPivot,
   onIsSelectionInPivot,
 }: {
@@ -1982,6 +2017,8 @@ function Ribbon({
   readonly selectedTable: SelectedTableRibbon | null
   readonly outlineSummary: { below: boolean; right: boolean }
   readonly onCommand: (command: string) => void
+  /// Formula view of the active sheet; the button reads as pressed.
+  readonly showFormulas: boolean
   /** Defined names for the Use in Formula menu. */
   readonly onListNames: () => readonly string[]
   /** Manual-recalc mode echo for the Calculation Options menu. */
@@ -2984,6 +3021,7 @@ function Ribbon({
           </div>
           <RibbonButton
             large
+            active={showFormulas}
             label={t('appShowFormulas')}
             detail={t('appShowFormulasDetail')}
             symbol="ƒ"
@@ -3091,6 +3129,14 @@ function Ribbon({
                   })),
                 )
               : null}
+            <button
+              className="styles-row as-button"
+              data-tip={t('appQueriesConnectionsTitle')}
+              onClick={() => onCommand('queries-open')}
+            >
+              <ToolSymbol symbol="⇄" />
+              {t('appQueriesConnections')}
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupSortFilter')}>

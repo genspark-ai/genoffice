@@ -26,7 +26,7 @@ import { emptyDocumentProperties, readDocumentProperties } from './doc-propertie
 import { computeListMarkerInfos, type ListItemRef } from './list-markers'
 import { FONT_TABLE_PART_PATH, parseFontTable, readEmbeddedFonts } from './font-table'
 import { DEFAULT_THEME_COLORS, THEME_PART_PATH, readThemeColors, readThemeFonts } from './theme'
-import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, SECTION_PAGES_MARK, TOTAL_PAGES_MARK } from './types'
 import { assertZipWithinLimits, loadDocxZip } from './zip-load'
 import { altChunkToDocx, hasAltChunkHtmlConverter } from './alt-chunk'
 import type {
@@ -38,6 +38,7 @@ import type {
   DocDefaults,
   FieldRun,
   InkInfo,
+  InlineContentControl,
   NoteInfo,
   NoteRun,
   NoteProps,
@@ -145,6 +146,7 @@ import {
   gradFillApproxHex,
   lineBoxOf,
   resolveAnchorPagePos,
+  resolveAnchorPageYEmu,
   topLevelDrawings,
   w14GlowOf,
   w14TextFillHex,
@@ -238,7 +240,7 @@ import {
   resolveMainDocumentPath,
   resolveRelationshipTargetPath,
 } from './parse-package'
-import { parseSdtBlock, sdtMeta, sdtTableXml, splitSdtParts } from './parse-sdt'
+import { parseSdtBlock, sdtMeta, sdtRanges, sdtTableXml, splitSdtParts } from './parse-sdt'
 import { sdtCheckboxControl } from './checkbox-control'
 import { paraCsFormat, parseStyles } from './parse-styles'
 import {
@@ -489,6 +491,7 @@ export async function parseDocx(
     referenceOnlyComments,
     sectionAt,
     docDefaults,
+    sdtGroupSeq: 0,
     ...(defaultParaStyle ? { defaultParaStyle } : {}),
     xmlSpacePreserve: partXmlSpacePreserve(documentXml, 'w:document'),
     ...(documentXml.includes('<v:shapetype')
@@ -508,13 +511,13 @@ export async function parseDocx(
       return cands.length > 0 ? Math.min(...cands) : undefined
     })(),
   }
-  let sdtGroupSeq = 0
   for (const el of scan.elements) {
     const xml = documentXml.slice(el.start, el.end)
     const sdtParts = el.name === 'w:sdt' ? splitSdtParts(xml) : null
     if (sdtParts) {
       const meta = sdtMeta(xml)
-      const group = sdtGroupSeq++
+      const group = buildCtx.sdtGroupSeq++
+      const firstPartIndex = elements.length
       for (const part of sdtParts) {
         const i = elements.length
         elements.push({ name: part.name, start: el.start + part.start, end: el.start + part.end })
@@ -527,12 +530,42 @@ export async function parseDocx(
           buildCtx,
         )
         block.originalXml = xml.slice(part.start, part.end)
+        // The control chain may be nested (an inner control around this child)
+        // and a split control's bytes live on several parts: record the owning
+        // block and offset per level so a specific level can be unwrapped later.
+        const ownerIndex = (offset: number): number => {
+          for (let k = 0; k < sdtParts.length; k++) {
+            const candidate = sdtParts[k]!
+            if (offset >= candidate.start && offset < candidate.end) return firstPartIndex + k
+          }
+          return i
+        }
+        const chain = part.chain.map((level, depth) => {
+          const openBlock = ownerIndex(level.openStart)
+          const closeBlock = ownerIndex(level.closeStart)
+          return {
+            ...level.shell,
+            level: depth,
+            group,
+            openBlock,
+            openOffset: level.openStart - sdtParts[openBlock - firstPartIndex]!.start,
+            closeBlock,
+            closeOffset: level.closeStart - sdtParts[closeBlock - firstPartIndex]!.start,
+          }
+        })
+        // compatibility: the legacy shell slices are the bytes each part owns
+        // around its child. A split control's outer open sits on the first part
+        // and its outer close on the last; middle parts whose child is nested in
+        // an inner control keep that inner control's wrapper fragments here
+        // (the editor's group rebalance relies on them).
         block.sdtShell = {
           ...meta,
           openXml: xml.slice(part.start, part.childStart),
           closeXml: xml.slice(part.childEnd, part.end),
           group,
         }
+        block.sdtShells = chain
+        if (part.name === 'w:p') attachInlineContentControls(block, childXml)
         if (!block.label) block.label = meta.alias || meta.tag || 'Content control'
         blocks.push(block)
         buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
@@ -555,6 +588,7 @@ export async function parseDocx(
     const i = elements.length
     elements.push(el)
     const block = await buildBlock(el, i, xml, buildCtx, zoteroFieldParagraphs.get(el.start))
+    if (el.name === 'w:p') attachInlineContentControls(block, xml)
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
   }
@@ -736,6 +770,9 @@ interface BuildContext {
   /** column span (twips) of a w:tblpPr table built just before the current block:
    *  it anchors to that block and shares its horizontal space */
   floatTableAhead?: { leftTwips: number; rightTwips: number }
+  /** next block-level control chain id: one id per w:sdt instance, shared by
+   *  every level and every block of a split control */
+  sdtGroupSeq: number
   /** settings.xml compatibilityMode (0 = legacy layout) */
   compatibilityMode?: number
   /** settings.xml compat flags the property resolver applies */
@@ -875,6 +912,37 @@ async function expandAltChunk(
   }
 }
 
+/**
+ * Run-level (inline) content controls inside a paragraph, read-only: their
+ * tag/title/lock/id and inner text are reported, while the paragraph's bytes
+ * (and therefore the run text/model) stay exactly as parsed.
+ */
+function inlineContentControlsOf(xml: string): InlineContentControl[] {
+  const out: InlineContentControl[] = []
+  for (const range of sdtRanges(xml)) {
+    const content = xml.slice(range.openEnd, range.closeStart)
+    // a w:sdt holding a paragraph or a table is a block container, not a
+    // run-level control; the body/split paths already report those
+    if (/<w:p[\s/>]|<w:tbl[\s>]/.test(content)) continue
+    const meta = sdtMeta(xml.slice(range.openStart, range.closeEnd))
+    out.push({
+      tag: meta.tag,
+      title: meta.alias,
+      lock: meta.lock,
+      id: meta.id,
+      text: plainText(content),
+    })
+  }
+  return out
+}
+
+/** attach the inline controls of a paragraph block, when it has any */
+function attachInlineContentControls(block: Block, xml: string): void {
+  if (block.inlineContentControls || !/^<w:p[\s/>]/.test(xml)) return
+  const inline = inlineContentControlsOf(xml)
+  if (inline.length > 0) block.inlineContentControls = inline
+}
+
 async function buildBlock(
   el: BodyElement,
   index: number,
@@ -953,7 +1021,7 @@ async function buildBlock(
     }
     const sdtResult = parseSdtBlock(xml)
     if (sdtResult) {
-      const { shell, pXml } = sdtResult
+      const { shell, pXml, chain } = sdtResult
       // Build a synthetic BodyElement for the inner w:p; the sdt's own document
       // offsets keep sectionAt on the right section
       const syntheticEl: BodyElement = { name: 'w:p', start: el.start, end: el.end }
@@ -962,6 +1030,19 @@ async function buildBlock(
       // Attach the sdt shell and preserve the full sdt XML as the original
       innerBlock.originalXml = xml
       innerBlock.sdtShell = shell
+      // A single-child control can still hold nested controls around its
+      // paragraph: keep the whole chain with the bytes it owns (this block owns
+      // the whole sdt xml in this path). No group id: a single block is not a
+      // multi-block split and the editor's group logic must not treat it as one.
+      innerBlock.sdtShells = chain.map((level, depth) => ({
+        ...level.shell,
+        level: depth,
+        openBlock: index,
+        openOffset: level.openStart,
+        closeBlock: index,
+        closeOffset: level.closeStart,
+      }))
+      attachInlineContentControls(innerBlock, pXml)
       // Label the block with the alias for UI affordance
       if (!innerBlock.label) {
         const aliasLabel = shell.alias || shell.tag || 'Content control'
@@ -3121,6 +3202,55 @@ function extractTextboxes(
       if (relXAbsolute) box.pageRelX = true
       if (meta.relH === 'page') box.pageRelXFrom = 'page'
     }
+    // page/margin-relative V places the box on its anchor's page in Word
+    // whatever the wrap kind (wrap only decides how body text flows around
+    // it). A wrapped one floats at that position instead of stacking into the
+    // flow at the anchor paragraph (cover bands drawn margin-shifted) — but
+    // only where floating cannot lay body text over it: the box lies wholly
+    // outside the body area, spans the column (text only above/below), or is
+    // a topAndBottom band covering the body top (its band is exact). A narrow
+    // in-column wrapped box keeps the flow placement: text cannot wrap around
+    // an absolute box, and its band would be relative to an unknown anchor.
+    const pageAbsV = opts?.section !== undefined && (meta.relV === 'page' || meta.relV === 'margin')
+    const alignedYEmu =
+      pageAbsV && meta.offsetYEmu === undefined
+        ? resolveAnchorPageYEmu(meta, opts?.section)
+        : undefined
+    let pageVFloat = false
+    // band only inside the body area: a box clear of it excludes no text
+    let pageVBand = false
+    if (pageAbsV && !meta.noWrap && opts?.section) {
+      const s = opts.section
+      // column / body-top space: page-relative X/Y are exact here (only the
+      // anchor paragraph's own position is unknown)
+      const x =
+        (box.offsetXEmu ?? 0) +
+        (pagePos !== null && !pagePos.outsideColumn && meta.offsetXEmu === undefined
+          ? pagePos.xEmu
+          : 0)
+      const y = (box.offsetYEmu ?? 0) + (meta.offsetYEmu ?? alignedYEmu ?? 0)
+      const w = box.widthPx !== undefined ? box.widthPx * EMU_PER_PX : meta.extentXEmu
+      const h =
+        box.heightPx !== undefined
+          ? box.heightPx * EMU_PER_PX
+          : !grouped
+            ? meta.extentYEmu
+            : undefined
+      const colW = (s.pageWidth - s.marginLeft - s.marginRight) * EMU_PER_TWIP
+      const bodyH = (s.pageHeight - s.marginTop - s.marginBottom) * EMU_PER_TWIP
+      if (w !== undefined && w > 0 && h !== undefined && h > 0) {
+        const outsideBody =
+          y + h <= 0 || y >= bodyH || (s.columns <= 1 && (x + w <= 0 || x >= colW))
+        const spans =
+          s.columns <= 1 &&
+          !grouped &&
+          x < MIN_WRAP_SLIVER_EMU &&
+          colW - x - w < MIN_WRAP_SLIVER_EMU
+        const exactBand = meta.topBottom === true && y <= 0 && y + h > 0
+        pageVFloat = outsideBody || spans || exactBand
+        pageVBand = pageVFloat && !outsideBody
+      }
+    }
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the
     // legacy flow placement
@@ -3128,12 +3258,20 @@ function extractTextboxes(
       pagePos !== null &&
       !pagePos.outsideColumn &&
       meta.offsetXEmu === undefined &&
-      (meta.topBottom || meta.noWrap || multiDrawing)
+      (meta.topBottom || meta.noWrap || multiDrawing || pageVFloat)
     ) {
       box.offsetXEmu = (box.offsetXEmu ?? 0) + pagePos.xEmu
       if (relXAbsolute) box.pageRelX = true
     }
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
+    // wp:align / pctPosVOffset against the page or margin box on a floating
+    // box: the resolved body-top offset, re-pinned onto the anchor's page like
+    // a posOffset (in-flow boxes keep ignoring it)
+    if (alignedYEmu !== undefined && (meta.noWrap || multiDrawing || pageVFloat)) {
+      box.offsetYEmu = (box.offsetYEmu ?? 0) + alignedYEmu
+      box.pageRelV = true
+      box.pageRelVFrom = meta.relV === 'page' ? 'page' : 'margin'
+    }
     // page/margin-relative posOffset V is absolute on the anchor's page in
     // Word; rendered from the anchor paragraph it needs the canvas re-pin
     if (
@@ -3170,7 +3308,7 @@ function extractTextboxes(
     // reserves flow height down to the box bottom (union over its boxes).
     if (
       (meta.topBottom || squareSpansColumn) &&
-      (meta.relV === 'paragraph' || meta.relV === 'line')
+      (meta.relV === 'paragraph' || meta.relV === 'line' || pageVBand)
     ) {
       // wp:extent cy covers the whole drawing: a usable height fallback only
       // for an ungrouped shape (each group child would claim the group height)
@@ -3181,7 +3319,11 @@ function extractTextboxes(
           : undefined)
       if (h !== undefined) {
         const top = Math.round((box.offsetYEmu ?? 0) / EMU_PER_PX)
-        if (top + h > 0) {
+        // a page-relative top counts from the body top (anchor paragraph
+        // assumed there): only a box covering that origin (a band hanging
+        // from the page top) bands exactly; reserving down to a box lower on
+        // the page would blank all the flow above it
+        if (top + h > 0 && (!pageAbsV || top <= 0)) {
           box.bandTopPx = top
           box.bandBottomPx = top + h
           // only a box that spans the column BY ITSELF may overflow the page
@@ -3192,7 +3334,7 @@ function extractTextboxes(
       }
       box.floating = true
     }
-    if (meta.noWrap || multiDrawing) box.floating = true
+    if (meta.noWrap || multiDrawing || pageVFloat) box.floating = true
     if (!meta.noWrap && !meta.topBottom) {
       box.wrapSides = true
       if (box.floating) {
@@ -3316,7 +3458,9 @@ function extractTextboxes(
         aligned !== null
           ? aligned.xEmu + marL
           : (meta.relH === 'margin' ? marL : 0) + (meta.offsetXEmu ?? 0)
-      meta.pageYEmu = aligned?.yEmu !== undefined ? aligned.yEmu + marT : (meta.offsetYEmu ?? 0)
+      // aligned V resolves on its own: a posOffset X leaves `aligned` null
+      const alignedYEmu = resolveAnchorPageYEmu(meta, opts.section)
+      meta.pageYEmu = alignedYEmu !== undefined ? alignedYEmu + marT : (meta.offsetYEmu ?? 0)
     }
     const pagePos = meta.pageXEmu === undefined ? resolveAnchorPagePos(meta, opts?.section) : null
     let wspCount = 0
@@ -5853,6 +5997,24 @@ const MATH_HOSTS = new Set(['m:oMath'])
 const TXBX_CONTENT = new Set(['w:txbxContent'])
 const WP_INLINE = new Set(['wp:inline'])
 const WP_ANCHOR = new Set(['wp:anchor'])
+/** the <w:drawing> elements of a header/footer part, in the order HfImage.drawing counts them */
+export const HF_DRAWING_RE = /<w:drawing[\s>][\s\S]*?<\/w:drawing>/g
+
+/**
+ * A HF_DRAWING_RE match the strip can move and resize: one floating picture
+ * with its own extents. A text box or group is not one, and neither is a
+ * fragment the lazy match cut at the </w:drawing> of a picture nested in a
+ * text box (its extents are the box's).
+ */
+export function hfMovablePictureFrag(frag: string): boolean {
+  return (
+    /<wp:anchor[\s>]/.test(frag) &&
+    /<a:blip[\s>]/.test(frag) &&
+    (frag.match(/<pic:pic[\s>]/g) ?? []).length === 1 &&
+    !/<(?:wps:|wpg:|w:txbxContent[\s>])/.test(frag)
+  )
+}
+
 /** wp:docPr ids of the anchored drawings in a layout-table row / on a cell-run image (binds HfImage.anchorPara) */
 const hfRowAnchorIds = new WeakMap<HfParagraph, string[]>()
 const hfImageAnchorId = new WeakMap<HfImage, string>()
@@ -6184,8 +6346,10 @@ async function hfImages(
     const jc = /<w:jc w:val="(\w+)"/.exec(partXml.slice(pStart, at))?.[1]
     return jc === 'left' || jc === 'center' || jc === 'right' ? jc : undefined
   }
-  for (const m of partXml.matchAll(/<w:drawing[\s>][\s\S]*?<\/w:drawing>/g)) {
+  let drawingOrdinal = -1
+  for (const m of partXml.matchAll(HF_DRAWING_RE)) {
     const frag = m[0]
+    drawingOrdinal++
     if (fallbackDup(m.index!)) continue
     if (!/<wp:anchor[\s>]/.test(frag) && onCellRun(m.index!)) continue
     if (!/<wp:anchor[\s>]/.test(frag) && onTextRun(frag)) continue
@@ -6234,6 +6398,8 @@ async function hfImages(
         image.wrap = wrap === 'TopAndBottom' ? 'topBottom' : (wrap.toLowerCase() as HfImage['wrap'])
       }
       readAnchorPos(frag, image)
+      // the strip can move and resize it (patchHfPicturesXml finds it again by this ordinal)
+      if (hfMovablePictureFrag(frag)) image.drawing = drawingOrdinal
       // inside a layout-table cell, column/margin offsets measure from that cell's text column
       if (image.posXPx != null && image.posHRel === 'margin' && onCellRun(m.index!)) {
         image.posXPx += hfCellColumnLeftPx(partXml, m.index!)
@@ -6817,6 +6983,11 @@ function hfContentFromXml(
       // the replacement closes/reopens the enclosing w:r to stay balanced
       // (the leftover edge runs end up empty and are dropped later)
       const emit = (inner: string) => `</w:r>${inner}<w:r>`
+      // before PAGE/NUMPAGES: neither word boundary matches inside SECTIONPAGES,
+      // so it used to fall through to the cached result (often dropped, else a stale "1")
+      if (/\bSECTIONPAGES\b/.test(instr)) {
+        return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
+      }
       if (/\bNUMPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
       }
@@ -6824,12 +6995,14 @@ function hfContentFromXml(
         hasPageNumber = true
         return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
       }
-      // complete result runs between separate and end (partial run fragments at the edges drop out)
-      return emit(
-        (cached?.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g) ?? [])
-          .filter((run) => run.includes('<w:t'))
-          .join(''),
-      )
+      // Keep the original run boundaries: separate/result/end may share a run,
+      // whose rPr is outside this span. Rewrapping only complete result runs
+      // drops those edge fragments and their formatting.
+      if (cached === undefined) return emit('')
+      const prefix = span.slice(0, span.length - cached.length)
+      return (prefix.replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '') + cached)
+        .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
+        .replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, '')
     },
   )
   // <w:fldSimple w:instr=" PAGE "> single-element field form
@@ -6837,6 +7010,7 @@ function hfContentFromXml(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
+      if (/\bSECTIONPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
       if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
       if (/\bPAGE\b/.test(instr)) {
         hasPageNumber = true
@@ -8027,15 +8201,29 @@ function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
       const hostPPr = /^<w:p\b[^>]*>\s*(<w:pPr>[\s\S]*?<\/w:pPr>)/.exec(xml)?.[1] ?? ''
       const eff = resolveParagraphPropsXml(hostPPr, rctx)
       const g = directParaGeometry(eff)
+      const floating = /<wp:anchor[\s>]/.test(xml)
+      // an in-line picture sits on a text line, which takes the chain's indents
+      // (style, docDefaults) like any other: a centered picture under a
+      // docDefaults first-line indent shifts right by half of it in Word. The
+      // wrapper has no data-style to bring them, so they travel inline; a float
+      // positions against the column and keeps only its direct ones
+      const indent =
+        !floating && !eff.indent.chars
+          ? {
+              indentLeftTwips: eff.indent.left,
+              indentRightTwips: eff.indent.right,
+              indentFirstLineTwips: eff.indent.firstLine,
+            }
+          : g
       // zero indents stay off the model: the wrapper has no style indent to cancel
-      if (g.indentLeftTwips) meta.imageParagraphIndentLeft = g.indentLeftTwips
-      if (g.indentRightTwips) meta.imageParagraphIndentRight = g.indentRightTwips
-      if (g.indentFirstLineTwips) meta.imageParagraphIndentFirstLine = g.indentFirstLineTwips
+      if (indent.indentLeftTwips) meta.imageParagraphIndentLeft = indent.indentLeftTwips
+      if (indent.indentRightTwips) meta.imageParagraphIndentRight = indent.indentRightTwips
+      if (indent.indentFirstLineTwips)
+        meta.imageParagraphIndentFirstLine = indent.indentFirstLineTwips
       // the picture node carries no data-style, so the chain's spacing (style,
       // docDefaults, builtin 0) has to travel inline. An unstyled floating
       // picture takes only its direct spacing: the base rule skips floats
       // because the anchor line inside already carries the default spacing
-      const floating = /<wp:anchor[\s>]/.test(xml)
       const chain = !floating || eff.styleId !== undefined
       const direct = (k: string) => eff.source[k] === 'direct'
       if (chain || direct('spaceBefore') || direct('spaceBeforeAuto')) {

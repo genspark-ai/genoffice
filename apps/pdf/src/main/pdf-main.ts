@@ -31,7 +31,8 @@ import {
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
-import { printJobOptions } from '@genoffice/electron-utils/print-job'
+import { printJobOptions, printOutcome } from '@genoffice/electron-utils/print-job'
+import { printPdfViaCups, printToPdfOptionsFor } from '@genoffice/electron-utils/print-cups'
 import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
@@ -1213,15 +1214,27 @@ function registerPdfIpc(): void {
     return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
   })
 
-  ipcMain.handle(PDF_CHANNELS.print, (e, job: unknown) => {
+  ipcMain.handle(PDF_CHANNELS.print, async (e, job: unknown) => {
     const opts = printJobOptions(job)
     // the renderer's print stylesheet already lays one rasterized page per sheet
+    if (process.platform === 'darwin' && opts.silent) {
+      // Chromium's silent print on macOS can drop the job outright — no queue
+      // entry, no callback error (genoffice#2347). Route through CUPS:
+      // printToPDF bakes the sheets at the document's own paper size (the
+      // renderer measured it), and lp spools a real, diagnosable job.
+      const printed = await e.sender.printToPDF(
+        printToPdfOptionsFor({
+          marginsIn: { top: 0, bottom: 0, left: 0, right: 0 },
+          ...(opts.pageSizeIn
+            ? { widthIn: opts.pageSizeIn.width, heightIn: opts.pageSizeIn.height }
+            : {}),
+        }),
+      )
+      return printPdfViaCups(printed, opts)
+    }
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       e.sender.print({ margins: { marginType: 'none' }, ...opts }, (success, failureReason) => {
-        resolve({
-          ok: success,
-          ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
-        })
+        resolve(printOutcome(success, failureReason, opts.silent))
       })
     })
   })
