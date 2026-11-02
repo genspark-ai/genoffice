@@ -1723,6 +1723,25 @@ export function IconHighlighterPen(props: IconProps) {
   )
 }
 
+export function IconPencilInk(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.2 11.8 3 13l1.2-3.3L10.5 3.4a1.3 1.3 0 0 1 1.9 0l.2.2a1.3 1.3 0 0 1 0 1.9L6.3 11.8H4.2Z" />
+      <path d="M4.2 9.7h2.1v2.1" />
+      <path d="M9.4 4.5 11.5 6.6" />
+      <path d="M3.2 14.2h3" strokeDasharray="0.8 1" />
+    </Svg>
+  )
+}
+
+export function IconPlus(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </Svg>
+  )
+}
+
 export function IconEraser(props: IconProps) {
   return (
     <Svg {...props}>

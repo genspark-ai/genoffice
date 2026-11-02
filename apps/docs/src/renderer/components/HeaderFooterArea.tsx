@@ -18,6 +18,7 @@ import {
   hfCellTabLines,
   hfLeadIndentCss,
   hfIndentOverhangPx,
+  hfInkOverhangPx,
   hfRowGeomOf,
   hfRowRightOverhangPx,
   hfRowStyle,
@@ -214,6 +215,7 @@ export function HeaderFooterArea({
   const firstEditable = hfEditorSlot(paras)
   const rowGeom = hfRowGeomOf(kind, boxGeom)
   const indOver = hfIndentOverhangPx(paras, rowGeom)
+  const inkOver = hfInkOverhangPx(paras)
   const tabOver = Math.max(
     hfRowRightOverhangPx(paras, rowGeom),
     ...paras.map((p) =>
@@ -229,6 +231,7 @@ export function HeaderFooterArea({
       style={{
         ...(tabOver > 0 ? { ['--hf-tab-over' as string]: `${tabOver.toFixed(1)}px` } : {}),
         ...(indOver > 0 ? { ['--hf-ind-over' as string]: `${indOver.toFixed(1)}px` } : {}),
+        ...(inkOver > 0 ? { ['--hf-ink-over' as string]: `${inkOver}px` } : {}),
         ...style,
       }}
       data-tip={

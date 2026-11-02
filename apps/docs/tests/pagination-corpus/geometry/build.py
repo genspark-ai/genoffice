@@ -14,7 +14,7 @@ import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '../../../../../packages/docx-engine/tests/fixtures/truths'))
-from _docx import W, R, XML, doc_defaults, hdr_xml, para, rpr, settings_xml, spacing, styles_xml, write
+from _docx import W, R, XML, doc_defaults, footnote_ref, footnotes_xml, hdr_xml, para, rpr, settings_xml, spacing, styles_xml, tbl, write
 
 C = rpr('Calibri', 22)
 SP = spacing(after=0, line=240, rule='auto')
@@ -223,3 +223,116 @@ pct_rows = [[para(f'r{r}c{c} ' + LOREM[: 40 * (c + 1)], ppr=SP, run_rpr=C) for c
 pct100 = table([1200, 3000, 5160], pct_rows, tblw='<w:tblW w:w="5000" w:type="pct"/>', layout='')
 pct60 = table([900, 1716, 3000], pct_rows, tblw='<w:tblW w:w="3000" w:type="pct"/>', layout='')
 emit('geo-table-pct-nonuniform.docx', text(1) + pct100 + text(2) + pct60 + text(3) + pct100 + text(1))
+
+
+# 6. split floating table with page-positioned boxes on its later pages (T4.5 / H7):
+#    a right-anchored floating table too tall for one page splits at row
+#    boundaries; a layoutInCell="0" text box anchored in a cell of the second
+#    portion is positioned against that page, and the anchor paragraph (laid out
+#    beside the last portion) hosts a behind-text picture with a page-relative X
+def float_textbox(content, cx, cy, x, y, id=1):
+    ns = (
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+    )
+    return (
+        f'<w:r><mc:AlternateContent {ns}><mc:Choice Requires="wps"><w:drawing>'
+        f'<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="{251658240 + id}" '
+        'behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/>'
+        f'<wp:positionH relativeFrom="page"><wp:posOffset>{x}</wp:posOffset></wp:positionH>'
+        f'<wp:positionV relativeFrom="page"><wp:posOffset>{y}</wp:posOffset></wp:positionV>'
+        f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        f'<wp:docPr id="{id}" name="Text Box {id}"/>'
+        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+        '<wps:wsp><wps:cNvSpPr txBox="1"/>'
+        f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFE699"/></a:solidFill>'
+        '<a:ln w="6350"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr>'
+        f'<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>'
+        '<wps:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="t"><a:noAutofit/></wps:bodyPr>'
+        '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>'
+    )
+
+
+split_rows = []
+for i in range(48):
+    cell_xml = para(f'S row {i + 1} ' + LOREM[:70], ppr=SP, run_rpr=C)
+    if i == 30:
+        cell_xml = (
+            f'<w:p><w:pPr>{SP}</w:pPr>'
+            + float_textbox(para('page box', ppr=SP, run_rpr=C), 1200 * EMU // 10, 400 * EMU // 10, 40 * EMU, 120 * EMU, id=7)
+            + f'<w:r>{C}<w:t xml:space="preserve">S row {i + 1} box host</w:t></w:r></w:p>'
+        )
+    split_rows.append([cell_xml])
+split_table = table(
+    [4200],
+    split_rows,
+    tblw='<w:tblW w:w="4200" w:type="dxa"/>',
+    extra=tblp('text', 'margin', xspec='right', y=0),
+)
+body = (
+    text(1)
+    + split_table
+    + anchor_para(picture(144 * EMU, 96 * EMU, rel_h='page', x=60 * EMU, y=0, wrap='behind', pic_id=1), lead='Anchor ')
+    + text(6)
+)
+out = emit('geo-float-table-split-boxes.docx', body)
+add_media(out, png(144, 96, (180, 90, 40)))
+
+
+# 7. footnoted table ending exactly on the page cut (the empty paragraphs after it
+# do not fit above the notes): page 2 opens on its bottom edge, a tailTable seam
+seam_rows = []
+for i in range(42):
+    note = footnote_ref(1) if i == 2 else (footnote_ref(2) if i == 5 else '')
+    seam_rows.append(f'<w:p><w:pPr>{SP}</w:pPr><w:r>{C}<w:t xml:space="preserve">Row {i + 1} cell text</w:t></w:r>{note}</w:p>')
+seam_notes = [
+    para('First note text for the table.', ppr=SP, run_rpr=rpr('Calibri', 20)),
+    para('Second note text for the table.', ppr=SP, run_rpr=rpr('Calibri', 20)),
+]
+NORMAL_SP = spacing(after=160, line=259, rule='auto')
+body = (
+    para('Intro paragraph before the table.', ppr=SP, run_rpr=C)
+    + tbl(seam_rows, width=9360)
+    + para(None, ppr=NORMAL_SP)
+    + para(None, ppr=NORMAL_SP)
+    + para('Table of Contents', ppr=spacing(before=0, after=0, line=276, rule='auto'), run_rpr=rpr('Cambria', 28))
+)
+emit('geo-footnoted-table-tail-seam.docx', body, footnotes=footnotes_xml(seam_notes))
+
+
+# 8. TOC in a narrow text column (2160-twip side margins): the long entry title
+# fits one line at the editor's initial width and wraps once the section wrap
+# width lands, so the leader must be re-measured against the wrapped title
+def toc_entry(title, page, first=False):
+    begin = (
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        if first
+        else ''
+    )
+    return (
+        f'<w:p><w:pPr><w:pStyle w:val="TOC1"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="7900"/></w:tabs>{SP}</w:pPr>{begin}'
+        f'<w:hyperlink w:anchor="_Toc{page}" w:history="1"><w:r>{C}<w:t xml:space="preserve">{title}</w:t></w:r><w:r>{C}<w:tab/></w:r>'
+        f'<w:r>{C}<w:t>{page}</w:t></w:r></w:hyperlink></w:p>'
+    )
+
+
+TOC_STYLES = styles_xml(
+    doc_defaults('Calibri', 22),
+    '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/></w:style>',
+)
+toc_body = (
+    para('Contents', ppr=SP, run_rpr=rpr('Calibri', 28))
+    + toc_entry('Introduction', 1, first=True)
+    + toc_entry('Progress towards results for the reporting period (October to December and January to March)', 2)
+    + toc_entry('Variations between targets and achievements of expected results', 3)
+    + toc_entry('Annexes', 4)
+    + '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    + text(2)
+)
+NARROW = '<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="2160" w:bottom="1440" w:left="2160" w:header="720" w:footer="720" w:gutter="0"/>'
+write(os.path.join(HERE, 'geo-toc-narrow-column.docx'), toc_body, TOC_STYLES, SETTINGS, sect=NARROW)

@@ -178,6 +178,7 @@ export const ko = {
   appCtxSendToBack: '맨 뒤로 보내기',
   appCtxBringForward: '앞으로 가져오기',
   appCtxSendBackward: '뒤로 보내기',
+  appCtxRotate: '회전',
   appCtxRotateLeft90: '왼쪽으로 90° 회전',
   appCtxRotateRight90: '오른쪽으로 90° 회전',
   appCtxFlipH: '좌우 대칭',

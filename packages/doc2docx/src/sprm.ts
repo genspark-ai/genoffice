@@ -14,6 +14,9 @@ export const SPRM_LONG_PARAGRAPH = 0xc615
 export interface Sprm {
   opcode: number
   operand: Uint8Array
+  /** byte range of the whole sprm (opcode, length byte(s), operand) in its grpprl */
+  start: number
+  end: number
 }
 
 function badSprm(detail: string): never {
@@ -66,28 +69,45 @@ export function sprmOperandSize(grpprl: Uint8Array, offset: number): number {
 
 /** Decode a grpprl into sprms; a truncated opcode or operand is a 'bad_sprm' error. */
 export function iterateSprms(grpprl: Uint8Array): Sprm[] {
+  const read = iterateSprmsLenient(grpprl)
+  if (read.truncated !== undefined) badSprm(read.truncated)
+  return read.sprms
+}
+
+/** Like iterateSprms, but a truncated sprm ends the walk and is reported as `truncated`. */
+export function iterateSprmsLenient(grpprl: Uint8Array): { sprms: Sprm[]; truncated?: string } {
   const sprms: Sprm[] = []
   let offset = 0
   while (offset < grpprl.length) {
     if (offset + 2 > grpprl.length)
-      badSprm(
-        `the last ${grpprl.length - offset} byte(s) of a grpprl do not hold a 2-byte sprm opcode`,
-      )
+      return {
+        sprms,
+        truncated: `the last ${grpprl.length - offset} byte(s) of a grpprl do not hold a 2-byte sprm opcode`,
+      }
     const opcode = grpprl[offset]! | (grpprl[offset + 1]! << 8)
-    const size = sprmOperandSize(grpprl, offset)
+    let size: number
+    try {
+      size = sprmOperandSize(grpprl, offset)
+    } catch (error) {
+      if (!(error instanceof LegacyDocError)) throw error
+      return { sprms, truncated: error.message }
+    }
     const spra = (opcode >> 13) & 7
     const headerBytes = spra === 6 ? (isLongLengthOpcode(opcode) ? 4 : 3) : 2
     if (offset + headerBytes + size > grpprl.length)
-      badSprm(
-        `sprm 0x${opcode.toString(16)} needs ${size} operand byte(s) but the grpprl ends after ${grpprl.length - offset - headerBytes}`,
-      )
+      return {
+        sprms,
+        truncated: `sprm 0x${opcode.toString(16)} needs ${size} operand byte(s) but the grpprl ends after ${grpprl.length - offset - headerBytes}`,
+      }
     sprms.push({
       opcode,
       operand: grpprl.slice(offset + headerBytes, offset + headerBytes + size),
+      start: offset,
+      end: offset + headerBytes + size,
     })
     offset += headerBytes + size
   }
-  return sprms
+  return { sprms }
 }
 
 /** operand readers; undefined when the operand is too short for the field (unknown sprm) */

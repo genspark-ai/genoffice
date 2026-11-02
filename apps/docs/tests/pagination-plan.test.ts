@@ -305,6 +305,26 @@ describe('buildBlockPlan: P2 space before', () => {
     })
     expect(b.dropAtPageTop).toBe(false)
   })
+
+  it('legacy pageBreakBefore keeps the space before beyond the previous space after', () => {
+    const legacy = { ...PROPS, pageBreakBeforeKeepsSpace: true }
+    const pbb = (after: number) => [
+      para([text('a')], { spaceAfter: after }),
+      para([text('b')], { pageBreakBefore: true, spaceBefore: 400 }),
+    ]
+    expect(plansOf(pbb(200), legacy)[1].forcedLeadSpacePt).toBe(10)
+    expect(plansOf(pbb(400), legacy)[1].forcedLeadSpacePt).toBe(0)
+    expect(plansOf(pbb(0), legacy)[1].forcedLeadSpacePt).toBe(20)
+    expect(plansOf(pbb(200))[1].forcedLeadSpacePt).toBeUndefined()
+    expect(
+      plansOf([para([text('a')]), para([text('b')], { spaceBefore: 400 })], legacy)[1]
+        .forcedLeadSpacePt,
+    ).toBeUndefined()
+    expect(
+      plansOf([para([text('a')], { pageBreakBefore: true, spaceBefore: 400 })], legacy)[0]
+        .forcedLeadSpacePt,
+    ).toBeUndefined()
+  })
 })
 
 describe('buildBlockPlan: float geometry (tableGeom / anchorGeom / floatShift)', () => {

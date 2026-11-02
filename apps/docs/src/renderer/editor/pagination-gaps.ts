@@ -7,6 +7,17 @@ import type { RowFillPatch } from '../pagination-types'
 import { rangeSlot } from '../dom-range'
 import { additiveParagraphSpacing, autoLineMultOf } from '../line-metrics'
 import type { PlanOf } from '../pagination-plan'
+import {
+  flowOffsetAt,
+  learnGapFlowTops,
+  pagePaperEdges,
+  pageReaderShadow,
+  topPushAt,
+  type FlowCarry,
+  type GapLedgerEntry,
+  type PageCut,
+} from '../pagination-cuts'
+import { pageOfY as pageOfCut } from '../pagination-slices'
 import { TopLevelPositions } from './top-level-pos'
 import { appliedFloatShift, floatShiftTarget, layoutHealth, writeFloatShift } from './layout-health'
 
@@ -527,6 +538,78 @@ export const GAP_BAND = 28
 
 export type GapKind = 'block' | 'inline' | 'table' | 'cut' | 'cell'
 
+/**
+ * The one meaning of "page turn" on the canvas: a page-gap widget that opens a
+ * page (top-level, mid-paragraph, in-cell and in-table gaps, the latter also
+ * inside a split floating table). The float-carry spacers (`page-gap-carry`,
+ * `page-float-carry`) are flow space on the last portion's page, not a turn;
+ * zero-height `page-gap-cut` markers are boundaries without a band and are
+ * matched separately where a caller wants them.
+ */
+export const PAGE_TURN_SEL = '.page-gap:not(.page-gap-carry)'
+
+export function isPageTurn(el: Element): boolean {
+  return el.classList.contains('page-gap') && !el.classList.contains('page-gap-carry')
+}
+
+/** one read after setPageGaps: where the page-turn widgets landed, in flow px
+ *  from `origin` (the first page's content top on screen) */
+export function stampGapFlowTops(
+  pm: HTMLElement,
+  cuts: readonly PageCut[],
+  origin: number,
+  factor: number,
+): void {
+  const tops = Array.from(pm.querySelectorAll<HTMLElement>(PAGE_TURN_SEL)).map(
+    (el) => (el.getBoundingClientRect().top - origin) / factor,
+  )
+  if (!learnGapFlowTops(cuts, tops))
+    pageReaderShadow.report('gapCount', tops.length, cuts.filter((c) => c.gap).length)
+}
+
+/** gap builder output → PageCut gap facts (applyGapLedger); carry spacers have no page */
+export function gapLedgerOf(
+  gaps: readonly PageGapSpec[],
+  overlayPages: readonly number[],
+): GapLedgerEntry[] {
+  const out: GapLedgerEntry[] = []
+  for (const gap of gaps) {
+    if (gap.page === undefined || ('el' in gap && gap.carryPx !== undefined)) continue
+    const m = gap.metrics
+    const kind: GapKind = 'el' in gap ? 'block' : (gap.kind ?? 'inline')
+    const cut = kind === 'cut'
+    out.push({
+      page: gap.page,
+      kind,
+      heightPx: cut ? 0 : m.marginBottom + GAP_BAND + m.marginTop,
+      marginBottomPx: cut ? 0 : m.marginBottom,
+      marginTopPx: cut ? 0 : m.marginTop,
+      marginLeftPx: cut ? 0 : (m.sectionMarginLeft ?? m.marginLeft),
+      ...(!cut && m.sectionMarginTop !== undefined
+        ? { topPushPx: Math.max(0, m.marginTop - m.sectionMarginTop) }
+        : {}),
+      pullUpPx: cut || kind === 'table' ? 0 : (gap.pullUp ?? 0),
+      repeatHeaderPx: gap.repeatHeaderPx ?? 0,
+      ...(gap.floatGap ? { floatGap: true } : {}),
+      ...(m.pageLeft !== undefined && m.pageWidth !== undefined
+        ? { pageBox: { left: m.pageLeft, width: m.pageWidth } }
+        : {}),
+    })
+  }
+  for (const page of overlayPages)
+    out.push({
+      page,
+      kind: 'cut',
+      heightPx: 0,
+      marginBottomPx: 0,
+      marginTopPx: 0,
+      marginLeftPx: 0,
+      pullUpPx: 0,
+      repeatHeaderPx: 0,
+    })
+  return out
+}
+
 export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElement {
   const gap = document.createElement(kind === 'table' ? 'tr' : 'div')
   gap.contentEditable = 'false'
@@ -544,9 +627,6 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
   if (m.bodyPad) gap.dataset.bodyPad = m.bodyPad.toFixed(1)
   if (m.bodyHeight) gap.dataset.bodyHeight = m.bodyHeight.toFixed(1)
   gap.style.setProperty('--gap-mt', `${m.marginTop}px`)
-  // written even when zero: a page without a header push must clear the previous one
-  if (m.sectionMarginTop !== undefined)
-    gap.dataset.topPush = Math.max(0, m.marginTop - m.sectionMarginTop).toFixed(1)
   // the next page's own section side margins: a section whose margins differ from
   // the canvas' first section gets its header/footer strips placed on ITS text
   // column (alignGapHfStrips), not the cover's margin-less one. Every gap kind
@@ -605,12 +685,21 @@ export type PageGapSpec = {
   /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
    *  lead block's space-before, so a node decoration zeroes its margin-top */
   suppressLeadMt?: boolean
+  /** page forced by the lead's own break that keeps part of its space before:
+   *  a node decoration sets its margin-top to this (px) */
+  leadMtPx?: number
   /** mixed-column page above: pull the gap (and everything below) up over the
    *  vacated stacked-column space (negative margin-top, neutralized while measuring) */
   pullUp?: number
-  /** slice boundary (gapless flow px) this gap opens; syncFloatShifts prefers it
-   *  over the widget's DOM position (they differ at trailing float-spill pages) */
+  /** slice boundary (gapless flow px) this gap opens: part of the widget key,
+   *  so a reused widget never keeps a stale boundary */
   boundaryY?: number
+  /** index of the page this gap opens (gap ledger, applyGapLedger) */
+  page?: number
+  /** rendered height of the repeated header clones below a table gap */
+  repeatHeaderPx?: number
+  /** in-table gap of a split floating table: moves the float, not the flow */
+  floatGap?: true
   /** table gaps: the host table's real column count (the spanning cell's colSpan
    *  must not widen the column grid — see makeGapEl) */
   cols?: number
@@ -694,6 +783,17 @@ export function setPageGaps(
               { key: `page-lead-${ordinal}` },
             ),
           )
+        else if (gap.leadMtPx !== undefined) {
+          const mt = Math.round(gap.leadMtPx * 100) / 100
+          decos.push(
+            Decoration.node(
+              pos,
+              after,
+              { class: 'page-break-lead-trim', style: `--lead-mt: ${mt}px` },
+              { key: `page-lead-trim-${ordinal}-${mt}` },
+            ),
+          )
+        }
       } catch {
         continue
       }
@@ -706,7 +806,6 @@ export function setPageGaps(
     const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0},${Math.round(metrics.pageLeft ?? -1)}`
     const build = (as: GapKind) => {
       const el = makeGapEl(metrics, as, gap.cols)
-      if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
       // margins don't apply to table-rows and cuts are zero-height markers;
       // tables inside mixed-column regions are out of scope anyway (v1)
       if (gap.pullUp && as !== 'cut' && as !== 'table') el.style.marginTop = `-${gap.pullUp}px`
@@ -840,6 +939,8 @@ export interface PageBorderStyle {
   /** w:zOrder="back": paint behind the page text */
   zOrder?: 'back'
   sides: Partial<Record<PageBorderSideName, PageBorderSide>>
+  /** w:shadow on the sides: Word's Shadow setting, a drop shadow at the bottom-right */
+  boxShadow?: string
 }
 
 /** Two/three-line OOXML border styles: CSS `double` is the closest match. */
@@ -861,13 +962,28 @@ const DOUBLE_BORDER_VALS = new Set([
 const DASHED_BORDER_VALS = new Set(['dashed', 'dashSmallGap', 'dotDash', 'dotDotDash'])
 
 /** OOXML page-border line → CSS border shorthand. */
-function pageBorderLineCss(val: string, widthPt: number, color: string): string {
+export function pageBorderLineCss(
+  val: string,
+  widthPt: number,
+  color: string,
+  frame?: boolean,
+): string {
   const px = Math.max(1, Math.round((widthPt * 96) / 72))
   if (DASHED_BORDER_VALS.has(val)) return `${px}px dashed ${color}`
   if (val === 'dotted' || val === 'dotDashSlanted') return `${px}px dotted ${color}`
   // w:sz is the individual line width; CSS double splits the total, so widen it
   if (DOUBLE_BORDER_VALS.has(val)) return `${Math.max(3, px * 2)}px double ${color}`
+  if (val === 'threeDEmboss' || val === 'outset') return `${Math.max(3, px)}px outset ${color}`
+  if (val === 'threeDEngrave' || val === 'inset') return `${Math.max(3, px)}px inset ${color}`
+  // Word's 3-D setting bevels plain lines like a raised frame
+  if (frame) return `${Math.max(3, px)}px ridge ${color}`
   return `${px}px solid ${color}`
+}
+
+/** Word offsets the shadow by the line width, at least a couple of points. */
+export function pageBorderShadowCss(widthPt: number, color: string): string {
+  const px = Math.max(3, Math.round((widthPt * 96) / 72) * 2)
+  return `${px}px ${px}px 0 ${color}`
 }
 
 /**
@@ -1052,7 +1168,15 @@ interface PageBorderSection {
     sides?: Partial<
       Record<
         PageBorderSideName,
-        { val: string; widthPt: number; spacePt: number; color?: string; art?: true }
+        {
+          val: string
+          widthPt: number
+          spacePt: number
+          color?: string
+          art?: true
+          shadow?: true
+          frame?: true
+        }
       >
     >
   }
@@ -1083,8 +1207,9 @@ export function pageBorderStyleOf(section: PageBorderSection): PageBorderStyle |
     left: section.marginLeft,
   }
   const sides: PageBorderStyle['sides'] = {}
+  let boxShadow: string | undefined
   // legacy single-box fallback: pageBorder set without parse-side details
-  const fallback: { val: string; widthPt: number; spacePt: number; color?: string; art?: true } = {
+  const fallback: NonNullable<NonNullable<typeof p>['sides']>['top'] = {
     val: 'single',
     widthPt: p?.widthPt ?? 0.75,
     spacePt: p?.spacePt ?? 24,
@@ -1098,16 +1223,19 @@ export function pageBorderStyleOf(section: PageBorderSection): PageBorderStyle |
     if (line.art) {
       const color = line.color ? `#${line.color}` : undefined
       sides[name] = { ...pageBorderArtCss(name, line.val, line.widthPt, color), insetPx }
+      if (line.shadow) boxShadow ??= pageBorderShadowCss(line.widthPt / 4, color ?? '#000000')
       continue
     }
     // w:color absent/auto on a parsed side = automatic (black), never a sibling side's color
     const color = `#${line.color ?? '000000'}`
-    sides[name] = { css: pageBorderLineCss(line.val, line.widthPt, color), insetPx }
+    sides[name] = { css: pageBorderLineCss(line.val, line.widthPt, color, line.frame), insetPx }
+    if (line.shadow) boxShadow ??= pageBorderShadowCss(line.widthPt, color)
   }
   return {
     ...(p?.display ? { display: p.display } : {}),
     ...(p?.zOrder ? { zOrder: p.zOrder } : {}),
     sides,
+    ...(boxShadow ? { boxShadow } : {}),
   }
 }
 
@@ -1129,42 +1257,87 @@ export function pageFramesFromGaps(
   wrap: HTMLElement,
   zoomFactor: number,
   first?: { left: number; width: number },
+  cuts?: readonly PageCut[],
 ): PageFrame[] {
   const wr = wrap.getBoundingClientRect()
   const paper = wrap.querySelector<HTMLElement>('.doc-page')
   const paperRect = paper?.getBoundingClientRect()
   const paperX = paperRect ? (paperRect.left - wr.left) / zoomFactor : 0
   first ??= { left: 0, width: (paperRect?.width ?? wr.width) / zoomFactor }
+  type GapGeom = {
+    top: number
+    height: number
+    mb: number
+    mt: number
+    page: { left: number; width: number } | null
+  }
   // the carry spacer of a split floating table displaces the flow like a gap
   // but is no page turn (the table's own in-table gap at the same Y is)
-  const gaps = Array.from(
-    wrap.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-carry), .page-gap-cut'),
-  )
-    .map((g) => {
-      const r = g.getBoundingClientRect()
-      const cs = getComputedStyle(g)
-      const mb = parseFloat(cs.getPropertyValue('--gap-mb')) || 0
-      const mt = parseFloat(cs.getPropertyValue('--gap-mt')) || 0
-      const x = parseFloat(g.style.getPropertyValue('--gap-page-x'))
-      const w = parseFloat(g.style.getPropertyValue('--gap-page-w'))
-      return {
-        top: (r.top - wr.top) / zoomFactor,
-        height: r.height / zoomFactor,
-        mb,
-        mt,
-        page: Number.isFinite(x) && Number.isFinite(w) ? { left: x, width: w } : null,
-      }
-    })
-    .sort((a, b) => a.top - b.top)
-  const frames: PageFrame[] = []
-  let geom = first
-  let top = 0
-  for (const g of gaps) {
-    frames.push({ top, bottom: g.top + g.mb, left: paperX + geom.left, width: geom.width })
-    geom = g.page ?? geom
-    top = g.top + g.height - g.mt
+  const fromDom = (): GapGeom[] =>
+    Array.from(wrap.querySelectorAll<HTMLElement>(`${PAGE_TURN_SEL}, .page-gap-cut`))
+      .map((g) => {
+        const r = g.getBoundingClientRect()
+        const cs = getComputedStyle(g)
+        const mb = parseFloat(cs.getPropertyValue('--gap-mb')) || 0
+        const mt = parseFloat(cs.getPropertyValue('--gap-mt')) || 0
+        const x = parseFloat(g.style.getPropertyValue('--gap-page-x'))
+        const w = parseFloat(g.style.getPropertyValue('--gap-page-w'))
+        return {
+          top: (r.top - wr.top) / zoomFactor,
+          height: r.height / zoomFactor,
+          mb,
+          mt,
+          page: Number.isFinite(x) && Number.isFinite(w) ? { left: x, width: w } : null,
+        }
+      })
+      .sort((a, b) => a.top - b.top)
+  const pm = wrap.querySelector<HTMLElement>('.ProseMirror')
+  const fromCuts = (): GapGeom[] | null => {
+    if (!cuts || !pm) return null
+    const off = (pm.getBoundingClientRect().top - wr.top) / zoomFactor
+    const firstMt = parseFloat(getComputedStyle(pm).paddingTop) || 0
+    return pagePaperEdges(cuts, firstMt).map((e) => ({
+      top: off + e.gapTop,
+      height: e.gap.heightPx,
+      mb: e.gap.marginBottomPx,
+      mt: e.gap.marginTopPx,
+      page: e.gap.pageBox ?? null,
+    }))
   }
-  frames.push({ top, bottom: wr.height / zoomFactor, left: paperX + geom.left, width: geom.width })
+  const build = (gaps: GapGeom[]): PageFrame[] => {
+    const frames: PageFrame[] = []
+    let geom = first!
+    let top = 0
+    for (const g of gaps) {
+      frames.push({ top, bottom: g.top + g.mb, left: paperX + geom.left, width: geom.width })
+      geom = g.page ?? geom
+      top = g.top + g.height - g.mt
+    }
+    frames.push({
+      top,
+      bottom: wr.height / zoomFactor,
+      left: paperX + geom.left,
+      width: geom.width,
+    })
+    return frames
+  }
+  const cutGaps = fromCuts()
+  if (!cutGaps) return build(fromDom())
+  const frames = build(cutGaps)
+  if (pageReaderShadow.enabled) {
+    const dom = build(fromDom())
+    const off =
+      dom.length !== frames.length
+        ? `count ${dom.length} vs ${frames.length}`
+        : dom
+            .map((f, i) =>
+              Math.abs(f.top - frames[i].top) > 1 || Math.abs(f.bottom - frames[i].bottom) > 1
+                ? `frame ${i} ${f.top.toFixed(1)}-${f.bottom.toFixed(1)} vs ${frames[i].top.toFixed(1)}-${frames[i].bottom.toFixed(1)}`
+                : '',
+            )
+            .find(Boolean)
+    if (off) pageReaderShadow.report('pageFrames', dom.length, frames.length, off)
+  }
   return frames
 }
 
@@ -1179,6 +1352,7 @@ export function syncPageBorders(
   style: PageBorderStyle | null,
   zoomFactor: number,
   first?: { left: number; width: number },
+  cuts?: readonly PageCut[],
 ): void {
   let layer = wrap.querySelector(':scope > .page-border-overlays') as HTMLElement | null
   if (!style) {
@@ -1196,7 +1370,7 @@ export function syncPageBorders(
   layer.textContent = ''
   const { sides } = style
   let page = 0
-  for (const f of pageFramesFromGaps(wrap, zoomFactor, first)) {
+  for (const f of pageFramesFromGaps(wrap, zoomFactor, first, cuts)) {
     if (f.bottom - f.top <= 10) continue
     const pageIdx = page++
     if (style.display === 'firstPage' && pageIdx > 0) continue
@@ -1211,6 +1385,7 @@ export function syncPageBorders(
     el.style.left = `${f.left + insetLeft}px`
     el.style.width = `${f.width - insetLeft - insetRight}px`
     el.style.height = `${f.bottom - f.top - insetTop - insetBottom}px`
+    if (style.boxShadow) el.style.boxShadow = style.boxShadow
     for (const name of ['top', 'right', 'bottom', 'left'] as const) {
       const side = sides[name]
       if (!side) continue
@@ -1236,6 +1411,7 @@ export function syncPageSheets(
   wrap: HTMLElement,
   zoomFactor: number,
   first: { left: number; width: number } | null,
+  cuts?: readonly PageCut[],
 ): void {
   let layer = wrap.querySelector(':scope > .page-sheets') as HTMLElement | null
   if (!first) {
@@ -1248,7 +1424,7 @@ export function syncPageSheets(
     wrap.appendChild(layer)
   }
   layer.textContent = ''
-  for (const f of pageFramesFromGaps(wrap, zoomFactor, first)) {
+  for (const f of pageFramesFromGaps(wrap, zoomFactor, first, cuts)) {
     if (f.bottom - f.top <= 10) continue
     const el = document.createElement('div')
     el.className = 'page-sheet'
@@ -1353,54 +1529,78 @@ export function syncFloatShifts(
   origin: number,
   factor: number,
   firstPagePush = 0,
+  /** the pass's cuts and carry spacers; without them the gap widgets are walked */
+  layout?: { cuts: readonly PageCut[]; carries: readonly FlowCarry[] },
 ): void {
   if (floats.length === 0) return
-  const gaps: Array<{ v: number; h: number; push?: number }> = []
-  let acc = 0
+  type Place = { above: number; pageStart: number; pagePush: number; widgetTop?: number }
   // in-table gap rows / repeated-header clones displace the DOM below them just
   // like top-level gap widgets: a float anchored after a multi-page table would
-  // otherwise resolve one page too high (its virtual top already excludes them)
-  for (const el of Array.from(
-    pm.querySelectorAll<HTMLElement>('.page-gap, .page-float-host, .page-repeat-header'),
-  )) {
-    // gap rows inside a floating table grow only the float's own box
-    if (insideFloatTable(el)) continue
-    const r = el.getBoundingClientRect()
-    // true slice boundary when known: the widget can sit at the flow end
-    // while its boundary lies inside trailing float-spill space, which would
-    // otherwise pull every below-flow box of the same page onto the next one
-    const b = parseFloat(el.dataset.boundaryY ?? '')
-    gaps.push({
-      v: Number.isFinite(b) ? b : (r.top - origin - acc) / factor,
-      h: r.height,
-      // only page gaps know their page's header push; float hosts and repeated
-      // header rows sit at the same virtual Y and must not clear it
-      push: el.dataset.topPush === undefined ? undefined : parseFloat(el.dataset.topPush) || 0,
-    })
-    acc += r.height
+  // otherwise resolve one page too high (its virtual top already excludes them).
+  // Gap rows inside a floating table grow only the float's own box.
+  const domGaps = () => {
+    const gaps: Array<{ v: number; h: number }> = []
+    let acc = 0
+    for (const el of Array.from(
+      pm.querySelectorAll<HTMLElement>('.page-gap, .page-float-host, .page-repeat-header'),
+    )) {
+      if (insideFloatTable(el)) continue
+      const r = el.getBoundingClientRect()
+      gaps.push({ v: (r.top - origin - acc) / factor, h: r.height })
+      acc += r.height
+    }
+    return gaps
+  }
+  const gaps = !layout || pageReaderShadow.enabled ? domGaps() : null
+  // a box sitting exactly on a widget's top edge reads a hair below it once its
+  // rounded shift is subtracted
+  const fromDom = (ref: number, abs: boolean): Place => {
+    let above = 0
+    let pageStart = 0
+    for (const g of gaps!) {
+      if (g.v <= ref + 0.1) {
+        above += g.h
+        if (abs && g.v >= pageStart) pageStart = g.v
+      }
+    }
+    return { above, pageStart, pagePush: firstPagePush }
+  }
+  // the page starts at the slice boundary (the retired data-boundary-y); the
+  // widget itself lands at flowTopPx, which is what the DOM walk sees
+  const fromCuts = (ref: number, abs: boolean): Place => {
+    const { cuts, carries } = layout!
+    const p = cuts.length > 0 ? pageOfCut(cuts, ref, 0) : 0
+    const turn = abs && p > 0
+    return {
+      above: flowOffsetAt(cuts, carries, ref) * factor,
+      pageStart: turn ? cuts[p].start : 0,
+      widgetTop: turn ? (cuts[p].gap?.flowTopPx ?? cuts[p].start) : 0,
+      pagePush: abs ? (topPushAt(cuts, p) ?? firstPagePush) : firstPagePush,
+    }
   }
   // reads first: a style write between two getBoundingClientRect calls forces
   // a whole-document layout per float (thousands of anchored pictures hung
   // the renderer for minutes)
   const curTops = floats.map((f) => f.el.getBoundingClientRect().top)
   floats.forEach((f, i) => {
-    let above = 0
-    let pageStart = 0
-    let pagePush = firstPagePush
     // page-absolute V boxes render on their ANCHOR's page at the page-relative
     // Y (Word): pinned tops already are page coords, pageRelV tops carry the
     // anchor position. Flow-positioned boxes keep their virtual Y.
-    const abs = f.pinned || f.pageRelV
+    const abs = !!(f.pinned || f.pageRelV)
     const ref = abs ? (f.anchorTop ?? f.top) + 0.5 : f.top
-    for (const g of gaps) {
-      if (g.v <= ref) {
-        above += g.h
-        if (abs && g.v >= pageStart) {
-          pageStart = g.v
-          if (g.push !== undefined) pagePush = g.push
-        }
-      }
+    const place = layout ? fromCuts(ref, abs) : fromDom(ref, abs)
+    if (layout && gaps) {
+      const dom = fromDom(ref, abs)
+      const widgetTop = place.widgetTop ?? place.pageStart
+      if (Math.abs(dom.pageStart - widgetTop) >= 0.5 || Math.abs(dom.above - place.above) > 1)
+        pageReaderShadow.report(
+          'floatShift',
+          `${dom.pageStart.toFixed(1)}+${dom.above.toFixed(1)}`,
+          `${widgetTop.toFixed(1)}+${place.above.toFixed(1)}`,
+          `ref ${ref.toFixed(1)}`,
+        )
     }
+    const { above, pageStart, pagePush } = place
     // page-edge V offsets count from the pgMar top, not the header-pushed flow start
     const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) - (f.pageRelFromPage ? pagePush : 0) : f.top
     const desired = origin + (pageStart + rel) * factor + above
@@ -1686,7 +1886,69 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
  * stamp the owning page so the preview hides the ride-along copies.
  * Idempotent: the applied shift is subtracted before measuring.
  */
-export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
+/** screen-space paper top, top margin and section left margin of every page a
+ *  gap opens: from the pass's cuts, else from the page-turn widgets */
+export interface PaperTop {
+  top: number
+  mt: number
+  ml: number
+}
+
+export function paperTopsOf(
+  pm: HTMLElement,
+  factor: number,
+  cuts?: readonly PageCut[],
+): PaperTop[] {
+  const pmRect = pm.getBoundingClientRect()
+  const fromDom = (): PaperTop[] =>
+    Array.from(pm.querySelectorAll<HTMLElement>(PAGE_TURN_SEL)).map((el) => ({
+      top:
+        el.getBoundingClientRect().bottom -
+        (parseFloat(el.style.getPropertyValue('--gap-mt')) || 0) * factor,
+      mt: parseFloat(el.style.getPropertyValue('--gap-mt')) || 0,
+      ml: parseFloat(el.style.getPropertyValue('--gap-ml')) || 0,
+    }))
+  if (!cuts) return fromDom()
+  const firstMt = parseFloat(getComputedStyle(pm).paddingTop) || 0
+  const tops = pagePaperEdges(cuts, firstMt)
+    .filter((e) => e.gap.kind !== 'cut')
+    .map((e) => ({
+      top: pmRect.top + e.top * factor,
+      mt: e.gap.marginTopPx,
+      ml: e.gap.marginLeftPx,
+    }))
+  if (pageReaderShadow.enabled) {
+    const dom = fromDom()
+    const off =
+      dom.length !== tops.length
+        ? `count ${dom.length} vs ${tops.length}`
+        : dom
+            .map((d, i) =>
+              Math.abs(d.top - tops[i].top) > 1
+                ? `page ${i + 1} ${d.top.toFixed(1)} vs ${tops[i].top.toFixed(1)}`
+                : '',
+            )
+            .find(Boolean)
+    if (off) pageReaderShadow.report('paperTops', dom.length, tops.length, off)
+  }
+  return tops
+}
+
+/** index into `pages` of the page whose paper holds screen y (-1 = first page) */
+function paperPageAt(pages: readonly PaperTop[], y: number): number {
+  let page = -1
+  for (const g of pages) {
+    if (g.top > y + 0.5) break
+    page++
+  }
+  return page
+}
+
+export function pinCellBoxesToPage(
+  pm: HTMLElement,
+  factor: number,
+  cuts?: readonly PageCut[],
+): void {
   const boxes = Array.from(
     pm.querySelectorAll<HTMLElement>('.doc-cell-boxes-page > .doc-textbox[data-cell-page]'),
   )
@@ -1695,14 +1957,7 @@ export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
   const pmCs = getComputedStyle(pm)
   const firstMt = parseFloat(pmCs.paddingTop) || 0
   const firstMl = parseFloat(pmCs.paddingLeft) || 0
-  // page boundaries: a gap's bottom edge minus its top margin is the next paper top
-  const pages = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))
-    .filter((el) => !insideFloatTable(el))
-    .map((el) => ({
-      bottom: el.getBoundingClientRect().bottom,
-      mt: parseFloat(el.style.getPropertyValue('--gap-mt')) || 0,
-      ml: parseFloat(el.style.getPropertyValue('--gap-ml')) || 0,
-    }))
+  const pages = paperTopsOf(pm, factor, cuts)
   // a narrower section's page is centered on the shared paper: its blocks carry
   // the page's left edge as --page-cx (column-layout), which the target must add
   const pageLeftOf = (box: HTMLElement): number => {
@@ -1718,17 +1973,11 @@ export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
     const appliedY = parseFloat(box.dataset.cellPageDy ?? '') || 0
     const naturalTop = r.top - appliedY * factor
     const naturalLeft = r.left - appliedX * factor
-    let paperTop = pmRect.top
-    let mt = firstMt
-    let ml = firstMl
-    let page = 0
-    for (const g of pages) {
-      if (g.bottom - g.mt * factor > naturalTop + 0.5) break
-      paperTop = g.bottom - g.mt * factor
-      mt = g.mt
-      ml = g.ml
-      page++
-    }
+    const idx = paperPageAt(pages, naturalTop)
+    const page = idx + 1
+    const paperTop = idx < 0 ? pmRect.top : pages[idx].top
+    const mt = idx < 0 ? firstMt : pages[idx].mt
+    const ml = idx < 0 ? firstMl : pages[idx].ml
     const offX = parseFloat(box.dataset.cellPageX ?? '') || 0
     const offY = parseFloat(box.dataset.cellPageY ?? '') || 0
     const fromPage = box.dataset.pageRelFrom === 'page'
@@ -1760,7 +2009,11 @@ export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
  * the inline transform; preview clones ignore it and keep the column maths).
  * Idempotent: the applied undo is added back before measuring.
  */
-export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
+export function pinPageRelXPictures(
+  pm: HTMLElement,
+  factor: number,
+  cuts?: readonly PageCut[],
+): void {
   const imgs = Array.from(
     pm.querySelectorAll<HTMLElement>(
       '.doc-anchor-origin .doc-inline-img-anchor > img[data-page-rel-x]',
@@ -1770,13 +2023,7 @@ export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
   const pmRect = pm.getBoundingClientRect()
   const pmCs = getComputedStyle(pm)
   const firstMl = parseFloat(pmCs.paddingLeft) || 0
-  const pages = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))
-    .filter((el) => !insideFloatTable(el))
-    .map((el) => ({
-      bottom: el.getBoundingClientRect().bottom,
-      mt: parseFloat(el.style.getPropertyValue('--gap-mt')) || 0,
-      ml: parseFloat(el.style.getPropertyValue('--gap-ml')) || 0,
-    }))
+  const pages = paperTopsOf(pm, factor, cuts)
   const pageLeftOf = (img: HTMLElement): number => {
     let block: HTMLElement | null = img
     while (block && block.parentElement !== pm) block = block.parentElement
@@ -1790,11 +2037,8 @@ export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
   imgs.forEach((img, i) => {
     const m = measured[i]
     if (m.height <= 0) return
-    let ml = firstMl
-    for (const g of pages) {
-      if (g.bottom - g.mt * factor > m.top + 0.5) break
-      ml = g.ml
-    }
+    const idx = paperPageAt(pages, m.top)
+    const ml = idx < 0 ? firstMl : pages[idx].ml
     const offX = parseFloat(img.dataset.pageRelXPx ?? '') || 0
     const fromPaperEdge = img.dataset.pageRelXFrom === 'page'
     const targetLeft = pmRect.left + (m.pageLeft + (fromPaperEdge ? offX : ml + offX)) * factor

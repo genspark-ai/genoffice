@@ -169,6 +169,7 @@ export const zh = {
   appCtxSendToBack: '置于底层',
   appCtxBringForward: '上移一层',
   appCtxSendBackward: '下移一层',
+  appCtxRotate: '旋转',
   appCtxRotateLeft90: '向左旋转 90°',
   appCtxRotateRight90: '向右旋转 90°',
   appCtxFlipH: '水平翻转',

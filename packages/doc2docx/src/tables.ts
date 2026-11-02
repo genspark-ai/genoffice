@@ -13,31 +13,46 @@
  * resolved from the CHPX runs by CP, cell paragraph formatting stays plain
  * (with a warning when the PAPX carries explicit paragraph properties).
  * Nested tables are detected and reported, but only single-level tables are
- * reconstructed. Malformed TAP/TDefTable data raises 'bad_table'.
+ * reconstructed. Malformed TAP/TDefTable data degrades: the affected row (or,
+ * when the grid cannot be built, the whole table) is imported as plain
+ * paragraphs and the problem is reported in `warnings`.
  */
-import { LegacyDocError, isLegacyDocError } from './errors'
 import {
   applyParagraphGrpprl,
   cpOfFc,
+  expandHugePapx,
   readFormattingDetailed,
   type FormattingRead,
   type FormattedParagraph,
   type FormattingSource,
+  type NoteMark,
+  type ParagraphContext,
   type ParagraphFormatting,
 } from './formatting'
 import { readPapxFkp } from './fkp'
+import type { LegacyDocNotes } from './notes'
 import { parsePlcBte } from './plcf'
 import {
+  commentMarksWithin,
+  fieldRangesWithin,
+  noteMarksWithin,
+  markFormattingEntry,
+  readStyleSheet,
   resolveParagraphFormattingFor,
+  resolveParagraphMarkFormatting,
   resolveRunsForRange,
+  type CommentMarkAt,
   type FormattedLinkRange,
   type ParagraphRunRequest,
 } from './resolve'
-import { iterateSprms, readSprmI16, readSprmU16, readSprmU8, type Sprm } from './sprm'
-import type { FieldParseResult } from './fields'
+import type { LegacyComment } from './comments'
+import { iterateSprmsLenient, readSprmI16, readSprmU16, readSprmU8 } from './sprm'
+import type { FieldParseResult, SimpleField } from './fields'
 import type { ImageBlock } from './images'
-import { isBulletLevel, type ListTables } from './lists'
-import { parseStsh, type StyleSheet } from './styles'
+import type { FloatingShape } from './drawings'
+import { isBulletLevel, resolveListLevel, type ListTables } from './lists'
+import type { StyleSheet } from './styles'
+import { COLOR_BY_INDEX } from './formatting'
 import { mapWordControlChars } from './text'
 
 /* TAP sprm operations (opcode & 0x1FF; sgc 5) */
@@ -45,11 +60,16 @@ const SPRM_T_JC = 0x00
 const SPRM_T_CANT_SPLIT = 0x03
 const SPRM_T_TABLE_HEADER = 0x04
 const SPRM_T_TABLE_BORDERS = 0x05
+/** sprmTTableBorders (Word 2003+): six 8-byte Brc */
+const SPRM_T_TABLE_BORDERS_WIDE = 0x13
+/** sprmTSetBrc80 / sprmTSetBrc: itcFirst, itcLim, grfbrc, then a Brc80 / Brc */
+const SPRM_T_SET_BRC80 = 0x20
+const SPRM_T_SET_BRC = 0x2f
 const SPRM_T_DYA_ROW_HEIGHT = 0x07
 const SPRM_T_TDEF_TABLE = 0x08
 const SPRM_T_CELL_PADDING = 0x34
 /** LibreOffice's table/cell border variants: 0xD612 / 0xD62F / 0xD670 */
-const SPRM_T_BORDER_VARIANTS = new Set([0x12, 0x2f, 0x70])
+const SPRM_T_BORDER_VARIANTS = new Set([0x12, 0x70])
 /** sprmPItap: table nesting level stored in the paragraph PAPX */
 const SPRM_P_ITAP = 0x6649
 /** TC rgf merge bits (TCAbstractType): fMerged marks continuation cells */
@@ -76,6 +96,18 @@ export interface TableBorders {
   insideVertical: boolean
 }
 
+/** one border line as OOXML writes it (w:val / w:sz in eighths of a point / w:color) */
+export interface BorderLine {
+  style: string
+  widthEighths: number
+  color?: string
+}
+
+export type BorderSide = keyof TableBorders
+
+/** the per-side line styles behind a TableBorders / CellBorders set (absent side = default single line) */
+export type BorderStyles = Partial<Record<BorderSide, BorderLine>>
+
 export interface TableCellPadding {
   top?: number
   left?: number
@@ -92,8 +124,13 @@ export interface TableCell {
   verticalMerge?: 'restart' | 'continue'
   /** visible borders of this cell (undefined when the TC carries none) */
   borders?: CellBorders
+  borderStyles?: BorderStyles
   /** cell content; always at least one (possibly empty) paragraph */
   paragraphs: FormattedParagraph[]
+  /** list membership of the cell paragraphs, by paragraph index */
+  paragraphLists?: Map<number, ParagraphListInfo>
+  /** pictures anchored in the cell paragraphs, by paragraph index */
+  paragraphPictures?: Map<number, ParagraphPictures>
 }
 
 export interface TableRow {
@@ -113,8 +150,10 @@ export interface TableModel {
   gridWidths: number[]
   rows: TableRow[]
   alignment?: 'left' | 'center' | 'right'
-  /** visible table borders; any visible border is written as a single-line set */
+  /** visible table borders */
   borders: TableBorders
+  /** line styles of the visible borders (sprmTTableBorders); sides without one are single 0.5pt */
+  borderStyles?: BorderStyles
   cellPadding?: TableCellPadding
   warnings: string[]
 }
@@ -126,10 +165,28 @@ export interface ParagraphListInfo {
   ilvl: number
 }
 
+/** Pictures anchored inside a paragraph: floating shapes and inline pictures mixed with text. */
+export interface ParagraphPictures {
+  floating?: FloatingShape[]
+  /** inline pictures that share the paragraph with text; written at its start or end */
+  inline?: Array<{ image: ImageBlock; position: 'start' | 'end' }>
+}
+
 export type BodyBlock =
-  | { type: 'paragraph'; paragraph: FormattedParagraph; list?: ParagraphListInfo }
+  | {
+      type: 'paragraph'
+      paragraph: FormattedParagraph
+      list?: ParagraphListInfo
+      pictures?: ParagraphPictures
+    }
   | { type: 'table'; table: TableModel }
-  | { type: 'image'; image: ImageBlock }
+  | {
+      type: 'image'
+      image: ImageBlock
+      /** the picture's own paragraph (alignment, spacing, indents) */
+      paragraph?: FormattedParagraph
+      list?: ParagraphListInfo
+    }
 
 /** The reconstructed body: paragraphs, tables and pictures in CP (document) order. */
 export interface LegacyDocBody {
@@ -137,6 +194,10 @@ export interface LegacyDocBody {
   warnings: string[]
   /** list definitions/overrides the numbered paragraphs refer to (stage 3c-4) */
   lists?: ListTables
+  /** footnotes/endnotes referenced from the body (notes.ts) */
+  notes?: LegacyDocNotes
+  /** comments anchored in the body (their marks sit in the paragraph runs) */
+  comments?: LegacyComment[]
 }
 
 /** One raw unit of the body text; markers keep their CP so formatting can be sliced. */
@@ -152,6 +213,7 @@ interface TapTableCell {
   rgf: number
   wWidth: number
   borders: CellBorders
+  borderStyles: BorderStyles
 }
 
 interface TapTableDefinition {
@@ -168,11 +230,15 @@ interface TapProperties {
   heightTwips?: number
   heightExact?: boolean
   borders: TableBorders
+  borderStyles: BorderStyles
   cellPadding?: TableCellPadding
 }
 
+/** a structural problem of one row or table; the caller falls back to paragraphs */
+class TableProblem extends Error {}
+
 function badTable(detail: string): never {
-  throw new LegacyDocError('bad_table', detail)
+  throw new TableProblem(detail)
 }
 
 function u16At(bytes: Uint8Array, offset: number): number {
@@ -187,6 +253,88 @@ function i16At(bytes: Uint8Array, offset: number): number {
 function visibleBorderCode(border: Uint8Array, offset: number): boolean {
   const brcType = border[offset + 1]
   return brcType !== undefined && brcType !== 0 && brcType <= 0x1b
+}
+
+/** MS-DOC brcType -> OOXML ST_Border */
+const BORDER_STYLES: Record<number, string> = {
+  1: 'single',
+  2: 'thick',
+  3: 'double',
+  5: 'hairline',
+  6: 'dotted',
+  7: 'dashed',
+  8: 'dotDash',
+  9: 'dotDotDash',
+  10: 'triple',
+  11: 'thinThickSmallGap',
+  12: 'thickThinSmallGap',
+  13: 'thinThickThinSmallGap',
+  14: 'thinThickMediumGap',
+  15: 'thickThinMediumGap',
+  16: 'thinThickThinMediumGap',
+  17: 'thinThickLargeGap',
+  18: 'thickThinLargeGap',
+  19: 'thinThickThinLargeGap',
+  20: 'wave',
+  21: 'doubleWave',
+  22: 'dashSmallGap',
+  23: 'dashDotStroked',
+  24: 'threeDEmboss',
+  25: 'threeDEngrave',
+  26: 'outset',
+  27: 'inset',
+}
+
+/** a Brc80 (4 bytes: width, type, ico, space) or Brc (8 bytes: cv, width, type, space); undefined = no line */
+function borderLineAt(bytes: Uint8Array, offset: number, wide: boolean): BorderLine | undefined {
+  if (offset + (wide ? 8 : 4) > bytes.length) return undefined
+  const base = wide ? offset + 4 : offset
+  const widthEighths = bytes[base]!
+  const brcType = bytes[base + 1]!
+  if (brcType === 0 || brcType === 0xff) return undefined
+  // Word 6 "thick" (type 2) draws the line at twice the stored width
+  const width = brcType === 2 ? widthEighths * 2 : widthEighths
+  const style = BORDER_STYLES[brcType] ?? 'single'
+  let color: string | undefined
+  if (wide) {
+    if (bytes[offset + 3] !== 0xff)
+      color = [bytes[offset]!, bytes[offset + 1]!, bytes[offset + 2]!]
+        .map((channel) => channel.toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase()
+  } else color = COLOR_BY_INDEX[bytes[base + 2]!]
+  return {
+    style,
+    widthEighths: width > 0 ? width : 4,
+    ...(color !== undefined && color !== 'auto' ? { color } : {}),
+  }
+}
+
+const TABLE_BORDER_SIDES: BorderSide[] = [
+  'top',
+  'left',
+  'bottom',
+  'right',
+  'insideHorizontal',
+  'insideVertical',
+]
+
+function tableBorderSet(
+  operand: Uint8Array,
+  wide: boolean,
+): {
+  borders: TableBorders
+  styles: BorderStyles
+} {
+  const borders = emptyBorders()
+  const styles: BorderStyles = {}
+  TABLE_BORDER_SIDES.forEach((side, index) => {
+    const line = borderLineAt(operand, index * (wide ? 8 : 4), wide)
+    if (!line) return
+    borders[side] = true
+    styles[side] = line
+  })
+  return { borders, styles }
 }
 
 function emptyBorders(): TableBorders {
@@ -225,16 +373,16 @@ function parseTDefTable(operand: Uint8Array, rowIndex: number): TapTableDefiniti
   const itcMac = operand[0]!
   if (itcMac < 1 || itcMac > MAX_GRID_COLUMNS)
     badTable('the TDefTable of row ' + rowIndex + ' declares ' + itcMac + ' cells')
-  const required = 1 + (itcMac + 1) * 2 + itcMac * TC_BYTES
-  if (operand.length < required)
+  const tcStart = 1 + (itcMac + 1) * 2
+  if (operand.length < tcStart)
     badTable(
       'the TDefTable of row ' +
         rowIndex +
         ' needs ' +
-        required +
+        tcStart +
         ' bytes for ' +
         itcMac +
-        ' cells but has ' +
+        ' cell boundaries but has ' +
         operand.length,
     )
   const centers: number[] = []
@@ -252,9 +400,18 @@ function parseTDefTable(operand: Uint8Array, rowIndex: number): TapTableDefiniti
       )
   }
   const cells: TapTableCell[] = []
-  const tcStart = 1 + (itcMac + 1) * 2
   for (let index = 0; index < itcMac; index++) {
     const base = tcStart + index * TC_BYTES
+    // Word writes rows whose rgTc80 is truncated or absent; the missing cells take default TC80s
+    if (base + TC_BYTES > operand.length) {
+      cells.push({
+        rgf: 0,
+        wWidth: 0,
+        borders: { top: false, left: false, bottom: false, right: false },
+        borderStyles: {},
+      })
+      continue
+    }
     const rgf = u16At(operand, base)
     const borders: CellBorders = {
       top: visibleBorderCode(operand, base + 4),
@@ -262,22 +419,33 @@ function parseTDefTable(operand: Uint8Array, rowIndex: number): TapTableDefiniti
       bottom: visibleBorderCode(operand, base + 12),
       right: visibleBorderCode(operand, base + 16),
     }
-    cells.push({ rgf, wWidth: u16At(operand, base + 2), borders })
+    const borderStyles: BorderStyles = {}
+    ;(['top', 'left', 'bottom', 'right'] as const).forEach((side, sideIndex) => {
+      const line = borderLineAt(operand, base + 4 + sideIndex * 4, false)
+      if (line && borders[side]) borderStyles[side] = line
+    })
+    cells.push({ rgf, wWidth: u16At(operand, base + 2), borders, borderStyles })
   }
   return { centers, cells }
 }
 
-function parseTap(grpprl: Uint8Array, rowIndex: number): TapProperties {
-  const properties: TapProperties = { cantSplit: false, header: false, borders: emptyBorders() }
-  let sprms: Sprm[]
-  try {
-    sprms = iterateSprms(grpprl)
-  } catch (error) {
-    if (isLegacyDocError(error))
-      badTable('the TAP of row ' + rowIndex + ' is invalid: ' + error.message)
-    throw error
+function parseTap(grpprl: Uint8Array, rowIndex: number, warnings: string[]): TapProperties {
+  const properties: TapProperties = {
+    cantSplit: false,
+    header: false,
+    borders: emptyBorders(),
+    borderStyles: {},
   }
-  for (const sprm of sprms) {
+  const read = iterateSprmsLenient(grpprl)
+  if (read.truncated !== undefined)
+    warnings.push(
+      'the table properties of row ' +
+        rowIndex +
+        ' are truncated (' +
+        read.truncated +
+        '); the properties after that point were ignored',
+    )
+  for (const sprm of read.sprms) {
     const operation = sprm.opcode & 0x1ff
     switch (operation) {
       case SPRM_T_JC: {
@@ -293,16 +461,36 @@ function parseTap(grpprl: Uint8Array, rowIndex: number): TapProperties {
       case SPRM_T_TABLE_HEADER:
         properties.header = toggleOperand(readSprmU8(sprm.operand), properties.header)
         break
-      case SPRM_T_TABLE_BORDERS: {
-        if (sprm.operand.length < 24)
-          badTable('the table borders of row ' + rowIndex + ' are truncated')
-        properties.borders = {
-          top: visibleBorderCode(sprm.operand, 0),
-          left: visibleBorderCode(sprm.operand, 4),
-          bottom: visibleBorderCode(sprm.operand, 8),
-          right: visibleBorderCode(sprm.operand, 12),
-          insideHorizontal: visibleBorderCode(sprm.operand, 16),
-          insideVertical: visibleBorderCode(sprm.operand, 20),
+      case SPRM_T_TABLE_BORDERS:
+      case SPRM_T_TABLE_BORDERS_WIDE: {
+        const wide = operation === SPRM_T_TABLE_BORDERS_WIDE
+        if (sprm.operand.length < (wide ? 48 : 24)) {
+          warnings.push('the table borders of row ' + rowIndex + ' are truncated and were ignored')
+          break
+        }
+        const set = tableBorderSet(sprm.operand, wide)
+        properties.borders = set.borders
+        properties.borderStyles = set.styles
+        break
+      }
+      case SPRM_T_SET_BRC80:
+      case SPRM_T_SET_BRC: {
+        // per-cell border override: itcFirst, itcLim, grfbrc (bit 0 top, 1 left, 2 bottom, 3 right), Brc
+        const wide = operation === SPRM_T_SET_BRC
+        if (sprm.operand.length < 3 + (wide ? 8 : 4) || !properties.table) break
+        const itcFirst = sprm.operand[0]!
+        const itcLim = sprm.operand[1]!
+        const grfbrc = sprm.operand[2]!
+        const line = borderLineAt(sprm.operand, 3, wide)
+        for (let itc = itcFirst; itc < itcLim; itc++) {
+          const cell = properties.table.cells[itc]
+          if (!cell) continue
+          ;(['top', 'left', 'bottom', 'right'] as const).forEach((side, sideIndex) => {
+            if (!(grfbrc & (1 << sideIndex))) return
+            cell.borders[side] = line !== undefined
+            if (line) cell.borderStyles[side] = line
+            else delete cell.borderStyles[side]
+          })
         }
         break
       }
@@ -318,8 +506,10 @@ function parseTap(grpprl: Uint8Array, rowIndex: number): TapProperties {
         properties.table = parseTDefTable(sprm.operand, rowIndex)
         break
       case SPRM_T_CELL_PADDING: {
-        if (sprm.operand.length < 6)
-          badTable('the cell padding of row ' + rowIndex + ' is truncated')
+        if (sprm.operand.length < 6) {
+          warnings.push('the cell padding of row ' + rowIndex + ' is truncated and was ignored')
+          break
+        }
         const grfbrc = sprm.operand[2]!
         const ftsWidth = sprm.operand[3]!
         const width = u16At(sprm.operand, 4)
@@ -386,14 +576,18 @@ interface UnitPapx {
   sprms: Uint8Array
 }
 
-function collectUnitPapx(source: FormattingSource): Map<number, UnitPapx> {
+function collectUnitPapx(source: FormattingSource, warnings: string[]): Map<number, UnitPapx> {
   const byCp = new Map<number, UnitPapx>()
+  const context: ParagraphContext = { source, warnings }
   const plc = parsePlcBte(source.table, source.fib.fcPlcfbtePapx, source.fib.lcbPlcfbtePapx)
   for (const page of plc.pages) {
     for (const entry of readPapxFkp(source.wordDocument, page)) {
       const resolved = cpOfFc(source.pieces, entry.fcStart)
       if (resolved === 'outside' || resolved === 'unaligned') continue
-      byCp.set(resolved.cp, { istd: entry.istd, sprms: entry.defaults ? EMPTY : entry.grpprl })
+      byCp.set(resolved.cp, {
+        istd: entry.istd,
+        sprms: entry.defaults ? EMPTY : expandHugePapx(entry.grpprl, context),
+      })
     }
   }
   return byCp
@@ -403,7 +597,7 @@ function collectUnitPapx(source: FormattingSource): Map<number, UnitPapx> {
 function itapOf(papx: Map<number, UnitPapx>, cp: number): number {
   const entry = papx.get(cp)
   if (!entry) return 1
-  for (const sprm of iterateSprms(entry.sprms))
+  for (const sprm of iterateSprmsLenient(entry.sprms).sprms)
     if (sprm.opcode === SPRM_P_ITAP) {
       if (sprm.operand.length >= 4)
         return (
@@ -420,19 +614,21 @@ function itapOf(papx: Map<number, UnitPapx>, cp: number): number {
 }
 
 /** paragraph-formatting keys that are structure, not explicit formatting */
-const STRUCTURAL_PARAGRAPH_KEYS = new Set(['styleIndex', 'inTable', 'tableRowEnd'])
-
-function hasExplicitParagraphFormatting(formatting: ParagraphFormatting): boolean {
-  return Object.keys(formatting).some((key) => !STRUCTURAL_PARAGRAPH_KEYS.has(key))
-}
-
 interface RawCell {
   units: BodyUnit[]
   definition: TapTableCell
 }
 
+interface RawRow {
+  rowEnd: BodyUnit
+  cells: RawCell[]
+  tap: TapProperties
+  /** every body unit of the row, for the plain-paragraph fallback */
+  units: BodyUnit[]
+}
+
 interface RawTable {
-  rows: Array<{ rowEnd: BodyUnit; cells: RawCell[]; tap: TapProperties }>
+  rows: RawRow[]
 }
 
 function buildCellParagraph(
@@ -442,6 +638,9 @@ function buildCellParagraph(
   styles: StyleSheet | undefined,
   papx: Map<number, UnitPapx>,
   warnings: string[],
+  fields: SimpleField[] = [],
+  noteMarks: NoteMark[] = [],
+  commentMarks: CommentMarkAt[] = [],
 ): FormattedParagraph {
   const entry = papx.get(unit.startCp)
   const request: ParagraphRunRequest = {
@@ -450,13 +649,27 @@ function buildCellParagraph(
     styleIstd: entry?.istd ?? 0,
     papxSprms: entry?.sprms ?? EMPTY,
   }
-  const runs = resolveRunsForRange(read, source, styles, request, warnings)
+  const runs = resolveRunsForRange(
+    read,
+    source,
+    styles,
+    request,
+    warnings,
+    [],
+    fieldRangesWithin(fields, unit.startCp, unit.endCp),
+    noteMarksWithin(noteMarks, unit.startCp, unit.endCp),
+    commentMarksWithin(commentMarks, unit.startCp, unit.endCp),
+  )
   const text = mapWordControlChars(source.rawText.slice(unit.startCp, unit.endCp))
-  // cell paragraph formatting is plain: report explicit PAPX properties once
-  const explicit = resolveParagraphFormattingFor(source, styles, request, [])
-  if (hasExplicitParagraphFormatting(explicit))
-    warnings.push('table cell paragraph formatting is flattened to plain paragraphs')
-  return { startCp: unit.startCp, endCp: unit.endCp, text, formatting: {}, runs }
+  const formatting = resolveParagraphFormattingFor(source, styles, request, warnings)
+  return {
+    startCp: unit.startCp,
+    endCp: unit.endCp,
+    text,
+    formatting,
+    runs,
+    ...markFormattingEntry(resolveParagraphMarkFormatting(read, source, styles, request, warnings)),
+  }
 }
 
 function buildTable(
@@ -465,6 +678,11 @@ function buildTable(
   read: FormattingRead,
   styles: StyleSheet | undefined,
   papx: Map<number, UnitPapx>,
+  listInfoFor: (formatting: ParagraphFormatting) => ParagraphListInfo | undefined = () => undefined,
+  picturesFor: (unit: BodyUnit) => ParagraphPictures | undefined = () => undefined,
+  fields: SimpleField[] = [],
+  noteMarks: NoteMark[] = [],
+  commentMarks: CommentMarkAt[] = [],
 ): TableModel {
   const tableWarnings: string[] = []
   // normalize each row's boundaries to its first cell boundary (the table's left edge)
@@ -524,6 +742,7 @@ function buildTable(
         .slice(startIndex, endIndex)
         .reduce((sum, width) => sum + width, 0)
       const borders = rawCell.definition.borders
+      const cellStyles = rawCell.definition.borderStyles
       if (borders.top || borders.left || borders.bottom || borders.right) {
         tableBorders.top ||= borders.top
         tableBorders.left ||= borders.left
@@ -533,15 +752,40 @@ function buildTable(
         tableBorders.insideVertical ||= borders.left || borders.right
       }
       const paragraphs = rawCell.units.map((unit) =>
-        buildCellParagraph(unit, source, read, styles, papx, tableWarnings),
+        buildCellParagraph(
+          unit,
+          source,
+          read,
+          styles,
+          papx,
+          tableWarnings,
+          fields,
+          noteMarks,
+          commentMarks,
+        ),
       )
+      const paragraphLists = new Map<number, ParagraphListInfo>()
+      const paragraphPictures = new Map<number, ParagraphPictures>()
+      paragraphs.forEach((paragraph, paragraphIndex) => {
+        const list = listInfoFor(paragraph.formatting)
+        if (list) paragraphLists.set(paragraphIndex, list)
+        const pictures = picturesFor(rawCell.units[paragraphIndex]!)
+        if (pictures) paragraphPictures.set(paragraphIndex, pictures)
+      })
       cells.push({
         gridSpan,
         widthTwips,
-        ...(rgf & TC_VERT_RESTART ? { verticalMerge: 'restart' as const } : {}),
-        ...(rgf & TC_VERT_MERGE ? { verticalMerge: 'continue' as const } : {}),
-        ...(borders.top || borders.left || borders.bottom || borders.right ? { borders } : {}),
+        ...(rgf & TC_VERT_RESTART
+          ? { verticalMerge: 'restart' as const }
+          : rgf & TC_VERT_MERGE
+            ? { verticalMerge: 'continue' as const }
+            : {}),
+        ...(borders.top || borders.left || borders.bottom || borders.right
+          ? { borders, ...(Object.keys(cellStyles).length > 0 ? { borderStyles: cellStyles } : {}) }
+          : {}),
         paragraphs,
+        ...(paragraphLists.size > 0 ? { paragraphLists } : {}),
+        ...(paragraphPictures.size > 0 ? { paragraphPictures } : {}),
       })
       index = last + 1
     }
@@ -562,11 +806,14 @@ function buildTable(
   })
   const alignment = raw.rows.find((row) => row.tap.alignment !== undefined)?.tap.alignment
   const cellPadding = raw.rows.find((row) => row.tap.cellPadding !== undefined)?.tap.cellPadding
+  const borderStyles = raw.rows.find((row) => Object.keys(row.tap.borderStyles).length > 0)?.tap
+    .borderStyles
   return {
     gridWidths,
     rows,
     ...(alignment ? { alignment } : {}),
     borders: tableBorders,
+    ...(borderStyles ? { borderStyles } : {}),
     ...(cellPadding ? { cellPadding } : {}),
     warnings: [...new Set(tableWarnings)],
   }
@@ -586,13 +833,18 @@ export function buildLegacyDocBody(
     images?: ImageBlock[]
     lists?: ListTables
     fields?: FieldParseResult
+    /** floating pictures of the body story (drawings.ts) */
+    drawings?: FloatingShape[]
+    /** footnote/endnote reference marks in the body (notes.ts) */
+    noteMarks?: NoteMark[]
+    comments?: LegacyComment[]
   } = {},
 ): LegacyDocBody {
   const warnings: string[] = []
   const detailed = read ?? readFormattingDetailed(source, warnings)
   const units = bodyUnits(source.rawText)
-  const papx = collectUnitPapx(source)
-  const context = { source, warnings }
+  const papx = collectUnitPapx(source, warnings)
+  const context: ParagraphContext = { source, warnings }
   // classify the \x07 markers: an empty marker after a cell is a row end;
   // paragraph units whose PAPX says inTable belong to a cell (multi-paragraph cell).
   // Documents without cell marks have no table structure to reconstruct even if
@@ -633,6 +885,28 @@ export function buildLegacyDocBody(
   const imagesByCp = new Map<number, ImageBlock>()
   for (const image of options.images ?? []) imagesByCp.set(image.cp, image)
   const consumedImageCps = new Set<number>()
+  const consumedDrawings = new Set<FloatingShape>()
+  const drawings = options.drawings ?? []
+  const picturesFor = (unit: BodyUnit): ParagraphPictures | undefined => {
+    const pictures: ParagraphPictures = {}
+    const floating = drawings.filter(
+      (drawing) => drawing.cp >= unit.startCp && drawing.cp <= unit.endCp,
+    )
+    if (floating.length > 0) {
+      pictures.floating = floating
+      for (const drawing of floating) consumedDrawings.add(drawing)
+    }
+    const inline: NonNullable<ParagraphPictures['inline']> = []
+    for (let cp = unit.startCp; cp < unit.endCp; cp++) {
+      const image = imagesByCp.get(cp)
+      if (!image || consumedImageCps.has(cp)) continue
+      consumedImageCps.add(cp)
+      const before = mapWordControlChars(source.rawText.slice(unit.startCp, cp))
+      inline.push({ image, position: before === '' ? 'start' : 'end' })
+    }
+    if (inline.length > 0) pictures.inline = inline
+    return pictures.floating || pictures.inline ? pictures : undefined
+  }
   const hyperlinks = options.fields?.hyperlinks ?? []
   const linkRangesFor = (startCp: number, endCp: number): FormattedLinkRange[] =>
     hyperlinks
@@ -640,10 +914,26 @@ export function buildLegacyDocBody(
       .map((link) => ({
         startCp: Math.max(link.startCp, startCp),
         endCp: Math.min(link.endCp, endCp),
-        href: link.anchor ? '#' + link.anchor : (link.target ?? ''),
+        href: link.anchor ? (link.target ?? '') + '#' + link.anchor : (link.target ?? ''),
         ...(link.tooltip ? { tooltip: link.tooltip } : {}),
       }))
       .filter((range) => range.href !== '') as FormattedLinkRange[]
+  const simpleFields = options.fields?.simpleFields ?? []
+  const noteMarks = options.noteMarks ?? []
+  // the reference run follows the \x05 annotation character; a range closes at its bookmark end
+  const commentMarks: CommentMarkAt[] = (options.comments ?? []).flatMap((comment) => [
+    ...(comment.rangeStartCp !== undefined && comment.rangeEndCp !== undefined
+      ? [
+          { kind: 'start' as const, id: comment.id, cp: comment.rangeStartCp },
+          { kind: 'end' as const, id: comment.id, cp: comment.rangeEndCp },
+        ]
+      : []),
+    {
+      kind: 'reference' as const,
+      id: comment.id,
+      cp: Math.max(comment.referenceCp + 1, comment.rangeEndCp ?? 0),
+    },
+  ])
   const missingListIlfos = new Set<number>()
   const listInfoFor = (formatting: ParagraphFormatting): ParagraphListInfo | undefined => {
     const ilfo = formatting.listId
@@ -662,12 +952,76 @@ export function buildLegacyDocBody(
       return undefined
     }
     const ilvl = Math.min(Math.max(formatting.listLevel ?? 0, 0), 8)
-    const level = definition.levels[ilvl]
+    const level = resolveListLevel(options.lists, ilfo, ilvl)
     return {
       kind: level && isBulletLevel(level) ? 'bullet' : 'ordered',
       numId: String(100 + ilfo),
       ilvl,
     }
+  }
+  const paragraphBlockFor = (unit: BodyUnit): BodyBlock => {
+    const entry = papx.get(unit.startCp)
+    const request: ParagraphRunRequest = {
+      startCp: unit.startCp,
+      endCp: unit.endCp,
+      styleIstd: entry?.istd ?? 0,
+      papxSprms: entry?.sprms ?? EMPTY,
+    }
+    const formatting = resolveParagraphFormattingFor(source, options.styles, request, warnings)
+    const list = listInfoFor(formatting)
+    const pictures = picturesFor(unit)
+    return {
+      type: 'paragraph',
+      ...(list ? { list } : {}),
+      ...(pictures ? { pictures } : {}),
+      paragraph: {
+        startCp: unit.startCp,
+        endCp: unit.endCp,
+        text: mapWordControlChars(source.rawText.slice(unit.startCp, unit.endCp)),
+        formatting,
+        runs: resolveRunsForRange(
+          detailed,
+          source,
+          options.styles,
+          request,
+          warnings,
+          linkRangesFor(unit.startCp, unit.endCp),
+          fieldRangesWithin(simpleFields, unit.startCp, unit.endCp),
+          noteMarksWithin(noteMarks, unit.startCp, unit.endCp),
+          commentMarksWithin(commentMarks, unit.startCp, unit.endCp),
+        ),
+        ...markFormattingEntry(
+          resolveParagraphMarkFormatting(detailed, source, options.styles, request, warnings),
+        ),
+      },
+    }
+  }
+  const flushRows = (rows: RawRow[]): void => {
+    if (rows.length === 0) return
+    try {
+      const table = buildTable(
+        { rows },
+        source,
+        detailed,
+        options.styles,
+        papx,
+        listInfoFor,
+        picturesFor,
+        simpleFields,
+        noteMarks,
+        commentMarks,
+      )
+      blocks.push({ type: 'table', table })
+    } catch (error) {
+      if (!(error instanceof TableProblem)) throw error
+      warnings.push(
+        'a table could not be reconstructed (' +
+          error.message +
+          '); its text was imported as plain paragraphs',
+      )
+      for (const row of rows) for (const unit of row.units) blocks.push(paragraphBlockFor(unit))
+    }
+    rows.length = 0
   }
   let index = 0
   while (index < units.length) {
@@ -675,50 +1029,32 @@ export function buildLegacyDocBody(
     if (unit.kind === 'paragraph' && !cellParagraph.has(index)) {
       const image = imagesByCp.get(unit.startCp)
       if (image && unit.text === '\u0001') {
-        blocks.push({ type: 'image', image })
+        const own = paragraphBlockFor(unit)
+        blocks.push({
+          type: 'image',
+          image,
+          ...(own.type === 'paragraph'
+            ? { paragraph: own.paragraph, ...(own.list ? { list: own.list } : {}) }
+            : {}),
+        })
         consumedImageCps.add(image.cp)
         index++
         continue
       }
-      const entry = papx.get(unit.startCp)
-      const request: ParagraphRunRequest = {
-        startCp: unit.startCp,
-        endCp: unit.endCp,
-        styleIstd: entry?.istd ?? 0,
-        papxSprms: entry?.sprms ?? EMPTY,
-      }
-      const formatting = resolveParagraphFormattingFor(source, options.styles, request, warnings)
-      const list = listInfoFor(formatting)
-      blocks.push({
-        type: 'paragraph',
-        ...(list ? { list } : {}),
-        paragraph: {
-          startCp: unit.startCp,
-          endCp: unit.endCp,
-          text: mapWordControlChars(source.rawText.slice(unit.startCp, unit.endCp)),
-          formatting,
-          runs: resolveRunsForRange(
-            detailed,
-            source,
-            options.styles,
-            request,
-            warnings,
-            linkRangesFor(unit.startCp, unit.endCp),
-          ),
-        },
-      })
+      blocks.push(paragraphBlockFor(unit))
       index++
       continue
     }
     // a table starts at the first cell marker: collect rows until a row end
     // followed by a normal paragraph (or the end of the text)
-    const rawRows: RawTable['rows'] = []
+    const rawRows: RawRow[] = []
     let finished = false
     const unitIsMarker = (at: number): boolean =>
       at < units.length && units[at]!.kind !== 'paragraph'
     const atTableStart = (at: number): boolean =>
       at < units.length && (unitIsMarker(at) || cellParagraph.has(at))
     while (!finished && index < units.length && atTableStart(index)) {
+      const rowStart = index
       const cells: RawCell[] = []
       const pending: BodyUnit[] = []
       let rowEnd: BodyUnit | undefined
@@ -741,35 +1077,47 @@ export function buildLegacyDocBody(
             rgf: 0,
             wWidth: 0,
             borders: { top: false, left: false, bottom: false, right: false },
+            borderStyles: {},
           },
         })
         pending.length = 0
       }
-      if (!rowEnd) badTable('a table row has no row-end mark')
-      if (cells.length === 0) badTable('a table row has no cells')
-      const entry = papx.get(rowEnd.startCp)
-      if (!entry || entry.sprms.length === 0) badTable('a table row end has no TAP properties')
-      const tap = parseTap(entry.sprms, rawRows.length)
-      const definition = tap.table
-      if (!definition) badTable('the row end of row ' + rawRows.length + ' has no TDefTable')
-      if (definition.cells.length !== cells.length)
-        badTable(
-          'row ' +
-            rawRows.length +
-            ' has ' +
-            cells.length +
-            ' cells but its TDefTable declares ' +
-            definition.cells.length,
+      const rowUnits = units.slice(rowStart, index)
+      try {
+        if (!rowEnd) badTable('a table row has no row-end mark')
+        if (cells.length === 0) badTable('a table row has no cells')
+        const entry = papx.get(rowEnd.startCp)
+        if (!entry || entry.sprms.length === 0) badTable('a table row end has no TAP properties')
+        const tap = parseTap(entry.sprms, rawRows.length, warnings)
+        const definition = tap.table
+        if (!definition) badTable('the row end of row ' + rawRows.length + ' has no TDefTable')
+        if (definition.cells.length !== cells.length)
+          badTable(
+            'row ' +
+              rawRows.length +
+              ' has ' +
+              cells.length +
+              ' cells but its TDefTable declares ' +
+              definition.cells.length,
+          )
+        cells.forEach((cell, cellIndex) => {
+          cell.definition = definition.cells[cellIndex]!
+        })
+        rawRows.push({ rowEnd, cells, tap, units: rowUnits })
+      } catch (error) {
+        if (!(error instanceof TableProblem)) throw error
+        warnings.push(
+          'a table row could not be reconstructed (' +
+            error.message +
+            '); its text was imported as plain paragraphs',
         )
-      cells.forEach((cell, cellIndex) => {
-        cell.definition = definition.cells[cellIndex]!
-      })
-      rawRows.push({ rowEnd, cells, tap })
+        flushRows(rawRows)
+        for (const rowUnit of rowUnits) blocks.push(paragraphBlockFor(rowUnit))
+      }
       if (index >= units.length || (!unitIsMarker(index) && !cellParagraph.has(index)))
         finished = true
     }
-    const table = buildTable({ rows: rawRows }, source, detailed, options.styles, papx)
-    blocks.push({ type: 'table', table })
+    flushRows(rawRows)
   }
   // table-level warnings travel with the body so the conversion reports them
   for (const block of blocks) {
@@ -787,14 +1135,32 @@ export function buildLegacyDocBody(
   if (source.rawText.includes('\u0001') && options.images === undefined)
     warnings.push('images are not converted yet; image placeholders are omitted')
   const unusedImages = (options.images ?? []).filter((image) => !consumedImageCps.has(image.cp))
-  if (unusedImages.length > 0)
+  if (unusedImages.length > 0) warnings.push('a picture outside any paragraph was omitted')
+  if (drawings.some((drawing) => !consumedDrawings.has(drawing)))
+    warnings.push('a floating picture is anchored outside any paragraph and was omitted')
+  // a comment whose reference fell outside every paragraph (a row-end mark) has nothing to anchor to
+  const referenced = new Set<number>()
+  const collect = (paragraphs: FormattedParagraph[]): void => {
+    for (const paragraph of paragraphs)
+      for (const run of paragraph.runs)
+        for (const mark of run.commentMarks ?? [])
+          if (mark.kind === 'reference') referenced.add(mark.id)
+  }
+  for (const block of blocks) {
+    if (block.type === 'table')
+      for (const row of block.table.rows) for (const cell of row.cells) collect(cell.paragraphs)
+    else if (block.paragraph) collect([block.paragraph])
+  }
+  const comments = (options.comments ?? []).filter((comment) => referenced.has(comment.id))
+  if (comments.length < (options.comments ?? []).length)
     warnings.push(
-      'a picture inside a table cell or a text paragraph is not supported yet; it was omitted',
+      `${(options.comments ?? []).length - comments.length} comment(s) are anchored outside any paragraph and were omitted`,
     )
   return {
     blocks,
     warnings: [...new Set(warnings)],
     ...(options.lists ? { lists: options.lists } : {}),
+    ...(comments.length > 0 ? { comments } : {}),
   }
 }
 
@@ -805,10 +1171,7 @@ export function readLegacyDocBody(
 ): LegacyDocBody {
   const detailedWarnings: string[] = []
   const detailed = readFormattingDetailed(source, detailedWarnings)
-  const styles =
-    source.fib.lcbStshf > 0
-      ? parseStsh(source.table, source.fib.fcStshf, source.fib.lcbStshf)
-      : undefined
+  const styles = readStyleSheet(source, detailedWarnings)
   const body = buildLegacyDocBody(source, detailed, {
     styles,
     images: options.images,
