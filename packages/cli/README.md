@@ -31,7 +31,7 @@ genoffice sheet read book.xlsx [--sheet Data] [--range A1:D20] [--formats] --jso
 genoffice sheet apply book.xlsx --cells cells.json    # [{cell:"B2", value|formula, style?, sheet?}]
 genoffice sheet apply book.xlsx --ops ops.json [--dry-run]   # workbook DSL: cells, formats, charts, tables, filters, conditional formats, validation, links, notes, panes, page setup, sheets (`genoffice guide sheets`)
 genoffice sheet check book.xlsx --json                # formula errors, missing-sheet references, broken defined names, chart ranges off the data, ### columns (suggest: set_col_width), placeholder text, existing rules; exit 0
-genoffice create --type docx --from report.md --out report.docx      # or --from fragment.html (restricted HTML)
+genoffice create --type docx --from report.md --out report.docx      # or --from fragment.html (restricted HTML); the new file carries Word-like docProps/core.xml + app.xml
 genoffice convert notes.md --to docx|html
 genoffice convert report.docx --to html               # the Word editor's standalone-HTML export
 genoffice convert page.html --to docx                 # html2docx, same as the HTML app's Export as Word
@@ -41,8 +41,8 @@ genoffice capabilities --json                        # which cloud features GenO
 genoffice search "electron headless export" [--images] [--max 6] --json
 genoffice image "isometric office, soft light" --aspect 16:9 --out hero.png
 genoffice media photo.jpg --ask "What text is in this picture?" --json
-genoffice docs read report.docx [--range 0-9] [--html] [--full] [--comments] [--revisions] [--header-footer] [--properties] --json   # blocks (--full: whole text), comment threads, tracked changes, header/footer text, document properties
-genoffice docs apply report.docx --ops ops.json [--dry-run]           # apply_ops entries + insert_content / replace_blocks / insert_image / insert_chart / edit_chart / set_header_footer / reply_comment / resolve_comment / set_properties (document metadata)
+genoffice docs read report.docx [--range 0-9] [--html] [--full] [--comments] [--revisions] [--header-footer] [--properties] --json   # blocks (--full: whole text), comment threads, tracked changes, header/footer text, document properties (custom values plus their vt customTypes)
+genoffice docs apply report.docx --ops ops.json [--dry-run]           # apply_ops entries + insert_content / replace_blocks / insert_image / insert_chart / edit_chart / set_header_footer / reply_comment / resolve_comment / set_properties (document metadata; numeric/boolean custom values keep or take a typed vt type)
 genoffice docs check report.docx --json                               # fields without results, broken bookmark references, stale TOC, missing images, empty charts/headings, heading level skips, placeholder text, pending revisions, open comments; exit 0
 genoffice docs compare original.docx revised.docx --out redline.docx [--author name] [--date iso] [--granularity word|char] [--ignore formatting,case,whitespace]   # redline: the revised document with the differences marked as tracked insertions and deletions; --json reports the counts
 genoffice merge invoice-template.docx --data values.json --out invoice.docx [--force] [--strict]   # fill {{key}} placeholders in a docx/pptx/xlsx template; reports used, unused and unresolved keys (or --data '{"name":"Ada"}')
