@@ -117,9 +117,9 @@ type DateStyles = Map<number, DateFormatParts>
  * A date cell is stored as a plain serial; without its style the model sees 45292 where the
  * sheet shows 1-Jan-24. Resolve each cellXfs entry's numFmt once per workbook.
  */
-async function loadDateStyles(zip: JSZip): Promise<DateStyles> {
+async function loadDateStyles(zip: JSZip, path: string): Promise<DateStyles> {
   const styles: DateStyles = new Map()
-  const xml = await zipText(zip, 'xl/styles.xml')
+  const xml = await zipText(zip, path)
   if (!xml) return styles
   const sheet = (parser.parse(xml) as Record<string, any>).styleSheet
   const custom = new Map<number, DateFormatParts | null>()
@@ -315,11 +315,12 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
   // Sheet order and names come from workbook.xml; r:id maps to the actual sheet path via the workbook rels
   const workbook = parser.parse(workbookXml) as Record<string, any>
   const sheets = asArray(workbook.workbook?.sheets?.sheet) as Array<Record<string, unknown>>
-  const dateStyles = await loadDateStyles(zip)
   const date1904 = isDate1904(workbook)
 
   const relsXml = await zipText(zip, 'xl/_rels/workbook.xml.rels')
   const relTargets = new Map<string, string>()
+  let stylesPath = 'xl/styles.xml'
+  let sharedStringsPath = 'xl/sharedStrings.xml'
   if (relsXml) {
     const rels = parser.parse(relsXml) as Record<string, any>
     for (const rel of asArray(rels.Relationships?.Relationship) as Array<Record<string, unknown>>) {
@@ -327,11 +328,17 @@ export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}):
       const target = String(rel['@_Target'] ?? '')
       const resolved = target.trim() === '' ? '' : resolveTarget('xl/workbook.xml', target)
       if (id !== '' && resolved !== '') relTargets.set(id, resolved)
+      if (resolved && String(rel['@_TargetMode'] ?? '').toLowerCase() !== 'external') {
+        const type = String(rel['@_Type'] ?? '')
+        if (type.endsWith('/styles')) stylesPath = resolved
+        if (type.endsWith('/sharedStrings')) sharedStringsPath = resolved
+      }
     }
   }
 
+  const dateStyles = await loadDateStyles(zip, stylesPath)
   const shared: string[] = []
-  const sharedXml = await zipText(zip, 'xl/sharedStrings.xml')
+  const sharedXml = await zipText(zip, sharedStringsPath)
   if (sharedXml) {
     const sst = parser.parse(sharedXml) as Record<string, any>
     for (const si of asArray(sst.sst?.si) as Array<Record<string, unknown>>) {
