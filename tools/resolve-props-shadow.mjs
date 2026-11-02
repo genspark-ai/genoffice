@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Shadow-mode report for packages/docx-engine/src/resolve-props.ts: parse every
 // docx under the given directories and print resolver vs legacy disagreements
-// by key, with example files.
+// by surface and key, with example files.
 //   node --import tsx tools/resolve-props-shadow.mjs <dir>... [--examples N] [--json out.json]
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename, resolve } from 'node:path'
@@ -47,8 +47,9 @@ for (const file of files) {
   }
   paragraphs += doc.blocks.length
   for (const d of doc.extras.resolveDiff ?? []) {
-    let e = byKey.get(d.key)
-    if (!e) byKey.set(d.key, (e = { count: 0, files: new Map() }))
+    const key = `${d.surface ?? 'body'}:${d.key}`
+    let e = byKey.get(key)
+    if (!e) byKey.set(key, (e = { count: 0, files: new Map() }))
     e.count++
     const f = e.files.get(file)
     if (!f) e.files.set(file, { count: 1, sample: d })

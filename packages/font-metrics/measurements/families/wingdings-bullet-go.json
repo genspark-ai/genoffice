@@ -1,0 +1,20 @@
+{
+  "family": "Wingdings Bullet GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-09-30",
+    "fonts": ["Wingdings (Word DFonts)", "LiberationSans-Regular.ttf"],
+    "probe": "Word glyph ink 0.579em over Liberation Sans U+25CF 0.43em; box = Word face total 1.1098em"
+  },
+  "faces": [
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 134.5,
+      "ascentOverride": 57.9,
+      "descentOverride": 24.6,
+      "lineGapOverride": 0,
+      "weight": null,
+      "style": null
+    }
+  ]
+}

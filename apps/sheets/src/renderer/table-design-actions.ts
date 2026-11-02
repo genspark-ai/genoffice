@@ -22,9 +22,12 @@ import {
   areaToA1,
   areasIntersect,
   containsCell,
+  fileTableArea,
   isValidTableName,
+  liveFileTables,
   optionsOfFileTable,
   optionsOfTableAdd,
+  originalFileTableName,
   resizeProblem,
   resolveCreateTableRange,
   totalsFunctionFor,
@@ -104,33 +107,6 @@ function sessionTableId(runtime: UniverRuntime, name: string): string | null {
   return workbook?.getTableInfoByName?.(name)?.id ?? null
 }
 
-/// Open-time displayName of every file table, by `${sheetId}:${index}`: the
-/// save locates the part by it after an in-session rename.
-const originalNames = new WeakMap<LazyWorkbookState, Map<string, string>>()
-
-function originalFileTableName(
-  state: LazyWorkbookState,
-  sheetId: string,
-  index: number,
-  table: FileTable,
-): string {
-  let names = originalNames.get(state)
-  if (!names) {
-    names = new Map()
-    originalNames.set(state, names)
-  }
-  const key = `${sheetId}:${index}`
-  const known = names.get(key)
-  if (known !== undefined) return known
-  const name = table.name ?? ''
-  names.set(key, name)
-  return name
-}
-
-function fileTableArea(table: FileTable): TableRegion {
-  return table.range
-}
-
 export function findTableAt(
   state: LazyWorkbookState,
   sheetId: string,
@@ -142,15 +118,10 @@ export function findTableAt(
       return { kind: 'session', sheetId, add }
     }
   }
-  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
-  if (!sheet) return null
-  for (let index = 0; index < sheet.tables.length; index += 1) {
-    const table = sheet.tables[index]!
-    if (!containsCell(fileTableArea(table), row, column)) continue
-    const originalName = originalFileTableName(state, sheetId, index, table)
-    const edit = tableEditFor(state.editJournal, sheetId, originalName)
-    if (edit?.remove) continue
-    return { kind: 'file', sheetId, index, table, originalName, edit }
+  for (const live of liveFileTables(state, sheetId)) {
+    if (containsCell(fileTableArea(live.table), row, column)) {
+      return { kind: 'file', sheetId, ...live }
+    }
   }
   return null
 }
@@ -160,12 +131,7 @@ function tablesOnSheet(state: LazyWorkbookState, sheetId: string): TableRef[] {
   for (const add of state.editJournal.tableAdds) {
     if (add.sheetId === sheetId) refs.push({ kind: 'session', sheetId, add })
   }
-  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
-  sheet?.tables.forEach((table, index) => {
-    const originalName = originalFileTableName(state, sheetId, index, table)
-    const edit = tableEditFor(state.editJournal, sheetId, originalName)
-    if (!edit?.remove) refs.push({ kind: 'file', sheetId, index, table, originalName, edit })
-  })
+  for (const live of liveFileTables(state, sheetId)) refs.push({ kind: 'file', sheetId, ...live })
   return refs
 }
 

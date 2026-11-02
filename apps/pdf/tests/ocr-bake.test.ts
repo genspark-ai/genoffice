@@ -47,12 +47,12 @@ describe('buildOcrBakeInserts', () => {
       0,
       // cjk overlay words carry spaceAfter=false (the overlay's own no-space-script rule)
       [
-        { ...word('使', 50, 700, 12, 12), spaceAfter: false },
-        { ...word('用', 62, 700, 12, 12), spaceAfter: false },
+        { ...word('\u4f7f', 50, 700, 12, 12), spaceAfter: false },
+        { ...word('\u7528', 62, 700, 12, 12), spaceAfter: false },
       ],
       geom,
     )
-    expect(inserts[0]!.text).toBe('使用')
+    expect(inserts[0]!.text).toBe('\u4f7f\u7528')
   })
 
   it('carries the page rotation', () => {

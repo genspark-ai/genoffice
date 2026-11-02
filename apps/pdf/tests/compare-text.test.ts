@@ -88,8 +88,6 @@ describe('compareDocuments', () => {
   })
 
   it('still truncates a past-cap page that differs only past the cap window', () => {
-    // same line count, same opening lines, one changed line deep inside:
-    // the join compare has to see it and keep the wholesale report.
     const left = Array.from({ length: 4001 }, (_, i) => `line${i}`).join('\n')
     const right = Array.from({ length: 4001 }, (_, i) => `line${i === 3000 ? 'changed' : i}`).join(
       '\n',

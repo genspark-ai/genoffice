@@ -246,3 +246,24 @@ tofu boxes for AI-residue PUA tokens, while Word — and chains headed by the
 bundled CJK subsets, whose subsetted `.notdef` is blank — show nothing. This
 face sits in the Aptos chain and behind the range-limited `Noto Sans/Serif
 CJK GO` aliases so PUA stays invisible there too.
+
+## Outline format
+
+Every bundled face carries TrueType (glyf) outlines. Chromium's PDF backend
+(Skia, `printToPDF`) cannot embed CFF-flavoured faces: each glyph drawn with
+one lands in the exported PDF as a Type3 path procedure instead of an embedded
+font (no font name in the viewer, unreliable text selection and search).
+Noto Sans/Serif CJK SC and the three Noto-derived KR faces (GenOffice Sans KR,
+GenOffice Serif KR, GenOffice Che Latin KR) come from CFF sources, so the last
+build step for them is `tools/convert-cff-to-glyf.py`: cu2qu at 1 font unit,
+glyph order, cmap, advances, OS/2, hhea/vhea, name and layout tables carried
+over byte for byte (the script asserts it), VORG dropped with each vertical
+origin kept in vmtx. Only outlines change, so the OFL Reserved Font Name
+"Source" (not part of any shipped family name) stays unused.
+
+`tools/scale-kr-sans-latin-ink.py` and `tools/build-kr-che-latin-font.py`
+edit CFF charstrings: run them on a CFF build, then convert. Those charstrings
+also carried their own widths, which no longer matched the normalized hmtx
+(hangul 0.92em, `A` 1.275em in GenOffice Sans KR). Chromium on Windows
+measured the CFF faces with those widths (probe 2026-10-31) while macOS used
+hmtx; glyf has no widths of its own, so hmtx now holds on every platform.

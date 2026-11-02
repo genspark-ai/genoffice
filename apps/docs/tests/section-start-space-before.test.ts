@@ -32,9 +32,10 @@ function block(docxIndex: number, top: number, height: number, marginTopPx: numb
 }
 
 // measureBlocks folds the inter-block margin into the previous block's space-after
-function flow(startType: SectionInfo['startType']) {
+function flow(startType: SectionInfo['startType'], marginBeforePx?: number) {
   const a = block(0, 0, 20, 0)
   const b = block(1, 36, 20, 16)
+  if (marginBeforePx !== undefined) b.marginBeforePx = marginBeforePx
   a.spaceAfterPx = 16
   a.height += 16
   assignSections([a, b], [sec(0, 0, 'nextPage'), sec(1, 1, startType)])
@@ -50,6 +51,14 @@ describe('space-before of the first paragraph of a forced section start', () => 
     expect(b.height).toBe(36)
     expect(b.spaceBeforePx).toBe(16)
     expect(b.leadFoldPx).toBe(16)
+  })
+
+  it('a planned block folds the plan margin, not the computed one', () => {
+    const { a, b } = flow('nextPage', 10)
+    expect(a.spaceAfterPx).toBe(6)
+    expect(b.spaceBeforePx).toBe(10)
+    expect(b.leadFoldPx).toBe(10)
+    expect(b.top).toBe(26)
   })
 
   it('a continuous section keeps the folded space-after (no page starts there)', () => {

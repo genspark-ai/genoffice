@@ -47,6 +47,19 @@ describe('carryStreamedSamples', () => {
     expect(next[2].lineBoxes).toBeUndefined()
   })
 
+  it('a carried table whose every row keeps next keeps the block flag too', () => {
+    const el = document.createElement('table')
+    const rows = [
+      { top: 0, height: 20, keepNext: true },
+      { top: 20, height: 20, keepNext: true },
+    ] as never
+    const prev = [blockOf(el, 0, 40, { tableRows: rows, keepNext: true })]
+    const next = [blockOf(el, 0, 40)]
+    carryStreamedSamples(next, prev, { pending: true, dirty: 1, lastPassChildCount: 1 })
+    expect(next[0].tableRows).toBe(rows)
+    expect(next[0].keepNext).toBe(true)
+  })
+
   it('stops at the element-identity frontier (an inserted block shifts the tail)', () => {
     const head = document.createElement('p')
     const carried = [{ offsetInBlock: 0, height: 12 }] as never

@@ -6,7 +6,7 @@
  */
 import { Editor } from '@tiptap/core'
 import { parseDocx } from '@genoffice/docx-engine'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { DocInlineImage, editorExtensions } from '../src/renderer/editor/extensions'
@@ -36,6 +36,14 @@ const PARA_V =
   '<wp:positionV relativeFrom="paragraph"><wp:posOffset>232695</wp:posOffset></wp:positionV>'
 const PAGE_V = '<wp:positionV relativeFrom="page"><wp:posOffset>23495</wp:posOffset></wp:positionV>'
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function render(bodyXml: string) {
   const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
   const editor = new Editor({
@@ -43,6 +51,7 @@ async function render(bodyXml: string) {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   return editor.view.dom as HTMLElement
 }
 
@@ -54,6 +63,7 @@ async function runImageStyle(bodyXml: string): Promise<string> {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   let style = ''
   editor.state.doc.descendants((node) => {
     if (node.type.name !== 'docInlineImage') return true

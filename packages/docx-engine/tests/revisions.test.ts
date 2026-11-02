@@ -449,3 +449,154 @@ describe('setPPrChange', () => {
     })
   })
 })
+
+describe('paired moves (w:moveFrom / w:moveTo)', () => {
+  const MOVE_PAIR_XML =
+    '<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>' +
+    '<w:moveFromRangeStart w:id="60" w:author="Alice" w:date="2026-07-01T10:00:00Z" w:name="move77"/>' +
+    '<w:moveFrom w:id="61" w:author="Alice" w:date="2026-07-01T10:00:00Z">' +
+    '<w:r><w:delText>gone</w:delText></w:r></w:moveFrom>' +
+    '<w:moveFromRangeEnd w:id="60"/></w:p>' +
+    '<w:p><w:r><w:t xml:space="preserve">B </w:t></w:r>' +
+    '<w:moveToRangeStart w:id="62" w:author="Alice" w:date="2026-07-01T10:00:00Z" w:name="move77"/>' +
+    '<w:moveTo w:id="63" w:author="Alice" w:date="2026-07-01T10:00:00Z">' +
+    '<w:r><w:t>gone</w:t></w:r></w:moveTo>' +
+    '<w:moveToRangeEnd w:id="62"/></w:p>'
+
+  it('parses the range name onto both sides', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: MOVE_PAIR_XML }))
+    const from = doc.blocks[0].runs!.find((r) => r.del)!
+    const to = doc.blocks[1].runs!.find((r) => r.ins)!
+    expect(from.del).toEqual({
+      author: 'Alice',
+      date: '2026-07-01T10:00:00Z',
+      id: '61',
+      move: 'move77',
+    })
+    expect(to.ins!.move).toBe('move77')
+  })
+
+  it('a range opened in one paragraph still names a move in the next', async () => {
+    const xml =
+      '<w:p><w:moveFromRangeStart w:id="1" w:author="A" w:name="mv"/>' +
+      '<w:moveFrom w:id="2" w:author="A"><w:r><w:delText>one</w:delText></w:r></w:moveFrom></w:p>' +
+      '<w:p><w:moveFrom w:id="3" w:author="A"><w:r><w:delText>two</w:delText></w:r></w:moveFrom>' +
+      '<w:moveFromRangeEnd w:id="1"/></w:p>' +
+      '<w:p><w:moveFrom w:id="4" w:author="A"><w:r><w:delText>loose</w:delText></w:r></w:moveFrom></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].runs![0].del!.move).toBe('mv')
+    expect(doc.blocks[1].runs![0].del!.move).toBe('mv')
+    expect(doc.blocks[2].runs![0].del!.move).toBe('move4')
+  })
+
+  it('saves editor moves as named ranges that pair again on reopen', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }),
+    )
+    const rev = { author: 'Alice', date: '2026-07-01T10:00:00Z', move: 'move12345' }
+    const out = await saveDocx(parsed, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          runs: [
+            { text: 'A ' },
+            { text: 'go', del: rev },
+            { text: 'ne', del: rev },
+            { text: ' B' },
+          ],
+        },
+      },
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', runs: [{ text: 'C ' }, { text: 'gone', ins: rev }] },
+      },
+    ])
+    const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    const from =
+      /<w:moveFromRangeStart w:id="(\d+)" w:author="Alice" w:date="2026-07-01T10:00:00Z" w:name="move12345"\/><w:moveFrom w:id="(\d+)"[^>]*><w:r><w:delText[^>]*>go<\/w:delText><\/w:r><w:r><w:delText[^>]*>ne<\/w:delText><\/w:r><\/w:moveFrom><w:moveFromRangeEnd w:id="\1"\/>/.exec(
+        xml,
+      )
+    expect(from).not.toBeNull()
+    expect(from![1]).not.toBe(from![2])
+    expect(xml).toMatch(
+      /<w:moveToRangeStart w:id="(\d+)"[^>]*w:name="move12345"\/><w:moveTo w:id="\d+"[^>]*><w:r><w:t[^>]*>gone<\/w:t><\/w:r><\/w:moveTo><w:moveToRangeEnd w:id="\1"\/>/,
+    )
+    expect(xml).not.toMatch(/<w:(?:ins|del)\b/)
+    const back = await parseDocx(out)
+    expect(back.blocks[0].runs!.find((r) => r.del)!.del!.move).toBe('move12345')
+    expect(back.blocks[1].runs!.find((r) => r.ins)!.ins!.move).toBe('move12345')
+  })
+})
+
+describe('rPrChange keeps the recorded previous rPr verbatim', () => {
+  const OLD_RPR =
+    '<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:i/><w:color w:val="0000FF"/>' +
+    '<w:spacing w:val="20"/><w:kern w:val="28"/><w:sz w:val="28"/>' +
+    '<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/><w:lang w:val="fr-FR"/>'
+  const RECORD = `<w:rPrChange w:id="9" w:author="Reviewer" w:date="2026-07-01T00:00:00Z"><w:rPr>${OLD_RPR}</w:rPr></w:rPrChange>`
+  const P = `<w:p><w:r><w:rPr><w:b/><w:color w:val="FF0000"/>${RECORD}</w:rPr><w:t>x</w:t></w:r></w:p>`
+
+  const documentXml = async (bytes: Uint8Array) =>
+    (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('string')
+
+  it('parses oldRPr next to the modeled subset', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: P }))
+    const run = parsed.blocks[0].runs![0]
+    expect(run.rPrChange?.oldRPr).toBe(OLD_RPR)
+    expect(run.rPrChange?.old).toMatchObject({
+      italic: true,
+      color: '0000FF',
+      fontAscii: 'Arial',
+      charSpacingTwips: 20,
+      kernHalfPoints: 28,
+      sizeHalfPoints: 28,
+      shading: 'FFFF00',
+    })
+  })
+
+  it('a rebuilt record re-emits the previous rPr including unmodeled children', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: P }))
+    const run = { ...parsed.blocks[0].runs![0], text: 'edited', rawRPr: undefined }
+    const xml = await documentXml(
+      await saveDocx(parsed, [
+        { kind: 'generated', block: { type: 'paragraph', runs: [run] }, docxIndex: 0 },
+      ]),
+    )
+    expect(xml).toContain(RECORD)
+  })
+
+  it('reject (run rebuilt from oldRPr) saves the previous rPr byte-for-byte; accept only drops the record', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: P }))
+    const current = parsed.blocks[0].runs![0]
+    const { rPrChange, ...rest } = current
+    const rejected = {
+      ...rest,
+      bold: undefined,
+      color: rPrChange!.old!.color,
+      italic: true,
+      fontAscii: 'Arial',
+      font: 'Arial',
+      charSpacingTwips: 20,
+      kernHalfPoints: 28,
+      sizeHalfPoints: 28,
+      shading: 'FFFF00',
+      rawRPr: `<w:rPr>${rPrChange!.oldRPr}</w:rPr>`,
+    }
+    const rejectedXml = await documentXml(
+      await saveDocx(parsed, [
+        { kind: 'generated', block: { type: 'paragraph', runs: [rejected] }, docxIndex: 0 },
+      ]),
+    )
+    expect(rejectedXml).toContain(`<w:r><w:rPr>${OLD_RPR}</w:rPr><w:t`)
+
+    const accepted = { ...rest, rawRPr: current.rawRPr!.replace(RECORD, '') }
+    const acceptedXml = await documentXml(
+      await saveDocx(parsed, [
+        { kind: 'generated', block: { type: 'paragraph', runs: [accepted] }, docxIndex: 0 },
+      ]),
+    )
+    expect(acceptedXml).toContain('<w:r><w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr><w:t')
+    expect(acceptedXml).not.toContain('w:rPrChange')
+  })
+})

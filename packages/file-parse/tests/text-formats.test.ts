@@ -66,6 +66,16 @@ describe('parseFileToText: plain-text formats', () => {
     expect(result.text).toBe('café,1')
   })
 
+  it.each(['txt', 'csv', 'json'])('rejects BOM-declared UTF-32BE %s attachments', async (ext) => {
+    const result = await parseFileToText(
+      writeFixture(`utf32be.${ext}`, Buffer.from([0x00, 0x00, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x41])),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.kind).toBe('text')
+    expect(result.error).toContain('UTF-32')
+    expect(result.text).toBeUndefined()
+  })
+
   it('returns the whole text for valid UTF-8 with a single stray 0xFF byte', async () => {
     const bytes = Buffer.concat([
       Buffer.from('hello '.repeat(500), 'utf8'),

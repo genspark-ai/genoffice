@@ -162,7 +162,11 @@ export class XlsxSidecarClient {
 
   /** IronCalc-backed recalculation: load the file, apply the pending edits,
    * evaluate, and return the requested cells' computed values. Fail-soft —
-   * callers keep cached values when this errors. */
+   * callers keep cached values when this errors. `reportStale` also returns
+   * the formula cells whose cached `<v>` disagrees with the engine (and the
+   * array spill cells it cannot refresh); the answer then carries
+   * `auditSkipped` instead when the engine had to decline the audit, e.g. on
+   * a `date1904` workbook. */
   async recalcCells(input: {
     readonly path: string
     readonly edits: readonly {
@@ -180,6 +184,7 @@ export class XlsxSidecarClient {
         readonly endColumn: number
       }
     }[]
+    readonly reportStale?: boolean
   }): Promise<unknown> {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }
@@ -197,9 +202,16 @@ export class XlsxSidecarClient {
     )
   }
 
+  /** The link list only: no source is opened, nothing is evaluated. */
+  async readExternalLinks(input: { readonly path: string }): Promise<unknown> {
+    return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
   /**
-   * The link list only: no source is opened, nothing is evaluated, and the
-   * targets are not probed (the listing carries no reachability).
+   * The links panel's listing: identity fields only, and the targets are not
+   * probed (no reachability) — opening a workbook must not stat a dead
+   * network share. CLI's `readExternalLinks` above answers reachability for
+   * its explicit link report; the panel's Update asks `updateExternalLinks`.
    */
   async listExternalLinks(input: { readonly path: string }): Promise<ExternalLinksResult> {
     return this.request<ExternalLinksResult>(

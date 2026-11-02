@@ -83,7 +83,7 @@ describe('appMenuLabels', () => {
 
   it('carries the AI naming label', () => {
     expect(en.nameWithAi).toBe('Name with AI…')
-    expect(appMenuLabels('zh').nameWithAi).toBe('用 AI 命名…')
+    expect(appMenuLabels('zh').nameWithAi).toBe('\u7528 AI \u547d\u540d\u2026')
   })
 
   it('falls back to English for unknown languages', () => {

@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::SidecarError;
+use crate::stream_patch::{read_patch_program, stream_patch_entry};
 use crate::xml_util::copy_entry_bounded;
 
 const MAX_ENTRY_COUNT: usize = 10_000;
@@ -48,6 +49,16 @@ pub struct ExtractedEntry {
 pub struct EntryContent {
     pub name: String,
     pub content_path: PathBuf,
+}
+
+/// An existing entry rewritten in a streaming pass: `patch_path` holds the
+/// JSON cell-upsert program (see `stream_patch`). Used for parts above the
+/// host's string-patching cap.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamPatchEntry {
+    pub name: String,
+    pub patch_path: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,6 +185,7 @@ pub fn save_archive(
     replacements: &[EntryContent],
     removals: &[String],
     additions: &[EntryContent],
+    stream_patches: &[StreamPatchEntry],
 ) -> Result<SaveArchiveResult, SidecarError> {
     if crate::canonicalize(source_path)? == crate::canonicalize(target_path).unwrap_or_default() {
         return Err(SidecarError::InvalidRequest(
@@ -186,9 +198,13 @@ pub fn save_archive(
         .iter()
         .map(|entry| entry.name.as_str())
         .collect();
-    validate_edit_sets(&source_names, replacements, removals, additions)?;
+    validate_edit_sets(&source_names, replacements, removals, additions, stream_patches)?;
 
     let replacement_by_name: std::collections::HashMap<&str, &EntryContent> = replacements
+        .iter()
+        .map(|item| (item.name.as_str(), item))
+        .collect();
+    let stream_patch_by_name: std::collections::HashMap<&str, &StreamPatchEntry> = stream_patches
         .iter()
         .map(|item| (item.name.as_str(), item))
         .collect();
@@ -202,22 +218,62 @@ pub fn save_archive(
         if removal_set.contains(name.as_str()) {
             continue;
         }
-        match replacement_by_name.get(name.as_str()) {
-            Some(replacement) => write_entry(&mut writer, &name, &replacement.content_path)?,
-            None => writer.raw_copy_file_rename(archive.by_index_raw(index)?, &name)?,
+        match (replacement_by_name.get(name.as_str()), stream_patch_by_name.get(name.as_str())) {
+            (Some(replacement), _) => write_entry(&mut writer, &name, &replacement.content_path)?,
+            (None, Some(patched)) => {
+                let program = read_patch_program(&patched.patch_path)?;
+                let options = SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Deflated)
+                    .large_file(true);
+                writer.start_file(name.as_str(), options)?;
+                let entry = archive.by_index(index)?;
+                stream_patch_entry(entry, &mut writer, &program)?;
+            }
+            (None, None) => writer.raw_copy_file_rename(archive.by_index_raw(index)?, &name)?,
         }
     }
     for addition in additions {
         write_entry(&mut writer, &addition.name, &addition.content_path)?;
     }
     let target_file = writer.finish()?;
-    target_file.sync_all()?;
+    sync_best_effort(&target_file)?;
 
     let mut saved = ZipArchive::new(File::open(target_path)?)?;
     Ok(SaveArchiveResult {
         before_entries,
         after_entries: manifest_of(&mut saved)?,
     })
+}
+
+/// SMB mounts on macOS answer `F_FULLFSYNC` with ENOTSUP, and some cloud-sync
+/// or network filesystems refuse fsync outright. The bytes are already
+/// written, so a refused flush only weakens power-loss durability and must
+/// not fail the save (mirrors the Node writer's tolerated codes).
+pub(crate) fn sync_best_effort(file: &File) -> io::Result<()> {
+    match file.sync_all() {
+        Err(error) if is_tolerated_sync_error(&error) => Ok(()),
+        result => result,
+    }
+}
+
+// ENOTSUP is `Uncategorized` in std on macOS, so match the errno directly.
+#[cfg(target_os = "macos")]
+const TOLERATED_SYNC_ERRNOS: [i32; 2] = [45, 78]; // ENOTSUP, ENOSYS
+#[cfg(target_os = "linux")]
+const TOLERATED_SYNC_ERRNOS: [i32; 2] = [95, 38]; // EOPNOTSUPP, ENOSYS
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+const TOLERATED_SYNC_ERRNOS: [i32; 0] = [];
+
+fn is_tolerated_sync_error(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::Unsupported
+            | io::ErrorKind::InvalidInput
+            | io::ErrorKind::PermissionDenied
+            | io::ErrorKind::ResourceBusy
+    ) || error
+        .raw_os_error()
+        .is_some_and(|raw| TOLERATED_SYNC_ERRNOS.contains(&raw))
 }
 
 fn write_entry(
@@ -239,13 +295,15 @@ fn validate_edit_sets(
     replacements: &[EntryContent],
     removals: &[String],
     additions: &[EntryContent],
+    stream_patches: &[StreamPatchEntry],
 ) -> Result<(), SidecarError> {
     let mut seen: HashSet<&str> = HashSet::new();
     let edited = replacements
         .iter()
         .map(|item| item.name.as_str())
         .chain(removals.iter().map(String::as_str))
-        .chain(additions.iter().map(|item| item.name.as_str()));
+        .chain(additions.iter().map(|item| item.name.as_str()))
+        .chain(stream_patches.iter().map(|item| item.name.as_str()));
     for name in edited {
         if !seen.insert(name) {
             return Err(SidecarError::InvalidRequest(format!(
@@ -278,6 +336,14 @@ fn validate_edit_sets(
             return Err(SidecarError::InvalidRequest(format!(
                 "Cannot add entry {} — it already exists.",
                 addition.name
+            )));
+        }
+    }
+    for patched in stream_patches {
+        if !source_names.contains(patched.name.as_str()) {
+            return Err(SidecarError::InvalidRequest(format!(
+                "Cannot stream-patch missing entry {}.",
+                patched.name
             )));
         }
     }
@@ -397,7 +463,13 @@ pub(crate) fn validate_entries(archive: &mut ZipArchive<File>) -> Result<(), Sid
         ));
     }
     for index in 0..archive.len() {
-        if canonical_entry_name(archive.by_index_raw(index)?.name()).is_none() {
+        let entry = archive.by_index_raw(index)?;
+        let safe = entry
+            .name()
+            .ok()
+            .and_then(|name| canonical_entry_name(&name))
+            .is_some();
+        if !safe {
             return Err(SidecarError::Workbook(
                 "Workbook contains an unsafe ZIP path.".into(),
             ));
@@ -418,7 +490,8 @@ fn canonical_names(archive: &ZipArchive<File>) -> Vec<Option<String>> {
     let mut seen = HashSet::new();
     (0..archive.len())
         .map(|index| {
-            let name = canonical_entry_name(archive.name_for_index(index)?)?;
+            let raw = archive.name_for_index(index)?.ok()?;
+            let name = canonical_entry_name(&raw)?;
             (!name.is_empty() && seen.insert(name.clone())).then_some(name)
         })
         .collect()
@@ -515,7 +588,7 @@ mod tests {
         let mut replacement = write_content(&dir, "b.new.xml", "<b>new</b>");
         replacement.name = "replace/b.xml".into();
 
-        let result = save_archive(&source, &target, &[replacement], &[], &[]).unwrap();
+        let result = save_archive(&source, &target, &[replacement], &[], &[], &[]).unwrap();
 
         let before: Vec<&str> = result
             .before_entries
@@ -561,6 +634,7 @@ mod tests {
             &[replacement],
             &["remove/c.xml".into()],
             &[addition],
+            &[],
         )
         .unwrap();
 
@@ -603,7 +677,7 @@ mod tests {
         let target = dir.join("saved.zip");
         let mut missing = write_content(&dir, "x.xml", "<x/>");
         missing.name = "missing/x.xml".into();
-        let error = save_archive(&source, &target, &[missing], &[], &[]).unwrap_err();
+        let error = save_archive(&source, &target, &[missing], &[], &[], &[]).unwrap_err();
         assert!(error.to_string().contains("missing entry"));
 
         let mut duplicate = write_content(&dir, "dup.xml", "<b/>");
@@ -614,18 +688,19 @@ mod tests {
             &[duplicate],
             &["replace/b.xml".into()],
             &[],
+            &[],
         )
         .unwrap_err();
         assert!(error.to_string().contains("more than one edit set"));
 
         let mut existing = write_content(&dir, "a.xml", "<a/>");
         existing.name = "keep/a.xml".into();
-        let error = save_archive(&source, &target, &[], &[], &[existing]).unwrap_err();
+        let error = save_archive(&source, &target, &[], &[], &[existing], &[]).unwrap_err();
         assert!(error.to_string().contains("already exists"));
 
         let mut unsafe_name = write_content(&dir, "evil.xml", "<e/>");
         unsafe_name.name = "../evil.xml".into();
-        let error = save_archive(&source, &target, &[], &[], &[unsafe_name]).unwrap_err();
+        let error = save_archive(&source, &target, &[], &[], &[unsafe_name], &[]).unwrap_err();
         assert!(error.to_string().contains("unsafe archive path"));
     }
 
@@ -696,4 +771,30 @@ mod tests {
     }
 
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+
+    #[test]
+    fn refused_flushes_are_tolerated() {
+        let enotsup = TOLERATED_SYNC_ERRNOS[0];
+        for raw in [enotsup, 22, 1, 13, 16] {
+            assert!(
+                is_tolerated_sync_error(&io::Error::from_raw_os_error(raw)),
+                "errno {raw}"
+            );
+        }
+        assert!(is_tolerated_sync_error(&io::Error::from(
+            io::ErrorKind::Unsupported
+        )));
+    }
+
+    #[test]
+    fn real_write_failures_still_fail() {
+        for raw in [5, 28, 30] {
+            assert!(!is_tolerated_sync_error(&io::Error::from_raw_os_error(raw)));
+        }
+    }
 }

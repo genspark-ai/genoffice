@@ -14,7 +14,7 @@ import { modelSaveAsName, proposedSaveName } from '../src/renderer/file-naming'
  */
 
 const SECRET = '13800138000'
-const LABEL = '客户电话'
+const LABEL = '\u5ba2\u6237\u7535\u8bdd'
 
 /** Calls the naming bridge received, in order. */
 let sent: Array<{ content: string }> = []
@@ -60,7 +60,9 @@ function selectText(editor: Editor, needle: string): void {
 
 /** A document whose phone number the reader has hidden from the model. */
 function editorWithRedaction(): Editor {
-  const editor = makeEditor('# 客户回访记录\n\n请拨打 13800138000 确认订单')
+  const editor = makeEditor(
+    '# \u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55\n\n\u8bf7\u62e8\u6253 13800138000 \u786e\u8ba4\u8ba2\u5355',
+  )
   selectText(editor, SECRET)
   editor.commands.setRedaction(LABEL)
   return editor
@@ -108,7 +110,7 @@ describe('the name the reader asks for', () => {
     const editor = editorWithRedaction()
     await modelSaveAsName(editor)
     expect(sent[0]!.content).toContain(LABEL)
-    expect(sent[0]!.content).toContain('客户回访记录')
+    expect(sent[0]!.content).toContain('\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55')
   })
 
   it('sends the whole document for one with nothing withheld', async () => {
@@ -172,15 +174,17 @@ describe('the name a save offers', () => {
   it('names a document that has never been on disk from its own content', async () => {
     // No model call: a save must not wait on a model round-trip to learn what
     // the document already says about itself.
-    const editor = makeEditor('# 客户回访记录\n\n正文')
-    expect(await proposedSaveName(editor, { filePath: null })).toBe('客户回访记录')
+    const editor = makeEditor('# \u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55\n\n\u6b63\u6587')
+    expect(await proposedSaveName(editor, { filePath: null })).toBe(
+      '\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55',
+    )
     expect(sent).toHaveLength(0)
   })
 
   it('never renames a document that already has a name', async () => {
     // The rule the whole feature rests on: a file that is open elsewhere,
     // referenced from a note, or synced keeps the name it has.
-    const editor = makeEditor('# 客户回访记录\n\n正文')
+    const editor = makeEditor('# \u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55\n\n\u6b63\u6587')
     expect(await proposedSaveName(editor, { filePath: '/tmp/notes.md' })).toBeUndefined()
     expect(sent).toHaveLength(0)
   })
@@ -189,7 +193,7 @@ describe('the name a save offers', () => {
     // The ribbon's "Name with AI" proposes a name for a document that already
     // has one. That is the reader asking, so nothing else gets a say — and
     // the model is not asked a second time.
-    const editor = makeEditor('# 客户回访记录\n\n正文')
+    const editor = makeEditor('# \u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55\n\n\u6b63\u6587')
     expect(
       await proposedSaveName(editor, {
         filePath: '/tmp/notes.md',
@@ -202,9 +206,12 @@ describe('the name a save offers', () => {
   it('does not ask again when the save already carries a name of its own', async () => {
     // The AI auto-naming path writes an untitled document under a name it
     // derived itself; there is nothing left to ask about.
-    const editor = makeEditor('# 客户回访记录\n\n正文')
+    const editor = makeEditor('# \u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55\n\n\u6b63\u6587')
     expect(
-      await proposedSaveName(editor, { filePath: null, suggestedName: '客户回访记录' }),
+      await proposedSaveName(editor, {
+        filePath: null,
+        suggestedName: '\u5ba2\u6237\u56de\u8bbf\u8bb0\u5f55',
+      }),
     ).toBeUndefined()
     expect(sent).toHaveLength(0)
   })

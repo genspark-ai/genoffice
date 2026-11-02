@@ -1,0 +1,53 @@
+{
+  "id": "hf-exact-line-cap",
+  "title": "Fixed line rules in a header strip: exact 200 under Calibri 11 is a 10 pt line, exact 480 with two br-lines pitches 24, atLeast 400 pitches 20, atLeast 200 under an 11 pt run keeps the natural 13.42 line",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Calibri 11; exact 200 baseline 44.16 (strip 10, body stays at 72.05); exact 480 baselines 55.20 / 79.20 (pitch 24.00, body 84.05 = 36 + 48); atLeast 400 baselines 53.04 / 72.96 (pitch 19.92, body 76.13 = 36 + 40); atLeast 200 baseline 46.56 like the 11 pt control. gen's strip paragraphs emitted the fixed line-height but not the run cap (--doc-lh-cap), the lead placement (--doc-lead-top) or the .doc-lh-fixed class the body uses, nor --doc-line-mult for multiples",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": {
+        "styles": [
+          "line-height:10.0pt",
+          "--doc-lh-cap:10.0pt",
+          "--doc-lead-top:var(--doc-lead-exact, 0px)"
+        ],
+        "classes": ["doc-lh-fixed"]
+      },
+      "note": "exact 200: the 11 pt glyphs are clipped to a 10 pt line, runs capped at the rule"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": {
+        "styles": ["line-height:24.0pt", "--doc-lh-cap:24.0pt"],
+        "classes": ["doc-lh-fixed"]
+      }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "expect": {
+        "styles": ["--doc-lh-cap:initial"],
+        "stylesStartWith": ["line-height:max(20.0pt,", "--doc-lead-top:calc("],
+        "classes": ["doc-lh-fixed"]
+      },
+      "note": "atLeast 400: 20 pt lines, glyphs bottom-aligned"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "expect": { "stylesStartWith": ["line-height:max(10.0pt,"] },
+      "note": "atLeast 200 under 11 pt text: the natural line wins"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 4,
+      "expect": { "notStyles": ["--doc-lh-cap", "--doc-lead-top"], "notClasses": ["doc-lh-fixed"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

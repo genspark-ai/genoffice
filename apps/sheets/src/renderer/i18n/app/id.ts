@@ -390,6 +390,9 @@ export const id = {
   appTableNameInFile: 'Nama tabel "{name}" sudah digunakan oleh tabel di dalam file.',
   appTableOverlapsSession:
     'Rentang tumpang-tindih dengan tabel "{name}" yang dibuat pada sesi ini.',
+  appTableOverlapsFile: 'Rentang tumpang tindih dengan tabel "{name}" di file.',
+  appTableAlreadyInTable:
+    'Pilihan sudah berada di tabel "{name}" — ubah gayanya dari Desain Tabel.',
   appTablesNeedFile: 'Buka file XLSX dahulu — tabel ditulis ke file.',
   appTableSelectRange: 'Pilih rentang data dahulu — header di baris pertamanya.',
   appTableCreated: 'Tabel dibuat — simpan dengan ⌘S.',
@@ -473,6 +476,7 @@ export const id = {
   appGridlinesHidden: 'Garis kisi disembunyikan.',
   appGridlinesShown: 'Garis kisi ditampilkan.',
   appShowingFormulas: 'Menampilkan rumus — alihkan lagi untuk melihat nilai.',
+  appShowingFormulasActive: 'Menampilkan rumus',
   appShowingValues: 'Menampilkan nilai hasil hitungan.',
   appTraceNoFormula: 'Lacak Presedan: sel aktif tidak memiliki rumus.',
   appTraceNoRefs: 'Lacak Presedan: rumus ini tidak memiliki referensi sel.',
@@ -1186,6 +1190,8 @@ export const id = {
   appRefreshAll: 'Refresh Semua',
   appWorkbookNoPivot: 'Tidak ada PivotTable di buku kerja ini.',
   appRefreshAllTitle: 'Segarkan semua PivotTable',
+  appQueriesConnections: 'Kueri & Koneksi',
+  appQueriesConnectionsTitle: 'Tampilkan kueri dan koneksi data buku kerja',
   appErrorCheckingDetail: 'Pindai nilai kesalahan di lembar',
   appErrorsFound: '{count} kesalahan — di {cell}: {value}',
   appCheckingErrors: 'Memindai kesalahan di seluruh lembar…',

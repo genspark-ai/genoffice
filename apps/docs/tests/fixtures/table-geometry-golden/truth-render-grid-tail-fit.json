@@ -1,0 +1,23 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-grid-tail-fit/probe.docx",
+  "tables": 7,
+  "hashes": [
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f",
+    "65ec02bb6f82104f"
+  ],
+  "staticTables": 7,
+  "staticHashes": [
+    "9421c1db174f494a",
+    "9421c1db174f494a",
+    "9421c1db174f494a",
+    "9421c1db174f494a",
+    "9421c1db174f494a",
+    "9421c1db174f494a",
+    "9421c1db174f494a"
+  ]
+}

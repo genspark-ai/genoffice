@@ -109,7 +109,7 @@ fn relationship_parts(
 ) -> Result<Vec<RelationshipPart>, SidecarError> {
     let mut parts = Vec::new();
     for index in 0..archive.len() {
-        let name = archive.by_index_raw(index)?.name().to_string();
+        let name = archive.by_index_raw(index)?.name()?.to_string();
         if name.ends_with('/') {
             continue;
         }
@@ -144,7 +144,7 @@ fn relationship_source_part(name: &str) -> Option<String> {
 
 fn read_part(archive: &mut ZipArchive<File>, index: usize) -> Result<String, SidecarError> {
     let mut entry = archive.by_index(index)?;
-    let name = entry.name().to_string();
+    let name = entry.name()?.to_string();
     let declared = entry.size();
     if declared > MAX_METADATA_PART_BYTES {
         return Err(SidecarError::Workbook(format!(
@@ -274,14 +274,14 @@ fn normalize_target(
         // stay the importer's business, exactly as before.
         Err(_) => return Ok(None),
     };
+    if !absolute {
+        return Ok(None);
+    }
     if crate::zip_entry(archive, &resolved).is_err() {
         return Err(SidecarError::Workbook(format!(
             "workbook relationship target not found: {} -> {resolved} (resolved from {target})",
             source_label(source_part)
         )));
-    }
-    if !absolute {
-        return Ok(None);
     }
     let mut rewritten = relative_target(source_part, &resolved);
     if let Some((_, fragment)) = target.trim().split_once('#') {
@@ -340,7 +340,7 @@ fn write_package(
     for index in 0..archive.len() {
         match rewrites.get(&index) {
             Some(xml) => {
-                let name = archive.by_index_raw(index)?.name().to_string();
+                let name = archive.by_index_raw(index)?.name()?.to_string();
                 writer.start_file(name, options)?;
                 writer.write_all(xml.as_bytes())?;
             }
@@ -479,6 +479,27 @@ mod tests {
             entry_text(&mut archive, "xl/worksheets/sheet1.xml"),
             "<worksheet/>"
         );
+    }
+
+    #[test]
+    fn a_dangling_relative_target_is_left_to_the_importer() {
+        let (_dir, path) = crate::tests::open_fixture(&[
+            (
+                "_rels/.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            ("xl/workbook.xml", "<workbook/>"),
+            ("xl/worksheets/sheet1.xml", "<worksheet/>"),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings" Target="../printerSettings/printerSettings1.bin"/></Relationships>"#,
+            ),
+        ]);
+        assert!(normalized_package(&path).unwrap().is_none());
     }
 
     #[test]

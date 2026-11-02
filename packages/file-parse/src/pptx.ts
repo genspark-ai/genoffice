@@ -15,6 +15,14 @@ const parser = new XMLParser({
   removeNSPrefix: true,
 })
 
+const notesParser = new XMLParser({
+  ignoreAttributes: false,
+  trimValues: false,
+  parseTagValue: false,
+  preserveOrder: true,
+  removeNSPrefix: true,
+})
+
 function stripNamespacePrefix(name: string): string {
   const separator = name.indexOf(':')
   return separator < 0 ? name : name.slice(separator + 1)
@@ -118,10 +126,26 @@ async function notesXmlForSlide(zip: JSZip, slidePath: string): Promise<string |
 /** body placeholder only: the notes page's slide-number field would read as a stray digit */
 function notesParagraphs(notesXml: string): string[] {
   const out: string[] = []
-  for (const m of notesXml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
-    if (!/<p:ph\b[^>]*type="body"/.test(m[0])) continue
-    collectParagraphs(parser.parse(m[0]), out)
+  type Node = Record<string, unknown>
+  const child = (nodes: Node[], name: string): Node[] =>
+    (nodes.find((node) => Array.isArray(node[name]))?.[name] as Node[] | undefined) ?? []
+  const tree = notesParser.parse(notesXml) as Node[]
+  const shapes = child(child(child(tree, 'notes'), 'cSld'), 'spTree')
+  const walkShapes = (nodes: Node[]): void => {
+    for (const shape of nodes) {
+      if (Array.isArray(shape.grpSp)) walkShapes(shape.grpSp as Node[])
+      if (Array.isArray(shape.AlternateContent))
+        walkShapes(mcBranch(shape.AlternateContent) as Node[])
+      if (!Array.isArray(shape.sp)) continue
+      const children = shape.sp as Node[]
+      const properties = child(child(children, 'nvSpPr'), 'nvPr')
+      const placeholder = properties.find((node) => Array.isArray(node.ph))
+      const attributes = placeholder?.[':@'] as Record<string, string> | undefined
+      if (attributes?.['@_type'] !== 'body') continue
+      collectParagraphs(child(children, 'txBody'), out)
+    }
   }
+  walkShapes(shapes)
   return out
 }
 

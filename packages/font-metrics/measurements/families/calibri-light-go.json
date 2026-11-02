@@ -1,0 +1,93 @@
+{
+  "family": "Calibri Light GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-10-29",
+    "fonts": ["Calibri Light (Word DFonts: calibril.ttf, calibrili.ttf)", "Carlito"],
+    "probe": "hmtx advance-ratio buckets (<= 1.5 % span, build-font-aliases.mjs --refit-buckets); Word lays Calibri Light out at its own advances"
+  },
+  "refit": {
+    "method": "hmtx-buckets",
+    "span": 0.015,
+    "range": "U+0020-007E, U+00A0-00FF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+20AC",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:calibril.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Regular.ttf",
+        "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')"
+      },
+      "normal/italic": {
+        "word": "dfonts:calibrili.ttf",
+        "base": "repo:packages/ui/src/fonts/Carlito-Italic.ttf",
+        "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')"
+      }
+    }
+  },
+  "note": "Calibri Light (Office heading face) ships only inside Office; the chain drew it\nwith Carlito, whose advances follow Calibri regular and run about 3 % wide on\nheadings (validation corpus 2026-10-29). Faces are advance-ratio buckets over\nCarlito; Word has no bold cut and emboldens the light face, so bold runs keep\nthe regular/italic buckets with Chromium's synthetic bold. Pitch stays Calibri's\n1.22 (line-factors calibri rule).",
+  "faces": [
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 98.9
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 94.5,
+      "unicodeRange": "U+0022, U+002F, U+005C, U+007B, U+007D"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 96.9,
+      "unicodeRange": "U+0027, U+002E, U+0041, U+0049, U+004B, U+0058-0059, U+005B, U+005D, U+0069-006C, U+0076, U+0078-0079, U+00A8, U+00AB, U+00B7, U+00BB, U+00C0-00C5, U+00CC-00CF, U+00DD, U+00DF, U+00EC-00EF, U+00FD, U+00FF"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 98.6,
+      "unicodeRange": "U+0025-0026, U+0028-0029, U+002C, U+003A-003B, U+0042, U+0044, U+004A, U+004D-0053, U+0055-0057, U+005A, U+0060-0062, U+0064, U+0066, U+0068, U+006D-0075, U+0077, U+007C, U+00AA, U+00B4-00B6, U+00B9-00BA, U+00BC-00BE, U+00D0-00D6, U+00D8-00DC, U+00DE, U+00E0-00E5, U+00F0-00F6, U+00F8-00FC, U+00FE, U+2018-201E, U+2026"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 99.9,
+      "unicodeRange": "U+0020-0021, U+0023-0024, U+002A-002B, U+002D, U+0030-0039, U+003C-0040, U+0043, U+0045-0048, U+004C, U+0054, U+005E-005F, U+0063, U+0065, U+0067, U+007A, U+007E, U+00A1-00A7, U+00A9, U+00AC, U+00AE-00B3, U+00BF, U+00C6-00CB, U+00D7, U+00E6-00EB, U+00F7, U+2013-2015, U+2017, U+2020-2022, U+20AC"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf')",
+      "sizeAdjust": 100.8,
+      "unicodeRange": "U+00B8"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 98.6,
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 93.9,
+      "unicodeRange": "U+002F, U+005C",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 95.9,
+      "unicodeRange": "U+0022, U+0059, U+0069-006A, U+006C, U+007B, U+007D, U+00DD, U+00EC-00EF",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 97.3,
+      "unicodeRange": "U+0027, U+002C, U+002E, U+0041, U+0049-004B, U+0052, U+0056, U+0058, U+005B, U+005D, U+0066, U+006B, U+0076-0079, U+00A8, U+00AB, U+00B7, U+00BB, U+00BE, U+00C0-00C5, U+00CC-00CF, U+00DF, U+00FD, U+00FF, U+2018-201E",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 98.7,
+      "unicodeRange": "U+0025-0026, U+0028-0029, U+003A-003B, U+0042, U+0044, U+0047-0048, U+004D-0051, U+0053-0055, U+0057, U+005A, U+0060-0062, U+0064-0065, U+0067-0068, U+006D-0075, U+007C, U+00AA, U+00B0, U+00B4-00B6, U+00B9-00BA, U+00BC-00BD, U+00C6, U+00D0-00D6, U+00D8-00DC, U+00DE, U+00E0-00E6, U+00E8-00EB, U+00F0-00F6, U+00F8-00FC, U+00FE, U+2026",
+      "style": "italic"
+    },
+    {
+      "src": "url('@genoffice/ui/fonts/Carlito-Italic.ttf')",
+      "sizeAdjust": 100,
+      "unicodeRange": "U+0020-0021, U+0023-0024, U+002A-002B, U+002D, U+0030-0039, U+003C-0040, U+0043, U+0045-0046, U+004C, U+005E-005F, U+0063, U+007A, U+007E, U+00A1-00A7, U+00A9, U+00AC, U+00AE-00AF, U+00B1-00B3, U+00B8, U+00BF, U+00C7-00CB, U+00D7, U+00E7, U+00F7, U+2013-2015, U+2017, U+2020-2022, U+20AC",
+      "style": "italic"
+    }
+  ]
+}

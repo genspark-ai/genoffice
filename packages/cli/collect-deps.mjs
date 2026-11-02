@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const rootModules = resolve(here, '../../node_modules')
 const out = join(here, 'dist', 'node_modules')
-const EXTERNALS = ['jsdom']
+const EXTERNALS = ['jsdom', '@rhwp/core']
 
 function resolvePkg(name, from) {
   let dir = from

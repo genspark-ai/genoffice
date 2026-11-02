@@ -243,7 +243,9 @@ function deriveKey(
   const padded = paddedPassword(password)
 
   if (revision <= 4) {
-    const keyLength = Math.min(Math.max(uintOf(encrypt, 'Length'), 40), 128) / 8
+    // /Length is optional: V4 files take it from the crypt filter (bytes), older ones mean 40
+    const declared = uintOf(encrypt, 'Length') || (revision === 4 ? filterKeyBits(encrypt) : 40)
+    const keyLength = Math.min(Math.max(declared, 40), 128) / 8
     const o = bytesOf(encrypt, 'O')
     const u = bytesOf(encrypt, 'U')
     const p = uintOf(encrypt, 'P')
@@ -322,6 +324,17 @@ function deriveKey(
     }
   }
   throw new WrongPasswordError()
+}
+
+/** key bits from the stream crypt filter's /Length (bytes; a few writers put bits) */
+function filterKeyBits(encrypt: PDFDict): number {
+  const stmF = encrypt.get(PDFName.of('StmF'))
+  const filterName = stmF instanceof PDFName ? stmF.asString().slice(1) : 'StdCF'
+  const cf = encrypt.get(PDFName.of('CF'))
+  const filter = cf instanceof PDFDict ? cf.get(PDFName.of(filterName)) : undefined
+  const length = filter instanceof PDFDict ? uintOf(filter, 'Length') : 0
+  if (length === 0) return 128
+  return length >= 40 ? length : length * 8
 }
 
 /** the cipher each payload class runs through, per /StmF and /StrF (§7.6.3.2) */
@@ -777,7 +790,7 @@ function encryptDictFor(context: PDFDocument['context'], entries: EncryptEntries
     Filter: entries.filter,
     V: entries.v,
     R: entries.r,
-    Length: entries.length,
+    ...(entries.length >= 40 ? { Length: entries.length } : {}),
     P: entries.p,
     O: PDFHexString.of(hex(entries.o)),
     U: PDFHexString.of(hex(entries.u)),

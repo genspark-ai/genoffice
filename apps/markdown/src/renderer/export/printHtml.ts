@@ -1,5 +1,8 @@
 import katexCss from 'katex/dist/katex.min.css?inline'
 
+/** `[[target|alias]]` as one whole literal; mirrors the editor's link regex */
+const WIKI_ALIAS_RE = /^\[\[[^[\]|\n]+\|([^[\]\n]+)\]\]$/
+
 /** Print-theme CSS: mirrors the editor typography so the PDF matches the canvas */
 const PRINT_CSS = `
 @page {
@@ -33,7 +36,8 @@ img { max-width: 100%; height: auto; }
 .md-diagram-preview { margin: 0.8em 0; text-align: center; break-inside: avoid; }
 .md-diagram-preview svg { max-width: 100%; height: auto; }
 .tableWrapper { margin: 0.8em 0; }
-table { border-collapse: collapse; width: 100%; margin: 0; break-inside: avoid; }
+table { border-collapse: collapse; width: 100%; margin: 0; }
+tr { break-inside: avoid; }
 th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; overflow-wrap: anywhere; }
 th > p, td > p { margin: 0; }
 th { background: #f6f8fa; font-weight: 600; }
@@ -49,7 +53,7 @@ sup.md-footnote-ref { color: #0a69da; font-size: 0.78em; }
 @media print {
   /* High-quality rendering for text */
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  pre, blockquote, table { break-inside: avoid; }
+  pre, blockquote, tr { break-inside: avoid; }
   img { max-width: 100% !important; page-break-inside: avoid; }
 }
 `
@@ -70,6 +74,14 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
     '.md-codeblock-bar, .md-diagram-error, .ProseMirror-separator',
   ))
     bar.remove()
+  // an aliased wiki link prints as its alias, from the literal rather than the
+  // view's hidden spans: a link under the caret has none, as it shows its syntax
+  for (const link of clone.querySelectorAll('a.wiki-link')) {
+    // a literal an inline mark splits stays visible on the canvas too
+    if ([...link.children].some((el) => el.tagName !== 'SPAN')) continue
+    const alias = WIKI_ALIAS_RE.exec(link.textContent ?? '')?.[1]
+    if (alias) link.textContent = alias
+  }
   // a rendered diagram block prints as its picture; an unrendered one keeps its source
   for (const block of clone.querySelectorAll('[data-diagram="rendered"] pre')) block.remove()
 

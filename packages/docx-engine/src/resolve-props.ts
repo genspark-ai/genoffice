@@ -13,6 +13,7 @@ import {
   JC_ALIGN,
   activeCharIndents,
   autoSpaceFlagsOf,
+  autoSpaceMode,
   charIndentsOf,
   indentTwipsOf,
   mergeCharIndents,
@@ -200,6 +201,11 @@ function docDefaultsPLayer(d: DocDefaults | undefined): PLayer {
   if (!d) return {}
   const out: PLayer = {}
   if (d.widowControl !== undefined) out.widowControl = d.widowControl
+  if (d.bidi !== undefined) out.bidi = d.bidi
+  if (d.indentLeftTwips !== undefined) out.indentLeft = d.indentLeftTwips
+  if (d.indentRightTwips !== undefined) out.indentRight = d.indentRightTwips
+  if (d.indentFirstLineTwips !== undefined) out.indentFirstLine = d.indentFirstLineTwips
+  if (d.indentChars) out.indentChars = d.indentChars
   if (d.spaceBeforeTwips !== undefined) out.spaceBefore = d.spaceBeforeTwips
   if (d.spaceAfterTwips !== undefined) out.spaceAfter = d.spaceAfterTwips
   if (d.spaceBeforeAuto !== undefined) out.spaceBeforeAuto = d.spaceBeforeAuto
@@ -646,6 +652,7 @@ function docDefaultsRLayer(d: DocDefaults | undefined, cs: boolean): RLayer {
   if (bold !== undefined) out.bold = bold
   if (italic !== undefined) out.italic = italic
   if (size !== undefined) out.sizeHalfPoints = size
+  if (d.rtl !== undefined) out.rtl = d.rtl
   if (d.asciiFont) out.ascii = d.asciiFont
   if (d.eastAsiaFont) out.eastAsia = d.eastAsiaFont
   if (d.eaSlotEmpty !== undefined) out.eaSlotEmpty = d.eaSlotEmpty
@@ -706,8 +713,9 @@ function directRLayer(
   }
   const color = colorFrom(rPr, themeColors) ?? autoColorOf(rPr)
   if (color) out.color = color
-  const u = findChild(rPr, 'w:u')
-  if (u) out.underline = attrsOf(u)['w:val'] !== 'none'
+  // a w:u without w:val is not an underline (Word; python-docx notes agree)
+  const u = attrsOf(findChild(rPr, 'w:u') ?? {})['w:val']
+  if (u !== undefined) out.underline = u !== 'none'
   const strike = onOffOf(rPr, 'w:strike')
   if (strike !== undefined) out.strike = strike
   const caps = onOffOf(rPr, 'w:caps')
@@ -766,7 +774,8 @@ export function resolveRunProps(
   const cs =
     ((rPr ? onOffOf(rPr, 'w:rtl') : undefined) ??
       charStyle?.display?.rtl ??
-      paraStyle?.display?.rtl) === true
+      paraStyle?.display?.rtl ??
+      ctx.docDefaults?.rtl) === true
 
   const source: Record<string, PropSource> = {}
   const acc: RLayer = {
@@ -848,124 +857,154 @@ export function resolveRunProps(
   }
 }
 
+// ---------------------------------------------------------------- direct view
+
+/**
+ * The paragraph's own w:pPr as the direct-only ParaFormat the model saves:
+ * every key the resolver sourced from the direct layer, in extractParaFormat's
+ * shape. w:bidi inherited from the chain surfaces as bidiInherited (the
+ * generator needs it to write the logical jc Word expects).
+ */
+export function directParaFormat(
+  eff: EffectivePPr,
+): Pick<
+  ParaFormat,
+  | 'align'
+  | 'bidi'
+  | 'bidiInherited'
+  | 'lineSpacing'
+  | 'lineRule'
+  | 'lineRawTwips'
+  | 'indentLeft'
+  | 'indentRight'
+  | 'indentFirstLine'
+  | 'spaceBefore'
+  | 'spaceAfter'
+  | 'spaceBeforeAuto'
+  | 'spaceAfterAuto'
+  | 'pageBreakBefore'
+  | 'keepNext'
+  | 'keepLines'
+  | 'suppressLineNumbers'
+  | 'widowControl'
+  | 'snapToGrid'
+  | 'autoSpace'
+  | 'autoSpaceDE'
+  | 'autoSpaceDN'
+  | 'wordWrap'
+  | 'overflowPunct'
+  | 'contextualSpacing'
+> {
+  const direct = (k: string) => eff.source[k] === 'direct'
+  const f: ReturnType<typeof directParaFormat> = {}
+  if (eff.bidi) {
+    if (direct('bidi')) f.bidi = true
+    else f.bidiInherited = true
+  }
+  if (direct('align') && eff.align) f.align = eff.align
+  if (direct('line')) Object.assign(f, effectiveLineFormat(eff.spacing.line))
+  if (direct('spaceBeforeAuto')) f.spaceBeforeAuto = eff.spacing.beforeAuto
+  if (direct('spaceAfterAuto')) f.spaceAfterAuto = eff.spacing.afterAuto
+  if (direct('spaceBefore')) f.spaceBefore = eff.spacing.before
+  if (direct('spaceAfter')) f.spaceAfter = eff.spacing.after
+  if (direct('indentLeft')) f.indentLeft = eff.indent.left
+  if (direct('indentRight')) f.indentRight = eff.indent.right
+  if (direct('indentFirstLine')) f.indentFirstLine = eff.indent.firstLine
+  for (const k of [
+    'pageBreakBefore',
+    'keepNext',
+    'keepLines',
+    'suppressLineNumbers',
+    'widowControl',
+    'contextualSpacing',
+    'wordWrap',
+    'overflowPunct',
+  ] as const) {
+    if (direct(k)) f[k] = eff[k]
+  }
+  if (direct('snapToGrid') && !eff.snapToGrid) f.snapToGrid = false
+  const de = direct('autoSpaceDE') ? eff.autoSpaceDE : undefined
+  const dn = direct('autoSpaceDN') ? eff.autoSpaceDN : undefined
+  if (de !== undefined) f.autoSpaceDE = de
+  if (dn !== undefined) f.autoSpaceDN = dn
+  const auto = autoSpaceMode(de, dn)
+  if (auto !== undefined) f.autoSpace = auto
+  return f
+}
+
+/**
+ * The run's own w:rPr as the direct-only Run fields the model saves: every key
+ * the resolver sourced from the direct layer, in extractRun's shape (font is
+ * the eastAsia-first display face; rtl, colour and shading keep their own
+ * readers).
+ */
+export function directRunFormat(
+  eff: EffectiveRPr,
+): Pick<
+  Run,
+  | 'bold'
+  | 'italic'
+  | 'sizeHalfPoints'
+  | 'underline'
+  | 'strike'
+  | 'caps'
+  | 'charSpacingTwips'
+  | 'kernHalfPoints'
+  | 'vertAlign'
+  | 'font'
+  | 'fontAscii'
+  | 'eastAsiaFont'
+  | 'eaSlotEmpty'
+  | 'csFont'
+> {
+  const direct = (k: string) => eff.source[k] === 'direct'
+  const f: ReturnType<typeof directRunFormat> = {}
+  if (direct('bold')) f.bold = eff.bold
+  if (direct('italic')) f.italic = eff.italic
+  if (direct('underline')) f.underline = eff.underline
+  if (direct('strike')) f.strike = eff.strike
+  if (direct('sizeHalfPoints')) f.sizeHalfPoints = eff.sizeHalfPoints
+  const eastAsia = direct('eastAsia') ? eff.fonts.eastAsia : undefined
+  const ascii = direct('ascii') ? eff.fonts.ascii : undefined
+  const font = eastAsia ?? ascii
+  if (font) f.font = font
+  if (eastAsia) f.eastAsiaFont = eastAsia
+  if (eastAsia && direct('eaSlotEmpty') && eff.fonts.eaSlotEmpty) f.eaSlotEmpty = true
+  if (ascii) f.fontAscii = ascii
+  if (direct('cs') && eff.fonts.cs) f.csFont = eff.fonts.cs
+  if (direct('charSpacingTwips')) f.charSpacingTwips = eff.charSpacingTwips
+  if (direct('kernHalfPoints')) f.kernHalfPoints = eff.kernHalfPoints
+  if (direct('caps')) f.caps = eff.caps
+  if (direct('vertAlign') && eff.vertAlign) f.vertAlign = eff.vertAlign
+  return f
+}
+
 // ---------------------------------------------------------------- shadow
 
 export interface ResolveDiff {
+  /** which parse surface produced the paragraph */
+  surface?: 'body' | 'cell' | 'run'
   key: string
   old: unknown
   eff: unknown
   text?: string
 }
 
-const DIRECT_ONLY_KEYS = [
-  'align',
-  'spaceBefore',
-  'spaceAfter',
-  'spaceBeforeAuto',
-  'spaceAfterAuto',
-  'keepNext',
-  'keepLines',
-  'pageBreakBefore',
-  'widowControl',
-  'contextualSpacing',
-  'suppressLineNumbers',
-] as const
-
-function effPlain(eff: EffectivePPr, k: (typeof DIRECT_ONLY_KEYS)[number]): unknown {
-  switch (k) {
-    case 'spaceBefore':
-      return eff.spacing.before
-    case 'spaceAfter':
-      return eff.spacing.after
-    case 'spaceBeforeAuto':
-      return eff.spacing.beforeAuto
-    case 'spaceAfterAuto':
-      return eff.spacing.afterAuto
-    default:
-      return eff[k]
-  }
-}
-
-/**
- * Compare the resolver's view with the legacy ParaFormat the parser produced.
- * Direct-only keys (the renderer cascades the style chain through CSS) must
- * agree on value and on `source === 'direct'`; keys the old path already
- * resolved through the style chain compare on value alone.
- */
+/** key-by-key comparison of a legacy direct reader's output with the resolver's */
 export function shadowCompare(
-  eff: EffectivePPr,
-  format: ParaFormat | undefined,
-  old: { hidden: boolean; emptySize?: number; markSize?: number; charResolved: boolean },
+  legacy: object | undefined,
+  resolved: object | undefined,
+  keys?: readonly string[],
 ): ResolveDiff[] {
   const out: ResolveDiff[] = []
-  const push = (key: string, o: unknown, e: unknown) => out.push({ key, old: o, eff: e })
-  if (old.hidden) {
-    if (!eff.hidden) push('hidden', true, false)
-    return out
+  const a = legacy ?? {}
+  const b = resolved ?? {}
+  for (const key of keys ?? new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (key === 'effective') continue
+    const o = (a as Record<string, unknown>)[key]
+    const e = (b as Record<string, unknown>)[key]
+    if (JSON.stringify(o) !== JSON.stringify(e)) out.push({ key, old: o, eff: e })
   }
-  for (const k of DIRECT_ONLY_KEYS) {
-    const o = format?.[k]
-    const e = effPlain(eff, k)
-    if (o !== undefined) {
-      if (eff.source[k] !== 'direct') push(`${k}:source`, o, eff.source[k])
-      else if (o !== e) push(`${k}:value`, o, e)
-    } else if (eff.source[k] === 'direct') push(`${k}:direct-missing`, o, e)
-  }
-  // indents: twips from the direct w:ind, or char indents resolved from the chain
-  for (const [k, e] of [
-    ['indentLeft', eff.indent.left],
-    ['indentRight', eff.indent.right],
-    ['indentFirstLine', eff.indent.firstLine],
-  ] as const) {
-    const o = format?.[k]
-    if (old.charResolved) {
-      if (o !== undefined && o !== e) push(`${k}:chars`, o, e)
-      continue
-    }
-    if (o !== undefined) {
-      if (eff.source[k] !== 'direct') push(`${k}:source`, o, eff.source[k])
-      else if (o !== e) push(`${k}:value`, o, e)
-    } else if (eff.source[k] === 'direct') push(`${k}:direct-missing`, o, e)
-  }
-  // line spacing is one component
-  if (format?.lineRawTwips !== undefined || format?.lineRule !== undefined) {
-    if (eff.source.line !== 'direct') push('line:source', format.lineRawTwips, eff.source.line)
-    else if (
-      eff.spacing.line?.raw !== format.lineRawTwips ||
-      eff.spacing.line?.rule !== (format.lineRule ?? 'auto')
-    )
-      push('line:value', [format.lineRule, format.lineRawTwips], eff.spacing.line)
-  } else if (eff.source.line === 'direct') push('line:direct-missing', undefined, eff.spacing.line)
-  if (format?.bidi === true && !eff.bidi) push('bidi', true, eff.bidi)
-  if (format?.snapToGrid === false && eff.snapToGrid) push('snapToGrid', false, true)
-  // keys the old path already resolved through the style chain
-  const oldAuto = format?.autoSpace ?? true
-  const effAuto =
-    eff.autoSpaceDE && eff.autoSpaceDN
-      ? true
-      : !eff.autoSpaceDE && !eff.autoSpaceDN
-        ? false
-        : eff.autoSpaceDE
-          ? 'latin'
-          : 'digits'
-  if (oldAuto !== effAuto) push('autoSpace', oldAuto, effAuto)
-  if ((format?.wordWrap ?? true) !== eff.wordWrap) push('wordWrap', format?.wordWrap, eff.wordWrap)
-  if ((format?.overflowPunct ?? true) !== eff.overflowPunct)
-    push('overflowPunct', format?.overflowPunct, eff.overflowPunct)
-  if (format?.eastAsiaLang !== eff.eastAsiaLang && eff.source.eastAsiaLang !== 'docDefaults')
-    push('eastAsiaLang', format?.eastAsiaLang, eff.eastAsiaLang)
-  // the legacy model keeps w:val=clear stops for the save path; eff holds the laid-out set
-  const oldStops = (format?.tabStops ?? [])
-    .filter((s) => !s.rel && s.val !== 'clear')
-    .map((s) => `${s.pos}${s.val}`)
-    .join(' ')
-  const effStops = eff.tabStops.map((s) => `${s.pos}${s.val}`).join(' ')
-  if (oldStops !== effStops) push('tabStops', oldStops, effStops)
-  if (old.hidden !== eff.hidden) push('hidden', old.hidden, eff.hidden)
-  if (old.emptySize !== undefined && old.emptySize !== eff.mark.sizeHalfPoints)
-    push('emptySize', old.emptySize, eff.mark.sizeHalfPoints)
-  if (old.markSize !== undefined && old.markSize !== eff.mark.sizeHalfPoints)
-    push('markSize', old.markSize, eff.mark.sizeHalfPoints)
   return out
 }
 

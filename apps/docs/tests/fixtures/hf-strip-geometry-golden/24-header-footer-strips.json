@@ -1,0 +1,24 @@
+[
+  {
+    "section": 0,
+    "kind": "header",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 749.4,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  },
+  {
+    "section": 0,
+    "kind": "footer",
+    "variant": "default",
+    "ownerWidthPx": 624,
+    "pageWidthPx": 624,
+    "estimatePx": 85.7,
+    "floorPx": 0,
+    "floats": [],
+    "disagree": []
+  }
+]
