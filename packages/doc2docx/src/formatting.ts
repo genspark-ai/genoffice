@@ -184,15 +184,30 @@ const VERTICAL_ALIGNS: Record<number, CharacterFormatting['verticalAlign']> = {
 }
 
 /**
- * ToggleOperand: 0 = off, 1 = on; 0x80 (inherit) and 0x81 (invert) need the
- * style sheet, which stage 2 does not read yet, so they leave the field unset.
+ * How ToggleOperand values 0x80/0x81 are applied. 'direct' is the stage-2
+ * direct-formatting model: without a style sheet there is nothing to inherit
+ * from, so both leave the field unset. 'inherit' is style resolution: 0x80
+ * keeps the value inherited from the previous layer and 0x81 inverts it (the
+ * base of the chain is off).
  */
-function applyToggle(target: object, key: string, operand: Uint8Array): void {
+export type ToggleMode = 'direct' | 'inherit'
+
+/**
+ * ToggleOperand: 0 = off, 1 = on, 0x80 = inherit, 0x81 = invert. The style
+ * resolver uses 'inherit'; the direct-formatting model keeps 'direct'.
+ */
+function applyToggle(target: object, key: string, operand: Uint8Array, mode: ToggleMode): void {
   const value = operand[0]
   if (value === undefined) return
   const record = target as Record<string, unknown>
-  if (value === TOGGLE_INHERIT || value === TOGGLE_INVERT) {
+  if (value === TOGGLE_INHERIT) {
+    if (mode === 'inherit') return // keep the inherited value
     delete record[key]
+    return
+  }
+  if (value === TOGGLE_INVERT) {
+    if (mode === 'inherit') record[key] = !(record[key] ?? false)
+    else delete record[key]
     return
   }
   record[key] = value !== 0
@@ -204,31 +219,31 @@ function underlineKind(value: number): UnderlineKind {
   return UNDERLINE_KINDS[value] ?? `other:${value}`
 }
 
-function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm): void {
+function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm, mode: ToggleMode): void {
   switch (sprm.opcode) {
     case SPRM_CF_BOLD:
-      applyToggle(format, 'bold', sprm.operand)
+      applyToggle(format, 'bold', sprm.operand, mode)
       break
     case SPRM_CF_ITALIC:
-      applyToggle(format, 'italic', sprm.operand)
+      applyToggle(format, 'italic', sprm.operand, mode)
       break
     case SPRM_CF_STRIKE:
-      applyToggle(format, 'strike', sprm.operand)
+      applyToggle(format, 'strike', sprm.operand, mode)
       break
     case SPRM_CF_OUTLINE:
-      applyToggle(format, 'outline', sprm.operand)
+      applyToggle(format, 'outline', sprm.operand, mode)
       break
     case SPRM_CF_SHADOW:
-      applyToggle(format, 'shadow', sprm.operand)
+      applyToggle(format, 'shadow', sprm.operand, mode)
       break
     case SPRM_CF_SMALL_CAPS:
-      applyToggle(format, 'smallCaps', sprm.operand)
+      applyToggle(format, 'smallCaps', sprm.operand, mode)
       break
     case SPRM_CF_CAPS:
-      applyToggle(format, 'caps', sprm.operand)
+      applyToggle(format, 'caps', sprm.operand, mode)
       break
     case SPRM_CF_VANISH:
-      applyToggle(format, 'hidden', sprm.operand)
+      applyToggle(format, 'hidden', sprm.operand, mode)
       break
     case SPRM_C_KUL: {
       const value = readSprmU8(sprm.operand)
@@ -292,13 +307,23 @@ function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm): void {
   }
 }
 
+/** Apply a raw CHPX grpprl to an existing character format (used by the style resolver). */
+export function applyCharacterGrpprl(
+  format: CharacterFormatting,
+  grpprl: Uint8Array,
+  mode: ToggleMode = 'direct',
+): void {
+  for (const sprm of iterateSprms(grpprl)) applyCharacterSprm(format, sprm, mode)
+}
+
 function characterFormattingOf(grpprl: Uint8Array): CharacterFormatting {
   const format: CharacterFormatting = {}
-  for (const sprm of iterateSprms(grpprl)) applyCharacterSprm(format, sprm)
+  applyCharacterGrpprl(format, grpprl)
   return format
 }
 
-interface ParagraphContext {
+/** What paragraph-sprm application needs besides the format (huge PAPX reads the Data stream). */
+export interface ParagraphContext {
   source: FormattingSource
   warnings: string[]
 }
@@ -308,6 +333,7 @@ function applyParagraphSprm(
   sprm: Sprm,
   context: ParagraphContext,
   depth: number,
+  mode: ToggleMode,
 ): void {
   switch (sprm.opcode) {
     case SPRM_P_JC80:
@@ -318,13 +344,13 @@ function applyParagraphSprm(
       break
     }
     case SPRM_P_F_KEEP:
-      applyToggle(format, 'keepLines', sprm.operand)
+      applyToggle(format, 'keepLines', sprm.operand, mode)
       break
     case SPRM_P_F_KEEP_FOLLOW:
-      applyToggle(format, 'keepNext', sprm.operand)
+      applyToggle(format, 'keepNext', sprm.operand, mode)
       break
     case SPRM_P_F_PAGE_BREAK_BEFORE:
-      applyToggle(format, 'pageBreakBefore', sprm.operand)
+      applyToggle(format, 'pageBreakBefore', sprm.operand, mode)
       break
     case SPRM_P_ILVL: {
       const value = readSprmU8(sprm.operand)
@@ -377,14 +403,14 @@ function applyParagraphSprm(
       break
     }
     case SPRM_P_F_IN_TABLE:
-      applyToggle(format, 'inTable', sprm.operand)
+      applyToggle(format, 'inTable', sprm.operand, mode)
       break
     case SPRM_P_F_TTP:
-      applyToggle(format, 'tableRowEnd', sprm.operand)
+      applyToggle(format, 'tableRowEnd', sprm.operand, mode)
       break
     case SPRM_P_HUGE_PAPX:
     case SPRM_P_HUGE_PAPX_2:
-      applyHugePapx(format, sprm, context, depth)
+      applyHugePapx(format, sprm, context, depth, mode)
       break
     default:
       // unknown/unsupported paragraph sprm: skipped by the operand-size rule
@@ -404,6 +430,7 @@ function applyHugePapx(
   sprm: Sprm,
   context: ParagraphContext,
   depth: number,
+  mode: ToggleMode,
 ): void {
   if (depth >= MAX_HUGE_PAPX_DEPTH) {
     context.warnings.push('nested sprmPHugePapx records were ignored (too deep)')
@@ -432,12 +459,23 @@ function applyHugePapx(
     return
   }
   const grpprl = data.slice(fc + 2, fc + 2 + cb)
-  for (const nested of iterateSprms(grpprl)) applyParagraphSprm(format, nested, context, depth + 1)
+  applyParagraphGrpprl(format, grpprl, context, mode, depth + 1)
+}
+
+/** Apply a raw PAPX grpprl to an existing paragraph format (used by the style resolver). */
+export function applyParagraphGrpprl(
+  format: ParagraphFormatting,
+  grpprl: Uint8Array,
+  context: ParagraphContext,
+  mode: ToggleMode = 'direct',
+  depth = 0,
+): void {
+  for (const sprm of iterateSprms(grpprl)) applyParagraphSprm(format, sprm, context, depth, mode)
 }
 
 function paragraphFormattingOf(entry: PapxEntry, context: ParagraphContext): ParagraphFormatting {
   const format: ParagraphFormatting = { styleIndex: entry.istd }
-  for (const sprm of iterateSprms(entry.grpprl)) applyParagraphSprm(format, sprm, context, 0)
+  applyParagraphGrpprl(format, entry.grpprl, context)
   return format
 }
 
@@ -497,10 +535,14 @@ function cpAtFc(source: FormattingSource, fc: number, what: string): number {
   return Math.min(resolved.cp, ccpText)
 }
 
+const NO_SPRMS = new Uint8Array(0)
+
 interface CpCharacterRun {
   cpStart: number
   cpEnd: number
   formatting: CharacterFormatting
+  /** the raw CHPX grpprl, kept for style resolution */
+  sprms: Uint8Array
 }
 
 function collectCharacterRuns(source: FormattingSource): CpCharacterRun[] {
@@ -512,7 +554,12 @@ function collectCharacterRuns(source: FormattingSource): CpCharacterRun[] {
       const cpStart = cpAtFc(source, run.fcStart, 'a CHPX run start')
       const cpEnd = Math.min(cpAtFc(source, run.fcEnd, 'a CHPX run end'), source.fib.ccpText)
       if (cpEnd <= cpStart) continue
-      runs.push({ cpStart, cpEnd, formatting: characterFormattingOf(run.grpprl) })
+      runs.push({
+        cpStart,
+        cpEnd,
+        formatting: characterFormattingOf(run.grpprl),
+        sprms: run.grpprl,
+      })
     }
   }
   runs.sort((left, right) => left.cpStart - right.cpStart)
@@ -546,13 +593,19 @@ function paragraphSpans(rawText: string): ParagraphSpan[] {
   return spans
 }
 
+interface CollectParagraphResult {
+  formats: Map<number, ParagraphFormatting>
+  raw: Map<number, RawParagraphSprms>
+}
+
 function collectParagraphFormatting(
   source: FormattingSource,
   spans: ParagraphSpan[],
   warnings: string[],
-): Map<number, ParagraphFormatting> {
+): CollectParagraphResult {
   const context: ParagraphContext = { source, warnings }
-  const bySpan = new Map<number, ParagraphFormatting>()
+  const formats = new Map<number, ParagraphFormatting>()
+  const raw = new Map<number, RawParagraphSprms>()
   const spanIndexByStartCp = new Map<number, number>()
   spans.forEach((span, index) => spanIndexByStartCp.set(span.startCp, index))
   const plc = parsePlcBte(source.table, source.fib.fcPlcfbtePapx, source.fib.lcbPlcfbtePapx)
@@ -566,10 +619,11 @@ function collectParagraphFormatting(
         )
         continue
       }
-      bySpan.set(index, paragraphFormattingOf(entry, context))
+      formats.set(index, paragraphFormattingOf(entry, context))
+      raw.set(index, { istd: entry.istd, sprms: entry.grpprl })
     }
   }
-  return bySpan
+  return { formats, raw }
 }
 
 function sameFormatting(left: object, right: object): boolean {
@@ -607,24 +661,66 @@ function buildRuns(
   return formatted
 }
 
+/** The PAPX istd and grpprl behind one paragraph (defaults when the paragraph has no PAPX). */
+export interface RawParagraphSprms {
+  istd: number
+  sprms: Uint8Array
+}
+
+/** One raw CHPX run: the CP range and its grpprl. */
+export interface RawCharacterRun {
+  cpStart: number
+  cpEnd: number
+  sprms: Uint8Array
+}
+
+/** The stage-2 formatting read plus the raw sprms the style resolver replays. */
+export interface FormattingRead {
+  paragraphs: FormattedParagraph[]
+  /** one entry per paragraph, aligned with `paragraphs` */
+  paragraphSprms: RawParagraphSprms[]
+  /** the CHPX runs in CP order */
+  characterRuns: RawCharacterRun[]
+}
+
 /**
  * Read the formatting model of a stage-1 document: one FormattedParagraph per
  * stage-1 paragraph (trailing empty paragraph included), each with paragraph
- * properties and character runs covering its text. Warnings (e.g. a paragraph
- * whose properties live in a missing Data stream) are appended to `warnings`.
+ * properties and character runs covering its text, plus the raw PAPX/CHPX
+ * sprms for the style resolver. Warnings (e.g. a paragraph whose properties
+ * live in a missing Data stream) are appended to `warnings`.
  */
+export function readFormattingDetailed(
+  source: FormattingSource,
+  warnings: string[] = [],
+): FormattingRead {
+  const spans = paragraphSpans(source.rawText)
+  const characterRuns = collectCharacterRuns(source)
+  const collected = collectParagraphFormatting(source, spans, warnings)
+  const paragraphs = spans.map((span, index) => ({
+    startCp: span.startCp,
+    endCp: span.endCp,
+    text: span.text,
+    formatting: collected.formats.get(index) ?? {},
+    runs: buildRuns(span, characterRuns, source.rawText),
+  }))
+  return {
+    paragraphs,
+    paragraphSprms: spans.map(
+      (_, index) => collected.raw.get(index) ?? { istd: 0, sprms: NO_SPRMS },
+    ),
+    characterRuns: characterRuns.map((run) => ({
+      cpStart: run.cpStart,
+      cpEnd: run.cpEnd,
+      sprms: run.sprms,
+    })),
+  }
+}
+
+/** Read just the stage-2 direct-formatting model (the stage-2/3a public read). */
 export function readFormatting(
   source: FormattingSource,
   warnings: string[] = [],
 ): FormattedParagraph[] {
-  const spans = paragraphSpans(source.rawText)
-  const characterRuns = collectCharacterRuns(source)
-  const paragraphFormats = collectParagraphFormatting(source, spans, warnings)
-  return spans.map((span, index) => ({
-    startCp: span.startCp,
-    endCp: span.endCp,
-    text: span.text,
-    formatting: paragraphFormats.get(index) ?? {},
-    runs: buildRuns(span, characterRuns, source.rawText),
-  }))
+  return readFormattingDetailed(source, warnings).paragraphs
 }

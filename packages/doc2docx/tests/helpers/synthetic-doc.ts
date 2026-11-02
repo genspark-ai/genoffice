@@ -92,6 +92,14 @@ export interface SyntheticDocOptions {
   ccpEdn?: number
   ccpTxbx?: number
   ccpHdrTxbx?: number
+  /** a stylesheet built from synthetic styles (appended to the table stream, FIB pair 1) */
+  stshStyles?: SyntheticStyle[]
+  /** STD base length of the synthetic stylesheet (0x0A Word 97, 0x12 Word 2000+) */
+  stshCbStdBase?: 0x0a | 0x12
+  /** a raw STSH override (for corrupt-stylesheet tests) */
+  stsh?: Uint8Array
+  /** pair-1 lcb override, for malformed stylesheet tests */
+  lcbStshf?: number
 }
 
 /** Windows-1252 high-half punctuation -> byte, for compressed-piece fixtures */
@@ -170,6 +178,99 @@ export function encodeClx(cps: number[], pcds: SyntheticPcd[]): Uint8Array {
     view.setUint16(start + 6, 0, true) // prm
   })
   return out
+}
+
+export type SyntheticStyleKind = 'paragraph' | 'character' | 'table' | 'numbering'
+
+/** One style for encodeStsh: array position = istd. */
+export interface SyntheticStyle {
+  /** built-in style id (default 4094 = user-defined) */
+  sti?: number
+  kind?: SyntheticStyleKind
+  basedOn?: number
+  next?: number
+  name?: string
+  /** PAPX sprms WITHOUT the 2-byte istd prefix (paragraph styles) */
+  papxSprms?: Uint8Array
+  /** CHPX sprms (character styles, and paragraph styles' UPX[1]) */
+  chpxSprms?: Uint8Array
+  /** write a cbStd == 0 empty slot */
+  empty?: boolean
+}
+
+const STK_BY_KIND: Record<SyntheticStyleKind, number> = {
+  paragraph: 1,
+  character: 2,
+  table: 3,
+  numbering: 4,
+}
+
+function u16le(value: number): number[] {
+  return [value & 0xff, (value >> 8) & 0xff]
+}
+
+/**
+ * Build an STSH stylesheet (Word 97 layout): STSHI + one STD per array slot.
+ * A paragraph style stores its PAPX grpprl (with the 2-byte istd prefix) as
+ * UPX[0] and its CHPX as UPX[1]; a character style stores its CHPX as UPX[0].
+ * cbStdBase 0x12 writes the extra 8-byte StdfPost2000 block Word 2000+ uses.
+ */
+export function encodeStsh(styles: SyntheticStyle[], cbStdBase: 0x0a | 0x12 = 0x0a): Uint8Array {
+  const bytes: number[] = []
+  const pushU16 = (value: number): void => {
+    bytes.push(...u16le(value))
+  }
+  const stshi: number[] = [
+    ...u16le(styles.length), // cstd
+    ...u16le(cbStdBase), // cbSTDBaseInFile
+    ...u16le(1), // info3
+    ...u16le(0x0fff), // stiMaxWhenSaved
+    ...u16le(0x000f), // istdMaxFixedWhenSaved
+    ...u16le(0), // nVerBuiltInNamesWhenSaved
+    ...u16le(0), // ftcAsci
+    ...u16le(0), // ftcFE
+    ...u16le(0), // ftcOther
+  ]
+  pushU16(stshi.length)
+  bytes.push(...stshi)
+  styles.forEach((style, istd) => {
+    if (style.empty) {
+      pushU16(0)
+      return
+    }
+    const kind = style.kind ?? 'paragraph'
+    const upx: number[][] = []
+    if (kind === 'paragraph') {
+      const papx = Uint8Array.from([...u16le(istd), ...(style.papxSprms ?? new Uint8Array(0))])
+      upx.push([...papx])
+      if (style.chpxSprms && style.chpxSprms.length > 0) upx.push([...style.chpxSprms])
+    } else if (kind === 'character') {
+      upx.push([...(style.chpxSprms ?? new Uint8Array(0))])
+    }
+    const payload: number[] = []
+    const pushPayload = (value: number): void => {
+      payload.push(...u16le(value))
+    }
+    pushPayload(style.sti ?? 4094) // info1: sti
+    pushPayload(STK_BY_KIND[kind] | (((style.basedOn ?? 0x0fff) & 0x0fff) << 4)) // info2
+    pushPayload(upx.length | (((style.next ?? 0x0fff) & 0x0fff) << 4)) // info3
+    pushPayload(0) // bchUpe
+    pushPayload(0) // grfstd
+    if (cbStdBase === 0x12) payload.push(0, 0, 0, 0, 0, 0, 0, 0) // StdfPost2000
+    const name = style.name ?? ''
+    pushPayload(name.length)
+    for (const char of name) pushPayload(char.charCodeAt(0))
+    pushPayload(0) // null terminator
+    for (const entry of upx) {
+      pushPayload(entry.length)
+      payload.push(...entry)
+      if (entry.length % 2 === 1) payload.push(0)
+    }
+    pushU16(payload.length)
+    bytes.push(...payload)
+    if (payload.length % 2 === 1) bytes.push(0)
+  })
+  return Uint8Array.from(bytes)
 }
 
 /**
@@ -285,6 +386,7 @@ interface FibValues {
   lcbClx: number
   chpxPlcf?: { fc: number; lcb: number }
   papxPlcf?: { fc: number; lcb: number }
+  stshf?: { fc: number; lcb: number }
   ccpFtn?: number
   ccpHdd?: number
   ccpAtn?: number
@@ -323,8 +425,13 @@ function writeFib(target: Uint8Array, values: FibValues): void {
   offset += 2
   view.setUint32(offset + CLX_PAIR_INDEX * 8, values.fcClx, true)
   view.setUint32(offset + CLX_PAIR_INDEX * 8 + 4, values.lcbClx, true)
+  const STSHF_PAIR_INDEX = 1
   const CHPX_PAIR_INDEX = 12
   const PAPX_PAIR_INDEX = 13
+  if (values.stshf) {
+    view.setUint32(offset + STSHF_PAIR_INDEX * 8, values.stshf.fc, true)
+    view.setUint32(offset + STSHF_PAIR_INDEX * 8 + 4, values.stshf.lcb, true)
+  }
   if (values.chpxPlcf) {
     view.setUint32(offset + CHPX_PAIR_INDEX * 8, values.chpxPlcf.fc, true)
     view.setUint32(offset + CHPX_PAIR_INDEX * 8 + 4, values.chpxPlcf.lcb, true)
@@ -352,6 +459,9 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
   let wordDocument = options.wordDocument
   let chpxPlcf = options.chpxPlcf
   let papxPlcf = options.papxPlcf
+  const stsh =
+    options.stsh ??
+    (options.stshStyles ? encodeStsh(options.stshStyles, options.stshCbStdBase) : undefined)
   if (!wordDocument) {
     const cps = [0]
     const pcds: SyntheticPcd[] = []
@@ -381,10 +491,11 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
     }
     chpxPlcf ??= chpxPages.length ? encodePlcBte([TEXT_OFFSET, ...chpxPages], chpxPages) : undefined
     papxPlcf ??= papxPages.length ? encodePlcBte([TEXT_OFFSET, ...papxPages], papxPages) : undefined
-    // table layout: CLX, then the two formatting tables
+    // table layout: CLX, then the two formatting tables, then the stylesheet
     const baseTableLength = fcClx + clx.length
     const chpxPlcFc = baseTableLength
     const papxPlcFc = baseTableLength + (chpxPlcf?.length ?? 0)
+    const stshFc = papxPlcFc + (papxPlcf?.length ?? 0)
     const word = new Uint8Array(nextPage * SYNTHETIC_FKP_PAGE_BYTES)
     writeFib(word, {
       wIdent,
@@ -405,6 +516,7 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
       ...(papxPlcf
         ? { papxPlcf: { fc: papxPlcFc, lcb: options.papxPlcLcb ?? papxPlcf.length } }
         : {}),
+      ...(stsh ? { stshf: { fc: stshFc, lcb: options.lcbStshf ?? stsh.length } } : {}),
     })
     let textOffset = TEXT_OFFSET
     for (const bytes of encoded) {
@@ -420,10 +532,14 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
   let table = options.table
   if (!table) {
     const baseTableLength = fcClx + (clx?.length ?? 0)
-    table = new Uint8Array(baseTableLength + (chpxPlcf?.length ?? 0) + (papxPlcf?.length ?? 0))
+    table = new Uint8Array(
+      baseTableLength + (chpxPlcf?.length ?? 0) + (papxPlcf?.length ?? 0) + (stsh?.length ?? 0),
+    )
     if (clx) table.set(clx, fcClx)
     if (chpxPlcf) table.set(chpxPlcf, baseTableLength)
-    if (papxPlcf) table.set(papxPlcf, baseTableLength + (chpxPlcf?.length ?? 0))
+    const papxTableFc = baseTableLength + (chpxPlcf?.length ?? 0)
+    if (papxPlcf) table.set(papxPlcf, papxTableFc)
+    if (stsh) table.set(stsh, papxTableFc + (papxPlcf?.length ?? 0))
   }
 
   const streams: Array<[string, Uint8Array]> = []

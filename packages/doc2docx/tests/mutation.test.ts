@@ -8,6 +8,8 @@ import {
   readFormatting,
   readLegacyDocModel,
   readLegacyDocText,
+  readResolvedFormatting,
+  readResolvedLegacyDocModel,
 } from '../src/index'
 import { FIXTURE_NAMES, fixtureBytes, type FixtureName } from './helpers/fixtures'
 import {
@@ -391,5 +393,125 @@ describe('mutation validation: stage-3a docx writer', () => {
       }
     }
     expect(outcomes.docx + outcomes.rejected).toBe(18)
+  })
+})
+
+describe('mutation validation: stage-3b stylesheet resolution', () => {
+  it('styles.doc: STSH byte flips through the resolved reader end as a model or a LegacyDocError', () => {
+    const doc = openLegacyDoc(fixtureBytes('styles'))
+    const random = seededRandom(0x5b00_0001)
+    const outcomes = { model: 0, rejected: 0 }
+    for (let index = 0; index < 24; index++) {
+      const table = doc.table.slice()
+      const position = doc.fib.fcStshf + Math.floor(random() * doc.fib.lcbStshf)
+      table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        const paragraphs = readResolvedFormatting({
+          fib: doc.fib,
+          pieces: doc.pieces,
+          wordDocument: doc.wordDocument,
+          table,
+          rawText: doc.rawText,
+          stream: doc.stream,
+        })
+        expect(Array.isArray(paragraphs)).toBe(true)
+        outcomes.model++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.model + outcomes.rejected).toBe(24)
+    expect(outcomes.model).toBeGreaterThan(0)
+  })
+
+  it('styles.doc: truncating the STSH region is a LegacyDocError, never a raw error', () => {
+    const doc = openLegacyDoc(fixtureBytes('styles'))
+    const outcomes = { model: 0, rejected: 0 }
+    for (const cut of [doc.fib.fcStshf + 4, doc.fib.fcStshf + doc.fib.lcbStshf - 10]) {
+      try {
+        readResolvedFormatting({
+          fib: doc.fib,
+          pieces: doc.pieces,
+          wordDocument: doc.wordDocument,
+          table: doc.table.slice(0, cut),
+          rawText: doc.rawText,
+          stream: doc.stream,
+        })
+        outcomes.model++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.rejected).toBe(2)
+  })
+
+  it('styles.doc: file-level flips through readResolvedLegacyDocModel stay within the contract', () => {
+    const bytes = fixtureBytes('styles')
+    const random = seededRandom(0x5b00_0002)
+    const outcomes = { model: 0, rejected: 0 }
+    for (let index = 0; index < 12; index++) {
+      let mutated: Uint8Array
+      if (index % 3 === 0) mutated = bytes.slice(0, Math.floor(random() * bytes.length))
+      else if (index % 3 === 1) {
+        mutated = bytes.slice()
+        const position = Math.floor(random() * Math.min(128, mutated.length))
+        mutated[position] = (mutated[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      } else mutated = flipFibByte(bytes, Math.floor(random() * 64), 1 + Math.floor(random() * 255))
+      try {
+        const model = readResolvedLegacyDocModel(mutated)
+        expect(Array.isArray(model.paragraphs)).toBe(true)
+        outcomes.model++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.model + outcomes.rejected).toBe(12)
+  })
+
+  it('synthetic stylesheet documents: STSH flips end as a model or a LegacyDocError', () => {
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: 'styled paragraph\r' }],
+      stshStyles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { name: 'Custom', kind: 'paragraph', basedOn: 0 },
+      ],
+      papxFkpPages: [
+        encodePapxFkp([
+          { fcStart: SYNTHETIC_TEXT_OFFSET, fcEnd: SYNTHETIC_TEXT_OFFSET + 16 * 2, istd: 1 },
+        ]),
+      ],
+    })
+    const doc = openLegacyDoc(bytes)
+    const random = seededRandom(0x5b00_0003)
+    const outcomes = { model: 0, rejected: 0 }
+    for (let index = 0; index < 16; index++) {
+      const table = doc.table.slice()
+      const position = doc.fib.fcStshf + Math.floor(random() * doc.fib.lcbStshf)
+      table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
+      try {
+        readResolvedFormatting({
+          fib: doc.fib,
+          pieces: doc.pieces,
+          wordDocument: doc.wordDocument,
+          table,
+          rawText: doc.rawText,
+          stream: doc.stream,
+        })
+        outcomes.model++
+      } catch (error) {
+        expect(error).toBeInstanceOf(LegacyDocError)
+        outcomes.rejected++
+      }
+    }
+    expect(outcomes.model + outcomes.rejected).toBe(16)
+  })
+
+  it('converts styles.doc into a docx after the loops', async () => {
+    const { docx, warnings } = await convertLegacyDocToDocx(fixtureBytes('styles'))
+    expect(docx.length).toBeGreaterThan(1000)
+    expect(warnings.some((warning) => warning.includes('styles are not resolved'))).toBe(false)
   })
 })

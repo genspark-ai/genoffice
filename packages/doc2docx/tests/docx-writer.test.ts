@@ -6,12 +6,13 @@ import {
   LegacyDocError,
   convertLegacyDocToDocx,
   readLegacyDocModel,
+  readResolvedLegacyDocModel,
   toDocxRun,
   toParaFormat,
   writeLegacyDocx,
   type LegacyDocModel,
 } from '../src/index'
-import { fixtureBytes } from './helpers/fixtures'
+import { expectedText, fixtureBytes } from './helpers/fixtures'
 import {
   SYNTHETIC_TEXT_OFFSET,
   buildSyntheticDoc,
@@ -426,5 +427,91 @@ describe('honest conversion warnings', () => {
       buildSyntheticDoc({ pieces: [{ text: 'clean\r' }] }),
     )
     expect(warnings).toEqual([])
+  })
+})
+
+describe('styles.doc -> docx round trip (resolved stylesheet)', () => {
+  let model: LegacyDocModel
+  let docx: Uint8Array
+  let warnings: string[]
+  let parsed: Parsed
+  let paragraphs: Block[]
+
+  beforeAll(async () => {
+    model = readResolvedLegacyDocModel(fixtureBytes('styles'))
+    const result = await convertLegacyDocToDocx(fixtureBytes('styles'))
+    docx = result.docx
+    warnings = result.warnings
+    parsed = await parseDocx(docx)
+    paragraphs = paragraphsOf(parsed)
+  })
+
+  it('writes every paragraph and no longer warns about unresolved styles', () => {
+    expect(paragraphs.map(textOf)).toEqual(expectedText('styles').split('\n'))
+    expect(docx.length).toBeGreaterThan(1000)
+    expect(warnings.some((warning) => warning.includes('styles are not resolved'))).toBe(false)
+    expect(warnings).toEqual([])
+  })
+
+  it('P0 Title becomes 26pt dark-blue direct formatting', () => {
+    expect(paragraphs[0]!.runs?.[0]).toMatchObject({
+      text: 'Document title',
+      sizeHalfPoints: 52,
+      color: '000080',
+    })
+    expect(paragraphs[0]!.format).toMatchObject({ spaceAfter: 300 })
+  })
+
+  it('P1 Heading 1 becomes bold 14pt with keep/spacing', () => {
+    expect(paragraphs[1]!.runs?.[0]).toMatchObject({
+      text: 'Heading one text',
+      bold: true,
+      sizeHalfPoints: 28,
+    })
+    expect(paragraphs[1]!.format).toMatchObject({
+      keepLines: true,
+      keepNext: true,
+      spaceBefore: 480,
+    })
+  })
+
+  it('P2 Body Bold becomes bold 16pt centered with 12/6pt spacing', () => {
+    expect(paragraphs[2]!.runs?.[0]).toMatchObject({ bold: true, sizeHalfPoints: 32 })
+    expect(paragraphs[2]!.format).toMatchObject({
+      align: 'center',
+      spaceBefore: 240,
+      spaceAfter: 120,
+    })
+  })
+
+  it('P3 keeps the plain run and the styled run (italic 12pt red palette)', () => {
+    const runs = paragraphs[3]!.runs ?? []
+    expect(runs.map((run) => run.text)).toEqual(['Plain run and ', 'styled emphasis run'])
+    expect(runs[0]!).toMatchObject({ sizeHalfPoints: 22 })
+    expect(runs[1]!).toMatchObject({ italic: true, sizeHalfPoints: 24, color: 'FF0000' })
+  })
+
+  it('P4 keeps the direct right alignment over the style center alignment', () => {
+    expect(paragraphs[4]!.format).toMatchObject({
+      align: 'right',
+      spaceBefore: 240,
+      spaceAfter: 120,
+    })
+  })
+
+  it('P5 keeps the derived style first-line indent and center alignment', () => {
+    expect(paragraphs[5]!.format).toMatchObject({ align: 'center', indentFirstLine: 360 })
+    expect(paragraphs[5]!.runs?.[0]).toMatchObject({ bold: true, sizeHalfPoints: 32 })
+  })
+
+  it('P6 keeps the bold Chinese paragraph', () => {
+    expect(textOf(paragraphs[6]!)).toBe('中文样式段落')
+    expect(paragraphs[6]!.runs?.[0]).toMatchObject({ bold: true, sizeHalfPoints: 32 })
+    expect(paragraphs[6]!.format).toMatchObject({ align: 'center' })
+  })
+
+  it('the resolved model agrees with the written paragraphs', () => {
+    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.map((paragraph) => paragraph.text))
+    expect(model.warnings).toEqual([])
   })
 })

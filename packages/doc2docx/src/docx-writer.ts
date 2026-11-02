@@ -184,18 +184,26 @@ export async function writeLegacyDocx(model: LegacyDocModel): Promise<Uint8Array
   })
 }
 
+export interface ConversionWarningOptions {
+  /** the model was read through the style resolver, so styles are applied (not a gap) */
+  stylesResolved?: boolean
+}
+
 /**
  * Honest conversion warnings: what this stage knows it does not carry over yet,
- * plus the non-fatal parse warnings from stages 1-2.
+ * plus the non-fatal parse/resolve warnings from earlier stages.
  */
-export function conversionWarnings(model: LegacyDocModel): string[] {
+export function conversionWarnings(
+  model: LegacyDocModel,
+  options: ConversionWarningOptions = {},
+): string[] {
   const warnings = [...model.warnings]
   const usesStyles = model.paragraphs.some(
     (paragraph) =>
       (paragraph.formatting.styleIndex ?? 0) !== 0 ||
       paragraph.runs.some((run) => (run.formatting.styleIndex ?? 0) !== 0),
   )
-  if (usesStyles)
+  if (usesStyles && !options.stylesResolved)
     warnings.push(
       'paragraph and character styles are not resolved yet (stage 3b); the text is imported with direct formatting only',
     )
@@ -214,13 +222,20 @@ export function conversionWarnings(model: LegacyDocModel): string[] {
   return warnings
 }
 
-/** Read a legacy .doc and convert it into a .docx (stage 3a core conversion). */
+/**
+ * Read a legacy .doc and convert it into a .docx. Documents with a stylesheet
+ * are read through the style resolver (stage 3b), so style-based formatting is
+ * written as direct formatting; styles themselves are not emitted as .docx
+ * styles yet.
+ */
 export async function convertLegacyDocToDocx(
   bytes: Uint8Array,
 ): Promise<{ docx: Uint8Array; warnings: string[] }> {
   // dynamic import keeps the module graph acyclic: index.ts re-exports this file
-  const { readLegacyDocModel } = await import('./index')
-  const model = readLegacyDocModel(bytes)
+  const { readLegacyDocModel, readResolvedLegacyDocModel } = await import('./index')
+  const base = readLegacyDocModel(bytes)
+  const stylesResolved = base.fib.lcbStshf > 0
+  const model = stylesResolved ? readResolvedLegacyDocModel(bytes) : base
   const docx = await writeLegacyDocx(model)
-  return { docx, warnings: conversionWarnings(model) }
+  return { docx, warnings: conversionWarnings(model, { stylesResolved }) }
 }

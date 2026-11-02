@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url'
 const FIXTURE_DIR = fileURLToPath(new URL('../fixtures', import.meta.url))
 
 /** the real documents the expected .txt files were exported from (LibreOffice) */
-export const FIXTURE_NAMES = ['text-basic', 'text-long', 'word97-sample', 'formatting'] as const
+export const FIXTURE_NAMES = [
+  'text-basic',
+  'text-long',
+  'word97-sample',
+  'formatting',
+  'styles',
+] as const
 export type FixtureName = (typeof FIXTURE_NAMES)[number]
 
 export function fixtureBytes(name: FixtureName): Uint8Array {
