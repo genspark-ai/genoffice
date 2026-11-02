@@ -119,7 +119,9 @@ describe('rotated pictures', () => {
     // jsdom folds the margins into a shorthand it cannot split again once a
     // var() fallback is inside: top / right / bottom / left
     expect(img.getAttribute('style')).toMatch(
-      /margin: 0\.0px calc\(100% - calc\(296(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\)\) 50\.0px -38\.0px/,
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(296(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 50\.0px -38\.0px`,
+      ),
     )
     editor.destroy()
   })
@@ -170,7 +172,9 @@ describe('rotated pictures', () => {
       'img.doc-inline-img--wrap-tight-right',
     )!
     expect(img.getAttribute('style')).toMatch(
-      /margin: 0\.0px calc\(100% - calc\(140(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\)\) 10\.0px 20\.0px/,
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(140(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 10\.0px 20\.0px`,
+      ),
     )
     editor.destroy()
   })

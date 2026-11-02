@@ -969,6 +969,23 @@ html.genoffice-popover-open .ribbon-tabs {
   gap: 8px;
 }
 
+/* Pen slots stack a 28px glyph over the stroke bar: 58px in a 40px band. */
+.ribbon-compact .ink-pen-slot {
+  flex-direction: row;
+  width: auto;
+  height: 32px;
+  padding: 1px 4px;
+  gap: 4px;
+}
+
+.ribbon-compact .ink-pen-bar {
+  width: 14px;
+}
+
+.ribbon-compact .ink-pen-slot > .rb-caret-svg {
+  position: static;
+}
+
 /* Page Layout: two columns each stacking two controls, 28 + 5 + 28 = 61px. */
 .ribbon-compact .layout-para {
   gap: 6px;
@@ -3316,7 +3333,11 @@ th[data-rev-fmt] {
   width: var(--section-content-w, calc(var(--page-w, 816px) - 120px));
   font-size: var(--hf-default-fs, 10.5pt);
   color: var(--docs-paper-ink);
-  overflow: hidden;
+  /* clip, not hidden: a line multiple below 1 shrinks the line box under the
+     glyphs (Word paints them whole over the strip edge), so the clip edge moves
+     out by the glyph overhang (--hf-ink-over, hf-dom) without touching layout */
+  overflow: clip;
+  overflow-clip-margin: var(--hf-ink-over, 0px);
   /* tab stops past the right margin: the clip box widens into the margin by
      --hf-tab-over (content box unchanged, so 100% still means the column) */
   box-sizing: content-box;
@@ -4039,20 +4060,23 @@ th[data-rev-fmt] {
 }
 
 /* a pending paragraph-mark deletion joins the paragraph into the next one in the
-   final-text views (Word): both flow inline, so the pair shares one line box.
-   The anonymous block they form inherits the page's text properties; the head's
-   own spacing and alignment do not carry over (display-time approximation). */
+   final-text views (Word): pagination-measure lifts the tail onto the head's last
+   line and indents its first line to where that line ends; both blocks keep
+   their own paragraph properties (display-time approximation). */
 .rev-display-none .doc-para-join-head,
-.rev-display-none .doc-para-join-tail,
-.rev-display-simple .doc-para-join-head,
-.rev-display-simple .doc-para-join-tail {
-  display: inline;
+.rev-display-simple .doc-para-join-head {
+  margin-bottom: 0 !important;
+}
+
+.rev-display-none .doc-para-join-tail[data-join-on],
+.rev-display-simple .doc-para-join-tail[data-join-on] {
+  margin-top: calc(-1 * var(--join-lift, 0px)) !important;
+  padding-top: 0 !important;
+  text-indent: var(--join-indent, 0px) !important;
 }
 
 .rev-display-none .doc-para-join-head > br.ProseMirror-trailingBreak,
-.rev-display-none .doc-para-join-tail > br.ProseMirror-trailingBreak,
-.rev-display-simple .doc-para-join-head > br.ProseMirror-trailingBreak,
-.rev-display-simple .doc-para-join-tail > br.ProseMirror-trailingBreak {
+.rev-display-simple .doc-para-join-head > br.ProseMirror-trailingBreak {
   display: none;
 }
 
@@ -5574,6 +5598,12 @@ th[data-rev-fmt] {
    spacing style; otherwise unscoped so pv clones and direct print match */
 .page-break-lead:not(.measuring-natural *) {
   margin-top: 0 !important;
+}
+
+/* the lead's own break keeps the part of its space before that exceeds the
+   previous paragraph's space after (the rest fell at the page bottom) */
+.page-break-lead-trim:not(.measuring-natural *) {
+  margin-top: var(--lead-mt) !important;
 }
 
 /* Sole line taller than its column (oversized inline picture): Word overflow-clips
@@ -7661,12 +7691,14 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   display: none !important;
 }
 
-/* the same trailing break when a sized rule run is wrapped in its mark span
-   (the break sits outside the span, so the sibling rule above misses it;
-   only separator images may follow the rule inside the span) */
-.doc-page span:has(> .doc-inline-rule:last-of-type) + .ProseMirror-trailingBreak,
+/* the same trailing break when the rule run is wrapped in mark elements (size
+   span, strong, em, ...; the break sits outside the outermost wrapper, so the
+   sibling rule above misses it and the paragraph measured a second line) */
 .doc-page
-  span:has(> .doc-inline-rule:last-of-type)
+  :is(span, strong, em, u, s):has(.doc-inline-rule:last-of-type)
+  + .ProseMirror-trailingBreak,
+.doc-page
+  :is(span, strong, em, u, s):has(.doc-inline-rule:last-of-type)
   + .ProseMirror-separator
   + .ProseMirror-trailingBreak {
   display: none !important;
@@ -7773,18 +7805,30 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 }
 
 .doc-toc-line {
-  display: flex;
-  /* the leader and page number sit on the entry's LAST line (Word: a right
-     tab after the wrapped title), not level with its first baseline */
-  align-items: flex-end;
   /* inherit the document's paragraph metrics: a hardcoded 11pt/1.7 line made
      every TOC entry ~50% taller than Word/LO and drifted long TOCs a page+ */
   font-size: inherit;
   line-height: inherit;
-  /* the entry's hanging indent would shift every blockified cell's first line
-     left, overprinting the neighbor cell; the flex row indents via padding */
+  /* the wrapper's inherited indent is re-applied on the body from the field */
   text-indent: 0;
   cursor: pointer;
+}
+
+/* one inline flow: number cell, title, then leader + page closing the title's
+   LAST line or dropping to a line of their own (Word's right tab). The first
+   line carries the entry's own first-line / hanging indent */
+.doc-toc-body {
+  display: block;
+  padding-left: var(--doc-toc-indent, 0px);
+  text-indent: var(--doc-toc-hang, 0px);
+}
+
+/* Word keeps a TOC entry's spaces (a double space widens the title and can
+   drop the leader to the next line); the preview clone inherits .pv-content's
+   pre-wrap, so the canvas must match or the clone wraps where it was not measured */
+.ProseMirror [contenteditable='false'].doc-toc-title,
+.ProseMirror [contenteditable='false'] .doc-toc-title {
+  white-space: pre-wrap;
 }
 
 .doc-toc-line:hover .doc-toc-title {
@@ -7792,34 +7836,52 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   text-decoration: underline;
 }
 
-/* level indent applies to the first cell (the numbering marker when present, the title otherwise) */
-.doc-toc-l2 > span:first-child {
-  padding-left: 1.5em;
+/* level indent ladder: stands in for a TOC style without its own w:ind */
+.doc-toc-l2 > .doc-toc-body {
+  --doc-toc-indent: 1.5em;
 }
 
-.doc-toc-l3 > span:first-child {
-  padding-left: 3em;
+.doc-toc-l3 > .doc-toc-body {
+  --doc-toc-indent: 3em;
 }
 
-.doc-toc-l4 > span:first-child {
-  padding-left: 4.5em;
+.doc-toc-l4 > .doc-toc-body {
+  --doc-toc-indent: 4.5em;
 }
 
+/* the number cell is as wide as its tab stop; without a stop a fixed gap */
 .doc-toc-num {
+  display: inline-block;
   white-space: pre;
-  margin-right: 8px;
-  /* the outline number stays beside the title's FIRST line (Word: a tab in
-     the same run as the title); only the leader and page drop to the last */
-  align-self: flex-start;
+  text-indent: 0;
+  box-sizing: border-box;
+  padding-right: 8px;
+  vertical-align: baseline;
+}
+
+.doc-toc-num[style*='width'] {
+  padding-right: 0;
+}
+
+/* leader + page travel as one unbreakable unit: TabLayoutView sets --doc-toc-gap
+   to the free width of the title's last line (0 when the unit has to drop to
+   the next line); the default keeps unmeasured lines (preview clones, print)
+   from overflowing */
+.doc-toc-tail {
+  display: inline-block;
+  white-space: nowrap;
+  text-indent: 0;
+  vertical-align: baseline;
 }
 
 /* leader glyphs at the entry font's own advance (Word: a period every 0.25em
    in Times, no extra tracking), starting right after the title */
 .doc-toc-dots {
-  flex: 1;
-  min-width: 24px;
-  overflow: hidden;
+  display: inline-block;
+  width: var(--doc-toc-gap, 24px);
+  overflow: clip;
   white-space: nowrap;
+  vertical-align: baseline;
   user-select: none;
 }
 
@@ -7831,7 +7893,9 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
  * (0-2-0), beating the single-class rules above; mirror it to keep TOC lines
  * from wrapping their leader dots into extra lines. */
 .ProseMirror [contenteditable='false'] .doc-toc-dots,
-.ProseMirror [contenteditable='false'].doc-toc-dots {
+.ProseMirror [contenteditable='false'].doc-toc-dots,
+.ProseMirror [contenteditable='false'] .doc-toc-tail,
+.ProseMirror [contenteditable='false'].doc-toc-tail {
   white-space: nowrap;
 }
 .ProseMirror [contenteditable='false'] .doc-toc-num,
@@ -13171,7 +13235,8 @@ ruby.doc-ruby rt {
 }
 
 .ink-tool-pen,
-.ink-tool-highlighter {
+.ink-tool-highlighter,
+.ink-tool-pencil {
   cursor: crosshair;
 }
 
@@ -13212,6 +13277,29 @@ ruby.doc-ruby rt {
   outline-offset: 1px;
 }
 
+.ink-more-wrap {
+  margin-left: 4px;
+}
+
+.ink-more-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.ink-more-swatch:hover,
+.ink-more-swatch.active {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
 .ink-widths {
   display: flex;
   gap: 3px;
@@ -13242,6 +13330,134 @@ ruby.doc-ruby rt {
 .ink-width-dot {
   border-radius: 50%;
   display: inline-block;
+}
+
+/* Draw ▸ Pens gallery: one slot per remembered pen, Word style */
+.ink-pens {
+  gap: 2px;
+}
+
+.ink-pen-slot {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 44px;
+  height: 58px;
+  padding: 4px 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.ink-pen-slot:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.ink-pen-slot.active {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.ink-pen-slot:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ink-pen-glyph {
+  display: inline-flex;
+}
+
+.ink-pen-bar {
+  width: 28px;
+  border-radius: 2px;
+}
+
+.ink-pen-slot > .rb-caret-svg {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+}
+
+.ink-pen-pop {
+  min-width: 190px;
+  padding: 8px;
+}
+
+.ink-pen-preview {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.ink-pen-preview > span {
+  display: block;
+  width: 100%;
+  border-radius: 2px;
+}
+
+.ink-pen-section {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 4px;
+}
+
+.ink-pen-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  gap: 6px;
+  padding: 2px;
+}
+
+.ink-pen-grid .ink-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.layout-menu .ink-pen-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  position: relative;
+}
+
+.layout-menu .ink-pen-item:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.layout-menu .ink-pen-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ink-pen-more {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+}
+
+.ink-pen-more input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 /* Page Number Format dialog */
@@ -15257,4 +15473,500 @@ tr > .page-gap-cut {
   border-radius: 2px;
   cursor: pointer;
   user-select: none;
+}
+
+/* Page Border dialog (Design > Page Borders > Page Border…): Word's Borders
+   and Shading > Page Border tab. The preview paints the document's border
+   through the same pageBorderStyleOf as the canvas, so color/width come inline. */
+.pb-dialog {
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.pb-columns {
+  display: grid;
+  grid-template-columns: 140px 200px 1fr;
+  gap: 12px;
+}
+
+.pb-dialog fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px 10px;
+  margin: 0;
+  min-width: 0;
+}
+
+.pb-dialog legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.pb-dialog .fld {
+  margin-bottom: 10px;
+}
+
+.pb-dialog .fld input,
+.pb-dialog .fld select {
+  height: 28px;
+}
+
+.pb-dialog .modal-desc {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.pb-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 6px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pb-setting:hover {
+  background: var(--hover);
+}
+
+.pb-setting.active {
+  border-color: var(--word-blue);
+  background: var(--accent-soft);
+}
+
+.pb-setting-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 40px;
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.pb-setting-icon i {
+  display: block;
+  width: 22px;
+  height: 26px;
+  background: repeating-linear-gradient(to bottom, var(--text-dim) 0 1px, transparent 1px 4px);
+  background-size: 14px 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.pb-setting-box i,
+.pb-setting-shadow i,
+.pb-setting-3d i {
+  border: 1px solid var(--text);
+}
+
+.pb-setting-shadow i {
+  box-shadow: 2px 2px 0 var(--text);
+}
+
+.pb-setting-3d i {
+  border-width: 3px;
+  border-style: ridge;
+}
+
+.pb-setting-custom i {
+  border-top: 1px dashed var(--text);
+  border-bottom: 3px solid var(--text);
+}
+
+.pb-style-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  height: 180px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.pb-style {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pb-style:hover {
+  background: var(--hover);
+}
+
+.pb-style.active {
+  background: var(--accent-soft);
+}
+
+.pb-style > span {
+  display: block;
+  width: 100%;
+  height: 0;
+}
+
+.pb-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pb-dialog .pb-color-row input[type='color'] {
+  width: 44px;
+  height: 28px;
+  margin: 0;
+  padding: 2px;
+}
+
+.pb-auto {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pb-auto.active {
+  border-color: var(--word-blue);
+  background: var(--accent-soft);
+}
+
+.pb-auto:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pb-preview {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pb-preview-side-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 0 44px;
+}
+
+.pb-preview-page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pb-preview-side-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+
+.pb-side-btn {
+  width: 28px;
+  height: 28px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.pb-side-btn:hover {
+  background: var(--hover);
+}
+
+.pb-side-btn.active {
+  border-color: var(--word-blue);
+  background: var(--accent-soft);
+}
+
+.pb-side-btn > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px dotted var(--text-dim);
+}
+
+.pb-side-top > span {
+  border-top: 2px solid var(--text);
+}
+
+.pb-side-bottom > span {
+  border-bottom: 2px solid var(--text);
+}
+
+.pb-side-left > span {
+  border-left: 2px solid var(--text);
+}
+
+.pb-side-right > span {
+  border-right: 2px solid var(--text);
+}
+
+/* the sheet is document data (white paper, black lines), same as the canvas */
+.pb-preview-page {
+  position: relative;
+  --pb-paper: #fff;
+  width: 150px;
+  height: 190px;
+  background: var(--pb-paper);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.pb-preview-border {
+  position: absolute;
+}
+
+.pb-preview-text {
+  position: absolute;
+  inset: 44px 36px;
+  background: repeating-linear-gradient(to bottom, var(--text-dim) 0 2px, transparent 2px 8px);
+  opacity: 0.6;
+}
+
+.pb-options-toggle {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pb-options-toggle:hover {
+  background: var(--hover);
+}
+
+.pb-options {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.pb-margin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+
+.pb-dialog .pb-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pb-dialog .pb-check input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+/* ---- Design → Watermark dialog (Word's Insert Watermark) ---- */
+.modal.watermark-dialog {
+  width: 820px;
+  max-width: calc(100vw - 48px);
+}
+
+.watermark-dialog .wm-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.watermark-dialog .wm-form {
+  flex: 1;
+  min-width: 0;
+}
+
+.watermark-dialog label.wm-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.watermark-dialog .wm-mode input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+.watermark-dialog .wm-fields {
+  padding: 0 0 12px 24px;
+}
+
+.watermark-dialog .wm-fields[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+.watermark-dialog .wm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.watermark-dialog .wm-row input,
+.watermark-dialog .wm-row select {
+  margin-top: 0;
+}
+
+.watermark-dialog .wm-row select {
+  width: auto;
+  min-width: 160px;
+  height: 30px;
+}
+
+.watermark-dialog .wm-row select.wm-size {
+  min-width: 90px;
+}
+
+.watermark-dialog .wm-row input[type='text'] {
+  height: 30px;
+}
+
+.watermark-dialog .wm-label {
+  width: 100px;
+  flex: none;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.watermark-dialog label.wm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.watermark-dialog .wm-check input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+.watermark-dialog input[type='range'] {
+  flex: 1;
+  height: auto;
+  border: none;
+  padding: 0;
+}
+
+.watermark-dialog input.wm-pct {
+  width: 64px;
+  height: 30px;
+}
+
+.watermark-dialog input.wm-color {
+  width: 120px;
+  height: 30px;
+}
+
+.watermark-dialog .wm-pick {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.watermark-dialog .wm-pick:disabled {
+  cursor: default;
+}
+
+.watermark-dialog .wm-pick-name {
+  color: var(--text-dim);
+}
+
+/* document preview: the paper stays white in both themes */
+.watermark-dialog .wm-preview {
+  --wm-paper: #fff;
+  --wm-ink: #444;
+  --wm-shadow: rgb(0 0 0 / 15%);
+  position: relative;
+  flex: none;
+  background: var(--wm-paper);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 2px 8px var(--wm-shadow);
+  overflow: hidden;
+}
+
+.watermark-dialog .wm-preview-margin {
+  position: absolute;
+  isolation: isolate;
+}
+
+.watermark-dialog .wm-preview-mark {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.watermark-dialog .wm-preview-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.watermark-dialog .wm-preview-lines {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.watermark-dialog .wm-preview-lines span {
+  display: block;
+  height: 3px;
+  width: 100%;
+  background: var(--wm-ink);
+  border-radius: 1px;
+}
+
+.watermark-dialog .wm-preview-lines span:nth-child(4n) {
+  margin-bottom: 5px;
 }

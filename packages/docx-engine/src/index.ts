@@ -116,6 +116,7 @@ export {
   generateCaptionXml,
   generateIndexFieldXml,
   generateParagraphXml,
+  mergeRPrModel,
   generateTableModelXml,
   generateTableXml,
   generateTocFieldXml,
@@ -202,6 +203,8 @@ export {
   readSections,
   readSectionSettings,
   sectionSettingsFromXml,
+  pageBordersXml,
+  LINE_BORDER_VALS,
   notePropsFromXml,
   xmlFlagOn,
 } from './section'
@@ -209,6 +212,8 @@ export { nextNoteId, parseNotesXml, type NoteKind } from './notes'
 export {
   isPictureWatermark,
   pictureWatermarkPreviewImage,
+  textWatermarkPreviewImage,
+  textWatermarkBoxPt,
   readPictureWatermark,
   readWatermarkText,
   type PictureWatermarkInfo,

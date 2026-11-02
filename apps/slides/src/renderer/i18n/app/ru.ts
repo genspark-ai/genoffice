@@ -185,6 +185,7 @@ export const ru = {
   appCtxSendToBack: 'На задний план',
   appCtxBringForward: 'Переместить вперед',
   appCtxSendBackward: 'Переместить назад',
+  appCtxRotate: 'Повернуть',
   appCtxRotateLeft90: 'Повернуть на 90° влево',
   appCtxRotateRight90: 'Повернуть на 90° вправо',
   appCtxFlipH: 'Отразить по горизонтали',

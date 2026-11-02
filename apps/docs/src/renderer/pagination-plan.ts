@@ -50,6 +50,10 @@ export interface BlockPlan {
   spaceBeforeInner?: true
   /** the space before vanishes when a natural break opens the page with this block */
   dropAtPageTop: boolean
+  /** space before (pt) a legacy-mode w:pageBreakBefore paragraph keeps at the page
+   *  top: the part its margin adds beyond the previous paragraph's space after
+   *  (Word probe 2026-11-02: compat 14 after=200 -> before=400 keeps 10 pt) */
+  forcedLeadSpacePt?: number
   /** w:tblpPr geometry of a table block (the data-tblp-* twins) */
   tableGeom?: PlanFloatGeom
   /** anchored-drawing geometry of a picture / text-box block */
@@ -141,6 +145,9 @@ export interface PlanProps {
   forcedSectionStarts?: ReadonlySet<number>
   /** list group (abstractNum) of a numId; auto spacing collapses between items of one group */
   listGroupOf?(numId: string): string | undefined
+  /** legacy layout (compatibilityMode < 15): a w:pageBreakBefore paragraph keeps
+   *  its space before at the page top; Word 2013+ drops it */
+  pageBreakBeforeKeepsSpace?: boolean
 }
 
 /** plan inputs of a parsed document (the renderer's live spacing mode applies) */
@@ -158,6 +165,7 @@ export function planPropsOf(
   })
   return {
     paraEffective: (i) => byIndex.get(i)?.format?.effective,
+    pageBreakBeforeKeepsSpace: (parsed.compatibilityMode ?? 0) < 15,
     cellParaEffective: (i, r, c, p) =>
       byIndex.get(i)?.table?.rows[r]?.[c]?.richParas?.[p]?.effective,
     tableModel: (i) => byIndex.get(i)?.table ?? undefined,
@@ -375,6 +383,19 @@ function paraSpaceBeforePt(
   return Math.round(pt * 10) / 10
 }
 
+/** The previous block's space after (pt) that a forced lead's margin merges with: a
+ *  paragraph's direct / resolved / auto spacing, 0 for tables and protected blocks */
+function prevSpaceAfterPt(prev: PmNode | undefined, props: PlanProps): number {
+  if (!prev || !isParaNode(prev)) return 0
+  const a = prev.attrs
+  const idx = typeof a.docxIndex === 'number' ? (a.docxIndex as number) : undefined
+  const eff = idx === undefined ? undefined : props.paraEffective(idx)
+  const auto = a.spaceAfterAuto ?? (a.spaceAfter == null && eff?.spacing.afterAuto) ?? false
+  if (auto) return props.autoSpacingPt
+  if (a.spaceAfter != null) return Number(a.spaceAfter) / 20
+  return (eff?.spacing.after ?? 0) / 20
+}
+
 /** rendered as p / .doc-li / h*.doc-outline-only, not the built-in heading look */
 function isBodyLook(node: PmNode): boolean {
   return node.type.name !== 'docHeading' || !!node.attrs.outlineOnly
@@ -439,6 +460,11 @@ export function buildBlockPlan(
       const leadingCol = colBrs.length === 1 && !colBrs[0].before
       const pageBreakBefore = direct || inheritedFlag(eff, 'pageBreakBefore')
       const leadingBr = c.hasText && c.leading > 0 && !c.leadingCut
+      const spaceBeforePt = paraSpaceBeforePt(node, eff, prev, index, props)
+      const forcedLeadSpacePt =
+        pageBreakBefore && props.pageBreakBeforeKeepsSpace && index > 0 && spaceBeforePt
+          ? Math.max(0, Math.round((spaceBeforePt - prevSpaceAfterPt(prev, props)) * 10) / 10)
+          : undefined
       plan = {
         ...base,
         kind: 'para',
@@ -454,13 +480,14 @@ export function buildBlockPlan(
         breakOnly: c.count > 0 && !text && !picture,
         colBreakBefore: leadingCol,
         colBreakAfter: colBrs.length > 0 && !leadingCol,
-        spaceBeforePt: paraSpaceBeforePt(node, eff, prev, index, props),
+        spaceBeforePt,
         dropAtPageTop: !(
           index === 0 ||
           pageBreakBefore ||
           leadingBr ||
           (docxIndex !== undefined && props.forcedSectionStarts?.has(docxIndex))
         ),
+        ...(forcedLeadSpacePt !== undefined ? { forcedLeadSpacePt } : {}),
       }
     } else {
       const field = node.attrs.fieldDisplay as { kind?: string } | null

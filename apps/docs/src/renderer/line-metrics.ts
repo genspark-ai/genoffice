@@ -23,6 +23,7 @@
  *   - space-before/space-after keep their face value (Word does not grid-snap them)
  */
 
+import { isEastAsianFontName } from './font-list'
 import type { DocGrid } from '@genoffice/docx-engine'
 import {
   arabicCodePage,
@@ -214,6 +215,13 @@ const KO_FONT_RE =
 /** line boxes of the open document's embedded faces, keyed like docFontTable */
 let embeddedLineBoxes = new Map<string, { factor: number; descent: number }>()
 
+/** the embed Word lays out with: none when Word ships the family itself (resolve.ts direct) */
+function embeddedBox(fontFamily: string): { factor: number; descent: number } | undefined {
+  const box = embeddedLineBoxes.get(fontFamily.normalize('NFKC').toLowerCase().trim())
+  if (!box) return undefined
+  return resolveDeclaredFace(fontFamily)?.source === 'embedded' ? box : undefined
+}
+
 /** first entry per family wins: callers list the regular cut first */
 export function setEmbeddedLineMetrics(
   faces: ReadonlyArray<{ family: string; ascent: number; descent: number; lineGap: number }>,
@@ -254,7 +262,9 @@ export function lineHeightFactor(fontFamily: string): number {
  */
 function resolverAnswers(name: string, face: ResolvedFace, known: number | undefined): boolean {
   const key = name.normalize('NFKC').toLowerCase().trim()
-  if (known !== undefined && LINE_FACTOR_PINS.some((pin) => pin.test(key))) return false
+  // a pin fixes a missing face's substitute; an installed copy lays out for real
+  const real = face.source === 'installed' && !face.substituted && face.metrics.eastAsian
+  if (known !== undefined && !real && LINE_FACTOR_PINS.some((pin) => pin.test(key))) return false
   if (face.metrics.eastAsian) {
     // a face Word ships paces at its own hhea x 1.3 whatever its name; an
     // installed or embedded one only under a CJK name (the EA code-page flag
@@ -313,7 +323,7 @@ function knownLineFactor(fontFamily: string): number | undefined {
   const f = fontFamily.toLowerCase()
   // an embedded face renders real: Word lays it with its own hhea total
   // (probe 2026-09-23, typo/win groups and USE_TYPO_METRICS ignored)
-  const embedded = embeddedLineBoxes.get(f.normalize('NFKC').trim())
+  const embedded = embeddedBox(fontFamily)
   // Word meters an embedded East Asian face by its EA rule, not its own box
   // (embedded Malgun Gothic: 19.05 pt at 11 pt = 1.7305, hhea total is 1.3301)
   if (embedded && !isCjkFontName(fontFamily)) return embedded.factor
@@ -388,8 +398,7 @@ function latinFace(font: string): ResolvedFace | null {
 /** Descent (em) Word lays a Latin text face with: its layout face's hhea
  *  descent; East Asian faces keep 1/4 em (their box is the x1.3 rule) */
 function latinDescent(font: string): number {
-  const f = font.toLowerCase()
-  const embedded = embeddedLineBoxes.get(f.normalize('NFKC').trim())?.descent
+  const embedded = embeddedBox(font)?.descent
   if (embedded !== undefined) return embedded
   const face = latinFace(font)
   return face && !face.metrics.eastAsian ? face.metrics.descent : 0.25
@@ -414,6 +423,29 @@ export function oversizedMarkerExtraPt(
 }
 
 /**
+ * Ascent (em) Word stands a marker glyph on: the symbol faces' win ascent, or
+ * for an East Asian face the hhea ascent plus half the leading its x1.3 line
+ * adds (probe 2026-11-02: Malgun Gothic bullet on a Times New Roman 11pt item
+ * 16.56 = 1.2886 x 11 + 2.38, Batang / Gulim 13.44 = 1.0098 x 11 + 2.38)
+ */
+function markerFaceAscent(font: string): number | undefined {
+  const key = font.trim().toLowerCase()
+  const symbol = SYMBOL_FACE_ASCENT[key]
+  if (symbol !== undefined) return symbol
+  const face = resolveDeclaredFace(font)
+  // Arial Unicode MS markers are unprobed; the CJK vendor faces follow the split
+  if (!face?.metrics.eastAsian || !isCjkFontName(font) || /^arial unicode/.test(key))
+    return undefined
+  const { ascent, descent } = face.metrics
+  return ascent + (lineHeightFactor(font) - ascent - descent) / 2
+}
+
+/** a level face whose glyph stands taller than Latin text faces (symbol and East Asian faces) */
+export function markerFaceLifts(font: string): boolean {
+  return markerFaceAscent(font) !== undefined
+}
+
+/**
  * Natural height (pt) of a list item's first line when a symbol-font bullet
  * sits on it, or null when the text face alone is as tall. Word sizes a line
  * by the max ascent plus the max descent of the faces on it, so Symbol (ascent
@@ -427,7 +459,7 @@ export function symbolBulletLinePt(
   textFont: string | null,
   textPt: number,
 ): number | null {
-  const asc = SYMBOL_FACE_ASCENT[symbolFont.trim().toLowerCase()]
+  const asc = markerFaceAscent(symbolFont)
   if (asc === undefined || !(markerPt > 0) || !(textPt > 0)) return null
   const line = asc * markerPt + latinDescent(textFont ?? '') * textPt
   if (line <= lineHeightFactor(textFont ?? 'Calibri') * textPt + 0.01) return null
@@ -452,6 +484,11 @@ export function cjkDeclaredLineFactor(fontFamily: string): number | null {
   const m = NOTO_HAN_REGIONAL_RE.exec(fontFamily.toLowerCase())
   if (!m) return null
   if (m[1] === 'kr') return lineHeightFactor(fontFamily)
+  // an installed copy lays out for real at its own EA rule (corpus 2026-11-01:
+  // Noto Sans JP 12pt on an 18pt grid takes two pitches in Word, 1.448 x 1.3)
+  const face = resolveDeclaredFace(fontFamily)
+  if (face && face.source === 'installed' && !face.substituted && face.metrics.eastAsian)
+    return lineHeightFactor(fontFamily)
   return simsunLineFactor()
 }
 
@@ -859,6 +896,10 @@ export function krCharsetRoute(font: string): 'malgun' | 'batang' | null {
   const head = font.split(',')[0].replace(/['"]/g, '').normalize('NFKC').trim()
   const hints = docFontTable.get(head.toLowerCase())
   if (hints?.charset !== '81' || !(isBundledFont(head) || !isFontAvailable(head))) return null
+  // a face Word ships (Gulim, Batang, Malgun Gothic under either name) is laid
+  // out for real, not routed (probe 2026-11-02: charset-81 Gulim 14.16-14.40 at 11pt)
+  const face = resolveDeclaredFace(head)
+  if (face && !face.substituted && face.source === 'dfonts') return null
   return hints.family?.toLowerCase() === 'roman' ? 'batang' : 'malgun'
 }
 
@@ -2383,6 +2424,75 @@ export function setHangulSpaceWidening(on: boolean): void {
 }
 export function hangulSpaceWideningOn(): boolean {
   return hangulSpaceWidening
+}
+
+// docDefaults w:lang w:val naming an East Asian language (Google Docs exports
+// of Korean documents write lang=ko with Arial in every slot) makes Word lay
+// out every run's Latin text with the run's eastAsia face, run-level lang
+// overrides included; an eastAsia face without East Asian coverage (Arial,
+// Courier New, Times New Roman, Calibri) is replaced by SimSun for Latin
+// (0.5em half-width, 1.3 line) and Batang for hangul (probe 2026-11-02; a
+// run-level lang=ko without the docDefaults one changes nothing).
+let latinViaEaSlot = false
+/** the document's inherited East Asian face: the eastAsia slot of runs that declare none */
+let docEaSlotFace: string | null = null
+export function latinViaEastAsiaSlotFor(parsed: { docDefaults?: { lang?: string } }): boolean {
+  return /^(?:ja|zh|ko)(?:[-_]|$)/i.test(parsed.docDefaults?.lang ?? '')
+}
+export function setLatinViaEastAsiaSlot(on: boolean, docEaFace?: string | null): void {
+  latinViaEaSlot = on
+  docEaSlotFace = docEaFace ?? null
+}
+export function latinViaEastAsiaSlotOn(): boolean {
+  return latinViaEaSlot
+}
+
+/** faces a run's slots lay out with: its own ascii / eastAsia pair, or under
+ *  the East Asian docDefaults language the eastAsia face (SimSun when that
+ *  face draws no East Asian script) for both */
+export function wordSlotFaces<T extends string | null | undefined>(
+  ascii: T,
+  eastAsia: T,
+  on: boolean = latinViaEaSlot,
+): { ascii: T | string; eastAsia: T | string } {
+  if (!on) return { ascii, eastAsia }
+  const face = eastAsia || docEaSlotFace || ascii
+  if (!face) return { ascii, eastAsia }
+  const laid = eastAsianCoverage(face) ? face : 'SimSun'
+  return { ascii: laid, eastAsia: laid }
+}
+
+/** the face draws East Asian script itself: a CJK / Korean name (either name
+ *  table), or a face Word ships whose OS/2 code pages say so; the same bit on
+ *  installed Latin macOS faces (Arial, Courier New) is a data quirk */
+function eastAsianCoverage(face: string): boolean {
+  if (isCjkFontName(face) || isEastAsianFontName(face)) return true
+  const r = resolveDeclaredFace(face)
+  if (!r || r.substituted || !r.metrics.eastAsian) return false
+  return r.source !== 'installed' && r.source !== 'system'
+}
+
+/** face a run without any rFonts lays its Latin out with under the rule, else null */
+export function inheritedSlotFace(): string | null {
+  if (!latinViaEaSlot || !docEaSlotFace) return null
+  return eastAsianCoverage(docEaSlotFace) ? docEaSlotFace : 'SimSun'
+}
+
+/** wordSlotFaces of a run's attrs: font is eastAsia-first and copies the Latin
+ *  name when the run declares no eastAsia (a parsed run then carries
+ *  eastAsiaFont), so only a declared eastAsia counts as the slot */
+export function runSlotFaces(attrs: {
+  font?: string | null
+  fontAscii?: string | null
+  eastAsiaFont?: string | null
+  rawRPr?: string | null
+}): { ascii: string | null; eastAsia: string | null; declaredEa: string | null } {
+  const font = attrs.font ?? null
+  const ascii = attrs.fontAscii ?? null
+  const declaredEa = attrs.eastAsiaFont ?? (!attrs.rawRPr && font !== ascii ? font : null)
+  if (!latinViaEaSlot) return { ascii, eastAsia: font, declaredEa }
+  const slot = wordSlotFaces(ascii, declaredEa)
+  return { ascii: slot.ascii, eastAsia: slot.eastAsia ?? slot.ascii, declaredEa }
 }
 
 /** UTF-16 offsets of the U+0020 in text with a hangul neighbour; prev/next

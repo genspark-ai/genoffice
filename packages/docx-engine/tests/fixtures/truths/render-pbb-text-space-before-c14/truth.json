@@ -1,0 +1,56 @@
+{
+  "id": "render-pbb-text-space-before-c14",
+  "title": "Space before at a page top opened by the paragraph's own break, compat 14: a pageBreakBefore paragraph keeps max(0, before - previous after) (20 pt after a plain paragraph, 0 after an after=400 one), direct or from its style; a break-only paragraph before it still drops it",
+  "section": "word-truths.md#L878",
+  "probe_date": "2026-11-02",
+  "class": "render",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-02), pymupdf span tops, Letter, Calibri 11 after=0 line=240, 14pt headings before=400 after=200; page 1 A1 71.95, flush lead 72.19, kept lead 92.11 (+20), compat 14 after=200 -> 82.27; compat 14 (the production document's mode)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 6
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 1,
+      "expect": 20.16,
+      "tol": 0.6,
+      "note": "B1: direct pageBreakBefore + before=400 after a plain paragraph"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 3,
+      "control": 1,
+      "expect": 20.16,
+      "tol": 0.6,
+      "status": "failing",
+      "note": "C1: leading w:br page in the paragraph keeps its before in every mode; gen cuts the line and drops it"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 4,
+      "control": 1,
+      "expect": 0.24,
+      "tol": 0.6,
+      "note": "E1: after a break-only paragraph the before is dropped"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 5,
+      "control": 1,
+      "expect": 0.24,
+      "tol": 0.6,
+      "note": "G1: pageBreakBefore before=400 after an after=400 paragraph: nothing beyond the merged spacing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 6,
+      "control": 1,
+      "expect": 20.16,
+      "tol": 0.6,
+      "note": "H1: pageBreakBefore from the paragraph style"
+    }
+  ]
+}

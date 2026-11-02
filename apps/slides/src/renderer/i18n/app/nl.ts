@@ -194,6 +194,7 @@ export const nl = {
   appCtxSendToBack: 'Naar achtergrond',
   appCtxBringForward: 'Naar voren',
   appCtxSendBackward: 'Naar achteren',
+  appCtxRotate: 'Draaien',
   appCtxRotateLeft90: '90° naar links draaien',
   appCtxRotateRight90: '90° naar rechts draaien',
   appCtxFlipH: 'Horizontaal spiegelen',

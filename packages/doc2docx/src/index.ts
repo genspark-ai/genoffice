@@ -8,15 +8,35 @@
 import { openCompoundFile } from './compound'
 import { parseFib, validateFibTableRanges, type FibInfo } from './fib'
 import { parseClx, type PieceTable } from './clx'
-import { extractBodyText } from './text'
-import { readFormatting, type FormattedParagraph } from './formatting'
-import { readResolvedFormatting } from './resolve'
-import { parseSections, type SectionInfo } from './sections'
-import { parseHeaderStories, type SectionHeaderFooter } from './headers'
+import {
+  decodeWordDocumentRange,
+  extractBodyText,
+  normalizeSectionMarks,
+  textFromRaw,
+} from './text'
+import { readFormatting, readFormattingDetailed, type FormattedParagraph } from './formatting'
+import {
+  readResolvedFormatting,
+  readStyleSheet,
+  resolveFormatting,
+  fieldRangesWithin,
+  markFormattingEntry,
+  resolveParagraphFormattingFor,
+  resolveParagraphMarkFormatting,
+  resolveRunsForRange,
+} from './resolve'
+import type { FormattingRead, FormattingSource } from './formatting'
+import type { StyleSheet } from './styles'
+import { parseSections, sectionMarkCps, type SectionInfo } from './sections'
+import { parseHeaderStories, type SectionHeaderFooter, type StoryFormatter } from './headers'
 import { parseInlineImages } from './images'
+import { parseFloatingPictures, type FloatingPicturesResult } from './drawings'
+import { parseTextBoxStories, textBoxDocumentStart } from './textboxes'
 import { parseListTables } from './lists'
 import { parseFields } from './fields'
-import { readLegacyDocBody as readBodyFromSource, type LegacyDocBody } from './tables'
+import { buildLegacyDocBody, type LegacyDocBody } from './tables'
+import { parseNotes, type LegacyDocNotes } from './notes'
+import { parseComments, type LegacyComment } from './comments'
 import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
@@ -61,20 +81,27 @@ export {
 } from './formatting'
 export type {
   CharacterFormatting,
+  CharacterIndents,
   FcResolution,
   FormattedParagraph,
   FormattedRun,
   FormattingRead,
   FormattingSource,
+  NoteMark,
+  ParagraphBorder,
+  ParagraphBorderSide,
   ParagraphContext,
   ParagraphFormatting,
   RawCharacterRun,
   RawParagraphSprms,
+  TabStop,
   ToggleMode,
   UnderlineKind,
 } from './formatting'
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
+export { fontNamesFor, parseFontTable } from './fonts'
+export type { DefaultFontIndices, FontNames, FontTable } from './fonts'
 export { isBulletLevel, levelTextForWriter, parseListTables } from './lists'
 export type { ListDefinition, ListLevel, ListTables } from './lists'
 export { parseFields } from './fields'
@@ -82,23 +109,40 @@ export type { FieldParseResult, HyperlinkField } from './fields'
 export { DEFAULT_SECTION_GEOMETRY, parseSections } from './sections'
 export { EMU_PER_TWIP, imageExtentEmu, parseInlineImages } from './images'
 export type { ImageBlock, InlineImageResult } from './images'
-export type { SectionInfo, SectionMargins, SectionSource } from './sections'
+export { parseFloatingPictures, readBlip } from './drawings'
+export type {
+  FloatingPicture,
+  FloatingPicturesResult,
+  FloatingShape,
+  FloatingTextBox,
+  PictureMedia,
+  PictureMediaType,
+} from './drawings'
+export { parseTextBoxStories, textBoxDocumentStart } from './textboxes'
+export type { TextBoxStories, TextBoxStoriesSource, TextBoxStory } from './textboxes'
+export type { SectionBreakType, SectionInfo, SectionMargins, SectionSource } from './sections'
 export { parseHeaderStories } from './headers'
+export { parseNotes } from './notes'
+export type { LegacyDocNotes, LegacyNote, NoteKind, NotesSource } from './notes'
 export type {
   HeaderFooterResult,
   HeaderFooterStory,
   HeaderStoriesSource,
   SectionHeaderFooter,
+  StoryFormatter,
 } from './headers'
 export {
   DEFAULT_CHARACTER_STYLE_ISTD,
   DEFAULT_PARAGRAPH_STYLE_ISTD,
   readResolvedFormatting,
+  readStyleSheet,
   resolveFormatting,
   resolveParagraphFormattingFor,
   resolveRunsForRange,
 } from './resolve'
 export type { FormattedLinkRange, ParagraphRunRequest } from './resolve'
+export { parseComments } from './comments'
+export type { CommentsResult, CommentsSource, LegacyComment } from './comments'
 export { buildLegacyDocBody } from './tables'
 export type {
   BodyBlock,
@@ -151,7 +195,9 @@ export function openLegacyDoc(bytes: Uint8Array): LegacyDoc {
     ccpText: fib.ccpText,
     wordDocumentLength: wordDocument.length,
   })
-  const extracted = extractBodyText(wordDocument, pieces, fib.ccpText)
+  const body = extractBodyText(wordDocument, pieces, fib.ccpText)
+  const normalized = normalizeSectionMarks(body.rawText, sectionMarkCps(fib, table))
+  const extracted = normalized === body.rawText ? body : textFromRaw(normalized)
   return {
     fib,
     pieces,
@@ -207,6 +253,169 @@ export interface LegacyDocLayout {
 }
 
 /**
+ * Header/footer, note and text box stories live past the body in the same
+ * text stream, so their formatting comes from a second formatting read over
+ * the whole text (only when the document has such stories).
+ */
+function wholeTextSource(doc: LegacyDoc): FormattingSource {
+  const total = doc.pieces.cps.at(-1) ?? 0
+  return {
+    ...doc,
+    fib: { ...doc.fib, ccpText: total },
+    rawText: decodeWordDocumentRange(doc.wordDocument, doc.pieces, 0, total),
+  }
+}
+
+function storyFormatter(source: FormattingSource, styles: StyleSheet | undefined): StoryFormatter {
+  const read = readFormattingDetailed(source, [])
+  const fields = parseFields(source.rawText).simpleFields
+  return {
+    paragraphs(startCp, endCp, noteMarks = []) {
+      const out: FormattedParagraph[] = []
+      read.paragraphs.forEach((paragraph, index) => {
+        if (paragraph.startCp < startCp || paragraph.endCp > endCp) return
+        const raw = read.paragraphSprms[index]!
+        const request = {
+          startCp: paragraph.startCp,
+          endCp: paragraph.endCp,
+          styleIstd: raw.istd,
+          papxSprms: raw.sprms,
+        }
+        out.push({
+          startCp: paragraph.startCp,
+          endCp: paragraph.endCp,
+          text: paragraph.text,
+          formatting: resolveParagraphFormattingFor(source, styles, request),
+          runs: resolveRunsForRange(
+            read,
+            source,
+            styles,
+            request,
+            [],
+            [],
+            fieldRangesWithin(fields, paragraph.startCp, paragraph.endCp),
+            noteMarks,
+          ),
+          ...markFormattingEntry(resolveParagraphMarkFormatting(read, source, styles, request)),
+        })
+      })
+      return out
+    },
+  }
+}
+
+function commentsOf(
+  doc: LegacyDoc,
+  formatter: StoryFormatter | undefined,
+): {
+  comments: LegacyComment[]
+  warnings: string[]
+} {
+  if (doc.fib.ccpAtn === 0 && doc.fib.lcbPlcfandRef === 0) return { comments: [], warnings: [] }
+  return parseComments(doc, formatter)
+}
+
+/** the formatting read shared by the header/footer, note, comment and text box stories */
+interface Stories {
+  source?: FormattingSource
+  formatter?: StoryFormatter
+  drawings: FloatingPicturesResult
+  warnings: string[]
+}
+
+function readStories(doc: LegacyDoc, styles: StyleSheet | undefined): Stories {
+  const { fib } = doc
+  if (fib.ccpHdd + fib.ccpFtn + fib.ccpEdn + fib.ccpAtn + fib.ccpTxbx + fib.ccpHdrTxbx === 0)
+    return { drawings: parseFloatingPictures(doc), warnings: [] }
+  const source = wholeTextSource(doc)
+  const formatter = storyFormatter(source, styles)
+  const warnings: string[] = []
+  const imagesIn = (startCp: number, length: number) => {
+    if (length === 0) return []
+    const result = parseInlineImages(source, { startCp, endCp: startCp + length })
+    warnings.push(...result.warnings)
+    return result.images.map((image) => ({ ...image, cp: image.cp - startCp }))
+  }
+  const textBoxStart = textBoxDocumentStart(fib)
+  const textBoxes = parseTextBoxStories(doc, formatter, {
+    body: imagesIn(textBoxStart, fib.ccpTxbx),
+    header: imagesIn(textBoxStart + fib.ccpTxbx, fib.ccpHdrTxbx),
+  })
+  return { source, formatter, drawings: parseFloatingPictures(doc, textBoxes), warnings }
+}
+
+function layoutOf(doc: LegacyDoc, stories: Stories): LegacyDocLayout {
+  const sections = parseSections(doc)
+  const headerStart = doc.fib.ccpText + doc.fib.ccpFtn
+  const images =
+    stories.source && doc.fib.ccpHdd > 0
+      ? parseInlineImages(stories.source, {
+          startCp: headerStart,
+          endCp: headerStart + doc.fib.ccpHdd,
+        })
+      : undefined
+  const headerFooter = parseHeaderStories(
+    doc,
+    sections,
+    stories.formatter,
+    stories.drawings.header,
+    images?.images.map((image) => ({ ...image, cp: image.cp - headerStart })),
+  )
+  return {
+    sections,
+    headerFooter: headerFooter.stories,
+    warnings: [
+      ...sections.flatMap((section) => section.warnings),
+      ...headerFooter.warnings,
+      ...(images?.warnings ?? []),
+      ...stories.warnings,
+    ],
+  }
+}
+
+function bodyOf(
+  doc: LegacyDoc,
+  read: FormattingRead,
+  styles: StyleSheet | undefined,
+  warnings: string[],
+  stories: Stories,
+): LegacyDocBody {
+  const images = parseInlineImages(doc)
+  const lists = parseListTables(doc.fib, doc.table)
+  const fields = parseFields(doc.rawText)
+  const notes: LegacyDocNotes = parseNotes(doc, stories.formatter)
+  const comments = commentsOf(doc, stories.formatter)
+  const body = buildLegacyDocBody(doc, read, {
+    styles,
+    images: images.images,
+    lists,
+    fields,
+    drawings: stories.drawings.body,
+    noteMarks: notes.marks,
+    comments: comments.comments,
+  })
+  return {
+    blocks: body.blocks,
+    warnings: [
+      ...new Set([
+        ...warnings,
+        ...body.warnings,
+        ...images.warnings,
+        ...lists.warnings,
+        ...fields.warnings,
+        ...stories.drawings.warnings,
+        ...stories.warnings,
+        ...notes.warnings,
+        ...comments.warnings,
+      ]),
+    ],
+    ...(body.lists ? { lists: body.lists } : {}),
+    ...(notes.footnotes.length + notes.endnotes.length > 0 ? { notes } : {}),
+    ...(body.comments ? { comments: body.comments } : {}),
+  }
+}
+
+/**
  * Read the reconstructed body of a .doc: paragraphs, real tables and inline
  * PNG/JPEG pictures in CP order (stages 3c-2/3c-3). Cell character formatting
  * is resolved from the stylesheet when the document has one; cell paragraph
@@ -214,32 +423,41 @@ export interface LegacyDocLayout {
  */
 export function readLegacyDocBody(bytes: Uint8Array): LegacyDocBody {
   const doc = openLegacyDoc(bytes)
-  const images = parseInlineImages(doc)
-  const lists = parseListTables(doc.fib, doc.table)
-  const fields = parseFields(doc.rawText)
-  const body = readBodyFromSource(doc, {
-    images: images.images,
-    lists,
-    fields,
-  })
-  return {
-    blocks: body.blocks,
-    warnings: [
-      ...new Set([...body.warnings, ...images.warnings, ...lists.warnings, ...fields.warnings]),
-    ],
-    ...(body.lists ? { lists: body.lists } : {}),
-  }
+  const warnings: string[] = []
+  const read = readFormattingDetailed(doc, warnings)
+  const styles = readStyleSheet(doc, warnings)
+  return bodyOf(doc, read, styles, warnings, readStories(doc, styles))
 }
 
 /** Read the section geometry and header/footer stories of a .doc. */
 export function readLegacyDocLayout(bytes: Uint8Array): LegacyDocLayout {
   const doc = openLegacyDoc(bytes)
-  const sections = parseSections(doc)
-  const headerFooter = parseHeaderStories(doc, sections)
+  return layoutOf(doc, readStories(doc, readStyleSheet(doc, [])))
+}
+
+/** Everything the .docx writer needs, read from one parse of the file. */
+export interface LegacyDocRead {
+  model: LegacyDocModel
+  layout: LegacyDocLayout
+  body: LegacyDocBody
+  /** the document has an STSH and the model carries style-resolved formatting */
+  stylesResolved: boolean
+}
+
+/** Open a .doc once and read the model, the layout and the body from that parse. */
+export function readLegacyDoc(bytes: Uint8Array): LegacyDocRead {
+  const doc = openLegacyDoc(bytes)
+  const warnings: string[] = []
+  const read = readFormattingDetailed(doc, warnings)
+  const styles = readStyleSheet(doc, warnings)
+  const paragraphs = styles ? resolveFormatting(read, doc, styles, warnings) : read.paragraphs
+  const model: LegacyDocModel = { fib: doc.fib, text: doc.text, paragraphs, warnings }
+  const stories = readStories(doc, styles)
   return {
-    sections,
-    headerFooter: headerFooter.stories,
-    warnings: [...sections.flatMap((section) => section.warnings), ...headerFooter.warnings],
+    model,
+    layout: layoutOf(doc, stories),
+    body: bodyOf(doc, read, styles, [], stories),
+    stylesResolved: styles !== undefined,
   }
 }
 

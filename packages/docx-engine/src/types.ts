@@ -284,6 +284,9 @@ export interface Run {
     rotDeg?: number
     flipH?: boolean
     flipV?: boolean
+    /** pictures of a picture-only wpg group stacked bottom first, each placed in
+     *  fractions of the image box; dataUrl is the first of them (display-only) */
+    layers?: { dataUrl: string; x: number; y: number; w: number; h: number }[]
     /** VML horizontal rule (v:rect o:hr), alone or sharing the paragraph with text:
      *  drawn as a rule on a line of its own like Word (dataUrl is empty). The line is
      *  as tall as the rule run's own font (sizeHalfPoints = the run's w:sz), not the
@@ -741,6 +744,10 @@ export interface SectionSettings {
           color?: string
           /** w:val names one of Word's bitmap art borders (gems, zigZagStitch, …) */
           art?: true
+          /** w:shadow="1": Word's Shadow setting (drop shadow at the bottom-right) */
+          shadow?: true
+          /** w:frame="1": Word's 3-D setting */
+          frame?: true
         }
       >
     >
@@ -1218,8 +1225,16 @@ export interface FieldDisplay {
   bold?: boolean
   /** character style (w:rStyle) of the tocLine's leading result run */
   runStyleId?: string
+  /** tocLine with num: width (twips) of the number cell, from the first line's start to the
+   *  left tab stop the title jumps to; absent = a fixed gap after the number */
+  numTabTwips?: number
+  /** tocLine: effective first-line indent (twips, negative = hanging); the wrapper drops the
+   *  paragraph's own indents, so the entry body applies it */
+  hangTwips?: number
   /** leader of the tocLine's right tab stop (direct pPr, else the style); undefined = unknown, drawn as dots */
   leader?: TabStop['leader']
+  /** position (twips, from the column edge) of that right tab stop; absent = the column edge */
+  rightTabTwips?: number
   /** formatted result runs of a text field (italic journal names, a manual
    *  drop-cap letter next to body text); their joined text equals `left` */
   runs?: FieldRun[]

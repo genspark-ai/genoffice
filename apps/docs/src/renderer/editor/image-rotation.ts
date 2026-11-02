@@ -75,3 +75,44 @@ export function foldQuarterTurnMargins(inset: number, declarations: string): str
   }
   return [...rest, ...SIDES.map((side) => `margin-${side}:${margins[side]}`)].join(';')
 }
+
+export interface PictureLayer {
+  dataUrl: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * A picture-only group paints its pictures bottom first as stacked background
+ * images of one <img>, each at its fraction of the box. The src stays the
+ * first picture so the element is a real image for every other path (the
+ * engine keeps the group bytes); the pixels come from the backgrounds and the
+ * src itself is shifted out of the box.
+ */
+export function pictureLayerDecls(layers: PictureLayer[] | null | undefined): string[] {
+  if (!layers || layers.length === 0) return []
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`
+  const top = [...layers].reverse()
+  return [
+    `background-image:${top.map((l) => `url("${l.dataUrl}")`).join(',')}`,
+    `background-size:${top.map((l) => `${pct(l.w)} ${pct(l.h)}`).join(',')}`,
+    // percentage positions place against the free space, so solve for the
+    // offset that lands the layer's left/top edge at its fraction
+    `background-position:${top.map((l) => `${edge(l.x, l.w)} ${edge(l.y, l.h)}`).join(',')}`,
+    'background-repeat:no-repeat',
+    // the layers are the picture: print must keep them like any bitmap
+    '-webkit-print-color-adjust:exact',
+    'print-color-adjust:exact',
+    // natural size shifted out of the box: a percent offset would resolve to
+    // zero under the default fill and leave the src painting over the layers
+    'object-fit:none',
+    'object-position:-100000px -100000px',
+  ]
+}
+
+function edge(start: number, size: number): string {
+  const free = 1 - size
+  return Math.abs(free) < 1e-6 ? '0%' : `${((start / free) * 100).toFixed(2)}%`
+}

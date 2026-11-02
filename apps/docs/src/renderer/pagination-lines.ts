@@ -743,8 +743,13 @@ export function rowSplitCss(
   const px = (v: number) => `${v.toFixed(1)}px`
   const out: string[] = []
   splits.forEach((split, n) => {
-    const block = blocks.find((b) => b.tableRows && Math.abs(b.top - split.blockTop) < 0.5)
-    const tr = block?.el ? outerTableRows(block.el)[split.row] : undefined
+    // the preview's snapshot blocks were never sliced (no tableRows): the row is found by top
+    let tr: HTMLElement | undefined
+    for (const b of blocks) {
+      if (!b.el || Math.abs(b.top - split.blockTop) >= 0.5) continue
+      tr = outerTableRows(b.el)[split.row]
+      if (tr) break
+    }
     if (!tr) return
     tr.dataset.pvSplit = String(n)
     for (const r of split.rules) {
@@ -1226,8 +1231,9 @@ function inFlowWithin(node: Element, el: HTMLElement): boolean {
 /** the block plus the paragraphs joined onto it (measureBlocks folded them into its box) */
 function joinedParagraphs(el: HTMLElement): HTMLElement[] {
   const out = [el]
-  if (getComputedStyle(el).display !== 'inline') return out
+  if (!el.classList.contains('doc-para-join-head')) return out
   for (let n = el.nextElementSibling; n; n = n.nextElementSibling) {
+    if (getComputedStyle(n).display === 'none') continue
     if (!n.classList.contains('doc-para-join-tail')) break
     out.push(n as HTMLElement)
   }

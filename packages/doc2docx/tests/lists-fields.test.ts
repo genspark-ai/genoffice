@@ -4,7 +4,6 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseDocx } from '@genoffice/docx-engine'
 import {
-  LegacyDocError,
   convertLegacyDocToDocx,
   openLegacyDoc,
   parseFields,
@@ -16,7 +15,9 @@ import {
   buildSyntheticDoc,
   encodeListParagraphPapx,
   encodePapxFkp,
+  encodeSprm,
   encodePlfLst,
+  type SyntheticLevelOverride,
   type SyntheticListDefinition,
   type SyntheticPapxEntry,
 } from './helpers/synthetic-doc'
@@ -31,22 +32,13 @@ async function zipText(docx: Uint8Array, path: string): Promise<string | undefin
   return file ? file.async('string') : undefined
 }
 
-function errorCode(run: () => unknown): string {
-  try {
-    run()
-  } catch (error) {
-    expect(error).toBeInstanceOf(LegacyDocError)
-    return (error as LegacyDocError).code
-  }
-  throw new Error('expected a LegacyDocError')
-}
-
 /** build a .doc whose body text marks list paragraphs via their PAPX sprms */
 function syntheticListDoc(options: {
   text: string
   paragraphs: Array<{ startCp: number; ilfo: number; ilvl?: number }>
   lists: SyntheticListDefinition[]
   listOverrides?: number[]
+  listLevelOverrides?: Array<SyntheticLevelOverride[] | undefined>
 }): Uint8Array {
   const entries: SyntheticPapxEntry[] = options.paragraphs.map((paragraph) => ({
     fcStart: SYNTHETIC_TEXT_OFFSET + paragraph.startCp * 2,
@@ -66,6 +58,7 @@ function syntheticListDoc(options: {
     papxFkpPages: [encodePapxFkp(entries)],
     lists: options.lists,
     ...(options.listOverrides ? { listOverrides: options.listOverrides } : {}),
+    ...(options.listLevelOverrides ? { listLevelOverrides: options.listLevelOverrides } : {}),
   })
 }
 
@@ -163,6 +156,42 @@ describe('rich.doc: lists + hyperlink alongside table and image', () => {
 })
 
 describe('synthetic list tables', () => {
+  it('applies LFOLVL overrides: a restart value and a replacement bullet level', async () => {
+    const bytes = syntheticListDoc({
+      text: 'One\rTwo\r',
+      paragraphs: [
+        { startCp: 0, ilfo: 1 },
+        { startCp: 4, ilfo: 2 },
+      ],
+      lists: [
+        { lsid: 7, simple: true, levels: [{ numberFormat: 0, levelText: '\u0000.' }] },
+        { lsid: 8, simple: true, levels: [{ numberFormat: 0, levelText: '*' }] },
+      ],
+      listLevelOverrides: [
+        [{ ilvl: 0, startAt: 5 }],
+        [{ ilvl: 0, level: { numberFormat: 23, levelText: '\uf0b7', indentLeft: 360 } }],
+      ],
+    })
+    const doc = openLegacyDoc(bytes)
+    const tables = parseListTables(doc.fib, doc.table)
+    expect(tables.warnings).toEqual([])
+    expect(tables.levelOverrides.get(1)).toEqual([{ ilvl: 0, startAt: 5 }])
+    expect(tables.levelOverrides.get(2)?.[0]?.level?.numberFormat).toBe(23)
+    const body = readLegacyDocBody(bytes)
+    const kinds = body.blocks.map((block) => (block.type === 'paragraph' ? block.list?.kind : '?'))
+    expect(kinds.slice(0, 2)).toEqual(['ordered', 'bullet'])
+    const { docx, warnings } = await convertLegacyDocToDocx(bytes)
+    expect(warnings).toEqual([])
+    const numbering = (await zipText(docx, 'word/numbering.xml'))!
+    expect(numbering).toContain(
+      '<w:num w:numId="101"><w:abstractNumId w:val="10"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride></w:num>',
+    )
+    expect(numbering).toMatch(
+      /<w:num w:numId="102"><w:abstractNumId w:val="11"\/><w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0"><w:start w:val="1"\/><w:numFmt w:val="bullet"\/>.*<w:lvlText w:val="\u2022"\/>.*<\/w:lvlOverride><\/w:num>/,
+    )
+    await expect(parseDocx(docx)).resolves.toBeDefined()
+  })
+
   it('parses levels, placeholders and numFmt values', () => {
     const bytes = syntheticListDoc({
       text: 'One\rTwo\r',
@@ -235,6 +264,53 @@ describe('synthetic list tables', () => {
     expect(xml).toContain('<w:numPr><w:ilvl w:val="0"/><w:numId w:val="101"/></w:numPr>')
   })
 
+  it('reads grpprlPapx and grpprlChpx of unequal lengths in LVLF order (cbChpx first)', () => {
+    const bytes = syntheticListDoc({
+      text: 'One\rTwo\r',
+      paragraphs: [
+        { startCp: 0, ilfo: 1 },
+        { startCp: 4, ilfo: 1, ilvl: 1 },
+      ],
+      lists: [
+        {
+          lsid: 7,
+          levels: [
+            {
+              numberFormat: 0,
+              levelText: '\u0000.',
+              indentLeft: 720,
+              indentFirstLine: -360,
+              characterSprms: encodeSprm(0x0835, [1]),
+            },
+            {
+              numberFormat: 4,
+              levelText: '\u0001)',
+              indentLeft: 1440,
+              characterSprms: new Uint8Array([
+                ...encodeSprm(0x0835, [1]),
+                ...encodeSprm(0x0836, [1]),
+                ...encodeSprm(0x4a43, [24, 0]),
+              ]),
+            },
+          ],
+        },
+      ],
+    })
+    const doc = openLegacyDoc(bytes)
+    const lists = parseListTables(doc.fib, doc.table)
+    const levels = lists.lists.get(7)!.levels
+    expect(levels[0]).toMatchObject({
+      levelText: '%1.',
+      indentLeftTwips: 720,
+      indentFirstLineTwips: -360,
+    })
+    expect(levels[0]!.characterSprms).toHaveLength(3)
+    expect(levels[1]).toMatchObject({ levelText: '%2)', indentLeftTwips: 1440, numberFormat: 4 })
+    expect(levels[1]!.characterSprms).toHaveLength(10)
+    expect(levels[1]!.paragraphSprms).toHaveLength(4)
+    expect(levels[2]!.levelText).toBe('%3.')
+  })
+
   it('supports a simple (single-level) list', () => {
     const bytes = syntheticListDoc({
       text: 'Only\r',
@@ -261,7 +337,7 @@ describe('synthetic list tables', () => {
     ).toBe(true)
   })
 
-  it('rejects malformed PlfLst tables with bad_list', () => {
+  it('drops malformed PlfLst tables with a warning instead of failing', () => {
     const header = encodePlfLst([
       { lsid: 1, levels: [{ numberFormat: 0, levelText: '\u0000.' }] },
     ]).header
@@ -271,20 +347,80 @@ describe('synthetic list tables', () => {
       plfLst: corruptedCount,
     })
     const doc = openLegacyDoc(badCount)
-    expect(errorCode(() => parseListTables(doc.fib, doc.table))).toBe('bad_list')
+    const lists = parseListTables(doc.fib, doc.table)
+    expect(lists.lists.size).toBe(0)
+    expect(lists.warnings.some((warning) => warning.includes('declares 65535 lists'))).toBe(true)
     const truncatedLevels = buildSyntheticDoc({ pieces: [{ text: 'x\r' }], plfLst: header })
     const truncatedDoc = openLegacyDoc(truncatedLevels)
-    expect(errorCode(() => parseListTables(truncatedDoc.fib, truncatedDoc.table))).toBe('bad_list')
+    const truncated = parseListTables(truncatedDoc.fib, truncatedDoc.table)
+    expect(truncated.lists.size).toBe(0)
+    expect(truncated.warnings.some((warning) => warning.includes('truncated (no LVLF)'))).toBe(true)
+    expect(() => convertLegacyDocToDocx(truncatedLevels)).not.toThrow()
   })
 
-  it('rejects an out-of-range PlfLfo table with bad_list', () => {
+  it('keeps the lists read before a truncated level', () => {
+    const encoded = encodePlfLst([
+      { lsid: 1, simple: true, levels: [{ numberFormat: 0, levelText: '\u0000.' }] },
+      { lsid: 2, simple: true, levels: [{ numberFormat: 23, levelText: '\uf0b7' }] },
+    ])
+    const table = new Uint8Array(encoded.header.length + encoded.levels.length - 20)
+    table.set(encoded.header, 0)
+    table.set(encoded.levels.subarray(0, encoded.levels.length - 20), encoded.header.length)
+    const doc = openLegacyDoc(
+      buildSyntheticDoc({
+        pieces: [{ text: 'x\r' }],
+        plfLst: table,
+        lcbPlfLst: encoded.header.length,
+      }),
+    )
+    const lists = parseListTables(doc.fib, doc.table)
+    expect([...lists.lists.keys()]).toEqual([1])
+    expect(lists.warnings.some((warning) => warning.includes('level 0 of list 1'))).toBe(true)
+  })
+
+  it('keeps a level whose grpprlPapx holds a truncated sprm', () => {
+    const bytes = syntheticListDoc({
+      text: 'One\r',
+      paragraphs: [{ startCp: 0, ilfo: 1 }],
+      lists: [
+        {
+          lsid: 5,
+          simple: true,
+          levels: [
+            {
+              numberFormat: 0,
+              levelText: '\u0000.',
+              paragraphSprms: new Uint8Array([
+                ...encodeSprm(0x845e, [0xd0, 0x02]),
+                0x5e,
+                0x84,
+                0x01,
+              ]),
+            },
+          ],
+        },
+      ],
+    })
+    const doc = openLegacyDoc(bytes)
+    const lists = parseListTables(doc.fib, doc.table)
+    const level = lists.lists.get(5)!.levels[0]!
+    expect(level.indentLeftTwips).toBe(720)
+    expect(level.levelText).toBe('%1.')
+    expect(lists.warnings.some((warning) => warning.includes('level 0 of list 0'))).toBe(true)
+    const body = readLegacyDocBody(bytes)
+    expect(body.blocks[0]).toMatchObject({ type: 'paragraph', list: { numId: '101' } })
+  })
+
+  it('drops an out-of-range PlfLfo table with a warning', () => {
     const bytes = buildSyntheticDoc({
       pieces: [{ text: 'x\r' }],
       plfLst: new Uint8Array([0, 0]),
     })
     const doc = openLegacyDoc(bytes)
     const fib = { ...doc.fib, fcPlfLfo: doc.table.length - 2, lcbPlfLfo: 40 }
-    expect(errorCode(() => parseListTables(fib, doc.table))).toBe('bad_list')
+    const lists = parseListTables(fib, doc.table)
+    expect(lists.overrides.size).toBe(0)
+    expect(lists.warnings.some((warning) => warning.includes('list override table'))).toBe(true)
   })
 })
 
@@ -315,7 +451,10 @@ describe('HYPERLINK field parser', () => {
   it('warns about unsupported and malformed fields instead of failing', () => {
     const page = parseFields('\u0013 PAGE \u0014 1 \u0015')
     expect(page.hyperlinks).toEqual([])
-    expect(page.warnings.some((warning) => warning.includes('PAGE field'))).toBe(true)
+    expect(page.simpleFields).toEqual([{ startCp: 8, endCp: 11, instruction: 'PAGE' }])
+    expect(page.warnings).toEqual([])
+    const seq = parseFields('\u0013 SEQ Figure \u0014 1 \u0015')
+    expect(seq.warnings.some((warning) => warning.includes('SEQ field'))).toBe(true)
     const noSeparator = parseFields('\u0013 HYPERLINK "https://example.test/" \u0015')
     expect(noSeparator.hyperlinks).toEqual([])
     expect(noSeparator.warnings.some((warning) => warning.includes('result separator'))).toBe(true)
@@ -368,5 +507,52 @@ describe('synthetic hyperlink conversion', () => {
     expect(xml).toContain('<w:hyperlink w:anchor="chapter1">')
     const rels = (await zipText(docx, 'word/_rels/document.xml.rels'))!
     expect(rels).not.toContain('/hyperlink')
+  })
+
+  it('keeps the file target of a bookmark link into another document', async () => {
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: 'Go \u0013 HYPERLINK "other.docx" \\l "chapter1" \u0014there\u0015\r' }],
+    })
+    const { docx } = await convertLegacyDocToDocx(bytes)
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).not.toContain('w:anchor=')
+    const rels = (await zipText(docx, 'word/_rels/document.xml.rels'))!
+    expect(rels).toContain('Target="other.docx#chapter1"')
+  })
+
+  it('passes an Office Open XML file saved under a .doc name through unchanged', async () => {
+    const zip = new JSZip()
+    zip.file('[Content_Types].xml', '<Types/>')
+    const bytes = new Uint8Array(await zip.generateAsync({ type: 'uint8array' }))
+    const { docx, warnings } = await convertLegacyDocToDocx(bytes)
+    expect(docx).toBe(bytes)
+    expect(warnings).toEqual(['the file is already Office Open XML; it was kept as is'])
+  })
+
+  it('writes PAGE / NUMPAGES fields as live complex fields with their cached result', async () => {
+    const text = 'Page \u0013 PAGE \u0014 3\u0015 of \u0013NUMPAGES\u0014 9\u0015\r'
+    const bytes = buildSyntheticDoc({ pieces: [{ text }] })
+    const { docx, warnings } = await convertLegacyDocToDocx(bytes)
+    expect(warnings).toEqual([])
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).toContain(
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t xml:space="preserve"> 3</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>',
+    )
+    expect(xml).toContain('<w:instrText xml:space="preserve"> NUMPAGES </w:instrText>')
+    expect(xml).not.toMatch(/[\ue000-\ue002]/)
+    await expect(parseDocx(docx)).resolves.toBeDefined()
+  })
+
+  it('keeps a PAGE field whose cached result is empty', async () => {
+    const text = 'Page \u0013 PAGE \u0014\u0015 end\r'
+    const bytes = buildSyntheticDoc({ pieces: [{ text }] })
+    expect(parseFields(text).simpleFields).toEqual([
+      { startCp: 13, endCp: 13, instruction: 'PAGE' },
+    ])
+    const xml = (await zipText((await convertLegacyDocToDocx(bytes)).docx, 'word/document.xml'))!
+    expect(xml).toContain('<w:instrText xml:space="preserve"> PAGE </w:instrText>')
+    expect(xml).toMatch(
+      /Page <\/w:t><\/w:r><w:r><w:fldChar w:fldCharType="begin"\/>.*?<w:fldChar w:fldCharType="end"\/><\/w:r><w:r><w:t xml:space="preserve"> end<\/w:t>/,
+    )
   })
 })

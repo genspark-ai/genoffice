@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
 
-// IeumOffice divergence (genoffice #2331): Word places a page/margin-relative
+// IeumOffice divergence (genoffice#2331): Word places a page/margin-relative
 // anchor at its page position whatever the wrap kind; wrap only decides how
 // the body text flows around it. Cover pages built from wrapTopAndBottom /
 // wrapSquare rectangles were stacked into the flow, shifted by the margins.
