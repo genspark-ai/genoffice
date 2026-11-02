@@ -456,6 +456,7 @@ export const ar = {
   appGridlinesHidden: 'أُخفيت خطوط الشبكة.',
   appGridlinesShown: 'أُظهرت خطوط الشبكة.',
   appShowingFormulas: 'عرض الصيغ — بدّل مرة أخرى لعرض القيم.',
+  appShowingFormulasActive: 'عرض الصيغ',
   appShowingValues: 'عرض القيم المحسوبة.',
   appTraceNoFormula: 'تتبع السابقات: لا توجد صيغة في الخلية النشطة.',
   appTraceNoRefs: 'تتبع السابقات: لا تحتوي هذه الصيغة على مراجع خلايا.',

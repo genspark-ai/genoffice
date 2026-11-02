@@ -478,6 +478,7 @@ export const cs = {
   appGridlinesHidden: 'Mřížka skryta.',
   appGridlinesShown: 'Mřížka zobrazena.',
   appShowingFormulas: 'Zobrazeny vzorce — dalším přepnutím zobrazíte hodnoty.',
+  appShowingFormulasActive: 'Zobrazené vzorce',
   appShowingValues: 'Zobrazeny vypočítané hodnoty.',
   appTraceNoFormula: 'Předchůdci: aktivní buňka neobsahuje vzorec.',
   appTraceNoRefs: 'Předchůdci: tento vzorec neobsahuje žádné odkazy na buňky.',

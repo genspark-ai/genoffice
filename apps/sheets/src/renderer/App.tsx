@@ -351,6 +351,7 @@ import { installFormulaBarAutosize } from './formula-bar-autosize'
 import { createFunctionArgumentsHost, installFxButtonHook } from './function-arguments-runtime'
 import {
   applyShowFormulasView,
+  formulaViewSheets,
   installFormulaTextInterceptor,
   installFormulaViewInterceptor,
 } from './formula-view'
@@ -5511,6 +5512,16 @@ export function App({
     }
   })()
 
+  // Formula view is per sheet and persisted (sheetView/@showFormulas), so a
+  // sheet can open showing formulas instead of values. The status bar says so;
+  // without it the sheet reads as a broken one.
+  const activeShowFormulas = (() => {
+    const worksheet = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    const state = lazyWorkbookRef.current
+    if (!worksheet || !state) return false
+    return formulaViewSheets(state).has(worksheet.getSheetId())
+  })()
+
   // Chart panels resolve their chart live (pending edits applied), so every
   // control reflects the state the next save would write.
   const visualDialogTarget = (() => {
@@ -5677,6 +5688,7 @@ export function App({
         printHost={printHost}
         onClosePrint={() => setPrintHost(null)}
         calcManual={calcManual}
+        showFormulas={activeShowFormulas}
         onGoalSeek={(setCell, toValue, byCell) => {
           const runtime = univerRef.current
           if (!runtime) return Promise.reject(new Error(t('appWorkbookNotReady')))

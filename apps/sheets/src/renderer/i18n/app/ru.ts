@@ -491,6 +491,7 @@ export const ru = {
   appGridlinesHidden: 'Сетка скрыта.',
   appGridlinesShown: 'Сетка показана.',
   appShowingFormulas: 'Показ формул — переключите снова, чтобы увидеть значения.',
+  appShowingFormulasActive: 'Показываются формулы',
   appShowingValues: 'Показ вычисленных значений.',
   appTraceNoFormula: 'Влияющие ячейки: в активной ячейке нет формулы.',
   appTraceNoRefs: 'Влияющие ячейки: в этой формуле нет ссылок на ячейки.',

@@ -495,6 +495,7 @@ export const pl = {
   appGridlinesHidden: 'Linie siatki ukryte.',
   appGridlinesShown: 'Linie siatki pokazane.',
   appShowingFormulas: 'Wyświetlanie formuł — przełącz ponownie, aby zobaczyć wartości.',
+  appShowingFormulasActive: 'Wyświetlanie formuł',
   appShowingValues: 'Wyświetlanie obliczonych wartości.',
   appTraceNoFormula: 'Śledź poprzedniki: aktywna komórka nie zawiera formuły.',
   appTraceNoRefs: 'Śledź poprzedniki: ta formuła nie zawiera odwołań do komórek.',
