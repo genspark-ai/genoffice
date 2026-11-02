@@ -6,7 +6,7 @@ import { ResponseBodyTooLargeError } from './protocols/shared'
 import { chatCodexAppServer } from './codex-app-server'
 import { getProviderAdapter, type ResolvedEndpoint } from './registry'
 import {
-  anthropicThinkingFor,
+  anthropicThinkingFields,
   geminiThinkingLevelFor,
   openAiEffortFor,
   toggleThinkingBodyFor,
@@ -43,7 +43,7 @@ export async function chatForProvider(
       case 'anthropic':
         return chatAnthropic(wd, config, system, user, endpoint.baseUrl, {
           headers: endpoint.headers,
-          thinking: anthropicThinkingFor(config),
+          ...anthropicThinkingFields(config),
         })
       case 'gemini':
         return chatGemini(wd, config, system, user, endpoint.baseUrl, {
@@ -54,15 +54,16 @@ export async function chatForProvider(
       case 'openai-compatible':
         return chatOpenAiCompatible(wd, endpoint.baseUrl, config, system, user, {
           omitTemperature: endpoint.omitTemperature,
+          // a stored pick outranks the profile's own body extras
           bodyExtras: { ...endpoint.bodyExtras, ...toggleThinkingBodyFor(config) },
           headers: endpoint.headers,
-          reasoningEffort: openAiEffortFor(config),
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
       case 'openai-responses':
         return chatOpenAiResponses(wd, endpoint.baseUrl, config, system, user, {
           bodyExtras: endpoint.bodyExtras,
           headers: endpoint.headers,
-          reasoningEffort: openAiEffortFor(config),
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
     }
   })

@@ -1,18 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { sanitizeAiSettings } from '../src/ai-settings-guard'
+import { chatForProvider } from '../src/chat'
 import {
-  anthropicThinkingFor,
+  anthropicThinkingFields,
   geminiThinkingLevelFor,
   openAiEffortFor,
   resolveThinkingEffort,
   thinkingShapeFor,
   toggleThinkingBodyFor,
 } from '../src/thinking-effort'
-import { sanitizeAiSettings } from '../src/ai-settings-guard'
+import { jsonResponse } from './test-utils'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+/** the JSON body of the most recent mocked fetch call */
+function lastBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const call = fetchMock.mock.calls.at(-1)!
+  return JSON.parse(call[1].body as string) as Record<string, unknown>
+}
 
 describe('thinkingShapeFor', () => {
-  it('openai: the 6.x ladder with none gated on the tiers that refuse it', () => {
-    expect(thinkingShapeFor('gpt-6.1-terra').levels).toEqual([
+  it('openai: the 6.x ladder, with the upper rungs gated on the Responses route', () => {
+    expect(thinkingShapeFor('gpt-6.1-terra', 'openai-responses').levels).toEqual([
       'none',
       'low',
       'medium',
@@ -20,23 +32,38 @@ describe('thinkingShapeFor', () => {
       'xhigh',
       'max',
     ])
-    expect(thinkingShapeFor('gpt-6-astra').levels).toEqual([
+    // the same id behind a chat-completions gateway only takes low..high
+    expect(thinkingShapeFor('gpt-6.1-terra', 'openai-compatible').levels).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+    ])
+    // no route known yet: the conservative surface
+    expect(thinkingShapeFor('gpt-6.1-terra').levels).toEqual(['none', 'low', 'medium', 'high'])
+    expect(thinkingShapeFor('gpt-6-astra', 'openai-responses').levels).toEqual([
       'low',
       'medium',
       'high',
       'xhigh',
       'max',
     ])
-    expect(thinkingShapeFor('gpt-6-sol').levels).not.toContain('none')
-    expect(thinkingShapeFor('gpt-6-luna').levels).toContain('none')
-    expect(thinkingShapeFor('gpt-5.6-terra').levels).toEqual(['none', 'low', 'medium', 'high'])
+    expect(thinkingShapeFor('gpt-6-sol', 'openai-responses').levels).not.toContain('none')
+    expect(thinkingShapeFor('gpt-6-luna', 'openai-responses').levels).toContain('none')
+    expect(thinkingShapeFor('gpt-5.6-terra', 'openai-responses').levels).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+    ])
     expect(thinkingShapeFor('gpt-5.5').kind).toBe('openai-effort')
+    expect(thinkingShapeFor('o3').kind).toBe('openai-effort')
   })
 
-  it('anthropic: adaptive effort, 5.x extends past high', () => {
+  it('anthropic: adaptive effort, and 5.x drops none (the default already thinks)', () => {
     expect(thinkingShapeFor('claude-opus-5-5')).toEqual({
       kind: 'anthropic-adaptive',
-      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
     expect(thinkingShapeFor('claude-sonnet-4-6').levels).toEqual(['none', 'low', 'medium', 'high'])
   })
@@ -49,157 +76,126 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('gemini-3.8-flash').levels).toEqual(['low', 'high'])
   })
 
-  it('deepseek and kimi take reasoning_effort with their own ladders', () => {
-    expect(thinkingShapeFor('deepseek-v4-pro')).toEqual({
-      kind: 'openai-effort',
-      levels: ['low', 'high', 'max'],
-    })
-    expect(thinkingShapeFor('deepseek-flash').levels).toEqual(['low', 'high', 'max'])
-    expect(thinkingShapeFor('kimi-k3.1-pro')).toEqual({
-      kind: 'openai-effort',
-      levels: ['low', 'high', 'max'],
-    })
-    expect(thinkingShapeFor('kimi-k3').levels).toEqual(['low', 'high', 'max'])
+  it('families whose surface is still documentation-only carry no knob', () => {
+    for (const id of [
+      'deepseek-v4-pro',
+      'deepseek-flash',
+      'kimi-k3.1-pro',
+      'glm-5.2',
+      'glm-5.3',
+      'doubao-seed-2-1-pro-260628',
+      'MiniMax-M3.1-Flash',
+      'hy4-preview',
+      'mistral-medium-latest',
+    ]) {
+      expect(thinkingShapeFor(id).levels, id).toEqual([])
+    }
   })
 
-  it('glm: the full ladder through effort, none only where thinking can stop', () => {
-    expect(thinkingShapeFor('glm-5.2').levels).toEqual([
-      'none',
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-    ])
-    expect(thinkingShapeFor('glm-5.3').levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
-    expect(thinkingShapeFor('glm-5.3-flash').levels).not.toContain('none')
-  })
-
-  it('qwen: enable_thinking plus a budget per level', () => {
-    expect(thinkingShapeFor('qwen3.8-max')).toEqual({
-      kind: 'qwen-budget',
-      levels: ['none', 'low', 'medium', 'high'],
-    })
-    expect(
-      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'low' } }),
-    ).toEqual({ enable_thinking: true, thinking_budget: 4096 })
-  })
-
-  it('ling is a thinking switch; grok speaks effort; longcat stays knobless', () => {
+  it('ling/spark/mimo are switches; qwen and grok keep their documented fields', () => {
     expect(thinkingShapeFor('ling-3.0-flash')).toEqual({
       kind: 'toggle',
       levels: ['none', 'medium'],
     })
-    expect(
-      toggleThinkingBodyFor({ model: 'ling-3.0-flash', thinking: { 'ling-3.0-flash': 'none' } }),
-    ).toEqual({ thinking: { type: 'disabled' } })
+    expect(thinkingShapeFor('spark-x2.5')).toEqual({ kind: 'toggle', levels: ['none', 'medium'] })
+    expect(thinkingShapeFor('mimo-v2.6-pro')).toEqual({
+      kind: 'toggle',
+      levels: ['none', 'medium'],
+    })
+    expect(thinkingShapeFor('qwen3.8-max')).toEqual({
+      kind: 'qwen-budget',
+      levels: ['none', 'low', 'medium', 'high'],
+    })
     expect(thinkingShapeFor('grok-4.7')).toEqual({
       kind: 'openai-effort',
       levels: ['none', 'low', 'medium', 'high'],
     })
     expect(thinkingShapeFor('LongCat-2.0').levels).toEqual([])
   })
-
-  it('minimax carries the five effort rungs without none; mimo is a switch', () => {
-    expect(thinkingShapeFor('MiniMax-M3.1-Flash').levels).toEqual([
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-    ])
-    expect(thinkingShapeFor('MiniMax-M3').levels).not.toContain('none')
-    expect(
-      openAiEffortFor({ model: 'MiniMax-M3.1-Flash', thinking: { MiniMax: 'xhigh' } }),
-    ).toBeUndefined()
-    expect(
-      openAiEffortFor({ model: 'MiniMax-M3.1-Flash', thinking: { 'MiniMax-M3.1-Flash': 'xhigh' } }),
-    ).toBe('xhigh')
-    expect(thinkingShapeFor('mimo-v2.6-pro')).toEqual({
-      kind: 'toggle',
-      levels: ['none', 'medium'],
-    })
-  })
-
-  it('doubao, hunyuan, spark and mistral-medium carry their documented surfaces', () => {
-    expect(thinkingShapeFor('doubao-seed-2-1-pro-260628').levels).toEqual([
-      'none',
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'max',
-    ])
-    expect(thinkingShapeFor('hy4-preview')).toEqual({
-      kind: 'openai-effort',
-      levels: ['low', 'high'],
-    })
-    expect(thinkingShapeFor('hy3').levels).toEqual(['low', 'high'])
-    expect(thinkingShapeFor('spark-x2.5')).toEqual({ kind: 'toggle', levels: ['none', 'medium'] })
-    expect(thinkingShapeFor('mistral-medium-latest').levels).toEqual(['low', 'medium', 'high'])
-    expect(thinkingShapeFor('mistral-large-latest').levels).toEqual([])
-  })
 })
 
 describe('resolveThinkingEffort', () => {
-  it('resolves the stored pick only when the family lists it', () => {
+  it('resolves the stored pick only when the family and route accept it', () => {
     expect(
-      resolveThinkingEffort({ model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'max' } }),
+      resolveThinkingEffort(
+        { model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'max' } },
+        'openai-responses',
+      ),
     ).toBe('max')
+    // the same pick is unsendable through chat-completions
+    expect(
+      resolveThinkingEffort(
+        { model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'max' } },
+        'openai-compatible',
+      ),
+    ).toBeUndefined()
+    expect(
+      resolveThinkingEffort(
+        { model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'high' } },
+        'openai-compatible',
+      ),
+    ).toBe('high')
     expect(
       resolveThinkingEffort({ model: 'gpt-6-astra', thinking: { 'gpt-6-astra': 'none' } }),
     ).toBeUndefined()
     expect(
-      resolveThinkingEffort({ model: 'gemini-4-argon', thinking: { 'gemini-4-argon': 'high' } }),
-    ).toBe('high')
-    expect(
       resolveThinkingEffort({ model: 'gemini-4-argon', thinking: { 'gemini-4-argon': 'max' } }),
     ).toBeUndefined()
+    // none is not on the 5.x Claude ladder; it is on the 4.x one
     expect(
-      resolveThinkingEffort({ model: 'deepseek-v4-pro', thinking: { 'deepseek-v4-pro': 'none' } }),
+      resolveThinkingEffort({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'none' } }),
     ).toBeUndefined()
-    expect(resolveThinkingEffort({ model: 'kimi-k3', thinking: { 'kimi-k3': 'high' } })).toBe(
-      'high',
-    )
-    expect(resolveThinkingEffort({ model: 'glm-5.2', thinking: { 'glm-5.2': 'none' } })).toBe(
-      'none',
-    )
     expect(
-      resolveThinkingEffort({ model: 'glm-5.3', thinking: { 'glm-5.3': 'none' } }),
+      resolveThinkingEffort({
+        model: 'claude-sonnet-4-6',
+        thinking: { 'claude-sonnet-4-6': 'none' },
+      }),
+    ).toBe('none')
+    expect(
+      resolveThinkingEffort({ model: 'hy4-preview', thinking: { 'hy4-preview': 'high' } }),
     ).toBeUndefined()
     expect(resolveThinkingEffort({ model: 'gpt-6.1-terra', thinking: {} })).toBeUndefined()
   })
 })
 
 describe('per-protocol translators', () => {
-  it('openai effort rides both routes; nothing for other families', () => {
+  it('openai effort is gated on the Responses route for the upper rungs', () => {
     expect(
-      openAiEffortFor({ model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'xhigh' } }),
+      openAiEffortFor(
+        { model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'xhigh' } },
+        'openai-responses',
+      ),
     ).toBe('xhigh')
+    expect(
+      openAiEffortFor(
+        { model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'xhigh' } },
+        'openai-compatible',
+      ),
+    ).toBeUndefined()
     expect(openAiEffortFor({ model: 'grok-4.7', thinking: { 'grok-4.7': 'low' } })).toBe('low')
     expect(
       openAiEffortFor({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'high' } }),
     ).toBeUndefined()
   })
 
-  it('anthropic: adaptive record, none means no thinking block', () => {
+  it('anthropic: the adaptive record carries no level; effort is top-level', () => {
     expect(
-      anthropicThinkingFor({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'max' } }),
-    ).toEqual({
-      type: 'adaptive',
-      effort: 'max',
-    })
+      anthropicThinkingFields({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'max' } }),
+    ).toEqual({ thinking: { type: 'adaptive' }, effort: 'max' })
     expect(
-      anthropicThinkingFor({
+      anthropicThinkingFields({
         model: 'claude-sonnet-4-6',
         thinking: { 'claude-sonnet-4-6': 'none' },
       }),
     ).toBeUndefined()
     expect(
-      anthropicThinkingFor({
+      anthropicThinkingFields({
         model: 'claude-sonnet-4-6',
         thinking: { 'claude-sonnet-4-6': 'xhigh' },
       }),
+    ).toBeUndefined()
+    expect(
+      anthropicThinkingFields({ model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'high' } }),
     ).toBeUndefined()
   })
 
@@ -218,21 +214,127 @@ describe('per-protocol translators', () => {
     ).toBeUndefined()
   })
 
-  it('toggles: qwen flips enable_thinking, doubao rides effort now', () => {
+  it('toggles: qwen flips enable_thinking and its budget; trimmed families send nothing', () => {
+    expect(
+      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'low' } }),
+    ).toEqual({ enable_thinking: true, thinking_budget: 4096 })
+    expect(
+      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'none' } }),
+    ).toEqual({ enable_thinking: false })
+    expect(
+      toggleThinkingBodyFor({ model: 'ling-3.0-flash', thinking: { 'ling-3.0-flash': 'none' } }),
+    ).toEqual({ thinking: { type: 'disabled' } })
     expect(
       toggleThinkingBodyFor({
         model: 'doubao-seed-2-1-pro-260628',
         thinking: { 'doubao-seed-2-1-pro-260628': 'medium' },
       }),
     ).toBeUndefined()
-    expect(
-      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'none' } }),
-    ).toEqual({
-      enable_thinking: false,
-    })
-    expect(
-      toggleThinkingBodyFor({ model: 'qwen3.8-max', thinking: { 'qwen3.8-max': 'medium' } }),
-    ).toEqual({ enable_thinking: true, thinking_budget: 8192 })
+  })
+})
+
+describe('request wiring', () => {
+  it('anthropic sends the adaptive record and the level as output_config.effort', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'anthropic',
+      { apiKey: 'k', model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'high' } },
+      'sys',
+      'hi',
+    )
+    expect(result).toEqual({ ok: true, content: 'ok' })
+    const body = lastBody(fetchMock)
+    expect(body.thinking).toEqual({ type: 'adaptive' })
+    expect(body.output_config).toEqual({ effort: 'high' })
+  })
+
+  it('anthropic sends neither thinking field without a pick', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider('anthropic', { apiKey: 'k', model: 'claude-opus-5-5' }, 'sys', 'hi')
+    const body = lastBody(fetchMock)
+    expect(body.thinking).toBeUndefined()
+    expect(body.output_config).toBeUndefined()
+  })
+
+  it('openai: xhigh rides the Responses route only', async () => {
+    const responsesMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }],
+      }),
+    )
+    vi.stubGlobal('fetch', responsesMock)
+    await chatForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'xhigh' } },
+      'sys',
+      'hi',
+    )
+    expect(responsesMock.mock.calls[0]![0]).toBe('https://api.openai.com/v1/responses')
+    expect(lastBody(responsesMock).reasoning).toEqual({ summary: 'auto', effort: 'xhigh' })
+
+    // the same model through a chat-completions gateway drops the unsendable pick
+    const chatMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', chatMock)
+    await chatForProvider(
+      'openrouter',
+      { apiKey: 'k', model: 'gpt-6.1-terra', thinking: { 'gpt-6.1-terra': 'xhigh' } },
+      'sys',
+      'hi',
+    )
+    expect(lastBody(chatMock).reasoning_effort).toBeUndefined()
+  })
+
+  it('a stored pick outranks a profile bodyExtras field, for both merge paths', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const base = { apiKey: 'k', baseUrl: 'https://gw.example.com/v1' }
+
+    await chatForProvider(
+      'custom',
+      {
+        ...base,
+        model: 'gpt-5.5',
+        profile: { bodyExtras: { reasoning_effort: 'low' } },
+        thinking: { 'gpt-5.5': 'high' },
+      },
+      'sys',
+      'hi',
+    )
+    expect(lastBody(fetchMock).reasoning_effort).toBe('high')
+
+    // no stored pick: the profile's own field still rides through untouched
+    await chatForProvider(
+      'custom',
+      { ...base, model: 'gpt-5.5', profile: { bodyExtras: { reasoning_effort: 'low' } } },
+      'sys',
+      'hi',
+    )
+    expect(lastBody(fetchMock).reasoning_effort).toBe('low')
+
+    await chatForProvider(
+      'custom',
+      {
+        ...base,
+        model: 'qwen3.8-max',
+        profile: { bodyExtras: { enable_thinking: false } },
+        thinking: { 'qwen3.8-max': 'medium' },
+      },
+      'sys',
+      'hi',
+    )
+    const toggleBody = lastBody(fetchMock)
+    expect(toggleBody.enable_thinking).toBe(true)
+    expect(toggleBody.thinking_budget).toBe(8192)
   })
 })
 

@@ -9,7 +9,7 @@ import {
   clampAiCustomFontSize,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
-import { thinkingShapeFor } from '@genoffice/ai-provider/browser'
+import { getProviderAdapter, thinkingShapeFor } from '@genoffice/ai-provider/browser'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
 import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
@@ -34,6 +34,7 @@ import type {
   AiMediaProviderId,
   AiMediaProviderMeta,
   AiMediaSettings,
+  AiProtocol,
   AiSearchProviderMeta,
   AiSearchSettings,
   AiSettings,
@@ -501,9 +502,22 @@ function AiModelPane({ t }: { t: TFunc }) {
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
   const modelsText = JSON.stringify(endpoint?.modelProfiles ?? [], null, 2)
+  // The route the configured endpoint will actually take decides whether the
+  // two upper effort rungs are offerable: only the OpenAI Responses API takes
+  // `xhigh`/`max`, while chat-completions gateways 400 on them.
+  let thinkingProtocol: AiProtocol | undefined
+  try {
+    thinkingProtocol = getProviderAdapter(provider).resolveEndpoint(config).protocol
+  } catch {
+    thinkingProtocol = undefined
+  }
   // the model's family effort surface: the field only renders for families
   // with a knob (codex runs its own CLI, so its reasoning is not ours to set)
-  const thinkingLevels = isCodex ? [] : thinkingShapeFor(config.model).levels
+  const thinkingLevels = isCodex ? [] : thinkingShapeFor(config.model, thinkingProtocol).levels
+  const storedThinking = config.thinking?.[config.model]
+  // a stored pick this family (or route) no longer offers reads as the model
+  // default instead of showing an unsendable level as selected
+  const thinkingValue = thinkingLevels.find((level) => level === storedThinking) ?? ''
   const updateConfig = (patch: Partial<typeof config>) => {
     if (meta?.needsBaseUrl) {
       // the slot mirrors the active endpoint, so the edit lands on the endpoint
@@ -754,7 +768,7 @@ function AiModelPane({ t }: { t: TFunc }) {
           <select
             id="set-ai-thinking"
             className="set-input"
-            value={config.thinking?.[config.model] ?? ''}
+            value={thinkingValue}
             onChange={(e) => {
               const thinking = { ...(config.thinking ?? {}) }
               if (e.target.value === '') delete thinking[config.model]
@@ -765,7 +779,7 @@ function AiModelPane({ t }: { t: TFunc }) {
             <option value="">{t('setAiThinkingDefault')}</option>
             {thinkingLevels.map((level) => (
               <option key={level} value={level}>
-                {level}
+                {level === 'none' ? t('setAiSwitchOff') : level}
               </option>
             ))}
           </select>

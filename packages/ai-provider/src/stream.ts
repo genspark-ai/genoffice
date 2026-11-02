@@ -8,7 +8,7 @@ import { streamCodexAppServer } from './codex-app-server'
 import type { StreamCallbacks } from './protocols/shared'
 import { getProviderAdapter, type AiProtocol } from './registry'
 import {
-  anthropicThinkingFor,
+  anthropicThinkingFields,
   geminiThinkingLevelFor,
   openAiEffortFor,
   toggleThinkingBodyFor,
@@ -48,7 +48,7 @@ export async function streamForProvider(
         return streamAnthropic(config, system, messages, tools, tokens, cb, baseUrl, {
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
-          thinking: anthropicThinkingFor(config),
+          ...anthropicThinkingFields(config),
         })
       case 'gemini':
         return streamGemini(config, system, messages, tools, tokens, cb, baseUrl, {
@@ -61,18 +61,19 @@ export async function streamForProvider(
         return streamOpenAiCompatible(baseUrl, config, system, messages, tools, tokens, cb, {
           omitTemperature: endpoint.omitTemperature,
           useMaxCompletionTokens: endpoint.useMaxCompletionTokens,
+          // a stored pick outranks the profile's own body extras
           bodyExtras: { ...endpoint.bodyExtras, ...toggleThinkingBodyFor(config) },
           echoReasoning: endpoint.echoReasoning,
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
-          reasoningEffort: openAiEffortFor(config),
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
       case 'openai-responses':
         return streamOpenAiResponses(baseUrl, config, system, messages, tools, tokens, cb, {
           bodyExtras: endpoint.bodyExtras,
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
-          reasoningEffort: openAiEffortFor(config),
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
     }
   })
