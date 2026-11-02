@@ -9,7 +9,7 @@ import type { AiProviderId } from '@genoffice/ai-provider/browser'
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
 // (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas
-// Cloud, Runcrate, OpenCode,
+// Cloud, Runcrate, cheapaimodel, OpenCode,
 // Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -261,6 +261,12 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   cloudgpu: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM8 9.2a1.2 1.2 0 0 1 1.2-1.2h5.6a1.2 1.2 0 0 1 1.2 1.2v5.6a1.2 1.2 0 0 1-1.2 1.2H9.2A1.2 1.2 0 0 1 8 14.8ZM5.5 9.25h2.5v1.5H5.5Zm0 4h2.5v1.5H5.5ZM16 9.25h2.5v1.5H16Zm0 4h2.5v1.5H16ZM9.25 5.5h1.5V8h-1.5Zm4 0h1.5V8h-1.5ZM9.25 16h1.5v2.5h-1.5Zm4 0h1.5v2.5h-1.5ZM10.75 10.75h2.5v2.5h-2.5Z" />
+    </svg>
+  ),
+  // cheapaimodel's mark (cheapaimodel.ai/favicon.svg): three slanted feathers
+  cheapaimodel: (
+    <svg viewBox="-3 0 30 30" fill="currentColor" aria-hidden="true">
+      <path d="M0 29L6 27V12Q6 9 3 10Q0 11 0 14ZM9 26L15 24V3Q15 0 12 1Q9 2 9 5ZM18 23L24 21V6Q24 3 21 4Q18 5 18 8Z" />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

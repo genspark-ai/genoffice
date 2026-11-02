@@ -118,6 +118,24 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds cheapaimodel with bare model ids (no vendor prefix)', () => {
+    const cheapaimodel = AI_PROVIDERS.find((provider) => provider.id === 'cheapaimodel')!
+    expect(cheapaimodel.models).toEqual([
+      'deepseek-v4-1-flash',
+      'glm-5.3',
+      'glm-5.3-flash',
+      'kimi-k3',
+      'grok-4.7',
+    ])
+    expect(cheapaimodel.defaultModel).toBe('deepseek-v4-1-flash')
+    expect(cheapaimodel.models).toContain(cheapaimodel.defaultModel)
+    expect(cheapaimodel.needsBaseUrl).toBeUndefined()
+    expect(cheapaimodel.keyPlaceholder).toBe('sk-...')
+    for (const model of cheapaimodel.models) {
+      expect(model).not.toContain('/')
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)

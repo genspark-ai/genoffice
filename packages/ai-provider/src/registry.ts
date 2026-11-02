@@ -313,6 +313,17 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every model; the bare model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://cloudgpu.app/v1'),
   },
+  cheapaimodel: {
+    meta: metaOf('cheapaimodel'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the bare model id picks it.
+    // glm-5.3 is text-only here; it is held back per endpoint because the same
+    // bare id is OpenCode Go's, which modelLacksVision() leaves alone.
+    resolveEndpoint: (config) => ({
+      ...fixedEndpoint('openai-compatible', 'https://api.cheapaimodel.ai/v1')(config),
+      ...(/^glm-5\.3$/i.test(config.model) ? { vision: false } : {}),
+    }),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

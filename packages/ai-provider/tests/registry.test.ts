@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AI_PROVIDER_ADAPTERS,
+  endpointSupportsVision,
   getProviderAdapter,
   modelEchoesReasoning,
   modelHasFixedSampling,
@@ -172,6 +173,20 @@ describe('provider registry', () => {
     expect(AI_PROVIDER_ADAPTERS.cloudgpu.resolveEndpoint(config('deepseek-v4.1-flash'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://cloudgpu.app/v1',
+    })
+  })
+
+  it('resolves cheapaimodel to its chat-completions endpoint', () => {
+    expect(
+      AI_PROVIDER_ADAPTERS.cheapaimodel.resolveEndpoint(config('deepseek-v4-1-flash')),
+    ).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.cheapaimodel.ai/v1',
+    })
+    expect(AI_PROVIDER_ADAPTERS.cheapaimodel.resolveEndpoint(config('kimi-k3'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.cheapaimodel.ai/v1',
+      omitTemperature: true,
     })
   })
 
@@ -522,6 +537,20 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('glm-5.3-flash')).toBe(false)
     expect(modelLacksVision('kimi-k2.6')).toBe(false)
     expect(modelLacksVision('minimax-m3')).toBe(false)
+  })
+
+  it('holds back the text-only cheapaimodel id but not its multimodal ones', () => {
+    const settings = (model: string) => ({
+      provider: 'cheapaimodel' as const,
+      providers: { cheapaimodel: config(model) },
+    })
+    expect(endpointSupportsVision(settings('glm-5.3'))).toBe(false)
+    expect(endpointSupportsVision(settings('deepseek-v4-1-flash'))).toBe(true)
+    expect(endpointSupportsVision(settings('glm-5.3-flash'))).toBe(true)
+    expect(endpointSupportsVision(settings('kimi-k3'))).toBe(true)
+    expect(endpointSupportsVision(settings('grok-4.7'))).toBe(true)
+    // the shared bare id stays untouched for the other providers
+    expect(modelLacksVision('glm-5.3')).toBe(false)
   })
 
   it('matches case-insensitively like its sibling matchers', () => {

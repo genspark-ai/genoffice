@@ -422,6 +422,19 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'cheapaimodel',
+    label: 'cheapaimodel',
+    // Bare model ids exactly as cheapaimodel.ai/models lists them (2026-11-02;
+    // GET api.cheapaimodel.ai/v1/models needs a key). Chat completions only.
+    // Docs: https://cheapaimodel.ai/docs. glm-5.3 is the one text-only id; the
+    // bare id is shared with OpenCode Go, so the adapter holds it back rather
+    // than modelLacksVision(). kimi-k3 omits temperature via
+    // modelHasFixedSampling().
+    models: ['deepseek-v4-1-flash', 'glm-5.3', 'glm-5.3-flash', 'kimi-k3', 'grok-4.7'],
+    defaultModel: 'deepseek-v4-1-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
