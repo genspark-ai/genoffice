@@ -320,6 +320,17 @@ fn join_package_path(base: &str, target: &str) -> String {
     format!("{base}/{target}")
 }
 
+/// The link list without touching any source: what `sheet links` prints and
+/// the panel lists.
+pub(crate) fn read_external_link_statuses(
+    workbook: &Path,
+) -> Result<Vec<ExternalLinkStatus>, SidecarError> {
+    Ok(parse_external_links(workbook)?
+        .iter()
+        .map(LinkEntry::status)
+        .collect())
+}
+
 /// Computes fresh values for every external-formula cell against the reachable
 /// sources. The workbook is never written here — the caller carries the
 /// returned values into the save pipeline as cached `<v>`s, formulas intact.

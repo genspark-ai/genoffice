@@ -120,6 +120,10 @@ pub enum Command {
     UpdateExternalLinks {
         path: PathBuf,
     },
+    #[serde(rename_all = "camelCase")]
+    ReadExternalLinks {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -643,6 +647,9 @@ pub fn handle_request(
         }
         Command::UpdateExternalLinks { path } => {
             crate::external_links::update_external_link_values(&path).and_then(to_json_value)
+        }
+        Command::ReadExternalLinks { path } => {
+            crate::external_links::read_external_link_statuses(&path).and_then(to_json_value)
         }
     };
     Some(match result {
