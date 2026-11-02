@@ -396,6 +396,9 @@ export const tr = {
   appTableNameUsed: '"{name}" tablo adı bu oturumda zaten kullanıldı.',
   appTableNameInFile: '"{name}" tablo adı dosyadaki bir tablo tarafından zaten kullanılıyor.',
   appTableOverlapsSession: 'Aralık, bu oturumda oluşturulan "{name}" tablosuyla çakışıyor.',
+  appTableOverlapsFile: 'Aralık, dosyadaki "{name}" tablosuyla çakışıyor.',
+  appTableAlreadyInTable:
+    'Seçim zaten "{name}" tablosunun içinde — stili Tablo Tasarımı\'ndan değiştirin.',
   appTablesNeedFile: 'Önce bir XLSX dosyası açın — tablolar dosyaya yazılır.',
   appTableSelectRange: 'Önce veri aralığını seçin — başlıklar ilk satırında olmalı.',
   appTableCreated: 'Tablo oluşturuldu — ⌘S ile kaydedin.',
@@ -1205,6 +1208,8 @@ export const tr = {
   appRefreshAll: 'Tümünü Yenile',
   appWorkbookNoPivot: 'Bu çalışma kitabında pivot tablo yok.',
   appRefreshAllTitle: 'Her pivot tabloyu yenile',
+  appQueriesConnections: 'Sorgular ve Bağlantılar',
+  appQueriesConnectionsTitle: 'Çalışma kitabının sorgularını ve veri bağlantılarını listeleyin',
   appErrorCheckingDetail: 'Sayfayı hata değerleri için tara',
   appErrorsFound: '{count} hata — {cell} konumunda: {value}',
   appCheckingErrors: 'Tüm sayfa hatalar için taranıyor…',

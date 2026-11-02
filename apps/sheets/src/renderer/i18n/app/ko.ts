@@ -396,6 +396,9 @@ export const ko = {
   appTableNameUsed: '표 이름 "{name}"은(는) 이번 세션에서 이미 사용되었습니다.',
   appTableNameInFile: '테이블 이름 "{name}"은(는) 파일의 테이블에서 이미 사용 중입니다.',
   appTableOverlapsSession: '이 범위는 이번 세션에서 만든 표 "{name}"과(와) 겹칩니다.',
+  appTableOverlapsFile: '이 범위는 파일의 표 "{name}"과(와) 겹칩니다.',
+  appTableAlreadyInTable:
+    '선택 영역이 이미 표 "{name}" 안에 있습니다. 스타일은 표 디자인에서 변경하세요.',
   appTablesNeedFile: '먼저 XLSX 파일을 여십시오. 표는 파일에 기록됩니다.',
   appTableSelectRange: '먼저 데이터 범위를 선택하십시오. 첫 행이 머리글이 됩니다.',
   appTableCreated: '표를 만들었습니다 — ⌘S로 저장합니다.',
@@ -1194,6 +1197,8 @@ export const ko = {
   appRefreshAll: '모두 새로 고침',
   appWorkbookNoPivot: '통합 문서에 피벗 테이블이 없습니다.',
   appRefreshAllTitle: '모든 피벗 테이블 새로 고침',
+  appQueriesConnections: '쿼리 및 연결',
+  appQueriesConnectionsTitle: '통합 문서의 쿼리와 데이터 연결 목록 보기',
   appErrorCheckingDetail: '시트의 오류 값 검사',
   appErrorsFound: '오류 {count}개 — {cell}: {value}',
   appCheckingErrors: '시트 전체의 오류를 검사하는 중…',

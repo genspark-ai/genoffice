@@ -63,11 +63,15 @@ describe('Data Table dialog validation', () => {
     const ok = host.querySelector<HTMLButtonElement>('button.primary-action')!
     expect(inputs[0]!.value).toBe('B4:C7')
     expect(ok.disabled).toBe(true)
-    expect(host.textContent).toContain('请至少填写一个输入单元格')
+    expect(host.textContent).toContain(
+      '\u8bf7\u81f3\u5c11\u586b\u5199\u4e00\u4e2a\u8f93\u5165\u5355\u5143\u683c',
+    )
 
     type(inputs[2]!, 'D1')
     expect(ok.disabled).toBe(false)
-    expect(host.textContent).not.toContain('请至少填写一个输入单元格')
+    expect(host.textContent).not.toContain(
+      '\u8bf7\u81f3\u5c11\u586b\u5199\u4e00\u4e2a\u8f93\u5165\u5355\u5143\u683c',
+    )
     expect(applied).toHaveLength(0)
   })
 
@@ -116,14 +120,14 @@ describe('Data Table dialog validation', () => {
     expect(typeof argument.onProgress).toBe('function')
 
     act(() => argument.onProgress?.(1, 3))
-    expect(host.textContent).toContain('运算中… 1/3')
+    expect(host.textContent).toContain('\u8fd0\u7b97\u4e2d\u2026 1/3')
 
     await act(async () => {
       release({ kind: 'column', cells: 3 })
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(host.textContent).toContain('已写入 3 个结果')
+    expect(host.textContent).toContain('\u5df2\u5199\u5165 3 \u4e2a\u7ed3\u679c')
     expect(ok.disabled).toBe(false)
   })
 
@@ -131,7 +135,8 @@ describe('Data Table dialog validation', () => {
     const host = await mount(
       createElement(DataTableDialog, {
         initialRange: 'B4:C7',
-        onApply: (() => Promise.reject(new Error('区域形状不符'))) satisfies Apply,
+        onApply: (() =>
+          Promise.reject(new Error('\u533a\u57df\u5f62\u72b6\u4e0d\u7b26'))) satisfies Apply,
         onClose: () => undefined,
       }),
     )
@@ -143,7 +148,7 @@ describe('Data Table dialog validation', () => {
       await Promise.resolve()
     })
     const alert = host.querySelector('[role="alert"]')!
-    expect(alert.textContent).toContain('区域形状不符')
+    expect(alert.textContent).toContain('\u533a\u57df\u5f62\u72b6\u4e0d\u7b26')
     expect(ok.disabled).toBe(false)
   })
 })

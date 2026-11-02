@@ -56,6 +56,8 @@ const LANGS = [
   'ms',
   'he',
   'hi',
+  'vi',
+  'tr',
   'zh-TW',
 ] as const
 
@@ -77,6 +79,11 @@ describe('appMenuLabels', () => {
       const labels = appMenuLabels(lang)
       for (const key of keys) expect(labels[key], `${lang}.${key}`).toBeTruthy()
     }
+  })
+
+  it('carries the AI naming label', () => {
+    expect(en.nameWithAi).toBe('Name with AI…')
+    expect(appMenuLabels('zh').nameWithAi).toBe('\u7528 AI \u547d\u540d\u2026')
   })
 
   it('falls back to English for unknown languages', () => {

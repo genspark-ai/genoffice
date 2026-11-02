@@ -393,6 +393,9 @@ export const ms = {
   appTableNameUsed: 'Nama jadual "{name}" telah digunakan dalam sesi ini.',
   appTableNameInFile: 'Nama jadual "{name}" sudah digunakan oleh jadual dalam fail.',
   appTableOverlapsSession: 'Julat bertindih dengan jadual "{name}" yang dicipta dalam sesi ini.',
+  appTableOverlapsFile: 'Julat bertindih dengan jadual "{name}" dalam fail.',
+  appTableAlreadyInTable:
+    'Pilihan sudah berada dalam jadual "{name}" — tukar gaya daripada Reka Bentuk Jadual.',
   appTablesNeedFile: 'Buka fail XLSX dahulu — jadual ditulis ke dalam fail.',
   appTableSelectRange: 'Pilih julat data dahulu — pengepala pada baris pertamanya.',
   appTableCreated: 'Jadual dicipta — simpan dengan ⌘S.',
@@ -1175,6 +1178,8 @@ export const ms = {
   appRefreshAll: 'Segar Semula Semua',
   appWorkbookNoPivot: 'Tiada Jadual Pangsi dalam buku kerja ini.',
   appRefreshAllTitle: 'Segar semula semua Jadual Pangsi',
+  appQueriesConnections: 'Pertanyaan & Sambungan',
+  appQueriesConnectionsTitle: 'Senaraikan pertanyaan dan sambungan data buku kerja',
   appErrorCheckingDetail: 'Imbas nilai ralat dalam helaian',
   appErrorsFound: '{count} ralat — di {cell}: {value}',
   appCheckingErrors: 'Mengimbas ralat di seluruh helaian…',

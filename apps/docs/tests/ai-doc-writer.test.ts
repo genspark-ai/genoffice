@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { undoDepth } from '@tiptap/pm/history'
 import {
@@ -19,6 +19,14 @@ import { executeTool } from '../src/renderer/ai/tools'
 
 const NUM_IDS = { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function createBlankEditor() {
   const { editorExtensions } = await import('../src/renderer/editor/extensions')
   const parsed = await parseDocx(await buildBlankDocx())
@@ -26,6 +34,7 @@ async function createBlankEditor() {
     element: document.createElement('div'),
     extensions: editorExtensions,
   })
+  liveEditors.push(editor)
   editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
   return editor
 }

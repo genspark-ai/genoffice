@@ -257,6 +257,12 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM5.793 9.207A1 1 0 0 1 7.207 7.793L11.414 12 7.207 16.207A1 1 0 0 1 5.793 14.793L8.586 12ZM13 14.5h4.5a1 1 0 0 1 0 2H13a1 1 0 0 1 0-2Z" />
     </svg>
   ),
+  // Original mark: a rounded square with a chip motif, 24-unit frame
+  cloudgpu: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6ZM8 9.2a1.2 1.2 0 0 1 1.2-1.2h5.6a1.2 1.2 0 0 1 1.2 1.2v5.6a1.2 1.2 0 0 1-1.2 1.2H9.2A1.2 1.2 0 0 1 8 14.8ZM5.5 9.25h2.5v1.5H5.5Zm0 4h2.5v1.5H5.5ZM16 9.25h2.5v1.5H16Zm0 4h2.5v1.5H16ZM9.25 5.5h1.5V8h-1.5Zm4 0h1.5V8h-1.5ZM9.25 16h1.5v2.5h-1.5Zm4 0h1.5v2.5h-1.5ZM10.75 10.75h2.5v2.5h-2.5Z" />
+    </svg>
+  ),
   'opencode-zen': opencodeLogo,
   'opencode-go': opencodeLogo,
   mimo: (

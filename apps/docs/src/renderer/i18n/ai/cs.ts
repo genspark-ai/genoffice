@@ -100,6 +100,11 @@ export const cs = {
     'Sledování změn zapnuto: úpravy obsahu od AI se označují jako revize (vložení podtržené, odstranění přeškrtnuté); přijměte nebo odmítněte v části Revize',
   aiTrackOffTitle:
     'Sledování změn vypnuto: úpravy AI se použijí okamžitě (stále se můžete vrátit pomocí snímků)',
+  aiRevisionBarTitle: 'Revize',
+  aiRevisionCount: 'Čekající změny: {count}',
+  aiRevisionRejectAll: 'Odmítnout vše',
+  aiRevisionAcceptAll: 'Přijmout vše',
+  aiRevisionPara: 'Odstavec {n}',
   aiTurnLimit:
     'Tento úkol byl pozastaven před dokončením všech kroků. Dokončené úpravy jsou zachovány; vyberte Pokračovat pro dokončení zbývající práce.',
   aiStopped: '(Zastaveno)',
@@ -198,7 +203,12 @@ export const cs = {
   aiMindMapAskPrompt: 'Pověz mi o „{label}“ v tomto dokumentu',
   aiMindMapJump: 'Přejít na citovanou pasáž',
   aiMindMapExport: 'Exportovat PNG',
+  aiMindMapExportSvg: 'Exportovat SVG',
+  aiMindMapInsert: 'Vložit do dokumentu',
   aiMindMapReset: 'Obnovit zobrazení',
   aiMindMapExpand: 'Rozbalit větev',
   aiMindMapCollapse: 'Sbalit větev',
+  aiMindMapToggleLayout: 'Přepnout rozvržení',
+  aiMindMapLayoutTopDown: 'Přepnout na rozvržení shora dolů',
+  aiMindMapLayoutLeftRight: 'Přepnout na rozvržení zleva doprava',
 } satisfies Record<keyof typeof zh, string>

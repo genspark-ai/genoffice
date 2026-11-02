@@ -415,6 +415,9 @@ export const ja = {
   appTableNameInFile: 'テーブル名 "{name}" はファイル内のテーブルで既に使用されています。',
   appTableOverlapsSession:
     'この範囲は、このセッションで作成したテーブル "{name}" と重なっています。',
+  appTableOverlapsFile: '範囲がファイル内のテーブル「{name}」と重なっています。',
+  appTableAlreadyInTable:
+    '選択範囲はすでにテーブル「{name}」の中です。スタイルは「テーブル デザイン」から変更してください。',
   appTablesNeedFile: '先に XLSX ファイルを開いてください。テーブルはファイルに書き込まれます。',
   appTableSelectRange: '先にデータ範囲を選択してください。先頭行がヘッダーになります。',
   appTableCreated: 'テーブルを作成しました — ⌘S で保存します。',
@@ -1223,6 +1226,8 @@ export const ja = {
   appRefreshAll: 'すべて更新',
   appWorkbookNoPivot: 'ブックにピボットテーブルがありません。',
   appRefreshAllTitle: 'すべてのピボットテーブルを更新',
+  appQueriesConnections: 'クエリと接続',
+  appQueriesConnectionsTitle: 'ブックのクエリとデータ接続を一覧表示',
   appErrorCheckingDetail: 'シート内のエラー値をスキャン',
   appErrorsFound: '{count} 件のエラー — {cell}:{value}',
   appCheckingErrors: 'シート全体のエラーをスキャンしています…',

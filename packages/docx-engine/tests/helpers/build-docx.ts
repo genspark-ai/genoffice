@@ -248,6 +248,28 @@ export const REVISION_TABLE_XML =
   '<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B3</w:t></w:r></w:p></w:tc></w:tr>' +
   '</w:tbl>'
 
+export const PROP_REVISION_AT = 'w:author="Alice" w:date="2026-01-01T00:00:00Z"'
+const propCell = (text: string, tcPrExtra = '') =>
+  `<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/>${tcPrExtra}</w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+
+/** every table-level property revision: tblPrChange, tblGridChange, tblPrExChange, trPrChange, tcPrChange, cellMerge */
+export const PROP_REVISION_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/>' +
+  `<w:tblPrChange w:id="21" ${PROP_REVISION_AT}><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="left"/></w:tblPr></w:tblPrChange></w:tblPr>` +
+  '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/>' +
+  '<w:tblGridChange w:id="22"><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="5000"/></w:tblGrid></w:tblGridChange></w:tblGrid>' +
+  `<w:tr><w:tblPrEx><w:tblCellMar><w:left w:w="200" w:type="dxa"/></w:tblCellMar><w:tblPrExChange w:id="23" ${PROP_REVISION_AT}><w:tblPrEx/></w:tblPrExChange></w:tblPrEx>` +
+  `<w:trPr><w:trHeight w:val="600"/><w:trPrChange w:id="24" ${PROP_REVISION_AT}><w:trPr><w:trHeight w:val="300"/></w:trPr></w:trPrChange></w:trPr>` +
+  propCell(
+    'A1',
+    `<w:shd w:val="clear" w:color="auto" w:fill="FF0000"/><w:tcPrChange w:id="25" ${PROP_REVISION_AT}><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr></w:tcPrChange>`,
+  ) +
+  propCell('B1') +
+  '</w:tr>' +
+  `<w:tr>${propCell('A2', '<w:vMerge w:val="restart"/>')}${propCell('B2')}</w:tr>` +
+  `<w:tr>${propCell('', `<w:vMerge/><w:cellMerge w:id="26" ${PROP_REVISION_AT} w:vMerge="cont"/>`)}${propCell('B3')}</w:tr>` +
+  '</w:tbl>'
+
 /** outer 1x2 table, cell A contains a 2x1 nested table (InnerA/InnerB) + trailing empty paragraph */
 export const NESTED_TABLE_XML =
   '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +

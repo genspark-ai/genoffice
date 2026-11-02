@@ -403,6 +403,9 @@ export const ru = {
   appTableNameUsed: 'Имя таблицы «{name}» уже использовалось в этом сеансе.',
   appTableNameInFile: 'Имя таблицы "{name}" уже используется таблицей в файле.',
   appTableOverlapsSession: 'Диапазон пересекается с таблицей «{name}», созданной в этом сеансе.',
+  appTableOverlapsFile: 'Диапазон пересекается с таблицей «{name}» в файле.',
+  appTableAlreadyInTable:
+    'Выделение уже находится в таблице «{name}» — измените стиль в разделе «Конструктор таблиц».',
   appTablesNeedFile: 'Сначала откройте файл XLSX — таблицы записываются в файл.',
   appTableSelectRange: 'Сначала выделите диапазон данных — заголовки в его первой строке.',
   appTableCreated: 'Таблица создана — сохраните с помощью ⌘S.',
@@ -1193,6 +1196,8 @@ export const ru = {
   appRefreshAll: 'Обновить все',
   appWorkbookNoPivot: 'В книге нет сводных таблиц.',
   appRefreshAllTitle: 'Обновить все сводные таблицы',
+  appQueriesConnections: 'Запросы и подключения',
+  appQueriesConnectionsTitle: 'Показать запросы и подключения к данным книги',
   appErrorCheckingDetail: 'Найти значения ошибок на листе',
   appErrorsFound: 'Ошибок: {count} — в {cell}: {value}',
   appCheckingErrors: 'Идёт поиск ошибок по всему листу…',

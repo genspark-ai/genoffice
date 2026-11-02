@@ -6165,6 +6165,9 @@ export function buildDocsMenu(): void {
           accelerator: 'Shift+CmdOrCtrl+S',
           click: () => sendCommand('save-as'),
         },
+        // also in the native File menu, the only entry on macOS: the ribbon's
+        // File tab is Windows/Linux-only
+        { label: labels.nameWithAi, click: () => sendCommand('name-with-ai') },
         { type: 'separator' },
         { label: tm('menuPageSetup'), click: () => sendCommand('page-setup') },
         { label: tm('menuExportPdf'), click: () => sendCommand('export-pdf') },

@@ -1,0 +1,37 @@
+{
+  "id": "footnote-hangul-wrap",
+  "title": "A Korean footnote (Malgun Gothic 10) wraps at spaces only and pitches 17.28; Latin notes pitch by their runs' face (Calibri 10 12.24, Times New Roman 9 10.32)",
+  "section": "word-truths.md#L813",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, docDefaults Calibri 11, three footnotes under Normal metrics; Korean note lines end at spaces (x1 520.78 / 372.07), text baselines 653.28 / 670.56; Calibri 10 note 684.48 / 696.72; Times New Roman 9 note 707.76 / 718.08. gen's note rows had neither a word-break rule nor the strut face of the runs",
+  "cases": [
+    {
+      "kind": "noteLineBox",
+      "note_index": 0,
+      "expect": {
+        "styles": ["word-break:keep-all", "overflow-wrap:anywhere", "direction:ltr"],
+        "stylesStartWith": ["font-family:'Malgun Gothic'"],
+        "notStyles": ["line-height", "font-size"]
+      },
+      "note": "Korean note: keep-all wrapping; the row's line height and size stay with the reservation model"
+    },
+    {
+      "kind": "noteLineBox",
+      "note_index": 1,
+      "expect": {
+        "stylesStartWith": ["font-family:'Calibri'"],
+        "styles": ["--doc-line-factor:1.22"]
+      }
+    },
+    {
+      "kind": "noteLineBox",
+      "note_index": 2,
+      "expect": {
+        "stylesStartWith": ["font-family:'Times New Roman'"],
+        "styles": ["--doc-line-factor:1.15"]
+      }
+    }
+  ],
+  "docx": "probe.docx"
+}

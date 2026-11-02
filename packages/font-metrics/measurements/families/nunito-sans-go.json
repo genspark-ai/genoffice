@@ -1,0 +1,31 @@
+{
+  "family": "Nunito Sans GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-08-23",
+    "probe": "Word cached NunitoSans-Regular, 272.93 vs 261.5pt per probe string at 12pt against Helvetica"
+  },
+  "note": "Nunito Sans is an Office cloud font Word downloads and renders real (probe\n2026-08-23). Its advances run 4.4% wider than Helvetica (272.93 vs 261.5pt\nper probe string @12pt, measured from Word's cached NunitoSans-Regular), so\nthe size-adjusted alias keeps line wraps aligned with Word. A locally\ninstalled Nunito still precedes this alias in the chain.",
+  "faces": [
+    {
+      "src": "local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 104.4
+    },
+    {
+      "src": "local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 104.4,
+      "weight": "bold"
+    },
+    {
+      "src": "local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf')",
+      "sizeAdjust": 104.4,
+      "style": "italic"
+    },
+    {
+      "src": "local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'), url('./LiberationSans-BoldItalic.ttf')",
+      "sizeAdjust": 104.4,
+      "weight": "bold",
+      "style": "italic"
+    }
+  ]
+}

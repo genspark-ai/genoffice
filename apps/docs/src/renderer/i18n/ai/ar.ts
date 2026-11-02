@@ -98,6 +98,11 @@ export const ar = {
     'تعقب التغييرات مفعّل: تُوضع علامة على تغييرات محتوى الذكاء الاصطناعي كمراجعات (الإدراجات مسطّرة والحذف مشطوب)؛ اقبلها أو ارفضها في «مراجعة»',
   aiTrackOffTitle:
     'تعقب التغييرات متوقف: تُطبَّق تغييرات الذكاء الاصطناعي فورًا (لا يزال بإمكانك الاسترجاع عبر لقطات الإصدارات)',
+  aiRevisionBarTitle: 'المراجعات',
+  aiRevisionCount: '{count} تغييرات معلقة',
+  aiRevisionRejectAll: 'رفض الكل',
+  aiRevisionAcceptAll: 'قبول الكل',
+  aiRevisionPara: 'الفقرة {n}',
   aiTurnLimit:
     '(تم بلوغ الحد الأقصى لجولات استدعاء الأدوات لهذا الطلب؛ الإجابة أعلاه تستند إلى الخطوات المكتملة وقد تكون غير كاملة.)',
   aiStopped: '(تم الإيقاف)',
@@ -194,7 +199,12 @@ export const ar = {
   aiMindMapAskPrompt: 'حدثني عن «{label}» في هذا المستند',
   aiMindMapJump: 'الانتقال إلى المقطع المشار إليه',
   aiMindMapExport: 'تصدير PNG',
+  aiMindMapExportSvg: 'تصدير SVG',
+  aiMindMapInsert: 'إدراج في المستند',
   aiMindMapReset: 'إعادة ضبط العرض',
   aiMindMapExpand: 'توسيع الفرع',
   aiMindMapCollapse: 'طي الفرع',
+  aiMindMapToggleLayout: 'تبديل التخطيط',
+  aiMindMapLayoutTopDown: 'التبديل إلى التخطيط من أعلى إلى أسفل',
+  aiMindMapLayoutLeftRight: 'التبديل إلى التخطيط من اليسار إلى اليمين',
 } satisfies Record<keyof typeof zh, string>

@@ -286,12 +286,33 @@ describe('renderTableSpec paragraph line box', () => {
     expect(tabOnly).toContain('--doc-strut:4pt')
   })
 
-  it('keeps the inherited strut when any run omits its size', () => {
+  it('a run omitting its size caps the strut at the base size (mixed)', () => {
     const [style] = paraStyles({
       rows: [[cell(['ab'], [{ runs: [{ text: 'a', sizeHalfPoints: 14 }, { text: 'b' }] }])]],
     })
-    expect(style).not.toContain('--doc-strut')
-    expect(style).toContain(SINGLE_LH)
+    expect(style).toContain('--doc-strut:min(7pt,var(--doc-base-fs,7pt))')
+    // no declared spacing: the stylesheet's paragraph-style / docDefaults rule decides
+    expect(style).not.toContain('line-height')
+  })
+
+  // the strut face carries the base face's box: fine for a cell row (the union
+  // of offset boxes grew 8.5pt YaHei rows +1pt), wrong for body lines in another
+  // face, which blockAttrs leaves unmarked (grid-strut test)
+  it('a declared-face CJK cell paragraph leads its boxes with the grid strut', () => {
+    const classes = findSpecs(
+      renderTableSpec({
+        rows: [
+          [
+            cell(
+              ['\u4e2d\u6587'],
+              [{ runs: [{ text: '\u4e2d\u6587', font: 'Microsoft YaHei', fontAscii: 'Calibri' }] }],
+            ),
+          ],
+        ],
+      }),
+      'div',
+    ).map((d) => d[1].class ?? '')
+    expect(classes.some((c) => c.split(' ').includes('doc-grid-strut'))).toBe(true)
   })
 
   it('restores exact line rule and explicit paragraph spacing', () => {
@@ -369,7 +390,37 @@ describe('renderTableSpec paragraph line box', () => {
     expect(styles).toHaveLength(2)
     expect(styles[0]).toContain('--doc-line-factor:var(--doc-line-factor-cjk,1.7)')
     expect(styles[1]).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
-    expect(styles[1]).toContain(SINGLE_LH)
+    expect(styles[1]).not.toContain('line-height')
+  })
+
+  it('a paragraph-style line multiple stays with the stylesheet rule; a table-style one is inlined', () => {
+    const eff = (source: string) =>
+      ({
+        source: { line: source },
+        spacing: {
+          before: 0,
+          after: 0,
+          beforeAuto: false,
+          afterAuto: false,
+          line: { rule: 'auto', raw: 254 },
+        },
+      }) as unknown as NonNullable<TableModel['rows'][0][0]['richParas']>[0]['effective']
+    const [styled, tableStyled] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['a', 'b'],
+            [
+              { runs: [{ text: 'a' }], styleId: 'MsoNormal0', effective: eff('paraStyle') },
+              { runs: [{ text: 'b' }], effective: eff('tableStyle') },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(styled).not.toContain('line-height')
+    expect(tableStyled).toContain('line-height:')
+    expect(tableStyled).toContain('--doc-line-mult:1.06')
   })
 })
 
@@ -499,7 +550,10 @@ describe('renderTableSpec autospacing classes', () => {
       ],
     }
     const divs = [...renderTable(model).querySelectorAll('td > div')]
-    expect(divs.map((d) => d.className)).toEqual(['sp-auto-b sp-auto-a', 'sp-auto-b'])
+    expect(divs.map((d) => d.className)).toEqual([
+      'doc-cell-para sp-auto-b sp-auto-a',
+      'doc-cell-para sp-auto-b',
+    ])
     expect(divs[0].getAttribute('style')).toContain('margin-top: 14pt')
   })
 })
@@ -543,5 +597,23 @@ describe('renderTableSpec cell inset variables', () => {
     expect(table.style.getPropertyValue('--doc-bd-h')).toBe('-0.333px')
     const td = table.querySelector('td') as HTMLElement
     expect(td.style.getPropertyValue('--cell-bd-t')).toBe('0.333px')
+  })
+})
+
+describe('renderTableSpec RTL paragraphs', () => {
+  it('a style-inherited w:bidi cell paragraph is RTL and isolates its Latin runs LTR', () => {
+    const model: TableModel = {
+      rows: [[cell(['abc 123'], [{ runs: [{ text: 'abc 123' }], bidiInherited: true }])]],
+    }
+    const div = renderTable(model).querySelector('td > div') as HTMLElement
+    expect(div.getAttribute('style')).toMatch(/direction:\s*rtl/)
+    expect(div.querySelector(':scope > span.doc-ltr-runs')).not.toBeNull()
+  })
+  it('an rtl run keeps the RTL base: no LTR wrapper', () => {
+    const model: TableModel = {
+      rows: [[cell(['abc'], [{ runs: [{ text: 'abc', rtl: true }], bidi: true }])]],
+    }
+    const div = renderTable(model).querySelector('td > div') as HTMLElement
+    expect(div.querySelector('.doc-ltr-runs')).toBeNull()
   })
 })

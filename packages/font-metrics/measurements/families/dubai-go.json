@@ -1,0 +1,18 @@
+{
+  "family": "Dubai GO",
+  "source": {
+    "kind": "corpus",
+    "date": "2026-10-28",
+    "probe": "Word line width over hb-shape of the Noto Sans Arabic subset across 300 body lines (median 0.942); 0.88 reproduces the paragraph breaks; box = embedded subset hhea 1129/559"
+  },
+  "note": "Dubai (M365 cloud face Word renders real, never installed locally): Word\nline width over the Noto Sans subset's hb-shape width of the same text\nspreads 0.89-1.01 across 300 body lines (median 0.942, per-glyph ratios\ndiffer), and 0.945 still wraps one line more than Word per paragraph; 0.88\nreproduces Word's paragraph breaks on the corpus sample (2026-10-28). Box\npinned to the embedded subset's hhea 1129/559 so the line paces 1.688.",
+  "faces": [
+    {
+      "src": "url('./NotoSansArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 88,
+      "unicodeRange": "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF",
+      "ascentOverride": 112.9,
+      "descentOverride": 55.9
+    }
+  ]
+}

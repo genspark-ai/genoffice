@@ -10,8 +10,15 @@
  * so both accepting and rejecting remove it.
  */
 import { Extension, type Editor } from '@tiptap/core'
-import type { Node as PmNode } from '@tiptap/pm/model'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { Fragment, type Mark as PmMark, type Node as PmNode } from '@tiptap/pm/model'
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from '@tiptap/pm/state'
+import { TableMap, removeColumn } from '@tiptap/pm/tables'
 import {
   AddMarkStep,
   canJoin,
@@ -21,6 +28,15 @@ import {
   ReplaceStep,
 } from '@tiptap/pm/transform'
 import { authorName } from '../author-name'
+import { charScaleEm, wordKerns } from '../line-metrics'
+import type { StoryLocation } from './story-revisions'
+import {
+  gridColTwips,
+  tblPrRestoreAttrs,
+  tcPrRestoreAttrs,
+  trPrRestoreAttrs,
+} from './prop-change-restore'
+import { columnWidthsPx, pctOf, reflowColumns } from '../ai/table-ops'
 
 export interface RevisionRange {
   from: number
@@ -28,7 +44,6 @@ export interface RevisionRange {
   kind:
     | 'ins'
     | 'del'
-    | 'both'
     | 'pPrChange'
     | 'paraMarkDel'
     | 'paraMarkIns'
@@ -42,12 +57,62 @@ export interface RevisionRange {
     | 'cellDel'
     | 'blockIns'
     | 'blockDel'
+    | 'tblPrChange'
+    | 'tblGridChange'
+    | 'trPrChange'
+    | 'tblPrExChange'
+    | 'tcPrChange'
+    | 'cellMerge'
+    | 'numberingChange'
+    | 'sectPrChange'
   author: string
   date?: string
+  /** text carrying both ins and del marks: hidden in every view but All Markup */
+  overlapped?: true
+  /** w:name shared by the source (moveFrom) and destination (moveTo) of one move */
+  moveId?: string
+  /** set when the change lives outside the body (note, header / footer, textbox); from / to only order it */
+  story?: StoryLocation
 }
 
 /** transactions carrying this meta are never recorded as revisions */
 export const TRACK_IGNORE = 'trackIgnore'
+/** meta: record this transaction's edits under the given author instead of the user */
+export const TRACK_AUTHOR = 'trackAuthor'
+
+const recorderKey = new PluginKey('trackChangesRecorder')
+
+/** the recorder's author while tracking is on, else null (for commands that record themselves) */
+export function activeTracking(state: EditorState): { author: string } | null {
+  const storage = (recorderKey.get(state)?.spec as { storage?: TrackChangesStorage } | undefined)
+    ?.storage
+  return storage?.enabled ? { author: storage.author } : null
+}
+
+export const revisionDateNow = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+const markRecord = (author: string, date: string) => JSON.stringify({ author, date })
+const recordAuthor = (raw: unknown): string | null => {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    return String(JSON.parse(raw)?.author ?? '')
+  } catch {
+    return null
+  }
+}
+
+/** trPr / tcPr bytes carrying a tracked-change marker (appended to existing properties) */
+export function withTrackMarker(
+  raw: string | null,
+  tag: string,
+  container: string,
+  author: string,
+  date: string,
+): string {
+  const marker = `<${tag} w:id="" w:author="${xmlAttr(author)}" w:date="${date}"/>`
+  if (raw && raw.endsWith(`</${container}>`))
+    return raw.replace(`</${container}>`, `${marker}</${container}>`)
+  return `<${container}>${marker}</${container}>`
+}
 
 const TRACKED_FORMAT_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'docTextStyle'])
 
@@ -132,6 +197,40 @@ function formatSnapshot(node: PmNode): Record<string, unknown> {
   return snapshot
 }
 
+/**
+ * docTextStyle attrs for text whose format revision is rejected: every attr
+ * reset, then the recorded previous formatting (the parser's modeled subset).
+ */
+function rejectedTextStyleAttrs(
+  specAttrs: Record<string, unknown>,
+  old: Record<string, unknown>,
+  text: string,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {}
+  for (const key of Object.keys(specAttrs)) next[key] = null
+  for (const field of TEXT_STYLE_FIELDS) next[field] = old[field] ?? null
+  for (const field of [
+    'charScalePct',
+    'caps',
+    'dstrike',
+    'vanishOwn',
+    'kernHalfPoints',
+    'positionHalfPoints',
+    'shading',
+    'rtl',
+    'themeColor',
+  ])
+    next[field] = old[field] ?? null
+  if (old.vanishOwn != null) next.vanish = old.vanishOwn
+  next.cs = old.rtl ?? null
+  const kern = old.kernHalfPoints as number | undefined
+  const size = old.sizeHalfPoints as number | undefined
+  next.kern = wordKerns(kern ?? undefined, size ?? undefined) ?? null
+  const scale = old.charScalePct as number | undefined
+  next.charScaleEm = scale ? charScaleEm(text, scale) : null
+  return next
+}
+
 /** contiguous revision ranges in document order (adjacent same-kind ranges merged) */
 export function collectRevisions(doc: PmNode): RevisionRange[] {
   const out: RevisionRange[] = []
@@ -157,10 +256,44 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     })
     suppressed.push({ from: pos, to: pos + node.nodeSize, kind: revision.kind })
   })
+  const propRev = (record: unknown, kind: RevisionRange['kind'], from: number, to: number) => {
+    const info = pendingPropChange(record)
+    if (info)
+      tableRevs.push({
+        from,
+        to,
+        kind,
+        author: info.author,
+        ...(info.date ? { date: info.date } : {}),
+      })
+  }
   doc.descendants((node, pos) => {
     const name = node.type.name
+    const end = pos + node.nodeSize
+    if (name === 'docTable') {
+      propRev(node.attrs?.tblPrChange, 'tblPrChange', pos, end)
+      // w:tblGridChange carries only an id: Word writes it alongside the tblPrChange, whose author it shares
+      const grid = pendingPropChange(node.attrs?.tblGridChange)
+      const credit = pendingPropChange(node.attrs?.tblPrChange)
+      if (grid)
+        tableRevs.push({
+          from: pos,
+          to: end,
+          kind: 'tblGridChange',
+          author: grid.author || credit?.author || '',
+          ...((grid.date ?? credit?.date) ? { date: grid.date ?? credit!.date } : {}),
+        })
+      return
+    }
     if (name !== 'docTableRow' && name !== 'docTableCell' && name !== 'docTableHeader') return
     const isRow = name === 'docTableRow'
+    if (isRow) {
+      propRev(node.attrs?.trPrChange, 'trPrChange', pos, end)
+      propRev(node.attrs?.tblPrExChange, 'tblPrExChange', pos, end)
+    } else {
+      propRev(node.attrs?.tcPrChange, 'tcPrChange', pos, end)
+      propRev(node.attrs?.cellMerge, 'cellMerge', pos, end)
+    }
     const rev = (isRow ? node.attrs?.rowRevision : node.attrs?.cellRevision) as {
       kind?: 'ins' | 'del'
       author?: string
@@ -182,8 +315,8 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     })
     suppressed.push({ from: pos, to: pos + node.nodeSize, kind: rev.kind })
   })
-  const isSuppressed = (pos: number, kind: 'ins' | 'del' | 'both') =>
-    suppressed.some((s) => pos >= s.from && pos < s.to && (kind === 'both' || s.kind === kind))
+  const isSuppressed = (pos: number, kind: 'ins' | 'del') =>
+    suppressed.some((s) => pos >= s.from && pos < s.to && s.kind === kind)
 
   // First pass: paragraph-level revisions at any depth, including table cells.
   // A moved paragraph's text carries plain ins / del marks (the parser maps
@@ -203,8 +336,13 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     }
   }
   doc.descendants((node, pos) => {
-    if (!PARAGRAPH_NODE_TYPES.has(node.type.name)) return
     const range = { from: pos, to: pos + node.nodeSize }
+    const sectPrChange = node.attrs?.sectPrChange as string | null | undefined
+    if (sectPrChange && !sectPrChange.includes('"resolved"'))
+      out.push({ ...range, kind: 'sectPrChange', ...credit(sectPrChange) })
+    if (!PARAGRAPH_NODE_TYPES.has(node.type.name)) return
+    const numberingChange = node.attrs?.numberingChange as string | null
+    if (numberingChange) out.push({ ...range, kind: 'numberingChange', ...credit(numberingChange) })
     const pPrChange = node.attrs?.pPrChange as string | null
     const paraMarkDel = node.attrs?.paraMarkDel as string | null
     const paraMarkIns = node.attrs?.paraMarkIns as string | null
@@ -253,25 +391,45 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
         })
       }
     }
-    const ins = node.marks.find((m) => m.type.name === 'ins')
+    // text inserted by one author and then deleted by another carries both
+    // marks: two revisions, as in Word (rejecting the deletion restores the
+    // text as a pending insertion). The deletion comes first so the current-
+    // revision actions at the caret target the later change.
+    const marks: Array<['ins' | 'del', PmMark]> = []
     const del = node.marks.find((m) => m.type.name === 'del')
-    if (!ins && !del) return
-    const textKind: 'ins' | 'del' | 'both' = ins && del ? 'both' : ins ? 'ins' : 'del'
-    if (isSuppressed(pos, textKind)) return
-    const kind = (textKind === 'both' ? null : moveKindAt(pos, textKind)) ?? textKind
-    const src = del ?? ins!
-    const author = String(src.attrs.author ?? '')
-    const prev = out[out.length - 1]
-    if (prev && prev.to === pos && prev.kind === kind && prev.author === author) {
-      prev.to = pos + node.nodeSize
-    } else {
-      out.push({
-        from: pos,
-        to: pos + node.nodeSize,
-        kind,
-        author,
-        ...(src.attrs.date ? { date: String(src.attrs.date) } : {}),
-      })
+    const ins = node.marks.find((m) => m.type.name === 'ins')
+    if (del) marks.push(['del', del])
+    if (ins) marks.push(['ins', ins])
+    const overlapped = marks.length === 2
+    for (const [textKind, src] of marks) {
+      if (isSuppressed(pos, textKind)) continue
+      const moveId = src.attrs.move ? String(src.attrs.move) : undefined
+      const paraKind = moveKindAt(pos, textKind)
+      const kind = moveId ? (textKind === 'del' ? 'moveFrom' : 'moveTo') : (paraKind ?? textKind)
+      const author = String(src.attrs.author ?? '')
+      const prev = out
+        .slice(-2)
+        .find(
+          (r) =>
+            r.to === pos &&
+            r.kind === kind &&
+            r.author === author &&
+            !!r.overlapped === overlapped &&
+            r.moveId === moveId,
+        )
+      if (prev) {
+        prev.to = pos + node.nodeSize
+      } else {
+        out.push({
+          from: pos,
+          to: pos + node.nodeSize,
+          kind,
+          author,
+          ...(src.attrs.date ? { date: String(src.attrs.date) } : {}),
+          ...(overlapped ? { overlapped: true } : {}),
+          ...(moveId ? { moveId } : {}),
+        })
+      }
     }
   })
   // a moved paragraph with no run-level marks (empty, or the mark alone moved) is the revision itself
@@ -281,6 +439,44 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
   return out.sort((a, b) => a.from - b.from)
 }
 
+/** a table / row / cell property-change record still awaiting review */
+function pendingPropChange(
+  record: unknown,
+): { author: string; date?: string; oldXml?: string } | null {
+  if (!record || typeof record !== 'object') return null
+  const r = record as { author?: string; date?: string; oldXml?: string; resolved?: string }
+  if (r.resolved) return null
+  return {
+    author: r.author ?? '',
+    ...(r.date ? { date: r.date } : {}),
+    ...(r.oldXml ? { oldXml: r.oldXml } : {}),
+  }
+}
+
+const PROP_CHANGE_ATTR: Partial<Record<RevisionRange['kind'], string>> = {
+  tblPrChange: 'tblPrChange',
+  tblGridChange: 'tblGridChange',
+  trPrChange: 'trPrChange',
+  tblPrExChange: 'tblPrExChange',
+  tcPrChange: 'tcPrChange',
+  cellMerge: 'cellMerge',
+}
+
+/**
+ * trPr with a row ins/del record in CT_TrPr position (after the base
+ * properties, before trPrChange). w:id stays empty: the save mints it from the
+ * package-wide revision counter, as it does for run-level ins/del.
+ */
+function withRowRecord(raw: unknown, kind: 'ins' | 'del', author: string, date: string): string {
+  const record = `<w:${kind} w:id="" w:author="${xmlAttr(author)}" w:date="${date}"/>`
+  const base =
+    typeof raw === 'string' && /^<w:trPr(?:\s[^>]*)?>[\s\S]*<\/w:trPr>$/.test(raw)
+      ? raw.replace(/<w:(?:ins|del)\b[^>]*\/>|<w:(?:ins|del)\b[^>]*>[\s\S]*?<\/w:(?:ins|del)>/g, '')
+      : '<w:trPr></w:trPr>'
+  const at = base.search(/<w:trPrChange\b|<\/w:trPr>/)
+  return base.slice(0, at) + record + base.slice(at)
+}
+
 /** strip a tracked-change marker element from raw trPr/tcPr bytes; empty container → null */
 function stripTrackMarker(raw: string | null, tag: string, container: string): string | null {
   if (!raw) return raw
@@ -288,6 +484,35 @@ function stripTrackMarker(raw: string | null, tag: string, container: string): s
     .replace(new RegExp(`<${tag}[^>]*/>`, 'g'), '')
     .replace(new RegExp(`<${tag}[^>]*>[\\s\\S]*?</${tag}>`, 'g'), '')
   if (new RegExp(`^<${container}(?:\\s[^>]*)?>\\s*</${container}>$`).test(out)) return null
+  return out
+}
+
+/** revisions as Word counts them: the two sides of a move are one change */
+export function revisionCount(ranges: Array<Pick<RevisionRange, 'moveId'>>): number {
+  const moves = new Set<string>()
+  let n = 0
+  for (const r of ranges) {
+    if (r.moveId) moves.add(r.moveId)
+    else n++
+  }
+  return n + moves.size
+}
+
+/** the given ranges plus the other side of every move among them (accept / reject act on the pair) */
+function withMovePairs(doc: PmNode, ranges: RevisionRange[]): RevisionRange[] {
+  if (!ranges.some((r) => r.kind === 'moveFrom' || r.kind === 'moveTo')) return ranges
+  const live = collectRevisions(doc)
+  const same = (a: RevisionRange, b: RevisionRange) =>
+    a.kind === b.kind && a.from === b.from && a.to === b.to
+  const ids = new Set<string>()
+  for (const r of ranges) {
+    const id = r.moveId ?? live.find((l) => same(l, r))?.moveId
+    if (id) ids.add(id)
+  }
+  if (ids.size === 0) return ranges
+  const out = [...ranges]
+  for (const l of live)
+    if (l.moveId && ids.has(l.moveId) && !out.some((o) => same(o, l))) out.push(l)
   return out
 }
 
@@ -301,7 +526,7 @@ export function applyRevisions(
   const tr = state.tr
   tr.setMeta(TRACK_IGNORE, true)
   // reverse order keeps earlier positions valid while later ranges mutate
-  for (const r of [...ranges].sort((a, b) => b.from - a.from)) {
+  for (const r of withMovePairs(state.doc, ranges).sort((a, b) => b.from - a.from)) {
     if (r.kind === 'blockIns' || r.kind === 'blockDel') {
       const revisionKind = r.kind === 'blockIns' ? 'ins' : 'del'
       const removeNode = mode === 'accept' ? revisionKind === 'del' : revisionKind === 'ins'
@@ -326,6 +551,74 @@ export function applyRevisions(
           const to = nodePos + node.nodeSize
           if (tr.doc.rangeHasMark(from, to, markType)) tr.removeMark(from, to, markType)
         }
+      }
+      continue
+    }
+
+    if (r.kind === 'numberingChange' || r.kind === 'sectPrChange') {
+      // numberingChange records only the old marker text: nothing to restore, the record goes either way.
+      // sectPrChange: the save path restores the previous sectPr bytes from the record
+      // -1: a record resolved on this same node just replaced its open token
+      const pos = tr.mapping.map(r.from, -1)
+      const node = tr.doc.nodeAt(pos)
+      const raw = node?.attrs?.[r.kind] as string | null | undefined
+      if (!node || !raw) continue
+      // the trailing section record has no block of its own: its verdict stays on the host
+      const keep = mode === 'reject' || raw.includes('"trailing":true')
+      const next =
+        !keep || r.kind === 'numberingChange'
+          ? null
+          : JSON.stringify({ ...JSON.parse(raw), resolved: mode })
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, [r.kind]: next })
+      continue
+    }
+
+    const propAttr = PROP_CHANGE_ATTR[r.kind]
+    if (propAttr) {
+      const mapped = tr.mapping.mapResult(r.from, -1)
+      const node = tr.doc.nodeAt(mapped.pos)
+      const record = node?.attrs?.[propAttr] as { oldXml?: string } | null | undefined
+      if (mapped.deleted || !node || !record) continue
+      const pos = mapped.pos
+      if (mode === 'accept') {
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, [propAttr]: null })
+        continue
+      }
+      // reject: the record stays (resolved) so the save restores the old bytes; the
+      // modeled subset of the old properties comes back on the node right away
+      const resolved = { ...record, resolved: 'reject' }
+      const oldXml = record.oldXml ?? ''
+      if (r.kind === 'tblPrChange') {
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          ...tblPrRestoreAttrs(oldXml),
+          [propAttr]: resolved,
+        })
+      } else if (r.kind === 'tblGridChange') {
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, [propAttr]: resolved })
+        const twips = gridColTwips(oldXml)
+        const map = TableMap.get(node)
+        if (twips.length === map.width) {
+          const widths = twips.map((w) => Math.max(1, Math.round(w / 15)))
+          reflowColumns(tr, pos, widths, pctOf(node, map, widths))
+        }
+      } else if (r.kind === 'trPrChange') {
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          ...trPrRestoreAttrs(oldXml),
+          [propAttr]: resolved,
+        })
+      } else if (r.kind === 'tcPrChange') {
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          ...tcPrRestoreAttrs(oldXml),
+          [propAttr]: resolved,
+        })
+      } else if (r.kind === 'cellMerge') {
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, [propAttr]: resolved })
+        unmergeCellRows(tr, pos)
+      } else {
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, [propAttr]: resolved })
       }
       continue
     }
@@ -389,15 +682,13 @@ export function applyRevisions(
           }
           const tsType = state.schema.marks.docTextStyle
           if (tsType) {
-            const baseAttrs = ts ? { ...ts.attrs } : {}
-            const nextAttrs: Record<string, unknown> = { ...baseAttrs }
-            for (const field of TEXT_STYLE_FIELDS) nextAttrs[field] = old[field] ?? null
-            // Reject goes back to the modeled old format. rawRPr contains the new
-            // format plus the revision record, so rebuild instead of preserving it.
-            nextAttrs.rawRPr = null
-            const hasAny = TEXT_STYLE_FIELDS.some(
-              (field) => nextAttrs[field] !== null && nextAttrs[field] !== undefined,
-            )
+            const nextAttrs = rejectedTextStyleAttrs(tsType.spec.attrs ?? {}, old, node.text ?? '')
+            const oldRPr = rpr.attrs.oldRPr as string | null
+            // the recorded previous rPr is what the save writes back; the modeled
+            // fields above agree with it, so the merge keeps its bytes
+            if (oldRPr != null) nextAttrs.rawRPr = oldRPr ? `<w:rPr>${oldRPr}</w:rPr>` : null
+            if (ts) nextAttrs.tblRun = ts.attrs.tblRun ?? null
+            const hasAny = Object.values(nextAttrs).some((v) => v !== null && v !== undefined)
             if (ts || hasAny) tr.addMark(from, to, tsType.create(nextAttrs))
           }
         }
@@ -457,26 +748,56 @@ export function applyRevisions(
       const isRow = r.kind === 'rowIns' || r.kind === 'rowDel'
       const revKind = r.kind === 'rowIns' || r.kind === 'cellIns' ? 'ins' : 'del'
       const removeNode = mode === 'accept' ? revKind === 'del' : revKind === 'ins'
-      const node = state.doc.nodeAt(r.from)
-      if (!node) continue
+      // a whole-column removal below shifts the rest of the table: positions must be mapped
+      const mapped = tr.mapping.mapResult(r.from, 1)
+      const from = mapped.pos
+      const to = tr.mapping.map(r.to, -1)
+      const node = tr.doc.nodeAt(from)
+      if (mapped.deleted || !node || to <= from) continue
       if (removeNode && isRow) {
         // accepting a deleted row / rejecting an inserted row = remove the whole row; if it is the only row, remove the whole table
-        const $pos = state.doc.resolve(r.from)
+        const $pos = tr.doc.resolve(from)
         if ($pos.parent.childCount <= 1) tr.delete($pos.before(), $pos.after())
-        else tr.delete(r.from, r.to)
+        else tr.delete(from, to)
       } else if (removeNode) {
-        // a cell cannot be removed outright (table grid self-repair would re-add an empty one): clear it in place and strip the marker
-        tr.setNodeMarkup(r.from, undefined, {
-          ...node.attrs,
+        const cellPos = from
+        const cell = node
+        if (!cell.attrs.cellRevision) continue
+        const $cell = tr.doc.resolve(cellPos)
+        const tablePos = $cell.before($cell.depth - 1)
+        const table = $cell.node($cell.depth - 1)
+        const map = TableMap.get(table)
+        const rect = map.findCell(cellPos - tablePos - 1)
+        const wholeColumn =
+          map.width > 1 &&
+          rect.right - rect.left === 1 &&
+          Array.from({ length: map.height }, (_, row) =>
+            table.nodeAt(map.map[row * map.width + rect.left]!),
+          ).every((c) => (c?.attrs.cellRevision as { kind?: string } | null)?.kind === revKind)
+        if (wholeColumn) {
+          const widths = columnWidthsPx(table, map)
+          const pct = pctOf(table, map, widths)
+          removeColumn(tr, { ...rect, map, table, tableStart: tablePos + 1 }, rect.left)
+          reflowColumns(
+            tr,
+            tablePos,
+            widths?.filter((_, col) => col !== rect.left) ?? null,
+            pct.filter((_, col) => col !== rect.left),
+          )
+          continue
+        }
+        // a lone cell cannot be removed outright (table grid self-repair would re-add an empty one): clear it in place and strip the marker
+        tr.setNodeMarkup(cellPos, undefined, {
+          ...cell.attrs,
           cellRevision: null,
           rawTcPr: stripTrackMarker(
-            node.attrs.rawTcPr as string | null,
+            cell.attrs.rawTcPr as string | null,
             revKind === 'ins' ? 'w:cellIns' : 'w:cellDel',
             'w:tcPr',
           ),
         })
         const empty = state.schema.nodes.docParagraph.createAndFill()
-        if (empty) tr.replaceWith(r.from + 1, r.to - 1, empty)
+        if (empty) tr.replaceWith(cellPos + 1, cellPos + cell.nodeSize - 1, empty)
       } else {
         // keep the content: clear the revision marker and strip the record from the raw trPr/tcPr bytes (takes effect on save)
         const attrs = isRow
@@ -498,9 +819,9 @@ export function applyRevisions(
                 'w:tcPr',
               ),
             }
-        tr.setNodeMarkup(r.from, undefined, attrs)
+        tr.setNodeMarkup(from, undefined, attrs)
         const markType = state.schema.marks[revKind]
-        if (markType) tr.removeMark(r.from + 1, r.to - 1, markType)
+        if (markType) tr.removeMark(from + 1, to - 1, markType)
       }
       continue
     }
@@ -523,32 +844,74 @@ export function applyRevisions(
       if ($para.parent.attrs?.moveRevision)
         tr.setNodeMarkup($para.before(), undefined, { ...$para.parent.attrs, moveRevision: null })
     }
+    // an ins and a del revision can share the same text: map through earlier steps
+    const from = tr.mapping.map(r.from, 1)
+    const to = tr.mapping.map(r.to, -1)
+    if (from >= to) continue
     const removeText = mode === 'accept' ? textKind !== 'ins' : textKind !== 'del'
     if (removeText) {
       // a revision covering a block's entire content removes the block itself
       // (Word: rejecting an inserted paragraph deletes the paragraph, not just
       // its text), unless it is the document's last remaining block
-      const $from = state.doc.resolve(r.from)
-      const $to = state.doc.resolve(r.to)
+      const $from = tr.doc.resolve(from)
+      const $to = tr.doc.resolve(to)
       if (
         $from.parent.isTextblock &&
         $from.sameParent($to) &&
-        r.from === $from.start() &&
-        r.to === $to.end() &&
+        from === $from.start() &&
+        to === $to.end() &&
         $from.depth === 1 &&
-        state.doc.childCount > 1
+        tr.doc.childCount > 1
       ) {
         tr.delete($from.before(), $to.after())
       } else {
-        tr.delete(r.from, r.to)
+        tr.delete(from, to)
       }
     } else if (mode === 'accept') {
-      tr.removeMark(r.from, r.to, state.schema.marks.ins)
+      tr.removeMark(from, to, state.schema.marks.ins)
     } else {
-      tr.removeMark(r.from, r.to, state.schema.marks.del)
+      tr.removeMark(from, to, state.schema.marks.del)
     }
   }
   editor.view.dispatch(tr)
+}
+
+/**
+ * Rejecting a w:cellMerge: the vertical merge is undone — the restart cell keeps its
+ * content at rowspan 1 and every row it spanned gets an empty cell back in its column.
+ */
+function unmergeCellRows(tr: Transaction, cellPos: number): void {
+  const $cell = tr.doc.resolve(cellPos)
+  const table = $cell.node(-1)
+  const tableStart = $cell.start(-1)
+  const map = TableMap.get(table)
+  const rect = map.findCell(cellPos - tableStart)
+  if (rect.bottom - rect.top <= 1) return
+  const cell = tr.doc.nodeAt(cellPos)!
+  tr.setNodeMarkup(cellPos, undefined, { ...cell.attrs, rowspan: 1 })
+  const rowEnds: number[] = []
+  let offset = 0
+  table.forEach((row) => {
+    offset += row.nodeSize
+    rowEnds.push(tableStart + offset - 1)
+  })
+  // bottom-up so earlier insertions do not shift the later ones
+  for (let row = rect.bottom - 1; row > rect.top; row--) {
+    let insertAt = rowEnds[row]
+    for (let col = rect.right; col < map.width; col++) {
+      const idx = row * map.width + col
+      const pos = map.map[idx]!
+      if (row > 0 && map.map[idx - map.width] === pos) continue
+      if (col > 0 && map.map[idx - 1] === pos) continue
+      insertAt = tableStart + pos
+      break
+    }
+    const empty = cell.type.createAndFill({
+      colspan: rect.right - rect.left,
+      colwidth: cell.attrs.colwidth,
+    })
+    if (empty) tr.insert(insertAt, empty)
+  }
 }
 
 export function acceptAllRevisions(editor: Editor): void {
@@ -624,6 +987,10 @@ export function gotoRevision(editor: Editor, dir: 1 | -1): RevisionRange | null 
 export interface TrackChangesStorage {
   enabled: boolean
   author: string
+  /** Track Changes Options: cut + paste pairs as a move (off = plain deletion + insertion) */
+  trackMoves: boolean
+  /** Track Changes Options: live format edits record w:rPrChange / w:pPrChange */
+  trackFormatting: boolean
 }
 
 declare module '@tiptap/core' {
@@ -646,47 +1013,127 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
   name: 'trackChanges',
 
   addStorage() {
-    return { enabled: false, author: authorName() }
+    return { enabled: false, author: authorName(), trackMoves: true, trackFormatting: true }
   },
 
   addKeyboardShortcuts() {
     const storage = this.storage
+    const moveCaret = (pos: number) =>
+      this.editor.commands.command(({ tr, dispatch }) => {
+        tr.setSelection(TextSelection.create(tr.doc, pos))
+        if (dispatch) dispatch(tr)
+        return true
+      })
     /**
-     * Backspace over text already marked deleted is a no-op (the recorder puts it
-     * straight back), which would trap the caret. Word skips such text, so step
-     * over the struck run and delete the live character in front of it instead.
+     * Backspace / Delete over text already marked deleted is a no-op (the
+     * recorder puts it straight back), which would trap the caret. Word skips
+     * such text, so step over the struck run and delete the live character
+     * beyond it instead.
      */
-    const skipStruckRun = (): boolean => {
+    const skipStruckRun = (dir: -1 | 1): boolean => {
       if (!storage.enabled) return false
       const { state, view } = this.editor
       const { selection, schema } = state
       const delType = schema.marks.del
       if (!delType || !selection.empty) return false
       const $pos = selection.$from
-      if ($pos.parentOffset === 0) return false
+      const size = $pos.parent.content.size
+      if (dir === -1 ? $pos.parentOffset === 0 : $pos.parentOffset >= size) return false
       const isStruck = (offset: number): boolean => {
         const index = $pos.parent.childAfter(offset).index
         const child = $pos.parent.maybeChild(index)
         return !!child?.marks.some((mark) => mark.type === delType)
       }
-      if (!isStruck($pos.parentOffset - 1)) return false
+      if (!isStruck(dir === -1 ? $pos.parentOffset - 1 : $pos.parentOffset)) return false
       const blockStart = $pos.start()
-      let offset = $pos.parentOffset - 1
-      while (offset > 0 && isStruck(offset - 1)) offset -= 1
-      if (offset === 0) {
-        // nothing live left in this block: park the caret before the struck run
-        view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, blockStart)))
+      let offset = $pos.parentOffset + dir
+      if (dir === -1) while (offset > 0 && isStruck(offset - 1)) offset -= 1
+      else while (offset < size && isStruck(offset)) offset += 1
+      const runEdge = blockStart + offset
+      if (offset === 0 || offset === size) {
+        // nothing live left in that direction: park the caret at the run's edge
+        view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, runEdge)))
         return true
       }
-      const runStart = blockStart + offset
-      this.editor.commands.command(({ tr, dispatch }) => {
-        tr.setSelection(TextSelection.create(tr.doc, runStart))
-        if (dispatch) dispatch(tr)
-        return true
-      })
-      return this.editor.commands.deleteRange({ from: runStart - 1, to: runStart })
+      moveCaret(runEdge)
+      return dir === -1
+        ? this.editor.commands.deleteRange({ from: runEdge - 1, to: runEdge })
+        : this.editor.commands.deleteRange({ from: runEdge, to: runEdge + 1 })
     }
-    return { Backspace: skipStruckRun }
+    /**
+     * Backspace at the start of a paragraph / Delete at its predecessor's end
+     * removes the first paragraph's mark. Under tracking that mark becomes a
+     * pending deletion and both paragraphs stay; only this author's own pending
+     * mark insertion really joins. A mark already struck is stepped over.
+     */
+    const joinParagraphMark = (dir: -1 | 1): boolean => {
+      if (!storage.enabled) return false
+      const { state, view } = this.editor
+      const { selection } = state
+      if (!selection.empty) return false
+      const $pos = selection.$from
+      if (!PARAGRAPH_NODE_TYPES.has($pos.parent.type.name)) return false
+      const atEdge =
+        dir === -1 ? $pos.parentOffset === 0 : $pos.parentOffset === $pos.parent.content.size
+      if (!atEdge) return false
+      const boundary = dir === -1 ? $pos.before() : $pos.after()
+      const $boundary = state.doc.resolve(boundary)
+      const first = dir === -1 ? $boundary.nodeBefore : $pos.parent
+      const second = dir === -1 ? $pos.parent : $boundary.nodeAfter
+      if (
+        !first ||
+        !second ||
+        !PARAGRAPH_NODE_TYPES.has(first.type.name) ||
+        !PARAGRAPH_NODE_TYPES.has(second.type.name)
+      )
+        return false
+      const firstPos = boundary - first.nodeSize
+      const firstEnd = boundary - 1
+      if (recordAuthor(first.attrs.paraMarkIns) === storage.author) {
+        if (!canJoin(state.doc, boundary)) return false
+        const tr = state.tr.setMeta(TRACK_IGNORE, true)
+        tr.join(boundary)
+        // the surviving mark is the second paragraph's: its revision state carries over
+        tr.setNodeMarkup(firstPos, undefined, {
+          ...first.attrs,
+          paraMarkIns: second.attrs.paraMarkIns,
+          paraMarkDel: second.attrs.paraMarkDel,
+          paraMarkRPrChange: second.attrs.paraMarkRPrChange,
+        })
+        tr.setSelection(TextSelection.create(tr.doc, firstEnd))
+        view.dispatch(tr)
+        return true
+      }
+      if (first.attrs.paraMarkDel) {
+        if (dir === -1) {
+          moveCaret(firstEnd)
+          if (first.content.size === 0) return true
+          return (
+            skipStruckRun(-1) ||
+            this.editor.commands.deleteRange({ from: firstEnd - 1, to: firstEnd })
+          )
+        }
+        const secondStart = boundary + 1
+        moveCaret(secondStart)
+        if (second.content.size === 0) return true
+        return (
+          skipStruckRun(1) ||
+          this.editor.commands.deleteRange({ from: secondStart, to: secondStart + 1 })
+        )
+      }
+      const tr = state.tr.setMeta(TRACK_IGNORE, true)
+      tr.setNodeMarkup(firstPos, undefined, {
+        ...first.attrs,
+        paraMarkDel: markRecord(storage.author, revisionDateNow()),
+      })
+      tr.setSelection(TextSelection.create(tr.doc, firstEnd))
+      view.dispatch(tr)
+      return true
+    }
+    return {
+      Backspace: () => joinParagraphMark(-1) || skipStruckRun(-1),
+      Delete: () => joinParagraphMark(1) || skipStruckRun(1),
+    }
   },
 
   addProseMirrorPlugins() {
@@ -698,6 +1145,25 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
     // span against it, because PM's IME DOM re-reads can replace far more than
     // the composed text (runs whose marks don't round-trip the DOM)
     let pendingIme: { from: number; to: number; base: PmNode; mapping: Mapping } | null = null
+    // Word records cut + paste (and drag-drop) of the same content as a move:
+    // the cut's struck text is remembered until the next edit; a paste of the
+    // same content pairs it with the insertion under one move name
+    let lastCut: {
+      key: string
+      delMark: PmMark
+      ranges: Array<{ from: number; to: number }>
+      /** the doc the ranges are positions in: later transactions map them forward */
+      doc: PmNode
+    } | null = null
+    // the custom paste lanes dispatch without PM's uiEvent meta: the DOM event arms the next recording
+    let armed: { event: 'cut' | 'paste' | 'drop'; at: number } | null = null
+    const arm = (event: 'cut' | 'paste' | 'drop') => () => {
+      armed = { event, at: Date.now() }
+      return false
+    }
+    const sliceKey = (fragment: Fragment) =>
+      fragment.textBetween(0, fragment.size, '\u2029', '\ufffc')
+    const newMoveId = () => `move${Date.now() % 1e9}${Math.floor(Math.random() * 1e3)}`
     // inline content of [from,to) as 1 char per position, else null (not a
     // single textblock / exotic inline node): lets the flush diff by text
     const inlineText = (
@@ -729,9 +1195,17 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
     }
     return [
       new Plugin({
-        key: new PluginKey('trackChangesRecorder'),
+        key: recorderKey,
+        storage,
         props: {
           handleDOMEvents: {
+            cut: arm('cut'),
+            paste: arm('paste'),
+            drop: arm('drop'),
+            copy: () => {
+              lastCut = null
+              return false
+            },
             // PM keeps the doc in sync during composition and often dispatches
             // nothing at compositionend; poke a transaction to flush pendingIme
             compositionend: (view) => {
@@ -752,6 +1226,16 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               pendingIme.from = transaction.mapping.map(pendingIme.from, -1)
               pendingIme.to = transaction.mapping.map(pendingIme.to, 1)
               pendingIme.mapping.appendMapping(transaction.mapping)
+            }
+          }
+          if (lastCut) {
+            for (const transaction of transactions) {
+              if (transaction.before !== lastCut.doc) continue
+              lastCut.ranges = lastCut.ranges.map((r) => ({
+                from: transaction.mapping.map(r.from, -1),
+                to: transaction.mapping.map(r.to, 1),
+              }))
+              lastCut.doc = transaction.doc
             }
           }
           const tracked = transactions.filter(
@@ -847,14 +1331,117 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             oldTo = Math.min(oldState.doc.content.size, inverted.map(newTo, 1))
           }
 
-          const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-          const insMark = insType.create({ author: storage.author, date: now })
-          const delMark = delType.create({ author: storage.author, date: now })
+          const now = revisionDateNow()
+          const author =
+            tracked.map((t) => t.getMeta(TRACK_AUTHOR) as string | undefined).find(Boolean) ??
+            storage.author
+
+          const uiEvent =
+            tracked.map((t) => t.getMeta('uiEvent') as string | undefined).find(Boolean) ??
+            (armed && Date.now() - armed.at < 1000 ? armed.event : undefined)
+          armed = null
+          let removedKey = ''
+          let insertedKey = ''
+          for (const { step, docBefore } of steps) {
+            if (!(step instanceof ReplaceStep)) continue
+            if (step.to > step.from)
+              removedKey += sliceKey(docBefore.slice(step.from, step.to).content)
+            insertedKey += sliceKey(step.slice.content)
+          }
+          let moveId: string | null = null
+          if (!storage.trackMoves) {
+            /* moves record as deletion + insertion */
+          } else if (uiEvent === 'drop' && insertedKey && insertedKey === removedKey)
+            moveId = newMoveId()
+          else if (uiEvent === 'paste' && lastCut && insertedKey === lastCut.key)
+            moveId = newMoveId()
+          const pairCut = uiEvent === 'paste' && moveId ? lastCut : null
+          if (uiEvent !== 'cut') lastCut = null
+          let struck = false
+
+          const insMark = insType.create({ author, date: now, move: moveId })
+          const delMark = delType.create({
+            author,
+            date: now,
+            move: uiEvent === 'drop' ? moveId : null,
+          })
 
           const tr = newState.tr
           tr.setMeta(TRACK_IGNORE, true)
           let changed = false
           const recordedFormatRanges = new Set<string>()
+
+          // Enter inside a paragraph: the inserted paragraph mark ends the first
+          // half (Word credits that mark); the second half is the original's
+          // continuation, not an inserted block
+          const splitTails = new Set<number>()
+          // A selection deleted from inside one paragraph into another: Word
+          // strikes the removed text and marks the first paragraph's mark
+          // deleted; the paragraphs stay apart (rebuilt below from the merged
+          // result). Their old positions must not read as block deletions.
+          const rebuiltOld = new Set<number>()
+          const crossParagraphCut = (step: ReplaceStep, docBefore: PmNode) => {
+            if (step.from === step.to) return null
+            const $from = docBefore.resolve(step.from)
+            const $to = docBefore.resolve(step.to)
+            if (
+              $from.depth !== $to.depth ||
+              $from.sameParent($to) ||
+              !PARAGRAPH_NODE_TYPES.has($from.parent.type.name) ||
+              !PARAGRAPH_NODE_TYPES.has($to.parent.type.name) ||
+              $from.start($from.depth - 1) !== $to.start($to.depth - 1)
+            )
+              return null
+            let inlineInsert = true
+            step.slice.content.forEach((child) => {
+              if (!child.isInline) inlineInsert = false
+            })
+            if (
+              step.slice.size > 0 &&
+              (step.slice.openStart !== 0 || step.slice.openEnd !== 0 || !inlineInsert)
+            )
+              return null
+            const depth = $from.depth
+            const parentStart = $from.start(depth - 1)
+            const paras: Array<{ node: PmNode; pos: number }> = []
+            $from.node(depth - 1).forEach((child, offset) => {
+              const pos = parentStart + offset
+              if (pos >= $from.before(depth) && pos <= $to.before(depth))
+                paras.push({ node: child, pos })
+            })
+            if (paras.some((p) => !PARAGRAPH_NODE_TYPES.has(p.node.type.name))) return null
+            return { $from, $to, paras }
+          }
+          const isParagraphSplit = (step: ReplaceStep) => {
+            const { slice } = step
+            const head = slice.content.firstChild
+            const second = slice.content.lastChild
+            return (
+              slice.openStart === 1 &&
+              slice.openEnd === 1 &&
+              slice.content.childCount === 2 &&
+              !!head &&
+              !!second &&
+              PARAGRAPH_NODE_TYPES.has(head.type.name) &&
+              PARAGRAPH_NODE_TYPES.has(second.type.name) &&
+              head.content.size === 0 &&
+              second.content.size === 0
+            )
+          }
+          steps.forEach(({ step, docBefore }, idx) => {
+            if (!(step instanceof ReplaceStep)) return
+            const tail = mapping.slice(idx + 1)
+            if (isParagraphSplit(step)) {
+              if (PARAGRAPH_NODE_TYPES.has(docBefore.resolve(step.from).parent.type.name))
+                splitTails.add(tail.map(step.from + 1, -1))
+              return
+            }
+            const cut = crossParagraphCut(step, docBefore)
+            if (!cut) return
+            // Mapping.invert ignores slice bounds: build the prefix explicitly
+            const toOld = new Mapping(steps.slice(0, idx).map((s) => s.step.getMap())).invert()
+            for (const { pos } of cut.paras.slice(1)) rebuiltOld.add(toOld.map(pos, -1))
+          })
 
           // Paragraph-property commands are SetNodeMarkup/ReplaceAround operations.
           // Comparing mapped textblocks catches alignment, spacing, indentation,
@@ -909,6 +1496,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
           const deletedBlocks: Array<{ node: PmNode; pos: number }> = []
           const oldOrdinals = new Map<number, number>()
           oldState.doc.nodesBetween(oldFrom, oldTo, (before, oldPos) => {
+            if (rebuiltOld.has(oldPos)) return false
             const index = before.attrs?.docxIndex
             if (typeof index === 'number') {
               const group = newAnchors.get(index) ?? []
@@ -962,7 +1550,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               node.type.create(
                 {
                   ...node.attrs,
-                  blockRevision: { kind: 'del', author: storage.author, date: now },
+                  blockRevision: { kind: 'del', author: author, date: now },
                 },
                 node.content,
                 node.marks,
@@ -975,12 +1563,13 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             const knownAnchor = typeof index === 'number' && oldAnchors.has(index)
             if (
               (!movedNewPositions.has(pos) && (knownAnchor || matchedNewPositions.has(pos))) ||
-              node.attrs?.blockRevision
+              node.attrs?.blockRevision ||
+              splitTails.has(pos)
             )
               return false
             tr.setNodeMarkup(tr.mapping.map(pos, 1), undefined, {
               ...node.attrs,
-              blockRevision: { kind: 'ins', author: storage.author, date: now },
+              blockRevision: { kind: 'ins', author: author, date: now },
             })
             changed = true
             return false
@@ -1026,10 +1615,8 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                 const pos = tr.mapping.map(rowPos(prefix + i), 1)
                 tr.setNodeMarkup(pos, undefined, {
                   ...newMiddle[i].attrs,
-                  rowRevision: { kind: 'ins', author: storage.author, date: now },
-                  rawTrPr:
-                    `<w:trPr><w:ins w:id="0" w:author="${xmlAttr(storage.author)}"` +
-                    ` w:date="${now}"/></w:trPr>`,
+                  rowRevision: { kind: 'ins', author: author, date: now },
+                  rawTrPr: withRowRecord(newMiddle[i].attrs.rawTrPr, 'ins', author, now),
                 })
               }
               changed = true
@@ -1041,10 +1628,8 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                   row.type.create(
                     {
                       ...row.attrs,
-                      rowRevision: { kind: 'del', author: storage.author, date: now },
-                      rawTrPr:
-                        `<w:trPr><w:del w:id="0" w:author="${xmlAttr(storage.author)}"` +
-                        ` w:date="${now}"/></w:trPr>`,
+                      rowRevision: { kind: 'del', author: author, date: now },
+                      rawTrPr: withRowRecord(row.attrs.rawTrPr, 'del', author, now),
                     },
                     row.content,
                     row.marks,
@@ -1056,7 +1641,8 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
           }
 
           oldState.doc.nodesBetween(oldFrom, oldTo, (before, oldPos) => {
-            if (!PARAGRAPH_NODE_TYPES.has(before.type.name)) return
+            if (!storage.trackFormatting) return false
+            if (!PARAGRAPH_NODE_TYPES.has(before.type.name) || rebuiltOld.has(oldPos)) return
             const newPos = fullMapping.map(oldPos, -1)
             const after = newState.doc.nodeAt(newPos)
             if (
@@ -1070,7 +1656,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             tr.setNodeMarkup(newPos, undefined, {
               ...after.attrs,
               pPrChange: JSON.stringify({
-                author: storage.author,
+                author: author,
                 date: now,
                 old: paragraphSnapshot(before),
               }),
@@ -1084,7 +1670,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               TRACKED_FORMAT_MARKS.has(step.mark.type.name)
             ) {
               const rprType = newState.schema.marks.rprChange
-              if (!rprType) return
+              if (!rprType || !storage.trackFormatting) return
               const tail = mapping.slice(idx + 1)
               docBefore.nodesBetween(step.from, step.to, (node, pos) => {
                 if (!node.isText) return
@@ -1102,7 +1688,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                   to,
                   existing ??
                     rprType.create({
-                      author: storage.author,
+                      author: author,
                       date: now,
                       old: formatSnapshot(node),
                     }),
@@ -1137,6 +1723,24 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               if (!child.isBlock) insertsWholeBlocks = false
             })
 
+            if (step instanceof ReplaceStep && isParagraphSplit(step)) {
+              const $split = docBefore.resolve(from)
+              if (!PARAGRAPH_NODE_TYPES.has($split.parent.type.name)) return
+              const headPos = tr.mapping.map(tail.map($split.before(), -1), -1)
+              const head = tr.doc.nodeAt(headPos)
+              if (!head || !PARAGRAPH_NODE_TYPES.has(head.type.name) || head.attrs.blockRevision)
+                return
+              // the split cloned the original mark's revision state onto both halves; it belongs to the second
+              tr.setNodeMarkup(headPos, undefined, {
+                ...head.attrs,
+                paraMarkIns: markRecord(author, now),
+                paraMarkDel: null,
+                paraMarkRPrChange: null,
+              })
+              changed = true
+              return
+            }
+
             // mark inserted content
             if (slice.size > 0 && !insertsWholeBlocks) {
               const a = tr.mapping.map(tail.map(from, 1), 1)
@@ -1146,6 +1750,79 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                 tr.addMark(a, b, insMark)
                 changed = true
               }
+            }
+
+            const strike = (fragment: Fragment): PmNode[] => {
+              const kept: PmNode[] = []
+              fragment.forEach((child) => {
+                if (child.marks.some((m) => m.type === insType && m.attrs.author === author)) return
+                if (child.marks.some((m) => m.type === delType)) kept.push(child)
+                else {
+                  struck = true
+                  kept.push(child.mark([...child.marks, delMark]))
+                }
+              })
+              return kept
+            }
+            const cut = step instanceof ReplaceStep ? crossParagraphCut(step, docBefore) : null
+            if (cut) {
+              const headSize = from - cut.$from.start()
+              const liveEnd = headSize + slice.size
+              const lastHead = to - cut.$to.start()
+              const mergedPos = tr.mapping.map(tail.map(cut.$from.before(), -1), -1)
+              const merged = tr.doc.nodeAt(mergedPos)
+              const lastNode = cut.paras[cut.paras.length - 1]!.node
+              if (
+                !merged ||
+                !PARAGRAPH_NODE_TYPES.has(merged.type.name) ||
+                merged.content.size !== liveEnd + lastNode.content.size - lastHead
+              )
+                return
+              const parts = cut.paras.map(({ node }, i) => {
+                const first = i === 0
+                const last = i === cut.paras.length - 1
+                const content: PmNode[] = []
+                if (first) merged.content.cut(0, liveEnd).forEach((n) => content.push(n))
+                content.push(
+                  ...strike(
+                    first
+                      ? node.content.cut(headSize)
+                      : last
+                        ? node.content.cut(0, lastHead)
+                        : node.content,
+                  ),
+                )
+                if (last) merged.content.cut(liveEnd).forEach((n) => content.push(n))
+                return { type: node.type, attrs: node.attrs, content, markDeleted: !last }
+              })
+              // a paragraph whose mark is this author's own pending insertion loses it for real
+              const folded: typeof parts = []
+              for (const part of parts) {
+                const prev = folded[folded.length - 1]
+                if (prev && recordAuthor(prev.attrs.paraMarkIns) === author) {
+                  prev.content.push(...part.content)
+                  prev.attrs = {
+                    ...prev.attrs,
+                    paraMarkIns: part.attrs.paraMarkIns,
+                    paraMarkDel: part.attrs.paraMarkDel,
+                    paraMarkRPrChange: part.attrs.paraMarkRPrChange,
+                  }
+                  prev.markDeleted = part.markDeleted
+                } else folded.push({ ...part })
+              }
+              const nodes = folded.map((part) =>
+                part.type.create(
+                  part.markDeleted && !part.attrs.paraMarkDel
+                    ? { ...part.attrs, paraMarkDel: markRecord(author, now) }
+                    : part.attrs,
+                  Fragment.from(part.content),
+                ),
+              )
+              tr.replaceWith(mergedPos, mergedPos + merged.nodeSize, nodes)
+              if (newState.selection.empty)
+                tr.setSelection(TextSelection.create(tr.doc, mergedPos + 1 + liveEnd))
+              changed = true
+              return
             }
 
             // re-materialize deleted inline content, struck through
@@ -1160,11 +1837,14 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                 const keep: PmNode[] = []
                 removed.content.forEach((child) => {
                   const ownIns = child.marks.some(
-                    (m) => m.type === insType && m.attrs.author === storage.author,
+                    (m) => m.type === insType && m.attrs.author === author,
                   )
                   if (ownIns) return // deleting your own insertion removes it outright
                   if (child.marks.some((m) => m.type === delType)) keep.push(child)
-                  else keep.push(child.mark([...child.marks, delMark]))
+                  else {
+                    struck = true
+                    keep.push(child.mark([...child.marks, delMark]))
+                  }
                 })
                 if (keep.length > 0) {
                   const pos = tr.mapping.map(tail.map(from + slice.size, -1), -1)
@@ -1184,6 +1864,23 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               }
             }
           })
+
+          if (pairCut) {
+            // the cut's struck text becomes the move's source
+            const source: Array<{ from: number; to: number }> = []
+            for (const r of pairCut.ranges) {
+              const from = tr.mapping.map(r.from, 1)
+              const to = tr.mapping.map(r.to, -1)
+              if (from >= to) continue
+              tr.doc.nodesBetween(from, to, (node, pos) => {
+                if (node.isText && node.marks.some((m) => m.eq(pairCut.delMark)))
+                  source.push({ from: Math.max(pos, from), to: Math.min(pos + node.nodeSize, to) })
+              })
+            }
+            for (const { from, to } of source)
+              tr.addMark(from, to, delType.create({ ...pairCut.delMark.attrs, move: moveId }))
+            if (source.length > 0) changed = true
+          }
 
           if (flush) {
             const max = newState.doc.content.size
@@ -1222,7 +1919,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               removed = removed.filter(
                 (child) =>
                   // deleting your own insertion removes it outright
-                  !child.marks.some((m) => m.type === insType && m.attrs.author === storage.author),
+                  !child.marks.some((m) => m.type === insType && m.attrs.author === author),
               )
             }
             const insFrom = tr.mapping.map(from + prefix, 1)
@@ -1247,6 +1944,18 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               }
               changed = true
             }
+          }
+
+          if (uiEvent === 'cut' && struck && removedKey && changed) {
+            // the struck text sits inside the recorded span; remember where, not just how it is marked
+            const ranges: Array<{ from: number; to: number }> = []
+            const from = Math.max(0, tr.mapping.map(newFrom, -1))
+            const to = Math.min(tr.doc.content.size, tr.mapping.map(newTo, 1))
+            tr.doc.nodesBetween(from, to, (node, pos) => {
+              if (node.isText && node.marks.some((m) => m.eq(delMark)))
+                ranges.push({ from: pos, to: pos + node.nodeSize })
+            })
+            if (ranges.length > 0) lastCut = { key: removedKey, delMark, ranges, doc: tr.doc }
           }
 
           return changed ? tr : null

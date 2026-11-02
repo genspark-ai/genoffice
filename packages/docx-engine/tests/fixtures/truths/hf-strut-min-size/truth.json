@@ -1,0 +1,46 @@
+{
+  "id": "hf-strut-min-size",
+  "title": "Each strip line is sized by the runs on it: 8 pt br-lines under an 11 pt first line pitch 8 x 1.15 (strip 31.05, body stays), three 11 pt lines push the body; an 8 + 11 pt single line is the 11 pt line; a space-only run is sized by the mark",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Calibri 11; `11pt bold TNR <br/> 8pt <br/> 8pt` baselines 46.32 / 56.16 / 65.28 with the body at 72.05 (strip 31.05 under the 36 pt reserve), three 11 pt TNR lines baselines 46.32 / 58.80 / 71.52 push the body to 73.97 (37.95); `Small (8pt) and large (11pt)` baseline 46.32; four paragraphs holding one sz 32 space under a sz 16 TNR mark over a Calibri line push the body to 86.21 = 36 + 4 x 9.2 + 13.42. gen's strip strut was the largest declared size, shrink-only against the strip default, so the 8 pt lines took the 11 pt pitch",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": {
+        "styles": ["--doc-strut:8pt", "font-size:var(--doc-strut)", "--doc-line-factor:1.15"],
+        "notStyles": ["font-size:min("]
+      },
+      "note": "smallest declared size carries the strut; the 11 pt run lays its own box"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": { "styles": ["--doc-strut:8pt", "font-size:var(--doc-strut)"] },
+      "note": "one line of 8 + 11 pt runs: the 11 pt span grows the line to the 11 pt pitch"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "para": 0,
+      "expect": {
+        "styles": ["font-size:8pt", "--doc-line-factor:1.15"],
+        "notStyles": ["--doc-strut"]
+      },
+      "note": "space-only sz 32 run under a sz 16 Times New Roman mark: the mark sizes the line"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "expect": { "styles": ["--doc-strut:8pt"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 4,
+      "expect": { "styles": ["--doc-strut:11pt"] }
+    }
+  ],
+  "docx": "probe.docx"
+}

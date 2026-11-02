@@ -98,6 +98,11 @@ export const he = {
     'מעקב אחר שינויים פועל: שינויי תוכן של ה-AI מסומנים כתיקונים (הוספות בקו תחתון, מחיקות בקו חוצה); קבלו או דחו בסקירה',
   aiTrackOffTitle:
     'מעקב אחר שינויים כבוי: שינויי ה-AI חלים מיד (עדיין אפשר לשחזר באמצעות תמונות מצב של גרסאות)',
+  aiRevisionBarTitle: 'שינויים',
+  aiRevisionCount: '{count} שינויים ממתינים',
+  aiRevisionRejectAll: 'דחה הכול',
+  aiRevisionAcceptAll: 'קבל הכול',
+  aiRevisionPara: 'פסקה {n}',
   aiTurnLimit:
     '(הגעתם למגבלת סבבי קריאות הכלים לבקשה זו; התשובה שלמעלה מבוססת על השלבים שהושלמו עד כה ועשויה להיות חלקית.)',
   aiStopped: '(נעצר)',
@@ -190,7 +195,12 @@ export const he = {
   aiMindMapAskPrompt: 'ספר לי על «{label}» במסמך הזה',
   aiMindMapJump: 'מעבר לקטע המצוטט',
   aiMindMapExport: 'ייצוא PNG',
+  aiMindMapExportSvg: 'ייצוא SVG',
+  aiMindMapInsert: 'הוספה למסמך',
   aiMindMapReset: 'איפוס תצוגה',
   aiMindMapExpand: 'הרחב ענף',
   aiMindMapCollapse: 'כווץ ענף',
+  aiMindMapToggleLayout: 'החלף פריסה',
+  aiMindMapLayoutTopDown: 'החלף לפריסה מלמעלה למטה',
+  aiMindMapLayoutLeftRight: 'החלף לפריסה משמאל לימין',
 } satisfies Record<keyof typeof zh, string>

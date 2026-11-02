@@ -1,0 +1,29 @@
+{
+  "id": "render-hf-page-anchor-wraps-lines",
+  "title": "A page-anchored wrapTopAndBottom shape in the header wraps the later strip lines in page coordinates",
+  "section": "word-truths.md#L147",
+  "probe_date": "2026-10-30",
+  "class": "render",
+  "source": "Letter, pgMar top 720, header 1440, header paragraph 1 anchors a 2 x 0.5 in rect at page y 90pt (wrapTopAndBottom) + \"HDRLINE 1\", then two more lines; Word for Mac PDF: line 1 at 72.05, lines 2-3 at 126.05 / 139.49 under the shape (90..126), body 152.93",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 1
+    },
+    {
+      "kind": "headerTextTopPt",
+      "page": 1,
+      "expect": 72.05,
+      "tol": 1.5,
+      "note": "guards the strip page position; gen draws strip text 1.1pt low (strip chrome)"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 152.93,
+      "note": "72 + line + 36pt shape + two lines; gen 114.57: a wrapTopAndBottom page-anchored shape does not push the strip lines below it (HfObstacle handles side wraps only)",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-grid-strut-two-face/probe.docx",
+  "tables": 3,
+  "hashes": ["1e149fde7a973f1a", "1e149fde7a973f1a", "1e149fde7a973f1a"],
+  "staticTables": 3,
+  "staticHashes": ["c82059979f8af7d3", "c82059979f8af7d3", "c82059979f8af7d3"]
+}

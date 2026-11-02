@@ -526,7 +526,8 @@ export function hfValueFromDoc(doc: PmNode, base: HeaderFooter, initial?: PmNode
   ]
   const pageNumber = next.some((p) => allRuns(p).some((r) => r.text.includes(PAGE_MARK)))
   const newPictures = newPicturesOf(next, base.newPictures)
-  const { newPictures: _prev, ...rest } = base
+  // a typed edit regenerates the part: the resolved-bytes shortcut no longer applies
+  const { newPictures: _prev, keepContent: _keep, ...rest } = base
   return { ...rest, text, paras: next, pageNumber, ...(newPictures ? { newPictures } : {}) }
 }
 

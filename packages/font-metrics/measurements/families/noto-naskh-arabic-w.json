@@ -1,0 +1,15 @@
+{
+  "family": "Noto Naskh Arabic W",
+  "source": {
+    "kind": "legacy",
+    "date": "2026-08-13",
+    "probe": "bundled subset ~13% wider than Word, calibration source not recorded"
+  },
+  "note": "Documents declaring Noto Naskh/Sans Arabic by name resolve to the bundled\nsubsets, which run ~13% wider than Word's rendering of those faces; kept\nseparate from the 90% TA alias (different calibration source).",
+  "faces": [
+    {
+      "src": "url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2')",
+      "sizeAdjust": 87
+    }
+  ]
+}

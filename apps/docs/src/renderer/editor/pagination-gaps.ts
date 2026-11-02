@@ -1,12 +1,14 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
 import type { RowFillPatch } from '../pagination-types'
 import { rangeSlot } from '../dom-range'
-import { autoLineMultOf } from '../line-metrics'
+import { additiveParagraphSpacing, autoLineMultOf } from '../line-metrics'
+import type { PlanOf } from '../pagination-plan'
 import { TopLevelPositions } from './top-level-pos'
+import { appliedFloatShift, floatShiftTarget, layoutHealth, writeFloatShift } from './layout-health'
 
 const anchorRange = rangeSlot()
 
@@ -61,7 +63,13 @@ export const PaginationGapsExtension = Extension.create({
           apply(tr, set) {
             const next = tr.getMeta(key) as DecorationSet | undefined
             if (next) return next
-            return set.map(tr.mapping, tr.doc)
+            let removed: Set<unknown> | null = null
+            const mapped = set.map(tr.mapping, tr.doc, {
+              onRemove: (spec) => (removed ??= new Set()).add(spec),
+            })
+            if (!removed) return mapped
+            const kept = keptGaps(set, mapped, removed, tr)
+            return kept.length > 0 ? mapped.add(tr.doc, kept) : mapped
           },
         },
         props: {
@@ -73,6 +81,75 @@ export const PaginationGapsExtension = Extension.create({
     ]
   },
 })
+
+/** a page gap widget's spec: what keptGaps needs to put it back */
+interface GapWidgetSpec {
+  side: number
+  key: string
+  gapKind: GapKind
+  toDOM: () => HTMLElement
+  /** a block gap drawn mid-paragraph (its page-leading paragraph was joined
+   *  into the one before) */
+  inlineDOM?: () => HTMLElement
+}
+
+/** deleted characters around a break beyond which it is left to the next pass */
+const KEEP_GAP_MAX_DELETED = 200
+
+/**
+ * The page gaps a transaction's mapping dropped that stay, at their mapped
+ * position, until the next pass places them. A widget goes when the character
+ * on its side is deleted: a backspace at the start of a page dropped the break
+ * and ran the two pages' text together until the pass ~300 ms later. A break
+ * whose surrounding text is cut by only a few lines still stands; a longer
+ * cut moves whole pages and drops it as before. A block gap whose paragraph
+ * was joined into the one before stays at the join as a mid-paragraph gap.
+ */
+function keptGaps(
+  old: DecorationSet,
+  mapped: DecorationSet,
+  removed: Set<unknown>,
+  tr: Transaction,
+): Decoration[] {
+  const taken = new Set(
+    mapped.find(undefined, undefined, (spec) => spec.gapKind != null).map((d) => d.from),
+  )
+  const out: Decoration[] = []
+  for (const d of old.find(undefined, undefined, (spec) => removed.has(spec))) {
+    const spec = d.spec as Partial<GapWidgetSpec>
+    if ((spec.gapKind !== 'block' && spec.gapKind !== 'inline') || !spec.toDOM) continue
+    let p = d.from
+    let deleted = 0
+    for (const map of tr.mapping.maps) {
+      map.forEach((oldStart, oldEnd) => {
+        if (oldStart <= p && p <= oldEnd) deleted += oldEnd - oldStart
+      })
+      p = map.map(p, -1)
+    }
+    if (deleted > KEEP_GAP_MAX_DELETED || taken.has(p)) continue
+    const $p = tr.doc.resolve(p)
+    let widget: Decoration | null = null
+    if ($p.depth === 0) {
+      if (spec.gapKind === 'block') widget = Decoration.widget(p, spec.toDOM, spec)
+    } else if ($p.parent.inlineContent) {
+      if (spec.gapKind === 'inline') widget = Decoration.widget(p, spec.toDOM, spec)
+      else if (spec.inlineDOM) {
+        // a distinct key: the block gap's DOM must not be reused inside the text
+        const joined: GapWidgetSpec = {
+          side: -1,
+          key: `${spec.key}-joined`,
+          gapKind: 'inline',
+          toDOM: spec.inlineDOM,
+        }
+        widget = Decoration.widget(p, joined.toDOM, joined)
+      }
+    }
+    if (!widget) continue
+    taken.add(p)
+    out.push(widget)
+  }
+  return out
+}
 
 const rowFillKey = new PluginKey<DecorationSet>('paginationRowFills')
 
@@ -253,6 +330,37 @@ export const FloatVShiftsExtension = Extension.create({
   },
 })
 
+export interface FloatShiftState {
+  /** applied --tblp-dy (px, signed); 0 for a flowed table */
+  dyPx: number
+  flow: boolean
+}
+
+/** the engine's float shifts in `state` by top-level node position: the plan's
+ *  model-side twin of `dataset.tblpDy` / the doc-table-float-flow class */
+export function floatShiftsOf(state: EditorState): (pos: number) => FloatShiftState | undefined {
+  const set = floatVKey.getState(state)
+  if (!set) return () => undefined
+  const byPos = new Map<number, FloatShiftState>()
+  for (const d of set.find()) {
+    const spec = d.spec as { flow?: boolean; dy?: number }
+    if (spec.flow) byPos.set(d.from, { dyPx: 0, flow: true })
+    else if (typeof spec.dy === 'number') byPos.set(d.from, { dyPx: spec.dy, flow: false })
+  }
+  return (pos) => byPos.get(pos)
+}
+
+/** the engine's float-carry spacers in `state` by the position they precede:
+ *  the model-side twin of the .page-float-carry element's height */
+export function floatCarriesOf(state: EditorState): (pos: number) => number | undefined {
+  const set = floatVKey.getState(state)
+  if (!set) return () => undefined
+  const byPos = new Map<number, number>()
+  for (const d of set.find(undefined, undefined, (spec) => typeof spec.carry === 'number'))
+    byPos.set(d.from, (byPos.get(d.from) ?? 0) + (d.spec as { carry: number }).carry)
+  return (pos) => byPos.get(pos)
+}
+
 /** transaction meta set when the set of flowed floating tables changed: the
  *  reflow moves real layout, so the pagination pass must run again */
 export const floatFlowChangedMeta = 'paginationFloatFlowChanged'
@@ -295,7 +403,7 @@ export function setFloatVShifts(
               div.style.height = `${carry}px`
               return div
             },
-            { side: -1, key: `tblp-carry-${i}-${carry}` },
+            { side: -1, key: `tblp-carry-${i}-${carry}`, carry },
           ),
         )
       } catch {
@@ -340,7 +448,7 @@ export function setFloatVShifts(
               from,
               to,
               { style: `--tblp-dy:${dy}px`, 'data-tblp-dy': String(dy) },
-              { key: `tblp-dy-${i}-${dy}` },
+              { key: `tblp-dy-${i}-${dy}`, dy },
             ),
           )
         }
@@ -356,6 +464,23 @@ export function setFloatVShifts(
       .map((d) => String(d.from))
       .sort()
     const flowChanged = prevFlow.join(',') !== flowKeys.sort().join(',')
+    layoutHealth.count('floatFlow', setDelta(prevFlow, flowKeys))
+    const isCarry = (spec: { carry?: number }) => typeof spec.carry === 'number'
+    const isDy = (spec: { flow?: boolean; carry?: number }) => spec.flow !== true && !isCarry(spec)
+    layoutHealth.count(
+      'tblpDy',
+      setDelta(
+        (prev?.find(undefined, undefined, isDy) ?? []).map(decoKey),
+        next.find(undefined, undefined, isDy).map(decoKey),
+      ),
+    )
+    layoutHealth.count(
+      'carry',
+      setDelta(
+        (prev?.find(undefined, undefined, isCarry) ?? []).map(decoKey),
+        next.find(undefined, undefined, isCarry).map(decoKey),
+      ),
+    )
     if (batch) {
       batch.set(floatVKey, next)
       batch.set(floatFlowChangedMeta, flowChanged)
@@ -395,14 +520,6 @@ export interface GapMetrics {
    *  the previous gap's bottom it places that page's body bottom even when the
    *  page's content ran past it */
   bodyHeight?: number
-}
-
-/** Word drops the space-before of a block that opens a page after a natural
- *  break too (probe 2026-10-20: a before=360 heading pushed by overflow or by
- *  its keepNext chain lands at the plain first-line position, compat 14 and
- *  15); only a section's first page keeps it */
-export function leadDropsSpaceBefore(blocks: { section?: number }[], i: number): boolean {
-  return i > 0 && (blocks[i].section ?? 0) === (blocks[i - 1].section ?? 0)
 }
 
 /** height of the gray inter-page band inside a page gap */
@@ -587,38 +704,37 @@ export function setPageGaps(
     // boundaryY in the key: a reused widget must not keep a stale boundary
     // (cols too: a table-structure edit must rebuild the spanning cell)
     const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0},${Math.round(metrics.pageLeft ?? -1)}`
-    decos.push(
-      Decoration.widget(
-        pos,
-        () => {
-          const el = makeGapEl(metrics, kind, gap.cols)
-          if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
-          // margins don't apply to table-rows and cuts are zero-height markers;
-          // tables inside mixed-column regions are out of scope anyway (v1)
-          if (gap.pullUp && kind !== 'cut' && kind !== 'table')
-            el.style.marginTop = `-${gap.pullUp}px`
-          if (notes) el.appendChild(notes)
-          if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
-            for (const hf of hfEls) el.appendChild(hf)
-          } else if (hfEls && kind === 'table') {
-            // table-row gaps position their strips inside the absolutely-filled cell;
-            // only zero-height cut markers still can't carry them
-            const fill = el.querySelector('.page-gap-table-fill')
-            if (fill) for (const hf of hfEls) fill.appendChild(hf)
-          }
-          return el
-        },
-        {
-          side: -1,
-          // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
-          // position without changing the page, so an ordinal key lets sameGaps
-          // skip the dispatch entirely and lets PM reuse the widget DOM when a
-          // dispatch does happen
-          // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
-          key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
-        },
-      ),
-    )
+    const build = (as: GapKind) => {
+      const el = makeGapEl(metrics, as, gap.cols)
+      if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
+      // margins don't apply to table-rows and cuts are zero-height markers;
+      // tables inside mixed-column regions are out of scope anyway (v1)
+      if (gap.pullUp && as !== 'cut' && as !== 'table') el.style.marginTop = `-${gap.pullUp}px`
+      if (notes) el.appendChild(notes)
+      if (hfEls && (as === 'block' || as === 'inline' || as === 'cell')) {
+        for (const hf of hfEls) el.appendChild(hf)
+      } else if (hfEls && as === 'table') {
+        // table-row gaps position their strips inside the absolutely-filled cell;
+        // only zero-height cut markers still can't carry them
+        const fill = el.querySelector('.page-gap-table-fill')
+        if (fill) for (const hf of hfEls) fill.appendChild(hf)
+      }
+      return el
+    }
+    const toDOM = () => build(kind)
+    const spec: GapWidgetSpec = {
+      side: -1,
+      // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
+      // position without changing the page, so an ordinal key lets sameGaps
+      // skip the dispatch entirely and lets PM reuse the widget DOM when a
+      // dispatch does happen
+      // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
+      key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
+      gapKind: kind,
+      toDOM,
+      inlineDOM: kind === 'block' ? () => build('inline') : undefined,
+    }
+    decos.push(Decoration.widget(pos, toDOM, spec))
     // repeated header rows (w:tblHeader) directly after the table gap: one widget per
     // cloned tr, side 0 so they land between the gap (side -1) and the split row
     if (kind === 'table' && gap.repeatHeaderEls?.length) {
@@ -1198,6 +1314,15 @@ export function syncPhantomRowspans(root: HTMLElement): void {
   }
 }
 
+const decoKey = (d: Decoration) => `${d.from}:${(d.spec as { key?: string }).key ?? ''}`
+
+/** entries that changed between two key lists (a replaced value counts once) */
+function setDelta(prev: string[], next: string[]): number {
+  const a = new Set(prev)
+  const b = new Set(next)
+  return Math.max(next.filter((k) => !a.has(k)).length, prev.filter((k) => !b.has(k)).length)
+}
+
 function sameGaps(a: DecorationSet, b: DecorationSet): boolean {
   const keyOf = (d: Decoration) => (d.spec as { key?: string }).key ?? ''
   const af = a.find()
@@ -1279,15 +1404,7 @@ export function syncFloatShifts(
     // page-edge V offsets count from the pgMar top, not the header-pushed flow start
     const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) - (f.pageRelFromPage ? pagePush : 0) : f.top
     const desired = origin + (pageStart + rel) * factor + above
-    const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
-    const next = applied + (desired - curTops[i]) / factor
-    if (Math.abs(next) < 0.5) {
-      f.el.style.removeProperty('--page-float-dy')
-      delete f.el.dataset.pageFloatDy
-    } else if (Math.abs(next - applied) > 0.5 || !f.el.dataset.pageFloatDy) {
-      f.el.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
-      f.el.dataset.pageFloatDy = String(next)
-    }
+    writeFloatShift(f.el, appliedFloatShift(f.el) + (desired - curTops[i]) / factor)
   })
 }
 
@@ -1396,7 +1513,10 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       (r.bottom - wr.top) / factor,
     ]
     const boxes = Array.from(
-      wrapper.querySelectorAll<HTMLElement>(':scope > .doc-textbox, :scope > .doc-img-wrap'),
+      wrapper.querySelectorAll<HTMLElement>(
+        // a single shape's box rides the chrome rotator (see shapeRotatorSpec)
+        ':scope > .doc-textbox, :scope > .box-rotator > .doc-textbox, :scope > .doc-img-wrap',
+      ),
     )
       .map((b) => rel(b.getBoundingClientRect()))
       .filter((b) => b[3] > b[2])
@@ -1550,18 +1670,8 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
   boxes.forEach((box, i) => {
     const r = rects[i]
     if (r.height <= 0) return
-    const applied = parseFloat(box.dataset.pageFloatDy ?? '0') || 0
-    const naturalTop = r.top - applied * factor
-    const next = Math.max(0, (paperTop - naturalTop) / factor)
-    if (next < 0.5) {
-      if (box.dataset.pageFloatDy) {
-        box.style.removeProperty('--page-float-dy')
-        delete box.dataset.pageFloatDy
-      }
-    } else if (Math.abs(next - applied) > 0.5 || !box.dataset.pageFloatDy) {
-      box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
-      box.dataset.pageFloatDy = String(next)
-    }
+    const naturalTop = r.top - appliedFloatShift(box) * factor
+    writeFloatShift(box, Math.max(0, (paperTop - naturalTop) / factor))
   })
 }
 
@@ -1703,17 +1813,30 @@ export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
  * Run-anchored front/behind pictures with a paragraph-relative Y: Word measures
  * wp:posOffset from the paragraph top including w:spacing before, but the host
  * paragraph's margin-top sits outside the positioning box, so the picture lands
- * one spacing-before too low. Hand the host's resolved margin to the picture
- * (direct, style-level, grid-snapped or contextual spacing all resolve here).
+ * one spacing-before too low. Hand the host's space before to the picture: the
+ * BlockPlan's for a planned paragraph (0 where the page lead dropped it or the
+ * additive-spacing padding carries it), the computed margin for the rest.
  */
-export function pinParagraphRelVPictures(pm: HTMLElement): void {
+export function pinParagraphRelVPictures(
+  pm: HTMLElement,
+  planOf?: PlanOf,
+  leadDropped?: ReadonlySet<HTMLElement>,
+): void {
   const imgs = pm.querySelectorAll<HTMLElement>(
     '.doc-anchor-origin .doc-inline-img-anchor > img:not([data-page-rel-v])',
   )
+  const additive = additiveParagraphSpacing()
   for (const img of imgs) {
     const host = img.closest<HTMLElement>('.doc-anchor-origin')
     if (!host) continue
-    const before = Math.max(0, parseFloat(getComputedStyle(host).marginTop) || 0)
+    const plan = planOf?.(host)
+    const planned =
+      plan && plan.kind === 'para' && !plan.spaceBeforeInner && plan.spaceBeforePt !== undefined
+        ? leadDropped?.has(host) || additive
+          ? 0
+          : (plan.spaceBeforePt * 96) / 72
+        : undefined
+    const before = Math.max(0, planned ?? (parseFloat(getComputedStyle(host).marginTop) || 0))
     const prev = parseFloat(img.style.getPropertyValue('--anchor-before')) || 0
     if (Math.abs(before - prev) > 0.1) {
       img.style.setProperty('--anchor-before', `${before.toFixed(1)}px`)
@@ -1841,7 +1964,7 @@ export function alignGapHfStrips(pm: HTMLElement, bodyLeftPx: number, factor: nu
 /** remove all float display shifts (leaving print view) */
 export function clearFloatShifts(pm: HTMLElement): void {
   for (const el of Array.from(pm.querySelectorAll<HTMLElement>('[data-page-float-dy]'))) {
-    el.style.removeProperty('--page-float-dy')
+    floatShiftTarget(el).style.removeProperty('--page-float-dy')
     delete el.dataset.pageFloatDy
   }
 }

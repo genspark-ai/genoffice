@@ -117,9 +117,11 @@ export function applyBalancedDbcsSpacing(
     if (!runs) continue
     for (const r of runs) {
       if (!r.charSpacingTwips || !r.text) continue
+      // the gate is the face Word draws the hangul with: a paragraph style's
+      // East Asian slot counts as much as a direct w:rFonts
       const frac = doubledGlyphFraction(
         r.text,
-        keepsHangulKanaSingle(r.eastAsiaFont ?? defaultFont),
+        keepsHangulKanaSingle(r.eastAsiaFont ?? r.effective?.fonts.eastAsia ?? defaultFont),
       )
       if (frac > 0) r.charSpacingTwips = Math.round(r.charSpacingTwips * (1 + frac) * 10) / 10
     }

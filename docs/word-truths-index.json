@@ -1,0 +1,1255 @@
+{
+  "gateSince": "2026-10-29",
+  "sections": [
+    {
+      "line": 5,
+      "date": null,
+      "title": "section at line 5",
+      "abridged": true,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["latin-face-factors", "symbol-face-factors"]
+    },
+    {
+      "line": 13,
+      "date": null,
+      "title": "/ /compat",
+      "abridged": true,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["autospacing-fixed", "grid-line-rules", "render-grid-line-rules"]
+    },
+    {
+      "line": 18,
+      "date": null,
+      "title": "section at line 18",
+      "abridged": true,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 22,
+      "date": "2026-08-31",
+      "title": "2026-08-31 09-02",
+      "abridged": true,
+      "truths": 16,
+      "proseOnly": null,
+      "fixtures": ["charspace-balanced", "charspace-latin-full-delta"]
+    },
+    {
+      "line": 41,
+      "date": "2026-09-03",
+      "title": "2026-09-03",
+      "abridged": true,
+      "truths": 12,
+      "proseOnly": null,
+      "fixtures": ["jp-face-substitution"]
+    },
+    {
+      "line": 56,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 60,
+      "date": "2026-09-04",
+      "title": "2026-09-04 SAS",
+      "abridged": true,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 68,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 71,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 78,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 85,
+      "date": "2026-09-05",
+      "title": "Table borders under cell fills at page breaks",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 92,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 96,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 100,
+      "date": "2026-09-05",
+      "title": "2026-09-05 SAS",
+      "abridged": true,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 107,
+      "date": "2026-09-06",
+      "title": "2026-09-06 SAS",
+      "abridged": true,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 112,
+      "date": "2026-09-06",
+      "title": "Numbering marker without a hanging area",
+      "abridged": false,
+      "truths": 7,
+      "proseOnly": null,
+      "fixtures": ["marker-tab-no-hanging"]
+    },
+    {
+      "line": 124,
+      "date": "2026-09-06",
+      "title": "Blank header/footer parts still push the body",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-hf-empty-footer-bottom", "render-hf-header-dist-push"]
+    },
+    {
+      "line": 128,
+      "date": "2026-09-06",
+      "title": "2026-09-06 SAS",
+      "abridged": true,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["empty-mark-ea-hint-ignored"]
+    },
+    {
+      "line": 132,
+      "date": "2026-09-06",
+      "title": "2026-09-06 SAS",
+      "abridged": true,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 137,
+      "date": "2026-09-06",
+      "title": "Blank header pushes the body; page-relative anchors stay put",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-hf-blank-header-push"]
+    },
+    {
+      "line": 143,
+      "date": "2026-09-06",
+      "title": "Per-line height follows the faces on the line",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 147,
+      "date": "2026-09-06",
+      "title": "Header/footer reserved height: the rendered strip decides",
+      "abridged": false,
+      "truths": 8,
+      "proseOnly": null,
+      "fixtures": ["render-hf-page-anchor-wraps-lines", "render-hf-strip-decides-three-lines"]
+    },
+    {
+      "line": 157,
+      "date": "2026-09-11",
+      "title": "Space-only paragraphs, paragraph spacing merge, TNR 1.5-line pitch",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-spacing-merge-max", "spacing-merge-max", "tnr-multiple-spacing"]
+    },
+    {
+      "line": 162,
+      "date": "2026-09-11",
+      "title": "2026-09-11 wave 2 cjk-metrics",
+      "abridged": true,
+      "truths": 8,
+      "proseOnly": null,
+      "fixtures": ["atleast-zero-no-snap"]
+    },
+    {
+      "line": 172,
+      "date": "2026-09-12",
+      "title": "styles.xml Word 365",
+      "abridged": true,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["builtin-normal-no-styles"]
+    },
+    {
+      "line": 180,
+      "date": "2026-09-12",
+      "title": "w:lnNumType",
+      "abridged": true,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["line-numbering-defaults"]
+    },
+    {
+      "line": 186,
+      "date": "2026-09-16",
+      "title": "2026-09-16 run6 wave1 cluster B",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["hg-missing-substitution"]
+    },
+    {
+      "line": 194,
+      "date": "2026-09-16",
+      "title": "2026-09-16 run6 wave1 cluster D",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 199,
+      "date": "2026-09-16",
+      "title": "2026-09-16 run6 wave1 cluster G",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["tcw-over-placeholder-grid"]
+    },
+    {
+      "line": 207,
+      "date": "2026-09-17",
+      "title": "2026-09-17 run6 wave2 cluster tblw-auto-overflow",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["autofit-overwide-shrink"]
+    },
+    {
+      "line": 214,
+      "date": "2026-09-17",
+      "title": "Table row keep policy by compatibility mode",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["keepnext-table-head-chain"]
+    },
+    {
+      "line": 222,
+      "date": "2026-09-17",
+      "title": "2026-09-17 wave 2 textbox-tab-misc probes",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["font-table-altname-alias"]
+    },
+    {
+      "line": 230,
+      "date": "2026-09-17",
+      "title": "Header strip spacing follows the style chain; styles off the Normal chain; tables have no margin",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 238,
+      "date": "2026-09-17",
+      "title": "2026-09-17 Latin line-pitch probe",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["latin-pitch-faces"]
+    },
+    {
+      "line": 245,
+      "date": "2026-09-23",
+      "title": "atLeast w:trHeight floors the cell CONTENT, cell margins add on top",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["atleast-row-margins"]
+    },
+    {
+      "line": 253,
+      "date": "2026-09-23",
+      "title": "Space before at a forced page top, and an empty pageBreakBefore paragraph",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-pbb-page-top"]
+    },
+    {
+      "line": 260,
+      "date": "2026-09-23",
+      "title": "Header strip: anchored objects reserve nothing, but their paragraph keeps its line",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["render-hf-anchor-reserve"]
+    },
+    {
+      "line": 268,
+      "date": "2026-09-23",
+      "title": "2026-09-23 cluster tblw-grid-widths",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["grid-saved-layout-wins"]
+    },
+    {
+      "line": 276,
+      "date": "2026-09-23",
+      "title": "Header paragraph holding only an inline picture reserves exactly the picture height",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-hf-inline-picture"]
+    },
+    {
+      "line": 282,
+      "date": "2026-09-23",
+      "title": "Body-level markers and hidden paragraphs collapse through; exact-line baseline at 80 %; trailing space-after spill mid-document",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["hidden-paragraph-collapse", "render-hidden-paragraph"]
+    },
+    {
+      "line": 288,
+      "date": "2026-09-23",
+      "title": "Nested table end-of-cell paragraph, page-bottom space-after, overwide inline object after a space",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 296,
+      "date": "2026-09-23",
+      "title": "Multiple line spacing puts the extra leading below the glyphs; atLeast puts it above",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["lead-placement-atleast-auto"]
+    },
+    {
+      "line": 300,
+      "date": "2026-09-23",
+      "title": "A br-only line is sized by the br run's rPr",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": ["br-only-line-size"]
+    },
+    {
+      "line": 303,
+      "date": "2026-09-23",
+      "title": "tblCellSpacing tables: outer gaps are 2s and the gaps come out of the grid uniformly",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 306,
+      "date": "2026-09-23",
+      "title": "Compat-14 floating table anchored to the margin hangs by the cell margin like an inline table",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 309,
+      "date": "2026-09-23",
+      "title": "Picture-only paragraph height, trailing tab at the right edge, space-after at the page bottom",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 316,
+      "date": "2026-09-23",
+      "title": "Block picture chrome fix confirmation + a second page-bottom keep on the same doc",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 321,
+      "date": "2026-09-23",
+      "title": "tblCellSpacing: Word-saved grids hold 2s per column plus s more on the two outer columns, not an equal share",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["cellspacing-grid-shares"]
+    },
+    {
+      "line": 326,
+      "date": "2026-09-23",
+      "title": "Multiple-spacing leading placement: mixed run sizes and typed grids",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 333,
+      "date": "2026-09-23",
+      "title": "Office-private CJK faces: Word's line geometry for DengXian and PMingLiU",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["office-private-cjk-alias"]
+    },
+    {
+      "line": 340,
+      "date": "2026-09-23",
+      "title": "Page-bottom fit: space before/after always count, the last line needs only its single-spacing extent",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["page-bottom-space-after-fit"]
+    },
+    {
+      "line": 347,
+      "date": "2026-09-23",
+      "title": "Embedded and cloud faces: Word for Mac lays lines with the hhea total, ignoring OS/2 typo/win and USE_TYPO_METRICS",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["embedded-face-hhea"]
+    },
+    {
+      "line": 354,
+      "date": "2026-09-23",
+      "title": "Anchor paragraph's own line vs its own wrapTopAndBottom band; nested-table end-of-cell paragraph in compat 15",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-anchor-own-line-band"]
+    },
+    {
+      "line": 360,
+      "date": "2026-09-23",
+      "title": "Heading faces: the theme major font applies only through asciiTheme/hAnsiTheme references",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["heading-theme-font-refs"]
+    },
+    {
+      "line": 364,
+      "date": "2026-09-23",
+      "title": "Table row at the page bottom: the row box must fit whole, a split fragment carries the bottom cell margin; DFKai-SB lays out as Microsoft YaHei",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["dfkai-yahei-factor"]
+    },
+    {
+      "line": 371,
+      "date": "2026-09-23",
+      "title": "Right tab stops resolve from the column edge, not the paragraph indent",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["tab-stops-column-edge"]
+    },
+    {
+      "line": 376,
+      "date": "2026-09-23",
+      "title": "EA-only Normal rFonts never sets the Latin line height",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["ea-only-normal-latin-line"]
+    },
+    {
+      "line": 380,
+      "date": "2026-09-23",
+      "title": "Paragraph shading/borders stay on the layout box; off-grid table cells put a multiple's extra below",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 385,
+      "date": "2026-09-24",
+      "title": "Fractional twips are read and truncated; list auto spacing collapses per abstractNum",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["fractional-twips"]
+    },
+    {
+      "line": 391,
+      "date": "2026-09-24",
+      "title": "`<w:background>` adds a phantom blank Normal paragraph to the first section's header",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 397,
+      "date": "2026-09-24",
+      "title": "Truths measured from production Word PDFs during the fix waves",
+      "abridged": false,
+      "truths": 13,
+      "proseOnly": null,
+      "fixtures": ["prod-0924-face-rules"]
+    },
+    {
+      "line": 412,
+      "date": "2026-09-30",
+      "title": "probe wave",
+      "abridged": false,
+      "truths": 8,
+      "proseOnly": null,
+      "fixtures": ["wave0930-face-rules"]
+    },
+    {
+      "line": 422,
+      "date": "2026-09-30",
+      "title": "probe wave 4",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["bullet-marker-lift"]
+    },
+    {
+      "line": 428,
+      "date": "2026-09-30",
+      "title": "probe wave 5",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 433,
+      "date": "2026-10-13",
+      "title": "2026-10-13 cluster D",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 440,
+      "date": "2026-10-13",
+      "title": "2026-10-13 post-#2386 regression probe",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 443,
+      "date": "2026-10-13",
+      "title": "2026-10-13 Malgun Gothic line/row geometry at 8.5-11 pt",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["malgun-line-pitch-sizes"]
+    },
+    {
+      "line": 449,
+      "date": "2026-10-13",
+      "title": "2026-10-13 Arabic line pitch",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["arabic-cs-face-pitch"]
+    },
+    {
+      "line": 455,
+      "date": "2026-10-13",
+      "title": "2026-10-13 wave-2 group C Japanese probes",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["jp-noto-missing-routes"]
+    },
+    {
+      "line": 462,
+      "date": "2026-10-13",
+      "title": "Side-wrapped drawings as page obstacles; anchor page turn",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 470,
+      "date": "2026-10-13",
+      "title": "Section-closing paragraph that holds only anchored drawings overflows the page bottom",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 477,
+      "date": "2026-10-14",
+      "title": "2026-10-14 keepNext chains longer than a page",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": [
+        "keepnext-chain-split-demand",
+        "render-keepnext-overpage-k1",
+        "render-keepnext-overpage-k3"
+      ]
+    },
+    {
+      "line": 482,
+      "date": "2026-10-14",
+      "title": "2026-10-14",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["keepnext-empty-paragraphs"]
+    },
+    {
+      "line": 487,
+      "date": "2026-10-14",
+      "title": "2026-10-14 wave 3 cs=\"Calibri\" Arabic",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["arabic-cs-calibri-pitch"]
+    },
+    {
+      "line": 491,
+      "date": "2026-10-14",
+      "title": "autoSpaceDE vs autoSpaceDN are independent; numbering tab catches a custom stop inside the hanging area",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["autospace-switches-marker-tab"]
+    },
+    {
+      "line": 496,
+      "date": "2026-10-14",
+      "title": "2026-10-14 Korean Malgun stand-in: Latin-1 General Punctuation advances, middle-dot breaking, Latin-only footer line",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["kr-middot-nobreak"]
+    },
+    {
+      "line": 502,
+      "date": "2026-10-14",
+      "title": "2026-10-14 w:cr pairs and Cambria Math",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["cr-pairs-one-blank-line"]
+    },
+    {
+      "line": 508,
+      "date": "2026-10-20",
+      "title": "fix wave",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 512,
+      "date": "2026-10-20",
+      "title": "2026-10-20 numbering-level w:ind in bidi lists",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["bidi-level-ind-start-end"]
+    },
+    {
+      "line": 520,
+      "date": "2026-10-20",
+      "title": "pct table with no w:tcW anywhere: grid ignored, CSS-style min/max-content distribution",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["pct-no-tcw-distribution"]
+    },
+    {
+      "line": 528,
+      "date": "2026-10-20",
+      "title": "2026-10-20 Hangul-charset fontTable entries",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["kr-charset-81-route"]
+    },
+    {
+      "line": 534,
+      "date": "2026-10-20",
+      "title": "Split-row continuation: paragraph space-before/after at the row cut",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 540,
+      "date": "2026-10-20",
+      "title": "Tab stop advance has no minimum",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": ["tab-stop-no-min-advance"]
+    },
+    {
+      "line": 543,
+      "date": "2026-10-20",
+      "title": "2026-10-20 numbering-level w:ind merges per attribute with the style; oversized number grows the line by ascent only",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["numbering-ind-merge-precedence"]
+    },
+    {
+      "line": 548,
+      "date": "2026-10-20",
+      "title": "Space before at a natural page top, keepNext-pushed heading, page-bottom space-after",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-pto-page-top"]
+    },
+    {
+      "line": 555,
+      "date": "2026-10-20",
+      "title": "contextualSpacing across table boundaries",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-ctx-spacing-cells"]
+    },
+    {
+      "line": 559,
+      "date": "2026-10-20",
+      "title": "Paragraphs after a multi-band wrapTopAndBottom anchor flow into the band gaps",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 565,
+      "date": "2026-10-20",
+      "title": "2026-10-20 Malgun Gothic single-spacing factor re-baselined to 1.7305",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["malgun-rebaseline-1-7305"]
+    },
+    {
+      "line": 570,
+      "date": "2026-10-20",
+      "title": "evenAndOddHeaders + page-number restart inserts a parity blank page; section-end space-after never does",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": [
+        "parity-blank-restart",
+        "render-parity-blank-even",
+        "render-parity-blank-odd",
+        "render-sectafter-no-blank"
+      ]
+    },
+    {
+      "line": 575,
+      "date": "2026-10-20",
+      "title": "Header/footer strip lines use the run face's own factor",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 580,
+      "date": "2026-10-20",
+      "title": "2026-10-20 Korean autospace gap, missing-KR Latin slot, Korean word-wrap",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["autospace-gap-xavg"]
+    },
+    {
+      "line": 587,
+      "date": "2026-10-20",
+      "title": "Table style conditional tcBorders",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["tblstyle-firstrow-borders"]
+    },
+    {
+      "line": 592,
+      "date": "2026-10-20",
+      "title": "Aptos width = per-glyph hmtx x pair kerning, not a scaled Carlito",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 601,
+      "date": "2026-10-20",
+      "title": "2026-10-20 Table-style w:pPr spacing vs w:linkStyles docDefaults swap",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["table-style-ppr-spacing"]
+    },
+    {
+      "line": 621,
+      "date": "2026-10-22",
+      "title": "hRule=\"exact\" rows advance by trHeight + bottom cell margin, never the gridline",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["exact-row-advance", "exact-row-margins", "render-exact-rows"]
+    },
+    {
+      "line": 627,
+      "date": "2026-10-22",
+      "title": "A grid-snapped line fits the page bottom when its TEXT fits, the lower half-leading may overflow",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-grid-tail-fit"]
+    },
+    {
+      "line": 633,
+      "date": "2026-10-22",
+      "title": "2026-10-22 rtl runs take the Cs twins up the whole chain",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["rtl-cs-twins"]
+    },
+    {
+      "line": 638,
+      "date": "2026-10-22",
+      "title": "2026-10-22 Missing Latin-named faces, Helvetica Neue, Nirmala UI",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["missing-latin-substitute"]
+    },
+    {
+      "line": 644,
+      "date": "2026-10-22",
+      "title": "settings.xml w:compat doNotUseHTMLParagraphAutoSpacing: spacing adds, auto spacing is 0",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["dnu-additive-spacing", "render-dnu-additive"]
+    },
+    {
+      "line": 651,
+      "date": "2026-10-22",
+      "title": "A sectPr-only paragraph has no height; a continuous section break keeps the line pitch",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-sectbreak-pitch"]
+    },
+    {
+      "line": 655,
+      "date": "2026-10-22",
+      "title": "Toggle properties XOR across style layers",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 660,
+      "date": "2026-10-22",
+      "title": "2026-10-22 executable-truths PR 3 probes",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 668,
+      "date": "2026-10-22",
+      "title": "2026-10-22 East Asian line factor probe",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["cjk-face-factors"]
+    },
+    {
+      "line": 677,
+      "date": "2026-10-22",
+      "title": "leftChars list item under a level hanging",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 680,
+      "date": "2026-10-22",
+      "title": "2026-10-22 Hangul-name Latin slot, altName to East Asian faces, kana under SimSun, style suffixes",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 688,
+      "date": "2026-10-22",
+      "title": "LibreOffice metric clones and the roman-family fallback",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 695,
+      "date": "2026-10-27",
+      "title": "2026-10-27 docDefaults w:rtl w:bidi and linked Char styles",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 700,
+      "date": "2026-10-27",
+      "title": "2026-10-27 Arabic script faces",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": ["render-cloud-face-pitch"]
+    },
+    {
+      "line": 708,
+      "date": "2026-10-27",
+      "title": "Nested-table cell and text-box paragraphs inherit Normal/docDefaults spacing",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-nested-cell-default-after"]
+    },
+    {
+      "line": 712,
+      "date": "2026-10-27",
+      "title": "2026-10-27 Missing-font aliases",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["altname-latin-pace"]
+    },
+    {
+      "line": 720,
+      "date": "2026-10-27",
+      "title": "2026-10-27 keepNext chains that fit a page still split; overlay-picture anchor paragraphs keep their line; kept anchor lines demand no space-after",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 725,
+      "date": "2026-10-27",
+      "title": "Small-size lines in table cells: Word sizes each line by its own runs; no size-dependent factor",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["grid-strut-two-face", "render-grid-strut-two-face"]
+    },
+    {
+      "line": 730,
+      "date": "2026-10-27",
+      "title": "Header/footer layout tables with w:tblpPr w:jc, empty-mark face",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-hf-numeric-style-size"]
+    },
+    {
+      "line": 736,
+      "date": "2026-10-27",
+      "title": "2026-10-27 pagination singles",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 742,
+      "date": "2026-10-28",
+      "title": "2026-10-28 post1 footer page-number size under a w:rtl run",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": ["render-hf-rtl-neutral-size"]
+    },
+    {
+      "line": 745,
+      "date": "2026-10-28",
+      "title": "Style-declared Malgun in header strips and balanced spacing",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 749,
+      "date": "2026-10-28",
+      "title": "Trailing tabs then spaces at a paragraph end: the overflowing tab opens a blank line",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-tab-trailing-wrap"]
+    },
+    {
+      "line": 753,
+      "date": "2026-10-28",
+      "title": "2026-10-28 keepNext tail split ahead of an unsplittable block; Symbol bullet lift under a line multiple",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-keepnext-tail-split"]
+    },
+    {
+      "line": 757,
+      "date": "2026-10-28",
+      "title": "2026-10-28 floating table nested in a cell; window lift at in-row cuts",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": null,
+      "fixtures": ["render-nested-float-table"]
+    },
+    {
+      "line": 761,
+      "date": "2026-10-28",
+      "title": "Centred text box overflow, photo preset geometry, Algerian pitch",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["cloud-face-factors"]
+    },
+    {
+      "line": 768,
+      "date": "2026-10-28",
+      "title": "2026-10-28 wave 2 section-end-landscape",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-inherited-header-width", "render-section-start-clears-float"]
+    },
+    {
+      "line": 773,
+      "date": "2026-10-28",
+      "title": "2026-10-28 display equations in table cells",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["render-math-line-box"]
+    },
+    {
+      "line": 780,
+      "date": "2026-10-28",
+      "title": "2026-10-28 probe corrections from executable fixtures",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": []
+    },
+    {
+      "line": 785,
+      "date": "2026-10-28",
+      "title": "2026-10-28 page-bottom floating table before a nextPage section break",
+      "abridged": false,
+      "truths": 1,
+      "proseOnly": null,
+      "fixtures": ["render-bottom-float-section-break"]
+    },
+    {
+      "line": 788,
+      "date": "2026-10-28",
+      "title": "2026-10-28 read-only cell and text-box paragraph line boxes",
+      "abridged": false,
+      "truths": 12,
+      "proseOnly": null,
+      "fixtures": [
+        "cell-cjk-mark-face",
+        "cell-cs-mixed-line",
+        "cell-cs-only-strut",
+        "cell-direct-indents",
+        "cell-direct-single-mult",
+        "cell-direction-isolate",
+        "cell-exact-line-cap",
+        "cell-inherited-ea-strut",
+        "textbox-face-box",
+        "textbox-hangul-wrap",
+        "textbox-spacing-face-value"
+      ]
+    },
+    {
+      "line": 802,
+      "date": "2026-10-29",
+      "title": "2026-10-29 header/footer strip paragraph line boxes",
+      "abridged": false,
+      "truths": 9,
+      "proseOnly": null,
+      "fixtures": [
+        "hf-cs-only-strut",
+        "hf-direction-isolate",
+        "hf-exact-line-cap",
+        "hf-hangul-wrap",
+        "hf-inherited-face-line",
+        "hf-strut-face",
+        "hf-strut-min-size"
+      ]
+    },
+    {
+      "line": 813,
+      "date": "2026-10-29",
+      "title": "2026-10-29 footnote body line boxes",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["footnote-hangul-wrap"]
+    },
+    {
+      "line": 818,
+      "date": "2026-10-29",
+      "title": "2026-10-29 validation-set gaps: docDefaults indent, picture-only rows, marker face line, Bookman Barlow Condensed pacing",
+      "abridged": false,
+      "truths": 6,
+      "proseOnly": null,
+      "fixtures": [
+        "bullet-marker-face-line",
+        "docdefaults-indent",
+        "font-barlow-condensed-alias",
+        "font-bookman-old-style-alias",
+        "para-picture-only-line"
+      ]
+    },
+    {
+      "line": 826,
+      "date": "2026-10-29",
+      "title": "2026-10-29 over-wide explicit dxa tables keep their width whatever the jc; a nested dxa table widens its parent column",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": null,
+      "fixtures": ["dxa-overwide-no-clamp"]
+    },
+    {
+      "line": 833,
+      "date": "2026-10-29",
+      "title": "2026-10-29 pct tables: w:tcW type=pct wins over any grid that is not Word's own layout; a saved grid that sums to the pct width is read as the layout",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["pct-saved-grid-wins"]
+    },
+    {
+      "line": 839,
+      "date": "2026-10-29",
+      "title": "2026-10-29 anchored-picture origins: column X under an indent, margin-relative Y over empty paragraphs, wp:align keywords",
+      "abridged": false,
+      "truths": 7,
+      "proseOnly": null,
+      "fixtures": ["anchor-align-origin"]
+    },
+    {
+      "line": 848,
+      "date": "2026-10-29",
+      "title": "2026-10-29 header lines flow around a side-wrapped header drawing",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-hf-side-wrap-flow"]
+    },
+    {
+      "line": 853,
+      "date": "2026-10-29",
+      "title": "Floating-table keyword X, side room, nested and header keywords",
+      "abridged": false,
+      "truths": 7,
+      "proseOnly": null,
+      "fixtures": ["float-table-spec-origin"]
+    },
+    {
+      "line": 862,
+      "date": "2026-10-30",
+      "title": "2026-10-30 contextual spacing compares paragraph styles, whatever the heading look or the flag's source",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["ctx-spacing-style-pairs"]
+    },
+    {
+      "line": 868,
+      "date": "2026-10-30",
+      "title": "2026-10-30 header strip top edge is w:headerDist on every page",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": ["render-hf-fixed-margin-header-dist"]
+    }
+  ]
+}

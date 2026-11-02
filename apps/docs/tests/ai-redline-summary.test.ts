@@ -62,7 +62,7 @@ describe('read_revisions', () => {
     expect(exec.output).toContain('block 1 | inserted by Alice on 2026-08-21: "8%"')
   })
 
-  it('text inserted then deleted while tracking is not labeled a replacement', () => {
+  it('text inserted then deleted while tracking lists both revisions, not a replacement', () => {
     const editor = createEditor([
       para([
         text('Keep this. '),
@@ -73,7 +73,8 @@ describe('read_revisions', () => {
       ]),
     ])
     const output = buildRevisionsContext(editor)
-    expect(output).toContain('inserted then deleted (not in the base document)')
+    expect(output).toContain('deleted by Bob')
+    expect(output).toContain('inserted by Alice')
     expect(output).not.toContain('replaced')
   })
 

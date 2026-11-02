@@ -54,7 +54,8 @@ describe('complex-script runs without a cs font', () => {
     const runs = doc.blocks[0].runs!
     expect(runs[0].csFont).toBe('Arial')
     expect(runs[0].fontCs).toBeUndefined()
-    expect(runs[1].csFont).toBeUndefined()
+    // an rtl run is complex script throughout: its Latin text takes the cs face too
+    expect(runs[1].csFont).toBe('Arial')
   })
 
   it('keep an explicit run cs font over the document default', async () => {
@@ -85,6 +86,20 @@ describe('complex-script runs without a cs font', () => {
     const doc = await parseDocx(await zip.generateAsync({ type: 'uint8array' }))
     expect(doc.blocks[0].runs![0].csFont).toBe('Sakkal Majalla')
   })
+  it('read the cs slot when docDefaults carry w:rtl and the run has no flag of its own', async () => {
+    const doc = await parseWithDocDefaults(
+      `<w:p><w:r><w:rPr><w:rFonts w:hint="cs"/></w:rPr><w:t>${ARABIC}</w:t></w:r>` +
+        `<w:r><w:rPr><w:rtl w:val="0"/></w:rPr><w:t>${ARABIC}</w:t></w:r></w:p>`,
+      '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Traditional Arabic"/><w:sz w:val="24"/><w:szCs w:val="28"/><w:rtl/>',
+    )
+    expect(doc.docDefaults?.rtl).toBe(true)
+    const runs = doc.blocks[0].runs!
+    expect(runs[0].cs).toBe(true)
+    expect(runs[0].csFont).toBe('Traditional Arabic')
+    expect(runs[1].cs).toBeUndefined()
+    expect(runs[1].csFont).toBeUndefined()
+  })
+
   it('leave a run without w:rtl on its ascii/hAnsi face even when the text is Arabic', async () => {
     const doc = await parseWithDocDefaults(
       `<w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Traditional Arabic" w:hAnsi="Traditional Arabic"/><w:sz w:val="31"/></w:rPr><w:t>${ARABIC}</w:t></w:r>` +

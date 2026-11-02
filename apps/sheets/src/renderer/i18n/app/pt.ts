@@ -420,6 +420,9 @@ export const pt = {
   appTableNameUsed: 'O nome de tabela "{name}" já foi usado nesta sessão.',
   appTableNameInFile: 'O nome de tabela "{name}" já é usado por uma tabela no arquivo.',
   appTableOverlapsSession: 'O intervalo sobrepõe a tabela "{name}" criada nesta sessão.',
+  appTableOverlapsFile: 'O intervalo sobrepõe a tabela "{name}" do arquivo.',
+  appTableAlreadyInTable:
+    'A seleção já está na tabela "{name}" — altere o estilo em Design da Tabela.',
   appTablesNeedFile: 'Abra primeiro um arquivo XLSX — as tabelas são gravadas no arquivo.',
   appTableSelectRange: 'Selecione primeiro o intervalo de dados — cabeçalhos na primeira linha.',
   appTableCreated: 'Tabela criada — salve com ⌘S.',
@@ -1214,6 +1217,8 @@ export const pt = {
   appRefreshAll: 'Atualizar Tudo',
   appWorkbookNoPivot: 'Nenhuma tabela dinâmica nesta pasta de trabalho.',
   appRefreshAllTitle: 'Atualizar todas as tabelas dinâmicas',
+  appQueriesConnections: 'Consultas e conexões',
+  appQueriesConnectionsTitle: 'Listar as consultas e conexões de dados da pasta de trabalho',
   appErrorCheckingDetail: 'Verificar valores de erro na planilha',
   appErrorsFound: '{count} erros — em {cell}: {value}',
   appCheckingErrors: 'Procurando erros na planilha inteira…',

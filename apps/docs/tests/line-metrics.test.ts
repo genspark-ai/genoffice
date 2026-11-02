@@ -13,7 +13,6 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   HeuristicMetrics,
   runLatinFactorFaces,
-  latinRunsFactor,
   autospaceBoundaries,
   autospaceLatinFirst,
   autospacePadBetween,
@@ -54,7 +53,6 @@ import {
   paraLineFactorCss,
   asciiOnlyCjkFace,
   nonCjkInkRanges,
-  runsLineFactor,
   snapSpacingToGrid,
   simulateLines,
   computeLineMetrics,
@@ -64,6 +62,12 @@ import {
   textHasHangul,
   wordMetricAliasFace,
 } from '../src/renderer/line-metrics'
+import type { Run } from '@genoffice/docx-engine'
+import {
+  latinParaFactor,
+  layoutParaOfRuns,
+  paraLineFactor,
+} from '../src/renderer/editor/para-layout-spec'
 import { hangulSpaceOffsets } from '../src/renderer/line-metrics'
 import { prefetchFaces, setFontMetricsProvider } from '../src/renderer/font-resolve'
 
@@ -171,6 +175,20 @@ describe('lineHeightFactor', () => {
     ]) {
       expect(cjkDeclaredLineFactor(n), n).toBe(1.3)
       expect(lineHeightFactor(n), n).toBe(1.172)
+    }
+  })
+  it('a missing Latin name paces as its fontTable altName face', () => {
+    setDocFontTable([
+      { name: 'Probe Grotesk Text', altName: 'Calibri' },
+      { name: 'Probe Grotesk Display', altName: 'Cambria', panose: '020B0604020202020204' },
+      { name: 'Probe Grotesk Mono', altName: 'Probe Grotesk Mono' },
+    ])
+    try {
+      expect(lineHeightFactor('Probe Grotesk Text')).toBe(1.22)
+      expect(lineHeightFactor('Probe Grotesk Display')).toBe(1.172)
+      expect(lineHeightFactor('Probe Grotesk Mono')).toBe(1.22)
+    } finally {
+      setDocFontTable(null)
     }
   })
   it('a fontTable entry for a missing Noto JP name does not turn its Latin into Calibri', () => {
@@ -451,10 +469,11 @@ describe('ascii-only CJK face (no eastAsia slot)', () => {
     expect(nonCjkInkRanges('\u9677\u5165\u201c\u4e8b\u60c5')).toEqual([{ from: 2, to: 3 }])
     expect(nonCjkInkRanges('\u56e2 \u961f ')).toEqual([])
   })
-  it('runsLineFactor: CJK text under an ascii-only YaHei run keeps the document EA var', () => {
+  it('paraLineFactor: CJK text under an ascii-only YaHei run keeps the document EA var', () => {
     const text = '\u56e2\u961f\u5bb9\u6613'
-    expect(runsLineFactor([{ text, ...yahei }], text)).toBe('var(--doc-line-factor-cjk,1.7)')
-    expect(runsLineFactor([{ text, ...yahei, eastAsiaFont: yahei.font }], text)).toBe('1.7157')
+    const factor = (runs: Run[]) => paraLineFactor(layoutParaOfRuns(runs, text, null))
+    expect(factor([{ text, ...yahei }])).toBe('var(--doc-line-factor-cjk,1.7)')
+    expect(factor([{ text, ...yahei, eastAsiaFont: yahei.font }])).toBe('1.7157')
   })
 })
 
@@ -774,11 +793,27 @@ function stubCanvas(availableFamilies: string[]) {
 
 describe('cssFontFamily', () => {
   it('common Word fonts → metric-compatible fallback + CJK safety net', () => {
+    expect(cssFontFamily('Roboto')).toMatch(/^'Roboto','Roboto GO',/)
+    expect(cssFontFamily('Roboto Mono')).not.toContain('Roboto GO')
+    expect(cssFontFamily('Garamond')).toMatch(/^'Garamond','Garamond GO',.*serif$/)
+    expect(cssFontFamily('EB Garamond')).not.toContain('Garamond GO')
+    // Word for Mac draws the condensed glyphs but paces them at Calibri-like advances
+    // (truth 2026-10-28), so the Carlito route wraps like Word; a size-adjusted condensed
+    // alias shrank capitals to lowercase height and wrapped a line short
+    setDocFontTable([{ name: 'Bahnschrift Light Condensed', panose: '020B0502040204020203' }])
+    try {
+      expect(cssFontFamily('Bahnschrift Light Condensed')).toMatch(
+        /^'Bahnschrift Light Condensed','Calibri','Carlito GO',/,
+      )
+      expect(lineHeightFactor('Bahnschrift Light Condensed')).toBe(1.22)
+    } finally {
+      setDocFontTable(null)
+    }
     expect(cssFontFamily('Calibri')).toBe(
       "'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif",
     )
     expect(cssFontFamily('Calibri Light')).toBe(
-      "'Calibri Light','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif",
+      "'Calibri Light','Calibri Light GO','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif",
     )
     expect(cssFontFamily('Times New Roman')).toBe(
       "'Times New Roman','Liberation Serif','GenOffice Box Drawing','Noto Serif CJK SC',serif",
@@ -1387,6 +1422,12 @@ describe('Lucida Handwriting (Office/Windows script face)', () => {
   })
 })
 
+describe('Algerian (Office cloud face)', () => {
+  it('paces at the corpus-measured 1.3167, not the gap-less cloud hhea total', () => {
+    expect(lineHeightFactor('Algerian')).toBe(1.3167)
+  })
+})
+
 describe('Aptos (M365 cloud face)', () => {
   afterEach(() => setDocFontTable(null))
 
@@ -1849,6 +1890,50 @@ describe('cssFontFamily Arabic', () => {
     expect(cssFontFamily('Scheherazade New')).toContain("'Noto Naskh Arabic TNR'")
   })
 
+  it('a missing Arabic name with a non-Arabic altName takes the altName chain', () => {
+    setDocFontTable([
+      { name: 'Fixture Uthman Naskh', altName: 'Arial', charset: 'B2' },
+      { name: 'Fixture Kufi', altName: 'Fixture Naskh Alt' },
+    ])
+    try {
+      expect(cssFontFamily('Fixture Uthman Naskh')).toBe(
+        "'Arial','Arial Arabic GO','Liberation Sans','Noto Sans CJK SC',sans-serif",
+      )
+      expect(cssFontFamily('Fixture Kufi')).toContain("'Noto Naskh Arabic TNR'")
+      expect(lineHeightFactor('Fixture Uthman Naskh')).toBe(1.15)
+    } finally {
+      setDocFontTable(null)
+    }
+  })
+  it('a missing Arabic name whose fontTable sig covers the Arabic code page takes the Arial chain', () => {
+    setDocFontTable([
+      {
+        name: 'Fixture Beirut Sans',
+        panose: '02000500000000000000',
+        charset: '00',
+        csb0: '00000041',
+      },
+      { name: 'Fixture Beirut Naskh', charset: 'B2', csb0: '00000040' },
+    ])
+    try {
+      expect(cssFontFamily('Fixture Beirut Sans')).toBe(cssFontFamily('Arial'))
+      expect(lineHeightFactor('Fixture Beirut Sans')).toBe(1.15)
+      expect(cssFontFamily('Fixture Beirut Naskh')).toMatch(/Noto Naskh Arabic TNR/)
+    } finally {
+      setDocFontTable(null)
+    }
+  })
+
+  it('missing Dubai rides its size-adjusted alias and paces the cloud hhea box', () => {
+    expect(cssFontFamily('Dubai')).toBe(
+      "'Dubai','Dubai GO','Arial','Liberation Sans','Noto Sans CJK SC',sans-serif",
+    )
+    expect(lineHeightFactor('Dubai')).toBe(1.688)
+    expect(cssCsFontFamily('Dubai', 'Calibri')).toMatch(
+      /^'Dubai','Dubai GO','Calibri','Carlito GO'/,
+    )
+  })
+
   it('unscaled digits alias precedes the TNR alias only in missing-serif chains', () => {
     const missing = cssFontFamily('Arabic Typesetting')
     expect(missing.indexOf("'Naskh Digits GO'")).toBeLessThan(
@@ -2164,9 +2249,8 @@ describe('runLatinFactorFaces', () => {
   const arabic = 'كريم حسن'
   it('sizes a complex-script run by its cs face instead of the ascii face', () => {
     expect(runLatinFactorFaces(arabic, 'Calibri', 'Arial')).toEqual(['Arial'])
-    expect(
-      latinRunsFactor([{ text: arabic, fontAscii: 'Calibri', csFont: 'Arial' }], 'var(--x)'),
-    ).toBe('1.15')
+    const runs: Run[] = [{ text: arabic, fontAscii: 'Calibri', csFont: 'Arial' }]
+    expect(latinParaFactor(layoutParaOfRuns(runs, arabic, null), 'var(--x)')).toBe('1.15')
   })
   it('keeps the ascii face for Latin letters sharing the run and without a cs face', () => {
     expect(runLatinFactorFaces(`${arabic} J1`, 'Calibri', 'Arial')).toEqual(['Arial', 'Calibri'])
@@ -2189,12 +2273,13 @@ describe('hangul under an empty EA slot resolved to a non-Korean face', () => {
     expect(emptyEaSlotHangulFactor('Malgun Gothic', '한글')).toBeNull()
     expect(emptyEaSlotHangulFactor('Calibri', '한글')).toBeNull()
   })
-  it('runsLineFactor: an empty-slot MS Gothic run with hangul takes the fallback factor', () => {
+  it('paraLineFactor: an empty-slot MS Gothic run with hangul takes the fallback factor', () => {
     const text = '한글 테스트'
-    const run = { text, font: msGothic, fontAscii: 'Calibri', eaSlotEmpty: true }
-    expect(runsLineFactor([run], text)).toBe('1.7291')
+    const run: Run = { text, font: msGothic, fontAscii: 'Calibri', eaSlotEmpty: true }
+    const factor = (runs: Run[], t: string) => paraLineFactor(layoutParaOfRuns(runs, t, null))
+    expect(factor([run], text)).toBe('1.7291')
     const kana = 'ひらがな'
-    expect(runsLineFactor([{ ...run, text: kana }], kana)).toBe('var(--doc-line-factor-cjk,1.7)')
+    expect(factor([{ ...run, text: kana }], kana)).toBe('var(--doc-line-factor-cjk,1.7)')
   })
 })
 

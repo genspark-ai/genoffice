@@ -14,14 +14,14 @@ import {
   type HeadlessWaitOptions,
 } from '@genoffice/electron-utils/headless-export'
 
-/** Pagination publishes its slice list here on every remeasure (App.tsx). */
+/** Pagination publishes its PageCut signature here on every remeasure (App.tsx). */
 interface PageDebug {
-  slices?: unknown[]
+  pageCutSig?: string
 }
 
-const pageSliceCount = (): number => {
+const pageCutSig = (): string => {
   const debug = (window as unknown as { __pageDebug?: PageDebug }).__pageDebug
-  return Array.isArray(debug?.slices) ? debug.slices.length : 0
+  return typeof debug?.pageCutSig === 'string' ? debug.pageCutSig : ''
 }
 
 export interface DocumentReadiness {
@@ -35,8 +35,9 @@ const UNREADABLE = 'the input document did not open (corrupt, unsupported or pas
 
 /**
  * Resolves once a document is open and its pagination has produced the same
- * slice count twice in a row — the settle test the Word-fidelity harness
- * uses, so headless exports the layout the editor would have shown.
+ * page cuts (start, end, lead, header/footer variant, window facts) twice in
+ * a row, so headless exports the layout the editor would have shown. A page
+ * count alone can repeat while the pass chain still moves a cut.
  */
 export async function waitForDocumentSettled(
   readiness: () => DocumentReadiness,
@@ -58,19 +59,19 @@ export async function waitForDocumentSettled(
   // trustworthy once the faces the document asked for have settled.
   await documentFontsSettled()
   let stable = 0
-  let last = -1
+  let last = ''
   while (Date.now() <= deadline) {
-    const count = pageSliceCount()
-    if (count >= 1) {
-      stable = count === last ? stable + 1 : 0
-      last = count
+    const sig = pageCutSig()
+    if (sig !== '') {
+      stable = sig === last ? stable + 1 : 0
+      last = sig
       if (stable >= 2) return
     }
     await headlessSleep(pollMs)
   }
-  // Out of budget: a page count that never stabilized is still exportable,
-  // a document that produced none is not.
-  if (last >= 1) return
+  // Out of budget: cuts that never stabilized are still exportable, a
+  // document that produced none is not.
+  if (last !== '') return
   throw new Error('pagination produced no pages')
 }
 
