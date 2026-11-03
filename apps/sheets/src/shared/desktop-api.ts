@@ -2658,8 +2658,36 @@ export type WorkbookRangeResult = z.infer<typeof workbookRangeResultSchema>
 export type WorkbookPagePrintSettings = NonNullable<WorkbookRangeResult['pageSetup']>
 export type WorkbookRecalcRequest = z.infer<typeof workbookRecalcRequestSchema>
 
-export const externalLinksRequestSchema = z.object({ path: z.string().min(1) }).strict()
+/// External-link reads and retargets are addressed by the open session, not a
+/// renderer-supplied path: the main process resolves the workbook this tab
+/// actually has open (the same binding the other workbook handlers use).
+export const externalLinksRequestSchema = z.object({ sessionId: z.string().uuid() }).strict()
 export type ExternalLinksRequest = z.infer<typeof externalLinksRequestSchema>
+
+/// Locate a source: the renderer names the link index of its own session, never
+/// a path, so the main process resolves the target from what the sidecar reads.
+export const externalLinkRevealRequestSchema = z
+  .object({ sessionId: z.string().uuid(), index: z.number().int().positive() })
+  .strict()
+export type ExternalLinkRevealRequest = z.infer<typeof externalLinkRevealRequestSchema>
+
+/// One link as the read-only listing carries it. Deliberately no `reachable`:
+/// listing the links must not probe the targets on disk (a dead network share
+/// can block the open), so reachability is answered only by the explicit
+/// update.
+export const externalLinkListStatusSchema = z
+  .object({
+    index: z.number().int().positive(),
+    rawTarget: z.string(),
+    source: z.string().nullable(),
+    sheetNames: z.array(z.string()),
+  })
+  .strict()
+export type ExternalLinkListStatus = z.infer<typeof externalLinkListStatusSchema>
+
+/// One row of the links panel: the listing's fields, plus the update's
+/// reachability verdict once it has run.
+export type ExternalLinkRow = ExternalLinkListStatus & { readonly reachable?: boolean }
 
 export const externalLinkStatusSchema = z
   .object({
@@ -2672,14 +2700,22 @@ export const externalLinkStatusSchema = z
   .strict()
 export type ExternalLinkStatus = z.infer<typeof externalLinkStatusSchema>
 
+/// The panel's non-probing listing (the sidecar's `list_external_links`).
 export const externalLinksResultSchema = z
-  .object({ links: z.array(externalLinkStatusSchema) })
+  .object({ links: z.array(externalLinkListStatusSchema) })
   .strict()
 export type ExternalLinksResult = z.infer<typeof externalLinksResultSchema>
 
+/// The kinds an external-formula cell's value can have: the save path writes a
+/// boolean as `t="b"` and an error as `t="e"` instead of spelling them as a
+/// text cache.
+export const externalLinkCellKindSchema = z.enum(['number', 'text', 'boolean', 'error'])
+export type ExternalLinkCellKind = z.infer<typeof externalLinkCellKindSchema>
+
 // One external-formula cell of an update report. `row` and `column` are
 // 0-based in the report; IronCalc, which computed the value, addresses the
-// same cells 1-based.
+// same cells 1-based. `kind` is absent when the cell has no usable value (a
+// formula the file never cached), so the host keeps the cell's own cache.
 export const externalLinkCellSchema = z
   .object({
     sheet: z.string(),
@@ -2687,9 +2723,11 @@ export const externalLinkCellSchema = z
     column: z.number().int().nonnegative(),
     formatted: z.string(),
     number: z.number().nullable().optional(),
+    kind: externalLinkCellKindSchema.optional(),
     formula: z.string(),
   })
   .strict()
+export type ExternalLinkCell = z.infer<typeof externalLinkCellSchema>
 
 export const externalLinksUpdateResultSchema = z
   .object({
@@ -3210,6 +3248,9 @@ export interface DesktopApi {
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
   readWorkbookRowOutline(request: WorkbookFormulaCellsRequest): Promise<WorkbookRowOutlineResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
+  listExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksResult>
+  updateExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksUpdateResult>
+  revealLinkSource(request: ExternalLinkRevealRequest): void
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
   /**

@@ -124,6 +124,10 @@ pub enum Command {
     ReadExternalLinks {
         path: PathBuf,
     },
+    #[serde(rename_all = "camelCase")]
+    ListExternalLinks {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -650,6 +654,9 @@ pub fn handle_request(
         }
         Command::ReadExternalLinks { path } => {
             crate::external_links::read_external_link_statuses(&path).and_then(to_json_value)
+        }
+        Command::ListExternalLinks { path } => {
+            crate::external_links::list_external_link_statuses(&path).and_then(to_json_value)
         }
     };
     Some(match result {
