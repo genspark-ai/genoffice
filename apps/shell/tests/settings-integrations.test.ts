@@ -159,8 +159,13 @@ describe('Settings → Integrations', () => {
     // guidance: hero steps, one-of-three note, npx command shown inline
     expect(host.querySelectorAll('.set-intg-hero-steps li')).toHaveLength(3)
     expect(host.textContent).toContain('Pick any one of these three ways')
-    // no "try it" block: the prompt examples are not repeated under CLI and MCP
-    expect(host.querySelectorAll('.set-intg-example')).toHaveLength(0)
+    // one "try it" block after both routes: its heading, the three prompt rows
+    // (each copyable) and the closing note that names both routes
+    expect(host.textContent).toContain('Try it')
+    const examples = [...host.querySelectorAll('.set-intg-example')]
+    expect(examples).toHaveLength(3)
+    expect(examples.every((row) => row.querySelector('button'))).toBe(true)
+    expect(host.textContent).toContain('through the command line or MCP')
     expect(host.textContent).toContain('npx skills add genspark-ai/genoffice')
     // MCP block: the launcher itself while genoffice is not on the PATH, as a command and as JSON
     const mcp = [...host.querySelectorAll('.set-intg-mcp code')].map((c) => c.textContent)

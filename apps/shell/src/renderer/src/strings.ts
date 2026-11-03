@@ -1355,7 +1355,8 @@ export const strings = {
     intgExample1: 'Chuyển đổi ~/Downloads/report.md thành tài liệu Word',
     intgExample2: 'Tạo bài thuyết trình 6 trang trình bày về kết quả quý 3 của chúng tôi',
     intgExample3: 'Chuyển đổi budget.xlsx sang PDF và mở trong GenOffice',
-    intgStep2Note: 'Trợ lý tự chạy dòng lệnh genoffice; bạn không bao giờ phải nhập lệnh.',
+    intgStep2Note:
+      'Trợ lý tự gọi GenOffice qua dòng lệnh hoặc MCP; bạn không bao giờ phải nhập lệnh.',
     intgCliPartTitle: 'CLI · dòng lệnh + kỹ năng',
     intgCliPartDesc:
       'Dành cho các trợ lý có thể chạy lệnh terminal (Claude Code, Codex, Cursor và các trợ lý khác). Khi kỹ năng đã được cài đặt, trợ lý sẽ tự gọi dòng lệnh genoffice để tạo, chuyển đổi, đọc và chỉnh sửa tệp; bạn không cần nhập lệnh.',
@@ -1886,7 +1887,7 @@ export const strings = {
     intgExample2: '3. çeyrek sonuçlarımız hakkında 6 slaytlık bir sunu hazırla',
     intgExample3: 'budget.xlsx dosyasını PDF’e dönüştür ve GenOffice’te aç',
     intgStep2Note:
-      'genoffice komut satırını asistan kendisi çalıştırır; sizin yazmanız hiç gerekmez.',
+      'Asistan GenOffice’i komut satırı veya MCP üzerinden kendisi çağırır; sizin yazmanız hiç gerekmez.',
     intgCliPartTitle: 'CLI · komut satırı + beceri',
     intgCliPartDesc:
       'Terminal komutları çalıştırabilen asistanlar için (Claude Code, Codex, Cursor ve diğerleri). Beceri yüklendikten sonra asistan, dosya oluşturmak, dönüştürmek, okumak ve düzenlemek için genoffice komut satırını kendisi çağırır; siz hiç komut yazmazsınız.',
@@ -2432,7 +2433,7 @@ export const strings = {
     intgExample2: '第 3 四半期の業績について 6 枚のスライドを作って',
     intgExample3: 'budget.xlsx を PDF に変換して GenOffice で開いて',
     intgStep2Note:
-      'genoffice コマンドラインはアシスタントが自分で実行します。あなたが入力する必要はありません。',
+      'アシスタントがコマンドラインまたは MCP 経由で GenOffice を自分で呼び出します。あなたが入力する必要はありません。',
     intgCliPartTitle: 'CLI · コマンドライン + skill',
     intgCliPartDesc:
       'ターミナルコマンドを実行できるアシスタント（Claude Code、Codex、Cursor など）向け。skill をインストールすると、アシスタントが自分で genoffice コマンドラインを呼び出してファイルを作成・変換・読み取り・編集します。コマンドを入力する必要はありません。',
@@ -2967,7 +2968,7 @@ export const strings = {
     intgExample2: '3분기 실적을 소개하는 6장짜리 슬라이드를 만들어 줘',
     intgExample3: 'budget.xlsx를 PDF로 변환해서 GenOffice에서 열어 줘',
     intgStep2Note:
-      'genoffice 명령줄은 어시스턴트가 직접 실행하므로 여러분이 입력할 필요가 없습니다.',
+      '어시스턴트가 명령줄 또는 MCP를 통해 GenOffice를 직접 호출하므로 여러분이 입력할 필요가 없습니다.',
     intgCliPartTitle: 'CLI · 명령줄 + skill',
     intgCliPartDesc:
       '터미널 명령을 실행할 수 있는 어시스턴트(Claude Code, Codex, Cursor 등)용입니다. skill을 설치하면 어시스턴트가 스스로 genoffice 명령줄을 호출해 파일을 만들고 변환하고 읽고 편집합니다. 명령을 직접 입력할 필요가 없습니다.',
@@ -3512,7 +3513,7 @@ export const strings = {
     intgExample2: 'Prépare une présentation de 6 diapositives sur nos résultats du T3',
     intgExample3: 'Convertis budget.xlsx en PDF et ouvre-le dans GenOffice',
     intgStep2Note:
-      "L'assistant lance lui-même la ligne de commande genoffice ; vous n'avez jamais à la saisir.",
+      "L'assistant appelle lui-même GenOffice, par la ligne de commande ou MCP ; vous n'avez jamais à saisir de commande.",
     intgCliPartTitle: 'CLI · ligne de commande + skill',
     intgCliPartDesc:
       'Pour les assistants capables de lancer des commandes dans le terminal (Claude Code, Codex, Cursor, etc.). Une fois le skill installé, l’assistant appelle lui-même la ligne de commande genoffice pour créer, convertir, lire et modifier les fichiers ; vous ne tapez jamais de commande.',
@@ -4067,7 +4068,7 @@ export const strings = {
     intgExample2: 'Erstelle eine Präsentation mit 6 Folien zu unseren Q3-Ergebnissen',
     intgExample3: 'Wandle budget.xlsx in PDF um und öffne es in GenOffice',
     intgStep2Note:
-      'Der Assistent ruft die genoffice-Befehlszeile selbst auf; Sie müssen sie nie eintippen.',
+      'Der Assistent ruft GenOffice selbst auf – über die Befehlszeile oder MCP; Sie müssen nie einen Befehl eintippen.',
     intgCliPartTitle: 'CLI · Kommandozeile + Skill',
     intgCliPartDesc:
       'Für Assistenten, die Terminalbefehle ausführen können (Claude Code, Codex, Cursor u. a.). Nach der Installation des Skills ruft der Assistent die genoffice-Kommandozeile selbst auf, um Dateien zu erstellen, zu konvertieren, zu lesen und zu bearbeiten; Sie tippen nie einen Befehl.',
@@ -4616,7 +4617,7 @@ export const strings = {
     intgExample2: 'Haz una presentación de 6 diapositivas sobre nuestros resultados del T3',
     intgExample3: 'Convierte budget.xlsx a PDF y ábrelo en GenOffice',
     intgStep2Note:
-      'El asistente ejecuta la línea de comandos genoffice por sí mismo; nunca tienes que escribirla.',
+      'El asistente llama a GenOffice por sí mismo, mediante la línea de comandos o MCP; nunca tienes que escribir un comando.',
     intgCliPartTitle: 'CLI · línea de comandos + skill',
     intgCliPartDesc:
       'Para asistentes que pueden ejecutar comandos de terminal (Claude Code, Codex, Cursor y otros). Con el skill instalado, el asistente llama por sí mismo a la línea de comandos genoffice para crear, convertir, leer y editar archivos; nunca escribes un comando.',
@@ -5151,7 +5152,7 @@ export const strings = {
     intgExample1: 'แปลง ~/Downloads/report.md เป็นเอกสาร Word',
     intgExample2: 'ทำสไลด์ 6 หน้าเกี่ยวกับผลประกอบการไตรมาส 3 ของเรา',
     intgExample3: 'แปลง budget.xlsx เป็น PDF แล้วเปิดใน GenOffice',
-    intgStep2Note: 'ผู้ช่วยจะเรียกใช้บรรทัดคำสั่ง genoffice เอง คุณไม่ต้องพิมพ์คำสั่งใด ๆ',
+    intgStep2Note: 'ผู้ช่วยจะเรียก GenOffice เองผ่านบรรทัดคำสั่งหรือ MCP คุณไม่ต้องพิมพ์คำสั่งใด ๆ',
     intgCliPartTitle: 'CLI · บรรทัดคำสั่ง + skill',
     intgCliPartDesc:
       'สำหรับผู้ช่วยที่รันคำสั่งเทอร์มินัลได้ (Claude Code, Codex, Cursor และอื่น ๆ) เมื่อติดตั้ง skill แล้ว ผู้ช่วยจะเรียกบรรทัดคำสั่ง genoffice เองเพื่อสร้าง แปลง อ่าน และแก้ไขไฟล์ คุณไม่ต้องพิมพ์คำสั่งใด ๆ',
@@ -5688,7 +5689,7 @@ export const strings = {
     intgExample2: 'Buat presentasi 6 slide tentang hasil Q3 kami',
     intgExample3: 'Konversi budget.xlsx ke PDF dan buka di GenOffice',
     intgStep2Note:
-      'Asisten menjalankan baris perintah genoffice sendiri; Anda tidak perlu mengetiknya.',
+      'Asisten memanggil GenOffice sendiri, melalui baris perintah atau MCP; Anda tidak perlu mengetik perintah apa pun.',
     intgCliPartTitle: 'CLI · baris perintah + skill',
     intgCliPartDesc:
       'Untuk asisten yang bisa menjalankan perintah terminal (Claude Code, Codex, Cursor, dan lainnya). Setelah skill terpasang, asisten memanggil baris perintah genoffice sendiri untuk membuat, mengonversi, membaca, dan mengedit file; Anda tidak pernah mengetik perintah.',
@@ -6227,7 +6228,7 @@ export const strings = {
     intgExample2: 'Сделай презентацию из 6 слайдов о наших результатах за 3-й квартал',
     intgExample3: 'Конвертируй budget.xlsx в PDF и открой в GenOffice',
     intgStep2Note:
-      'Ассистент сам запускает командную строку genoffice; вводить её вам не придётся.',
+      'Ассистент сам вызывает GenOffice — через командную строку или MCP; вам не нужно вводить команды.',
     intgCliPartTitle: 'CLI · командная строка + skill',
     intgCliPartDesc:
       'Для ассистентов, умеющих выполнять команды терминала (Claude Code, Codex, Cursor и другие). После установки skill ассистент сам вызывает командную строку genoffice, чтобы создавать, конвертировать, читать и редактировать файлы; вам не нужно вводить команды.',
@@ -6764,7 +6765,8 @@ export const strings = {
     intgExample1: 'حوّل ~/Downloads/report.md إلى مستند Word',
     intgExample2: 'أنشئ عرضاً من 6 شرائح عن نتائج الربع الثالث',
     intgExample3: 'حوّل budget.xlsx إلى PDF وافتحه في GenOffice',
-    intgStep2Note: 'المساعد يشغّل سطر أوامر genoffice بنفسه؛ لن تحتاج إلى كتابته أبداً.',
+    intgStep2Note:
+      'المساعد يستدعي GenOffice بنفسه، عبر سطر الأوامر أو MCP؛ لن تحتاج إلى كتابة أي أمر.',
     intgCliPartTitle: 'CLI · سطر الأوامر + skill',
     intgCliPartDesc:
       'للمساعدين الذين يستطيعون تنفيذ أوامر الطرفية (Claude Code وCodex وCursor وغيرها). بعد تثبيت skill، يستدعي المساعد سطر أوامر genoffice بنفسه لإنشاء الملفات وتحويلها وقراءتها وتحريرها؛ لن تكتب أي أمر.',
@@ -7297,7 +7299,7 @@ export const strings = {
     intgExample2: 'Monte uma apresentação de 6 slides sobre nossos resultados do 3º trimestre',
     intgExample3: 'Converta budget.xlsx para PDF e abra no GenOffice',
     intgStep2Note:
-      'O assistente executa a linha de comando genoffice sozinho; você nunca precisa digitá-la.',
+      'O assistente chama o GenOffice sozinho, pela linha de comando ou MCP; você nunca precisa digitar um comando.',
     intgCliPartTitle: 'CLI · linha de comando + skill',
     intgCliPartDesc:
       'Para assistentes que executam comandos de terminal (Claude Code, Codex, Cursor e outros). Com o skill instalado, o assistente chama a linha de comando genoffice sozinho para criar, converter, ler e editar arquivos; você nunca digita um comando.',
@@ -7835,7 +7837,7 @@ export const strings = {
     intgExample2: 'Prepara una presentazione di 6 slide sui nostri risultati del terzo trimestre',
     intgExample3: 'Converti budget.xlsx in PDF e aprilo in GenOffice',
     intgStep2Note:
-      "L'assistente esegue da solo la riga di comando genoffice; non dovrai mai digitarla.",
+      "L'assistente richiama GenOffice da solo, tramite la riga di comando o MCP; non dovrai mai digitare un comando.",
     intgCliPartTitle: 'CLI · riga di comando + skill',
     intgCliPartDesc:
       'Per assistenti che possono eseguire comandi da terminale (Claude Code, Codex, Cursor e altri). Installato lo skill, l’assistente richiama da sé la riga di comando genoffice per creare, convertire, leggere e modificare file; non digiti mai un comando.',
@@ -8368,7 +8370,8 @@ export const strings = {
     intgExample1: 'Zamień ~/Downloads/report.md na dokument Word',
     intgExample2: 'Zrób prezentację z 6 slajdów o naszych wynikach za III kwartał',
     intgExample3: 'Przekonwertuj budget.xlsx do PDF i otwórz w GenOffice',
-    intgStep2Note: 'Asystent sam uruchamia wiersz poleceń genoffice; nigdy nie musisz go wpisywać.',
+    intgStep2Note:
+      'Asystent sam wywołuje GenOffice — przez wiersz poleceń lub MCP; nigdy nie musisz wpisywać polecenia.',
     intgCliPartTitle: 'CLI · wiersz poleceń + skill',
     intgCliPartDesc:
       'Dla asystentów, które potrafią uruchamiać polecenia terminala (Claude Code, Codex, Cursor i inne). Po zainstalowaniu skilla asystent sam wywołuje wiersz poleceń genoffice, aby tworzyć, konwertować, czytać i edytować pliki; nigdy nie wpisujesz polecenia.',
@@ -8853,7 +8856,8 @@ export const strings = {
     intgExample1: 'Převeď ~/Downloads/report.md na dokument Word',
     intgExample2: 'Udělej prezentaci o 6 snímcích o našich výsledcích za 3. čtvrtletí',
     intgExample3: 'Převeď budget.xlsx do PDF a otevři ho v GenOffice',
-    intgStep2Note: 'Asistent spouští příkazový řádek genoffice sám; nikdy ho nemusíte psát.',
+    intgStep2Note:
+      'Asistent volá GenOffice sám – přes příkazový řádek nebo MCP; nikdy nemusíte psát žádný příkaz.',
     intgCliPartTitle: 'CLI · příkazový řádek + skill',
     intgCliPartDesc:
       'Pro asistenty, kteří umí spouštět příkazy terminálu (Claude Code, Codex, Cursor a další). Po instalaci skillu asistent sám volá příkazový řádek genoffice k vytváření, převodu, čtení a úpravám souborů; žádný příkaz nepíšete.',
@@ -9431,7 +9435,7 @@ export const strings = {
     intgExample2: 'Maak een presentatie van 6 dia’s over onze Q3-resultaten',
     intgExample3: 'Zet budget.xlsx om naar PDF en open het in GenOffice',
     intgStep2Note:
-      'De assistent voert de genoffice-opdrachtregel zelf uit; u hoeft die nooit te typen.',
+      'De assistent roept GenOffice zelf aan, via de opdrachtregel of MCP; u hoeft nooit een opdracht te typen.',
     intgCliPartTitle: 'CLI · opdrachtregel + skill',
     intgCliPartDesc:
       'Voor assistenten die terminalopdrachten kunnen uitvoeren (Claude Code, Codex, Cursor en andere). Na installatie van de skill roept de assistent zelf de genoffice-opdrachtregel aan om bestanden te maken, converteren, lezen en bewerken; je typt nooit een opdracht.',
@@ -9965,7 +9969,7 @@ export const strings = {
     intgExample2: 'Buat pembentangan 6 slaid tentang hasil S3 kami',
     intgExample3: 'Tukar budget.xlsx kepada PDF dan buka dalam GenOffice',
     intgStep2Note:
-      'Pembantu menjalankan baris arahan genoffice sendiri; anda tidak perlu menaipnya.',
+      'Pembantu memanggil GenOffice sendiri, melalui baris arahan atau MCP; anda tidak perlu menaip sebarang arahan.',
     intgCliPartTitle: 'CLI · baris arahan + skill',
     intgCliPartDesc:
       'Untuk pembantu yang boleh menjalankan arahan terminal (Claude Code, Codex, Cursor dan lain-lain). Setelah skill dipasang, pembantu memanggil baris arahan genoffice sendiri untuk mencipta, menukar, membaca dan mengedit fail; anda tidak perlu menaip sebarang arahan.',
@@ -10491,7 +10495,8 @@ export const strings = {
     intgExample1: 'הפוך את ~/Downloads/report.md למסמך Word',
     intgExample2: 'הכן מצגת של 6 שקופיות על תוצאות הרבעון השלישי שלנו',
     intgExample3: 'המר את budget.xlsx ל-PDF ופתח אותו ב-GenOffice',
-    intgStep2Note: 'העוזר מריץ בעצמו את שורת הפקודה genoffice; לעולם לא תצטרכו להקליד אותה.',
+    intgStep2Note:
+      'העוזר קורא ל-GenOffice בעצמו, דרך שורת הפקודה או MCP; לעולם לא תצטרכו להקליד פקודה.',
     intgCliPartTitle: 'CLI · שורת פקודה + skill',
     intgCliPartDesc:
       'לעוזרים שיכולים להריץ פקודות טרמינל (Claude Code‏, Codex‏, Cursor ואחרים). לאחר התקנת ה‑skill העוזר קורא בעצמו לשורת הפקודה genoffice כדי ליצור, להמיר, לקרוא ולערוך קבצים; אתם לא מקלידים שום פקודה.',
@@ -11014,7 +11019,8 @@ export const strings = {
     intgExample1: '~/Downloads/report.md को Word दस्तावेज़ बना दो',
     intgExample2: 'हमारे Q3 नतीजों पर 6 स्लाइड का प्रेज़ेंटेशन बनाओ',
     intgExample3: 'budget.xlsx को PDF में बदलो और GenOffice में खोलो',
-    intgStep2Note: 'genoffice कमांड लाइन असिस्टेंट खुद चलाता है; आपको कभी टाइप नहीं करना पड़ता।',
+    intgStep2Note:
+      'असिस्टेंट GenOffice को कमांड लाइन या MCP के ज़रिए खुद कॉल करता है; आपको कभी कोई कमांड टाइप नहीं करनी पड़ती।',
     intgCliPartTitle: 'CLI · कमांड लाइन + skill',
     intgCliPartDesc:
       'उन सहायकों के लिए जो टर्मिनल कमांड चला सकते हैं (Claude Code, Codex, Cursor आदि)। skill इंस्टॉल होने के बाद सहायक फ़ाइलें बनाने, बदलने, पढ़ने और संपादित करने के लिए खुद genoffice कमांड लाइन चलाता है; आपको कोई कमांड टाइप नहीं करना पड़ता।',
@@ -11529,7 +11535,7 @@ export const strings = {
     intgExample1: '把 ~/Downloads/report.md 轉成 Word 文件',
     intgExample2: '做一份 6 頁的簡報，介紹我們第三季的業績',
     intgExample3: '把 budget.xlsx 轉成 PDF，並在 GenOffice 中開啟',
-    intgStep2Note: '助理會自行呼叫 genoffice 命令列，你不需要輸入任何指令。',
+    intgStep2Note: '助理會透過命令列或 MCP 自行呼叫 GenOffice，你不需要輸入任何指令。',
     intgCliPartTitle: 'CLI · 命令列 + skill',
     intgCliPartDesc:
       '適合能執行終端機指令的助理（Claude Code、Codex、Cursor 等）。安裝 skill 後，助理會自己呼叫 genoffice 命令列建立、轉換、讀取和編輯檔案，你不需要輸入任何指令。',
