@@ -69,6 +69,57 @@ describe('ScriptFonts decorations', () => {
   })
 })
 
+describe('ScriptFonts and IME composition', () => {
+  const textNodes = (dom: Node): string[] => {
+    const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT)
+    const out: string[] = []
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push((n as Text).data)
+    return out
+  }
+
+  const startComposition = (editor: Editor) => {
+    const view = editor.view
+    view.dom.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    return view
+  }
+
+  // The decoration spans wrap every East Asian run, so the pinyin a Chinese
+  // IME keeps in the DOM splits the run in two. Rebuilding the decorations
+  // while the composition runs rewrites the text node the composition lives
+  // in: Chrome drops the selection with it, the composition is cancelled and
+  // the caret lands past the next bracket.
+  it('keeps the composing text node intact while a composition runs', () => {
+    const editor = open(['（看各种文件）'])
+    const caret = 1 + '（看各种文件'.length
+    editor.commands.setTextSelection(caret)
+    const view = startComposition(editor)
+    expect(view.composing).toBe(true)
+
+    // the provisional pinyin reaches the document while the composition runs
+    view.dispatch(view.state.tr.insertText('gezhong', caret))
+
+    // the decoration set was not rebuilt: the run stayed one piece and the
+    // composing text is still in the node the composition lives in
+    expect(textNodes(view.dom)).toEqual(['（看各种文件gezhong）'])
+    expect(decorated(editor)).toEqual(['（看各种文件gezhong）'])
+  })
+
+  it('picks the committed characters up once the composition is over', () => {
+    const editor = open(['（看各种文件）'])
+    const caret = 1 + '（看各种文件'.length
+    editor.commands.setTextSelection(caret)
+    const view = startComposition(editor)
+    view.dispatch(view.state.tr.insertText('gezhong', caret))
+
+    view.dom.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    expect(view.composing).toBe(false)
+    // the commit replaces the pinyin with the chosen characters
+    view.dispatch(view.state.tr.insertText('各种', caret, caret + 'gezhong'.length))
+
+    expect(decorated(editor)).toEqual(['（看各种文件各种）'])
+  })
+})
+
 describe('ScriptFonts spans stay East-Asian-primary', () => {
   /**
    * The decoration span's first available font is what Chromium uses to place

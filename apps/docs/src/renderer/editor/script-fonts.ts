@@ -53,6 +53,7 @@ const key = new PluginKey<DecorationSet>('scriptFonts')
 export const ScriptFonts = Extension.create({
   name: 'scriptFonts',
   addProseMirrorPlugins() {
+    const editor = this.editor
     return [
       new Plugin<DecorationSet>({
         key,
@@ -64,6 +65,13 @@ export const ScriptFonts = Extension.create({
           // rescanned, the rest of the set is mapped through the change.
           apply(tr, old) {
             if (!tr.docChanged) return old
+            // The pinyin an IME keeps in the DOM splits the East Asian run in
+            // two, so rebuilding the decorations rewrites the text node the
+            // composition runs in. Chrome drops the selection with the node —
+            // the composition is cancelled and the caret lands past the next
+            // bracket. Keep the mapped set until the composition commits; the
+            // commit itself rebuilds the decorations again.
+            if (editor?.view?.composing) return old.map(tr.mapping, tr.doc)
             const touched = touchedTopLevelBlocks(tr)
             if (!touched)
               return DecorationSet.create(tr.doc, decorationsIn(tr.doc, 0, tr.doc.content.size))
