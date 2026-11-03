@@ -5,12 +5,13 @@
  * the picture was put into the note this session and is not written to the
  * file yet, which is the one case where the bytes are already at hand.
  */
-import { useSyncExternalStore } from 'react'
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import type { WorkbookFile } from '../shared/desktop-api'
 import { useI18n } from './i18n/locale'
+import type { NotePopupCard } from './note-hover-card'
 import {
   collectNotePictures,
   notePicturesPane,
@@ -40,13 +41,13 @@ function Picture({
   sessionId,
   picture,
 }: {
-  readonly sessionId: string
+  readonly sessionId: string | undefined
   readonly picture: NotePicture
 }) {
   // a picture put into the note this session is not in the file yet, so its
   // bytes are already at hand
   if (picture.dataUrl) return <img className="np-image" src={picture.dataUrl} alt="" />
-  if (!picture.imageId) return null
+  if (!picture.imageId || sessionId === undefined) return null
   return <FilePicture sessionId={sessionId} imageId={picture.imageId} />
 }
 
@@ -146,5 +147,69 @@ export function NotePicturesPane({
         )}
       </div>
     </aside>
+  )
+}
+
+/** The card hanging under Univer's note popup while that popup is up: the
+ *  author, the picture and the text of a note that carries a picture. It
+ *  reads its anchor from the popup's own box so the two read as one note. */
+export function NotePictureHoverCard({
+  card,
+  sessionId,
+  onRemove,
+}: {
+  readonly card: NotePopupCard | null
+  readonly sessionId: string | undefined
+  readonly onRemove: (sheetId: string, row: number, column: number) => void
+}): React.JSX.Element | null {
+  const { t } = useI18n()
+  const ref = useRef<HTMLDivElement | null>(null)
+  const key = card ? `${card.sheetId}:${card.row}:${card.column}` : ''
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !card) return
+    const place = (): void => {
+      // the popup Univer just opened is the newest cell popup on the page
+      const popups = document.querySelectorAll('.cell-popup')
+      const popup = popups[popups.length - 1]
+      if (!popup) return
+      const rect = popup.getBoundingClientRect()
+      const width = el.offsetWidth || 260
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+      const top = Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - 120))
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      // a tall card under a popup near the screen edge moves above it instead
+      if (el.getBoundingClientRect().bottom > window.innerHeight - 8) {
+        el.style.top = `${Math.max(8, rect.top - el.offsetHeight - 6)}px`
+      }
+    }
+    place()
+    // the popup settles a frame after the service announces it (and the
+    // picture loads later), so measure again once things have painted
+    const timer = window.setTimeout(place, 150)
+    return () => window.clearTimeout(timer)
+  }, [key, card])
+
+  if (!card) return null
+  const { picture } = card
+  return (
+    <div ref={ref} className="note-hover-card" role="tooltip">
+      <header>
+        {picture.author && <span className="np-author">{picture.author}</span>}
+        <button
+          type="button"
+          className="np-remove"
+          aria-label={t('appNotePictureRemove')}
+          title={t('appNotePictureRemove')}
+          onClick={() => onRemove(card.sheetId, card.row, card.column)}
+        >
+          ×
+        </button>
+      </header>
+      <Picture sessionId={sessionId} picture={picture} />
+      {picture.text && <p className="np-text">{picture.text}</p>}
+    </div>
   )
 }
