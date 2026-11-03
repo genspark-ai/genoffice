@@ -1196,7 +1196,7 @@ export const ko = {
   appGroupGetData: '데이터 가져오기',
   appFromTextCsv: '텍스트/CSV에서',
   appRefreshAll: '모두 새로 고침',
-  appQueryConnections: '쿼리 및 연결',
+  appRefreshQuery: '쿼리 새로 고침',
   appQueryConnectionsTitle: '워크북의 쿼리를 새로 고칩니다',
   appQueryRefreshing: '{name} 새로 고치는 중…',
   appQueryRefreshed: '{name} 새로 고침 완료 ({rows}행)',

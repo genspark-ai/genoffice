@@ -1225,7 +1225,7 @@ export const ja = {
   appGroupGetData: 'データの取得',
   appFromTextCsv: 'テキスト/CSV から',
   appRefreshAll: 'すべて更新',
-  appQueryConnections: 'クエリと接続',
+  appRefreshQuery: 'クエリを更新',
   appQueryConnectionsTitle: 'ワークブックのクエリを更新します',
   appQueryRefreshing: '{name} を更新中…',
   appQueryRefreshed: '{name} を更新しました（{rows} 行）',

@@ -1153,7 +1153,7 @@ export const en = {
   appGroupGetData: 'Get Data',
   appFromTextCsv: 'From Text/CSV',
   appRefreshAll: 'Refresh All',
-  appQueryConnections: 'Queries & Connections',
+  appRefreshQuery: 'Refresh query',
   appQueryConnectionsTitle: 'Refresh the workbook’s queries',
   appQueryRefreshing: 'Refreshing {name}…',
   appQueryRefreshed: '{name} refreshed ({rows} rows)',

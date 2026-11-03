@@ -30,6 +30,15 @@ export interface RefreshableQuery {
   readonly sheetName: string
   /// A1 range of the loaded rows, header included.
   readonly range: string
+  /// Rows at the top of the range that are the query's header (0 or 1).
+  readonly headerRows: number
+  /// Trailing rows of the range that hold a ListObject's totals row; a
+  /// refresh leaves them alone.
+  readonly totalsRows: number
+  /// True when the rows live in a ListObject: Excel requires each of its
+  /// header cells to equal `tableColumn/@name`, so a refresh preserves them
+  /// instead of writing the fetched page's header row over them.
+  readonly hasTable: boolean
 }
 
 export interface RefreshTarget {
@@ -50,11 +59,25 @@ export interface RefreshedTable {
 /// One cell of a refresh plan: a typed value to write, or null to clear.
 export type RefreshCell = string | number | null
 
+/// The destination's stored shape, as the listing reports it.
+export interface TableRefreshShape {
+  /// Rows at the top of the destination range that are its header (0 or 1).
+  readonly headerRows: number
+  /// Trailing rows of a ListObject's totals row, left untouched.
+  readonly totalsRows: number
+  /// True when the range is a ListObject: its header cells must keep matching
+  /// `tableColumn/@name`, so a refresh leaves them exactly as they are.
+  readonly hasTable: boolean
+}
+
 export interface TableRefreshPlan {
-  /// Row-major over the destination range; null cells clear what was there.
+  /// First row of the writable region, in grid coordinates (0-based). The
+  /// range's header and totals rows are outside it, so they keep their cells.
+  readonly startRow: number
+  /// Row-major over the writable region; null cells clear what was there.
   readonly values: readonly (readonly RefreshCell[])[]
-  /// Rows the fetched table had beyond the destination range (the range is
-  /// not grown yet, so they are dropped and reported to the user).
+  /// Rows the fetched table had beyond the writable region (the range is not
+  /// grown yet, so they are dropped and reported to the user).
   readonly droppedRows: number
   /// Columns the fetched table had beyond the destination range.
   readonly droppedColumns: number
@@ -88,6 +111,9 @@ export async function refreshableQueriesOf(read: PartReader): Promise<Refreshabl
       source: query.source,
       sheetName: query.destination.sheet,
       range: query.destination.range,
+      headerRows: query.destination.headerRows,
+      totalsRows: query.destination.totalsRows,
+      hasTable: query.destination.hasTable,
     })
   }
   return out
@@ -172,18 +198,38 @@ function refreshCellValue(text: string | undefined): RefreshCell {
 /**
  * The fetched table as the values to write into the destination range.
  *
- * The whole destination is covered, not just the rows the answer happened to
- * return: Excel's default refresh clears the cells a shrinking answer no
+ * The whole writable region is covered, not just the rows the answer happened
+ * to return: Excel's default refresh clears the cells a shrinking answer no
  * longer fills, and a stale row left behind reads as current data. Growing the
  * range is out of scope, so rows and columns that no longer fit are dropped
  * and counted for the status message.
+ *
+ * A ListObject's header row is never written. Excel repairs (and here drops)
+ * a table whose header cell differs from `tableColumn/@name` — casing,
+ * whitespace, a header Excel de-duplicated to `Name2`, an empty `<th>` — so
+ * refreshing such a query keeps the header cells and replaces data rows only.
+ * Its totals row is left alone for the same reason. A legacy range query has
+ * no column names to match, so its fetched header row is written like any
+ * other row — and a range that stores no header row (`headers="0"`) gets the
+ * fetched first row as data, where it belongs.
  */
-export function planTableRefresh(target: RefreshTarget, table: RefreshedTable): TableRefreshPlan {
-  const sourceRows: readonly (readonly string[])[] = [table.headers, ...table.rows]
-  let sourceWidth = 0
-  for (const row of sourceRows) sourceWidth = Math.max(sourceWidth, row.length)
+export function planTableRefresh(
+  target: RefreshTarget,
+  table: RefreshedTable,
+  shape: TableRefreshShape,
+): TableRefreshPlan {
+  const headerRows = Math.max(0, shape.headerRows)
+  // A preserved header keeps its cells; without a ListObject the fetched
+  // header row is ordinary content and belongs in the range.
+  const preserveHeader = shape.hasTable && headerRows > 0
+  const top = preserveHeader ? Math.min(headerRows, target.height) : 0
+  const bottom = Math.max(top, target.height - Math.max(0, shape.totalsRows))
+  const sourceRows: readonly (readonly string[])[] = preserveHeader
+    ? table.rows
+    : [table.headers, ...table.rows]
+  const capacity = bottom - top
   const values: RefreshCell[][] = []
-  for (let row = 0; row < target.height; row++) {
+  for (let row = 0; row < capacity; row++) {
     const source = sourceRows[row]
     const cells: RefreshCell[] = []
     for (let column = 0; column < target.width; column++) {
@@ -191,9 +237,16 @@ export function planTableRefresh(target: RefreshTarget, table: RefreshedTable): 
     }
     values.push(cells)
   }
+  // The dropped-column count describes the fetched table, so it counts the
+  // header row too even when that row is preserved rather than written.
+  let sourceWidth = 0
+  for (const row of [table.headers, ...table.rows]) {
+    sourceWidth = Math.max(sourceWidth, row.length)
+  }
   return {
+    startRow: target.startRow + top,
     values,
-    droppedRows: Math.max(0, sourceRows.length - target.height),
+    droppedRows: Math.max(0, sourceRows.length - capacity),
     droppedColumns: Math.max(0, sourceWidth - target.width),
   }
 }

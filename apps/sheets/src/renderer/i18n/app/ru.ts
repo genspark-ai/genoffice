@@ -1195,7 +1195,7 @@ export const ru = {
   appGroupGetData: 'Получить данные',
   appFromTextCsv: 'Из текстового/CSV-файла',
   appRefreshAll: 'Обновить все',
-  appQueryConnections: 'Запросы и подключения',
+  appRefreshQuery: 'Обновить запрос',
   appQueryConnectionsTitle: 'Обновить запросы книги',
   appQueryRefreshing: 'Обновление {name}…',
   appQueryRefreshed: '{name} обновлён ({rows} строк)',

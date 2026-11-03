@@ -2451,7 +2451,10 @@ export const workbookQueriesResultSchema = z
           .object({
             sheet: z.string().max(1_000),
             table: z.string().max(1_000).optional(),
+            hasTable: z.boolean(),
             range: z.string().max(100),
+            headerRows: z.number().int().min(0),
+            totalsRows: z.number().int().min(0),
             rows: z.number().int().min(0),
           })
           .strict()
@@ -3384,6 +3387,12 @@ export const workbookConnectionSchema = z
     sheetName: z.string(),
     /** the A1 range the query fills, header row included */
     range: z.string(),
+    /** rows at the top of the range that are the query's header (0 or 1) */
+    headerRows: z.number().int().min(0),
+    /** trailing rows that hold a ListObject's totals row, left untouched */
+    totalsRows: z.number().int().min(0),
+    /** true when the rows live in a ListObject, whose column names pin the header cells */
+    hasTable: z.boolean(),
   })
   .strict()
 

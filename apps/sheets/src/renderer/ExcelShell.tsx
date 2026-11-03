@@ -3122,17 +3122,22 @@ function Ribbon({
               <ToolSymbol symbol="⟳" />
               {t('appRefreshAll')}
             </button>
-            {queryConnections.length > 0
-              ? largeMenu(
-                  t('appQueryConnections'),
-                  '⇄',
-                  t('appQueryConnectionsTitle'),
-                  queryConnections.map((c) => ({
+            {queryConnections.length > 0 ? (
+              <span className="styles-row" data-tip={t('appQueryConnectionsTitle')}>
+                <ToolSymbol symbol="⟳" />
+                {t('appRefreshQuery')}
+                <CaretIcon />
+                <MenuSelect
+                  cover
+                  label={t('appRefreshQuery')}
+                  options={queryConnections.map((c) => ({
                     value: `query-refresh:${c.id}`,
                     label: `${c.name} — ${queryConnectionHost(c.source)}`,
-                  })),
-                )
-              : null}
+                  }))}
+                  onPick={onCommand}
+                />
+              </span>
+            ) : null}
             <button
               className="styles-row as-button"
               data-tip={t('appQueriesConnectionsTitle')}

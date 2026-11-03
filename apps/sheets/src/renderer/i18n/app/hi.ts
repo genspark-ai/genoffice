@@ -1176,7 +1176,7 @@ export const hi = {
   appGroupGetData: 'डेटा प्राप्त करें',
   appFromTextCsv: 'पाठ/CSV से',
   appRefreshAll: 'सभी ताज़ा करें',
-  appQueryConnections: 'प्रश्न और कनेक्शन',
+  appRefreshQuery: 'क्वेरी रीफ़्रेश करें',
   appQueryConnectionsTitle: 'वर्कबुक के प्रश्न रीफ़्रेश करें',
   appQueryRefreshing: '{name} रीफ़्रेश हो रहा है…',
   appQueryRefreshed: '{name} रीफ़्रेश हो गया ({rows} पंक्तियाँ)',

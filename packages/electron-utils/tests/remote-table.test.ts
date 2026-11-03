@@ -6,6 +6,7 @@ import {
   parseDelimitedRow,
   parseDelimitedTable,
   parseHtmlTable,
+  REMOTE_TABLE_TIMEOUT_MS,
 } from '../src/remote-table'
 
 vi.mock('node:dns/promises', () => ({
@@ -111,6 +112,21 @@ describe('fetchRemoteTable', () => {
     const table = await fetchRemoteTable('https://example.com/rates.csv', { fetchImpl })
     expect(table?.source).toBe('csv')
     expect(table?.headers).toEqual(['Currency', 'Rate'])
+  })
+
+  it('bounds the fetch with a timeout so a trickling server cannot pin it', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValue(htmlResponse('<table><tr><th>Currency</th></tr></table>'))
+      await fetchRemoteTable('https://example.com/rates.html', { fetchImpl })
+      expect(timeout).toHaveBeenCalledWith(REMOTE_TABLE_TIMEOUT_MS)
+      const init = fetchImpl.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+    } finally {
+      timeout.mockRestore()
+    }
   })
 
   it('gives up on a refused address instead of retrying', async () => {

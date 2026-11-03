@@ -1216,7 +1216,7 @@ export const it = {
   appGroupGetData: 'Recupera dati',
   appFromTextCsv: 'Da testo/CSV',
   appRefreshAll: 'Aggiorna tutti',
-  appQueryConnections: 'Query e connessioni',
+  appRefreshQuery: 'Aggiorna query',
   appQueryConnectionsTitle: 'Aggiorna le query della cartella di lavoro',
   appQueryRefreshing: 'Aggiornamento di {name}…',
   appQueryRefreshed: '{name} aggiornato ({rows} righe)',

@@ -1177,7 +1177,7 @@ export const id = {
   appGroupGetData: 'Dapatkan Data',
   appFromTextCsv: 'Dari Teks/CSV',
   appRefreshAll: 'Refresh Semua',
-  appQueryConnections: 'Kueri & koneksi',
+  appRefreshQuery: 'Segarkan kueri',
   appQueryConnectionsTitle: 'Muat ulang kueri workbook',
   appQueryRefreshing: 'Memuat ulang {name}…',
   appQueryRefreshed: '{name} dimuat ulang ({rows} baris)',

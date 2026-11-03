@@ -1332,6 +1332,8 @@ function assertWorkbookRefreshRequest(input: unknown): asserts input is Workbook
 }
 
 function parseWorkbookConnection(input: unknown): WorkbookConnection {
+  const isRowCount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value >= 0
   if (
     !isRecord(input) ||
     typeof input.id !== 'string' ||
@@ -1339,7 +1341,10 @@ function parseWorkbookConnection(input: unknown): WorkbookConnection {
     input.kind !== 'web' ||
     typeof input.source !== 'string' ||
     typeof input.sheetName !== 'string' ||
-    typeof input.range !== 'string'
+    typeof input.range !== 'string' ||
+    !isRowCount(input.headerRows) ||
+    !isRowCount(input.totalsRows) ||
+    typeof input.hasTable !== 'boolean'
   ) {
     throw new Error('Invalid workbook-connections response.')
   }
@@ -1350,6 +1355,9 @@ function parseWorkbookConnection(input: unknown): WorkbookConnection {
     source: input.source,
     sheetName: input.sheetName,
     range: input.range,
+    headerRows: input.headerRows,
+    totalsRows: input.totalsRows,
+    hasTable: input.hasTable,
   }
 }
 

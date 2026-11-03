@@ -1167,7 +1167,7 @@ export const vi = {
   appGroupGetData: 'Lấy dữ liệu',
   appFromTextCsv: 'Từ Văn bản/CSV',
   appRefreshAll: 'Làm mới tất cả',
-  appQueryConnections: 'Truy vấn & kết nối',
+  appRefreshQuery: 'Làm mới truy vấn',
   appQueryConnectionsTitle: 'Làm mới truy vấn của sổ làm việc',
   appQueryRefreshing: 'Đang làm mới {name}…',
   appQueryRefreshed: 'Đã làm mới {name} ({rows} hàng)',

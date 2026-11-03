@@ -1214,7 +1214,7 @@ export const nl = {
   appGroupGetData: 'Gegevens ophalen',
   appFromTextCsv: 'Uit tekst/CSV',
   appRefreshAll: 'Alles vernieuwen',
-  appQueryConnections: 'Query’s en verbindingen',
+  appRefreshQuery: 'Query vernieuwen',
   appQueryConnectionsTitle: 'Werkmapquery’s vernieuwen',
   appQueryRefreshing: '{name} wordt vernieuwd…',
   appQueryRefreshed: '{name} vernieuwd ({rows} rijen)',

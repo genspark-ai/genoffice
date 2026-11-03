@@ -1088,7 +1088,7 @@ export const zhTW = {
   appGroupGetData: '取得資料',
   appFromTextCsv: '從文字/CSV',
   appRefreshAll: '全部重新整理',
-  appQueryConnections: '查詢與連線',
+  appRefreshQuery: '重新整理查詢',
   appQueryConnectionsTitle: '重新整理工作簿裡的查詢',
   appQueryRefreshing: '正在重新整理 {name}…',
   appQueryRefreshed: '{name} 已重新整理（{rows} 列）',

@@ -1207,7 +1207,7 @@ export const tr = {
   appGroupGetData: 'Veri Al',
   appFromTextCsv: 'Metin/CSV’den',
   appRefreshAll: 'Tümünü Yenile',
-  appQueryConnections: 'Sorgular ve bağlantılar',
+  appRefreshQuery: 'Sorguyu yenile',
   appQueryConnectionsTitle: 'Çalışma kitabı sorgularını yenile',
   appQueryRefreshing: '{name} yenileniyor…',
   appQueryRefreshed: '{name} yenilendi ({rows} satır)',

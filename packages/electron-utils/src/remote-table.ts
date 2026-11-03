@@ -23,6 +23,9 @@ export const MAX_REMOTE_TABLE_COLUMNS = 1_000
 /// Cells longer than this are clipped: a page can put a whole document into
 /// one cell, and the value would be unreadable in the grid anyway.
 export const MAX_REMOTE_TABLE_CELL_CHARS = 32_767
+/// A server that trickles its answer must not pin the refresh (and its status
+/// bar) forever: the caller has no cancel button, so the fetch owns a deadline.
+export const REMOTE_TABLE_TIMEOUT_MS = 30_000
 
 export type RemoteTableSource = 'html' | 'csv'
 
@@ -234,6 +237,7 @@ export async function fetchRemoteTable(
         Accept: 'text/html,application/xhtml+xml,text/csv,text/plain;q=0.9,*/*;q=0.5',
       },
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      signal: AbortSignal.timeout(REMOTE_TABLE_TIMEOUT_MS),
     })
   } catch {
     return null

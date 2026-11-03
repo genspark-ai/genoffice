@@ -4513,8 +4513,10 @@ export function App({
    * table through the SSRF gate, then the plan turns it into grid values for
    * the range the query fills. Numbers go in as numbers (Excel's web query
    * does the same — a SUM over a text copy would read zeros), and the whole
-   * destination range is written so cells a shrinking answer no longer fills
-   * are cleared instead of keeping stale rows.
+   * writable region is written so cells a shrinking answer no longer fills are
+   * cleared instead of keeping stale rows. A ListObject's header cells are
+   * preserved: Excel repairs the whole table when a header cell differs from
+   * its column name, so the fetched page's header row never overwrites them.
    */
   async function refreshQueryConnection(connectionId: string): Promise<void> {
     const connection = queryConnections.find((c) => c.id === connectionId)
@@ -4535,13 +4537,21 @@ export function App({
       if (table.headers.length === 0 && table.rows.length === 0) {
         throw new Error('The query returned no rows.')
       }
-      const plan = planTableRefresh(target, table)
-      const matrix: ICellData[][] = plan.values.map((row) =>
-        row.map((value) => ({ v: value, f: null, si: null, p: null })),
-      )
-      worksheet
-        .getRange(target.startRow, target.startColumn, target.height, target.width)
-        .setValues(matrix)
+      const plan = planTableRefresh(target, table, {
+        headerRows: connection.headerRows,
+        totalsRows: connection.totalsRows,
+        hasTable: connection.hasTable,
+      })
+      // Only the writable region is touched: a ListObject's header row and
+      // totals row stay exactly as they were.
+      if (plan.values.length > 0) {
+        const matrix: ICellData[][] = plan.values.map((row) =>
+          row.map((value) => ({ v: value, f: null, si: null, p: null })),
+        )
+        worksheet
+          .getRange(plan.startRow, target.startColumn, plan.values.length, target.width)
+          .setValues(matrix)
+      }
       // Growing the destination range is out of scope: say so rather than drop
       // the extra rows silently.
       if (plan.droppedRows > 0) {

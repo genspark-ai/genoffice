@@ -1220,7 +1220,7 @@ export const es = {
   appGroupGetData: 'Obtener datos',
   appFromTextCsv: 'Desde texto/CSV',
   appRefreshAll: 'Actualizar todo',
-  appQueryConnections: 'Consultas y conexiones',
+  appRefreshQuery: 'Actualizar consulta',
   appQueryConnectionsTitle: 'Actualizar las consultas del libro',
   appQueryRefreshing: 'Actualizando {name}…',
   appQueryRefreshed: '{name} actualizado ({rows} filas)',

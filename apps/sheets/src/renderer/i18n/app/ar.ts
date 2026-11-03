@@ -1141,7 +1141,7 @@ export const ar = {
   appGroupGetData: 'إحضار البيانات',
   appFromTextCsv: 'من نص/CSV',
   appRefreshAll: 'تحديث الكل',
-  appQueryConnections: 'الاستعلامات والاتصالات',
+  appRefreshQuery: 'تحديث الاستعلام',
   appQueryConnectionsTitle: 'تحديث استعلامات المصنف',
   appQueryRefreshing: 'جارٍ تحديث {name}…',
   appQueryRefreshed: 'تمت تحديث {name} ({rows} صف)',

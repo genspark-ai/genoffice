@@ -1203,7 +1203,7 @@ export const pl = {
   appGroupGetData: 'Pobierz dane',
   appFromTextCsv: 'Z pliku tekstowego/CSV',
   appRefreshAll: 'Odśwież wszystko',
-  appQueryConnections: 'Zapytania i połączenia',
+  appRefreshQuery: 'Odśwież zapytanie',
   appQueryConnectionsTitle: 'Odśwież zapytania skoroszytu',
   appQueryRefreshing: 'Odświeżanie {name}…',
   appQueryRefreshed: 'Odświeżono {name} ({rows} wierszy)',

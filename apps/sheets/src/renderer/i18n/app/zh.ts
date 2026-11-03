@@ -1113,7 +1113,7 @@ export const zh = {
   appGroupGetData: '获取数据',
   appFromTextCsv: '从文本/CSV',
   appRefreshAll: '全部刷新',
-  appQueryConnections: '查询与连接',
+  appRefreshQuery: '刷新查询',
   appQueryConnectionsTitle: '刷新工作簿里的查询',
   appQueryRefreshing: '正在刷新 {name}…',
   appQueryRefreshed: '{name} 已刷新（{rows} 行）',

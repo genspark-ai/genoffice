@@ -1118,7 +1118,7 @@ export const he = {
   appGroupGetData: 'קבל נתונים',
   appFromTextCsv: 'מטקסט/CSV',
   appRefreshAll: 'רענן הכל',
-  appQueryConnections: 'שאילתות וחיבורים',
+  appRefreshQuery: 'רענן שאילתה',
   appQueryConnectionsTitle: 'רענן את השאילתות בחוברת',
   appQueryRefreshing: 'מרענן {name}…',
   appQueryRefreshed: '{name} רוענן ({rows} שורות)',

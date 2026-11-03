@@ -1243,7 +1243,7 @@ export const fr = {
   appGroupGetData: 'Obtenir des données',
   appFromTextCsv: 'À partir de texte/CSV',
   appRefreshAll: 'Actualiser tout',
-  appQueryConnections: 'Requêtes et connexions',
+  appRefreshQuery: 'Actualiser la requête',
   appQueryConnectionsTitle: 'Actualiser les requêtes du classeur',
   appQueryRefreshing: 'Actualisation de {name}…',
   appQueryRefreshed: '{name} actualisé ({rows} lignes)',

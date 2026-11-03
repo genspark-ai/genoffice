@@ -1177,7 +1177,7 @@ export const ms = {
   appGroupGetData: 'Dapatkan Data',
   appFromTextCsv: 'Daripada Teks/CSV',
   appRefreshAll: 'Segar Semula Semua',
-  appQueryConnections: 'Pertanyaan & sambungan',
+  appRefreshQuery: 'Muat semula pertanyaan',
   appQueryConnectionsTitle: 'Muat semula pertanyaan buku',
   appQueryRefreshing: 'Memuat semula {name}…',
   appQueryRefreshed: '{name} disegarkan semula ({rows} baris)',

@@ -1140,7 +1140,7 @@ export const th = {
   appGroupGetData: 'รับข้อมูล',
   appFromTextCsv: 'จากข้อความ/CSV',
   appRefreshAll: 'รีเฟรชทั้งหมด',
-  appQueryConnections: 'คิวรีและการเชื่อมต่อ',
+  appRefreshQuery: 'รีเฟรชคิวรี',
   appQueryConnectionsTitle: 'รีเฟรชคิวรีของสมุดงาน',
   appQueryRefreshing: 'กำลังรีเฟรช {name}…',
   appQueryRefreshed: 'รีเฟรช {name} แล้ว ({rows} แถว)',

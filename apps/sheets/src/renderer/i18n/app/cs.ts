@@ -1177,7 +1177,7 @@ export const cs = {
   appGroupGetData: 'Načíst data',
   appFromTextCsv: 'Z textu/CSV',
   appRefreshAll: 'Aktualizovat vše',
-  appQueryConnections: 'Dotazy a připojení',
+  appRefreshQuery: 'Obnovit dotaz',
   appQueryConnectionsTitle: 'Aktualizovat dotazy sešita',
   appQueryRefreshing: 'Obnovuji {name}…',
   appQueryRefreshed: '{name} aktualizováno ({rows} řádků)',

@@ -78,6 +78,9 @@ describe('refreshableQueriesOf', () => {
         source: 'https://example.com/rates.html',
         sheetName: 'Rates',
         range: 'A1:C21',
+        headerRows: 1,
+        totalsRows: 0,
+        hasTable: true,
       },
       {
         id: '4',
@@ -86,6 +89,9 @@ describe('refreshableQueriesOf', () => {
         source: 'https://example.com/legacy.html',
         sheetName: 'Sales & Notes',
         range: 'D2:E12',
+        headerRows: 1,
+        totalsRows: 0,
+        hasTable: false,
       },
     ])
   })
@@ -104,6 +110,29 @@ describe('refreshableQueriesOf', () => {
   it('finds nothing in a workbook without a connections part', async () => {
     const { ['xl/connections.xml']: _omit, ...rest } = PARTS
     expect(await refreshableQueriesOf(reader(rest))).toEqual([])
+  })
+
+  it("reports a ListObject's header and totals rows and marks it as a table", async () => {
+    const withTotals = {
+      ...PARTS,
+      'xl/tables/table1.xml':
+        '<table id="1" name="Rates" displayName="Rates" ref="A1:C21" totalsRowCount="1" tableType="queryTable"/>',
+    }
+    expect((await refreshableQueriesOf(reader(withTotals)))[0]).toMatchObject({
+      headerRows: 1,
+      totalsRows: 1,
+      hasTable: true,
+    })
+  })
+
+  it('reads the legacy query table header flag instead of assuming a header', async () => {
+    const headless = {
+      ...PARTS,
+      'xl/queryTables/queryTable2.xml':
+        '<queryTable name="ExternalData_1" connectionId="4" headers="0"/>',
+    }
+    const legacy = (await refreshableQueriesOf(reader(headless))).find((query) => query.id === '4')
+    expect(legacy).toMatchObject({ headerRows: 0, totalsRows: 0, hasTable: false })
   })
 })
 
@@ -169,15 +198,22 @@ describe('a1RangeToTarget', () => {
 
 describe('planTableRefresh', () => {
   const target = { sheetName: 'Rates', startRow: 4, startColumn: 2, width: 3, height: 4 }
+  /// A legacy range query that stores a header row: the fetched header is
+  /// ordinary content and is written like the data rows.
+  const PLAIN = { headerRows: 1, totalsRows: 0, hasTable: false }
 
   it('writes the header and rows and leaves the rest of the range blank', () => {
-    const plan = planTableRefresh(target, {
-      headers: ['Currency', 'Rate', 'Change'],
-      rows: [
-        ['EUR', '1.09', '-0.02'],
-        ['USD', '1.00', 'n/a'],
-      ],
-    })
+    const plan = planTableRefresh(
+      target,
+      {
+        headers: ['Currency', 'Rate', 'Change'],
+        rows: [
+          ['EUR', '1.09', '-0.02'],
+          ['USD', '1.00', 'n/a'],
+        ],
+      },
+      PLAIN,
+    )
     expect(plan.values).toEqual([
       ['Currency', 'Rate', 'Change'],
       ['EUR', 1.09, -0.02],
@@ -192,6 +228,7 @@ describe('planTableRefresh', () => {
     const plan = planTableRefresh(
       { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 2, height: 5 },
       { headers: ['h1', 'h2'], rows: [] },
+      PLAIN,
     )
     expect(plan.values).toHaveLength(5)
     expect(plan.values.every((row) => row.length === 2)).toBe(true)
@@ -209,6 +246,7 @@ describe('planTableRefresh', () => {
           ['7', '8', '9'],
         ],
       },
+      PLAIN,
     )
     expect(plan.values).toHaveLength(3)
     expect(plan.droppedRows).toBe(1)
@@ -222,6 +260,7 @@ describe('planTableRefresh', () => {
         headers: ['int', 'decimal', 'negative', 'exponent', 'grouped', 'percent', 'date', 'blank'],
         rows: [[' 42 ', '.5', '-3', '1e3', '1,09', '5%', '2024-01-01', '']],
       },
+      PLAIN,
     )
     expect(plan.values[1]).toEqual([42, 0.5, -3, 1000, '1,09', '5%', '2024-01-01', null])
   })
@@ -230,10 +269,64 @@ describe('planTableRefresh', () => {
     const plan = planTableRefresh(
       { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 3, height: 2 },
       { headers: ['a', 'b', 'c'], rows: [['1'], ['2', '3']] },
+      PLAIN,
     )
     expect(plan.values).toEqual([
       ['a', 'b', 'c'],
       [1, null, null],
+    ])
+  })
+
+  it("preserves a ListObject's header row and writes data rows only", () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 2, startColumn: 1, width: 3, height: 4 },
+      { headers: ['currency', 'rate', 'change'], rows: [['EUR', '1.09', '-0.02']] },
+      { headerRows: 1, totalsRows: 0, hasTable: true },
+    )
+    // the header row (grid row 2) stays outside the writable region
+    expect(plan.startRow).toBe(3)
+    expect(plan.values).toEqual([
+      ['EUR', 1.09, -0.02],
+      [null, null, null],
+      [null, null, null],
+    ])
+  })
+
+  it("leaves a ListObject's totals row alone as well", () => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 0, startColumn: 0, width: 2, height: 4 },
+      {
+        headers: ['h1', 'h2'],
+        rows: [
+          ['a', 'b'],
+          ['c', 'd'],
+          ['e', 'f'],
+        ],
+      },
+      { headerRows: 1, totalsRows: 1, hasTable: true },
+    )
+    // only rows 1 and 2 are writable: row 0 is the header, row 3 the totals
+    expect(plan.startRow).toBe(1)
+    expect(plan.values).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ])
+    expect(plan.droppedRows).toBe(1)
+  })
+
+  it.each([
+    ['a legacy range', { headerRows: 0, totalsRows: 0, hasTable: false }],
+    ['a ListObject without a header row', { headerRows: 0, totalsRows: 0, hasTable: true }],
+  ])('writes the fetched first row as data into %s', (_name, shape) => {
+    const plan = planTableRefresh(
+      { sheetName: 'Rates', startRow: 4, startColumn: 3, width: 2, height: 2 },
+      { headers: ['EUR', '1.09'], rows: [['USD', '1']] },
+      shape,
+    )
+    expect(plan.startRow).toBe(4)
+    expect(plan.values).toEqual([
+      ['EUR', 1.09],
+      ['USD', 1],
     ])
   })
 })
