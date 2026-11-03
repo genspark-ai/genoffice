@@ -49,6 +49,8 @@ describe('thinkingShapeFor', () => {
       'max',
     ])
     expect(thinkingShapeFor('gpt-6-sol', 'openai-responses').levels).not.toContain('none')
+    expect(thinkingShapeFor('gpt-6.1-sol', 'openai-responses').levels).not.toContain('none')
+    expect(thinkingShapeFor('gpt-6.1-astra', 'openai-responses').levels).not.toContain('none')
     expect(thinkingShapeFor('gpt-6-luna', 'openai-responses').levels).toContain('none')
     expect(thinkingShapeFor('gpt-5.6-terra', 'openai-responses').levels).toEqual([
       'none',
@@ -60,20 +62,26 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('o3').kind).toBe('openai-effort')
   })
 
-  it('anthropic: adaptive effort, and 5.x drops none (the default already thinks)', () => {
+  it('anthropic: adaptive on 4.6+, nothing below (4.5 and older 400 on adaptive)', () => {
     expect(thinkingShapeFor('claude-opus-5-5')).toEqual({
       kind: 'anthropic-adaptive',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
-    expect(thinkingShapeFor('claude-sonnet-4-6').levels).toEqual(['none', 'low', 'medium', 'high'])
+    expect(thinkingShapeFor('claude-sonnet-4-6').levels).toEqual(['low', 'medium', 'high'])
+    // 4.5 and older reject `{ type: 'adaptive' }`: no knob at all
+    expect(thinkingShapeFor('claude-sonnet-4-5').levels).toEqual([])
+    expect(thinkingShapeFor('claude-opus-4-5').levels).toEqual([])
+    expect(thinkingShapeFor('claude-haiku-4-5').levels).toEqual([])
+    expect(thinkingShapeFor('claude-3-7-sonnet').levels).toEqual([])
+    expect(thinkingShapeFor('claude-sonnet-4-6').kind).toBe('anthropic-adaptive')
   })
 
-  it('gemini 3/4: low and high only', () => {
+  it('gemini 3/4: low, medium and high', () => {
     expect(thinkingShapeFor('gemini-4-argon')).toEqual({
       kind: 'gemini-level',
-      levels: ['low', 'high'],
+      levels: ['low', 'medium', 'high'],
     })
-    expect(thinkingShapeFor('gemini-3.8-flash').levels).toEqual(['low', 'high'])
+    expect(thinkingShapeFor('gemini-3.8-flash').levels).toEqual(['low', 'medium', 'high'])
   })
 
   it('families whose surface is still documentation-only carry no knob', () => {
@@ -106,10 +114,17 @@ describe('thinkingShapeFor', () => {
       kind: 'qwen-budget',
       levels: ['none', 'low', 'medium', 'high'],
     })
+    // grok documents low/medium/high and cannot disable reasoning
     expect(thinkingShapeFor('grok-4.7')).toEqual({
       kind: 'openai-effort',
-      levels: ['none', 'low', 'medium', 'high'],
+      levels: ['low', 'medium', 'high'],
     })
+    // o-series ids document low/medium/high only as well
+    expect(thinkingShapeFor('o3')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high'],
+    })
+    expect(thinkingShapeFor('o4-mini').levels).toEqual(['low', 'medium', 'high'])
     expect(thinkingShapeFor('LongCat-2.0').levels).toEqual([])
   })
 })
@@ -141,7 +156,7 @@ describe('resolveThinkingEffort', () => {
     expect(
       resolveThinkingEffort({ model: 'gemini-4-argon', thinking: { 'gemini-4-argon': 'max' } }),
     ).toBeUndefined()
-    // none is not on the 5.x Claude ladder; it is on the 4.x one
+    // none is not on any adaptive Claude ladder
     expect(
       resolveThinkingEffort({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'none' } }),
     ).toBeUndefined()
@@ -150,7 +165,24 @@ describe('resolveThinkingEffort', () => {
         model: 'claude-sonnet-4-6',
         thinking: { 'claude-sonnet-4-6': 'none' },
       }),
-    ).toBe('none')
+    ).toBeUndefined()
+    expect(
+      resolveThinkingEffort({
+        model: 'claude-sonnet-4-6',
+        thinking: { 'claude-sonnet-4-6': 'high' },
+      }),
+    ).toBe('high')
+    // 4.5 has no knob: its old file picks resolve to nothing sent
+    expect(
+      resolveThinkingEffort({
+        model: 'claude-sonnet-4-5',
+        thinking: { 'claude-sonnet-4-5': 'high' },
+      }),
+    ).toBeUndefined()
+    expect(
+      resolveThinkingEffort({ model: 'grok-4.7', thinking: { 'grok-4.7': 'none' } }),
+    ).toBeUndefined()
+    expect(resolveThinkingEffort({ model: 'o3', thinking: { o3: 'none' } })).toBeUndefined()
     expect(
       resolveThinkingEffort({ model: 'hy4-preview', thinking: { 'hy4-preview': 'high' } }),
     ).toBeUndefined()
@@ -191,6 +223,19 @@ describe('per-protocol translators', () => {
     expect(
       anthropicThinkingFields({
         model: 'claude-sonnet-4-6',
+        thinking: { 'claude-sonnet-4-6': 'high' },
+      }),
+    ).toEqual({ thinking: { type: 'adaptive' }, effort: 'high' })
+    // 4.5 rejects the adaptive record outright: nothing is sent
+    expect(
+      anthropicThinkingFields({
+        model: 'claude-opus-4-5',
+        thinking: { 'claude-opus-4-5': 'high' },
+      }),
+    ).toBeUndefined()
+    expect(
+      anthropicThinkingFields({
+        model: 'claude-sonnet-4-6',
         thinking: { 'claude-sonnet-4-6': 'xhigh' },
       }),
     ).toBeUndefined()
@@ -212,6 +257,12 @@ describe('per-protocol translators', () => {
         thinking: { 'gemini-3.8-flash': 'none' },
       }),
     ).toBeUndefined()
+    expect(
+      geminiThinkingLevelFor({
+        model: 'gemini-3.8-flash',
+        thinking: { 'gemini-3.8-flash': 'medium' },
+      }),
+    ).toBe('medium')
   })
 
   it('toggles: qwen flips enable_thinking and its budget; trimmed families send nothing', () => {
@@ -260,6 +311,33 @@ describe('request wiring', () => {
     const body = lastBody(fetchMock)
     expect(body.thinking).toBeUndefined()
     expect(body.output_config).toBeUndefined()
+  })
+
+  it('gemini nests the level under generationConfig.thinkingConfig', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'gemini',
+      { apiKey: 'k', model: 'gemini-4-argon', thinking: { 'gemini-4-argon': 'medium' } },
+      'sys',
+      'hi',
+    )
+    expect(result).toEqual({ ok: true, content: 'ok' })
+    const generationConfig = lastBody(fetchMock).generationConfig as Record<string, unknown>
+    expect(generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'medium' })
+    // a flat level is an unknown generationConfig field and 400s
+    expect(generationConfig.thinkingLevel).toBeUndefined()
+  })
+
+  it('gemini sends no thinkingConfig without a pick', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider('gemini', { apiKey: 'k', model: 'gemini-4-argon' }, 'sys', 'hi')
+    expect(lastBody(fetchMock).generationConfig).not.toHaveProperty('thinkingConfig')
   })
 
   it('openai: xhigh rides the Responses route only', async () => {

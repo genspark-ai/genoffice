@@ -166,8 +166,10 @@ export interface GeminiRequestOptions {
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
   idleTimeoutMs?: number | undefined
-  /** thinkingLevel for the 3/4.x families (their docs reject the 2.5-era
-   * thinkingBudget); absent = the model's dynamic default */
+  /** generationConfig.thinkingConfig.thinkingLevel for the 3/4.x families
+   * (their docs reject the 2.5-era thinkingBudget); absent = the model's
+   * dynamic default. The level only exists nested under thinkingConfig: a
+   * flat generationConfig.thinkingLevel is an unknown field and a 400. */
   thinkingLevel?: string | undefined
 }
 
@@ -236,7 +238,9 @@ async function geminiTurn(
       // so omit our hard-coded 0.3 for those models via omitTemperature.
       generationConfig: {
         ...(options.omitTemperature ? {} : { temperature: 0.3 }),
-        ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
+        ...(options.thinkingLevel
+          ? { thinkingConfig: { thinkingLevel: options.thinkingLevel } }
+          : {}),
         maxOutputTokens: maxTokens,
       },
     }),
@@ -336,7 +340,9 @@ export async function chatGemini(
       contents: [{ role: 'user', parts: [{ text: user }] }],
       generationConfig: {
         ...(options.omitTemperature ? {} : { temperature: 0.3 }),
-        ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
+        ...(options.thinkingLevel
+          ? { thinkingConfig: { thinkingLevel: options.thinkingLevel } }
+          : {}),
       },
     }),
   })

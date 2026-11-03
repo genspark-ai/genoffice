@@ -44,18 +44,26 @@ const OPENAI_SIX_LEVELS: readonly ThinkingEffort[] = [
   'max',
 ]
 const OPENAI_FIVE_LEVELS: readonly ThinkingEffort[] = ['none', 'low', 'medium', 'high']
+/** o-series models document low/medium/high only — `none` is not a value they take */
+const OPENAI_O_SERIES_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
+/** xAI's grok takes low/medium/high and cannot disable reasoning at all */
+const GROK_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
 /** the rungs only the Responses API takes: chat-completions gateways 400 on them */
 const OPENAI_RESPONSES_ONLY: readonly ThinkingEffort[] = ['xhigh', 'max']
-/** the 6.1 Sol and Astra tiers refuse `none` outright (registry, live-verified 2026-10-27) */
-const NO_NONE = /(^|\/)gpt-6-(?:astra|sol)$/i
+/** the 6.x Sol and Astra tiers refuse `none` outright (registry, live-verified 2026-10-27) */
+const NO_NONE = /(^|\/)gpt-6(?:\.\d+)?-(?:astra|sol)$/i
 /**
- * Anthropic's 5.x lineup extends adaptive effort past high (models overview).
- * It does not offer `none`: omitting `thinking` still runs adaptive there, and
+ * Anthropic adaptive thinking arrived with the 4.6 generation: 4.5 and older
+ * reject `{ type: 'adaptive' }` with a 400, so those ids carry no knob at all.
+ * 4.6 takes low..high; the 5.x lineup extends that past high (models overview).
+ * Neither offers `none`: omitting `thinking` still runs adaptive there, and
  * `{ type: 'disabled' }` is a 400 on the newest ones, so the vendor default is
  * the only "off" those ids have.
  */
 const ANTHROPIC_FIVE_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
-const ANTHROPIC_FOUR_LEVELS: readonly ThinkingEffort[] = ['none', 'low', 'medium', 'high']
+const ANTHROPIC_FOUR_SIX_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
+/** Gemini 3.x/4.x `thinkingLevel` bars: the vendor lists low, medium and high */
+const GEMINI_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
 
 /**
  * The model's family effort surface. `protocol` is the route the request will
@@ -66,7 +74,8 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   const id = model.toLowerCase()
   if (/(^|\/)(gpt-[5-9]|o[134](-|$))/.test(id)) {
     const six = /(^|\/)gpt-6/.test(id)
-    let levels = six ? OPENAI_SIX_LEVELS : OPENAI_FIVE_LEVELS
+    const oSeries = /(^|\/)o[134](-|$)/.test(id)
+    let levels = six ? OPENAI_SIX_LEVELS : oSeries ? OPENAI_O_SERIES_LEVELS : OPENAI_FIVE_LEVELS
     if (protocol !== 'openai-responses') {
       levels = levels.filter((l) => !OPENAI_RESPONSES_ONLY.includes(l))
     }
@@ -74,13 +83,20 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
     return { kind: 'openai-effort', levels }
   }
   if (/(^|\/)claude/.test(id)) {
-    const five = /opus-5|sonnet-5|fable-5|haiku-5/.test(id)
-    return {
-      kind: 'anthropic-adaptive',
-      levels: five ? ANTHROPIC_FIVE_LEVELS : ANTHROPIC_FOUR_LEVELS,
+    // the family spelling is optional: the model field is free text
+    const version = /(?:^|\/)(?:claude-)?(?:(?:opus|sonnet|haiku|fable)-)?(\d+)(?:[.-](\d+))?/.exec(
+      id,
+    )
+    const major = version ? Number(version[1]) : 0
+    const minor = version && version[2] !== undefined ? Number(version[2]) : 0
+    // 5.x extends adaptive effort past high; 4.6 introduced it, older ids 400
+    if (major >= 5) return { kind: 'anthropic-adaptive', levels: ANTHROPIC_FIVE_LEVELS }
+    if (major === 4 && minor >= 6) {
+      return { kind: 'anthropic-adaptive', levels: ANTHROPIC_FOUR_SIX_LEVELS }
     }
+    return { kind: 'anthropic-adaptive', levels: [] }
   }
-  if (/(^|\/)gemini-[3-9]/.test(id)) return { kind: 'gemini-level', levels: ['low', 'high'] }
+  if (/(^|\/)gemini-[3-9]/.test(id)) return { kind: 'gemini-level', levels: GEMINI_LEVELS }
   // Ant Ling 3.0/3.1: thinking.type enabled|disabled (default enabled) — the
   // API reference documents the switch, no levels
   if (/(^|\/)ling-/.test(id) || /(^|\/)ring-/.test(id))
@@ -93,8 +109,9 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   // (per-model ranges; these picks sit inside the band the guide cites)
   if (/(^|\/)qwen\d/.test(id))
     return { kind: 'qwen-budget', levels: ['none', 'low', 'medium', 'high'] }
-  // xAI's grok takes the OpenAI-style effort field on the current lineup
-  if (/(^|\/)grok-/.test(id)) return { kind: 'openai-effort', levels: OPENAI_FIVE_LEVELS }
+  // xAI's grok takes the OpenAI-style effort field on the current lineup, but
+  // documents low/medium/high and states reasoning cannot be disabled
+  if (/(^|\/)grok-/.test(id)) return { kind: 'openai-effort', levels: GROK_LEVELS }
   // Doc-only families (GLM, Doubao, MiniMax, DeepSeek, Kimi, Hunyuan, Mistral)
   // deliberately carry no knob until a live probe confirms their surface.
   return { kind: 'openai-effort', levels: [] }
@@ -134,8 +151,9 @@ export function openAiEffortFor(
  * Anthropic adaptive-thinking request fields. The record itself carries no
  * level (`{ type: 'adaptive' }`); the pick rides the separate top-level
  * `output_config.effort`, and an `effort` inside `thinking` is rejected as an
- * invalid request. Absent fields = the vendor default; `none` (offered on the
- * 4.x families only) means no thinking block, which is those ids' own "off".
+ * invalid request. Absent fields = the vendor default. Only 4.6+ ids are
+ * adaptive at all; 4.5 and older resolve to no knob, so nothing is sent for
+ * them (their own "off" already is the default).
  */
 export function anthropicThinkingFields(config: {
   model: string
@@ -147,7 +165,7 @@ export function anthropicThinkingFields(config: {
   return { thinking: { type: 'adaptive' }, effort: level }
 }
 
-/** Gemini 3/4.x `generationConfig.thinkingLevel`; absent = dynamic (the default). */
+/** Gemini 3/4.x `generationConfig.thinkingConfig.thinkingLevel`; absent = dynamic (the default). */
 export function geminiThinkingLevelFor(config: {
   model: string
   thinking?: Record<string, string> | undefined

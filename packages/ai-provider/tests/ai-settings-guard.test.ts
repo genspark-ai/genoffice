@@ -308,6 +308,15 @@ describe('sanitizeAiSettings: custom endpoint profiles', () => {
     expect(profile.compat).toEqual({ echoReasoning: true })
   })
 
+  it('carries the endpoint thinking map through the guard', () => {
+    const sanitized = sanitizeAiSettings(
+      withEndpoints({
+        thinking: { 'glm-4.6': 'high', 'glm-4.6x': 'nonsense', '': 'low' },
+      }),
+    )
+    expect(sanitized!.customEndpoints![0]!.thinking).toEqual({ 'glm-4.6': 'high' })
+  })
+
   it('bounds the idle timeout and model profile entries', () => {
     const out = sanitizeAiSettings(
       withProfile({

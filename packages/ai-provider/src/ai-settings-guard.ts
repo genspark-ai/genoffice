@@ -174,6 +174,9 @@ function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
       baseUrl: config.baseUrl ?? '',
       apiKey: config.apiKey,
       model: config.model,
+      // the endpoint record carries its own thinking picks (bounded by
+      // sanitizeProviderConfig) so the slot mirror can hand them to the request
+      ...(config.thinking ? { thinking: config.thinking } : {}),
       ...(models && models.length > 0 ? { models } : {}),
     }
     for (const key of [
