@@ -297,4 +297,20 @@ describe('remove_parts package scrub', () => {
     expect(plan.removedPaths).toEqual([])
     expect(await saveFixture(saved, options)).toEqual(saved)
   })
+
+  it('keeps folder entries on the source date so unchanged saves stay byte-identical', async () => {
+    const bytes = await fixtureDocx()
+    // a real removal sends the save through the writer, which must carry the
+    // source date over to the surviving folder entries instead of stamping
+    // them with the current time (that made two saves differ whenever they
+    // straddled a 2-second DOS-time tick)
+    const saved = await saveFixture(bytes, { kinds: ['customXml'] })
+    const zip = await JSZip.loadAsync(saved)
+    const folder = zip.files['word/webextensions/']
+    expect(folder).toBeTruthy()
+    expect(folder!.dir).toBe(true)
+    expect(folder!.date.getTime()).toBe(Date.UTC(2026, 0, 1))
+    const resaved = await saveFixture(saved, { kinds: ['customXml'] })
+    expect(Buffer.from(resaved).equals(Buffer.from(saved))).toBe(true)
+  })
 })

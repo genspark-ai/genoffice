@@ -2260,7 +2260,10 @@ export async function saveDocx(
   const out = new JSZip()
   for (const [name, entry] of Object.entries(zip.files)) {
     if (entry.dir) {
-      out.folder(name)
+      // folder entries must carry the source date too: folder() stamps them
+      // with the current time, which makes two saves of an unchanged package
+      // differ in bytes whenever they straddle a 2-second DOS-time tick
+      out.file(name, null, { dir: true, date: entry.date })
       continue
     }
     const hfPart = hfParts.find((p) => p.path === name)
