@@ -111,7 +111,7 @@ export async function printPdfViaCups(
   })
 }
 
-/** One 1-based page selection as lp's `-p` spelling: consecutive runs
+/** One 1-based page selection as lp's `-P page-list` spelling: consecutive runs
  * collapse (`1,2,3,7` → `1-3,7`). Empty or invalid input → undefined, not an
  * empty range (lp would print nothing). */
 export function lpPageRange(pages: readonly number[]): string | undefined {
@@ -136,7 +136,7 @@ export function lpPageRange(pages: readonly number[]): string | undefined {
 }
 
 /** Spools an existing PDF file: the vector original goes to the driver
- * untouched (no rasterization pass), with an optional `-p` page selection.
+ * untouched (no rasterization pass), with an optional `-P page-list` selection.
  * The caller owns the path's authorization — this only builds the argv. */
 export async function printFileViaCups(
   path: string,
@@ -145,7 +145,14 @@ export async function printFileViaCups(
   spawnFn: typeof spawn = spawn,
 ): Promise<{ ok: boolean; error?: string }> {
   const range = pages === undefined ? undefined : lpPageRange(pages)
-  const args = [...lpArgumentsFor(job), ...(range ? ['-p', range] : []), '--', path]
+  // A selection that filters down to nothing must not quietly print the whole
+  // file: report it instead, the same wholesale-drop rule the caller applied.
+  if (pages !== undefined && range === undefined) {
+    return { ok: false, error: 'the page selection has no printable pages' }
+  }
+  // capital -P is lp's page-list option; lowercase -p is the priority alias,
+  // so the lowercase spelling would spool the whole document.
+  const args = [...lpArgumentsFor(job), ...(range ? ['-P', range] : []), '--', path]
   return new Promise((resolve) => {
     const child = spawnFn('/usr/bin/lp', args, { stdio: ['pipe', 'pipe', 'pipe'] })
     let stderr = ''

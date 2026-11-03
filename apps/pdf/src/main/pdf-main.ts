@@ -38,7 +38,7 @@ import {
   printToPdfOptionsFor,
 } from '@genoffice/electron-utils/print-cups'
 
-/** 1-based file page positions for the lp `-p` selection: integers within a
+/** 1-based file page positions for the lp `-P` page-list: integers within a
  * real document's reach, undefined = the whole document. Anything else is
  * dropped wholesale — a half-valid list would silently print the wrong
  * subset. */
@@ -1264,7 +1264,7 @@ function registerPdfIpc(): void {
     }
     const opts = printJobOptions(req)
     // the pages travel beside the job: 1-based file positions the renderer
-    // validated against the opened document, spooled as lp's -p selection
+    // validated against the opened document, spooled as lp's -P page-list
     const pages = validPrintPages(req.pages)
     return printFileViaCups(req.path, opts, pages)
   })
