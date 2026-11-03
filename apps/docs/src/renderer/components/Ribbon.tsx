@@ -1538,9 +1538,10 @@ function RibbonInner({
     // resizes with the window, so it would never re-trigger the observer
     ro.observe(el.parentElement ?? el)
     return () => ro.disconnect()
-    // re-check when the card set can change, and after the expander mounts or
-    // unmounts (it takes row width, which can change how many cards fit)
-  }, [tab, galleryEntries.length, lang, styleGalleryOverflow])
+    // re-check when the card set can change, after the expander mounts or
+    // unmounts (it takes row width, which can change how many cards fit), and
+    // on a density switch (compact cards size to their label, full ones don't)
+  }, [tab, galleryEntries.length, lang, styleGalleryOverflow, collapse.density])
 
   const currentSize = fs.fontSizePt
   // computed unconditionally (not inside the dropdown render): cheap, and the
