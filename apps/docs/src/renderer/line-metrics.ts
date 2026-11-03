@@ -1246,7 +1246,21 @@ function substituteFontFamily(font: string): string | null {
   return lead ? `${lead},${chain}` : chain
 }
 
+/** The system-font alias lookup the renderer populates from queryLocalFonts:
+    a localized (CJK) name maps to the English family the browser resolves.
+    Null until the query completes; cssFontFamily falls through to the
+    default chain until then (genoffice#2449). */
+let fontAliasLookup: ((name: string) => string | null) | null = null
+
+export function setFontAliasLookup(fn: (name: string) => string | null): void {
+  fontAliasLookup = fn
+}
+
 export function cssFontFamily(font: string): string {
+  // a localized (CJK) name the browser can't match resolves through the
+  // system font table's English family (genoffice#2449)
+  const alias = fontAliasLookup?.(font)
+  if (alias) font = alias
   // faces Word lays out directly take the chain of their target face, names it
   // substitutes the chain of the substitute; the name-keyed branches below
   // serve unkeyed targets and the script chains

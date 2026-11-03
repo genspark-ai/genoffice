@@ -91,6 +91,7 @@ import { pruneUnreferencedNumbering } from './numbering-actions'
 import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
+import { loadSystemFontAliases } from './system-fonts'
 import {
   loadBundledStandIns,
   setAdditiveParagraphSpacing,
@@ -500,6 +501,9 @@ export async function loadFile(
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
+    // populate the localized-name alias map before the first render: the
+    // font pipeline consults it when the browser can't match a CJK name
+    await loadSystemFontAliases()
     await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return 'superseded'
@@ -654,6 +658,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
+    // populate the localized-name alias map before the first render: the
+    // font pipeline consults it when the browser can't match a CJK name
+    await loadSystemFontAliases()
     await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return
