@@ -95,6 +95,21 @@ test('compact ribbon fits every tab without clipping', async () => {
           openPanels: [...document.querySelectorAll('[data-rb-panel]')].map(
             (p) => `${p.className} h=${Math.round(p.getBoundingClientRect().height)}`,
           ),
+          gallery: (() => {
+            const g = body.querySelector('.style-gallery')
+            if (!g) return 'no gallery'
+            const cs = getComputedStyle(g)
+            const card = g.querySelector('.style-card')
+            const chain: string[] = []
+            let node: HTMLElement | null = card as HTMLElement | null
+            while (node && node !== body) {
+              chain.push(
+                `${node.className?.toString?.().slice(0, 40) || node.tagName} display=${getComputedStyle(node).display} pos=${getComputedStyle(node).position} h=${Math.round(node.getBoundingClientRect().height)}`,
+              )
+              node = node.offsetParent as HTMLElement | null
+            }
+            return `rect=${JSON.stringify(g.getBoundingClientRect())} style=h${cs.height}/ovf${cs.overflow}/${cs.overflowX},${cs.overflowY} wrap=${cs.flexWrap} dir=${cs.flexDirection} maxW=${g.style.maxWidth || 'none'} cards=${g.querySelectorAll(':scope > .style-card').length} chain=[${chain.join(' <- ')}]`
+          })(),
         }
       })
       expect(measured, `no ribbon on the "${tab}" tab`).not.toBeNull()
