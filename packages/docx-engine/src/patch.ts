@@ -33,7 +33,7 @@ import {
 import { resolveRelationshipTargetPath } from './parse-package'
 import { applyRemoveParts, planRemoveParts, type RemovePartsOptions } from './remove-parts'
 import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
-import { cleanupDocxOwnedResources } from './resource-cleanup'
+import { cleanupDocxOwnedResources, referencedRelationshipIds } from './resource-cleanup'
 import { loadDocxZip } from './zip-load'
 import {
   BLANK_NUMBERING_XML,
@@ -2374,7 +2374,17 @@ export async function saveDocx(
   if (customPropertiesIsNew && customPropertiesXml !== null) {
     out.file(CUSTOM_PROPERTIES_PATH, customPropertiesXml)
   }
-  await cleanupDocxOwnedResources(out, docPath)
+  // The resource sweep prunes only what this save broke: a relationship the
+  // source document already did not reference is a pre-existing orphan, and
+  // Word keeps those (so do the byte-identity round trips).
+  const sourceDocumentFile = zip.file(docPath)
+  await cleanupDocxOwnedResources(
+    out,
+    docPath,
+    sourceDocumentFile
+      ? referencedRelationshipIds(await sourceDocumentFile.async('string'))
+      : undefined,
+  )
   await cleanStoryMoveRanges(out, docPath)
   if (scrubPersonalInfo) await scrubPersonalMetadata(out)
   // metadata scrubs come after every generated/copied part is in place, so a
