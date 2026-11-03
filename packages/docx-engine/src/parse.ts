@@ -7002,15 +7002,17 @@ function hfContentFromXml(
       // the replacement closes/reopens the enclosing w:r to stay balanced
       // (the leftover edge runs end up empty and are dropped later)
       const emit = (inner: string) => `</w:r>${inner}<w:r>`
-      // before PAGE/NUMPAGES: neither word boundary matches inside SECTIONPAGES,
-      // so it used to fall through to the cached result (often dropped, else a stale "1")
-      if (/\bSECTIONPAGES\b/.test(instr)) {
+      // classify by the leading keyword: a nested child field's PAGE inside a
+      // DOCPROPERTY instruction must not make the parent a PAGE field
+      // (genoffice#2458 — the lazy begin-to-end span stops at the nested end,
+      // concatenating the child's instrText into the parent's instruction)
+      if (/^\s*SECTIONPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
       }
-      if (/\bNUMPAGES\b/.test(instr)) {
+      if (/^\s*NUMPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
       }
-      if (/\bPAGE\b/.test(instr)) {
+      if (/^\s*PAGE\b/.test(instr)) {
         hasPageNumber = true
         return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
       }
@@ -7029,9 +7031,10 @@ function hfContentFromXml(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
-      if (/\bSECTIONPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
-      if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
-      if (/\bPAGE\b/.test(instr)) {
+      if (/^\s*SECTIONPAGES\b/.test(instr))
+        return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
+      if (/^\s*NUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
+      if (/^\s*PAGE\b/.test(instr)) {
         hasPageNumber = true
         return `<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`
       }
