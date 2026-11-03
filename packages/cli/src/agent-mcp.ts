@@ -44,11 +44,20 @@ interface TomlShape {
   kind: 'toml'
 }
 
+/** The DSH Cordis profile patch: a YAML array of `{ insert: [...] }` blocks,
+    each insert carrying a server entry with its own id and transport config.
+    A scalar union won't do — the file has no top-level key to hang a map on. */
+interface YamlShape {
+  kind: 'yaml-cordis'
+  /** the entry this shape writes into the insert list */
+  entry: (launch: McpLaunch) => Record<string, unknown>
+}
+
 interface McpAgentDef {
   id: AgentId
   /** config file, relative to the agent's dotfolder unless the agent keeps it elsewhere */
   file: (configDir: string, home: string, explicit: boolean) => string
-  shape: JsonShape | TomlShape
+  shape: JsonShape | TomlShape | YamlShape
 }
 
 const strings = (v: unknown): string[] =>
@@ -123,6 +132,26 @@ const MCP_AGENTS: readonly McpAgentDef[] = [
     },
   },
   { id: 'windsurf', file: (dir) => join(dir, 'mcp_config.json'), shape: bareEntry },
+  {
+    id: 'dsh',
+    // DSH_HOME (default ~/.dsh): the home-level patch outranks every profile
+    file: (dir) => join(dir, 'cordis.patch.yml'),
+    shape: {
+      kind: 'yaml-cordis',
+      entry: (l) => ({
+        id: 'mcp-genoffice',
+        name: '@deepseek-ai/dsh-mcp-client',
+        config: {
+          serverName: MCP_SERVER_NAME,
+          transport: 'stdio',
+          command: l.command,
+          args: l.args,
+          toolCallTimeoutMs: 180_000, // render/convert-to-pdf can take a few seconds
+          failOnStartupError: false,
+        },
+      }),
+    },
+  },
 ]
 
 export function mcpAgentIds(): AgentId[] {
@@ -156,6 +185,7 @@ function homeOf(env: NodeJS.ProcessEnv): string {
 export function mcpSnippet(id: AgentId, launch: McpLaunch): string {
   const def = MCP_AGENTS.find((a) => a.id === id)!
   if (def.shape.kind === 'toml') return tomlTable(launch)
+  if (def.shape.kind === 'yaml-cordis') return cordisSnippet(launch)
   return JSON.stringify(
     { [def.shape.key]: { [MCP_SERVER_NAME]: def.shape.entry(launch) } },
     null,
@@ -172,6 +202,7 @@ export function readMcpEntry(id: AgentId, file: string, launch: McpLaunch): McpE
   }
   const text = readFileSync(file, 'utf-8')
   if (def.shape.kind === 'toml') return tomlState(text, launch)
+  if (def.shape.kind === 'yaml-cordis') return cordisState(text, launch)
   if (!text.trim()) return { status: 'absent', command: null }
   const doc = parseJsonObject(text)
   if (!doc) return { status: 'manual', command: null }
@@ -197,6 +228,10 @@ export function writeMcpEntry(id: AgentId, file: string, launch: McpLaunch): voi
     save(file, `${body}${body.trim().length ? '\n' : ''}${tomlTable(launch)}`)
     return
   }
+  if (def.shape.kind === 'yaml-cordis') {
+    save(file, cordisUpsert(text, launch))
+    return
+  }
   const doc = text.trim() ? parseJsonObject(text) : {}
   if (!doc) throw new Error(`${file} is not a JSON object`)
   const map = isRecord(doc[def.shape.key]) ? (doc[def.shape.key] as Record<string, unknown>) : {}
@@ -215,6 +250,12 @@ export function removeMcpEntry(id: AgentId, file: string): boolean {
     save(file, next)
     return true
   }
+  if (def.shape.kind === 'yaml-cordis') {
+    const next = cordisRemove(text)
+    if (next === text) return false
+    save(file, next)
+    return true
+  }
   if (!text.trim()) return false
   const doc = parseJsonObject(text)
   if (!doc) throw new Error(`${file} is not a JSON object`)
@@ -224,6 +265,109 @@ export function removeMcpEntry(id: AgentId, file: string): boolean {
   doc[def.shape.key] = rest
   save(file, `${JSON.stringify(doc, null, 2)}\n`)
   return true
+}
+
+// ---- the DSH Cordis patch (yaml-cordis shape) ----
+// The file is a YAML array of `{ insert: [...] }` blocks; this converter only
+// owns the block whose insert carries `id: mcp-genoffice`. Hand-rolled line
+// walker, not a YAML parser: the format DSH reads is a strict subset of YAML
+// (one nesting shape, no anchors, no multi-line scalars in practice), and a
+// targeted line edit can never reorder or reformat entries the way a full
+// parse-serialize round trip would.
+
+/** YAML indentation depth of a non-empty, non-comment line (0-based, 2-space steps). */
+function yamlIndent(line: string): number {
+  const trimmed = line.trimStart()
+  return line.length - trimmed.length === 0 ? 0 : Math.floor((line.length - trimmed.length) / 2)
+}
+
+/** Split the patch into top-level blocks: each starts at indent 0 with `- `. */
+function cordisBlocks(text: string): string[][] {
+  const blocks: string[][] = []
+  let current: string[] | null = null
+  for (const line of text.split('\n')) {
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+    if (yamlIndent(line) === 0 && line.trimStart().startsWith('- ')) {
+      if (current) blocks.push(current)
+      current = [line]
+    } else if (current) {
+      current.push(line)
+    }
+  }
+  if (current) blocks.push(current)
+  return blocks
+}
+
+/** The `id:` and `serverName:` values inside one insert block. */
+function cordisBlockInfo(block: string[]): { id: string | null; serverName: string | null } {
+  let id: string | null = null
+  let serverName: string | null = null
+  for (const line of block) {
+    const idMatch = /^\s*-?\s*id:\s*(.+)$/.exec(line)
+    if (idMatch && id === null) id = idMatch[1]!.trim().replace(/^['"]|['"]$/g, '')
+    const nameMatch = /^\s*serverName:\s*(.+)$/.exec(line)
+    if (nameMatch && serverName === null)
+      serverName = nameMatch[1]!.trim().replace(/^['"]|['"]$/g, '')
+  }
+  return { id, serverName }
+}
+
+function isGenofficeCordisBlock(block: string[]): boolean {
+  const { id, serverName } = cordisBlockInfo(block)
+  return id === 'mcp-genoffice' || serverName === MCP_SERVER_NAME
+}
+
+function cordisState(text: string, _launch: McpLaunch): McpEntryState {
+  for (const block of cordisBlocks(text)) {
+    if (!isGenofficeCordisBlock(block)) continue
+    const commandLine = block.find((l) => /^\s*command:\s*/.test(l))
+    const command = commandLine
+      ? commandLine
+          .replace(/^\s*command:\s*/, '')
+          .trim()
+          .replace(/^['"]|['"]$/g, '')
+      : null
+    // the block is ours by id: registered when it launches a genoffice binary
+    if (command !== null && isGenofficeLauncher(command)) return { status: 'registered', command }
+    return { status: command !== null ? 'stale' : 'occupied', command }
+  }
+  return { status: 'absent', command: null }
+}
+
+function cordisEntryLines(launch: McpLaunch): string[] {
+  const c = launch.command.replace(/\\/g, '/')
+  const args = launch.args.map((a) => `'${a.replace(/'/g, "\\'")}'`).join(', ')
+  return [
+    '- insert:',
+    '  - id: mcp-genoffice',
+    "    name: '@deepseek-ai/dsh-mcp-client'",
+    '    config:',
+    '      serverName: genoffice',
+    '      transport: stdio',
+    `      command: ${c}`,
+    `      args: [${args}]`,
+    '      toolCallTimeoutMs: 180000',
+    '      failOnStartupError: false',
+  ]
+}
+
+function cordisSnippet(launch: McpLaunch): string {
+  return cordisEntryLines(launch).join('\n')
+}
+
+function cordisUpsert(text: string, launch: McpLaunch): string {
+  const kept = cordisBlocks(text).filter((b) => !isGenofficeCordisBlock(b))
+  const body = kept.map((b) => b.join('\n')).join('\n')
+  const ours = cordisEntryLines(launch)
+  const out = body.length ? `${body}\n${ours.join('\n')}\n` : `${ours.join('\n')}\n`
+  return out
+}
+
+function cordisRemove(text: string): string {
+  const blocks = cordisBlocks(text)
+  const kept = blocks.filter((b) => !isGenofficeCordisBlock(b))
+  if (kept.length === blocks.length) return text
+  return kept.map((b) => b.join('\n')).join('\n') + (kept.length ? '\n' : '')
 }
 
 const LAUNCHER_NAMES = new Set(['genoffice', 'genoffice.cmd', 'genoffice.exe'])

@@ -37,6 +37,7 @@ export type AgentId =
   | 'openclaw'
   | 'copilot'
   | 'opencode'
+  | 'dsh'
 
 export interface AgentTarget {
   id: AgentId
