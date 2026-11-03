@@ -46,7 +46,7 @@ describe('a real LibreOffice-authored BIFF8 workbook', () => {
   it('writes the values, the merge and the 1904 workbook property into the xlsx', async () => {
     const xml = await sheetXml()
     expect(cellValue(xml, 'A1')).toBe('0') // shared string index for "Name"
-    expect(cellValue(xml, 'B1')).toBe('1') // "中文标签"
+    expect(cellValue(xml, 'B1')).toBe('1') // the CJK label cell
     expect(cellValue(xml, 'C1')).toBe('2') // "BoldPlain" (rich string flattened)
     expect(cellValue(xml, 'A2')).toBe('2')
     expect(cellValue(xml, 'A3')).toBe('42.5')
