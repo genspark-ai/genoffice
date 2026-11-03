@@ -5661,7 +5661,7 @@ export function registerDocsIpc(): void {
       await writeFile(path, bytes)
     }
     try {
-      if (request.mode === 'single') {
+      if (request.mode === 'single' || request.mode === 'labels') {
         const file = files[0]!
         const name = mergeOutputFileName(file.name)
         const result = await saveDialog(event, {
