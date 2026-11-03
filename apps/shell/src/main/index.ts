@@ -7095,9 +7095,12 @@ app.whenReady().then(async () => {
   // first scan waits for the windows to come up; later ones follow folder changes
   setTimeout(() => ensureFileIndexer()?.refresh(), 4000)
   // the docs font resolver queries system font faces for localized-name
-  // aliases (genoffice#2449); grant the Local Font Access API without a prompt
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'local-fonts')
+  // aliases (genoffice#2449); grant the Local Font Access API without a prompt.
+  // installing a request handler replaces Electron's approve-by-default, so
+  // approve the rest as well — denying clipboard write, openExternal or
+  // fullscreen here would break paste, links and zoom
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(true)
   })
   installRendererProtocol({
     docs: join(DOCS_OUT, 'renderer'),
