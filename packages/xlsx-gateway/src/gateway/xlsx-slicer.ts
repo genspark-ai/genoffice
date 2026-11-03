@@ -15,8 +15,9 @@
 ///     slicer-space id — not the workbook cacheId) — tabular@pivotCacheId
 ///     must equal it or Excel drops the whole slicerCache part as
 ///     'Removed Part: slicerCache',
-///   a Slicer_<name> definedName in the workbook (Excel writes #N/A with no
-///     hidden attribute; hidden="1" makes Excel repair the slicer cache),
+///   one definedName per slicerCache named exactly like the cache
+///     (slicerCacheDefinition@name, "#N/A", no hidden attribute — a different
+///     name or hidden="1" makes Excel repair the slicer cache),
 ///   [Content_Types].xml overrides per part.
 ///
 /// Read side mirrors the writer (the reader keys on container element names
@@ -1018,14 +1019,16 @@ const AFTER_DEFINED_NAMES = [
   '<extLst',
 ] as const
 
-/// The `Slicer_<name>` definedName Excel writes per control (no hidden
-/// attribute): it keeps slicer names inside the workbook's name space. Excel
-/// writes `#N/A` as the value — the name is a marker, not a reference — and a
-/// restore-then-save must refresh the existing entry rather than add a second one.
-function addSlicerDefinedName(workbookXml: string, name: string): string {
-  const element = `<definedName name="Slicer_${escapeAttribute(name)}">#N/A</definedName>`
+/// Excel requires exactly one definedName per slicerCache, named exactly like
+/// the cache (`slicerCacheDefinition@name`) with `#N/A` as the value: the name
+/// is a marker, not a reference. Keying it on the control name instead leaves an
+/// invalid/absent name (spaces, a fresh caption) that makes Excel repair the
+/// file, and a restore-then-save must refresh the existing entry rather than add
+/// a second one.
+function addSlicerDefinedName(workbookXml: string, cacheName: string): string {
+  const element = `<definedName name="${escapeAttribute(cacheName)}">#N/A</definedName>`
   const existing = new RegExp(
-    `<definedName\\b[^>]*\\bname="Slicer_${escapeRegExp(escapeAttribute(name))}"[^>]*>[^<]*</definedName>`,
+    `<definedName\\b[^>]*\\bname="${escapeRegExp(escapeAttribute(cacheName))}"[^>]*>[^<]*</definedName>`,
   )
   if (existing.test(workbookXml)) return workbookXml.replace(existing, element)
   // A self-closing <definedNames/> (openpyxl and others write it) is opened up
@@ -1059,9 +1062,9 @@ function addSlicerDefinedName(workbookXml: string, name: string): string {
   )
 }
 
-function removeSlicerDefinedName(workbookXml: string, name: string): string {
+function removeSlicerDefinedName(workbookXml: string, cacheName: string): string {
   const pattern = new RegExp(
-    `<definedName\\b[^>]*\\bname="Slicer_${escapeRegExp(escapeAttribute(name))}"[^>]*>[^<]*</definedName>\\s*`,
+    `<definedName\\b[^>]*\\bname="${escapeRegExp(escapeAttribute(cacheName))}"[^>]*>[^<]*</definedName>\\s*`,
   )
   let patched = workbookXml.replace(pattern, '')
   // an emptied <definedNames> container drops out
@@ -1133,7 +1136,7 @@ async function writeControl(
   await registerContentTypeOverride(pkg, cachePath, SLICER_CACHE_CONTENT_TYPE, touchedEntries)
 
   // The workbook rel + ext entry point at the cache part, and the
-  // Slicer_<name> definedName joins the workbook's name space.
+  // cache-named definedName joins the workbook's name space.
   const relId = await appendOrReuseRelationship(
     pkg,
     'xl/_rels/workbook.xml.rels',
@@ -1143,7 +1146,7 @@ async function writeControl(
     touchedEntries,
   )
   let wiredWorkbook = addExtRef(workbookXml, WORKBOOK_SLICER_WIRING, relId, '</workbook>')
-  wiredWorkbook = addSlicerDefinedName(wiredWorkbook, name)
+  wiredWorkbook = addSlicerDefinedName(wiredWorkbook, cacheName)
 
   // The control part: Excel keeps every slicer of a worksheet in one part, so
   // a rewrite replaces only the control keyed by its name (appending it when
@@ -1211,11 +1214,12 @@ export async function applySlicerState(
     )
     const cacheName = cacheNameRaw === undefined ? undefined : decodeAttribute(cacheNameRaw)
     const carried = carryOverSlicerPart(partXml)
+    // Match on the cache name only: a cache part that is already gone must not
+    // make removal strip an arbitrary control from a shared part.
     const target =
-      (cacheName === undefined
+      cacheName === undefined
         ? undefined
-        : carried.controls.find((control) => control.cacheName === cacheName)) ??
-      carried.controls[0]
+        : carried.controls.find((control) => control.cacheName === cacheName)
     const name = target?.name ?? null
     const remaining = name === null ? carried : withoutSlicerControl(carried, name)
     const boundX14CacheId = Number(
@@ -1234,16 +1238,21 @@ export async function applySlicerState(
         )
       }
     }
-    if (remaining.controls.length > 0) {
-      pkg.write(removal.partPath, buildSlicerPartXml(remaining))
-      touchedEntries.add(removal.partPath)
-    } else {
-      await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
+    if (name !== null) {
+      if (remaining.controls.length > 0) {
+        pkg.write(removal.partPath, buildSlicerPartXml(remaining))
+        touchedEntries.add(removal.partPath)
+      } else {
+        await removePartWithSatellites(pkg, removal.partPath, touchedEntries)
+      }
     }
-    if (name !== null) workbookXml = removeSlicerDefinedName(workbookXml, name)
-    // Another slicer can share this cache; its part and workbook wiring stay.
+    // Another slicer can share this cache; its part, workbook wiring and the
+    // one-per-cache definedName all stay.
     const cacheStillUsed = cacheName !== undefined && (await otherControlUsesCache(pkg, cacheName))
     if (!cacheStillUsed) {
+      if (cacheName !== undefined) {
+        workbookXml = removeSlicerDefinedName(workbookXml, cacheName)
+      }
       const relsPath = 'xl/_rels/workbook.xml.rels'
       if (await pkg.has(relsPath)) {
         const relsXml = await pkg.readText(relsPath)

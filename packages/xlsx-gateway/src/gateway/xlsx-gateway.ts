@@ -350,6 +350,12 @@ class PackageEditor {
     if (!this.addedPaths.delete(path)) this.removed.add(path)
   }
 
+  /// The entries dropped so far in this plan, for allocators that must not hand
+  /// out a removed part's name again (paths() hides them by design).
+  removedPaths(): readonly string[] {
+    return [...this.removed]
+  }
+
   async canPatch(path: string): Promise<boolean> {
     if (this.overlay.has(path)) return true
     return this.source.canPatch?.(path) ?? true

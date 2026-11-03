@@ -283,7 +283,7 @@ describe('slicer write + read round trip', () => {
     expect(drawing).toContain('</mc:AlternateContent><xdr:clientData/></xdr:twoCellAnchor>')
     expect(drawing).not.toContain('<xdr:clientData/></xdr:graphicFrame>')
 
-    // Workbook rel + ext wiring, plus the hidden Slicer_<name> definedName.
+    // Workbook rel + ext wiring, plus the cache-named definedName (one per slicerCache).
     const workbookRels = await pkg.readText('xl/_rels/workbook.xml.rels')
     expect(workbookRels).toContain(
       `Type="${SLICER_CACHE_REL_TYPE}" Target="slicerCaches/slicerCache1.xml"`,
@@ -530,7 +530,7 @@ it('opens up a self-closing <definedNames/> instead of appending a second contai
   expect(workbook.indexOf('<definedNames>')).toBeLessThan(workbook.indexOf('<pivotCaches>'))
 })
 
-it('keeps one definedName per control across saves and refreshes its value', async () => {
+it('keeps one definedName per slicerCache across saves and refreshes its value', async () => {
   const { pkg, slicer } = await writeInitial()
   // a previous export wrote the slicer name as the value
   const stale = (await pkg.readText('xl/workbook.xml')).replace(
@@ -960,6 +960,159 @@ describe('slicer state through the save planner', () => {
     expect(savedContentTypes).toContain('application/vnd.ms-excel.slicer+xml')
     expect(savedContentTypes).toContain('application/vnd.ms-excel.slicerCache+xml')
   })
+
+  it('handles removing a restored control and adding a fresh one in the same save', async () => {
+    const buffer = await plannerFixture()
+    const firstPlan = await planCellEditsToXlsx(
+      await createBufferEntrySource(buffer),
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      { slicers: [{ sheetName: 'Data', ...SLICER_INPUT }], removals: [] },
+    )
+    const sample = await assembleWithJsZip(buffer, firstPlan)
+    expect(() => assertOnlyTouchedEntriesChanged(sample)).not.toThrow()
+    const sampleZip = await JSZip.loadAsync(sample.buffer)
+    expect(sampleZip.file('xl/slicers/slicer1.xml')).not.toBeNull()
+
+    // Removing the restored slicer and adding a fresh one in one save used to
+    // hand the just-removed slicer1/slicerCache1 paths back out (paths() hides
+    // removed entries, so allocation saw a free slot), then abort with
+    // "Saving should have removed ... but did not".
+    const plan = await planCellEditsToXlsx(
+      await createBufferEntrySource(sample.buffer),
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      {
+        slicers: [{ sheetName: 'Data', ...SLICER_INPUT }],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache1.xml' },
+        ],
+      },
+    )
+    const mutation = await assembleWithJsZip(sample.buffer, plan)
+    expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
+    const saved = await JSZip.loadAsync(mutation.buffer)
+    expect(saved.file('xl/slicers/slicer1.xml')).toBeNull()
+    expect(saved.file('xl/slicerCaches/slicerCache1.xml')).toBeNull()
+    expect(saved.file('xl/slicers/slicer2.xml')).not.toBeNull()
+    expect(saved.file('xl/slicerCaches/slicerCache2.xml')).not.toBeNull()
+    const workbook = await saved.file('xl/workbook.xml')!.async('string')
+    expect(workbook.match(/<definedName\b/g) ?? []).toHaveLength(1)
+    expect(workbook).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
+    const slicerXml = await saved.file('xl/slicers/slicer2.xml')!.async('string')
+    expect(slicerXml.match(/<slicer\b/g) ?? []).toHaveLength(1)
+    const restored = await parseSlicerState(await createBufferEntrySource(mutation.buffer))
+    expect(restored).toHaveLength(1)
+    expect(restored[0]!.name).toBe('Region')
+
+    // The removed parts stay in the renderer's removal list until the file is
+    // switched, so the next save still asks to remove them; that must not abort
+    // or resurrect the parts, and the rewrite of the new control still works.
+    const followUp = await planCellEditsToXlsx(
+      await createBufferEntrySource(mutation.buffer),
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      {
+        slicers: [
+          {
+            sheetName: 'Data',
+            ...SLICER_INPUT,
+            name: 'Region',
+            partPath: 'xl/slicers/slicer2.xml',
+            cachePath: 'xl/slicerCaches/slicerCache2.xml',
+            cacheName: 'Slicer_Region',
+          },
+        ],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache1.xml' },
+        ],
+      },
+    )
+    const followMutation = await assembleWithJsZip(mutation.buffer, followUp)
+    expect(() => assertOnlyTouchedEntriesChanged(followMutation)).not.toThrow()
+    const followed = await JSZip.loadAsync(followMutation.buffer)
+    expect(followed.file('xl/slicers/slicer2.xml')).not.toBeNull()
+    const followWorkbook = await followed.file('xl/workbook.xml')!.async('string')
+    expect(followWorkbook.match(/<definedName\b/g) ?? []).toHaveLength(1)
+  })
 })
 
 // ─── Shared slicers parts: Excel keeps every slicer of a worksheet in one part
@@ -1163,5 +1316,130 @@ describe('shared slicers parts (one part, several controls)', () => {
     const workbook = await pkg.readText('xl/workbook.xml')
     expect(workbook).toContain('<definedName name="Slicer_Region">#N/A</definedName>')
     expect(workbook).not.toContain('hidden="1"')
+  })
+})
+
+// ─── definedName must be keyed on the slicerCache name, not the control name
+
+const KOREAN_SLICER_PART =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+  '<slicer name="담당 1" cache="슬라이서_담당PM" caption="담당 1"/></slicers>'
+
+const KOREAN_CACHE_PART =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" ' +
+  'name="슬라이서_담당PM" sourceName="담당">' +
+  '<pivotTables><pivotTable tabId="1" name="Pivot1"/></pivotTables>' +
+  '<data><tabular pivotCacheId="7"><items count="3"><i x="0" s="1"/><i x="1"/><i x="2"/></items></tabular></data>' +
+  '</slicerCacheDefinition>'
+
+const KOREAN_SHEET_RELS =
+  '<?xml version="1.0" encoding="UTF-8"?>\n' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="pRel1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>' +
+  '<Relationship Id="sRel1" Type="' +
+  SLICER_REL_TYPE +
+  '" Target="../slicers/slicer1.xml"/>' +
+  '</Relationships>'
+
+function koreanPackage(): MutablePackage {
+  const pkg = fixture()
+  pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
+  pkg.add('xl/slicers/slicer1.xml', KOREAN_SLICER_PART)
+  pkg.add('xl/slicerCaches/slicerCache1.xml', KOREAN_CACHE_PART)
+  pkg.write('xl/worksheets/_rels/sheet1.xml.rels', KOREAN_SHEET_RELS)
+  return pkg
+}
+
+const KOREAN_SLICER_INPUT = {
+  ...SLICER_INPUT,
+  sourceName: '담당',
+  caption: '담당 1',
+  name: '담당 1',
+  partPath: 'xl/slicers/slicer1.xml',
+  cachePath: 'xl/slicerCaches/slicerCache1.xml',
+  cacheName: '슬라이서_담당PM',
+}
+
+describe('definedName is keyed on the slicerCache name', () => {
+  it('writes the name exactly like the cache, not like the control', async () => {
+    const pkg = koreanPackage()
+    const workbook = await applySlicerState(
+      pkg,
+      { slicers: [KOREAN_SLICER_INPUT], removals: [] },
+      WORKBOOK,
+      new Set(),
+    )
+    expect(workbook).toContain('<definedName name="슬라이서_담당PM">#N/A</definedName>')
+    expect(workbook).not.toContain('Slicer_담당 1')
+    expect(workbook.match(/<definedName\b/g) ?? []).toHaveLength(1)
+    expect(await pkg.readText('xl/slicers/slicer1.xml')).toContain(
+      'name="담당 1" cache="슬라이서_담당PM"',
+    )
+  })
+
+  it('removes the cache-named definedName together with the control', async () => {
+    const pkg = koreanPackage()
+    const workbook = await applySlicerState(
+      pkg,
+      {
+        slicers: [],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache1.xml' },
+        ],
+      },
+      WORKBOOK,
+      new Set(),
+    )
+    expect(workbook).not.toContain('슬라이서_담당PM')
+    expect(workbook).not.toContain('Slicer_')
+    expect(await pkg.has('xl/slicers/slicer1.xml')).toBe(false)
+    expect(await pkg.has('xl/slicerCaches/slicerCache1.xml')).toBe(false)
+  })
+
+  it('names a fresh control definedName after its cache, not its caption', async () => {
+    const pkg = fixture()
+    pkg.write('xl/pivotCache/pivotCacheDefinition1.xml', PIVOT_CACHE_WITH_X14_EXT_7)
+    pkg.write('xl/worksheets/_rels/sheet1.xml.rels', SHEET_RELS_WITH_SLICER_AND_DRAWING)
+    pkg.add(
+      'xl/slicers/slicer1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+        '<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+        '<slicer name="Country" cache="Slicer_Country" caption="Country" columnCount="2"/>' +
+        '</slicers>',
+    )
+    pkg.add('xl/slicerCaches/slicerCache1.xml', COUNTRY_CACHE_PART)
+    pkg.add('xl/drawings/drawing1.xml', TWO_CONTROL_DRAWING)
+    const workbook = await applySlicerState(
+      pkg,
+      { slicers: [{ ...SLICER_INPUT, sourceName: 'Product', caption: 'Fresh' }], removals: [] },
+      WORKBOOK,
+      new Set(),
+    )
+    expect(workbook).toContain('<definedName name="Slicer_Product">#N/A</definedName>')
+    expect(workbook).not.toContain('Slicer_Fresh')
+    expect(workbook.match(/<definedName\b/g) ?? []).toHaveLength(1)
+  })
+
+  it('does not strip an arbitrary shared control when the removal cache part is gone', async () => {
+    const pkg = sharedPartPackage()
+    const before = await pkg.readText('xl/slicers/slicer1.xml')
+    await applySlicerState(
+      pkg,
+      {
+        slicers: [],
+        removals: [
+          { partPath: 'xl/slicers/slicer1.xml', cachePath: 'xl/slicerCaches/slicerCache99.xml' },
+        ],
+      },
+      WORKBOOK,
+      new Set(),
+    )
+    const after = await pkg.readText('xl/slicers/slicer1.xml')
+    expect(after.match(/<slicer\b/g) ?? []).toHaveLength(2)
+    expect(after).toContain('name="Region"')
+    expect(after).toContain('name="Country"')
+    expect(after).toBe(before)
   })
 })
