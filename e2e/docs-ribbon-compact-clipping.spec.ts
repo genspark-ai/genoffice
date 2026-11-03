@@ -114,11 +114,15 @@ test('compact ribbon fits every tab without clipping', async () => {
       })
       expect(measured, `no ribbon on the "${tab}" tab`).not.toBeNull()
       const m = measured!
+      console.log(
+        `[compact-clip] ${tab}: ` + `gallery=${(m as { gallery?: string }).gallery ?? 'n/a'}`,
+      )
       expect(
         m.clipped,
         `"${tab}" overflows the compact band: tallest control ${m.tallest}px, content needs ` +
           `${m.scrollH}px, band has ${m.avail}px; deepest-bottom culprits: ` +
-          `${(m.culprits ?? []).join(' | ')}; open panels: ${(m.openPanels ?? []).join(', ') || 'none'}`,
+          `${(m.culprits ?? []).join(' | ')}; open panels: ${(m.openPanels ?? []).join(', ') || 'none'}; ` +
+          `gallery=${(m as { gallery?: string }).gallery ?? 'n/a'}`,
       ).toBe(false)
       expect(m.scrollH, `"${tab}" needs more than the band holds`).toBeLessThanOrEqual(m.avail)
     }
