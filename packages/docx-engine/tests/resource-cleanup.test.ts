@@ -34,6 +34,40 @@ describe('DOCX-owned resource cleanup', () => {
     expect(await documentRels(zip)).not.toContain('media/image1.png')
   })
 
+  it('keeps a part the source already did not reference (a pre-existing orphan)', async () => {
+    // the package carries an image part and its relationship, but nothing in
+    // the body references them: Word keeps what it was handed, so a save that
+    // regenerates some other block must not editorialize the orphan away
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>keep</w:t></w:r></w:p>',
+        withImage: true,
+      }),
+    )
+    const saved = await saveDocx(parsed, [
+      { kind: 'generated', block: { type: 'paragraph', runs: [{ text: 'rewritten' }] } },
+    ])
+    const zip = await JSZip.loadAsync(saved)
+    expect(zip.file('word/media/image1.png')).not.toBeNull()
+    expect(await documentRels(zip)).toContain('media/image1.png')
+  })
+
+  it('keeps an orphaned external hyperlink the source already did not reference', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>keep</w:t></w:r></w:p>',
+        extraRels:
+          '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>',
+      }),
+    )
+    const saved = await saveDocx(parsed, [
+      { kind: 'generated', block: { type: 'paragraph', runs: [{ text: 'rewritten' }] } },
+    ])
+    const zip = await JSZip.loadAsync(saved)
+    expect(await documentRels(zip)).toContain('rId20')
+    expect(await documentRels(zip)).toContain('https://example.com/')
+  })
+
   it('keeps only the newest media part across repeated image replacements', async () => {
     let bytes = await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true })
     for (let replacement = 0; replacement < 3; replacement++) {
