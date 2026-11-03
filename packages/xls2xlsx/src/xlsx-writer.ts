@@ -135,11 +135,15 @@ export async function writeXlsxWorkbook(workbook: XlsWorkbook): Promise<Uint8Arr
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
       '</Relationships>',
   )
+  // The 1904 date system is a workbook property in OOXML; without it every
+  // date serial from a Mac-authored .xls shifts by four years.
+  const workbookPr = workbook.date1904 ? '<workbookPr date1904="1"/>' : ''
   zip.file(
     'xl/workbook.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      workbookPr +
       '<bookViews><workbookView/></bookViews>' +
       '<sheets>' +
       sheetXmls

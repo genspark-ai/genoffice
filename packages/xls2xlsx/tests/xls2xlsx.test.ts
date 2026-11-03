@@ -121,6 +121,71 @@ describe('convertXlsToXlsx: the values foundation', () => {
     expect(wbx).toContain('name="中文"')
   })
 
+  it("reads the cRun/cbExtRst header that precedes a rich string's characters", async () => {
+    // XLUnicodeRichExtendedString (MS-XLS 2.5.293) puts the run/ext counts
+    // before the characters; reading chars first desynchronises the table.
+    const rich = { text: 'BoldPlain', runCount: 2, extRst: new Uint8Array([1, 2, 3, 4]) }
+    const sheets: SheetSpec[] = [
+      { name: 'S', cells: [{ kind: 'label', row: 0, col: 0, stringIndex: 0 }] },
+    ]
+    const bytes = buildXlsContainer(buildWorkbookStream(sheets, [rich]))
+    const cells = await cellsOf(bytes)
+    expect(cells.get('sheet1!A1')).toEqual({ kind: 's', value: '0' })
+    const out = await convertXlsToXlsx(bytes)
+    const zip = await (await import('jszip')).default.loadAsync(out.bytes)
+    const shared = await zip.file('xl/sharedStrings.xml')!.async('string')
+    expect(shared).toContain('<t>BoldPlain</t>')
+  })
+
+  it('reads FormulaValue bool and error cached results from the BIFF8 offsets', async () => {
+    // FormulaValue (MS-XLS 2.5.133): type at byte1 (payload 6), value at
+    // byte3 (payload 8), fExprO=0xFFFF last (payload 12..13).
+    const sheets: SheetSpec[] = [
+      {
+        name: 'S',
+        cells: [
+          { kind: 'formulaBool', row: 0, col: 0, value: true },
+          { kind: 'formulaError', row: 0, col: 1, code: 0x07 },
+          { kind: 'formulaNumber', row: 0, col: 2, value: 12.5 },
+        ],
+      },
+    ]
+    const cells = await cellsOf(buildXlsContainer(buildWorkbookStream(sheets, [])))
+    expect(cells.get('sheet1!A1')).toEqual({ kind: 'b', value: '1' })
+    expect(cells.get('sheet1!B1')).toEqual({ kind: 'e', value: '#DIV/0!' })
+    expect(cells.get('sheet1!C1')).toEqual({ kind: 'n', value: '12.5' })
+  })
+
+  it('carries the 1904 date system as workbookPr, not a warning', async () => {
+    const bytes = buildXlsContainer(buildWorkbookStream(tree, strings, undefined, true))
+    expect(parseXlsWorkbook(buildWorkbookStream(tree, strings, undefined, true)).date1904).toBe(
+      true,
+    )
+    const out = await convertXlsToXlsx(bytes)
+    const zip = await (await import('jszip')).default.loadAsync(out.bytes)
+    const wb = await zip.file('xl/workbook.xml')!.async('string')
+    expect(wb).toContain('<workbookPr date1904="1"/>')
+    expect(out.warnings.join('\n')).not.toContain('date system')
+    const normal = await convertXlsToXlsx(bytesOf(tree))
+    expect(normal.warnings.join('\n')).not.toContain('date system')
+    const normalZip = await (await import('jszip')).default.loadAsync(normal.bytes)
+    expect(await normalZip.file('xl/workbook.xml')!.async('string')).not.toContain('date1904')
+  })
+
+  it('writes zero-based Ref8 merge ranges unchanged', async () => {
+    const sheets: SheetSpec[] = [
+      {
+        name: 'S',
+        cells: [{ kind: 'number', row: 0, col: 0, value: 1 }],
+        merges: [[5, 6, 0, 2]],
+      },
+    ]
+    const out = await convertXlsToXlsx(buildXlsContainer(buildWorkbookStream(sheets, [])))
+    const zip = await (await import('jszip')).default.loadAsync(out.bytes)
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
+    expect(sheet).toContain('<mergeCell ref="A6:C7"/>')
+  })
+
   it('decodes a shared string table split across CONTINUE records', async () => {
     // the split sits at a whole-string boundary; each CONTINUE restarts the
     // compression flag, and the reader walks the segments
@@ -137,6 +202,11 @@ describe('convertXlsToXlsx: the values foundation', () => {
       const u16b = (v: number): Uint8Array => {
         const out = new Uint8Array(2)
         new DataView(out.buffer).setUint16(0, v, true)
+        return out
+      }
+      const u32b = (v: number): Uint8Array => {
+        const out = new Uint8Array(4)
+        new DataView(out.buffer).setUint32(0, v, true)
         return out
       }
       const chars = (text: string): Uint8Array =>
@@ -166,7 +236,8 @@ describe('convertXlsToXlsx: the values foundation', () => {
         return out
       }
       const u8b = (v: number): Uint8Array => new Uint8Array([v & 0xff])
-      const sstPart = record(0x00fc, concat2(u16b(3), u16b(3), one('Name')))
+      // both SST counts are 4-byte fields (MS-XLS 2.4.265)
+      const sstPart = record(0x00fc, concat2(u32b(3), u32b(3), one('Name')))
       const contPart = record(0x003c, concat2(one('Value'), one('中文标签')))
       return concat2(sstPart, contPart)
     })()

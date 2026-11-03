@@ -1,4 +1,4 @@
-import * as CFB from 'cfb'
+import { CompoundFileError, openCompoundStreams } from '@genoffice/compound-file'
 import { LegacyXlsError } from './errors'
 
 /** Caps mirror the doc2docx reader: a malformed container must fail fast, not
@@ -15,34 +15,27 @@ export interface XlsContainer {
   workbook: Uint8Array
 }
 
-/** Open a legacy .xls container: OLE2/CFB validated, the workbook stream out. */
+/**
+ * Open a legacy .xls container. The OLE2 rules — signature, 512-byte header,
+ * input/stream caps and owned stream bytes — come from @genoffice/compound-file,
+ * the same opener the .doc reader uses, instead of a second weaker copy.
+ */
 export function openXlsContainer(bytes: Uint8Array): XlsContainer {
-  if (bytes.length > MAX_INPUT_BYTES) {
-    throw new LegacyXlsError('limits_exceeded', `input ${bytes.length} bytes`)
-  }
-  if (bytes.length < 8 || bytes[0] !== 0xd0 || bytes[1] !== 0xcf) {
-    throw new LegacyXlsError('not_cfb')
-  }
-  let cfb: CFB.CFB$Container
+  let opened
   try {
-    cfb = CFB.read(bytes as unknown as Buffer, { type: 'buffer' })
-  } catch (err) {
-    throw new LegacyXlsError('not_cfb', err instanceof Error ? err.message : undefined)
+    opened = openCompoundStreams(bytes, {
+      maxBytes: MAX_INPUT_BYTES,
+      maxStreamBytes: MAX_STREAM_BYTES,
+    })
+  } catch (error) {
+    if (error instanceof CompoundFileError) {
+      throw new LegacyXlsError(error.code, error.detail)
+    }
+    throw error
   }
   for (const name of WORKBOOK_STREAMS) {
-    const entry = CFB.find(cfb, name)
-    if (!entry) continue
-    // cfb hands the stream back as a Buffer for big streams and a plain
-    // number array for small ones — both are array-likes of bytes
-    const content = entry.content as ArrayLike<number> | undefined
-    const size = content?.length ?? 0
-    if (size === 0) continue
-    if (size > MAX_STREAM_BYTES) {
-      throw new LegacyXlsError('limits_exceeded', `stream ${name} ${size} bytes`)
-    }
-    const workbook = new Uint8Array(size)
-    for (let i = 0; i < size; i++) workbook[i] = content![i]!
-    return { workbook }
+    const content = opened.stream(name)
+    if (content && content.length > 0) return { workbook: content }
   }
   throw new LegacyXlsError('missing_stream')
 }

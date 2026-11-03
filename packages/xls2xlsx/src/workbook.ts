@@ -83,36 +83,36 @@ class CellStore {
   }
 }
 
-/** The shared string table: one segment-aware read across SST + CONTINUEs. */
+/** The shared string table: one segment-aware read across SST + CONTINUEs.
+    Both counts are 4-byte fields (MS-XLS 2.4.265), not the 2-byte counts the
+    old byte-builder wrote. */
 function readSst(stream: Uint8Array, record: BiffRecord): string[] {
   const { segments } = recordSegments(stream, record)
   const reader = new SegmentedReader(segments)
-  const total = reader.u16()
-  const unique = reader.u16()
+  const total = reader.u32()
+  const unique = reader.u32()
   void total
   const strings: string[] = []
   for (let i = 0; i < unique; i++) {
     if (strings.length >= MAX_SST_STRINGS) {
       throw new LegacyXlsError('limits_exceeded', `more than ${MAX_SST_STRINGS} strings`)
     }
+    // XLUnicodeRichExtendedString (MS-XLS 2.5.293): cch, flags, [cRun],
+    // [cbExtRst], chars, runs, ExtRst — the run/ext counts precede the text.
     const cch = reader.u16()
     const flags = reader.u8()
     const rich = (flags & 8) !== 0
     const farEast = (flags & 4) !== 0
+    const runs = rich ? reader.u16() : 0
+    const extSize = farEast ? reader.u32() : 0
     let text: string
     try {
       text = reader.chars(cch, (flags & 1) === 1)
     } catch (err) {
       throw new LegacyXlsError('bad_sst', err instanceof Error ? err.message : undefined)
     }
-    if (rich) {
-      const runs = reader.u16()
-      reader.rawBytes(runs * 4)
-    }
-    if (farEast) {
-      const extSize = Number(reader.rawBytes(4).reduce((acc, b, j) => acc + b * 2 ** (8 * j), 0))
-      reader.rawBytes(extSize)
-    }
+    if (runs > 0) reader.rawBytes(runs * 4)
+    if (extSize > 0) reader.rawBytes(extSize)
     strings.push(text)
   }
   return strings
@@ -236,16 +236,19 @@ function parseWorksheet(stream: Uint8Array, startRecord: BiffRecord, sst: string
       case BIFF.formula: {
         const row = view.getUint16(0, true)
         const col = view.getUint16(2, true)
-        // the cached result rides bytes 6..13; 0xFF 0xFF marks the special forms
-        if (payload[6] === 0xff && payload[7] === 0xff) {
-          const kind = payload[8]
-          const value = payload[9]
+        // FormulaValue (MS-XLS 2.5.133): the 8-byte result rides bytes 6..13;
+        // fExprO (0xFFFF) is the LAST word, the value type is byte1 (offset 6)
+        // and the bool/error payload is byte3 (offset 8).
+        if (payload[12] === 0xff && payload[13] === 0xff) {
+          const kind = payload[6]
+          const value = payload[8]
           if (kind === 1) {
             store.put({ row, col, type: 'boolean', value: value === 1 })
           } else if (kind === 2) {
             store.put({ row, col, type: 'error', value: BIFF_ERROR_NAMES[value] ?? '#VALUE!' })
           } else {
-            // the string result follows in the very next STRING record
+            // string (0x00) and blank string (0x03): the text follows in the
+            // String record immediately after this one
             pendingStringCell = { row, col }
             store.put({ row, col, type: 'string', value: '' })
           }
@@ -272,11 +275,12 @@ function parseWorksheet(stream: Uint8Array, startRecord: BiffRecord, sst: string
         if (count > MAX_MERGES) throw new LegacyXlsError('limits_exceeded', 'merge ranges')
         for (let i = 0; i < count; i++) {
           const at = 2 + i * 8
+          // Ref8/Ref8U are zero-based (MS-XLS 2.5.209), so no bias correction.
           sheet.merges.push({
-            firstRow: view.getUint16(at, true) - 1,
-            lastRow: view.getUint16(at + 2, true) - 1,
-            firstCol: view.getUint16(at + 4, true) - 1,
-            lastCol: view.getUint16(at + 6, true) - 1,
+            firstRow: view.getUint16(at, true),
+            lastRow: view.getUint16(at + 2, true),
+            firstCol: view.getUint16(at + 4, true),
+            lastCol: view.getUint16(at + 6, true),
           })
         }
         break
@@ -363,9 +367,14 @@ export function parseXlsWorkbook(stream: Uint8Array): XlsWorkbook {
         sheetRefs.push({ lbPlyPos, name: text, visible: state === 0 })
         break
       }
-      case 0x0022:
-        date1904 = true
+      case BIFF.date1904: {
+        // Date1904 is always present in BIFF8 (MS-XLS 2.4.74); its 2-byte
+        // payload carries f1904, so presence alone does not mean the 1904 epoch.
+        const payload = payloadOf(stream, record)
+        const pv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+        date1904 = pv.byteLength >= 2 && (pv.getUint16(0, true) & 1) === 1
         break
+      }
       default:
         break
     }

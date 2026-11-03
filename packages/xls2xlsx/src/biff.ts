@@ -32,6 +32,7 @@ export const BIFF = {
   mergedCells: 0x00e5,
   colInfo: 0x007d,
   filePass: 0x002f,
+  date1904: 0x0022,
   window2: 0x023e,
 } as const
 
@@ -130,6 +131,10 @@ export class SegmentedReader {
 
   u16(): number {
     return this.u8() | (this.u8() << 8)
+  }
+
+  u32(): number {
+    return (this.u8() | (this.u8() << 8) | (this.u8() << 16) | (this.u8() << 24)) >>> 0
   }
 
   /** read `count` characters compressed per `high`, crossing segments */
