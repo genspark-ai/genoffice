@@ -7085,6 +7085,15 @@ async function runHeadlessExportEntry(
   app.exit(headlessExitCode(outcome))
 }
 
+// Wayland sessions (Crostini on ChromeOS, GNOME-Wayland, KDE-Wayland): without
+// an Ozone platform hint Electron runs on X11 through XWayland, which works
+// but loses fractional scaling and can drop IME timing on some compositors.
+// The hint selects the native backend when Wayland is actually present and
+// changes nothing under X11, so it is safe to set unconditionally on Linux.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+}
+
 app.whenReady().then(async () => {
   // first scan waits for the windows to come up; later ones follow folder changes
   setTimeout(() => ensureFileIndexer()?.refresh(), 4000)
