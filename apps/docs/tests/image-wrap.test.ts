@@ -712,7 +712,9 @@ describe('image wrap in the editor', () => {
     const right = editor.view.dom.querySelector<HTMLElement>(
       '.doc-protected.img-wrap-square-right',
     )!
-    expect(right.style.marginRight).toMatch(/calc\(100% - 216(\.0)?px\)/)
+    expect(right.style.marginRight).toMatch(
+      /max\(100% - 216(\.0)?px, -1 \* var\(--doc-margin-right,0px\)\)/,
+    )
     editor.destroy()
   })
 
@@ -766,7 +768,9 @@ describe('image wrap in the editor', () => {
     // jsdom folds the margins into a shorthand it cannot split again once a
     // var() fallback is inside: top / right / bottom / left
     expect(img.getAttribute('style')).toMatch(
-      /margin: 0\.0px calc\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\)\) 0\.0px 12\.0px/,
+      new RegExp(
+        String.raw`margin: 0\.0px max\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 0\.0px 12\.0px`,
+      ),
     )
     expect(img.style.maxWidth).toBe('none')
     editor.destroy()

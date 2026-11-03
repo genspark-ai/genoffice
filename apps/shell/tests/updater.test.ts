@@ -436,9 +436,25 @@ describe('initAutoUpdater', () => {
 })
 
 describe('quiet background updates (genoffice#2389)', () => {
-  it('a background check downloads the package instead of opening the card', async () => {
+  const silent = () => true
+
+  it('is off by default: a background check opens the card and downloads nothing', async () => {
     const { initAutoUpdater } = await loadUpdater()
     initAutoUpdater(() => null)
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0' })
+    expect(showUpdateWindow).toHaveBeenCalledTimes(1)
+    expect(downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('a background check downloads the package instead of opening the card', async () => {
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
     expect(checkForUpdates).toHaveBeenCalledTimes(1)
 
@@ -450,7 +466,12 @@ describe('quiet background updates (genoffice#2389)', () => {
 
   it('a quiet download stays quiet and installs the package on quit', async () => {
     const { initAutoUpdater } = await loadUpdater()
-    initAutoUpdater(() => null)
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
     updaterState.listeners.get('update-available')!({ version: '0.2.0' })
     expect(showUpdateWindow).not.toHaveBeenCalled()
@@ -465,7 +486,12 @@ describe('quiet background updates (genoffice#2389)', () => {
   it('a failed quiet download stays quiet too: the next check retries', async () => {
     downloadUpdate.mockImplementation(() => Promise.reject(new Error('network')))
     const { initAutoUpdater } = await loadUpdater()
-    initAutoUpdater(() => null)
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
     updaterState.listeners.get('update-available')!({ version: '0.2.0' })
     await flushAsync()
@@ -475,7 +501,12 @@ describe('quiet background updates (genoffice#2389)', () => {
 
   it('a manual check after a quiet download shows the package is ready', async () => {
     const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
-    initAutoUpdater(() => null)
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
     updaterState.listeners.get('update-available')!({ version: '0.2.0' })
     updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
@@ -492,7 +523,12 @@ describe('quiet background updates (genoffice#2389)', () => {
   it('a check the user asked for still reports a failure', async () => {
     checkForUpdates.mockRejectedValueOnce(new Error('network'))
     const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
-    initAutoUpdater(() => null)
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     void checkForUpdatesNow()
     await flushAsync()
 
@@ -502,7 +538,12 @@ describe('quiet background updates (genoffice#2389)', () => {
 
   it('a check the user asked for still opens the card', async () => {
     const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
-    initAutoUpdater(() => null)
+    initAutoUpdater(
+      () => null,
+      'stable',
+      () => true,
+      silent,
+    )
     void checkForUpdatesNow()
     await flushAsync()
 

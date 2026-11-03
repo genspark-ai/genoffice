@@ -185,6 +185,7 @@ export const th = {
   appCtxSendToBack: 'ย้ายไปไว้ข้างหลังสุด',
   appCtxBringForward: 'นำไปข้างหน้า',
   appCtxSendBackward: 'ย้ายไปข้างหลัง',
+  appCtxRotate: 'หมุน',
   appCtxRotateLeft90: 'หมุนซ้าย 90°',
   appCtxRotateRight90: 'หมุนขวา 90°',
   appCtxFlipH: 'พลิกแนวนอน',

@@ -198,6 +198,7 @@ export const es = {
   appCtxSendToBack: 'Enviar al fondo',
   appCtxBringForward: 'Traer adelante',
   appCtxSendBackward: 'Enviar atrás',
+  appCtxRotate: 'Girar',
   appCtxRotateLeft90: 'Girar 90° a la izquierda',
   appCtxRotateRight90: 'Girar 90° a la derecha',
   appCtxFlipH: 'Voltear horizontalmente',

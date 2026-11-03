@@ -190,6 +190,7 @@ export const vi = {
   appCtxSendToBack: 'Đưa xuống dưới cùng',
   appCtxBringForward: 'Đưa lên một lớp',
   appCtxSendBackward: 'Đưa xuống một lớp',
+  appCtxRotate: 'Xoay',
   appCtxRotateLeft90: 'Xoay sang trái 90°',
   appCtxRotateRight90: 'Xoay sang phải 90°',
   appCtxFlipH: 'Lật ngang',

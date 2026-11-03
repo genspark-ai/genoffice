@@ -156,7 +156,7 @@ describe('lpPageRange', () => {
 })
 
 describe('printFileViaCups', () => {
-  it('spools the file operand after the flags, with the -P selection', async () => {
+  it('spools the file operand after the flags, with the -P page-list', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const pending = printFileViaCups(
       '/docs/report.pdf',
@@ -183,6 +183,14 @@ describe('printFileViaCups', () => {
     calls[0]!.fake.stderr.write('lp: printer refused the job\n')
     calls[0]!.fake.close(1)
     await expect(pending).resolves.toEqual({ ok: false, error: 'lp: printer refused the job' })
+  })
+
+  it('refuses a selection that filters down to nothing instead of printing everything', async () => {
+    const { calls, spawnFn } = fakeSpawn()
+    await expect(
+      printFileViaCups('/docs/report.pdf', {}, [1_000_001, 0], spawnFn as unknown as typeof spawn),
+    ).resolves.toEqual({ ok: false, error: 'the page selection has no printable pages' })
+    expect(calls).toHaveLength(0)
   })
 })
 

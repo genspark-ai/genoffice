@@ -190,6 +190,7 @@ export const ja = {
   appCtxSendToBack: '最背面へ移動',
   appCtxBringForward: '前面へ移動',
   appCtxSendBackward: '背面へ移動',
+  appCtxRotate: '回転',
   appCtxRotateLeft90: '左へ 90° 回転',
   appCtxRotateRight90: '右へ 90° 回転',
   appCtxFlipH: '左右反転',

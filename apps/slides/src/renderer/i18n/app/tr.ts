@@ -192,6 +192,7 @@ export const tr = {
   appCtxSendToBack: 'En Arkaya Gönder',
   appCtxBringForward: 'Bir Öne Getir',
   appCtxSendBackward: 'Bir Arkaya Gönder',
+  appCtxRotate: 'Döndür',
   appCtxRotateLeft90: '90° Sola Döndür',
   appCtxRotateRight90: '90° Sağa Döndür',
   appCtxFlipH: 'Yatay Çevir',

@@ -197,6 +197,7 @@ export const hi = {
   appCtxSendToBack: 'सबसे पीछे भेजें',
   appCtxBringForward: 'आगे लाएँ',
   appCtxSendBackward: 'पीछे भेजें',
+  appCtxRotate: 'घुमाएँ',
   appCtxRotateLeft90: '90° बाएँ घुमाएँ',
   appCtxRotateRight90: '90° दाएँ घुमाएँ',
   appCtxFlipH: 'क्षैतिज पलटें',

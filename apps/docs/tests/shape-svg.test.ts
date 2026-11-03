@@ -53,7 +53,7 @@ describe('straight connector rendering', () => {
 describe('authored outline width', () => {
   it('keeps the historical encoded SVG byte-identical when no width is authored', () => {
     expect(decodedSvg(shapeBackgroundImage('rect', 10, 10, '112233', '445566'))).toBe(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="-1 -1 10 10">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="-1 -1 10 10" preserveAspectRatio="none">' +
         '<path d="M 0 0 L 8 0 L 8 8 L 0 8 Z" fill="#112233" stroke="#445566" stroke-width="2"/>' +
         '</svg>',
     )

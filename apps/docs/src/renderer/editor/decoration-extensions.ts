@@ -24,6 +24,7 @@ import {
 } from './para-border-merge'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
+import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './cjk-punct-shrink'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
 import { blockDecorationPlugin } from './local-edit'
 
@@ -471,7 +472,44 @@ function tabGlyphLeft(view: EditorView, pos: number): number | null {
 /** inner whitespace or CJK text: a wrap opportunity inside the tab segment */
 const SEG_BREAKABLE_RE = /\s|[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/
 
+/**
+ * Leader width (layout px): the free width of the title's last line when the
+ * page number fits before the right tab stop; else the "leader + page" unit
+ * drops to the next line, bare when the title stopped short of the stop (Word
+ * wraps only the number) or filling that line up to the stop when the title
+ * ran past it (Word wraps the tab itself and lays its leader there).
+ */
+export function tocLeaderGap(
+  titleLastRight: number,
+  lineLeft: number,
+  stopRight: number,
+  pageWidth: number,
+  minGap: number,
+): number {
+  const free = stopRight - titleLastRight - pageWidth
+  if (free >= minGap) return free
+  if (titleLastRight < stopRight) return 0
+  return Math.max(0, stopRight - lineLeft - pageWidth)
+}
+
+/** last client rect of a node's contents, taking a wrapped line's trailing fragment */
+function lastLineRect(el: HTMLElement): DOMRect | null {
+  const range = alignRange()
+  range.selectNodeContents(el)
+  const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 || r.height > 0)
+  if (rects.length === 0) return null
+  let last = rects[0]
+  for (const r of rects)
+    if (
+      r.bottom > last.bottom + 0.5 ||
+      (Math.abs(r.bottom - last.bottom) <= 0.5 && r.right > last.right)
+    )
+      last = r
+  return last
+}
+
 const MEASURE_RETRY_MAX = 10
+const TOC_GAP_SLACK_PX = 1
 /**
  * Distinct decoration signatures tolerated between external invalidations
  * (edit / resize / font load). A convergent measure→decorate→re-measure
@@ -496,6 +534,8 @@ class TabLayoutView {
   private lastDomWidth = -1
   /** tab paragraph heights before the last decoration dispatch */
   private heightsBefore = new Map<number, number>()
+  /** toc entries already sized, keyed by element; the gap they were given */
+  private tocGaps = new WeakMap<HTMLElement, string>()
   // font swaps change text metrics, which shifts every tab's start x
   private onFontsLoaded = () => {
     this.invalidate()
@@ -513,6 +553,10 @@ class TabLayoutView {
     this.measure()
     document.fonts?.addEventListener('loadingdone', this.onFontsLoaded)
     document.addEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
+    // section wrap widths / document CSS land after the first measure and
+    // re-wrap TOC titles without touching the editor root's width
+    document.addEventListener(DOC_CSS_COMMITTED_EVENT, this.onPhasedSettled)
+    document.addEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onPhasedSettled)
     if (typeof ResizeObserver !== 'undefined') {
       // width-only trigger: height changes on every keystroke
       this.resizeObserver = new ResizeObserver(() => {
@@ -563,6 +607,8 @@ class TabLayoutView {
   destroy() {
     document.fonts?.removeEventListener('loadingdone', this.onFontsLoaded)
     document.removeEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
+    document.removeEventListener(DOC_CSS_COMMITTED_EVENT, this.onPhasedSettled)
+    document.removeEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onPhasedSettled)
     this.resizeObserver?.disconnect()
     if (this.retryRaf) cancelAnimationFrame(this.retryRaf)
   }
@@ -589,6 +635,8 @@ class TabLayoutView {
       this.scheduleRetry()
       return
     }
+
+    this.layoutTocLines()
 
     const paras: Array<{ node: ProseMirrorNode; pos: number }> = []
     view.state.doc.descendants((node, pos) => {
@@ -678,6 +726,74 @@ class TabLayoutView {
       )
     }
     view.dispatch(view.state.tr.setMeta(tabStopPluginKey, decos).setMeta('addToHistory', false))
+  }
+
+  /**
+   * TOC entries: size each leader to the free width of the title's last line
+   * so the page number closes that line, or drop leader + page to a full-width
+   * line when it cannot (Word's right tab). Written straight onto the NodeView
+   * DOM: decorations do not reach inside a protected node, and preview clones
+   * copy the inline style with the markup. Entries whose height moved tell the
+   * paginator through the tab reflow meta.
+   */
+  private layoutTocLines() {
+    const { view } = this
+    const lines = view.dom.querySelectorAll<HTMLElement>('.doc-toc-line')
+    if (lines.length === 0) return
+    const changed: Array<{ el: HTMLElement; before: number }> = []
+    const pending: Array<{ tail: HTMLElement; gap: string; el: HTMLElement }> = []
+    // read everything first, then write: alternating would relayout per entry
+    for (const el of lines) {
+      const body = el.querySelector<HTMLElement>(':scope > .doc-toc-body')
+      const title = body?.querySelector<HTMLElement>(':scope > .doc-toc-title')
+      const tail = body?.querySelector<HTMLElement>(':scope > .doc-toc-tail')
+      const page = tail?.querySelector<HTMLElement>(':scope > .doc-toc-page')
+      if (!body || !title || !tail || !page || el.offsetWidth === 0) continue
+      const bodyRect = body.getBoundingClientRect()
+      if (bodyRect.width === 0) continue
+      const zoom = el.getBoundingClientRect().width / el.offsetWidth
+      const titleLast = lastLineRect(title)
+      if (!titleLast) continue
+      const cs = getComputedStyle(body)
+      const bodyLeft = bodyRect.left + (parseFloat(cs.paddingLeft) || 0) * zoom
+      const bodyRight = bodyRect.right - (parseFloat(cs.paddingRight) || 0) * zoom
+      // the right tab stop is measured from the column edge (the wrapper's margin box)
+      const stopPt = parseFloat(cs.getPropertyValue('--doc-toc-stop'))
+      const wrap = el.parentElement
+      const stopX =
+        Number.isFinite(stopPt) && wrap
+          ? Math.min(
+              bodyRight,
+              wrap.getBoundingClientRect().left +
+                ((stopPt * 96) / 72 - (parseFloat(getComputedStyle(wrap).marginLeft) || 0)) * zoom,
+            )
+          : bodyRight
+      const pageW = page.getBoundingClientRect().width
+      // Word fills a gap narrower than one leader glyph with nothing but still
+      // keeps the number on the line; a tiny positive min keeps it measurable
+      const minGap = 1 * zoom
+      const free = tocLeaderGap(titleLast.right, bodyLeft, stopX, pageW, minGap)
+      // a unit sized to the exact free width overflows by sub-pixel rounding and
+      // wraps anyway: give back one layout px (Word's number is flush right)
+      const gapPx = free > 0 ? Math.max(0, free / zoom - TOC_GAP_SLACK_PX) : 0
+      const gap = `${gapPx.toFixed(2)}px`
+      if (this.tocGaps.get(tail) === gap) continue
+      pending.push({ tail, gap, el })
+    }
+    if (pending.length === 0) return
+    for (const p of pending) changed.push({ el: p.el, before: p.el.getBoundingClientRect().height })
+    for (const p of pending) {
+      p.tail.style.setProperty('--doc-toc-gap', p.gap)
+      this.tocGaps.set(p.tail, p.gap)
+    }
+    let from: number | null = null
+    for (const c of changed) {
+      if (Math.abs(c.el.getBoundingClientRect().height - c.before) <= 0.5) continue
+      const pos = view.posAtDOM(c.el, 0)
+      if (from === null || pos < from) from = pos
+    }
+    if (from === null) return
+    view.dispatch(view.state.tr.setMeta(tabReflowMeta, from).setMeta('addToHistory', false))
   }
 
   /** null = paragraph not measurable right now (hidden, not mounted...) */

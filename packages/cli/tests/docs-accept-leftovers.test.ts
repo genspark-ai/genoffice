@@ -1,11 +1,11 @@
 /**
- * #2337 (move-range half): genoffice docs apply accept_changes / reject_changes
+ * genoffice#2337 (move-range half): genoffice docs apply accept_changes / reject_changes
  * {all:true} used to leave w:moveFromRangeEnd / w:moveToRangeEnd behind in the
  * paragraphs Word wrote them into (the following, untouched paragraphs). The
  * fixture is the issue's synthetic document (JSZip + XML strings: python-docx
  * is not available in CI).
  *
- * The section-property half (the body w:sectPrChange record) is PR #2344 and
+ * The section-property half (the body w:sectPrChange record) is genoffice#2344 and
  * is deliberately not covered here.
  */
 import { readFileSync, writeFileSync } from 'node:fs'

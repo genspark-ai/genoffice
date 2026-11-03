@@ -26,11 +26,14 @@ import {
   cssLineHeight,
   isCjk,
   lineHeightFactor,
+  paraLineFactorCss,
   runLetterSpacingCss,
   fontKerningCss,
   textHasComplexScript,
   textHasHangul,
   SPACE_ONLY_RE,
+  runSlotFaces,
+  wordSlotFaces,
 } from '../line-metrics'
 import {
   custGeomBackgroundCss,
@@ -38,7 +41,12 @@ import {
   shapePaths,
   shapeTextInsetsPx,
 } from './shape-svg'
-import { pictureTransformFns, quarterTurnInsetPx, quarterTurnMarginCss } from './image-rotation'
+import {
+  pictureLayerDecls,
+  pictureTransformFns,
+  quarterTurnInsetPx,
+  quarterTurnMarginCss,
+} from './image-rotation'
 import {
   DK_SIDE,
   dkBackground,
@@ -162,14 +170,20 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
         ea ? (cjkDeclaredLineFactor(ea) ?? lineHeightFactor(ea)) : 0,
       )
       tocStyles.push(`--doc-line-factor:${factor}`)
+    } else {
+      // style-only face: the entry's script picks the per-style factor var like
+      // any paragraph (Arial TOC1 under a Calibri body: 1.15, not the body's 1.22)
+      tocStyles.push(
+        `--doc-line-factor:${paraLineFactorCss(`${field.num ?? ''}${field.left ?? ''}${field.right ?? ''}`)}`,
+      )
     }
     tocStyles.push(...effectiveRPrCss({ sizeHalfPoints: field.szHalfPoints, ...field }))
     const tocLh = cssLineHeight(field.lineRule, field.lineRawTwips, field.lineSpacing)
-    // an own face needs its own strut: the inherited computed line-height
+    // an own factor needs its own strut: the inherited computed line-height
     // would carry the body face's factor; the inherited multiple still applies
     // (same --doc-line-max contract as cssLineHeight)
     if (tocLh) tocStyles.push(`line-height:${tocLh}`)
-    else if (field.fontFamily)
+    else
       tocStyles.push(
         'line-height:var(--doc-line-max, calc(var(--doc-line-factor,1.2) * var(--doc-line-mult,1)))',
       )
@@ -179,25 +193,45 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
     else if (fixedLineRule(field)) tocStyles.push('--doc-line-fixed:1')
     if (tocStyles.length > 0) attrs.style = tocStyles.join(';')
     const numAttrs: Record<string, string> = { class: 'doc-toc-num', contenteditable: 'false' }
+    const bodyAttrs: Record<string, string> = { class: 'doc-toc-body', contenteditable: 'false' }
+    const bodyStyles: string[] = []
     if (field.indentLeftTwips != null)
-      (field.num ? numAttrs : titleAttrs).style = `padding-left:${field.indentLeftTwips / 20}pt`
+      bodyStyles.push(`--doc-toc-indent:${field.indentLeftTwips / 20}pt`)
+    // Word: the number's tab jumps to the left stop, so the number is a cell at
+    // least as wide as the stop; the first line keeps the paragraph's (hanging) indent
+    if (field.num && field.numTabTwips) numAttrs.style = `min-width:${field.numTabTwips / 20}pt`
+    if (field.hangTwips) bodyStyles.push(`--doc-toc-hang:${field.hangTwips / 20}pt`)
+    if (field.rightTabTwips) bodyStyles.push(`--doc-toc-stop:${field.rightTabTwips / 20}pt`)
+    if (bodyStyles.length > 0) bodyAttrs.style = bodyStyles.join(';')
     const num: DomSpec[] = field.num ? [['span', numAttrs, field.num]] : []
+    // Word: the title wraps across the full column; the right tab's leader and
+    // page close the LAST line when they fit after it, else they take a line of
+    // their own. The body is an inline flow doing that; TabLayoutView measures
+    // the last title line and sizes --doc-toc-gap on the tail.
     return [
       'div',
       attrs,
-      ...num,
-      ['span', titleAttrs, field.left || '\u00a0'],
-      // real leader glyphs (clipped to the free width), not a border decoration:
-      // Word/LO leader dots are text, and exported-PDF text comparison sees them
       [
         'span',
-        {
-          class: `doc-toc-dots${field.leader === 'heavy' ? ' doc-toc-leader-heavy' : ''}`,
-          contenteditable: 'false',
-        },
-        TOC_LEADER_GLYPH[field.leader ?? 'dot'].repeat(220),
+        bodyAttrs,
+        ...num,
+        ['span', titleAttrs, field.left || '\u00a0'],
+        [
+          'span',
+          { class: 'doc-toc-tail', contenteditable: 'false' },
+          // real leader glyphs (clipped to the free width), not a border decoration:
+          // Word/LO leader dots are text, and exported-PDF text comparison sees them
+          [
+            'span',
+            {
+              class: `doc-toc-dots${field.leader === 'heavy' ? ' doc-toc-leader-heavy' : ''}`,
+              contenteditable: 'false',
+            },
+            TOC_LEADER_GLYPH[field.leader ?? 'dot'].repeat(220),
+          ],
+          ['span', { class: 'doc-toc-page', contenteditable: 'false' }, field.right ?? ''],
+        ],
       ],
-      ['span', { class: 'doc-toc-page', contenteditable: 'false' }, field.right ?? ''],
     ]
   }
   if (field.kind === 'pageBreak') {
@@ -1985,6 +2019,7 @@ export function runSpanSpecs(
     const styles: string[] = []
     if (widthPx)
       styles.push(`width:${widthPx}px`, heightPx ? `height:${heightPx}px` : 'height:auto')
+    styles.push(...pictureLayerDecls(run.image.layers))
     const xf = pictureTransformFns(rotDeg, flipH, flipV)
     if (xf.length) styles.push(`transform:${xf.join(' ')}`)
     const qtMargin = quarterTurnMarginCss(quarterTurnInsetPx(widthPx ?? 0, heightPx ?? 0, rotDeg))
@@ -2001,12 +2036,11 @@ export function runSpanSpecs(
  *  East Asian face */
 function runFaceDecls(run: Run, cs: string | undefined): { decls: string[]; family?: string } {
   if (!run.font && !run.fontAscii && !cs) return { decls: [] }
-  const ea = run.font ?? null
-  const ascii = run.fontAscii ?? null
-  const decls: string[] = []
   // a Latin-only chain fills both slots, so an unparsed run's font only names
   // an East Asian face when the slots differ
-  const explicitEa = run.eastAsiaFont ?? (!run.rawRPr && ea !== ascii ? ea : null)
+  const { ascii, eastAsia: ea, declaredEa } = runSlotFaces(run)
+  const decls: string[] = []
+  const explicitEa = declaredEa ? wordSlotFaces(null, declaredEa).eastAsia : null
   if (explicitEa && !run.eaSlotEmpty)
     decls.push(`--doc-east-asian-font:${cssFontFamily(explicitEa)}`)
   const family = cs

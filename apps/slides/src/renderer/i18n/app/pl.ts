@@ -198,6 +198,7 @@ export const pl = {
   appCtxSendToBack: 'Przesuń na spód',
   appCtxBringForward: 'Przesuń do przodu',
   appCtxSendBackward: 'Przesuń do tyłu',
+  appCtxRotate: 'Obróć',
   appCtxRotateLeft90: 'Obróć o 90° w lewo',
   appCtxRotateRight90: 'Obróć o 90° w prawo',
   appCtxFlipH: 'Przerzuć w poziomie',

@@ -137,13 +137,8 @@ import {
   remapOutlineTree,
 } from './heading-outline'
 import { filterPageParity, maySpoolOriginal, printPdf, type PageParity } from './print'
-import type {
-  PdfEncryptionInput,
-  PdfPermissions,
-  PrintDuplex,
-  PrinterInfo,
-  PrinterOption,
-} from '../shared/ipc'
+import { readFileBytes } from './file-bytes'
+import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
@@ -1114,11 +1109,6 @@ export default function App() {
   const [printCopies, setPrintCopies] = useState(1)
   const [printCollate, setPrintCollate] = useState(true)
   const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
-  // the chosen printer's driver option groups (quality, color, media type) and
-  // what the user picked from them; empty for the system dialog and on
-  // platforms where the CUPS route does not run
-  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
-  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   /** Page-crop dialog: rendered page bitmap + which page it shows */
   const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
   const [cropAllPages, setCropAllPages] = useState(false)
@@ -1137,20 +1127,6 @@ export default function App() {
   docFontsRef.current = docFonts
   /** OCR results for scanned pages, keyed by original page index (reset per doc) */
   const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
-  /** the auto-OCR's words as white text inserts: baked into every save while the
-      recognition data is in the session (the post-save reload finds a text layer,
-      so the pass never re-runs and the bake never doubles) */
-  const ocrBakeInserts = useMemo(() => {
-    const out: LocalTextInsert[] = []
-    for (const [origIdx, data] of ocrPages) {
-      const geom = pageGeomRef.current(origIdx)
-      if (!geom) continue
-      for (const input of buildOcrBakeInserts(origIdx, data.words, geom)) {
-        out.push({ id: `ocr-bake-${origIdx}-${out.length}`, input })
-      }
-    }
-    return out
-  }, [ocrPages])
   /** One text extraction per loaded document, shared by search, paragraph boxes,
       the AI tools and the auto-OCR pass */
   const [searchIndexCache] = useState(createSearchIndexCache)
@@ -1215,6 +1191,20 @@ export default function App() {
   /** Latest geometry for async pipelines that must not rebind on rotation (OCR) */
   const pageGeomRef = useRef(pageGeom)
   pageGeomRef.current = pageGeom
+  /** the auto-OCR's words as white text inserts: baked into every save while the
+      recognition data is in the session (the post-save reload finds a text layer,
+      so the pass never re-runs and the bake never doubles) */
+  const ocrBakeInserts = useMemo(() => {
+    const out: LocalTextInsert[] = []
+    for (const [origIdx, data] of ocrPages) {
+      const geom = pageGeomRef.current(origIdx)
+      if (!geom) continue
+      for (const input of buildOcrBakeInserts(origIdx, data.words, geom)) {
+        out.push({ id: `ocr-bake-${origIdx}-${out.length}`, input })
+      }
+    }
+    return out
+  }, [ocrPages])
   /** Current original page index, readable without rebinding the OCR pass on scroll */
   const currentOrigIdxRef = useRef(0)
   currentOrigIdxRef.current = visList[currentPage - 1] ?? 0
@@ -1285,8 +1275,7 @@ export default function App() {
       saved?: SavedSnapshot,
       waitForPageNos: number[] = [],
     ) => {
-      const data = await window.pdfApi.readFile(path)
-      const bytes = new Uint8Array(data)
+      const bytes = await readFileBytes(window.pdfApi, path)
       setFormHasXfa(hasXfaMarker(bytes))
       if (!saved) {
         setFormCatalog(null)
@@ -1663,7 +1652,7 @@ export default function App() {
           return mapped.every((n, i) => n === i) ? null : mapped
         })
       }
-      setFileSize(data.byteLength)
+      setFileSize(bytes.byteLength)
       setSelected(null)
       setDeleteToast(false)
       setUndoStack([])
@@ -1723,7 +1712,7 @@ export default function App() {
           // reports it like a password failure, and the answer has to name the
           // real reason instead of looping the prompt
           try {
-            const raw = new Uint8Array(await window.pdfApi.readFile(path))
+            const raw = await readFileBytes(window.pdfApi, path)
             const probe = await window.pdfApi.decryptPdf(raw, '')
             if (!probe.ok && probe.reason === 'certificate-encryption') {
               showNotice(t('pwCertEncrypted'))
@@ -6734,12 +6723,6 @@ export default function App() {
             copies: printCopies,
             collate: printCollate,
             duplex: printDuplex,
-            driverOptions: driverOptions
-              .filter(
-                (g) =>
-                  driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
-              )
-              .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
           }
     try {
       await flushThen(async () => {
@@ -6755,8 +6738,8 @@ export default function App() {
             if (!r.ok && r.error) opFailed(r.error)
             return
           }
-          const data = await window.pdfApi.readFile(filePath)
-          const pdoc = await getDocument({ data: new Uint8Array(data), ...DOC_OPTS }).promise
+          const data = await readFileBytes(window.pdfApi, filePath)
+          const pdoc = await getDocument({ data, ...DOC_OPTS }).promise
           try {
             await printPdf(pdoc, pages, job)
           } finally {
@@ -11566,16 +11549,7 @@ export default function App() {
                     <select
                       className="pdf-modal-input"
                       value={printDevice}
-                      onChange={(e) => {
-                        setPrintDevice(e.target.value)
-                        setDriverChoices({})
-                        setDriverOptions([])
-                        if (e.target.value && IS_MAC)
-                          void window.pdfApi
-                            .printerOptions(e.target.value)
-                            .then(setDriverOptions)
-                            .catch(() => setDriverOptions([]))
-                      }}
+                      onChange={(e) => setPrintDevice(e.target.value)}
                     >
                       <option value="">{t('printDefaultPrinter')}</option>
                       {printers.map((p) => (
@@ -11634,24 +11608,6 @@ export default function App() {
                       ))}
                     </select>
                   </label>
-                  {driverOptions.map((group) => (
-                    <label key={group.name} className="pdf-modal-row pdf-print-field">
-                      <span>{group.translation}</span>
-                      <select
-                        className="pdf-modal-input"
-                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
-                        onChange={(e) =>
-                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
-                        }
-                      >
-                        {group.values.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
                   <div className="pdf-print-divider" />
                   <label className="pdf-modal-row">
                     <input

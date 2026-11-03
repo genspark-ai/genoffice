@@ -213,14 +213,15 @@ export function markTableSeamSlices(slices: PageSlice[], blocks: BlockBox[]): vo
     }
     const prev = blocks[bi - 1]
     if (prev?.el?.tagName !== 'TABLE') continue
-    if (prev.top + prev.height > s.start + ROW_SEAM_TOL_PX) {
+    // the inter-block gap and the page-bottom footnote reservation are folded into the height
+    const boxBottom =
+      prev.top + prev.height - (prev.spaceAfterPx ?? 0) - (prev.footnoteExtraPx ?? 0)
+    if (boxBottom > s.start + ROW_SEAM_TOL_PX) {
       // a cut through a row's cell text has no border on the seam: the window
       // lift would show the previous page's last-line descenders at the top
       if (cutOnRowSeam(prev, s.start)) s.cutTable = true
       continue
     }
-    // the inter-block gap was folded into the table's height as spaceAfterPx
-    const boxBottom = prev.top + prev.height - (prev.spaceAfterPx ?? 0)
     if (seamDecision([boxBottom], s.start)) s.tailTable = true
   }
 }
@@ -2772,7 +2773,7 @@ export function sectionFirstPages(slices: PageSlice[]): boolean[] {
 }
 
 /** Page containing content-area Y (1-based) */
-export function pageAt(slices: PageSlice[], y: number): number {
+export function pageAt(slices: ReadonlyArray<{ start: number }>, y: number): number {
   let page = 1
   for (let i = 1; i < slices.length; i++) {
     if (y >= slices[i].start) page = i + 1
@@ -2782,7 +2783,7 @@ export function pageAt(slices: PageSlice[], y: number): number {
 
 /** 0-based page a block or line top belongs to: a top sitting on a page
  *  boundary (within `tol`) opens that page rather than closing the previous one */
-export function pageOfY(slices: PageSlice[], top: number, tol = 0.5): number {
+export function pageOfY(slices: ReadonlyArray<{ start: number }>, top: number, tol = 0.5): number {
   return pageAt(slices, top + tol) - 1
 }
 

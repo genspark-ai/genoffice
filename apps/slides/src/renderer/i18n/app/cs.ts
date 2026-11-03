@@ -191,6 +191,7 @@ export const cs = {
   appCtxSendToBack: 'Přenést do pozadí',
   appCtxBringForward: 'Přenést blíž',
   appCtxSendBackward: 'Přenést dál',
+  appCtxRotate: 'Otočit',
   appCtxRotateLeft90: 'Otočit vlevo o 90°',
   appCtxRotateRight90: 'Otočit vpravo o 90°',
   appCtxFlipH: 'Překlopit vodorovně',

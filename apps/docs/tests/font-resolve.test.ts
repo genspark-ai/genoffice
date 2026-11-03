@@ -7,6 +7,7 @@ import {
   setResolverFontTable,
 } from '../src/renderer/font-resolve'
 import {
+  cjkDeclaredLineFactor,
   lineHeightFactor,
   setDocFontTable,
   tableLineHeightFactor,
@@ -110,5 +111,31 @@ describe('installed index failures', () => {
     await flush()
     expect(resolveDeclaredFace('Verdana')).toBe(verdana)
     expect(resolveDeclaredFace('Helvetica Neue')?.source).not.toBe('system')
+  })
+})
+
+describe('installed Noto Han regional face', () => {
+  // Noto Sans JP installed: hhea 1160/-288, EA code pages
+  const notoJp = {
+    unitsPerEm: 1000,
+    hheaAscender: 1160,
+    hheaDescender: -288,
+    hheaLineGap: 0,
+    typoAscender: 880,
+    typoDescender: -120,
+    typoLineGap: 0,
+    winAscent: 1160,
+    winDescent: 288,
+    useTypoMetrics: false,
+    xAvgCharWidth: 500,
+    codePageRange1: 0x60060107,
+  }
+
+  it('lays out at its own hhea x 1.3 instead of the missing-face SimSun/Cambria pins', async () => {
+    setFontMetricsProvider((f) => Promise.resolve(f === 'noto sans jp' ? notoJp : null))
+    await prefetchFaces(['Noto Sans JP', 'Noto Sans SC'])
+    expect(lineHeightFactor('Noto Sans JP')).toBe(1.8824)
+    expect(cjkDeclaredLineFactor('Noto Sans JP')).toBe(1.8824)
+    expect(cjkDeclaredLineFactor('Noto Sans SC')).toBe(1.3)
   })
 })

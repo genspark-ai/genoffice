@@ -81,12 +81,193 @@ export interface PageCut {
    *  (Word probe 2026-09-23) or the plan drops it at a natural lead; only a
    *  section's first page keeps it */
   leadDropsSpaceBefore: boolean
+  /** the lead's explicit break keeps this much of its space before (px): its
+   *  margin-top below the gap, instead of the declared (collapsed) one */
+  leadMtPx?: number
   pageNo: number
   display: string
   /** zero-height slice: a deliberate blank page (double w:br, even/odd parity) */
   blank: boolean
   /** page-pinned floated blocks whose anchor lands on this page */
   floats: number[]
+  /** the gap widget that opens this page (applyGapLedger); absent on the first
+   *  page, a parity twin and a boundary the gap builder dropped */
+  gap?: PageGapFacts
+  /** cumulative height of the page-turn gaps above this page's content (px at
+   *  zoom 1): screen Y of a flow y on this page = origin + (y + gapOffsetPx) * zoom */
+  gapOffsetPx: number
+  /** cumulative flow displacement above this page's content: the gaps outside
+   *  floating tables plus their repeated-header clones (a split floating table's
+   *  in-table gaps move only the float; its carry spacer moves the flow, see
+   *  flowOffsetAt) */
+  flowOffsetPx: number
+}
+
+/** page-turn widget kinds: a zero-height `cut` marker (multi-cell row cut,
+ *  nested-table overlay) is a boundary without a band */
+export type PageGapKind = 'block' | 'inline' | 'table' | 'cell' | 'cut'
+
+/** What the gap builder emitted for a page turn, in px at zoom 1 */
+export interface PageGapFacts {
+  kind: PageGapKind
+  /** rendered box height: bottom margin + band + top margin (0 for a cut marker) */
+  heightPx: number
+  /** previous page's bottom margin incl. the footnote area and the pad */
+  marginBottomPx: number
+  /** next page's top margin after the header push (`--gap-mt`) */
+  marginTopPx: number
+  /** next page's section left margin on the paper (`--gap-ml`) */
+  marginLeftPx: number
+  /** header push past the section's top margin (page-edge V offsets count from the pgMar top) */
+  topPushPx?: number
+  /** mixed-column page above: the gap is pulled up over the vacated stacked space */
+  pullUpPx: number
+  /** repeated table header clones rendered right below a table gap */
+  repeatHeaderPx: number
+  /** in-table gap of a split floating table: displaces the float, not the flow */
+  floatGap?: true
+  /** flow y where the widget landed (learnGapFlowTops): the slice boundary plus
+   *  the trailing space the previous block keeps in the DOM (Word drops it at
+   *  the page bottom), minus the pull-up */
+  flowTopPx?: number
+  /** next page's left edge and width on the shared paper (differing-width documents) */
+  pageBox?: { left: number; width: number }
+}
+
+/** flow spacer that carries a split floating table's anchor paragraph past the
+ *  table's in-table gaps: sits at flow y `y`, `px` tall */
+export interface FlowCarry {
+  y: number
+  px: number
+}
+
+/** one page-turn entry of the gap builder's output */
+export interface GapLedgerEntry extends PageGapFacts {
+  /** index of the page the gap opens */
+  page: number
+}
+
+/**
+ * Stamp the gap facts the builder emitted onto the cuts and accumulate the two
+ * offsets. Pages without an entry (first page, parity twins, dropped
+ * boundaries) inherit the offsets of the page above.
+ */
+export function applyGapLedger(cuts: PageCut[], ledger: readonly GapLedgerEntry[]): void {
+  const byPage = new Map<number, PageGapFacts>()
+  for (const { page, ...facts } of ledger) byPage.set(page, facts)
+  let gapOffsetPx = 0
+  let flowOffsetPx = 0
+  cuts.forEach((cut, i) => {
+    const gap = byPage.get(i)
+    if (gap) {
+      cut.gap = gap
+      gapOffsetPx += gap.heightPx - gap.pullUpPx
+      if (!gap.floatGap) flowOffsetPx += gap.heightPx - gap.pullUpPx + gap.repeatHeaderPx
+    } else delete cut.gap
+    cut.gapOffsetPx = gapOffsetPx
+    cut.flowOffsetPx = flowOffsetPx
+  })
+}
+
+/** flow displacement (px at zoom 1) the DOM shows above flow y: the page's
+ *  flowOffsetPx plus the carry spacers at or above y */
+export function flowOffsetAt(
+  cuts: readonly PageCut[],
+  carries: readonly FlowCarry[],
+  y: number,
+  tol = 0,
+): number {
+  let off = 0
+  for (const cut of cuts) {
+    const gap = cut.gap
+    if (!gap || gap.floatGap || (gap.flowTopPx ?? cut.start) > y + tol) continue
+    off += gap.heightPx - gap.pullUpPx + gap.repeatHeaderPx
+  }
+  return carries.reduce((s, c) => (c.y <= y + tol ? s + c.px : s), off)
+}
+
+/** Stamp the page-turn widgets' landed flow tops (DOM order = page order; px at
+ *  zoom 1 from the first page's content top) onto the ledger; a count mismatch
+ *  leaves the slice boundaries in place. */
+export function learnGapFlowTops(cuts: readonly PageCut[], widgetTops: readonly number[]): boolean {
+  const turns = cuts.filter((c, i) => i > 0 && c.gap && c.gap.kind !== 'cut')
+  if (turns.length !== widgetTops.length) return false
+  turns.forEach((cut, i) => {
+    const prev = cuts[cuts.indexOf(cut) - 1]
+    cut.gap!.flowTopPx = widgetTops[i] - prev.gapOffsetPx
+  })
+  return true
+}
+
+/** the nearest page at or above `page` whose gap knows its header push (cut
+ *  markers carry none, like the DOM markers before them) */
+export function topPushAt(cuts: readonly PageCut[], page: number): number | undefined {
+  for (let p = page; p >= 0; p--) {
+    const push = cuts[p].gap?.topPushPx
+    if (push !== undefined) return push
+  }
+  return undefined
+}
+
+/** Paper edges of every page a gap opens, in flow px from the editor box top
+ *  (zoom 1): where its paper starts, where the previous paper ends, and the gap
+ *  box itself */
+export interface PagePaperEdge {
+  page: number
+  gap: PageGapFacts
+  /** this page's paper top (gap bottom minus the top margin) */
+  top: number
+  /** previous page's paper bottom (gap top plus the bottom margin) */
+  prevBottom: number
+  gapTop: number
+  gapBottom: number
+}
+
+export function pagePaperEdges(cuts: readonly PageCut[], firstMarginTop: number): PagePaperEdge[] {
+  const out: PagePaperEdge[] = []
+  cuts.forEach((cut, page) => {
+    const gap = cut.gap
+    if (!gap || page === 0) return
+    const gapTop =
+      gap.flowTopPx === undefined
+        ? firstMarginTop + cut.start + cut.gapOffsetPx - gap.heightPx
+        : firstMarginTop + gap.flowTopPx + cuts[page - 1].gapOffsetPx
+    const gapBottom = gapTop + gap.heightPx
+    out.push({
+      page,
+      gap,
+      top: gapBottom - gap.marginTopPx,
+      prevBottom: gapTop + gap.marginBottomPx,
+      gapTop,
+      gapBottom,
+    })
+  })
+  return out
+}
+
+/** page a floated block was pinned to (`floats`), or undefined */
+export function floatPageOf(cuts: readonly PageCut[], block: number): number | undefined {
+  const i = cuts.findIndex((c) => c.floats.includes(block))
+  return i >= 0 ? i : undefined
+}
+
+/**
+ * Transition shadow (T4.5): every page reader compares the page it derived
+ * from the DOM gap widgets with the PageCut-derived page; disagreements are
+ * counted here and published as `__pageDebug.pageReaderMismatch`. Cumulative
+ * like the other counters; `enabled` is set per pass (dev or `__pageReaderShadow`).
+ */
+export const pageReaderShadow = {
+  enabled: false,
+  count: 0,
+  diag: [] as string[],
+  report(reader: string, dom: unknown, cut: unknown, detail = ''): void {
+    this.count++
+    if (this.diag.length < 40)
+      this.diag.push(
+        `${reader}: dom ${String(dom)} vs cut ${String(cut)}${detail ? ` ${detail}` : ''}`,
+      )
+  },
 }
 
 export interface PageCutOptions {
@@ -296,11 +477,12 @@ export function buildPageCuts(
       : capacityPx
     const lead = leadOf(blocks, index, s.start, opts.floatSplits)
     const lb = lead.kind === 'block' ? blocks[lead.block] : undefined
+    const leadKeepsPx = lb?.leadMtPx
     const leadDrops =
       !!lb &&
-      (!!lb.breakBefore ||
-        !!blocks[lead.block - 1]?.breakAfter ||
-        (lb.dropAtPageTop ?? leadDropsSpaceBefore(blocks, lead.block)))
+      (!!blocks[lead.block - 1]?.breakAfter ||
+        (leadKeepsPx === undefined &&
+          (!!lb.breakBefore || (lb.dropAtPageTop ?? leadDropsSpaceBefore(blocks, lead.block)))))
     const variant = hfVariantOf(opts.titlePgOf?.(s.section), firsts[i], !!opts.evenOddHf, pageNo)
     const h = hfHeights[Math.max(0, Math.min(s.section, hfHeights.length - 1))] ?? {
       headerPx: 0,
@@ -322,10 +504,13 @@ export function buildPageCuts(
       padPx: Math.max(0, bodyPx - physUsedPx),
       hf: { variant, ...hf },
       leadDropsSpaceBefore: leadDrops,
+      ...(!leadDrops && leadKeepsPx !== undefined ? { leadMtPx: leadKeepsPx } : {}),
       pageNo,
       display: formatPageNumber(pageNo, opts.pageNumberFmtOf?.(s.section)),
       blank: s.end === s.start,
       floats: floats[i],
+      gapOffsetPx: 0,
+      flowOffsetPx: 0,
     }
   })
   applyPageWindows(cuts, blocks, geoms)

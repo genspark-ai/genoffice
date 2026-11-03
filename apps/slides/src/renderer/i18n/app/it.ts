@@ -202,6 +202,7 @@ export const it = {
   appCtxSendToBack: 'Porta in secondo piano',
   appCtxBringForward: 'Porta avanti',
   appCtxSendBackward: 'Porta indietro',
+  appCtxRotate: 'Ruota',
   appCtxRotateLeft90: 'Ruota di 90° a sinistra',
   appCtxRotateRight90: 'Ruota di 90° a destra',
   appCtxFlipH: 'Capovolgi orizzontalmente',

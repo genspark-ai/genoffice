@@ -189,6 +189,7 @@ export const en = {
   appCtxSendToBack: 'Send to Back',
   appCtxBringForward: 'Bring Forward',
   appCtxSendBackward: 'Send Backward',
+  appCtxRotate: 'Rotate',
   appCtxRotateLeft90: 'Rotate Left 90°',
   appCtxRotateRight90: 'Rotate Right 90°',
   appCtxFlipH: 'Flip Horizontal',

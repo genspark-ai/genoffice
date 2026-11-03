@@ -204,6 +204,7 @@ export const de = {
   appCtxSendToBack: 'In den Hintergrund',
   appCtxBringForward: 'Eine Ebene nach vorne',
   appCtxSendBackward: 'Eine Ebene nach hinten',
+  appCtxRotate: 'Drehen',
   appCtxRotateLeft90: 'Um 90° nach links drehen',
   appCtxRotateRight90: 'Um 90° nach rechts drehen',
   appCtxFlipH: 'Horizontal spiegeln',

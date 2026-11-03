@@ -5,12 +5,14 @@
  * sprmCFSpec (0x0855 = 1) and sprmCPicLocation (0x6A03, a signed 32-bit offset
  * into the CFB 'Data' stream). At that offset the stream holds a PICF header
  * (lcb, cbHeader, mm, xExt/yExt, dxaGoal/dyaGoal, mx/my) followed by the
- * OfficeArt inline shape; the actual image is a PNG or JPEG blob inside the
- * PICF lcb range. We validate the PICF, cut the exact PNG chunk sequence (or
- * the JPEG SOI..EOI range), and report unsupported formats (EMF/WMF/DIB) as
- * warnings instead of guessing.
+ * OfficeArt inline shape whose blip store carries the picture as an
+ * OfficeArtBlip record (PNG, JPEG, DIB, WMF or EMF; drawings.ts decodes it).
+ * Pictures without a blip record fall back to a raw PNG/JPEG signature scan.
+ * Corrupt picture data degrades per picture: a warning, and the picture is
+ * skipped; only a PICF whose header is structurally invalid raises bad_picture.
  */
 import { LegacyDocError, isLegacyDocError } from './errors'
+import { isBlipRecordAt, readBlip, type PictureMedia, type PictureMediaType } from './drawings'
 import { readFormattingDetailed, type FormattingSource, type RawCharacterRun } from './formatting'
 import { iterateSprms, readSprmU8, readSprmU32 } from './sprm'
 
@@ -38,11 +40,17 @@ export interface ImageBlock {
   /** display width/height in twips (PICF dxaGoal/mx, then xExt, then dxaGoal) */
   widthTwips: number
   heightTwips: number
-  mediaType: 'image/png' | 'image/jpeg'
-  /** exact image bytes (PNG chunk sequence or JPEG SOI..EOI range) */
+  mediaType: PictureMediaType
+  /** exact image bytes (PNG chunk sequence, JPEG SOI..EOI range, metafile or .bmp) */
   bytes: Uint8Array
   /** non-fatal problems found while extracting this picture */
   warnings: string[]
+}
+
+/** the story to scan; defaults to the whole rawText (the body) */
+export interface CpRange {
+  startCp: number
+  endCp: number
 }
 
 export interface InlineImageResult {
@@ -65,17 +73,18 @@ function u32At(bytes: Uint8Array, offset: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true)
 }
 
-/** the CPs of body text picture characters outside field ranges */
-function pictureCharacterCps(rawText: string): number[] {
+/** the CPs of body text picture characters outside field instructions (EMBED results are pictures) */
+function pictureCharacterCps(rawText: string, range?: CpRange): number[] {
   const cps: number[] = []
   const fields: Array<'instruction' | 'result'> = []
-  for (let cp = 0; cp < rawText.length; cp++) {
+  const end = Math.min(rawText.length, range?.endCp ?? rawText.length)
+  for (let cp = range?.startCp ?? 0; cp < end; cp++) {
     const char = rawText[cp]
     if (char === FIELD_INSTRUCTION) fields.push('instruction')
     else if (char === FIELD_SEPARATOR) {
       if (fields.length > 0) fields[fields.length - 1] = 'result'
     } else if (char === FIELD_END) fields.pop()
-    else if (char === PICTURE_CHAR && fields.length === 0) cps.push(cp)
+    else if (char === PICTURE_CHAR && !fields.includes('instruction')) cps.push(cp)
   }
   return cps
 }
@@ -160,32 +169,44 @@ function findSignature(range: Uint8Array, signature: number[]): number {
   return -1
 }
 
-interface ExtractedImage {
-  mediaType: 'image/png' | 'image/jpeg'
-  bytes: Uint8Array
-}
-
-/** extract the supported image blob out of one PICF range */
+/** extract the picture out of one PICF range: its OfficeArt blip record, else a raw PNG/JPEG */
 function extractImage(
   data: Uint8Array,
   fcPic: number,
+  cbHeader: number,
   lcb: number,
   warnings: string[],
-): ExtractedImage | undefined {
+): PictureMedia | undefined {
   const range = data.subarray(fcPic, fcPic + lcb)
+  // a byte pattern that merely looks like a blip header must not shadow a raw PNG/JPEG payload
+  let blipWarnings: string[] = []
+  for (let offset = cbHeader; offset + 8 <= range.length; offset++) {
+    if (!isBlipRecordAt(range, offset)) continue
+    const attempt: string[] = []
+    const media = readBlip(range, offset, attempt)
+    if (media) return media
+    if (blipWarnings.length === 0) blipWarnings = attempt
+  }
   const png = findSignature(range, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   if (png >= 0) {
     const bytes = pngBytes(range, png)
-    if (!bytes) badPicture('the PNG picture data is truncated (no complete IEND chunk)')
-    return { mediaType: 'image/png', bytes }
+    if (!bytes) {
+      warnings.push('a PNG picture is truncated (no complete IEND chunk) and was omitted')
+      return undefined
+    }
+    return { mediaType: 'image/png', extension: 'png', bytes }
   }
   const jpeg = findSignature(range, [0xff, 0xd8, 0xff])
   if (jpeg >= 0) {
     const bytes = jpegBytes(range, jpeg)
-    if (!bytes) badPicture('the JPEG picture data is truncated (no EOI marker)')
-    return { mediaType: 'image/jpeg', bytes }
+    if (!bytes) {
+      warnings.push('a JPEG picture is truncated (no EOI marker) and was omitted')
+      return undefined
+    }
+    return { mediaType: 'image/jpeg', extension: 'jpeg', bytes }
   }
-  warnings.push('an embedded picture uses an unsupported format (EMF/WMF/DIB) and was omitted')
+  if (blipWarnings.length > 0) warnings.push(...blipWarnings)
+  else warnings.push('an embedded picture uses an unsupported format and was omitted')
   return undefined
 }
 
@@ -194,9 +215,9 @@ function extractImage(
  * missing Data stream are warnings; corrupt PICF / truncated image data raise
  * 'bad_picture'. Picture characters inside field ranges are ignored.
  */
-export function parseInlineImages(source: FormattingSource): InlineImageResult {
+export function parseInlineImages(source: FormattingSource, range?: CpRange): InlineImageResult {
   const warnings: string[] = []
-  const cps = pictureCharacterCps(source.rawText)
+  const cps = pictureCharacterCps(source.rawText, range)
   if (cps.length === 0) return { images: [], warnings: [] }
   let read
   try {
@@ -253,14 +274,16 @@ export function parseInlineImages(source: FormattingSource): InlineImageResult {
           (data.length - fcPic),
       )
     const picWarnings: string[] = []
-    const extracted = extractImage(data, fcPic, lcb, picWarnings)
+    const extracted = extractImage(data, fcPic, cbHeader, lcb, picWarnings)
     if (!extracted) {
       warnings.push(...picWarnings)
       continue
     }
     const size = displaySize(data, fcPic)
-    if (size.width <= 0 || size.height <= 0)
-      badPicture('the PICF at Data offset ' + fcPic + ' declares no picture size')
+    if (size.width <= 0 || size.height <= 0) {
+      warnings.push('a picture declares no display size and was omitted')
+      continue
+    }
     images.push({
       cp,
       widthTwips: size.width,

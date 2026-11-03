@@ -246,6 +246,44 @@ describe('grouped and sibling pictures', () => {
     expect(shape.fill).toBe('C8A24B')
   })
 
+  it('an inline group of pictures carries every picture as a layer of one run image', async () => {
+    const pic = (id: string, x: number, y: number, cx: number, cy: number) =>
+      `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`
+    // group drawn at half its child space: offsets and sizes scale by 0.5
+    const group =
+      `<wpg:wgp ${WPG_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
+      `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/>` +
+      `<a:chOff x="0" y="0"/><a:chExt cx="1905000" cy="1905000"/></a:xfrm>` +
+      `</wpg:grpSpPr>${pic('2', 0, 0, 1905000, 1905000)}${pic('3', 190500, 381000, 952500, 476250)}</wpg:wgp>`
+    const para =
+      `<w:p><w:r><w:drawing><wp:inline><wp:extent cx="952500" cy="952500"/>` +
+      `<wp:docPr id="9" name="Group 9"/><a:graphic><a:graphicData uri="${GROUP_URI}">${group}` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.textboxes ?? []).toHaveLength(0)
+    const img = block.runs?.[0]?.image
+    expect(img?.widthPx).toBe(100)
+    expect(img?.heightPx).toBe(100)
+    expect(img?.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+    expect(img?.layers).toEqual([
+      { dataUrl: img!.dataUrl, x: 0, y: 0, w: 1, h: 1 },
+      { dataUrl: img!.dataUrl, x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
+    ])
+    // the original bytes still save verbatim
+    expect(img?.xml).toContain('<wpg:wgp')
+  })
+
+  it('a group holding a shape next to its pictures keeps the photo-box route', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: anchorParagraph(GROUP_WITH_PIC, GROUP_URI), withImage: true }),
+    )
+    expect(doc.blocks[0].runs?.some((r) => r.image?.layers)).toBeFalsy()
+  })
+
   it('a rotated grouped pic:pic carries its rotation onto the photo box', async () => {
     const rotated = GROUP_WITH_PIC.replace('<pic:spPr><a:xfrm>', '<pic:spPr><a:xfrm rot="5400000">')
     const doc = await parseDocx(

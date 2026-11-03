@@ -12,6 +12,7 @@
  *   style's UPX[0] is its CHPX grpprl.
  */
 import { LegacyDocError } from './errors'
+import type { DefaultFontIndices, FontTable } from './fonts'
 
 export type StyleKind = 'paragraph' | 'character' | 'table' | 'numbering'
 
@@ -35,6 +36,10 @@ export interface Style {
 export interface StyleSheet {
   /** every STSH slot, including empty cbStd == 0 placeholders, keyed by istd */
   styles: Map<number, Style>
+  /** STSHI rgftcStandardChpStsh: the document's default font indices */
+  defaultFonts: DefaultFontIndices
+  /** the font table, attached by the readers that have the FIB at hand */
+  fonts?: FontTable
 }
 
 const STK_PARAGRAPH = 1
@@ -102,7 +107,7 @@ function styleKind(stk: number, istd: number): StyleKind {
  * LegacyDocError with code 'bad_stsh', never a raw RangeError.
  */
 export function parseStsh(tableStream: Uint8Array, fc: number, lcb: number): StyleSheet {
-  if (lcb === 0) return { styles: new Map() }
+  if (lcb === 0) return { styles: new Map(), defaultFonts: {} }
   if (fc > tableStream.length || lcb > tableStream.length - fc)
     badStsh(
       `the stylesheet range (${fc}+${lcb}) lies outside the ${tableStream.length}-byte table stream`,
@@ -127,6 +132,14 @@ export function parseStsh(tableStream: Uint8Array, fc: number, lcb: number): Sty
     )
   if (cstd > MAX_STYLES)
     badStsh(`the stylesheet declares ${cstd} styles, more than the 4096 Word can address`)
+  const ftcAt = (at: number): number | undefined =>
+    cbStshi >= at + 2 ? reader.view.getUint16(stshiStart + at, true) : undefined
+  const defaultFonts: DefaultFontIndices = {
+    ...(ftcAt(12) !== undefined ? { ascii: ftcAt(12) } : {}),
+    ...(ftcAt(14) !== undefined ? { eastAsia: ftcAt(14) } : {}),
+    ...(ftcAt(16) !== undefined ? { other: ftcAt(16) } : {}),
+    ...(ftcAt(18) !== undefined ? { cs: ftcAt(18) } : {}),
+  }
   const styles = new Map<number, Style>()
   let offset = stshiStart + cbStshi
   for (let istd = 0; istd < cstd; istd++) {
@@ -198,5 +211,5 @@ export function parseStsh(tableStream: Uint8Array, fc: number, lcb: number): Sty
     // (fcStshf itself is not necessarily even).
     if ((offset - fc) % 2 === 1) offset++
   }
-  return { styles }
+  return { styles, defaultFonts }
 }

@@ -188,6 +188,7 @@ export const ar = {
   appCtxSendToBack: 'إرسال إلى الخلفية',
   appCtxBringForward: 'إحضار للأمام',
   appCtxSendBackward: 'إرسال للخلف',
+  appCtxRotate: 'تدوير',
   appCtxRotateLeft90: 'تدوير 90° لليسار',
   appCtxRotateRight90: 'تدوير 90° لليمين',
   appCtxFlipH: 'انعكاس أفقي',

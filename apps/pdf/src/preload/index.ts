@@ -10,6 +10,8 @@ const api: PdfApi = {
   consumePending: () => ipcRenderer.invoke(PDF_CHANNELS.consumePending),
   openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   readFile: (path) => ipcRenderer.invoke(PDF_CHANNELS.readFile, path),
+  readFileChunk: (path: string, start: number, end: number) =>
+    ipcRenderer.invoke(PDF_CHANNELS.readFileChunk, path, start, end),
   decryptPdf: (bytes, password) => ipcRenderer.invoke(PDF_CHANNELS.decryptPdf, bytes, password),
   save: (request) => ipcRenderer.invoke(PDF_CHANNELS.save, request),
   pickAttachmentFile: () => ipcRenderer.invoke(PDF_CHANNELS.pickAttachmentFile),
@@ -81,7 +83,6 @@ const api: PdfApi = {
   },
   print: (job) => ipcRenderer.invoke(PDF_CHANNELS.print, job),
   printFile: (job) => ipcRenderer.invoke(PDF_CHANNELS.printFile, job),
-  printerOptions: (queue: string) => ipcRenderer.invoke(PDF_CHANNELS.printerOptions, queue),
   listPrinters: () => ipcRenderer.invoke(PDF_CHANNELS.printers),
   onPrintRequest: (handler) => {
     const listener = () => handler()

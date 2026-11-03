@@ -198,6 +198,7 @@ export const ms = {
   appCtxSendToBack: 'Hantar ke Belakang',
   appCtxBringForward: 'Bawa ke Depan',
   appCtxSendBackward: 'Hantar ke Belakang Satu Aras',
+  appCtxRotate: 'Putar',
   appCtxRotateLeft90: 'Putar Kiri 90°',
   appCtxRotateRight90: 'Putar Kanan 90°',
   appCtxFlipH: 'Balikkan Melintang',

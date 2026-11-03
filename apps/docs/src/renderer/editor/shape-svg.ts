@@ -179,8 +179,10 @@ function pathsBackgroundImage(
   const inset = strokeWidth === undefined ? 1 : Math.max(1, R(strokeWidth / 2 + 0.5))
   const viewW = strokeWidth === undefined ? w : R(w + 2 * (inset - 1))
   const viewH = strokeWidth === undefined ? h : R(h + 2 * (inset - 1))
+  // printToPDF honors the intrinsic ratio over background-size 100% 100%: a
+  // box whose live height differs from the measured one shrank uniformly
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${-inset} ${-inset} ${viewW} ${viewH}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${-inset} ${-inset} ${viewW} ${viewH}" preserveAspectRatio="none">` +
     parts.join('') +
     '</svg>'
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
