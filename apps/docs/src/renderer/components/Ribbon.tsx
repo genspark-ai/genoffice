@@ -1520,6 +1520,11 @@ function RibbonInner({
   useLayoutEffect(() => {
     const el = styleGalleryRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
+    // the pending deferred re-check, so a second check() cancels the first's
+    let raf: number | null = null
+    // the last applied outcome: a re-check that recomputes exactly this stops
+    // the chain, so a settled layout converges instead of looping
+    let lastApplied: string | null = null
     const check = () => {
       // measure the natural (uncapped) layout at the current wrapper width
       el.style.maxWidth = ''
@@ -1531,13 +1536,30 @@ function RibbonInner({
         el.style.maxWidth = `${last.offsetLeft - firstRow[0].offsetLeft + last.offsetWidth}px`
       }
       setStyleGalleryOverflow(overflow)
+      // A cap shrinks the gallery without resizing the wrapper, so the
+      // ResizeObserver below never fires again — a measurement taken during
+      // a layout transition (density flip, fonts still swapping in) would
+      // lock the cap forever. Re-measure next frame while the outcome keeps
+      // changing; a settled layout recomputes the same cap and stops.
+      const applied = `${overflow ? el.style.maxWidth : ''}|${overflow}`
+      if (applied !== lastApplied) {
+        lastApplied = applied
+        if (raf !== null) cancelAnimationFrame(raf)
+        raf = requestAnimationFrame(() => {
+          raf = null
+          check()
+        })
+      }
     }
     check()
     const ro = new ResizeObserver(check)
     // observe the wrapper, not the gallery: once capped, the gallery no longer
     // resizes with the window, so it would never re-trigger the observer
     ro.observe(el.parentElement ?? el)
-    return () => ro.disconnect()
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
     // re-check when the card set can change, after the expander mounts or
     // unmounts (it takes row width, which can change how many cards fit), and
     // on a density switch (compact cards size to their label, full ones don't)
