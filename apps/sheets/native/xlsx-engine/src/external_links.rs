@@ -95,9 +95,18 @@ pub struct ExternalLinkCell {
     pub formatted: String,
     pub number: Option<f64>,
     /// The value's kind; `None` when there is no usable value (a formula cell
-    /// the file never cached cannot be written as one).
+    /// the file never cached cannot be written as one). Skipped, not `null`:
+    /// the host schema only knows an absent `kind`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<ExternalLinkCellKind>,
     pub formula: String,
+}
+
+/// The panel listing, shaped like the update report's `links` so the host
+/// reads both with one schema.
+#[derive(serde::Serialize)]
+pub struct ExternalLinksListing {
+    pub links: Vec<ExternalLinkListStatus>,
 }
 
 #[derive(serde::Serialize)]
@@ -380,11 +389,13 @@ pub(crate) fn read_external_link_statuses(
 /// panel reads when it opens; the explicit update answers reachability.
 pub(crate) fn list_external_link_statuses(
     workbook: &Path,
-) -> Result<Vec<ExternalLinkListStatus>, SidecarError> {
-    Ok(parse_external_links(workbook)?
-        .iter()
-        .map(LinkEntry::read_status)
-        .collect())
+) -> Result<ExternalLinksListing, SidecarError> {
+    Ok(ExternalLinksListing {
+        links: parse_external_links(workbook)?
+            .iter()
+            .map(LinkEntry::read_status)
+            .collect(),
+    })
 }
 
 /// Computes fresh values for every external-formula cell against the reachable
@@ -1273,7 +1284,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("book.xlsx");
         write_dependent_fixture(&path, "gone.xlsx");
-        let links = list_external_link_statuses(&path).unwrap();
+        let links = list_external_link_statuses(&path).unwrap().links;
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].index, 1);
         assert_eq!(links[0].raw_target, "gone.xlsx");
@@ -1286,7 +1297,7 @@ mod tests {
         );
         // a file:/// target resolves without being opened
         write_dependent_fixture(&path, "file:///Users/me/source.xlsx");
-        let links = list_external_link_statuses(&path).unwrap();
+        let links = list_external_link_statuses(&path).unwrap().links;
         assert_eq!(links[0].source.as_deref(), Some("/Users/me/source.xlsx"));
     }
 
@@ -1310,6 +1321,23 @@ mod tests {
         let error = cell_of(&report, "[1]Sheet1!A1/0");
         assert_eq!(error.kind, Some(ExternalLinkCellKind::Error));
         assert_eq!(error.formatted, "#DIV/0!");
+    }
+
+    /// An uncached cell serializes without a `kind` key: the host rejects
+    /// `kind: null`.
+    #[test]
+    fn uncached_cell_omits_kind() {
+        let cell = ExternalLinkCell {
+            sheet: "Sheet1".into(),
+            row: 0,
+            column: 0,
+            formatted: String::new(),
+            number: None,
+            kind: None,
+            formula: "[1]Sheet1!A1".into(),
+        };
+        let json = serde_json::to_value(&cell).unwrap();
+        assert!(json.get("kind").is_none(), "{json}");
     }
 
     /// A skipped cell (unreachable source) keeps its kind from the file's
