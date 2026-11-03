@@ -83,6 +83,18 @@ test('compact ribbon fits every tab without clipping', async () => {
           scrollH: body.scrollHeight,
           tallest,
           clipped: body.scrollHeight > body.clientHeight + 1,
+          culprits: [...body.querySelectorAll('*')]
+            .map((el) => ({ el, r: el.getBoundingClientRect() }))
+            .filter((x) => x.r.height > 20)
+            .sort((a, b) => b.r.bottom - a.r.bottom)
+            .slice(0, 5)
+            .map(
+              (x) =>
+                `${(x.el.className || x.el.tagName).toString().slice(0, 60)} h=${Math.round(x.r.height)} top=${Math.round(x.r.top)}`,
+            ),
+          openPanels: [...document.querySelectorAll('[data-rb-panel]')].map(
+            (p) => `${p.className} h=${Math.round(p.getBoundingClientRect().height)}`,
+          ),
         }
       })
       expect(measured, `no ribbon on the "${tab}" tab`).not.toBeNull()
@@ -90,7 +102,8 @@ test('compact ribbon fits every tab without clipping', async () => {
       expect(
         m.clipped,
         `"${tab}" overflows the compact band: tallest control ${m.tallest}px, content needs ` +
-          `${m.scrollH}px, band has ${m.avail}px`,
+          `${m.scrollH}px, band has ${m.avail}px; deepest-bottom culprits: ` +
+          `${(m.culprits ?? []).join(' | ')}; open panels: ${(m.openPanels ?? []).join(', ') || 'none'}`,
       ).toBe(false)
       expect(m.scrollH, `"${tab}" needs more than the band holds`).toBeLessThanOrEqual(m.avail)
     }
@@ -135,20 +148,28 @@ test('compact style cards show the full label, the menu the full card', async ()
     // The 30px compact card is label-only by design: the preview is clipped
     // out of the visual flow and the label must not ellipsize or spill — the
     // 46×30 card that stacked a 20px preview over the label clipped both.
-    const cards = await page.evaluate(() =>
-      [...document.querySelectorAll('.style-gallery > .style-card')].map((card) => {
-        const label = card.querySelector('.style-card-label') as HTMLElement
-        const preview = card.querySelector('.style-card-preview') as HTMLElement
-        const box = card.getBoundingClientRect()
-        return {
-          name: label.textContent ?? '',
-          cardH: Math.round(box.height),
-          labelFits: label.scrollWidth <= label.clientWidth + 1,
-          contentFits: card.scrollHeight <= card.clientHeight + 1,
-          previewHidden: preview.getBoundingClientRect().width <= 1,
-        }
-      }),
-    )
+    // The gallery renders every entry and clips the wrapped rows visually, so
+    // "visible" means first-row (same offsetTop as the first card), which is
+    // exactly the set the expander exists to reach.
+    const { cards, visibleCount } = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('.style-gallery > .style-card')]
+      const firstTop = all[0]?.offsetTop
+      return {
+        cards: all.map((card) => {
+          const label = card.querySelector('.style-card-label') as HTMLElement
+          const preview = card.querySelector('.style-card-preview') as HTMLElement
+          const box = card.getBoundingClientRect()
+          return {
+            name: label.textContent ?? '',
+            cardH: Math.round(box.height),
+            labelFits: label.scrollWidth <= label.clientWidth + 1,
+            contentFits: card.scrollHeight <= card.clientHeight + 1,
+            previewHidden: preview.getBoundingClientRect().width <= 1,
+          }
+        }),
+        visibleCount: all.filter((c) => c.offsetTop === firstTop).length,
+      }
+    })
     expect(cards.length, 'no style cards on the Home tab').toBeGreaterThan(3)
     for (const c of cards) {
       expect(c.cardH, `"${c.name}" is not the 30px compact card`).toBe(30)
@@ -159,6 +180,7 @@ test('compact style cards show the full label, the menu the full card', async ()
 
     // The overflow menu reuses the card markup; it must keep the full 62px
     // card with the preview showing — the one place both halves still fit.
+    expect(visibleCount, '640px window left every style card visible').toBeLessThan(cards.length)
     await page.click('.style-gallery-more')
     await page.waitForSelector('.style-gallery-menu')
     await page.waitForTimeout(300)
@@ -175,7 +197,7 @@ test('compact style cards show the full label, the menu the full card', async ()
       }),
     )
     expect(menuCards.length, 'the overflow menu did not list the clipped styles').toBeGreaterThan(
-      cards.length,
+      visibleCount,
     )
     for (const c of menuCards) {
       expect(c.cardH, `"${c.name}" menu card lost its full height in compact`).toBe(62)
