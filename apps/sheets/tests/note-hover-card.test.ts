@@ -113,9 +113,12 @@ describe('NotePictureHoverCard', () => {
   })
 
   it('anchors under the newest cell popup box', async () => {
+    const host = document.createElement('div')
+    host.id = 'univer-container'
     const popup = document.createElement('div')
-    popup.className = 'cell-popup'
-    document.body.appendChild(popup)
+    popup.setAttribute('data-u-comp', 'cell-popup')
+    host.appendChild(popup)
+    document.body.appendChild(host)
     vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue({
       left: 40,
       top: 60,
@@ -137,5 +140,37 @@ describe('NotePictureHoverCard', () => {
     const card = document.querySelector<HTMLElement>('.note-hover-card')!
     expect(card.style.left).toBe('40px')
     expect(card.style.top).toBe('186px')
+  })
+
+  it('keeps the card alive while the pointer is inside it after a hover popup closes', async () => {
+    await mount(
+      createElement(NotePictureHoverCard, {
+        card: cardOf(),
+        sessionId: 'session-1',
+        onRemove: vi.fn(),
+      }),
+    )
+    const el = document.querySelector<HTMLElement>('.note-hover-card')!
+    expect(el).not.toBeNull()
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent('pointerover', { bubbles: true, relatedTarget: null }))
+    })
+    await act(async () => {
+      root!.render(
+        createElement(NotePictureHoverCard, {
+          card: null,
+          sessionId: 'session-1',
+          onRemove: vi.fn(),
+        }),
+      )
+      await Promise.resolve()
+    })
+    expect(document.querySelector('.note-hover-card')).not.toBeNull()
+    await act(async () => {
+      el.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      )
+    })
+    expect(document.querySelector('.note-hover-card')).toBeNull()
   })
 })
