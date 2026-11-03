@@ -35,6 +35,7 @@ import {
 } from './csv-export'
 import type { CellScalar, CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+import type { ExternalLinkOps } from '../shared/desktop-api'
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { isErrorResult, verifiedFormulaValues } from './formula-values'
 import { COORDINATE_SHIFTING_OPS } from './formula-cached-fallback'
@@ -77,6 +78,10 @@ export interface SaveContext {
    * claiming nothing is hidden.
    */
   redactionStates?: () => readonly SheetRedactionState[] | null
+  /** External-link breaks and source retargets pending this save (the links
+      panel). Consumed with the save that carries them; the caller clears the
+      pending state once the save settles. */
+  externalLinkOps?: () => ExternalLinkOps | null
   /** Saving swaps the session and reinstalls the workbook, which resets the
       view to the first sheet's A1 — stash where the user was so the
       reinstall lands there instead. `viewRow`/`viewColumn` is the viewport's
@@ -556,6 +561,9 @@ export async function handleSave(
       sheetName: state.sheetName,
       marks: state.marks.map((mark) => ({ ...mark })),
     })) ?? null
+  // External-link breaks/retargets are one-shot: the panel sets them, this
+  // save carries them, and the caller clears them once it settles.
+  const externalLinkOps = ctx.externalLinkOps?.() ?? null
   // The gateway fails closed when these additions ride with structural or
   // sheet changes (their coordinates entangle). Instead of bouncing the
   // user, hold them back and save in two sequential phases: structure
@@ -620,6 +628,12 @@ export async function handleSave(
     // A save with nothing else pending but newly withheld cells is still a
     // save: skipping it would leave the file claiming nothing is hidden.
     (redactionStates?.length ?? 0) +
+    // A link break/retarget is a file change on its own: the journal can be
+    // clean (every referencing cell carries an error cache, so the literal
+    // journal skips it) or only defined names may reference the link. Without
+    // this the panel's ops would answer "No edits to save" and never reach
+    // the file.
+    (externalLinkOps === null ? 0 : 1) +
     // External-link values the panel applied are pending work too: without
     // this the post-Update save would be skipped as "no edits to save" and the
     // file would keep the old cached <v>s.
@@ -749,6 +763,7 @@ export async function handleSave(
     workbookProtectionState,
     protectedRangeStates,
     redactionStates,
+    externalLinkOps,
   }
   if (mode === 'recovery') {
     // Best-effort; a failure only means this tick's copy is skipped — but an
@@ -806,6 +821,7 @@ export async function handleSave(
       workbookProtectionState,
       protectedRangeStates,
       redactionStates,
+      externalLinkOps,
     })
     if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
     if (result.canceled) {
@@ -890,6 +906,8 @@ export async function handleSave(
         // performed. Sending them again would rewrite the part under the names
         // this session loaded — the pre-rename ones — and orphan it.
         redactionStates: null,
+        // link ops rode with the first phase; a second phase carries none
+        externalLinkOps: null,
       })
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {

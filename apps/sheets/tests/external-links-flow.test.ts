@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { updateExternalLinksFlow } from '../src/renderer/external-links-flow'
-import type { ExternalLinksUpdateResult } from '../src/shared/desktop-api'
+import { breakExternalLinkFlow, updateExternalLinksFlow } from '../src/renderer/external-links-flow'
+import type { ExternalLinksUpdateResult, ExternalLinkUsageResult } from '../src/shared/desktop-api'
 
 const REPORT: ExternalLinksUpdateResult = {
   links: [
@@ -22,6 +22,28 @@ const REPORT: ExternalLinksUpdateResult = {
       number: 20,
       kind: 'number',
       formula: '[1]Sheet1!A1',
+    },
+  ],
+}
+
+const USAGE: ExternalLinkUsageResult = {
+  links: [
+    {
+      index: 1,
+      cells: [
+        {
+          sheet: 'Sheet1',
+          row: 0,
+          column: 0,
+          value: { kind: 'number', value: 20 },
+        },
+        {
+          sheet: 'Sheet1',
+          row: 1,
+          column: 0,
+          value: { kind: 'text', value: 'gone!' },
+        },
+      ],
     },
   ],
 }
@@ -102,5 +124,70 @@ describe('updateExternalLinksFlow', () => {
     expect(updated).toBe(true)
     expect(apply).toHaveBeenCalledWith({ links: [], cells: [] })
     expect(save).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('breakExternalLinkFlow', () => {
+  it('journals the link cells, queues one break, and saves', async () => {
+    const order: string[] = []
+    const restore = vi.fn(async () => {
+      order.push('restore')
+    })
+    const outcome = await breakExternalLinkFlow({
+      index: 1,
+      readUsage: async () => USAGE,
+      journal: async (cells) => {
+        order.push('journal:' + cells.length)
+        return restore
+      },
+      queue: (ops) => order.push('queue:' + ops.broken.join(',')),
+      clear: () => order.push('clear'),
+      save: async () => {
+        order.push('save')
+        return { ok: true }
+      },
+    })
+    expect(outcome).toBe(true)
+    // the grid is journaled before the save that carries the break; a landed
+    // save keeps the literals
+    expect(order).toEqual(['journal:2', 'queue:1', 'save', 'clear'])
+    expect(restore).not.toHaveBeenCalled()
+  })
+
+  it('puts the formulas back when the save does not land', async () => {
+    const order: string[] = []
+    const outcome = await breakExternalLinkFlow({
+      index: 1,
+      readUsage: async () => USAGE,
+      journal: async () => async () => {
+        order.push('restore')
+      },
+      queue: () => {},
+      clear: () => order.push('clear'),
+      save: async () => ({ ok: false }),
+    })
+    expect(outcome).toBe(false)
+    // the file still has the formulas and the link, so the grid must too
+    expect(order).toEqual(['restore', 'clear'])
+  })
+
+  it('still queues the break when the usage scan lists no cells', async () => {
+    // a link referenced only from defined names journals nothing; the file
+    // transform still has to run (and may refuse)
+    const journal = vi.fn(async () => async () => {})
+    const queue = vi.fn()
+    const save = vi.fn(async () => ({ ok: true }))
+    const outcome = await breakExternalLinkFlow({
+      index: 1,
+      readUsage: async () => ({ links: [] }),
+      journal,
+      queue,
+      clear: vi.fn(),
+      save,
+    })
+    expect(outcome).toBe(true)
+    expect(journal).not.toHaveBeenCalled()
+    expect(queue).toHaveBeenCalledWith({ broken: [1], retargets: [] })
+    expect(save).toHaveBeenCalledTimes(1)
   })
 })

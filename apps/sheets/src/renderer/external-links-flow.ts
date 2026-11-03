@@ -1,4 +1,9 @@
-import type { ExternalLinksUpdateResult } from '../shared/desktop-api'
+import type {
+  ExternalLinkOps,
+  ExternalLinkUsageCell,
+  ExternalLinkUsageResult,
+  ExternalLinksUpdateResult,
+} from '../shared/desktop-api'
 
 /** What the links panel's Update action needs from the editor. */
 export interface ExternalLinksUpdateDeps {
@@ -35,4 +40,42 @@ export async function updateExternalLinksFlow(deps: ExternalLinksUpdateDeps): Pr
   deps.onStatuses(report)
   await deps.save()
   return true
+}
+
+/** What the links panel's Break action needs from the editor. */
+export interface ExternalLinkBreakDeps {
+  /** the 1-based `[n]` link to break */
+  readonly index: number
+  /** the workbook's referencing formula cells */
+  readonly readUsage: () => Promise<ExternalLinkUsageResult>
+  /**
+   * Rewrites the link's formula cells as the literals their caches hold and
+   * resolves to the undo for that write.
+   */
+  readonly journal: (cells: readonly ExternalLinkUsageCell[]) => Promise<() => Promise<void>>
+  /** hands the ops to the next save */
+  readonly queue: (ops: ExternalLinkOps) => void
+  readonly clear: () => void
+  readonly save: () => Promise<{ readonly ok: boolean; readonly reason?: string }>
+}
+
+/**
+ * The panel's Break action: journal the link's cells as literals (the grid's
+ * current values beat the file's possibly stale caches), queue the break for
+ * one save, then roll the formulas back when that save does not land — a grid
+ * showing literals for a file that still has formulas and the link is exactly
+ * the inconsistency the journal-before-save order used to leave behind.
+ */
+export async function breakExternalLinkFlow(deps: ExternalLinkBreakDeps): Promise<boolean> {
+  const usage = await deps.readUsage()
+  const entry = usage.links.find((link) => link.index === deps.index)
+  const restore = entry === undefined ? null : await deps.journal(entry.cells)
+  deps.queue({ broken: [deps.index], retargets: [] })
+  try {
+    const outcome = await deps.save()
+    if (!outcome.ok && restore !== null) await restore()
+    return outcome.ok
+  } finally {
+    deps.clear()
+  }
 }
