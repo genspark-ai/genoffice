@@ -171,6 +171,30 @@ async function firstTextTopPx(page: Page, docxIndex: number): Promise<number> {
   }, BLOCK_SEL(docxIndex))
 }
 
+/** paper-relative left / right (pt) of a block's nth side-wrapped run picture */
+async function pictureBoxPt(
+  page: Page,
+  docxIndex: number,
+  nth: number,
+): Promise<{ x: number; right: number }> {
+  return page.evaluate(
+    ({ sel, nth }) => {
+      const el = document.querySelector<HTMLElement>(sel)
+      const paper = el?.closest('.doc-page')
+      if (!el || !paper) throw new Error(`no block element ${sel}`)
+      const img = el.querySelectorAll<HTMLElement>('img.doc-inline-img')[nth]
+      if (!img) throw new Error(`${sel} has no picture ${nth}`)
+      const zoomHost = el.closest('.doc-zoom') as HTMLElement | null
+      const zoom = zoomHost ? parseFloat(getComputedStyle(zoomHost).zoom || '1') || 1 : 1
+      const r = img.getBoundingClientRect()
+      const left = paper.getBoundingClientRect().left
+      const pt = (px: number) => (px / zoom) * 0.75
+      return { x: pt(r.left - left), right: pt(r.right - left) }
+    },
+    { sel: BLOCK_SEL(docxIndex), nth },
+  )
+}
+
 /** top (pt) of the first glyph box on the 1-based page, measured from that page's top;
  *  page frames are rebuilt from the gap widgets exactly like pageFramesFromGaps. `body`
  *  reads the flow text, `header` the page's header strip (the first page's edge area,
@@ -244,6 +268,53 @@ async function pageTextTopPt(
       return ((best - f.top) * 72) / 96
     },
     { n: pageNo, part },
+  )
+}
+
+/** whether every header text box of a page lies inside its strip's paint clip
+ *  (the padding box widened by overflow-clip-margin; overflow:hidden clips at the box) */
+async function headerInkInClip(
+  page: Page,
+  pageNo: number,
+): Promise<{ inside: boolean; detail: string }> {
+  return page.evaluate(
+    ({ n }) => {
+      const strip =
+        n === 1
+          ? document.querySelector<HTMLElement>('.page-wrap .page-hf-header:not(.page-gap-hf)')
+          : document.querySelector<HTMLElement>(
+              `.page-gap-hf.page-hf-header[data-hf-page-idx="${n - 1}"]`,
+            )
+      if (!strip) throw new Error(`no header strip on page ${n}`)
+      const cs = getComputedStyle(strip)
+      const margin = cs.overflow === 'clip' ? parseFloat(cs.overflowClipMargin) || 0 : 0
+      const r = strip.getBoundingClientRect()
+      const clipTop = r.top - margin
+      const clipBottom = r.bottom + margin
+      const walker = document.createTreeWalker(strip, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.textContent && node.textContent.trim() !== ''
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT,
+      })
+      let inside = true
+      const boxes: string[] = []
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        const range = document.createRange()
+        range.selectNodeContents(t)
+        for (const b of Array.from(range.getClientRects())) {
+          if (b.height === 0) continue
+          boxes.push(`${b.top.toFixed(1)}-${b.bottom.toFixed(1)}`)
+          if (b.top < clipTop - 0.5 || b.bottom > clipBottom + 0.5) inside = false
+        }
+      }
+      if (boxes.length === 0) throw new Error(`no header text on page ${n}`)
+      return {
+        inside,
+        detail: `clip ${clipTop.toFixed(1)}-${clipBottom.toFixed(1)} (margin ${margin}), text ${boxes.join(' ')}`,
+      }
+    },
+    { n: pageNo },
   )
 }
 
@@ -367,6 +438,11 @@ test.describe('executable Word truths (rendered)', () => {
                 .toBeLessThan(c.tol ?? 0.6)
               break
             }
+            case 'headerInkInClip': {
+              const got = await headerInkInClip(editorPage, c.page!)
+              expect.soft(got.inside, `${label}: ${got.detail}`).toBe(c.expect)
+              break
+            }
             case 'pageTextTopDeltaPt': {
               // against a control page: independent of the face's ascent convention
               const got =
@@ -445,6 +521,17 @@ test.describe('executable Word truths (rendered)', () => {
               expect
                 .soft(Math.abs(got - (c.expect as number)), `${label}: ${got.toFixed(2)}pt`)
                 .toBeLessThanOrEqual(c.tol ?? 0.6)
+              break
+            }
+            case 'pictureBoxPt': {
+              const got = await pictureBoxPt(editorPage, c.block!, c.nth ?? 0)
+              const want = c.expect as { x?: number; right?: number }
+              for (const k of ['x', 'right'] as const) {
+                if (want[k] === undefined) continue
+                expect
+                  .soft(Math.abs(got[k] - want[k]), `${label} ${k}: ${got[k].toFixed(2)}pt`)
+                  .toBeLessThanOrEqual(c.tol ?? 0.6)
+              }
               break
             }
             case 'mathLinePt': {

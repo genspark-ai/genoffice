@@ -175,6 +175,7 @@ export const he = {
   appCtxSendToBack: 'העבר לרקע',
   appCtxBringForward: 'הבא קדימה',
   appCtxSendBackward: 'העבר אחורה',
+  appCtxRotate: 'סיבוב',
   appCtxRotateLeft90: 'סובב 90° שמאלה',
   appCtxRotateRight90: 'סובב 90° ימינה',
   appCtxFlipH: 'הפוך אופקית',

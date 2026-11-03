@@ -2,6 +2,7 @@
 // breaks, balanced DBCS spacing, image z-order normalization.
 import type { Block, Run, SectionSettings, TableModel, TextboxDisplay } from './types'
 import { EMU_PER_PX } from './parse-xml-text'
+import { stripTextboxes } from './parse-props'
 
 /**
  * Word writes wp:anchor relativeHeight as 251658240 + rank, which decodes to
@@ -22,6 +23,7 @@ import { EMU_PER_PX } from './parse-xml-text'
  */
 const PPR_HEAD_RE = /^<w:p(?:\s[^>]*)?>\s*<w:pPr>((?:(?!<\/w:pPr>)[\s\S])*)<\/w:pPr>/
 const PAGE_BREAK_BEFORE_RE = /<w:pageBreakBefore(?:\s+w:val="(?:1|true|on)")?\s*\/>/
+const PAGE_BR_RE = /<w:br\s[^>]*w:type=(["'])page\1/
 
 function hostParagraphBreaksBefore(xml: string): boolean {
   // w:pPrChange holds the tracked-change *previous* pPr, not the live setting
@@ -43,12 +45,17 @@ export function applyProtectedLeadingBreaks(blocks: Block[]): void {
     if (b.type !== 'image') continue
     const drawing = xml.search(/<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/)
     const head = xml.slice(0, drawing === -1 ? xml.length : drawing)
-    const br = head.search(/<w:br\s[^>]*w:type=(["'])page\1/)
-    if (br === -1) continue
-    const textBefore = [...head.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
-      .map((m) => m[1])
-      .join('')
-    if (textBefore.trim() === '') b.format = { ...b.format, pageBreakBefore: true }
+    const br = head.search(PAGE_BR_RE)
+    if (br !== -1) {
+      const textBefore = [...head.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+        .map((m) => m[1])
+        .join('')
+      if (textBefore.trim() === '') b.format = { ...b.format, pageBreakBefore: true }
+      continue
+    }
+    // a page-break run after the drawing turns the page below the picture
+    if (drawing !== -1 && !b.fieldDisplay && PAGE_BR_RE.test(stripTextboxes(xml.slice(drawing))))
+      b.fieldDisplay = { kind: 'pageBreak' }
   }
 }
 

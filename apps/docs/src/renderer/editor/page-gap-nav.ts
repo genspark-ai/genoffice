@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import { PAGE_TURN_SEL } from './pagination-gaps'
 import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 
@@ -96,7 +97,7 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   // elementFromPoint: the gap may sit outside the viewport)
   let gap: HTMLElement | null = null
   let gapRect: DOMRect | null = null
-  for (const el of Array.from(view.dom.querySelectorAll<HTMLElement>('.page-gap'))) {
+  for (const el of Array.from(view.dom.querySelectorAll<HTMLElement>(PAGE_TURN_SEL))) {
     const r = el.getBoundingClientRect()
     if (r.height <= 0 || x < r.left - 2 || x > r.right + 2) continue
     if (dir === 1 ? r.top < caret.top : r.bottom > caret.bottom) continue
@@ -223,7 +224,7 @@ function recordNativeArrow(view: EditorView, dir: -1 | 1, extend: boolean): void
     return
   }
   const gapPositions: number[] = []
-  for (const el of Array.from(view.dom.querySelectorAll<HTMLElement>('.page-gap'))) {
+  for (const el of Array.from(view.dom.querySelectorAll<HTMLElement>(PAGE_TURN_SEL))) {
     try {
       gapPositions.push(view.posAtDOM(el, 0))
     } catch {

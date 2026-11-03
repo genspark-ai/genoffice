@@ -60,8 +60,13 @@ function hasVisiblePageBorder(xml: string): boolean {
   })
 }
 
+function onOffAttr(tag: string, attr: string): boolean {
+  const v = strAttr(tag, attr)
+  return v === '1' || v === 'true' || v === 'on'
+}
+
 /** ST_Border line styles; every other w:val is an art (bitmap) border. */
-const LINE_BORDER_VALS = new Set([
+export const LINE_BORDER_VALS = new Set([
   'single',
   'thick',
   'double',
@@ -114,6 +119,8 @@ function pageBorderPropsOf(xml: string): SectionSettings['pageBorderProps'] {
       spacePt: intAttr(side, 'w:space', 0),
       ...(sideColor ? { color: sideColor } : {}),
       ...(art ? { art } : {}),
+      ...(onOffAttr(side, 'w:shadow') ? { shadow: true } : {}),
+      ...(onOffAttr(side, 'w:frame') ? { frame: true } : {}),
     }
     spacePt = Math.max(spacePt, intAttr(side, 'w:space', 0))
     widthPt = Math.max(widthPt, sides[name]!.widthPt)
@@ -425,6 +432,39 @@ function roundColsInPlace(xml: string, cols: string): string {
   return rounded === cols ? xml : xml.replace(cols, rounded)
 }
 
+/**
+ * w:pgBorders for pageBorderProps. Without props the legacy single-line box
+ * (½ pt, 24 pt from the page edge) is written; props with no sides yield ''.
+ */
+export function pageBordersXml(props: SectionSettings['pageBorderProps']): string {
+  const sides = props?.sides
+  if (props && !(sides && Object.keys(sides).length > 0)) return ''
+  if (!props || !sides) {
+    const side = (name: string) =>
+      `<w:${name} w:val="single" w:sz="4" w:space="24" w:color="auto"/>`
+    return (
+      '<w:pgBorders w:offsetFrom="page">' +
+      `${side('top')}${side('left')}${side('bottom')}${side('right')}` +
+      '</w:pgBorders>'
+    )
+  }
+  let out = '<w:pgBorders'
+  if (props.zOrder === 'back') out += ' w:zOrder="back"'
+  if (props.display) out += ` w:display="${props.display}"`
+  out += ` w:offsetFrom="${props.offsetFrom ?? 'text'}">`
+  for (const name of ['top', 'left', 'bottom', 'right'] as const) {
+    const side = sides[name]
+    if (!side) continue
+    const sz = side.art ? Math.round(side.widthPt) : Math.round(side.widthPt * 8)
+    out += `<w:${name} w:val="${side.val}" w:sz="${sz}" w:space="${Math.round(side.spacePt)}"`
+    out += ` w:color="${side.color ?? 'auto'}"`
+    if (side.shadow) out += ' w:shadow="1"'
+    if (side.frame) out += ' w:frame="1"'
+    out += '/>'
+  }
+  return out + '</w:pgBorders>'
+}
+
 /** Rewrite pgSz / pgMar inside a w:sectPr XML slice, preserving everything else. */
 export function applySectionSettings(sectPrXml: string, settings: SectionSettings): string {
   const orient = settings.orientation === 'landscape' ? ' w:orient="landscape"' : ''
@@ -474,17 +514,11 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
     xml = xml.replace(/<\/w:sectPr>/, `${pgMar}</w:sectPr>`)
   }
 
-  // page border: single-line box measured from the page edge (pgBorders sits
-  // between pgMar and cols in CT_SectPr)
+  // page border (pgBorders sits between pgMar and cols in CT_SectPr)
   xml = xml.replace(/<w:pgBorders[^>]*\/>|<w:pgBorders[\s\S]*?<\/w:pgBorders>/, '')
   if (settings.pageBorder) {
-    const side = (name: string) =>
-      `<w:${name} w:val="single" w:sz="4" w:space="24" w:color="auto"/>`
-    const pgBorders =
-      '<w:pgBorders w:offsetFrom="page">' +
-      `${side('top')}${side('left')}${side('bottom')}${side('right')}` +
-      '</w:pgBorders>'
-    xml = xml.replace(/(<w:pgMar[^>]*\/>)/, `$1${pgBorders}`)
+    const pgBorders = pageBordersXml(settings.pageBorderProps)
+    if (pgBorders) xml = xml.replace(/(<w:pgMar[^>]*\/>)/, `$1${pgBorders}`)
   }
 
   // columns (w:cols may be self-closing or carry explicit <w:col> children)

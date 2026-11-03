@@ -26,15 +26,15 @@ describe('synthetic documents: piece table text decoding', () => {
   it('mixes compressed and UTF-16LE pieces and keeps the CP boundaries', () => {
     const pieces: SyntheticPiece[] = [
       { text: 'Hello ', compressed: true },
-      { text: '中文 world' },
+      { text: '\u4e2d\u6587 world' },
       { text: '\rend', compressed: true },
     ]
     const doc = openLegacyDoc(buildSyntheticDoc({ pieces }))
     expect(doc.pieces.cps).toEqual([0, 6, 14, 18])
     expect(doc.pieces.pieces.map((piece) => piece.compressed)).toEqual([true, false, true])
-    expect(doc.rawText).toBe('Hello 中文 world\rend')
-    expect(doc.text).toBe('Hello 中文 world\nend')
-    expect(doc.paragraphs).toEqual(['Hello 中文 world', 'end'])
+    expect(doc.rawText).toBe('Hello \u4e2d\u6587 world\rend')
+    expect(doc.text).toBe('Hello \u4e2d\u6587 world\nend')
+    expect(doc.paragraphs).toEqual(['Hello \u4e2d\u6587 world', 'end'])
   })
 
   it('keeps a surrogate pair (emoji) inside a UTF-16LE piece', () => {
@@ -106,7 +106,7 @@ describe('Word control-mark mapping', () => {
   it('maps cell marks, line/page breaks, hard/optional hyphens', () => {
     expect(mapWordControlChars('a\u0007b')).toBe('a\tb')
     expect(mapWordControlChars('a\u000bb')).toBe('a\nb')
-    expect(mapWordControlChars('a\u000cb')).toBe('a\nb')
+    expect(mapWordControlChars('a\u000cb')).toBe('a\fb')
     expect(mapWordControlChars('a\u001eb')).toBe('a-b')
     expect(mapWordControlChars('a\u001fb')).toBe('ab')
   })

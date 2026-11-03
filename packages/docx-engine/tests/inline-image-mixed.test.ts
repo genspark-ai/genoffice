@@ -162,3 +162,13 @@ describe('rotated run pictures', () => {
     expect(image.flipV).toBeUndefined()
   })
 })
+
+describe('picture-only paragraph with a trailing page break', () => {
+  it('keeps the break as a pageBreak display under the image', async () => {
+    const bodyXml = `<w:p>${INLINE_IMAGE_RUN}<w:r><w:br w:type="page"/></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+    expect(doc.blocks[0].fieldDisplay).toEqual({ kind: 'pageBreak' })
+  })
+})

@@ -57,6 +57,7 @@ import {
   isCjkFontName,
   lineHeightFactor,
   symbolBulletLinePt,
+  markerFaceLifts,
   oversizedMarkerExtraPt,
   SIMSUN_GAP_CHAR_RE,
   simsunGapLineFactor,
@@ -262,9 +263,11 @@ import { moveBlocks } from './move-block'
 import { tablePositionCss, tableWidthCss, type TableWidthInput } from './table-geometry'
 import {
   foldQuarterTurnMargins,
+  pictureLayerDecls,
   pictureTransformFns,
   quarterTurnInsetPx,
   quarterTurnMarginCss,
+  type PictureLayer,
 } from './image-rotation'
 import {
   blockPictureAnchor,
@@ -564,6 +567,8 @@ export const DocInlineImage = Node.create({
       rotDeg: { default: null as number | null },
       flipH: { default: false },
       flipV: { default: false },
+      /** pictures of a picture-only group, bottom first, in fractions of the box (display only) */
+      layers: { default: null as PictureLayer[] | null },
       /** the run's raw <w:rPr> slice, re-emitted before the fragment on save (not rendered) */
       rawRPr: { default: null as string | null, rendered: false },
       /** VML horizontal rule (alone or sharing the paragraph): {colorHex?, thicknessPx?, sizeHalfPoints?, widthPx?, align?}; drawn as a rule on its own line */
@@ -610,6 +615,7 @@ export const DocInlineImage = Node.create({
         `border:${((ib.widthPt * 96) / 72).toFixed(1)}px solid #${String(ib.color).replace(/[^0-9A-Fa-f]/g, '')}`,
       )
     }
+    styles.push(...pictureLayerDecls(node.attrs.layers as PictureLayer[] | null))
     const xf = pictureTransformFns(node.attrs.rotDeg, node.attrs.flipH, node.attrs.flipV)
     const px = (v: number) => `${v.toFixed(1)}px`
     const wrap = node.attrs.wrap as string | null
@@ -705,14 +711,21 @@ export const DocInlineImage = Node.create({
     // containing block (the host's indented box) hands its inset back (WT L400)
     const pageX = geom.xOrigin === 'page' ? ' - var(--doc-margin-left,0px)' : ''
     const colX = pageX ? '' : ANCHOR_IND_SUB
+    // paper right edge in column coordinates: the host box (100%) plus what its
+    // indent (and, for a float, its list padding) took off the column
+    const colW = (pageX: string, pad = true): string =>
+      `100%${pageX ? '' : ` + var(--anchor-ind,0px)${pad ? ' + var(--anchor-pad,0px)' : ''}`} + var(--doc-margin-right,0px)`
     if (tx != null && wrap) {
+      // the picture stays on the paper: Word pulls an X past the paper edge
+      // back to it (probe 2026-11-02, C3)
       if (wrap.endsWith('-right') && w > 0) {
-        margin.right = pageX
-          ? `calc(100% - ${px(tx + w)} + var(--doc-margin-left,0px))`
-          : `calc(100% - calc(${px(tx + w)}${ANCHOR_IND_SUB}))`
+        const inset = pageX
+          ? `100% - ${px(tx + w)} + var(--doc-margin-left,0px)`
+          : `100% - calc(${px(tx + w)}${ANCHOR_IND_SUB})`
+        margin.right = `max(${inset}, -1 * var(--doc-margin-right,0px))`
         styles.push('max-width:none')
       } else if (wrap.endsWith('-left')) {
-        margin.left = `calc(${px(tx)}${pageX}${colX})`
+        margin.left = `calc(clamp(-1 * var(--doc-margin-left,0px), ${px(tx)}${pageX}, ${colW(pageX)} - ${px(w)})${colX})`
         styles.push('max-width:none')
       } else if (wrap === 'topBottom') {
         // an explicit X leaves the centred slot, like the block-picture path
@@ -748,7 +761,7 @@ export const DocInlineImage = Node.create({
         if (tx != null) {
           // the overlay positions from the host's padding edge: list padding stays
           styles.push(
-            `--obs-left:calc(${px(tx)}${pageX}${pageX ? '' : ' - var(--anchor-ind,0px)'})`,
+            `--obs-left:calc(clamp(-1 * var(--doc-margin-left,0px), ${px(tx)}${pageX}, ${colW(pageX, false)} - ${px(w)})${pageX ? '' : ' - var(--anchor-ind,0px)'})`,
           )
           attrs['data-obs-x'] = tx.toFixed(1)
           if (pageX) attrs['data-obs-x-from'] = 'page'
@@ -2538,18 +2551,20 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
           const liftFace =
             marker.symbolFont ??
             fallbackFace ??
-            (markerFace && SEGOE_UI_SYMBOL_RE.test(markerFace.trim().toLowerCase())
+            (markerFace &&
+            (SEGOE_UI_SYMBOL_RE.test(markerFace.trim().toLowerCase()) ||
+              (marker.font && markerFaceLifts(marker.font)))
               ? markerFace
               : null)
+          const exact = effectiveLineRule(nodeAttrs, storage) === 'exact'
           if (fallbackFace) {
             styles.push(`--li-marker-font:'Segoe UI Symbol GO',${cssFontFamily(markerFace!)}`)
           } else if (marker.font) {
             // its own face without letting that face's leading stretch the line
-            // (an oversized w:sz below overrides the 0)
+            // (an oversized w:sz below overrides the 0); an exact rule never lifts
             styles.push(`--li-marker-font:${cssString(marker.font)}`)
-            if (!liftFace) styles.push('--li-marker-lh:0')
+            if (!liftFace || exact) styles.push('--li-marker-lh:0')
           }
-          const exact = effectiveLineRule(nodeAttrs, storage) === 'exact'
           const lifted = liftFace && !exact
           const textHalf = runSizeHalf ?? para.sizeHalf
           const extraPt =
@@ -2720,6 +2735,9 @@ const tableCellAttrs = {
   clipHeightTwips: { default: null as number | null },
   /** display placeholder for the row's w:gridBefore/w:gridAfter columns (borderless, not saved as w:tc) */
   gridGap: { default: false },
+  /** inert grid space standing in for a merged-away cell no rowspan covers;
+   *  its real cell is rebuilt from the table's continuationCells record */
+  mergeGap: { default: false },
   colspan: { default: 1 },
   rowspan: { default: 1 },
   colwidth: { default: null as number[] | null },
@@ -3181,6 +3199,9 @@ export const DocTable = Node.create({
       tblGridChange: { default: null as Record<string, string> | null },
       originalStructure: { default: null as string | null },
       originalFormatting: { default: null as string | null },
+      /** JSON of the merged-away (vMerge continue) cells: their own tcPr bytes
+       *  and hidden text, keyed row:column (they have no node of their own) */
+      continuationCells: { default: null as string | null },
       blockRevision: { default: null as Record<string, string> | null },
     }
   },
@@ -4601,8 +4622,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
     }
     // caption text sharing the picture's paragraph (SEQ figure numbers) sits under it
     const captionSpec = fieldDisplay ? renderFieldSpec(fieldDisplay as FieldDisplay) : null
+    const pageBreakChip = (fieldDisplay as FieldDisplay | null)?.kind === 'pageBreak'
     const imageCaption: DomSpec[] = captionSpec
-      ? [['div', { class: 'doc-img-caption' }, captionSpec]]
+      ? pageBreakChip
+        ? [captionSpec]
+        : [['div', { class: 'doc-img-caption' }, captionSpec]]
       : []
     // a side-wrapped picture no text fits beside floats at its offset with the
     // wrapper reserving its band (a CSS float would drop below the neighbour)
@@ -4844,7 +4868,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
           // 60% float clamp would shift the math, and Word never shrinks a
           // freely positioned picture
           wrapperCss.push(
-            `margin-right:calc(100% - ${(tx + w - qt).toFixed(1)}px${pageRelH ? ' + var(--doc-margin-left,0px)' : ''})`,
+            `margin-right:max(100% - ${(tx + w - qt).toFixed(1)}px${pageRelH ? ' + var(--doc-margin-left,0px)' : ''}, -1 * var(--doc-margin-right,0px))`,
             'max-width:none',
           )
         } else {

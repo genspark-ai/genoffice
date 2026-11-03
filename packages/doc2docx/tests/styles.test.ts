@@ -124,7 +124,7 @@ describe('real styles.doc: resolved stylesheet formatting', () => {
       colorIndex: 9,
       fontSizeHalfPoints: 52,
       ftcAscii: 7,
-      ftcHAnsi: 8,
+      ftcEastAsia: 8,
     })
     expect(model.paragraphs[0]!.runs[0]!.formatting.bold).toBeUndefined()
   })
@@ -198,7 +198,7 @@ describe('real styles.doc: resolved stylesheet formatting', () => {
   })
 
   it('P6 applies Body Bold to the Chinese paragraph', () => {
-    expect(model.paragraphs[6]!.text).toBe('中文样式段落')
+    expect(model.paragraphs[6]!.text).toBe('\u4e2d\u6587\u6837\u5f0f\u6bb5\u843d')
     expect(model.paragraphs[6]!.formatting).toMatchObject({ alignment: 'center', styleIndex: 82 })
     expect(model.paragraphs[6]!.runs[0]!.formatting).toMatchObject({ bold: true })
   })

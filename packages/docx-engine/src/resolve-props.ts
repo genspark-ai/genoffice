@@ -706,7 +706,7 @@ function directRLayer(
   const rfNode = findChild(rPr, 'w:rFonts')
   if (rfNode) {
     const rf = themedRFonts(attrsOf(rfNode), themeFonts)
-    if (rf.ascii ?? rf.hAnsi) out.ascii = rf.ascii ?? rf.hAnsi
+    if (rf.ascii) out.ascii = rf.ascii
     if (rf.eastAsia) out.eastAsia = rf.eastAsia
     if (rf.eaSlotEmpty) out.eaSlotEmpty = true
     if (rf.cs) out.cs = rf.cs

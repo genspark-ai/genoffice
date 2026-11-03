@@ -27,7 +27,8 @@ import { wordTableCell, wordTableModel } from '../editor/new-table'
 import { insertPageBreak } from '../editor/page-break'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import { isStraightLineKind } from '../editor/shape-svg'
-import type { InkTool } from '../editor/ink'
+import { HIGHLIGHTER_ALPHA, isPenKind, type InkPenKind, type InkTool } from '../editor/ink'
+import { colorsFor, newInkPreset, widthsFor, type InkPreset } from '../editor/ink-presets'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import iconEditor from '../assets/icon-editor.png'
 import iconTranslate from '../assets/icon-translate.png'
@@ -42,10 +43,12 @@ import {
   IconCommentPrev,
   IconComments,
   IconCompare,
-  IconCursor,
   IconEraser,
   IconHighlighterPen,
+  IconPalette,
   IconPen,
+  IconPencilInk,
+  IconPlus,
   IconLock,
   IconMoon,
   IconNavPane,
@@ -1675,107 +1678,99 @@ export function ViewTab({
 }
 /* ================= Draw ================= */
 
-/** per-pen settings the Draw tab remembers (Word keeps pen/highlighter separate) */
-export interface InkPenSettings {
-  /** hex without '#' */
-  color: string
-  width: number
-}
-
-const INK_COLORS = [
-  '000000',
-  'C00000',
-  'FF0000',
-  'FFC000',
-  'FFFF00',
-  '92D050',
-  '00B050',
-  '00B0F0',
-  '0070C0',
-  '7030A0',
-]
-
-const PEN_WIDTHS = [1, 2, 3.5, 5]
-const HIGHLIGHTER_WIDTHS = [6, 10, 16]
-
 interface DrawTabProps {
   hasDoc: boolean
+  dropdown: string | null
+  setDropdown: SetDropdown
   tool: InkTool
   onTool: (tool: InkTool) => void
-  pen: InkPenSettings
-  onPen: (settings: InkPenSettings) => void
-  highlighter: InkPenSettings
-  onHighlighter: (settings: InkPenSettings) => void
+  presets: InkPreset[]
+  activeId: string
+  onPresets: (presets: InkPreset[]) => void
+  onActivate: (id: string) => void
   annotationCount: number
   onClearAll: () => void
 }
 
+function PenGlyph({ kind, size }: { kind: InkPenKind; size: number }) {
+  if (kind === 'highlighter') return <IconHighlighterPen size={size} />
+  if (kind === 'pencil') return <IconPencilInk size={size} />
+  return <IconPen size={size} />
+}
+
 export function DrawTab({
   hasDoc,
+  dropdown,
+  setDropdown,
   tool,
   onTool,
-  pen,
-  onPen,
-  highlighter,
-  onHighlighter,
+  presets,
+  activeId,
+  onPresets,
+  onActivate,
   annotationCount,
   onClearAll,
 }: DrawTabProps) {
   const { t } = useI18n()
-  // color/thickness edit the active pen; with no pen active they configure the pen tool
-  const editingHighlighter = tool === 'highlighter'
-  const active = editingHighlighter ? highlighter : pen
-  const setActive = editingHighlighter ? onHighlighter : onPen
-  const widths = editingHighlighter ? HIGHLIGHTER_WIDTHS : PEN_WIDTHS
+  const active = presets.find((p) => p.id === activeId) ?? presets[0]
+  const drawing = isPenKind(tool)
+  const kindLabel = (kind: InkPenKind) =>
+    kind === 'highlighter'
+      ? t('ribbonHighlighter')
+      : kind === 'pencil'
+        ? t('ribbonPencil')
+        : t('ribbonPen')
+  const update = (id: string, patch: Partial<InkPreset>) =>
+    onPresets(presets.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+  const remove = (id: string) => {
+    const rest = presets.filter((p) => p.id !== id)
+    onPresets(rest)
+    if (id === activeId) {
+      onActivate(rest[0].id)
+      if (drawing) onTool(rest[0].kind)
+    }
+    setDropdown(() => null)
+  }
+  const add = (kind: InkPenKind) => {
+    const preset = newInkPreset(kind)
+    onPresets([...presets, preset])
+    onActivate(preset.id)
+    onTool(kind)
+    setDropdown(() => null)
+  }
+  // a slot click arms that pen; a second click on the armed pen opens its properties
+  const pickSlot = (preset: InkPreset) => {
+    if (drawing && preset.id === activeId) {
+      toggleDropdown(setDropdown, `inkPen:${preset.id}`)
+      return
+    }
+    onActivate(preset.id)
+    onTool(preset.kind)
+  }
 
   return (
     <>
       <div className="ribbon-group">
         <div className="ribbon-group-items">
           <button
-            className={`rb-big ${tool === 'select' ? 'active' : ''}`}
+            className={`rb-big ${drawing ? 'active' : ''}`}
             disabled={!hasDoc}
-            data-tip={t('ribbonSelectTip')}
-            onClick={() => onTool('select')}
+            data-tip={t('ribbonInkDrawTip')}
+            onClick={() => onTool(drawing ? 'select' : active.kind)}
           >
-            <span className="rb-big-icon">
-              <IconCursor size={BIG} />
+            <span
+              className="rb-big-icon"
+              style={drawing ? { color: `#${active.color}` } : undefined}
+            >
+              <PenGlyph kind={active.kind} size={BIG} />
             </span>
-            <span>{t('ribbonSelect')}</span>
-          </button>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonSelect')}</div>
-      </div>
-      <div className="ribbon-sep" />
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <button
-            className={`rb-big ${tool === 'pen' ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonPenTip')}
-            onClick={() => onTool('pen')}
-          >
-            <span className="rb-big-icon" style={{ color: `#${pen.color}` }}>
-              <IconPen size={BIG} />
-            </span>
-            <span>{t('ribbonPen')}</span>
-          </button>
-          <button
-            className={`rb-big ${tool === 'highlighter' ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={t('ribbonHighlighterTip')}
-            onClick={() => onTool('highlighter')}
-          >
-            <span className="rb-big-icon" style={{ color: `#${highlighter.color}` }}>
-              <IconHighlighterPen size={BIG} />
-            </span>
-            <span>{t('ribbonHighlighter')}</span>
+            <span>{t('ribbonInkDraw')}</span>
           </button>
           <button
             className={`rb-big ${tool === 'eraser' ? 'active' : ''}`}
             disabled={!hasDoc}
             data-tip={t('ribbonEraserTip')}
-            onClick={() => onTool('eraser')}
+            onClick={() => onTool(tool === 'eraser' ? 'select' : 'eraser')}
           >
             <span className="rb-big-icon">
               <IconEraser size={BIG} />
@@ -1787,45 +1782,132 @@ export function DrawTab({
       </div>
       <div className="ribbon-sep" />
       <div className="ribbon-group">
-        <div className="ribbon-group-items ink-settings">
-          <div className="ink-swatches">
-            {INK_COLORS.map((hex) => (
-              <button
-                key={hex}
-                className={`ink-swatch ${active.color === hex ? 'active' : ''}`}
-                style={{ background: `#${hex}` }}
-                data-tip={`#${hex}`}
-                aria-label={`#${hex}`}
-                disabled={!hasDoc}
-                onClick={() => setActive({ ...active, color: hex })}
-              />
-            ))}
-          </div>
-          <div className="ink-widths">
-            {widths.map((w) => (
-              <button
-                key={w}
-                className={`ink-width ${active.width === w ? 'active' : ''}`}
-                data-tip={t('ribbonPixels', { w })}
-                aria-label={t('ribbonPixels', { w })}
-                disabled={!hasDoc}
-                onClick={() => setActive({ ...active, width: w })}
-              >
-                <span
-                  className="ink-width-dot"
-                  style={{
-                    width: Math.min(16, w * 2 + 2),
-                    height: Math.min(16, w * 2 + 2),
-                    background: `#${active.color}`,
-                  }}
-                />
-              </button>
-            ))}
+        <div className="ribbon-group-items ink-pens">
+          {presets.map((preset) => {
+            const armed = drawing && preset.id === activeId
+            const open = dropdown === `inkPen:${preset.id}`
+            const widths = widthsFor(preset.kind)
+            const colors = colorsFor(preset.kind)
+            return (
+              <div key={preset.id} className="rb-split-wrap">
+                <button
+                  className={`ink-pen-slot ${armed ? 'active' : ''}`}
+                  disabled={!hasDoc}
+                  data-tip={`${kindLabel(preset.kind)} · #${preset.color}`}
+                  aria-label={kindLabel(preset.kind)}
+                  onClick={() => pickSlot(preset)}
+                >
+                  <span className="ink-pen-glyph" style={{ color: `#${preset.color}` }}>
+                    <PenGlyph kind={preset.kind} size={28} />
+                  </span>
+                  <span
+                    className="ink-pen-bar"
+                    style={{
+                      background: `#${preset.color}`,
+                      height: Math.max(
+                        2,
+                        Math.min(8, preset.width / (preset.kind === 'highlighter' ? 4 : 1)),
+                      ),
+                      opacity: preset.kind === 'highlighter' ? HIGHLIGHTER_ALPHA : 1,
+                    }}
+                  />
+                  {armed && <IconCaret />}
+                </button>
+                {open && (
+                  <div data-rb-panel="" className="layout-menu ink-pen-pop">
+                    <div className="ink-pen-preview">
+                      <span
+                        style={{
+                          background: `#${preset.color}`,
+                          height: preset.width,
+                          opacity: preset.kind === 'highlighter' ? HIGHLIGHTER_ALPHA : 1,
+                        }}
+                      />
+                    </div>
+                    <div className="ink-pen-section">{t('ribbonInkThickness')}</div>
+                    <div className="ink-widths">
+                      {widths.map((w, i) => (
+                        <button
+                          key={w}
+                          className={`ink-width ${preset.width === w ? 'active' : ''}`}
+                          data-tip={t('ribbonPixels', { w })}
+                          aria-label={t('ribbonPixels', { w })}
+                          onClick={() => update(preset.id, { width: w })}
+                        >
+                          <span
+                            className="ink-width-dot"
+                            style={{
+                              width: 4 + i * 3,
+                              height: 4 + i * 3,
+                              background: `#${preset.color}`,
+                            }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ink-pen-section">{t('ribbonInkColors')}</div>
+                    <div className="ink-pen-grid">
+                      {colors.map((hex) => (
+                        <button
+                          key={hex}
+                          className={`ink-swatch ${preset.color === hex ? 'active' : ''}`}
+                          style={{ background: `#${hex}` }}
+                          data-tip={`#${hex}`}
+                          aria-label={`#${hex}`}
+                          onClick={() => update(preset.id, { color: hex })}
+                        />
+                      ))}
+                    </div>
+                    <label className="ink-pen-item ink-pen-more">
+                      <IconPalette size={14} />
+                      {t('ribbonMoreColors')}
+                      <input
+                        type="color"
+                        value={`#${preset.color}`}
+                        onChange={(e) =>
+                          update(preset.id, { color: e.target.value.slice(1).toUpperCase() })
+                        }
+                      />
+                    </label>
+                    <button
+                      className="ink-pen-item ink-pen-delete"
+                      disabled={presets.length <= 1}
+                      onClick={() => remove(preset.id)}
+                    >
+                      <IconTrash size={14} />
+                      {t('ribbonInkDelete')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big ink-pen-add"
+              disabled={!hasDoc}
+              data-tip={t('ribbonInkAddTip')}
+              onClick={() => toggleDropdown(setDropdown, 'inkAdd')}
+            >
+              <span className="rb-big-icon">
+                <IconPlus size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonInkAdd')}</span>
+            </button>
+            {dropdown === 'inkAdd' && (
+              <div data-rb-panel="" className="layout-menu ink-pen-pop">
+                {(['pen', 'highlighter', 'pencil'] as const).map((kind) => (
+                  <button key={kind} className="ink-pen-item" onClick={() => add(kind)}>
+                    <PenGlyph kind={kind} size={16} />
+                    {kindLabel(kind)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        <div className="ribbon-group-label">
-          {editingHighlighter ? t('ribbonHighlighterStyle') : t('ribbonPenStyle')}
-        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupPens')}</div>
       </div>
       <div className="ribbon-sep" />
       <div className="ribbon-group">

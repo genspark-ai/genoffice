@@ -8,6 +8,8 @@ import type {
   PageNoteItem,
   PageSlice,
 } from './pagination-types'
+import type { EditorView } from '@tiptap/pm/view'
+import { rangeSlot } from './dom-range'
 import { effectiveParaFlags } from './editor/para-flags'
 import type { BlockPlan, PlanOf } from './pagination-plan'
 import { floatKeepWholeOf, wrapperObstacleFacts } from './editor/obstacle-plan'
@@ -125,7 +127,120 @@ function bucketByBlock(pm: HTMLElement, selector: string): Map<HTMLElement, HTML
  * (break-line Ys, boxes). Blocks without a plan (decoration widgets, callers
  * without an editor) fall back to the DOM scrape of the same facts.
  */
-const isJoinHead = (el: HTMLElement) => getComputedStyle(el).display === 'inline'
+const isJoinHead = (el: HTMLElement) => el.classList.contains('doc-para-join-head')
+
+const hiddenBlock = (el: Element) =>
+  el.classList.contains('page-gap') ||
+  el.classList.contains('page-float-host') ||
+  getComputedStyle(el).display === 'none'
+
+/** the join head a tail continues: the previous paragraph past hidden (fully deleted) ones */
+export function joinHeadOf(tail: Element): HTMLElement | null {
+  let n = tail.previousElementSibling
+  while (n && hiddenBlock(n)) n = n.previousElementSibling
+  return n && isJoinHead(n as HTMLElement) ? (n as HTMLElement) : null
+}
+
+const JOIN_LINE_RE = /^[\d.]+px$/
+const joinRange = rangeSlot()
+
+/**
+ * A pending paragraph-mark deletion shows as one paragraph in the final-text
+ * views: the tail block is lifted one line so its first line continues the
+ * head's last line (text-indent = where that line ends). Both keep their own
+ * block properties; when the rest of the line has no room for the tail's
+ * first word, the tail simply starts the next line.
+ */
+export function alignJoinedParagraphs(
+  pm: HTMLElement,
+  zoomFactor: number,
+  view?: EditorView,
+): void {
+  const tails = Array.from(pm.querySelectorAll(':scope > .doc-para-join-tail'))
+  if (tails.length === 0) return
+  // the writes land on node DOM: unobserved, or the next transaction redraws the node
+  const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } } | undefined)
+    ?.domObserver
+  obs?.stop()
+  try {
+    alignTails(tails, zoomFactor)
+  } finally {
+    obs?.start()
+  }
+}
+
+function inFlowRects(el: HTMLElement, range: Range): DOMRect[] {
+  const out: DOMRect[] = []
+  if (typeof range.getClientRects !== 'function') return out
+  const skip = (n: Element | null) => !!n?.closest('.page-gap, .page-float-host')
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (skip(n.parentElement)) continue
+    range.selectNodeContents(n)
+    for (const r of range.getClientRects()) if (r.height > 0 && r.width > 0) out.push(r)
+  }
+  for (const im of Array.from(el.querySelectorAll('img'))) {
+    if (skip(im)) continue
+    let flow = true
+    for (let e: Element | null = im; e && e !== el; e = e.parentElement) {
+      const cs = getComputedStyle(e)
+      if ((cs.float && cs.float !== 'none') || cs.position === 'absolute') flow = false
+    }
+    const r = im.getBoundingClientRect()
+    if (flow && r.height > 0 && r.width > 0) out.push(r)
+  }
+  return out
+}
+
+function alignTails(tails: Element[], zoomFactor: number): void {
+  const z = zoomFactor || 1
+  const range = joinRange()
+  const pad = (cs: CSSStyleDeclaration, side: 'Left' | 'Right' | 'Bottom') =>
+    (parseFloat(cs[`padding${side}`]) || 0) + (parseFloat(cs[`border${side}Width`]) || 0)
+  const write = (t: HTMLElement, lift: number, indent: number) => {
+    const next = [`${lift.toFixed(2)}px`, `${Math.max(0, indent).toFixed(2)}px`]
+    if (t.dataset.joinOn !== '1') t.dataset.joinOn = '1'
+    if (t.style.getPropertyValue('--join-lift') !== next[0])
+      t.style.setProperty('--join-lift', next[0])
+    if (t.style.getPropertyValue('--join-indent') !== next[1])
+      t.style.setProperty('--join-indent', next[1])
+  }
+  for (const tail of tails) {
+    const t = tail as HTMLElement
+    const head = joinHeadOf(t)
+    if (!head || getComputedStyle(head).direction === 'rtl') {
+      delete t.dataset.joinOn
+      continue
+    }
+    const hcs = getComputedStyle(head)
+    const hr = head.getBoundingClientRect()
+    const rects = inFlowRects(head, range)
+    const lastTop = rects.reduce((m, r) => Math.max(m, r.top), -Infinity)
+    if (lastTop === -Infinity) {
+      write(t, hr.height / z, 0)
+      continue
+    }
+    const lastRight = rects.reduce(
+      (m, r) => (r.top + r.height / 2 >= lastTop ? Math.max(m, r.right) : m),
+      0,
+    )
+    const tcs = getComputedStyle(t)
+    const tr = t.getBoundingClientRect()
+    const lh = JOIN_LINE_RE.test(hcs.lineHeight)
+      ? parseFloat(hcs.lineHeight)
+      : (hr.bottom - lastTop) / z
+    const room = (tr.right - lastRight) / z - pad(tcs, 'Right')
+    if (room <= 0) {
+      write(t, 0, 0)
+      continue
+    }
+    write(t, lh + pad(hcs, 'Bottom'), (lastRight - tr.left) / z - pad(tcs, 'Left'))
+    // the first word did not fit after the indent and wrapped, leaving the
+    // shared line with a hole: start the tail on its own line instead
+    const first = inFlowRects(t, range)[0]
+    if (first && first.top > lastTop + lh * z * 0.5) write(t, 0, 0)
+  }
+}
 
 function planKeepWhole(
   el: HTMLElement,
@@ -183,13 +298,16 @@ export function measureBlocks(
     // in a final-text view) shares its line: it extends that block, not a new
     // one. A tail with break or float facts of its own stays a block.
     if (el.classList.contains('doc-para-join-tail') && rect.height > 0) {
-      const prev = blocks[blocks.length - 1]
       const liveBreak = (b: Element) => showDeleted || !b.closest('.doc-del')
       const plain =
         !breaksByBlock.get(el)?.some(liveBreak) &&
         !colBreaksByBlock.get(el)?.some(liveBreak) &&
         [gapInlinesByBlock, relImgsByBlock, relXImgsByBlock].every((m) => !m.get(el)?.length)
-      if (plain && prev?.el && isJoinHead(prev.el)) {
+      // a chained middle paragraph (tail and head) was folded away: climb to its block
+      let headEl = joinHeadOf(el)
+      while (headEl && !blocks.some((b) => b.el === headEl)) headEl = joinHeadOf(headEl)
+      const prev = headEl ? blocks.find((b) => b.el === headEl) : undefined
+      if (plain && prev) {
         const bottom = (rect.bottom - origin - gapAccum) / zoomFactor
         prev.height = Math.max(prev.height, bottom - prev.top)
         prev.domHeight = prev.height
@@ -556,6 +674,7 @@ export function measureBlocks(
       ...(padBeforePx > 0.5 ? { padBeforePx } : {}),
       ...(marginBeforePx !== undefined ? { marginBeforePx } : {}),
       ...(plan ? { dropAtPageTop: plan.dropAtPageTop } : {}),
+      ...(plan?.forcedLeadSpacePt ? { forcedLeadSpacePx: (plan.forcedLeadSpacePt * 96) / 72 } : {}),
       ...(floated ? { floated: true } : {}),
       ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
@@ -619,6 +738,7 @@ export function measureBlocks(
       blocks[i].height += gap
     }
   }
+  foldForcedLeadSpaceBefore(blocks)
   // leading offset before the first block (first-paragraph space-before): Word
   // consumes page capacity with it, so fold it in like the inter-block margins
   // (space-before semantics: counted before the block's own lines)
@@ -640,6 +760,35 @@ export function measureBlocks(
     }
   }
   return { blocks, totalHeight, floats, sectBreaks }
+}
+
+/**
+ * A block whose own explicit break opens a page keeps part of its space before
+ * (BlockPlan.forcedLeadSpacePt). The DOM lays that margin out collapsed with the
+ * previous block's space after; move the kept part over so the page starts above
+ * it and the lead's margin (leadMtPx) shows it below the gap.
+ */
+export function foldForcedLeadSpaceBefore(blocks: BlockBox[]): void {
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i]
+    const prev = blocks[i - 1]
+    // the plan sets forcedLeadSpacePx on pageBreakBefore blocks only (a styled
+    // one gets its breakBefore flag later, from applyBlockMeta)
+    if (!block.forcedLeadSpacePx || prev.breakAfter) continue
+    const keep = Math.min(
+      block.forcedLeadSpacePx,
+      block.marginBeforePx ?? 0,
+      prev.spaceAfterPx ?? 0,
+    )
+    if (keep <= 0.5) continue
+    prev.spaceAfterPx = (prev.spaceAfterPx ?? 0) - keep
+    prev.height -= keep
+    block.top -= keep
+    block.height += keep
+    block.spaceBeforePx = (block.spaceBeforePx ?? 0) + keep
+    block.leadFoldPx = (block.leadFoldPx ?? 0) + keep
+    block.leadMtPx = keep
+  }
 }
 
 /**

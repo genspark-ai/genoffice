@@ -123,12 +123,12 @@ function parseStyles(xml: string): Styles {
   }
   const fontSizes: number[] = []
   const fonts = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(xml)?.[1] ?? ''
-  for (const m of fonts.matchAll(/<font\b[^>]*(?:\/>|>([\s\S]*?)<\/font>)/g)) {
+  for (const m of fonts.matchAll(/<font\b[^>]*?(?:\/>|>([\s\S]*?)<\/font>)/g)) {
     fontSizes.push(Number(/<sz\b[^>]*\bval="([\d.]+)"/.exec(m[1] ?? '')?.[1] ?? 11))
   }
   const xfs: Xf[] = []
   const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml)?.[1] ?? ''
-  for (const m of cellXfs.matchAll(/<xf\b([^>]*)(?:\/>|>([\s\S]*?)<\/xf>)/g)) {
+  for (const m of cellXfs.matchAll(/<xf\b([^>]*?)(?:\/>|>([\s\S]*?)<\/xf>)/g)) {
     xfs.push({
       numFmtId: Number(/\bnumFmtId="(\d+)"/.exec(m[1]!)?.[1] ?? 0),
       fontId: Number(/\bfontId="(\d+)"/.exec(m[1]!)?.[1] ?? 0),

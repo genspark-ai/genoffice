@@ -1,5 +1,5 @@
 /**
- * Stage 3c-4: HYPERLINK fields in the body text.
+ * Stage 3c-4: HYPERLINK and page-number fields in the body text.
  *
  * A Word field is \x13 instruction \x14 result \x15 (the separator is
  * optional for fields without a result). This module walks the raw body text,
@@ -21,10 +21,23 @@ export interface HyperlinkField {
   tooltip?: string
 }
 
+/** A field whose result is kept as a live field in the docx (PAGE, NUMPAGES, SECTIONPAGES). */
+export interface SimpleField {
+  /** first CP of the field result */
+  startCp: number
+  /** one past the last CP of the field result */
+  endCp: number
+  /** the cleaned instruction, e.g. "PAGE" or "PAGE \\* MERGEFORMAT" */
+  instruction: string
+}
+
 export interface FieldParseResult {
   hyperlinks: HyperlinkField[]
+  simpleFields: SimpleField[]
   warnings: string[]
 }
+
+const LIVE_FIELD_TYPES = new Set(['PAGE', 'NUMPAGES', 'SECTIONPAGES'])
 
 const FIELD_BEGIN = '\u0013'
 const FIELD_SEPARATOR = '\u0014'
@@ -116,6 +129,7 @@ function parseHyperlinkInstruction(instruction: string): HyperlinkInstruction | 
  */
 export function parseFields(rawText: string): FieldParseResult {
   const hyperlinks: HyperlinkField[] = []
+  const simpleFields: SimpleField[] = []
   const warnings: string[] = []
   const unsupportedTypes = new Set<string>()
   const stack: FieldFrame[] = []
@@ -125,6 +139,11 @@ export function parseFields(rawText: string): FieldParseResult {
     if (frame.separatorCp === undefined) {
       if (type !== '')
         warnings.push('a ' + type + ' field has no result separator and was imported as plain text')
+      return
+    }
+    if (LIVE_FIELD_TYPES.has(type)) {
+      // an empty result (field never updated) still becomes a live field
+      simpleFields.push({ startCp: frame.separatorCp + 1, endCp, instruction })
       return
     }
     if (!/^HYPERLINK\b/i.test(instruction)) {
@@ -166,7 +185,7 @@ export function parseFields(rawText: string): FieldParseResult {
   }
   if (stack.length > 0)
     warnings.push('the document ends inside a field; its text was imported as plain text')
-  return { hyperlinks, warnings: [...new Set(warnings)] }
+  return { hyperlinks, simpleFields, warnings: [...new Set(warnings)] }
 }
 
 /** true when the CP lies inside a field range (instruction or result) */

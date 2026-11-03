@@ -1,0 +1,82 @@
+{
+  "id": "ea-lang-latin-via-ea-slot",
+  "title": "docDefaults w:lang w:val=ko lays every run's Latin out with its eastAsia face; a Latin eastAsia face becomes SimSun (0.5em, 1.3 line), hangul Batang",
+  "section": "word-truths.md#L891",
+  "probe_date": "2026-11-02",
+  "source": "build.py -> gwc_staging/ealang_probe.pdf, Word for Mac direct PDF, pymupdf rawdict char origins and span fonts",
+  "class": "pure",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "docDefaults",
+      "expect": {
+        "asciiFont": "Arial",
+        "eastAsiaFont": "Arial",
+        "lang": "ko"
+      }
+    },
+    {
+      "kind": "slotFaces",
+      "ascii": "Arial",
+      "eastAsia": "Arial",
+      "expect": {
+        "ascii": "SimSun",
+        "eastAsia": "SimSun"
+      },
+      "note": "A1/A8: no rFonts (A8 with run lang en-US) -> SimSun, Latin 0.498em, pitch 14.16-14.4 at 11pt"
+    },
+    {
+      "kind": "slotFaces",
+      "ascii": "Courier New",
+      "eastAsia": "Courier New",
+      "expect": {
+        "ascii": "SimSun",
+        "eastAsia": "SimSun"
+      },
+      "note": "A3/A7: Courier New in every slot -> SimSun 0.498em (Courier New itself is 0.598em), run lang en-US changes nothing"
+    },
+    {
+      "kind": "slotFaces",
+      "ascii": "Courier New",
+      "eastAsia": "Batang",
+      "expect": {
+        "ascii": "Batang",
+        "eastAsia": "Batang"
+      },
+      "note": "A9: eastAsia Batang draws the Latin (0.556em)"
+    },
+    {
+      "kind": "slotFaces",
+      "ascii": "Arial Unicode MS",
+      "eastAsia": "Arial Unicode MS",
+      "expect": {
+        "ascii": "Arial Unicode MS",
+        "eastAsia": "Arial Unicode MS"
+      },
+      "note": "A5/A6: ArialUnicodeMS keeps itself, hangul 0.996em"
+    },
+    {
+      "kind": "slotFaces",
+      "ascii": "Gungsuh",
+      "eastAsia": "Gungsuh",
+      "expect": {
+        "ascii": "Gungsuh",
+        "eastAsia": "Gungsuh"
+      },
+      "note": "A10/A11: Gungsuh Latin 0.625-0.639em, hangul 0.996em"
+    },
+    {
+      "kind": "factor",
+      "font": "SimSun",
+      "expect": 1.3,
+      "tol": 0.005,
+      "note": "SimSun Latin lines pitch 14.16-14.4 at 11pt = 1.29-1.31"
+    },
+    {
+      "kind": "cssFamilyIncludes",
+      "font": "SimSun",
+      "expect": "GenOffice SimSun Latin",
+      "note": "the half-width 0.5em Latin stand-in heads the chain"
+    }
+  ]
+}

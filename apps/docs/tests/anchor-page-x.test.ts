@@ -94,7 +94,9 @@ describe('page-relative anchor x', () => {
     const style = await runImageStyle(
       `<w:p>${anchor(PAGE_H, PARA_V, '<wp:wrapSquare wrapText="right"/>')}<w:r><w:t>T</w:t></w:r></w:p>`,
     )
-    expect(style).toContain('margin-left:calc(46.7px - var(--doc-margin-left,0px))')
+    expect(style).toContain(
+      'margin-left:calc(clamp(-1 * var(--doc-margin-left,0px), 46.7px - var(--doc-margin-left,0px), 100% + var(--doc-margin-right,0px) - 703.4px))',
+    )
   })
 
   it('a page-relative Y above the body top lifts a side-wrapped run picture there', async () => {
