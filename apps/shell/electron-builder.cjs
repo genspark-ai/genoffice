@@ -27,7 +27,7 @@
  */
 
 const { execFileSync } = require('node:child_process')
-const { existsSync, readFileSync, rmSync } = require('node:fs')
+const { closeSync, existsSync, openSync, readFileSync, readSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
 
 function normalizeHttpsBaseUrl(name, value) {
@@ -91,6 +91,32 @@ const winSidecarCandidates = [
 const WIN_SIDECAR =
   winSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ?? winSidecarCandidates[0]
 
+// GENOFFICE_LINUX_ARM64=1 — package the arm64 Linux artifacts instead of x64.
+// CI runs it as a second electron-builder pass (own BUILD_DIR) after the x64
+// pass, mirroring the Windows arm64 pass: the two never share an output dir or
+// a sidecar path. The sidecar comes from cargo's host-native target/release
+// when the build host is arm64 Linux itself (a native ubuntu-arm64 runner needs
+// no cross toolchain), or from an explicit cross-compilation triple otherwise —
+// and beforePack checks the ELF machine type either way, because
+// electron-builder exits 0 on a missing/odd extraResources source and would
+// otherwise ship Sheets dead on every install.
+const linuxArm64 = process.env.GENOFFICE_LINUX_ARM64 === '1'
+const linuxSidecarTarget = 'aarch64-unknown-linux-gnu'
+// The x64 pass keeps the historical host-native source (unchanged behavior);
+// the arm64 pass prefers an explicit cross-compilation triple dir and also
+// accepts a native arm64 Linux host's plain build.
+const LINUX_SIDECAR_X64 = '../sheets/native/xlsx-engine/target/release/xlsx-sidecar'
+const linuxSidecarArm64Candidates = [
+  `../sheets/native/xlsx-engine/target/${linuxSidecarTarget}/release/xlsx-sidecar`,
+  ...(process.platform === 'linux' && process.arch === 'arm64'
+    ? ['../sheets/native/xlsx-engine/target/release/xlsx-sidecar']
+    : []),
+]
+const LINUX_SIDECAR = linuxArm64
+  ? (linuxSidecarArm64Candidates.find((rel) => existsSync(join(__dirname, rel))) ??
+    linuxSidecarArm64Candidates[0])
+  : LINUX_SIDECAR_X64
+
 function assertExtraResourceSources() {
   for (const rel of [
     '../../node_modules/@genspark/cli',
@@ -106,6 +132,35 @@ function assertExtraResourceSources() {
         `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
       )
     }
+  }
+}
+
+/** ELF e_machine check (little-endian header): refuse a sidecar whose
+ *  architecture does not match the package being built. 0x3E = EM_X86_64,
+ *  0xB7 = EM_AARCH64. */
+function assertLinuxSidecarArch(sidecarPath, wantArm64) {
+  const fd = openSync(sidecarPath, 'r')
+  try {
+    const header = Buffer.alloc(20)
+    if (
+      readSync(fd, header, 0, 20, 0) < 20 ||
+      header.subarray(0, 4).toString('latin1') !== '\x7fELF'
+    ) {
+      throw new Error(`not an ELF binary: ${sidecarPath}`)
+    }
+    const machine = header.readUInt16LE(18)
+    const got = machine === 0xb7 ? 'aarch64' : machine === 0x3e ? 'x86_64' : `e_machine=${machine}`
+    const want = wantArm64 ? 'aarch64' : 'x86_64'
+    if (got !== want) {
+      throw new Error(
+        `linux sidecar is ${got} but this package ships ${want}: ${sidecarPath} — ` +
+          (wantArm64
+            ? 'cross-build it (cargo zigbuild --target aarch64-unknown-linux-gnu) or build natively on an arm64 host'
+            : 'rebuild it for x64'),
+      )
+    }
+  } finally {
+    closeSync(fd)
   }
 }
 
@@ -685,21 +740,24 @@ const config = {
   },
   // Unlike win (which cross-compiles the sidecar to an explicit target
   // triple), linux takes it from cargo's host-native target/release/ — the
-  // same source mac uses. So no `arch` is pinned here: electron-builder
-  // defaults to the build host's architecture, which is the only one the
-  // sidecar was actually built for. Packaging arm64 on an x64 host, or the
-  // reverse, needs a matching `cargo build --target` first.
+  // same source mac uses. So no `arch` is pinned here beyond the flag below:
+  // electron-builder defaults to the build host's architecture, which is the
+  // only one the sidecar was actually built for — and GENOFFICE_LINUX_ARM64=1
+  // (the second release pass, mirroring GENOFFICE_WIN_ARM64) switches every
+  // target to arm64, where the sidecar must come from a native arm64 host or
+  // an explicit cross build (see linuxSidecarCandidates and the ELF check).
   linux: {
     // AppImage (self-contained, any distro) + deb (apt install, pulls in the
     // GTK/NSS runtime deps) + rpm (dnf/zypper install on Fedora / RHEL /
     // openSUSE). Default artifact names are kept on purpose —
     // GenOffice-<v>.AppImage / genoffice_<v>_amd64.deb — because the public
     // README download links and the already-published linux-v0.5.149 release
-    // use them.
+    // use them. The arm64 pass reuses the ${arch}-templated deb/rpm names
+    // (genoffice_<v>_arm64.deb).
     target: [
-      { target: 'AppImage', arch: ['x64'] },
-      { target: 'deb', arch: ['x64'] },
-      { target: 'rpm', arch: ['x64'] },
+      { target: 'AppImage', arch: [linuxArm64 ? 'arm64' : 'x64'] },
+      { target: 'deb', arch: [linuxArm64 ? 'arm64' : 'x64'] },
+      { target: 'rpm', arch: [linuxArm64 ? 'arm64' : 'x64'] },
     ],
     // deb control metadata; values match the manually published 0.5.149 deb
     // so apt sees the new packages as the same lineage. Homepage comes from
@@ -730,7 +788,7 @@ const config = {
     syncDesktopName: true,
     extraResources: [
       {
-        from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
+        from: LINUX_SIDECAR,
         to: 'native/xlsx-sidecar',
       },
       // Same blank templates the Windows installer registers for Explorer's
@@ -804,6 +862,19 @@ const config = {
         `win extraResources source missing: ${winSidecarCandidates.join(' or ')} ` +
           `(run "npm run native:build -w @genoffice/sheets", or cargo build --target ${winSidecarTarget})`,
       )
+    }
+    if (context.electronPlatformName === 'linux') {
+      const sidecar = join(__dirname, LINUX_SIDECAR)
+      if (!existsSync(sidecar)) {
+        throw new Error(
+          `linux extraResources source missing: ${linuxSidecarCandidates.join(' or ')} ` +
+            (linuxArm64
+              ? `(cross-build with "cargo zigbuild --release --target ${linuxSidecarTarget}", ` +
+                'or build natively on an arm64 Linux host)'
+              : '(run "npm run native:build -w @genoffice/sheets")'),
+        )
+      }
+      assertLinuxSidecarArch(sidecar, linuxArm64)
     }
   },
   dmg: {
