@@ -5,7 +5,8 @@
     // resolve the sibling source package by path (worktree-safe: a linked
     // node_modules would otherwise typecheck against another checkout)
     "paths": {
-      "@genoffice/docx-engine": ["../docx-engine/src/index.ts"]
+      "@genoffice/doc2docx": ["../doc2docx/src/index.ts"],
+      "@genoffice/doc2docx/*": ["../doc2docx/src/*"]
     }
   },
   "include": ["src", "tests"]

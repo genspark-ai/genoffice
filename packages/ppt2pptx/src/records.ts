@@ -27,14 +27,17 @@ export const PPT_TYPES = {
   slideContainer: 0x03ee,
   slideAtom: 0x03ef,
   notesContainer: 0x03f0,
+  slidePersistAtom: 0x03f3,
   mainMasterContainer: 0x03f8,
-  slideListWithText: 0x0ff0,
-  userEditAtom: 0x0ff5,
-  persistPtrIncrementalBlock: 0x1772,
   textHeaderAtom: 0x0f9f,
   textCharsAtom: 0x0fa0,
   textBytesAtom: 0x0fa8,
+  slideListWithText: 0x0ff0,
+  userEditAtom: 0x0ff5,
   currentUserAtom: 0x0ff6,
+  persistPtrIncrementalBlock: 0x1772,
+  /** Escher OfficeArtClientTextbox: an atom whose payload holds MS-PPT text records */
+  escherClientTextbox: 0xf00d,
 } as const
 
 /** Walk the records of one stream (flat; consumers recurse into containers). */
@@ -60,6 +63,15 @@ export function* walkRecords(
 
 export function payloadOf(stream: Uint8Array, record: PptRecord): Uint8Array {
   return stream.subarray(record.offset, record.offset + record.length)
+}
+
+/**
+ * True when the payload is itself a record stream: MS-PPT containers carry
+ * version 0xF, and the Escher OfficeArtClientTextbox atom (version 0) holds
+ * the shape's TextHeaderAtom / TextCharsAtom pair instead of raw bytes.
+ */
+export function isRecordContainer(record: PptRecord): boolean {
+  return record.version === 0xf || record.type === PPT_TYPES.escherClientTextbox
 }
 
 /** decode a TextCharsAtom payload: UTF-16LE with PowerPoint's control runes */

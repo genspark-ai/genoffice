@@ -1,12 +1,30 @@
 import * as CFB from 'cfb'
 
 /**
- * A minimal MS-PPT binary builder: records written by hand, so the tests
+ * A minimal MS-PPT binary builder: records are laid out the way PowerPoint
+ * writes them — a change directory (CurrentUserAtom → UserEditAtom →
+ * PersistDirectoryAtom) over one or more generations, slide text nested under
+ * PPDrawing/OfficeArt and outline text under SlideListWithText — so the tests
  * exercise the reader against bytes whose content is known exactly.
  */
 
 export interface SlideSpec {
-  textSequences: Array<{ kind: number; text: string }>
+  textSequences: Array<{ kind: number; text: string; atom?: 'chars' | 'bytes' }>
+}
+
+export interface BuildOptions {
+  /** slide surface in master units (576 per inch); default 5760 × 4320 (10 × 7.5 in) */
+  slideSize?: [number, number]
+  /** a second generation restating the slides (stale first-gen must be ignored) */
+  secondGeneration?: SlideSpec[]
+  /**
+   * Store each slide's text in the SlideListWithText outline (the real
+   * PowerPoint shape for placeholders) instead of in the drawing's
+   * OfficeArtClientTextbox.
+   */
+  outlineTexts?: boolean
+  /** write the password-protected CurrentUserAtom headerToken (0xF3D1C4DF) */
+  encrypted?: boolean
 }
 
 const record = (type: number, payload: Uint8Array, instance = 0, version = 0): Uint8Array => {
@@ -45,113 +63,160 @@ const concat = (parts: Uint8Array[]): Uint8Array => {
 const textChars = (text: string): Uint8Array =>
   record(0x0fa0, new Uint8Array(Buffer.from(text, 'utf16le')))
 
+const textBytes = (text: string): Uint8Array =>
+  record(0x0fa8, new Uint8Array(Buffer.from(text, 'latin1')))
+
 const textHeader = (kind: number): Uint8Array => record(0x0f9f, u32(kind))
 
-const documentAtom = (width = 5760000, height = 4320000): Uint8Array =>
-  record(0x03e9, concat([u32(width), u32(height), u32(0), u32(0)]))
+/** OfficeArtClientTextbox with a Reference to the slide's outline text entry. */
+const outlineTextRef = (index: number): Uint8Array => record(0x0f9e, u32(index))
 
-/** one slide's text records as a flat run (the container wrapper the builder adds) */
-function slideContainer(spec: SlideSpec): Uint8Array {
-  const parts: Uint8Array[] = [record(0x03ef, concat([u32(0), u32(0), u32(0), u32(0), u32(0)]))]
+const slideAtom = (): Uint8Array => record(0x03ef, new Uint8Array(20))
+
+/** SlidePersistAtom: persistIdRef, unused, cTexts, slideId, reserved. */
+const slidePersistAtom = (persistIdRef: number, slideId: number, cTexts: number): Uint8Array =>
+  record(0x03f3, concat([u32(persistIdRef), u32(0), u32(cTexts), u32(slideId), u32(0)]))
+
+const documentAtom = (width: number, height: number): Uint8Array =>
+  record(0x03e9, concat([u32(width), u32(height), u32(width), u32(height)]))
+
+/** one Escher record: the header layout is MS-PPT's (ver/inst, type, length) */
+const escher = (type: number, payload: Uint8Array, instance = 0, version = 0): Uint8Array =>
+  record(type, payload, instance, version)
+
+const escherContainer = (type: number, children: Uint8Array[]): Uint8Array =>
+  escher(type, concat(children), 0, 0xf)
+
+/**
+ * A slide's PPDrawing: DgContainer → SpgrContainer → one SpContainer per text
+ * sequence → OfficeArtClientTextbox. This is how a real PowerPoint slide nests
+ * its text (five levels under the slide container), so the reader's deep walk
+ * is what moves these bytes.
+ */
+function drawing(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
+  const shapes = spec.textSequences.map((sequence, index) => {
+    const atoms: Uint8Array[] = [textHeader(sequence.kind)]
+    if (outlineTexts) atoms.push(outlineTextRef(index))
+    else atoms.push(sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text))
+    const textbox = escher(0xf00d, concat(atoms))
+    return escherContainer(0xf004, [textbox])
+  })
+  const spgr = escherContainer(0xf003, shapes)
+  const dg = escherContainer(0xf002, [spgr])
+  return escherContainer(0x040c, [dg])
+}
+
+function slideContainer(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
+  return record(0x03ee, concat([slideAtom(), drawing(spec, outlineTexts)]), 0, 0xf)
+}
+
+/** The outline text pairs SlideListWithText carries for one slide. */
+function outlineText(spec: SlideSpec): Uint8Array[] {
+  const parts: Uint8Array[] = []
   for (const sequence of spec.textSequences) {
-    parts.push(textHeader(sequence.kind), textChars(sequence.text))
+    parts.push(textHeader(sequence.kind))
+    parts.push(sequence.atom === 'bytes' ? textBytes(sequence.text) : textChars(sequence.text))
   }
-  return record(0x03ee, concat(parts), 0, 0xf)
+  return parts
 }
 
-export interface BuildOptions {
-  slideSize?: [number, number]
-  /** a second generation restating the slides (stale first-gen must be ignored) */
-  secondGeneration?: SlideSpec[]
-}
-
-/** The PowerPoint Document stream + Current User stream, chained the way
-    PowerPoint saves: CurrentUserAtom → offsetToCurrentEdit → UserEditAtom →
-    PersistPtr block → the live generation's containers. Persist ids are
-    implicit: the oldest block covers 1..count, the next block continues. */
+/** The PowerPoint Document stream + Current User stream, chained the way PowerPoint saves. */
 export function buildPptStreams(
   slideSpecs: SlideSpec[],
   options: BuildOptions = {},
 ): { document: Uint8Array; currentUser: Uint8Array } {
-  const slideSize = options.slideSize ?? [5760000, 4320000]
+  const slideSize = options.slideSize ?? [5760, 4320]
+  const outlineTexts = options.outlineTexts === true
   const generations: SlideSpec[][] = options.secondGeneration
     ? [slideSpecs, options.secondGeneration]
     : [slideSpecs]
 
-  // lay every part out in stream order, recording the persist mapping
+  // lay every part out in stream order, recording each persist id's offset
+  const persistOffsets = new Map<number, number>()
   const parts: Uint8Array[] = []
-  const persistDirectory = new Map<number, number>()
   let offset = 0
   let nextId = 1
+  let nextSlideId = 256
   let lastUserEditOffset = 0
 
-  const push = (record: Uint8Array): void => {
-    parts.push(record)
-    offset += record.length
+  const push = (bytes: Uint8Array): void => {
+    parts.push(bytes)
+    offset += bytes.length
   }
 
-  generations.forEach((specs, genIndex) => {
-    const slideIds: number[] = []
+  for (const [generation, specs] of generations.entries()) {
+    const slides: { persistId: number; slideId: number }[] = []
     for (const spec of specs) {
       const start = offset
-      push(slideContainer(spec))
-      persistDirectory.set(nextId, start)
-      slideIds.push(nextId)
-      nextId += 1
+      const persistId = nextId++
+      const slideId = nextSlideId++
+      push(slideContainer(spec, outlineTexts))
+      slides.push({ persistId, slideId })
+      persistOffsets.set(persistId, start)
+    }
+
+    // DocumentContainer: DocumentAtom + SlideListWithText (instance 0 = slides)
+    const listParts: Uint8Array[] = []
+    for (const [index, spec] of specs.entries()) {
+      const slide = slides[index]!
+      listParts.push(slidePersistAtom(slide.persistId, slide.slideId, spec.textSequences.length))
+      if (outlineTexts) listParts.push(...outlineText(spec))
     }
     const docStart = offset
-    const docRecord = record(
-      0x03e8,
-      concat([
-        documentAtom(slideSize[0], slideSize[1]),
-        record(0x0ff0, concat(slideIds.map((id) => u32(id))), 0, 0xf),
-      ]),
-      0,
-      0xf,
+    push(
+      record(
+        0x03e8,
+        concat([
+          documentAtom(slideSize[0], slideSize[1]),
+          record(0x0ff0, concat(listParts), 0, 0xf),
+          record(0x03ea, new Uint8Array(0)),
+        ]),
+        0,
+        0xf,
+      ),
     )
-    push(docRecord)
-    const docPersistId = nextId
-    persistDirectory.set(docPersistId, docStart)
-    nextId += 1
+    const docPersistId = nextId++
+    persistOffsets.set(docPersistId, docStart)
 
-    // the PersistPtr block covers this generation's ids; its payload is the
-    // plain offset array (the ids are implicit: the previous blocks' counts)
-    const entries = [...slideIds, docPersistId]
-    const startId = nextId - entries.length
-    void startId
-    const ptr = record(
-      0x1772,
-      concat(entries.map((id) => u32(persistDirectory.get(id)!))),
-      entries.length - 1,
-    )
-    push(ptr)
+    // PersistDirectoryAtom: one PersistDirectoryEntry per persist id (cPersist=1)
+    const persistParts: Uint8Array[] = []
+    for (const id of [...slides.map((slide) => slide.persistId), docPersistId]) {
+      persistParts.push(u32(id | (1 << 20)), u32(persistOffsets.get(id)!))
+    }
+    const persistStart = offset
+    push(record(0x1772, concat(persistParts)))
 
+    // UserEditAtom (28-byte payload: MS-PPT 2.3.3 field order)
     const editStart = offset
-    const userEdit = record(
-      0x0ff5,
-      concat([
-        u32(docPersistId), // lastEditId
-        u32(docPersistId), // docPersistId
-        u32(nextId), // persistIdSeed
-        u16(1), // lastView
-        u16(0), // unused
-        u32(genIndex === 0 ? 0 : lastUserEditOffset), // offsetToPrevEdit
-      ]),
+    push(
+      record(
+        0x0ff5,
+        concat([
+          u32(0), // lastSlideIdRef
+          u16(0x00f4), // version
+          new Uint8Array([0, 3]), // minorVersion, majorVersion
+          u32(generation === 0 ? 0 : lastUserEditOffset), // offsetLastEdit
+          u32(persistStart), // offsetPersistDirectory
+          u32(docPersistId), // docPersistIdRef
+          u32(nextId), // persistIdSeed
+          u16(0),
+          u16(0), // lastView, unused
+        ]),
+      ),
     )
-    push(userEdit)
     lastUserEditOffset = editStart
-  })
+  }
 
   const currentUser = record(
     0x0ff6,
     concat([
       u32(0x14), // size
-      u32(0xe391c05f), // headerToken
+      u32(options.encrypted ? 0xf3d1c4df : 0xe391c05f), // headerToken
       u32(lastUserEditOffset), // offsetToCurrentEdit
-      u32(0x30), // lenUserEdit
-      u32(0x0000000a),
-      u16(0x000a),
-      u16(0),
+      u16(0), // lenUserName
+      u16(0x03f4), // docFileVersion
+      new Uint8Array([3, 0, 0]), // majorVersion, minorVersion, unused
+      u16(0), // reserved
     ]),
   )
 

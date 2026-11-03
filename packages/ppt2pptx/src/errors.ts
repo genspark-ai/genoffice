@@ -9,6 +9,7 @@ export const LEGACY_PPT_ERROR_CODES = [
   'truncated',
   'missing_stream',
   'unsupported_version',
+  'encrypted',
   'limits_exceeded',
   'corrupt',
   'bad_persist',
@@ -23,6 +24,8 @@ const ADVICE: Record<LegacyPptErrorCode, string> = {
   truncated: 'The file is shorter than its own structure claims.',
   missing_stream: 'The presentation stream is missing from the file.',
   unsupported_version: 'Only PowerPoint 97-2003 (.ppt) files are supported.',
+  encrypted:
+    'The presentation is password-protected; remove the password in PowerPoint before converting it.',
   limits_exceeded: 'The presentation is too large to convert.',
   corrupt: 'The presentation structure is damaged beyond parsing.',
   bad_persist: 'The presentation change directory is damaged.',

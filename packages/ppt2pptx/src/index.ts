@@ -1,4 +1,4 @@
-import { openPptContainer } from './cfb'
+import { openPptContainer } from './container'
 import { parsePptPresentation } from './ppt'
 import { writePptxPresentation } from './pptx-writer'
 

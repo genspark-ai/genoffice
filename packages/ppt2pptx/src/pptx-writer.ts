@@ -9,7 +9,8 @@ import type { PptPresentation, PptSlideText } from './ppt'
  * PowerPoint requires before it opens anything.
  */
 
-const EMU_PER_MASTER_UNIT = 914400 / 576000
+/** PowerPoint measures the slide surface in 1/576-inch master units. */
+const EMU_PER_MASTER_UNIT = 914400 / 576
 
 function escapeXml(text: string): string {
   return text
@@ -21,12 +22,16 @@ function escapeXml(text: string): string {
 
 const TITLE_KINDS = new Set([0, 5, 6])
 
-/** one text sequence → a centered text box stacked down the slide */
+/**
+ * one text sequence → a text box stacked down the slide. `id` is the shape's
+ * cNvPr id: unique per spTree (the group shape itself is 1).
+ */
 function textShape(
   sequence: PptSlideText,
   slideWidthEmu: number,
   slot: number,
   slots: number,
+  id: number,
 ): string {
   const isTitle = TITLE_KINDS.has(sequence.kind)
   const margin = 457200 // 0.5 in
@@ -35,13 +40,6 @@ function textShape(
     600000,
     Math.floor((slideWidthEmu - margin * 2) / Math.max(slots, 1) / 1.6),
   )
-  const y =
-    margin +
-    slot *
-      Math.floor(
-        (slideHeightTotal(slideWidthEmu, boxHeight, margin) || boxHeight) / Math.max(slots, 1),
-      )
-  void y
   const top = margin + slot * boxHeight
   const paragraphs = sequence.text
     .split('\n')
@@ -55,7 +53,7 @@ function textShape(
   return (
     '<p:sp>' +
     '<p:nvSpPr>' +
-    '<p:cNvPr id="0" name=""/>' +
+    `<p:cNvPr id="${id}" name=""/>` +
     (isTitle
       ? '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr>'
       : '<p:cNvSpPr/><p:nvPr/>') +
@@ -69,11 +67,6 @@ function textShape(
   )
 }
 
-/** the vertical room the stacked boxes fill (kept simple: the slide height) */
-function slideHeightTotal(_widthEmu: number, _boxHeight: number, _margin: number): number {
-  return 0
-}
-
 export async function writePptxPresentation(presentation: PptPresentation): Promise<Uint8Array> {
   const zip = new JSZip()
   const slideWidthEmu = Math.round(presentation.slideWidth * EMU_PER_MASTER_UNIT)
@@ -82,7 +75,8 @@ export async function writePptxPresentation(presentation: PptPresentation): Prom
   const slideXmls = presentation.slides.map((slide) => {
     const shapes = slide.textSequences
       .map((sequence, slot) =>
-        textShape(sequence, slideWidthEmu, slot, Math.max(slide.textSequences.length, 1)),
+        // ids start at 2: the spTree's own group shape is 1 and ids must be unique
+        textShape(sequence, slideWidthEmu, slot, Math.max(slide.textSequences.length, 1), slot + 2),
       )
       .join('')
     return (

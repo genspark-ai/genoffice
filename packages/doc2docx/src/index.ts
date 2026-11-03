@@ -41,8 +41,22 @@ import { LegacyDocError } from './errors'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
 export type { LegacyDocErrorCode } from './errors'
-export { LEGACY_DOC_LIMITS, openCompoundFile } from './compound'
-export type { CompoundFile, CompoundFileLimits } from './compound'
+export {
+  LEGACY_DOC_LIMITS,
+  OLE2_HEADER_BYTES,
+  OLE2_MAGIC,
+  hasOle2Signature,
+  openCompoundFile,
+  openOle2Container,
+} from './compound'
+export type {
+  CompoundFile,
+  CompoundFileLimits,
+  Ole2FailureCode,
+  Ole2Limits,
+  Ole2OpenResult,
+  Ole2Streams,
+} from './compound'
 export {
   FIB_IDENT,
   MAX_SUPPORTED_NFIB,
