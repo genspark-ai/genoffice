@@ -52,6 +52,11 @@ export interface PopoverDismissOptions {
    * with `onMouseDown={(e) => e.stopPropagation()}` (the slides convention).
    */
   inside?: () => ReadonlyArray<Element | null | undefined>
+  /**
+   * Also close on Escape. Every dropdown grew its own 7-line keydown effect
+   * for this; opting in folds it into the same install/teardown.
+   */
+  escape?: boolean
 }
 
 /** Install the three dismissal listeners; returns a teardown function. */
@@ -70,9 +75,13 @@ export function installPopoverDismiss(
     close()
   }
   const onBlur = () => close()
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') close()
+  }
   if (inside) window.addEventListener('pointerdown', onPress, true)
   else window.addEventListener('mousedown', onPress)
   window.addEventListener('blur', onBlur)
+  if (options?.escape) window.addEventListener('keydown', onKey)
   const offChrome = subscribeChromePressed(close)
   bumpOpenPopovers(1)
   let tornDown = false
@@ -82,9 +91,31 @@ export function installPopoverDismiss(
     if (inside) window.removeEventListener('pointerdown', onPress, true)
     else window.removeEventListener('mousedown', onPress)
     window.removeEventListener('blur', onBlur)
+    if (options?.escape) window.removeEventListener('keydown', onKey)
     offChrome?.()
     bumpOpenPopovers(-1)
   }
+}
+
+/**
+ * Escape closes an open thing and that is all: the exact behavior of the
+ * window-keydown effect that every dropdown, dialog and armed mode used to
+ * grow by hand. For states that are true popovers prefer `useDismissablePopover`
+ * with `escape: true` (it also handles outside presses, blur and the shell tab
+ * strip); this one is for the rest — armed modes, inline editors, modal overlays.
+ * No preventDefault: Escape-close sites never swallowed the key's default.
+ */
+export function useEscapeToClose(active: boolean, close: () => void): void {
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active])
 }
 
 /** React binding: listeners live only while `open` is true. */
@@ -98,11 +129,12 @@ export function useDismissablePopover(
   const insideRef = useRef(options?.inside)
   insideRef.current = options?.inside
   const guarded = options?.inside != null
+  const escape = options?.escape === true
   useEffect(() => {
     if (!open) return
     return installPopoverDismiss(
       () => closeRef.current(),
-      guarded ? { inside: () => insideRef.current?.() ?? [] } : undefined,
+      guarded ? { inside: () => insideRef.current?.() ?? [], escape } : { escape },
     )
-  }, [open, guarded])
+  }, [open, guarded, escape])
 }
