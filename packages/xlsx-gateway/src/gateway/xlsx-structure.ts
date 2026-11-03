@@ -195,6 +195,9 @@ export function applyStructuralOps(
     }
     const axis: Axis = axisOf(op)
     const shift = toShift(op)
+    if (!shift.swap && shift.deleted) {
+      xml = materializeRemovedSharedAnchors(xml, axis, shift.deleted)
+    }
     if (axis === 'column') {
       xml = transformColumnOperation(xml, sheetName, shift)
     } else {
@@ -1144,6 +1147,82 @@ function toShift(op: RowColumnOp): Shift {
     delta: -op.count,
     deleted: { start: op.index, end: op.index + op.count - 1 },
   }
+}
+
+/// A deleted cell that anchors a shared formula would leave the group's
+/// surviving followers as bare `<f t="shared" si="…"/>` tags with nothing to
+/// share. Before the removal, each such follower becomes a plain formula
+/// translated from its anchor, the way a rewritten anchor is handled on save.
+function materializeRemovedSharedAnchors(xml: string, axis: Axis, deleted: Span): string {
+  if (!xml.includes('t="shared"')) return xml
+  const removed = (row: number, column: number) => {
+    const index = axis === 'row' ? row : column
+    return index >= deleted.start && index <= deleted.end
+  }
+  const fragments: {
+    start: number
+    end: number
+    row: number
+    column: number
+    si: string
+    isAnchor: boolean
+    body: string
+  }[] = []
+  // The open tag is matched alone so a self-closing follower never pairs
+  // with a later </f>.
+  const sharedOpen = /<f\b[^>]*?\bt="shared"[^>]*?(\/?)>/g
+  let match: RegExpExecArray | null
+  while ((match = sharedOpen.exec(xml)) !== null) {
+    const si = /\bsi="([^"]+)"/.exec(match[0])?.[1]
+    if (si === undefined) continue
+    const openEnd = match.index + match[0].length
+    let end = openEnd
+    let body = ''
+    if (match[1] !== '/') {
+      const close = xml.indexOf('</f>', openEnd)
+      if (close === -1) continue
+      body = xml.slice(openEnd, close)
+      end = close + '</f>'.length
+    }
+    const cellOpen = xml.lastIndexOf('<c', match.index)
+    const address = /\br="([A-Z]{1,3})([0-9]+)"/.exec(xml.slice(cellOpen, match.index))
+    if (!address) continue
+    fragments.push({
+      start: match.index,
+      end,
+      row: Number(address[2]) - 1,
+      column: lettersToColumn(address[1] ?? 'A'),
+      si,
+      isAnchor: /\bref="/.test(match[0]),
+      body,
+    })
+  }
+  const removedAnchors = new Map<string, (typeof fragments)[number]>()
+  for (const fragment of fragments) {
+    if (fragment.isAnchor && fragment.body !== '' && removed(fragment.row, fragment.column)) {
+      removedAnchors.set(fragment.si, fragment)
+    }
+  }
+  if (removedAnchors.size === 0) return xml
+  const parts: string[] = []
+  let cursor = 0
+  for (const fragment of fragments) {
+    const anchor = removedAnchors.get(fragment.si)
+    if (!anchor || fragment.isAnchor || fragment.body !== '') continue
+    if (removed(fragment.row, fragment.column)) continue
+    const translated = translateSharedFormula(
+      decodeEntities(anchor.body),
+      fragment.row - anchor.row,
+      fragment.column - anchor.column,
+    )
+    parts.push(xml.slice(cursor, fragment.start))
+    // A follower whose translation would leave the sheet keeps its cached value.
+    if (translated !== null) parts.push(`<f>${escapeXmlText(translated)}</f>`)
+    cursor = fragment.end
+  }
+  if (parts.length === 0) return xml
+  parts.push(xml.slice(cursor))
+  return parts.join('')
 }
 
 /// Shifts a single 0-based position; null means it was deleted.
