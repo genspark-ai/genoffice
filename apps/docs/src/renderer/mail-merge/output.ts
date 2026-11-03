@@ -2,7 +2,12 @@ import { mergeOutputFileName, type MergeRecord } from '@genoffice/docx-engine'
 import type { MergeOutputMode } from '../../shared/ipc'
 import { buildDocBytes, type FileActionContext } from '../file-actions'
 import type { PmNode } from '../editor/convert'
-import { mergeAllRecords, substituteMergeFields } from './template'
+import {
+  hasNextField,
+  mergeAllRecords,
+  substituteMergeFields,
+  substituteWithCursor,
+} from './template'
 
 /**
  * The output half of the mail merge: the documents the merge writes.
@@ -12,6 +17,14 @@ import { mergeAllRecords, substituteMergeFields } from './template'
  * template's styles, sections, headers and pictures, and carries no field
  * code any more. genoffice#2097.
  */
+
+/** a slice of the recipient list the merge walks, by record index (inclusive) */
+export interface MergeRange {
+  /** first record index (0-based) */
+  start: number
+  /** last record index (0-based, inclusive) */
+  end: number
+}
 
 /** what the user asked the merge to write */
 export interface MailMergeRequest {
@@ -23,6 +36,8 @@ export interface MailMergeRequest {
   fields: readonly string[]
   /** the field the file names come from; empty takes the first field */
   namePattern: string
+  /** the slice of records the merge walks; defaults to the whole list */
+  range?: MergeRange
 }
 
 /** one merged document, ready to be written */
@@ -50,9 +65,16 @@ export interface MailMergeResponse {
 /**
  * The documents a merge writes.
  *
- * One document per record is the letter case: every record gets its own
- * letter, named after the record. One document for all the records is the
- * directory case: the letters follow each other, each on its own page.
+ * The records are first trimmed to the requested range. Then there are two
+ * shapes:
+ *
+ *  - a template without a NEXT field (the "one letter per record" merge): every
+ *    record becomes its own letter — perRecord writes one file each, single
+ *    stacks them into one document, each letter on its own page;
+ *  - a template with a NEXT field (the "one page, many records" merge): the
+ *    template is scanned once with a cursor that NEXT advances, so a page that
+ *    names three records fills three of them — single writes that one document,
+ *    perRecord writes one such document per starting record.
  */
 export async function buildMailMergeFiles(
   ctx: FileActionContext,
@@ -61,19 +83,55 @@ export async function buildMailMergeFiles(
   const editor = ctx.editor
   if (!editor || request.records.length === 0) return []
   const template = editor.getJSON() as PmNode
+  const start = request.range?.start ?? 0
+  const end = request.range?.end ?? request.records.length - 1
+  // the window the cursor (or the per-record walk) is allowed to touch
+  const subset = request.records.slice(
+    Math.max(start, 0),
+    Math.min(end, request.records.length - 1) + 1,
+  )
+  if (subset.length === 0) return []
+
+  if (!hasNextField(template)) {
+    if (request.mode === 'perRecord') {
+      const files: MailMergeFile[] = []
+      for (const record of subset) {
+        const bytes = await buildDocBytes(ctx, substituteMergeFields(template, record))
+        if (!bytes) continue
+        files.push({
+          name: `${mergeOutputFileName(request.namePattern, record, request.fields)}.docx`,
+          bytes,
+        })
+      }
+      return files
+    }
+    const bytes = await buildDocBytes(ctx, mergeAllRecords(template, subset))
+    if (!bytes) return []
+    return [{ name: mergedDocumentName(ctx), bytes }]
+  }
+
+  // a NEXT template: walk a cursor from each starting record
   if (request.mode === 'perRecord') {
     const files: MailMergeFile[] = []
-    for (const record of request.records) {
-      const bytes = await buildDocBytes(ctx, substituteMergeFields(template, record))
+    for (let from = 0; from < subset.length; from++) {
+      const bytes = await buildDocBytes(
+        ctx,
+        substituteWithCursor(template, subset, from, subset.length - 1),
+      )
       if (!bytes) continue
-      files.push({
-        name: `${mergeOutputFileName(request.namePattern, record, request.fields)}.docx`,
-        bytes,
-      })
+      const name = `${mergeOutputFileName(
+        request.namePattern,
+        subset[from] ?? {},
+        request.fields,
+      )}.docx`
+      files.push({ name, bytes })
     }
     return files
   }
-  const bytes = await buildDocBytes(ctx, mergeAllRecords(template, request.records))
+  const bytes = await buildDocBytes(
+    ctx,
+    substituteWithCursor(template, subset, 0, subset.length - 1),
+  )
   if (!bytes) return []
   return [{ name: mergedDocumentName(ctx), bytes }]
 }

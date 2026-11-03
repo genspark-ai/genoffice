@@ -79,6 +79,8 @@ function substituteContent(
     // first of them and the others are emptied
     const text = fieldSeen ? '' : value
     fieldSeen = true
+    // PM rejects empty text nodes outright; emitting one makes setContent void
+    if (node.type === 'text' && text === '') continue
     out.push({
       ...node,
       text,
@@ -176,4 +178,110 @@ function withoutUniqueAnchors(node: PmNode): PmNode {
       .map(withoutUniqueAnchors)
   }
   return out
+}
+
+/**
+ * Whether the template advances the record cursor with a NEXT field, i.e. it is
+ * a "one page, many records" merge rather than the "one letter per record" one.
+ */
+export function hasNextField(doc: PmNode): boolean {
+  let found = false
+  const walk = (node: PmNode): void => {
+    if (found) return
+    const mark = node.marks?.find((m) => m.type === FIELD_MARK)
+    if (mark) {
+      const [keyword] = splitInstruction(String(mark.attrs?.instr ?? ''))
+      if (keyword === 'NEXT') {
+        found = true
+        return
+      }
+    }
+    for (const child of node.content ?? []) walk(child)
+  }
+  walk(doc)
+  return found
+}
+
+/**
+ * The template filled from a run of records, walked by a cursor.
+ *
+ * This is Word's NEXT field: the document is scanned in order, every
+ * MERGEFIELD/IF takes the value of the record the cursor points at, and a NEXT
+ * field advances the cursor to the next record and then disappears. The cursor
+ * is held inside [startIndex, endIndex], so a template that asks for more
+ * records than the window holds repeats the last one — the way Word's trailing
+ * labels come out blank. genoffice#2097.
+ */
+export function substituteWithCursor(
+  doc: PmNode,
+  records: readonly MergeRecord[],
+  startIndex: number,
+  endIndex: number,
+): PmNode {
+  const cursor = { value: Math.max(startIndex, 0) }
+  return { ...doc, content: walkContent(doc.content, records, cursor, endIndex) }
+}
+
+function walkContent(
+  content: readonly PmNode[] | undefined,
+  records: readonly MergeRecord[],
+  cursor: { value: number },
+  endIndex: number,
+): PmNode[] {
+  if (!content) return []
+  const out: PmNode[] = []
+  // the field the previous text node carried, and how many nodes it spans; a
+  // NEXT field shares this bookkeeping so a field split over several runs only
+  // advances the cursor (or fills its value) once
+  let fieldInstr: string | null = null
+  let fieldSeen = false
+  for (const node of content) {
+    const mark = node.marks?.find((m) => m.type === FIELD_MARK)
+    const instr = mark ? String(mark.attrs?.instr ?? '') : ''
+    const [keyword] = splitInstruction(instr)
+    if (keyword === 'NEXT') {
+      if (instr !== fieldInstr) {
+        if (cursor.value < endIndex) cursor.value++
+        fieldInstr = instr
+        fieldSeen = true
+      }
+      // the NEXT field itself leaves nothing behind
+      continue
+    }
+    const value = mark ? fieldValue(instr, records[Math.min(cursor.value, endIndex)] ?? {}) : null
+    if (value === null) {
+      fieldInstr = null
+      fieldSeen = false
+      out.push(walkNode(node, records, cursor, endIndex))
+      continue
+    }
+    if (instr !== fieldInstr) {
+      fieldInstr = instr
+      fieldSeen = false
+    }
+    // the field's result may span several nodes: the value goes into the
+    // first of them and the others are emptied
+    const text = fieldSeen ? '' : value
+    fieldSeen = true
+    // PM rejects empty text nodes outright; emitting one makes setContent void
+    if (node.type === 'text' && text === '') continue
+    out.push({
+      ...node,
+      text,
+      // the field is gone: what is left is the value, with the text's own marks
+      marks: (node.marks ?? []).filter((m) => m.type !== FIELD_MARK),
+      content: walkContent(node.content, records, cursor, endIndex),
+    })
+  }
+  return out
+}
+
+function walkNode(
+  node: PmNode,
+  records: readonly MergeRecord[],
+  cursor: { value: number },
+  endIndex: number,
+): PmNode {
+  if (!node.content) return node
+  return { ...node, content: walkContent(node.content, records, cursor, endIndex) }
 }

@@ -39,7 +39,7 @@ describe('substituteMergeFields', () => {
       para(text('Ada', [mergeMark('FirstName')]), text(' Lovelace', [mergeMark('FirstName')])),
     )
     const merged = substituteMergeFields(template, record)
-    expect(merged.content?.[0]?.content?.map((n) => n.text)).toEqual(['Ada', ''])
+    expect(merged.content?.[0]?.content?.map((n) => n.text)).toEqual(['Ada'])
   })
 
   it('leaves a field that is not a merge field alone', () => {

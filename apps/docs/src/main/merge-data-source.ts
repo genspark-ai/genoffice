@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
-import { mergeDataFromRows, type MergeRecord } from '@genoffice/docx-engine'
+import { mergeDataFromRows } from '@genoffice/docx-engine'
 import { decodeCsvBuffer, parseCsv } from '@genoffice/xlsx-gateway/gateway/csv-import'
-import { readSheetRows } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import { readSheetNames, readSheetRows } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import type { MergeDataSource, MergeDataSourceFile } from '../shared/ipc'
 
 /**
  * The data source of a mail merge: the local spreadsheet the records come
@@ -15,41 +16,48 @@ import { readSheetRows } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
  * genoffice#2097.
  */
 
-/** A data source the mail merge reads: the field names and the records. */
-export interface MergeDataSource {
-  /** absolute path of the file the records came from */
-  path: string
-  /** the file's name, for the UI */
-  name: string
-  /** the column names, in file order */
-  fields: string[]
-  /** one entry per record */
-  records: MergeRecord[]
-}
-
 /** the file extensions a data source may have */
 export const MERGE_DATA_SOURCE_EXTENSIONS = ['xlsx', 'csv'] as const
 
 /**
+ * The file a recipient list comes from, and the sheets it offers.
+ *
+ * The sheets are listed before one of them is read: a workbook holds several,
+ * and the user picks the one the merge draws on. A csv has no sheets.
+ */
+export async function readMergeDataSourceFile(path: string): Promise<MergeDataSourceFile> {
+  const extension = extname(path).toLowerCase()
+  const sheets = extension === '.xlsx' ? await readSheetNames(await readFile(path)) : []
+  return { path, name: basename(path), sheets }
+}
+
+/**
  * Read a local .xlsx or .csv as a mail merge data source.
  *
- * The first sheet of a workbook and the first row of a CSV name the fields;
- * the rows below them are the records.
+ * The chosen sheet of a workbook (the first one by default) and the first row
+ * of a CSV name the fields; the rows below them are the records.
  */
-export async function readMergeDataSource(path: string): Promise<MergeDataSource> {
+export async function readMergeDataSource(
+  path: string,
+  sheetName?: string,
+): Promise<MergeDataSource> {
   const extension = extname(path).toLowerCase()
   const bytes = await readFile(path)
-  const rows =
-    extension === '.csv'
-      ? parseCsv(decodeCsvBuffer(bytes))
-      : extension === '.xlsx'
-        ? await readSheetRows(bytes)
-        : null
+  let rows: string[][] | null = null
+  let sheet = ''
+  if (extension === '.csv') {
+    rows = parseCsv(decodeCsvBuffer(bytes))
+  } else if (extension === '.xlsx') {
+    const names = await readSheetNames(bytes)
+    sheet = sheetName && names.includes(sheetName) ? sheetName : (names[0] ?? '')
+    rows = await readSheetRows(bytes, sheet || undefined)
+  }
   if (!rows) throw new Error(`unsupported data source: ${extension || path}`)
   const data = mergeDataFromRows(namedHeaders(rows))
   return {
     path,
     name: basename(path),
+    sheet,
     fields: [...data.fields],
     records: [...data.records],
   }

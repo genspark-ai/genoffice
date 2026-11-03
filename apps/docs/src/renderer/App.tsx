@@ -104,6 +104,7 @@ import type {
   AiSettings,
   MenuCommand,
   MergeDataSource,
+  MergeDataSourceFile,
   OpenDocxResult,
 } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
@@ -2565,21 +2566,43 @@ export function App() {
   /** the recipient list the user picked; null until they pick one */
   const [mergeSource, setMergeSource] = useState<MergeDataSource | null>(null)
 
-  /** open the file dialog and read the recipient list the user chose */
-  const pickMergeDataSource = useCallback(async () => {
-    const result = await window.desktop.pickMergeDataSource()
-    if (!result) return
-    if (!result.ok) {
-      setStatus(result.error)
-      return
+  /** pick the file the recipient list comes from; null when the user canceled */
+  const pickMergeDataSourceFile = useCallback(async (): Promise<MergeDataSourceFile | null> => {
+    try {
+      const result = await window.desktop.pickMergeDataSource()
+      if (!result) return null
+      if (!result.ok) {
+        setStatus(result.error)
+        return null
+      }
+      return result.file
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return null
     }
-    setMergeSource(result.source)
-    setStatus(
-      t('appMergeSourceLoaded', {
-        name: result.source.name,
-        n: result.source.records.length,
-      }),
-    )
+  }, [])
+
+  /** read the sheet the user confirmed as the recipient list */
+  const readMergeDataSource = useCallback(async (path: string, sheet: string): Promise<boolean> => {
+    try {
+      const result = await window.desktop.readMergeDataSource(path, sheet)
+      if (!result) return false
+      if (!result.ok) {
+        setStatus(result.error)
+        return false
+      }
+      setMergeSource(result.source)
+      setStatus(
+        t('appMergeSourceLoaded', {
+          name: result.source.name,
+          n: result.source.records.length,
+        }),
+      )
+      return true
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return false
+    }
   }, [])
 
   /** build the merged documents and write them where the user says */
@@ -2903,7 +2926,9 @@ export function App() {
   const insertField = useCallback(
     (instr: string) => {
       if (!editor) return
-      const value = fieldValue(instr) || ' '
+      const keyword = instr.trim().split(/\s+/)[0]?.toUpperCase()
+      // NEXT shows as a label, not as the empty result Word would write
+      const value = keyword === 'NEXT' ? t('ribbonMailingsNextLabel') : fieldValue(instr) || ' '
       editor
         .chain()
         .focus()
@@ -2916,7 +2941,7 @@ export function App() {
         .run()
       setStatus(t('appFieldInserted', { instr }))
     },
-    [editor, fieldValue],
+    [editor, fieldValue, t],
   )
 
   /** F9: recompute all inline field caches (PAGE/NUMPAGES/date-time/file name); REF/TOC are recomputed when Word opens the file */
@@ -7535,7 +7560,8 @@ export function App() {
     onHeader: (next: HeaderFooter) => commitHfAt(0, 'header', headerAreaView, next),
     onPageNumFormat: openPgNumModal,
     onInsertField: insertField,
-    onPickMergeDataSource: () => void pickMergeDataSource(),
+    onPickMergeDataSourceFile: () => pickMergeDataSourceFile(),
+    onReadMergeDataSource: (path: string, sheet: string) => readMergeDataSource(path, sheet),
     onMergeMailings: mergeMailings,
     onFooter: (next: HeaderFooter) => commitHfAt(lastSectionIdx, 'footer', footerAreaView, next),
     onHfAction: (action: HfAction) => onHfAction(action),

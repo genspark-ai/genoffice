@@ -152,7 +152,11 @@ import type {
   SpellLanguages,
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS, MARKDOWN_MEDIA_DIR_TOKEN, type MarkdownImage } from '../shared/ipc'
-import { MERGE_DATA_SOURCE_EXTENSIONS, readMergeDataSource } from './merge-data-source'
+import {
+  MERGE_DATA_SOURCE_EXTENSIONS,
+  readMergeDataSource,
+  readMergeDataSourceFile,
+} from './merge-data-source'
 import { mergeOutputFileName, mergeOutputPath } from './merge-output'
 import { ClickClaims } from '../shared/context-menu-claims'
 import {
@@ -5626,8 +5630,9 @@ export function registerDocsIpc(): void {
     }
   })
 
-  // Mailings tab: pick a local recipient list and read it as a data source.
-  // The file is read here, in the main process, where the file system is.
+  // Mailings tab: pick the local file the recipient list comes from. Only the
+  // file is picked here — the sheet is the user's second step, because a
+  // workbook holds several and the merge reads the one they name.
   ipcMain.handle('docs:merge-data-source', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgMergeDataSource'),
@@ -5641,11 +5646,23 @@ export function registerDocsIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     try {
-      return { ok: true, source: await readMergeDataSource(result.filePaths[0]) }
+      return { ok: true, file: await readMergeDataSourceFile(result.filePaths[0]) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+
+  // Mailings tab: read the sheet the user confirmed as the recipient list.
+  ipcMain.handle(
+    'docs:read-merge-data-source',
+    async (_event, path: string, sheetName?: string) => {
+      try {
+        return { ok: true, source: await readMergeDataSource(path, sheetName) }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 
   // Mailings tab: write the merged documents. One file for the whole merge
   // goes where the user says; one file per record goes into a folder they

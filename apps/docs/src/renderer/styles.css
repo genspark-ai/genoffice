@@ -15379,6 +15379,34 @@ tr > .page-gap-cut {
   color: var(--text-dim);
 }
 
+/* the sheet the records are read from */
+.mailmerge-sheet-name {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* the sheets a picked workbook offers */
+.mailmerge-sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* the modal stylesheet stretches every input it holds, so the radios and the
+   checkboxes of the merge panels get their own size back */
+.mailmerge-sheets input[type='radio'],
+.mailmerge-recipients input[type='checkbox'] {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
 .mailmerge-counter {
   font-size: 12px;
   color: var(--text-dim);
@@ -15399,11 +15427,33 @@ tr > .page-gap-cut {
   white-space: pre-wrap;
 }
 
-.mailmerge-radio {
+/* .modal label and .modal input win on specificity over a bare class, so the
+   merge radios repeat .modal to keep their inline size instead of stretching
+   to a full-width block with the caption underneath */
+.modal .mailmerge-radio {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 8px;
   font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.modal .mailmerge-radio input[type='radio'] {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+/* a row of merge options: they sit side by side and wrap instead of stacking */
+.mailmerge-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
 }
 
 .mailmerge-pattern {
@@ -15422,12 +15472,303 @@ tr > .page-gap-cut {
   color: var(--color-text-primary);
 }
 
+/* the recipient list: the records the merge draws on, and the ones taken out */
+.modal-recipients {
+  position: relative;
+  width: min(760px, 92vw);
+}
+
+/* drag the title bar to move the window; drag the corner to resize it */
+.mailmerge-drag-title {
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.mailmerge-resizable {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: none;
+}
+
+.mailmerge-resizable .mailmerge-list-section {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mailmerge-resizable .mailmerge-recipients {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.mailmerge-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(
+    135deg,
+    transparent 0 9px,
+    var(--border) 9px 10px,
+    transparent 10px 13px,
+    var(--border) 13px 14px,
+    transparent 14px
+  );
+}
+
+.mailmerge-recipients {
+  margin-top: 6px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mailmerge-recipient-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.mailmerge-recipient-table th,
+.mailmerge-recipient-table td {
+  padding: 4px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.mailmerge-recipient-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-subtle);
+  font-weight: 600;
+}
+
+.mailmerge-recipient-table .mailmerge-recipient-check {
+  width: 30px;
+  text-align: center;
+}
+
+/* a record the user took out of the merge stays readable but recedes */
+.mailmerge-recipient-off td {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+/* the data source sits on one line, so the list itself gets the room */
+.mailmerge-source-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.mailmerge-source-line .mailmerge-label {
+  flex: none;
+  margin-bottom: 0;
+}
+
+.mailmerge-source-line .mailmerge-source-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailmerge-source-line .mailmerge-sheet-name {
+  flex: none;
+  margin-top: 0;
+}
+
+.mailmerge-sort-arrow {
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+/* 筛选 and 排序 open one dialog with two tabs, sitting over the list */
+.mailmerge-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mailmerge-toolbar button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mailmerge-toolbar button:hover {
+  background: var(--color-bg-subtle);
+}
+
+.mailmerge-toolbar button.mailmerge-toggle-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* the condition dialog layers over the recipient list without dimming it again */
+.mailmerge-cond-backdrop {
+  z-index: 110;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.mailmerge-cond-modal {
+  width: 620px;
+}
+
+.mailmerge-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.mailmerge-tab {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mailmerge-tab:hover {
+  background: var(--color-bg-subtle);
+}
+
+.mailmerge-tab-on {
+  border-color: var(--color-btn-primary);
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+}
+
+.mailmerge-tab-on:hover {
+  border-color: var(--color-btn-primary-hover);
+  background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-text);
+}
+
+/* one grid for the header and every condition row: 且/或, 域, 比较关系, 比较对象 */
+.mailmerge-cond-head,
+.mailmerge-cond-row {
+  display: grid;
+  grid-template-columns: 76px 1fr 150px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.mailmerge-cond-head {
+  margin-bottom: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.mailmerge-cond-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.mailmerge-cond-row {
+  margin-bottom: 6px;
+}
+
+.mailmerge-cond-row select,
+.mailmerge-cond-row input {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.mailmerge-cond-row:last-child {
+  margin-bottom: 0;
+}
+
+.mailmerge-join,
+.mailmerge-join-blank,
+.mailmerge-cond-field,
+.mailmerge-cond-op,
+.mailmerge-cond-value {
+  width: 100%;
+}
+
+.mailmerge-sort-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mailmerge-sort-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.mailmerge-sort-row select {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.mailmerge-sort-label {
+  white-space: nowrap;
+}
+
+.mailmerge-cond-spacer {
+  flex: 1;
+}
+
+.mailmerge-count {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.mailmerge-no-results {
+  text-align: center;
+  color: var(--text-dim);
+  white-space: normal;
+}
+
 .rb-field-list {
+  /* fixed + anchored like the other ribbon panels, so the list floats under
+     its trigger instead of sitting in the ribbon's own flow */
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
   width: 220px;
   max-height: 320px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 5px;
 }
 
 .rb-field-item {
@@ -15443,6 +15784,29 @@ tr > .page-gap-cut {
 
 .rb-field-item:hover {
   background: var(--color-bg-subtle);
+}
+
+.rb-field-next {
+  font-weight: 600;
+  color: var(--color-accent, #1a73e8);
+}
+
+.rb-drop-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border, #e0e0e0);
+}
+
+.modal .mailmerge-range-num {
+  width: 56px;
+  height: 26px;
+  margin: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--color-text-primary);
 }
 
 /* Show Revisions in Balloons: the deleted run leaves the flow; a thin marker

@@ -157,6 +157,8 @@ const api: DesktopApi = {
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),
   pickImage: () => ipcRenderer.invoke('docs:pick-image'),
   pickMergeDataSource: () => ipcRenderer.invoke('docs:merge-data-source'),
+  readMergeDataSource: (path: string, sheetName?: string) =>
+    ipcRenderer.invoke('docs:read-merge-data-source', path, sheetName),
   writeMergeOutput: (request: MergeOutputRequest) =>
     ipcRenderer.invoke('docs:merge-output', request),
   fontMetrics: (family: string) => ipcRenderer.invoke('docs:font-metrics', family),

@@ -652,6 +652,25 @@ function firstSheetName(workbookXml: string): string {
   return decodeXmlText(name)
 }
 
+/**
+ * The names of the workbook's sheets, in file order.
+ *
+ * A workbook holds several sheets and the user picks the one the merge reads,
+ * so the sheet names have to be readable before a sheet is read.
+ */
+export async function readSheetNames(buffer: Buffer): Promise<string[]> {
+  const zip = await createBufferEntrySource(buffer)
+  const workbookXml = await zip.readText('xl/workbook.xml')
+  const sheetPattern = /<sheet\b((?:"[^"]*"|'[^']*'|[^>"'])*?)\/?>/g
+  const names: string[] = []
+  let match: RegExpExecArray | null
+  while ((match = sheetPattern.exec(workbookXml)) !== null) {
+    const name = readXmlAttribute(match[1] ?? '', 'name')
+    if (name) names.push(decodeXmlText(name))
+  }
+  return names
+}
+
 /** the zero-based column an A1 address names */
 function columnIndexOf(address: string): number {
   const match = /^\$?([A-Z]+)\$?[0-9]+$/.exec(address)
