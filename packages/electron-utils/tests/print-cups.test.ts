@@ -156,7 +156,7 @@ describe('lpPageRange', () => {
 })
 
 describe('printFileViaCups', () => {
-  it('spools the file operand after the flags, with the -p selection', async () => {
+  it('spools the file operand after the flags, with the -P selection', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const pending = printFileViaCups(
       '/docs/report.pdf',
@@ -165,12 +165,12 @@ describe('printFileViaCups', () => {
       spawnFn as unknown as typeof spawn,
     )
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]!.args).toEqual(['-d', 'HP', '-n', '2', '-p', '1-4', '--', '/docs/report.pdf'])
+    expect(calls[0]!.args).toEqual(['-d', 'HP', '-n', '2', '-P', '1-4', '--', '/docs/report.pdf'])
     calls[0]!.fake.close(0)
     await expect(pending).resolves.toEqual({ ok: true })
   })
 
-  it('prints the whole document without a -p flag when no pages are given', async () => {
+  it('prints the whole document without a -P flag when no pages are given', async () => {
     const { calls, spawnFn } = fakeSpawn()
     const pending = printFileViaCups(
       '/docs/report.pdf',
