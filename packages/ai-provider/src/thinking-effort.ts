@@ -46,8 +46,14 @@ const OPENAI_SIX_LEVELS: readonly ThinkingEffort[] = [
 const OPENAI_FIVE_LEVELS: readonly ThinkingEffort[] = ['none', 'low', 'medium', 'high']
 /** o-series models document low/medium/high only — `none` is not a value they take */
 const OPENAI_O_SERIES_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
-/** xAI's grok takes low/medium/high and cannot disable reasoning at all */
+/**
+ * xAI's grok takes the OpenAI-style effort field and cannot disable reasoning.
+ * Per docs.x.ai "Reasoning" (2026-11-03): grok-4.7/4.6/4.5 take
+ * low/medium/high, and xhigh is available on grok-4.6 and later (on 4.5 it is
+ * clamped to high). The default is high.
+ */
 const GROK_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high']
+const GROK_XHIGH_LEVELS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh']
 /** the rungs only the Responses API takes: chat-completions gateways 400 on them */
 const OPENAI_RESPONSES_ONLY: readonly ThinkingEffort[] = ['xhigh', 'max']
 /** the 6.x Sol and Astra tiers refuse `none` outright (registry, live-verified 2026-10-27) */
@@ -109,9 +115,15 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   // (per-model ranges; these picks sit inside the band the guide cites)
   if (/(^|\/)qwen\d/.test(id))
     return { kind: 'qwen-budget', levels: ['none', 'low', 'medium', 'high'] }
-  // xAI's grok takes the OpenAI-style effort field on the current lineup, but
-  // documents low/medium/high and states reasoning cannot be disabled
-  if (/(^|\/)grok-/.test(id)) return { kind: 'openai-effort', levels: GROK_LEVELS }
+  // xAI's grok takes the OpenAI-style effort field on the current lineup and
+  // states reasoning cannot be disabled; xhigh exists from grok-4.6 on.
+  if (/(^|\/)grok-/.test(id)) {
+    const version = /(?:^|\/)grok-(\d+)(?:[.-](\d+))?/.exec(id)
+    const major = version ? Number(version[1]) : 0
+    const minor = version && version[2] !== undefined ? Number(version[2]) : 0
+    const levels = major > 4 || (major === 4 && minor >= 6) ? GROK_XHIGH_LEVELS : GROK_LEVELS
+    return { kind: 'openai-effort', levels }
+  }
   // Doc-only families (GLM, Doubao, MiniMax, DeepSeek, Kimi, Hunyuan, Mistral)
   // deliberately carry no knob until a live probe confirms their surface.
   return { kind: 'openai-effort', levels: [] }

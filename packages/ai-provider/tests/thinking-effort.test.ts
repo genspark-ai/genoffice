@@ -114,8 +114,16 @@ describe('thinkingShapeFor', () => {
       kind: 'qwen-budget',
       levels: ['none', 'low', 'medium', 'high'],
     })
-    // grok documents low/medium/high and cannot disable reasoning
+    // grok documents low/medium/high, xhigh from 4.6 on, and no none
     expect(thinkingShapeFor('grok-4.7')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh'],
+    })
+    expect(thinkingShapeFor('grok-4.6')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh'],
+    })
+    expect(thinkingShapeFor('grok-4.5')).toEqual({
       kind: 'openai-effort',
       levels: ['low', 'medium', 'high'],
     })
@@ -205,6 +213,10 @@ describe('per-protocol translators', () => {
       ),
     ).toBeUndefined()
     expect(openAiEffortFor({ model: 'grok-4.7', thinking: { 'grok-4.7': 'low' } })).toBe('low')
+    expect(openAiEffortFor({ model: 'grok-4.7', thinking: { 'grok-4.7': 'xhigh' } })).toBe('xhigh')
+    expect(
+      openAiEffortFor({ model: 'grok-4.5', thinking: { 'grok-4.5': 'xhigh' } }),
+    ).toBeUndefined()
     expect(
       openAiEffortFor({ model: 'claude-opus-5-5', thinking: { 'claude-opus-5-5': 'high' } }),
     ).toBeUndefined()
