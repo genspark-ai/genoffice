@@ -163,14 +163,15 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'sk-...',
     defaultBaseUrl: DASHSCOPE_BASE_URL,
     imageProtocol: 'dashscope',
-    // per the Model Studio text-to-image docs 2026-11-02: qwen-image 3.0/2.1
-    // ids are the current family (3.0 pro flagship, 2.1 pro balanced); the
-    // older qwen-image-plus/qwen-image ids stay listed, not seen retired
+    // per the Model Studio text-to-image docs 2026-11-02: qwen-image 3.0 and
+    // 2.0 are the published families (3.0 pro flagship, 2.0 pro balanced);
+    // 2.1 ids are not on the EN/ZH pages, so they are not listed. The older
+    // qwen-image-plus/qwen-image ids stay listed, not seen retired
     imageModels: [
       'qwen-image-3.0-pro',
       'qwen-image-3.0',
-      'qwen-image-2.1-pro',
-      'qwen-image-2.1-turbo',
+      'qwen-image-2.0-pro',
+      'qwen-image-2.0',
       'qwen-image-plus',
       'qwen-image',
     ],
@@ -220,7 +221,7 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     imageProtocol: 'bfl',
     // per docs.bfl.ai 2026-11-02: the endpoint is /v1/<id>; FLUX.2 Pro is the
     // production-recommended default, FLUX 3 Image is the newest generation
-    imageModels: ['flux-2-pro', 'flux-3-image', 'flux-1.1-pro'],
+    imageModels: ['flux-2-pro', 'flux-3-image', 'flux-pro-1.1'],
     defaultImageModel: 'flux-2-pro',
     analysisModels: [],
     defaultAnalysisModel: '',

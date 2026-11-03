@@ -826,6 +826,21 @@ function bflPollSleep(guard: AbortSignal, ms: number): Promise<void> {
   })
 }
 
+/** FLUX.2 Pro / FLUX 1.1 take width/height (256..1440, multiples of 32),
+ *  not aspect_ratio; map the UI ratio onto a 1024-long box. */
+function bflDimensions(aspectRatio: string): { width: number; height: number } | null {
+  const match = /^(\d+):(\d+)$/.exec(aspectRatio)
+  if (!match) return null
+  const ratioW = Number(match[1])
+  const ratioH = Number(match[2])
+  if (!(ratioW > 0) || !(ratioH > 0)) return null
+  const long = 1024
+  const round32 = (n: number): number => Math.max(256, Math.round(n / 32) * 32)
+  return ratioW >= ratioH
+    ? { width: long, height: round32((long * ratioH) / ratioW) }
+    : { width: round32((long * ratioW) / ratioH), height: long }
+}
+
 async function generateImageBfl(
   config: AiMediaProviderConfig,
   model: string,
@@ -843,15 +858,20 @@ async function generateImageBfl(
     'Content-Type': 'application/json',
     accept: 'application/json',
   }
+  const body: Record<string, unknown> = { prompt: input.prompt }
+  if (input.aspectRatio && input.aspectRatio !== 'auto') {
+    // only FLUX 3 Image documents aspect_ratio; the others take width/height
+    if (model === 'flux-3-image') {
+      body.aspect_ratio = input.aspectRatio
+    } else {
+      const dimensions = bflDimensions(input.aspectRatio)
+      if (dimensions) Object.assign(body, dimensions)
+    }
+  }
   const submit = await aiFetch(`${base}/v1/${model}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      prompt: input.prompt,
-      ...(input.aspectRatio && input.aspectRatio !== 'auto'
-        ? { aspect_ratio: input.aspectRatio }
-        : {}),
-    }),
+    body: JSON.stringify(body),
     signal,
   })
   if (!submit.ok) return failFrom('FLUX generation failed:', submit)
@@ -867,12 +887,26 @@ async function generateImageBfl(
     const json = await readJson('FLUX result', poll)
     const status = String(json.status ?? '')
     if (status === 'Ready') {
-      if (typeof json.sample_url !== 'string' || !json.sample_url) {
+      // BFL's quick start: result.result.sample
+      const result = (json.result ?? {}) as Record<string, unknown>
+      const sample =
+        typeof result.sample === 'string' && result.sample
+          ? result.sample
+          : typeof json.sample_url === 'string' && json.sample_url
+            ? json.sample_url
+            : undefined
+      if (!sample) {
         throw new Error(`FLUX returned no image URL: ${JSON.stringify(json).slice(0, 200)}`)
       }
-      return downloadImage('FLUX', json.sample_url, signal)
+      return downloadImage('FLUX', sample, signal)
     }
-    if (status === 'Error' || status === 'Content Moderated' || status === 'Request Moderated') {
+    if (
+      status === 'Error' ||
+      status === 'Failed' ||
+      status === 'No Card Generated' ||
+      status === 'Content Moderated' ||
+      status === 'Request Moderated'
+    ) {
       throw new Error(`FLUX generation failed: ${status}`)
     }
   }
@@ -961,20 +995,38 @@ export async function testMediaProvider(
     const meta = metaOf(provider)
     requireBaseUrl(meta, config)
     const guard = withTimeout(signal, TEST_TIMEOUT_MS)
-    const resp =
-      provider === 'gemini'
-        ? await aiFetch(geminiModelsProbeUrl(config), {
-            headers: { 'x-goog-api-key': config.apiKey },
-            signal: guard,
-          })
-        : await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
-            headers: bearer(config),
-            signal: guard,
-          })
+    // provider-aware credential probes: BFL authenticates with x-key and has
+    // no model listing (a bogus job id answers 404 for a valid key), Microsoft
+    // Foundry with api-key rather than a Bearer token
+    let resp: Response
+    if (provider === 'gemini') {
+      resp = await aiFetch(geminiModelsProbeUrl(config), {
+        headers: { 'x-goog-api-key': config.apiKey },
+        signal: guard,
+      })
+    } else if (provider === 'bfl') {
+      const base = trimSlash(config.baseUrl || BFL_BASE_URL)
+      resp = await aiFetch(`${base}/v1/get_result?id=00000000-0000-0000-0000-000000000000`, {
+        headers: { 'x-key': config.apiKey },
+        signal: guard,
+      })
+    } else if (provider === 'microsoft') {
+      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+        headers: { 'api-key': config.apiKey },
+        signal: guard,
+      })
+    } else {
+      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+        headers: bearer(config),
+        signal: guard,
+      })
+    }
     if (resp.ok) return { ok: true }
     // Vendors without a model-listing endpoint answer 404/405 to a valid
     // key, so those statuses still mean the credentials are usable.
     if (resp.status === 404 || resp.status === 405) return { ok: true }
+    // BFL answers 400 for a well-formed but unknown job id on a valid key
+    if (provider === 'bfl' && resp.status === 400) return { ok: true }
     const body = await readCappedResponseText(resp, {
       maxBytes: MAX_ERROR_BODY_BYTES,
       onOverflow: 'truncate',
