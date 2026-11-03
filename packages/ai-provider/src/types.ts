@@ -26,8 +26,11 @@ export type AiProviderId =
   | 'atlascloud'
   | 'runcrate'
   | 'cloudgpu'
+  | 'siliconflow'
+  | 'ppio'
   | 'opencode-zen'
   | 'opencode-go'
+  | 'commandcode'
   | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */
