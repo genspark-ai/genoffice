@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { HorizontalAlign } from '@univerjs/core'
+import { EDITOR_ACTIVATED, HorizontalAlign } from '@univerjs/core'
 
 import {
   handleRibbonCommand,
@@ -182,39 +182,91 @@ describe('use-in-formula cell guard', () => {
   })
 })
 
-describe('handleRibbonCommand redo-or-repeat (Excel Ctrl+Y)', () => {
-  function makeHarness(hasRedo: boolean) {
-    const calls: string[] = []
+describe('in-cell editor inline formatting', () => {
+  function makeEditorHarness(editing: boolean) {
+    const cellWrites: Record<string, unknown[]> = {
+      fontColor: [],
+      fontWeight: [],
+      fontFamily: [],
+      fontSize: [],
+    }
+    const inlineCommands: Array<{ id: string; params: unknown }> = []
+    const range = {
+      getCellStyleData: () => ({}),
+      getFontSize: () => 11,
+      setFontColor: (value: unknown) => cellWrites.fontColor!.push(value),
+      setFontWeight: (value: unknown) => cellWrites.fontWeight!.push(value),
+      setFontFamily: (value: unknown) => cellWrites.fontFamily!.push(value),
+      setFontSize: (value: unknown) => cellWrites.fontSize!.push(value),
+    }
+    const workbook = {
+      getActiveSheet: () => undefined,
+      getActiveRange: () => range,
+    }
+    const contextService = {
+      getContextValue: (key: string) => editing && key === EDITOR_ACTIVATED,
+    }
     const runtime = {
       univerAPI: {
-        redo: () => {
-          calls.push('redo')
-          return Promise.resolve(true)
-        },
-        executeCommand: (id: string) => {
-          calls.push(id)
+        getActiveWorkbook: () => workbook,
+        executeCommand: (id: string, params?: unknown) => {
+          inlineCommands.push({ id, params })
           return Promise.resolve(true)
         },
       },
-      univer: {
-        __getInjector: () => ({
-          get: () => ({ pitchTopRedoElement: () => (hasRedo ? {} : null) }),
-        }),
-      },
+      univer: { __getInjector: () => ({ get: () => contextService }) },
     }
-    const ctx = { univerRef: { current: runtime } } as unknown as RibbonCommandContext
-    return { ctx, calls }
+    const ctx = {
+      univerRef: { current: runtime },
+      setMessage: () => {},
+    } as unknown as RibbonCommandContext
+    return { ctx, cellWrites, inlineCommands }
   }
 
-  it('redoes when the redo stack has entries', () => {
-    const { ctx, calls } = makeHarness(true)
-    handleRibbonCommand(ctx, 'redo-or-repeat')
-    expect(calls).toEqual(['redo'])
+  it('font color goes to the run-level inline command while editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-color:#C00000')
+    expect(cellWrites.fontColor).toHaveLength(0)
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-text-color', params: { value: '#C00000' } },
+    ])
   })
 
-  it('repeats the last action when there is nothing to redo', () => {
-    const { ctx, calls } = makeHarness(false)
-    handleRibbonCommand(ctx, 'redo-or-repeat')
-    expect(calls).toEqual(['sheet.command.repeat-last-action'])
+  it('font color "auto" clears the run color while editing', () => {
+    const { ctx, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-color:auto')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-text-color', params: { value: null } },
+    ])
+  })
+
+  it('font color still styles the whole cell when not editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(false)
+    handleRibbonCommand(ctx, 'font-color:#C00000')
+    expect(inlineCommands).toHaveLength(0)
+    expect(cellWrites.fontColor).toEqual(['#C00000'])
+  })
+
+  it('bold toggle routes inline while editing, absolute :on stays cell-wide', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'bold')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-bold', params: undefined },
+    ])
+    expect(cellWrites.fontWeight).toHaveLength(0)
+    handleRibbonCommand(ctx, 'bold:on')
+    expect(cellWrites.fontWeight).toEqual(['bold'])
+  })
+
+  it('font family and size route inline with their values while editing', () => {
+    const { ctx, cellWrites, inlineCommands } = makeEditorHarness(true)
+    handleRibbonCommand(ctx, 'font-family:Arial')
+    handleRibbonCommand(ctx, 'font-size:14')
+    expect(inlineCommands).toEqual([
+      { id: 'doc.command.set-inline-format-font-family', params: { value: 'Arial' } },
+      { id: 'doc.command.set-inline-format-fontsize', params: { value: 14 } },
+    ])
+    expect(cellWrites.fontFamily).toHaveLength(0)
+    expect(cellWrites.fontSize).toHaveLength(0)
   })
 })

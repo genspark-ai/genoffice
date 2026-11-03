@@ -191,6 +191,7 @@ export const fr = {
   appCtxSendToBack: 'Mettre à l’arrière-plan',
   appCtxBringForward: 'Avancer',
   appCtxSendBackward: 'Reculer',
+  appCtxRotate: 'Rotation',
   appCtxRotateLeft90: 'Faire pivoter de 90° à gauche',
   appCtxRotateRight90: 'Faire pivoter de 90° à droite',
   appCtxFlipH: 'Retourner horizontalement',

@@ -5,6 +5,7 @@ import {
   pictureWatermarkPreviewImage,
   readSectionSettings,
   saveDocx,
+  textWatermarkPreviewImage,
 } from '../src/index'
 import { TINY_PNG_BASE64, buildDocx } from './helpers/build-docx'
 
@@ -53,6 +54,67 @@ describe('watermark spec', () => {
       bold: true,
     })
     expect(wm?.rotationDeg ?? 0).toBe(0)
+  })
+
+  it('an explicit box (Size != Auto) sizes the shape and the pending preview alike', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
+    const spec = { text: 'DRAFT', boxPt: { widthPt: 200, heightPt: 52.5 } }
+    const xml = await headerXml(await saveDocx(doc, originalOrder(doc), { watermark: spec }))
+    expect(xml).toContain('width:200pt;height:52.5pt;rotation:315;')
+
+    const preview = textWatermarkPreviewImage(spec)
+    expect(preview).toMatchObject({
+      widthPx: 267,
+      heightPx: 70,
+      floating: true,
+      behind: true,
+      rotationDeg: 315,
+      posH: 'center',
+      posVRel: 'margin',
+      wordArt: { text: 'DRAFT', colorHex: 'C0C0C0', opacity: 0.5 },
+    })
+    const flat = textWatermarkPreviewImage({ text: 'X', diagonal: false, colorHex: '#ff0000' })
+    expect(flat.rotationDeg).toBeUndefined()
+    expect(flat.widthPx).toBe(704)
+    expect(flat.wordArt?.colorHex).toBe('FF0000')
+  })
+
+  it('lands on every page: each section, first and even headers included, gets the shape', async () => {
+    const twoSections =
+      '<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:pPr>' +
+      '<w:r><w:t>section one</w:t></w:r></w:p>' +
+      BODY
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: twoSections, sectPrExtra: '<w:titlePg/>' }),
+    )
+    const saved = await saveDocx(doc, originalOrder(doc), {
+      watermark: 'DRAFT',
+      evenAndOddHeaders: true,
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const docXml = await zip.file('word/document.xml')!.async('string')
+    const sectPrs = [...docXml.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)].map((m) => m[0])
+    expect(sectPrs).toHaveLength(2)
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string')
+    const typesOf = (sect: string) =>
+      [...sect.matchAll(/<w:headerReference w:type="(\w+)" r:id="(rId\d+)"/g)].map((m) => ({
+        type: m[1],
+        rId: m[2],
+      }))
+    expect(
+      typesOf(sectPrs[0]!)
+        .map((r) => r.type)
+        .sort(),
+    ).toEqual(['default', 'even'])
+    // default/even of the last section inherit the first section's parts (OOXML)
+    expect(typesOf(sectPrs[1]!).map((r) => r.type)).toEqual(['first'])
+    for (const sect of sectPrs) {
+      for (const { rId } of typesOf(sect)) {
+        const target = new RegExp(`Id="${rId}"[^>]*Target="([^"]+)"`).exec(rels)?.[1]
+        const xml = await zip.file(`word/${target}`)!.async('string')
+        expect(xml).toContain('string="DRAFT"')
+      }
+    }
   })
 
   it('replaces the sdt-wrapped watermark on re-set and drops it on null', async () => {

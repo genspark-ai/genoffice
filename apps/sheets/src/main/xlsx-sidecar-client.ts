@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 
-import type { ExternalLinksUpdateResult } from '../shared/desktop-api'
+import type { ExternalLinksResult, ExternalLinksUpdateResult } from '../shared/desktop-api'
 
 const PROTOCOL_VERSION = 1
 const REQUEST_TIMEOUT_MS = 30_000
@@ -205,6 +205,19 @@ export class XlsxSidecarClient {
   /** The link list only: no source is opened, nothing is evaluated. */
   async readExternalLinks(input: { readonly path: string }): Promise<unknown> {
     return this.request({ command: 'read_external_links', ...input }, ARCHIVE_TIMEOUT_MS)
+  }
+
+  /**
+   * The links panel's listing: identity fields only, and the targets are not
+   * probed (no reachability) — opening a workbook must not stat a dead
+   * network share. CLI's `readExternalLinks` above answers reachability for
+   * its explicit link report; the panel's Update asks `updateExternalLinks`.
+   */
+  async listExternalLinks(input: { readonly path: string }): Promise<ExternalLinksResult> {
+    return this.request<ExternalLinksResult>(
+      { command: 'list_external_links', ...input },
+      ARCHIVE_TIMEOUT_MS,
+    )
   }
 
   /**

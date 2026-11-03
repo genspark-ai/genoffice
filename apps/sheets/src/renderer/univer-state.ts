@@ -189,6 +189,10 @@ export interface LazyWorkbookState {
     /// the gap is suspect): the save must not refresh cached <v>s from such
     /// an overlay — the file's own results are Excel's and stay authoritative.
     readonly incompleteRuns: Set<string>
+    /// Values the external-links panel applied: a fresh sidecar computation,
+    /// not engine output. Kept out of `overlay` so an incomplete engine run
+    /// cannot release them, and a save counts them as pending work.
+    readonly externalOverlay: Map<string, Map<string, PinnedClosureCell>>
     /// per-sheet: viewport row the last SUCCESSFUL overlay window was
     /// anchored at and whether it covered every formula band; a partial
     /// window re-anchors when the user scrolls far from it. Written only

@@ -41,6 +41,15 @@ const DOCS: Array<{ name: string; file: string }> = [
   { name: 'geo-anchored-pictures', file: join(GEOMETRY, 'geo-anchored-pictures.docx') },
   { name: 'geo-table-overwide-centred', file: join(GEOMETRY, 'geo-table-overwide-centred.docx') },
   { name: 'geo-table-pct-nonuniform', file: join(GEOMETRY, 'geo-table-pct-nonuniform.docx') },
+  {
+    name: 'geo-float-table-split-boxes',
+    file: join(GEOMETRY, 'geo-float-table-split-boxes.docx'),
+  },
+  {
+    name: 'geo-footnoted-table-tail-seam',
+    file: join(GEOMETRY, 'geo-footnoted-table-tail-seam.docx'),
+  },
+  { name: 'geo-toc-narrow-column', file: join(GEOMETRY, 'geo-toc-narrow-column.docx') },
   { name: 'ruled-header', file: join(TRUTHS, 'render-hf-side-wrap-flow/probe.docx') },
   { name: 'header-anchors', file: join(TRUTHS, 'render-hf-anchor-reserve/probe.docx') },
 ]
@@ -59,6 +68,12 @@ interface DebugBlock {
   height: number
 }
 
+interface DebugFloatSplit {
+  blockTop: number
+  dyPx: number
+  cutYs: number[]
+}
+
 interface PageDebug {
   slices: DebugSlice[]
   blocks: DebugBlock[]
@@ -68,7 +83,15 @@ interface PageDebug {
   gapBoundaryMismatch: number
   /** I11: PageCut facts vs the gap builder's DOM re-derivation (lead, capacity, hf variant) */
   pageCutMismatch: number
+  /** one `start:end:section:lead:...:flags` record per page (pagination-cuts pageCutSig) */
+  pageCutSig: string
   pageCutDiag: string[]
+  /** T4.5: page readers (float shifts, cell boxes, frames, status bar, thumbnails)
+   *  derive the same page from the cuts as from the gap widgets */
+  pageReaderMismatch: number
+  pageReaderDiag: string[]
+  pageReaderShadowed: boolean
+  floatSplits: DebugFloatSplit[]
   tabFreezes: number
   sliceIterationsCapped: boolean
   sliceRunaway: boolean
@@ -89,6 +112,8 @@ interface FlipCounts {
 
 interface DebugWindow {
   __pageDebug?: PageDebug
+  /** set before a pass: every page reader also walks the gap widgets and compares (pageReaderMismatch) */
+  __pageReaderShadow?: boolean
   __previewDebug?: {
     slices: DebugSlice[]
     shadowed: boolean
@@ -106,13 +131,21 @@ const readDebug = (page: Page) =>
     const dbg = (window as unknown as DebugWindow).__pageDebug!
     return {
       slices: dbg.slices.map((s) => ({ start: s.start, end: s.end, section: s.section })),
-      blocks: dbg.blocks.map((b) => ({ top: b.top, height: b.height })),
+      blocks: dbg.blocks.map((b) => ({
+        top: b.top,
+        height: b.height,
+      })),
       followUps: dbg.followUps,
       retriggerLog: dbg.retriggerLog,
       loopStops: dbg.loopStops,
       gapBoundaryMismatch: dbg.gapBoundaryMismatch,
       pageCutMismatch: dbg.pageCutMismatch,
+      pageCutSig: dbg.pageCutSig,
       pageCutDiag: dbg.pageCutDiag,
+      pageReaderMismatch: dbg.pageReaderMismatch,
+      pageReaderDiag: dbg.pageReaderDiag,
+      pageReaderShadowed: dbg.pageReaderShadowed,
+      floatSplits: dbg.floatSplits,
       tabFreezes: dbg.tabFreezes,
       sliceIterationsCapped: dbg.sliceIterationsCapped,
       sliceRunaway: dbg.sliceRunaway,
@@ -205,10 +238,20 @@ test.describe('pagination invariants (rendered)', () => {
           `float channels rewritten after the first pass: ${JSON.stringify(dbg.layoutHealth.passes)}`,
         ).toEqual({ tblpDy: 0, floatFlow: 0, pageFloatDy: 0, carry: 0 })
 
-        // (c) a forced full re-measure of the untouched document changes nothing
-        await page.evaluate(() => document.fonts.dispatchEvent(new Event('loadingdone')))
+        // (c) a forced full re-measure of the untouched document changes nothing;
+        // run it with the page-reader shadow on: every reader must derive the same
+        // page from the cuts as from the gap widgets
+        await page.evaluate(() => {
+          ;(window as unknown as DebugWindow).__pageReaderShadow = true
+          document.fonts.dispatchEvent(new Event('loadingdone'))
+        })
         await page.waitForTimeout(400)
         const again = await settle(page)
+        expect(again.pageReaderShadowed, 'page-reader shadow ran').toBe(true)
+        expect(
+          again.pageReaderMismatch,
+          `page readers vs cuts: ${again.pageReaderDiag.join(' | ')}`,
+        ).toBe(0)
         expect(sliceKey(again.slices), 'slices after a forced re-measure').toBe(
           sliceKey(dbg.slices),
         )
@@ -233,7 +276,109 @@ test.describe('pagination invariants (rendered)', () => {
             carry: 0,
           })
 
-        // (b) canvas == preview == exported PDF: the sheets print the canvas
+        // a page opening on a footnoted table's bottom edge is a tail seam (its
+        // bottom border stays on the table's page, no rule atop the next one)
+        if (d.name === 'geo-footnoted-table-tail-seam') {
+          const cuts = dbg.pageCutSig.split('|')
+          expect(cuts.length, dbg.pageCutSig).toBe(2)
+          expect(cuts[1].split(':').pop(), dbg.pageCutSig).toBe('T')
+        }
+
+        // TOC leaders are sized against the title as wrapped at the section's
+        // width: every leader + page unit closes its title's last line
+        if (d.name === 'geo-toc-narrow-column') {
+          const drops = await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>('.ProseMirror .doc-toc-line')].map((el) => {
+              const title = el.querySelector('.doc-toc-title')!.getBoundingClientRect()
+              const tail = el.querySelector('.doc-toc-tail')!.getBoundingClientRect()
+              return `${el.textContent?.slice(0, 12)}:${tail.top >= title.bottom - 1 ? 'dropped' : 'inline'}`
+            }),
+          )
+          expect(drops).toHaveLength(4)
+          expect(drops.filter((d) => d.endsWith(':dropped'))).toEqual([])
+        }
+
+        // (b) H7: a split floating table's later pages own the boxes on them. The
+        // page-positioned cell box in the second portion sits on that portion's
+        // paper (page turn = any non-carry gap widget, the in-table ones included)
+        // and the slicer agrees; the anchor paragraph's page-relative-X picture
+        // keeps its paper offset on the page the carry moved it to
+        if (d.name === 'geo-float-table-split-boxes') {
+          const own = await page.evaluate(() => {
+            const pm = document.querySelector<HTMLElement>('.doc-page')!
+            const zoom =
+              parseFloat(getComputedStyle(pm.closest<HTMLElement>('.doc-zoom')!).zoom || '1') || 1
+            const turns = [...document.querySelectorAll<HTMLElement>('.doc-page .page-gap')]
+              .filter((g) => !g.classList.contains('page-gap-carry'))
+              .map((g) => ({
+                top: g.getBoundingClientRect().top,
+                bottom: g.getBoundingClientRect().bottom,
+                mt: parseFloat(g.style.getPropertyValue('--gap-mt')) || 0,
+              }))
+              .sort((a, b) => a.top - b.top)
+            const pageOf = (y: number) => turns.filter((t) => t.top < y).length
+            const paperTopOf = (pageIdx: number) =>
+              pageIdx === 0
+                ? pm.getBoundingClientRect().top
+                : turns[pageIdx - 1].bottom - turns[pageIdx - 1].mt * zoom
+            const box = pm.querySelector<HTMLElement>(
+              '.doc-cell-boxes-page > .doc-textbox[data-cell-page]',
+            )
+            const tr = box?.closest('tr')
+            const table = tr?.closest('table')
+            const rows = table
+              ? [...table.querySelectorAll(':scope > tbody > tr')].filter(
+                  (r) =>
+                    !r.classList.contains('page-gap') &&
+                    !r.classList.contains('page-repeat-header'),
+                )
+              : []
+            const floatGaps = table
+              ? table.querySelectorAll(':scope > tbody > tr.page-gap').length
+              : 0
+            const img = pm.querySelector<HTMLElement>('img[data-page-rel-x]')
+            const r = (el: Element | null | undefined) => el?.getBoundingClientRect()
+            return {
+              zoom,
+              floatGaps,
+              rowIndex: tr ? rows.indexOf(tr) : -1,
+              rowsAbovePx: tr
+                ? rows
+                    .slice(0, rows.indexOf(tr))
+                    .reduce((s, r) => s + r.getBoundingClientRect().height, 0) / zoom
+                : NaN,
+              rowPage: tr ? pageOf(r(tr)!.top + 1) : -1,
+              pinPage: box ? Number(box.dataset.pinPage) : -1,
+              boxTop: r(box)?.top ?? NaN,
+              boxPaperTop: tr ? paperTopOf(pageOf(r(tr)!.top + 1)) : NaN,
+              boxOffY: box ? parseFloat(box.dataset.cellPageY ?? '') : NaN,
+              imgPage: img ? pageOf(r(img)!.top + 1) : -1,
+              imgLeft: r(img)?.left ?? NaN,
+              pmLeft: pm.getBoundingClientRect().left,
+              imgOffX: img ? parseFloat(img.dataset.pageRelXPx ?? '') : NaN,
+            }
+          })
+          expect(own.floatGaps, 'the floating table splits across pages').toBeGreaterThan(0)
+          expect(own.rowPage, 'the box host row sits on a later page').toBeGreaterThan(0)
+          expect(own.pinPage, 'cell box pinned to its row page').toBe(own.rowPage)
+          expect(
+            Math.abs(own.boxTop - (own.boxPaperTop + own.boxOffY * own.zoom)),
+            'cell box at its page-relative Y on that paper',
+          ).toBeLessThan(1.5)
+          // the slicer's page of the host row: its cut list is the gap list
+          const split = dbg.floatSplits[0]
+          expect(split, 'slicer split the floating table').toBeTruthy()
+          const rowTop = split.blockTop + split.dyPx + own.rowsAbovePx
+          const slicerPage = dbg.slices.filter((s, i) => i > 0 && s.start <= rowTop + 0.5).length
+          expect(own.pinPage, 'cell box page equals the slicer page of its row').toBe(slicerPage)
+          expect(own.imgPage, 'anchor paragraph picture lands on a later page').toBeGreaterThan(0)
+          expect(
+            Math.abs(own.imgLeft - (own.pmLeft + own.imgOffX * own.zoom)),
+            'page-relative X picture measured from the paper edge',
+          ).toBeLessThan(1.5)
+        }
+
+        // (e) canvas == preview == exported PDF: the sheets print the canvas
         // PageCut list; the preview's shadow re-slicing of its own snapshot must
         // agree with it (previewCutMismatch), and the PDF page count with both
         await page.evaluate(() => {

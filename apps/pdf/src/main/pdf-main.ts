@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, stat, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
@@ -125,6 +125,8 @@ import type { ExternalSigner, SignPdfOptions } from './pdf-sign'
 import { readPdfSignatures } from './pdf-signatures'
 import { SystemStoreError, openSystemSigner, listSystemCertificates } from './system-certificates'
 import type { SystemCertificateRef, SystemIdentity } from './system-certificates'
+/** the largest slice readFileChunk hands over IPC (the renderer loops) */
+const PDF_READ_CHUNK_MAX_BYTES = 8 * 1024 * 1024
 
 const tDlg = createI18n({
   zh: {
@@ -1276,6 +1278,35 @@ function registerPdfIpc(): void {
     const buf = await readFile(path)
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
   })
+
+  // Chunked reads for the same grant: one 42 MB ArrayBuffer over IPC has
+  // killed renderers before first paint on Windows (genoffice#2366), while
+  // small slices deserialize fine. The size rides along so the renderer's
+  // loop needs no separate stat.
+  ipcMain.handle(
+    PDF_CHANNELS.readFileChunk,
+    async (e, path: unknown, start: unknown, end: unknown) => {
+      // the preload hands the grant's path, start and end as positional args
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        throw new Error('pdf: path not granted to this view')
+      }
+      const from = typeof start === 'number' && Number.isInteger(start) && start >= 0 ? start : -1
+      const to = typeof end === 'number' && Number.isInteger(end) && end >= from ? end : -1
+      if (from < 0 || to < 0 || to - from > PDF_READ_CHUNK_MAX_BYTES) {
+        throw new Error('pdf: invalid chunk range')
+      }
+      const handle = await open(path, 'r')
+      try {
+        const length = to - from
+        const buf = Buffer.alloc(length)
+        const { bytesRead } = await handle.read(buf, 0, length, from)
+        const fileSize = (await handle.stat()).size
+        return { data: new Uint8Array(buf.subarray(0, bytesRead)), fileSize }
+      } finally {
+        await handle.close()
+      }
+    },
+  )
 
   // pdf.js has already accepted `password` for these bytes on the render side;
   // a failure here therefore means the standard handler refused it

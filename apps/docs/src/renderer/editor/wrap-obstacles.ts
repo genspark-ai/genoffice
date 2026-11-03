@@ -2,7 +2,8 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
-import { insideFloatTable } from './pagination-gaps'
+import { insideFloatTable, isPageTurn } from './pagination-gaps'
+import { pageReaderShadow } from '../pagination-cuts'
 import { appliedFloatShift } from './layout-health'
 import { TopLevelPositions } from './top-level-pos'
 import {
@@ -99,6 +100,56 @@ const SIDE_IMG_SEL = ['square', 'tight', 'through']
   .flatMap((w) => [`img.doc-inline-img--wrap-${w}-left`, `img.doc-inline-img--wrap-${w}-right`])
   .join(', ')
 
+const sideImagesOf = (el: HTMLElement): HTMLElement[] =>
+  el.getElementsByTagName('img').length === 0
+    ? []
+    : Array.from(el.querySelectorAll<HTMLElement>(SIDE_IMG_SEL)).filter(
+        (img) => !img.closest('.doc-textbox'),
+      )
+
+export interface FloatBox {
+  side: 'left' | 'right'
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+/** CSS stacks a float against an earlier one its margin box meets (same side: pushed
+ *  off its posOffset X; opposite side: pushed down); Word keeps the declared position
+ *  (probe 2026-11-02, D1-D3), so such a picture takes the overlay route */
+export function floatStacks(box: FloatBox, floats: readonly FloatBox[]): boolean {
+  return floats.some(
+    (f) =>
+      f.top < box.bottom &&
+      f.bottom > box.top &&
+      (f.side === box.side || (f.left < box.right && f.right > box.left)),
+  )
+}
+
+const sideOf = (img: HTMLElement): 'left' | 'right' =>
+  img.className.includes('-right') ? 'right' : 'left'
+
+function recordFloats(
+  imgs: readonly HTMLElement[],
+  rel: (r: DOMRect) => ObstacleRect,
+  floats: FloatBox[],
+): void {
+  for (const img of imgs) {
+    const r = rel(img.getBoundingClientRect())
+    if (r.bottom <= r.top) continue
+    const [l, rr, , bt] = distOf(img)
+    const mt = parseFloat(getComputedStyle(img).marginTop) || 0
+    floats.push({
+      side: sideOf(img),
+      left: r.left - l,
+      right: r.right + rr,
+      top: r.top - mt,
+      bottom: r.bottom + bt,
+    })
+  }
+}
+
 const distOf = (el: HTMLElement): [number, number, number, number] => {
   const d = (el.dataset.wrapDist ?? '').split(' ').map(Number)
   return [d[0] || 0, d[1] || 0, d[2] || 0, d[3] || 0]
@@ -147,6 +198,10 @@ export function syncWrapObstacles(
   planOf?: PlanOf,
   /** I9 shadow sink: the model obstacles against the rendered boxes */
   shadow?: ObstacleShadow,
+  /** blocks that open a page in the previous pass's cuts (block leads); the
+   *  obstacle set is cleared in front of them. Without it the gap widgets of
+   *  that pass mark the turns */
+  pageLeads?: ReadonlySet<Element>,
 ): boolean {
   const pmRect = pm.getBoundingClientRect()
   const rel = (r: DOMRect): ObstacleRect => ({
@@ -158,9 +213,17 @@ export function syncWrapObstacles(
   const writes: Write[] = []
   const paras: ParaSpec[] = []
   let rects: ObstacleRect[] = []
+  const floats: FloatBox[] = []
+  // a float-carry spacer (page-gap-carry) is flow space on the last portion's
+  // page, not a turn: it keeps the obstacles like any other spacer
+  let domTurns = 0
+  let cutTurns = 0
   for (const el of Array.from(pm.children) as HTMLElement[]) {
     if (el.classList.contains('page-gap')) {
-      if (!insideFloatTable(el)) rects = []
+      if (isPageTurn(el) && !insideFloatTable(el)) {
+        domTurns++
+        if (!pageLeads) rects = []
+      }
       continue
     }
     if (
@@ -170,15 +233,26 @@ export function syncWrapObstacles(
     ) {
       continue
     }
+    if (pageLeads?.has(el)) {
+      cutTurns++
+      rects = []
+    }
     if (el.classList.contains('doc-protected-floating')) {
       if (el.classList.contains('doc-protected-pagepinned')) continue
       collectWrapper(el, rel, rects, writes, factor, planOf, shadow)
       continue
     }
     if (!isTextBlock(el)) continue
-    if (rects.length === 0 && el.dataset.obsMode !== '1') continue
-    placeParagraph(el, rel, rects, paras, factor)
+    const imgs = sideImagesOf(el)
+    if (rects.length === 0 && el.dataset.obsMode !== '1' && !(imgs.length && floats.length)) {
+      recordFloats(imgs, rel, floats)
+      continue
+    }
+    if (!placeParagraph(el, rel, rects, paras, factor, imgs, floats))
+      recordFloats(imgs, rel, floats)
   }
+  if (pageLeads && pageReaderShadow.enabled && domTurns !== cutTurns)
+    pageReaderShadow.report('obstacleTurns', domTurns, cutTurns)
   let changed = false
   for (const w of writes) {
     const sig = JSON.stringify([w.style, w.data])
@@ -677,7 +751,9 @@ function placeParagraph(
   rects: ObstacleRect[],
   paras: ParaSpec[],
   factor: number,
-): void {
+  imgs: readonly HTMLElement[],
+  floats: readonly FloatBox[],
+): boolean {
   const cs = getComputedStyle(el)
   // base = the paragraph's own padding before this pass added to it
   let base = (el.dataset.obsBase ?? '').split(' ').map(Number)
@@ -712,32 +788,42 @@ function placeParagraph(
   const external = rects.some(
     (o) => o.top < top + lineH && o.bottom > top && o.right > colLeft && o.left < colRight,
   )
-  const imgs = Array.from(el.querySelectorAll<HTMLElement>(SIDE_IMG_SEL)).filter(
-    (img) => !img.closest('.doc-textbox'),
-  )
-  if (!external) return
   // the paragraph's own run pictures become overlays at their anchor offsets
   // (data-obs-mode CSS); their rectangles join the obstacle set from here on
   const marginLeft = parseFloat(cs.getPropertyValue('--doc-margin-left')) || 0
+  const marginRight = parseFloat(cs.getPropertyValue('--doc-margin-right')) || 0
   // a column-relative X measures from the column edge, outside the paragraph's
   // start indent (margin) and list padding (WT L400)
   const colEdge = r.left - (cs.direction === 'rtl' ? 0 : parseFloat(cs.marginLeft) || 0) + border[1]
   const own: ObstacleRect[] = []
+  let stacked = false
   for (const img of imgs) {
     const b = img.getBoundingClientRect()
     if (b.height <= 0) continue
     const w = b.width / factor
     const h = b.height / factor
     const x = parseFloat(img.dataset.obsX ?? '')
+    // a posOffset X keeps the picture on the paper (probe 2026-11-02, C3)
     const left = Number.isFinite(x)
-      ? colEdge + x - (img.dataset.obsXFrom === 'page' ? marginLeft : 0)
-      : img.className.includes('-right')
+      ? Math.max(
+          colEdge - marginLeft,
+          Math.min(
+            colEdge + x - (img.dataset.obsXFrom === 'page' ? marginLeft : 0),
+            r.right - border[2] + marginRight - w,
+          ),
+        )
+      : sideOf(img) === 'right'
         ? colRight - w
         : colLeft
     const y = top + (parseFloat(img.dataset.obsY ?? '') || 0)
     const [l, rr, t, bt] = distOf(img)
-    own.push({ left: left - l, right: left + w + rr, top: y - t, bottom: y + h + bt })
+    const rect = { left: left - l, right: left + w + rr, top: y - t, bottom: y + h + bt }
+    own.push(rect)
+    // as a float its margin box would start at the line top
+    if (floatStacks({ side: sideOf(img), ...rect, top: Math.min(top, rect.top) }, floats))
+      stacked = true
   }
+  if (!external && !stacked) return false
   const all = own.length ? [...rects, ...own] : rects
   const p = placeLine(all, top, lineH, colLeft, colRight, needW)
   rects.push(...own)
@@ -753,4 +839,5 @@ function placeParagraph(
     base: [base[0], base[1], base[2]],
     pad: [padTop, p.left - colLeft, colRight - p.right],
   })
+  return true
 }

@@ -141,8 +141,8 @@ describe('countMindMapNodes', () => {
 describe('labelUnits / wrapLabel', () => {
   it('counts CJK characters as double width', () => {
     expect(labelUnits('ab')).toBe(2)
-    expect(labelUnits('风险')).toBe(4)
-    expect(labelUnits('a风')).toBe(3)
+    expect(labelUnits('\u98ce\u9669')).toBe(4)
+    expect(labelUnits('a\u98ce')).toBe(3)
   })
 
   it('wraps latin labels at word boundaries', () => {
@@ -160,7 +160,10 @@ describe('labelUnits / wrapLabel', () => {
   })
 
   it('wraps CJK per character', () => {
-    expect(wrapLabel('风险管理要点总结', 8)).toEqual(['风险管理', '要点总结'])
+    expect(wrapLabel('\u98ce\u9669\u7ba1\u7406\u8981\u70b9\u603b\u7ed3', 8)).toEqual([
+      '\u98ce\u9669\u7ba1\u7406',
+      '\u8981\u70b9\u603b\u7ed3',
+    ])
   })
 })
 

@@ -16,6 +16,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import JSZip from 'jszip'
 import { classifySkill, parseSkillFrontmatter } from '@genoffice/agent-core'
+import { getUiLang } from '@genoffice/i18n'
 import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
 
 /**
@@ -370,6 +371,7 @@ export async function recommendedSkills(
   }
   const out: RecommendedSkill[] = []
   for (const name of entries.sort()) {
+    if (name === 'locales') continue // localized descriptions, not a skill
     const path = join(recommendedDir, name, 'SKILL.md')
     let text: string
     try {
@@ -388,7 +390,25 @@ export async function recommendedSkills(
     }
     out.push({ ...skill, category, version, state })
   }
+  // the frontmatter descriptions are English; locales/<uiLang>.json carries the
+  // per-language ones, so the Recommended list speaks the UI's language. 'en'
+  // has no file — the frontmatter is the English source.
+  for (const [name, description] of Object.entries(recommendedDescriptions(recommendedDir))) {
+    const skill = out.find((s) => s.name === name)
+    if (skill && typeof description === 'string' && description) skill.description = description
+  }
   return out
+}
+
+/** skill name -> localized description for the UI language, when the file exists */
+function recommendedDescriptions(recommendedDir: string): Record<string, string> {
+  try {
+    return JSON.parse(
+      readFileSync(join(recommendedDir, 'locales', `${getUiLang()}.json`), 'utf8'),
+    ) as Record<string, string>
+  } catch {
+    return {}
+  }
 }
 
 /**

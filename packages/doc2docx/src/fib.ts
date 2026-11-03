@@ -48,12 +48,25 @@ export interface FibInfo {
   /** header/footer story table (stage 3c) */
   fcPlcfhdd: number
   lcbPlcfhdd: number
+  /** footnote reference / text tables (PlcffndRef over the body, PlcffndTxt over the footnote document) */
+  fcPlcffndRef: number
+  lcbPlcffndRef: number
+  fcPlcffndTxt: number
+  lcbPlcffndTxt: number
+  /** endnote reference / text tables (PlcfendRef / PlcfendTxt) */
+  fcPlcfendRef: number
+  lcbPlcfendRef: number
+  fcPlcfendTxt: number
+  lcbPlcfendTxt: number
   /** list definitions (stage 3c-4 PlfLst; the level array follows the LSTFs) */
   fcPlfLst: number
   lcbPlfLst: number
   /** list format overrides (stage 3c-4 PlfLfo) */
   fcPlfLfo: number
   lcbPlfLfo: number
+  /** font table (SttbfFfn): ftc -> font name */
+  fcSttbfFfn: number
+  lcbSttbfFfn: number
   /** CHPX / PAPX bin tables (stage 2) */
   fcPlcfbteChpx: number
   lcbPlcfbteChpx: number
@@ -62,6 +75,34 @@ export interface FibInfo {
   /** document properties (stage 2) */
   fcDop: number
   lcbDop: number
+  /** floating shape anchors of the body (PlcSpaMom) and the header document (PlcSpaHdr) */
+  fcPlcSpaMom: number
+  lcbPlcSpaMom: number
+  fcPlcSpaHdr: number
+  lcbPlcSpaHdr: number
+  /** OfficeArt drawing data (DggInfo): blip store + shape containers */
+  fcDggInfo: number
+  lcbDggInfo: number
+  /** comments: anchors (PlcfandRef), text ranges (PlcfandTxt), annotation bookmarks, authors, Word 2002+ extras */
+  fcPlcfandRef: number
+  lcbPlcfandRef: number
+  fcPlcfandTxt: number
+  lcbPlcfandTxt: number
+  fcSttbfAtnBkmk: number
+  lcbSttbfAtnBkmk: number
+  fcPlcfAtnBkf: number
+  lcbPlcfAtnBkf: number
+  fcPlcfAtnBkl: number
+  lcbPlcfAtnBkl: number
+  fcSttbfRMark: number
+  lcbSttbfRMark: number
+  fcAtrdExtra: number
+  lcbAtrdExtra: number
+  /** text box stories of the body (PlcftxbxTxt) and the header document (PlcfHdrtxbxTxt) */
+  fcPlcftxbxTxt: number
+  lcbPlcftxbxTxt: number
+  fcPlcfHdrtxbxTxt: number
+  lcbPlcfHdrtxbxTxt: number
 }
 
 /** FibRgLw97 dword indices (the block starts right after the cslw count) */
@@ -75,14 +116,32 @@ const LW_CCP_HDR_TXBX = 10
 
 /** FibRgFcLcb97 pair indices (MS-DOC 2.5.2 / 2.9.3xx) */
 const PAIR_STSHF = 1
+const PAIR_PLCFFND_REF = 2
+const PAIR_PLCFFND_TXT = 3
+const PAIR_PLCFAND_REF = 4
+const PAIR_PLCFAND_TXT = 5
 const PAIR_PLCFSED = 6
 const PAIR_PLCFHDD = 11
 const PAIR_PLCFBTE_CHPX = 12
+const PAIR_STTBF_FFN = 15
 const PAIR_PLFLST = 73
 const PAIR_PLFLFO = 74
 const PAIR_PLCFBTE_PAPX = 13
 const PAIR_DOP = 31
 const PAIR_CLX = 33
+const PAIR_PLC_SPA_MOM = 40
+const PAIR_PLC_SPA_HDR = 41
+const PAIR_PLCFEND_REF = 46
+const PAIR_PLCFEND_TXT = 47
+const PAIR_STTBF_ATN_BKMK = 37
+const PAIR_PLCF_ATN_BKF = 42
+const PAIR_PLCF_ATN_BKL = 43
+const PAIR_DGG_INFO = 50
+const PAIR_STTBF_RMARK = 51
+/** FibRgFcLcb2002: ATRDPost10 array (comment dates) */
+const PAIR_ATRD_EXTRA = 112
+const PAIR_PLCF_TXBX_TXT = 56
+const PAIR_PLCF_HDR_TXBX_TXT = 58
 /** Word 97's FibRgFcLcb97 has 93 pair entries; the CLX pair is inside every version */
 const MIN_PAIR_COUNT = 34
 
@@ -204,11 +263,28 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
   const stshf = fibPair(reader, pairsStart, pairCount, PAIR_STSHF)
   const plcfsed = fibPair(reader, pairsStart, pairCount, PAIR_PLCFSED)
   const plcfhdd = fibPair(reader, pairsStart, pairCount, PAIR_PLCFHDD)
+  const plcffndRef = fibPair(reader, pairsStart, pairCount, PAIR_PLCFFND_REF)
+  const plcffndTxt = fibPair(reader, pairsStart, pairCount, PAIR_PLCFFND_TXT)
   // lists are Word 97+ pairs 73/74; shorter synthetic headers simply have none
   const optionalPair = (index: number): FibPair =>
     index < pairCount ? fibPair(reader, pairsStart, pairCount, index) : { fc: 0, lcb: 0 }
   const plflst = optionalPair(PAIR_PLFLST)
   const plflfo = optionalPair(PAIR_PLFLFO)
+  const plcSpaMom = optionalPair(PAIR_PLC_SPA_MOM)
+  const plcSpaHdr = optionalPair(PAIR_PLC_SPA_HDR)
+  const dggInfo = optionalPair(PAIR_DGG_INFO)
+  const plcfendRef = optionalPair(PAIR_PLCFEND_REF)
+  const plcfendTxt = optionalPair(PAIR_PLCFEND_TXT)
+  const plcfandRef = fibPair(reader, pairsStart, pairCount, PAIR_PLCFAND_REF)
+  const plcfandTxt = fibPair(reader, pairsStart, pairCount, PAIR_PLCFAND_TXT)
+  const sttbfAtnBkmk = optionalPair(PAIR_STTBF_ATN_BKMK)
+  const plcfAtnBkf = optionalPair(PAIR_PLCF_ATN_BKF)
+  const plcfAtnBkl = optionalPair(PAIR_PLCF_ATN_BKL)
+  const sttbfRMark = optionalPair(PAIR_STTBF_RMARK)
+  const atrdExtra = optionalPair(PAIR_ATRD_EXTRA)
+  const txbxTxt = optionalPair(PAIR_PLCF_TXBX_TXT)
+  const hdrTxbxTxt = optionalPair(PAIR_PLCF_HDR_TXBX_TXT)
+  const sttbfFfn = fibPair(reader, pairsStart, pairCount, PAIR_STTBF_FFN)
   const chpx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_CHPX)
   const papx = fibPair(reader, pairsStart, pairCount, PAIR_PLCFBTE_PAPX)
   const dop = fibPair(reader, pairsStart, pairCount, PAIR_DOP)
@@ -236,16 +312,50 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
     lcbPlcfsed: plcfsed.lcb,
     fcPlcfhdd: plcfhdd.fc,
     lcbPlcfhdd: plcfhdd.lcb,
+    fcPlcffndRef: plcffndRef.fc,
+    lcbPlcffndRef: plcffndRef.lcb,
+    fcPlcffndTxt: plcffndTxt.fc,
+    lcbPlcffndTxt: plcffndTxt.lcb,
+    fcPlcfendRef: plcfendRef.fc,
+    lcbPlcfendRef: plcfendRef.lcb,
+    fcPlcfendTxt: plcfendTxt.fc,
+    lcbPlcfendTxt: plcfendTxt.lcb,
     fcPlfLst: plflst.fc,
     lcbPlfLst: plflst.lcb,
     fcPlfLfo: plflfo.fc,
     lcbPlfLfo: plflfo.lcb,
+    fcSttbfFfn: sttbfFfn.fc,
+    lcbSttbfFfn: sttbfFfn.lcb,
     fcPlcfbteChpx: chpx.fc,
     lcbPlcfbteChpx: chpx.lcb,
     fcPlcfbtePapx: papx.fc,
     lcbPlcfbtePapx: papx.lcb,
     fcDop: dop.fc,
     lcbDop: dop.lcb,
+    fcPlcSpaMom: plcSpaMom.fc,
+    lcbPlcSpaMom: plcSpaMom.lcb,
+    fcPlcSpaHdr: plcSpaHdr.fc,
+    lcbPlcSpaHdr: plcSpaHdr.lcb,
+    fcDggInfo: dggInfo.fc,
+    lcbDggInfo: dggInfo.lcb,
+    fcPlcfandRef: plcfandRef.fc,
+    lcbPlcfandRef: plcfandRef.lcb,
+    fcPlcfandTxt: plcfandTxt.fc,
+    lcbPlcfandTxt: plcfandTxt.lcb,
+    fcSttbfAtnBkmk: sttbfAtnBkmk.fc,
+    lcbSttbfAtnBkmk: sttbfAtnBkmk.lcb,
+    fcPlcfAtnBkf: plcfAtnBkf.fc,
+    lcbPlcfAtnBkf: plcfAtnBkf.lcb,
+    fcPlcfAtnBkl: plcfAtnBkl.fc,
+    lcbPlcfAtnBkl: plcfAtnBkl.lcb,
+    fcSttbfRMark: sttbfRMark.fc,
+    lcbSttbfRMark: sttbfRMark.lcb,
+    fcAtrdExtra: atrdExtra.fc,
+    lcbAtrdExtra: atrdExtra.lcb,
+    fcPlcftxbxTxt: txbxTxt.fc,
+    lcbPlcftxbxTxt: txbxTxt.lcb,
+    fcPlcfHdrtxbxTxt: hdrTxbxTxt.fc,
+    lcbPlcfHdrtxbxTxt: hdrTxbxTxt.lcb,
   }
 }
 
@@ -266,11 +376,23 @@ export function validateFibTableRanges(fib: FibInfo, tableLength: number): void 
     tableLength,
     'header/footer table (fcPlcfhdd)',
   )
+  for (const [fc, lcb, what] of [
+    [fib.fcPlcffndRef, fib.lcbPlcffndRef, 'footnote reference table (fcPlcffndRef)'],
+    [fib.fcPlcffndTxt, fib.lcbPlcffndTxt, 'footnote text table (fcPlcffndTxt)'],
+    [fib.fcPlcfendRef, fib.lcbPlcfendRef, 'endnote reference table (fcPlcfendRef)'],
+    [fib.fcPlcfendTxt, fib.lcbPlcfendTxt, 'endnote text table (fcPlcfendTxt)'],
+  ] as const)
+    validatePairRange({ fc, lcb }, tableLength, what)
   validatePairRange({ fc: fib.fcPlfLst, lcb: fib.lcbPlfLst }, tableLength, 'list table (fcPlfLst)')
   validatePairRange(
     { fc: fib.fcPlfLfo, lcb: fib.lcbPlfLfo },
     tableLength,
     'list override table (fcPlfLfo)',
+  )
+  validatePairRange(
+    { fc: fib.fcSttbfFfn, lcb: fib.lcbSttbfFfn },
+    tableLength,
+    'font table (fcSttbfFfn)',
   )
   validatePairRange(
     { fc: fib.fcPlcfbteChpx, lcb: fib.lcbPlcfbteChpx },

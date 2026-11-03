@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import {
+  applyGapLedger,
   buildPageCuts,
+  flowOffsetAt,
+  learnGapFlowTops,
   headingPagesOf,
   pageCutDiffs,
   pageCutSignature,
+  pagePaperEdges,
+  topPushAt,
+  type GapLedgerEntry,
 } from '../src/renderer/pagination-cuts'
 import type { BlockBox, PageSlice, SectionGeom } from '../src/renderer/pagination-types'
 
@@ -91,6 +97,18 @@ describe('buildPageCuts', () => {
       [{ headerPx: 0, footerPx: 0 }],
     )
     expect(cuts.map((c) => c.leadDropsSpaceBefore)).toEqual([false, true, true, false, false, true])
+  })
+
+  it('a folded legacy pageBreakBefore lead keeps its trimmed margin', () => {
+    const blocks = [para(0, 400), para(390, 110, { breakBefore: true, leadMtPx: 10 })]
+    const cuts = buildPageCuts(
+      blocks,
+      [slice(0, 390), slice(390, 500)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+    expect(cuts[1].leadDropsSpaceBefore).toBe(false)
+    expect(cuts[1].leadMtPx).toBe(10)
   })
 
   it('pad and pull-up follow the physical height of a regioned page and the body height of a vertical one', () => {
@@ -257,5 +275,83 @@ describe('headingPagesOf', () => {
     const stray = document.createElement('p')
     expect(headingPagesOf(blocks, cuts, [h1.el!, restamped])).toEqual({ pages: [1, 2], misses: 0 })
     expect(headingPagesOf(blocks, cuts, [stray, null])).toEqual({ pages: [1, 1], misses: 2 })
+  })
+})
+
+describe('gap ledger on the cuts', () => {
+  const entry = (page: number, extra: Partial<GapLedgerEntry> = {}): GapLedgerEntry => ({
+    page,
+    kind: 'block',
+    heightPx: 220,
+    marginBottomPx: 96,
+    marginTopPx: 96,
+    marginLeftPx: 90,
+    topPushPx: 0,
+    pullUpPx: 0,
+    repeatHeaderPx: 0,
+    ...extra,
+  })
+  const cutsOf = () =>
+    buildPageCuts(
+      [para(0, 400), para(400, 400), para(800, 400), para(1200, 400), para(1600, 400)],
+      [slice(0, 400), slice(400, 800), slice(800, 1200), slice(1200, 1600), slice(1600, 2000)],
+      [geom(400)],
+      [{ headerPx: 0, footerPx: 0 }],
+    )
+
+  it('accumulates page-turn gaps for the geometry and flow gaps for the displacement', () => {
+    const cuts = cutsOf()
+    applyGapLedger(cuts, [
+      entry(1, { topPushPx: 26 }),
+      entry(2, { kind: 'table', floatGap: true, repeatHeaderPx: 30 }),
+      entry(3, { kind: 'table', repeatHeaderPx: 30, pullUpPx: 20 }),
+      entry(4, {
+        kind: 'cut',
+        heightPx: 0,
+        marginBottomPx: 0,
+        marginTopPx: 0,
+        topPushPx: undefined,
+      }),
+    ])
+    expect(cuts.map((c) => c.gapOffsetPx)).toEqual([0, 220, 440, 640, 640])
+    expect(cuts.map((c) => c.flowOffsetPx)).toEqual([0, 220, 220, 450, 450])
+    expect(cuts[0].gap).toBeUndefined()
+    expect(topPushAt(cuts, 4)).toBe(0)
+    expect(topPushAt(cuts, 1)).toBe(26)
+    // a carry spacer counts for flow y at or below it only
+    const carries = [{ y: 900, px: 220 }]
+    expect(flowOffsetAt(cuts, carries, 850)).toBe(220)
+    expect(flowOffsetAt(cuts, carries, 900)).toBe(440)
+    expect(flowOffsetAt(cuts, carries, 1300)).toBe(670)
+  })
+
+  it('paper edges follow the gap boxes; pages without a gap inherit the offsets', () => {
+    const cuts = cutsOf()
+    applyGapLedger(cuts, [entry(1), entry(3, { pullUpPx: 20 })])
+    expect(cuts.map((c) => c.gapOffsetPx)).toEqual([0, 220, 220, 420, 420])
+    const edges = pagePaperEdges(cuts, 96)
+    expect(edges.map((e) => e.page)).toEqual([1, 3])
+    // gap bottom = first margin + start + offset; paper top is a top margin above it
+    expect(edges[0]).toMatchObject({
+      gapBottom: 96 + 400 + 220,
+      top: 400 + 220,
+      prevBottom: 96 + 400 + 96,
+    })
+    expect(edges[1]).toMatchObject({ gapBottom: 96 + 1200 + 420, top: 1200 + 420 })
+  })
+
+  it('learned widget tops move the paper edges and the flow displacement off the slice boundary', () => {
+    const cuts = cutsOf()
+    applyGapLedger(cuts, [entry(1), entry(3, { pullUpPx: 20 })])
+    // page 2's widget sits 10 px under the boundary (the previous block's space after)
+    expect(learnGapFlowTops(cuts, [410, 1200 + 220 - 20])).toBe(true)
+    expect(cuts[1].gap?.flowTopPx).toBe(410)
+    expect(cuts[3].gap?.flowTopPx).toBe(1180)
+    const edges = pagePaperEdges(cuts, 96)
+    expect(edges[0]).toMatchObject({ gapTop: 96 + 410, gapBottom: 96 + 410 + 220 })
+    expect(edges[1]).toMatchObject({ gapBottom: 96 + 1200 + 420, top: 1200 + 420 })
+    expect(flowOffsetAt(cuts, [], 405)).toBe(0)
+    expect(flowOffsetAt(cuts, [], 410)).toBe(220)
+    expect(learnGapFlowTops(cuts, [410])).toBe(false)
   })
 })

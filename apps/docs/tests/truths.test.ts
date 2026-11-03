@@ -35,9 +35,12 @@ import {
   simsunGapLineFactor,
   symbolBulletLinePt,
   wordMetricAliasFace,
+  wordSlotFaces,
+  latinViaEastAsiaSlotFor,
 } from '../src/renderer/line-metrics'
 import { listFirstLineTw, rowHeightCss, tableRowEatCss } from '../src/renderer/editor/extensions'
 import { resolveTabTarget } from '../src/renderer/editor/decoration-extensions'
+import { resolveDeclaredFace } from '../src/renderer/font-resolve'
 import { resolveTableWidth } from '../src/renderer/editor/table-geometry'
 import {
   hfRowFloatLeftPx,
@@ -891,6 +894,9 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
               case 'latinSubstitute':
                 expect(missingLatinSubstitute(c.font!)).toBe(c.expect)
                 break
+              case 'resolvedFace':
+                expect(resolveDeclaredFace(c.font!)?.family).toBe(c.expect)
+                break
               case 'rowPt':
                 expect(rowPt(res, c)).toBeCloseToPt(c.expect as number, tol)
                 break
@@ -940,6 +946,15 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
                 break
               case 'cssFamilyIncludes':
                 expect(cssFontFamily(c.font!)).toContain(c.expect)
+                break
+              case 'slotFaces':
+                expect(
+                  wordSlotFaces(
+                    c.ascii as string,
+                    c.eastAsia as string,
+                    latinViaEastAsiaSlotFor(res.parsed),
+                  ),
+                ).toEqual(c.expect)
                 break
               case 'krNoBreakIncludes': {
                 const got = krNoBreakOffsets(c.text as string, (c.prev as string) ?? '')

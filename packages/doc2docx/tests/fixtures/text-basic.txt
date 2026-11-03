@@ -1,6 +1,6 @@
 Legacy DOC text extraction
 English paragraph with punctuation: 1, 2, 3.
-中文段落：混合中英文 ABC 测试。
+\u4e2d\u6587\u6bb5\u843d\uff1a\u6df7\u5408\u4e2d\u82f1\u6587 ABC \u6d4b\u8bd5\u3002
 Column A	Column B
 
 Emoji and quotes: 😀 “curly” — dash…

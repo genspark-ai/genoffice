@@ -12,7 +12,12 @@ import {
   type Run,
   type SectionSettings,
 } from '@genoffice/docx-engine'
-import { cssRunFontFamily, estimateHfHeight, runLetterSpacingCss } from '../line-metrics'
+import {
+  cssAutoLineMult,
+  cssRunFontFamily,
+  estimateHfHeight,
+  runLetterSpacingCss,
+} from '../line-metrics'
 import {
   anchorXBand,
   anchorYBand,
@@ -292,6 +297,29 @@ function hfRowExtentPx(row: HfTableRow, geom?: HfRowGeom): { left: number; width
 /** how far layout-table rows hang into the start margin (negative tblInd, w:tblpPr past the margin), px */
 export function hfIndentOverhangPx(paras: readonly HfParagraph[], geom?: HfRowGeom): number {
   return Math.max(0, ...paras.map((p) => (p.row ? -hfRowExtentPx(p.row, geom).left : 0)))
+}
+
+/** glyph overhang of strip paragraphs whose auto line multiple is below 1: the
+ *  line box shrinks around the centred glyphs (Word paints them whole, probe
+ *  2026-11-02: line 14 = 0.058 keeps the full 8 pt glyph at the strip top), so
+ *  the strip's clip edge has to give that much room, px */
+export function hfInkOverhangPx(paras: readonly HfParagraph[]): number {
+  let over = 0
+  for (const p of paras) {
+    if (p.cells || p.boxAnchored) continue
+    const m = cssAutoLineMult(p.lineRule, p.lineRawTwips, p.lineSpacing)
+    if (m == null || m >= 1) continue
+    const sized = p.runs.filter((r) => r.text.trim() !== '')
+    const half = Math.max(
+      0,
+      ...sized.map((r) => hfRunFace(r).sizeHalfPoints ?? 0),
+      sized.length === 0 ? (p.emptyRunSizeHalfPoints ?? 0) : 0,
+    )
+    const naturalPx =
+      (((half || p.markSizeHalfPoints || 21) / 2) * 96 * (hfLineFactorNumber(p.runs) ?? 1.3)) / 72
+    over = Math.max(over, (naturalPx * (1 - m)) / 2)
+  }
+  return over > 0 ? Math.ceil(over) + 1 : 0
 }
 
 /** how far layout-table rows run past the strip column's right edge (an
@@ -1879,6 +1907,8 @@ export function makeGapHfEl(opts: {
   if (rightOver > 0) wrap.style.setProperty('--hf-tab-over', `${rightOver.toFixed(1)}px`)
   const indOver = hfIndentOverhangPx(paras, rowGeom)
   if (indOver > 0) wrap.style.setProperty('--hf-ind-over', `${indOver.toFixed(1)}px`)
+  const inkOver = hfInkOverhangPx(paras)
+  if (inkOver > 0) wrap.style.setProperty('--hf-ink-over', `${inkOver}px`)
   for (const img of (images ?? []).filter(hfImageHangsOnPara)) {
     const anchor = paraEls[img.anchorPara!]
     if (!anchor) continue

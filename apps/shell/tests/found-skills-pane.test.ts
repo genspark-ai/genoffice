@@ -226,15 +226,16 @@ describe('FoundSkills', () => {
     ])
     await render()
     expect(host.textContent).toContain('Recommended')
-    // one tab per category in the fixed order; an unknown category lands under Other
+    // the All tab leads, then one tab per category in the fixed order; an
+    // unknown category lands under Other
     const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.set-intg-tab')]
-    expect(tabs().map((e) => e.textContent)).toEqual(['Office', 'Finance', 'Other'])
-    // the first tab is open: only its skill shows
+    expect(tabs().map((e) => e.textContent)).toEqual(['All', 'Office', 'Finance', 'Other'])
+    // All opens first: every recommended skill shows, installed ones included
     expect(buttonWithText('Update')).toBeTruthy()
-    expect(buttonWithText('Install')).toBeFalsy()
-    await click(tabs()[2])
+    expect(buttonWithText('Install')).toBeTruthy()
+    await click(tabs()[3])
     expect(host.textContent).toContain('Installed')
-    await click(tabs()[1])
+    await click(tabs()[2])
     expect(buttonWithText('Install')).toBeTruthy()
     await click(buttonWithText('Install'))
     expect(imported).toEqual(['recommended:fresh'])

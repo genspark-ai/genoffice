@@ -10,7 +10,7 @@ import {
 } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
-/** SECTIONPAGES in a footer (#2331): a mark the renderer fills with the section's page count */
+/** SECTIONPAGES in a footer (genoffice#2331): a mark the renderer fills with the section's page count */
 
 const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 const FTR_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml'
@@ -45,7 +45,7 @@ const footerString = (doc: Awaited<ReturnType<typeof parseDocx>>) =>
   doc.footerParas!.flatMap((p) => p.runs.map((r) => r.text)).join('')
 
 describe('SECTIONPAGES header/footer field', () => {
-  it('a one-run field becomes the section-pages mark, not an empty string (#2331)', async () => {
+  it('a one-run field becomes the section-pages mark, not an empty string (genoffice#2331)', async () => {
     const doc = await parseDocx(
       await footerDocx(
         '<w:p><w:r><w:t xml:space="preserve">- </w:t></w:r>' +
