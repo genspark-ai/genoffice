@@ -77,7 +77,19 @@ describe('NotePictureHoverCard', () => {
 
     await mount(
       createElement(NotePictureHoverCard, {
-        card: cardOf({ dataUrl: undefined, imageId: undefined }),
+        card: {
+          sheetId: 'sheet-1',
+          row: 3,
+          column: 2,
+          picture: {
+            sheetId: 'sheet-1',
+            sheetName: 'Data',
+            row: 3,
+            column: 2,
+            author: 'Alice',
+            text: '老照片扫描件',
+          },
+        },
         sessionId: undefined,
         onRemove: vi.fn(),
       }),
