@@ -520,6 +520,37 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'API Key',
   },
   {
+    id: 'commandcode',
+    label: 'Command Code',
+    // Coding-plan gateway (commandcode.ai/docs/provider): one key serves
+    // OpenAI Chat Completions and Anthropic Messages at
+    // api.commandcode.ai/provider/v1; every plan except the $1 Go tier has
+    // API access (GOAT = $10/month). Vendor-prefixed ids exactly as the CLI
+    // model reference lists them (2026-11-03); the rest of the catalog works
+    // as-is when typed in. Claude ids answer only on /v1/messages, so they
+    // ride the Anthropic route. GPT-5.4+/6 call tools only over the Responses
+    // API, which this route does not take, so GPT and Grok stay out as on the
+    // OpenCode tiers.
+    models: [
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.2',
+      'deepseek/deepseek-v4-pro',
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'moonshotai/Kimi-K3',
+      'Qwen/Qwen3.8-Max',
+      'Qwen/Qwen3.8-27B',
+      'MiniMaxAI/MiniMax-M3',
+      'minimax/minimax-m3.1-flash',
+      'tencent/hy3-paid',
+      'google/gemini-3.8-flash',
+      'google/gemini-3.7-flash',
+    ],
+    defaultModel: 'zai-org/GLM-5.3',
+    keyPlaceholder: 'CMD API key',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],

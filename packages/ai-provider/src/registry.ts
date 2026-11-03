@@ -91,8 +91,9 @@ function opencodeEndpoint(
     // a stored base URL replaces the gateway root; the documented `/v1` API base is tolerated
     const base = stripTrailingV1(normalizeBaseUrl(config.baseUrl, root))
     const model = config.model ?? ''
-    const omit =
-      model !== '' && (modelHasFixedSampling(model) || model.toLowerCase().startsWith('kimi-'))
+    // Kimi fixes sampling whether the gateway spells the id bare (kimi-k3) or
+    // lab-prefixed (moonshotai/Kimi-K3), as Command Code does
+    const omit = model !== '' && (modelHasFixedSampling(model) || /(^|\/)kimi-/i.test(model))
     const sampling = omit ? { omitTemperature: true as const } : {}
     if (routes.anthropic.test(model)) return { protocol: 'anthropic', baseUrl: base, ...sampling }
     if (routes.gemini?.test(model)) {
@@ -342,6 +343,15 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // OpenCode ships routes only 3.8 Flash there — follow the running client)
     resolveEndpoint: opencodeEndpoint(OPENCODE_GATEWAY_ROOTS.go, {
       anthropic: /^(minimax-|qwen3\.8-flash$)/,
+    }),
+  },
+  commandcode: {
+    meta: metaOf('commandcode'),
+    capabilities: { auth: 'api-key', vision: true },
+    // Claude ids answer only on /v1/messages (docs: they 400 on
+    // chat-completions); everything else is chat-completions at /provider/v1
+    resolveEndpoint: opencodeEndpoint('https://api.commandcode.ai/provider', {
+      anthropic: /^claude-/,
     }),
   },
   custom: {

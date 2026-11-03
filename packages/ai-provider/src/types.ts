@@ -30,6 +30,7 @@ export type AiProviderId =
   | 'ppio'
   | 'opencode-zen'
   | 'opencode-go'
+  | 'commandcode'
   | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */

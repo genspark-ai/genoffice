@@ -330,6 +330,35 @@ describe('provider registry', () => {
     expect(resolve('gemini-3.7-flash').protocol).toBe('openai-compatible')
   })
 
+  it('routes Command Code Claude ids onto Messages and the rest onto chat-completions', () => {
+    const resolve = (model: string) =>
+      AI_PROVIDER_ADAPTERS.commandcode.resolveEndpoint(config(model))
+    expect(resolve('claude-sonnet-5-5')).toEqual({
+      protocol: 'anthropic',
+      baseUrl: 'https://api.commandcode.ai/provider',
+    })
+    for (const model of ['zai-org/GLM-5.3', 'deepseek/deepseek-v4-pro', 'tencent/hy3-paid']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.commandcode.ai/provider/v1',
+      })
+    }
+    // lab-prefixed Kimi ids fix sampling like the bare ones, K2 line included
+    for (const model of ['moonshotai/Kimi-K2.7-Code', 'moonshotai/Kimi-K3']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.commandcode.ai/provider/v1',
+        omitTemperature: true,
+      })
+    }
+    // the Gemini 3 family keeps Google's default sampling behind the prefix too
+    expect(resolve('google/gemini-3.8-flash')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.commandcode.ai/provider/v1',
+      omitTemperature: true,
+    })
+  })
+
   it('does not crash the opencode route on a missing model id', () => {
     const zen = AI_PROVIDER_ADAPTERS['opencode-zen'].resolveEndpoint({
       apiKey: 'k',

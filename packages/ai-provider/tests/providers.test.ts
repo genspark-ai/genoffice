@@ -154,6 +154,20 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds Command Code with vendor-prefixed ids and no Claude/GPT/Grok in the list', () => {
+    const cc = AI_PROVIDERS.find((provider) => provider.id === 'commandcode')!
+    expect(cc.label).toBe('Command Code')
+    expect(cc.defaultModel).toBe('zai-org/GLM-5.3')
+    expect(cc.models).toContain(cc.defaultModel)
+    expect(cc.needsBaseUrl).toBeUndefined()
+    for (const model of cc.models) {
+      // the CLI model reference spells every listed open-weight / Gemini id lab-prefixed
+      expect(model).toMatch(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/)
+      // Claude rides a different route; GPT/Grok need the Responses API for tools
+      expect(model).not.toMatch(/(^|\/)(claude-|gpt-|grok-)/)
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)
