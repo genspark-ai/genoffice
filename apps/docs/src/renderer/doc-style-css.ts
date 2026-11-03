@@ -35,10 +35,12 @@ import {
   isFontAvailable,
   krLineFactor,
   latinLineFactor,
+  latinViaEastAsiaSlotFor,
   lineHeightFactor,
   textHasCjk,
   isKoreanFontName,
   wordKerns,
+  wordSlotFaces,
 } from './line-metrics'
 import { sectionGridPitchPt } from './pagination'
 import { DARK_PAPER_HEX, DK_SIDE, darkPageBorderCss, darkPageColor } from './editor/dark-page'
@@ -164,6 +166,16 @@ export function docHasCjk(parsed: ParsedDocFull): boolean {
  */
 export function docLineFactor(parsed: ParsedDocFull, hasCjk: boolean): number {
   return hasCjk ? docCjkFactor(parsed) : lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')
+}
+
+/** the document's East Asian body face (Normal, then docDefaults) */
+export function docBodyEaFont(parsed: ParsedDocFull): string | undefined {
+  const normal = defaultParaDisplay(parsed)
+  return (
+    normal?.eastAsiaFont ??
+    (normal?.font !== normal?.fontAscii ? normal?.font : undefined) ??
+    parsed.docDefaults?.eastAsiaFont
+  )
 }
 
 /** StyleDisplay.font is EA-first: a name shared with fontAscii is a Latin-only
@@ -576,16 +588,15 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     const stripVars = [`--doc-line-factor:${factor}`, ...scriptFactors]
     // dual-slot baseline: Latin families first, then the East Asian chain
     const baseAscii = normal?.fontAscii ?? dd?.asciiFont
-    const baseEa =
-      normal?.eastAsiaFont ??
-      (normal?.font !== normal?.fontAscii ? normal?.font : undefined) ??
-      dd?.eastAsiaFont
+    const baseEa = docBodyEaFont(parsed)
+    const viaEa = latinViaEastAsiaSlotFor(parsed)
+    const base = wordSlotFaces(baseAscii, baseEa, viaEa)
     const baseFamily =
-      baseAscii && baseEa && baseAscii !== baseEa
-        ? cssDualFontFamily(baseAscii, baseEa)
-        : cssFontFamily(baseEa ?? baseAscii ?? 'Calibri')
+      base.ascii && base.eastAsia && base.ascii !== base.eastAsia
+        ? cssDualFontFamily(base.ascii, base.eastAsia)
+        : cssFontFamily(base.eastAsia ?? base.ascii ?? 'Calibri')
     decls.push(`font-family:${baseFamily}`, ...fontBoxCss(baseFamily))
-    if (baseEa) decls.push(`--doc-east-asian-font:${cssFontFamily(baseEa)}`)
+    if (base.eastAsia) decls.push(`--doc-east-asian-font:${cssFontFamily(base.eastAsia)}`)
     // Mixed declared/inherited-font paragraphs under a typed grid (blockAttrs
     // .doc-grid-strut): Chromium's line box unions the strut's and every inline
     // box's half-leading geometry, so a Latin-primary strut under EA-primary
@@ -636,7 +647,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // inherited ascii chain for eastAsia-only runs (cssEaOnlyFontFamily);
     // .page-wrap too: header/footer areas are .doc-page siblings inside it
     rules.push(
-      `.page-wrap, .doc-page, .pv-page { --doc-latin-chain:${docLatinChainCss(baseAscii ?? baseEa ?? 'Calibri')} }`,
+      `.page-wrap, .doc-page, .pv-page { --doc-latin-chain:${docLatinChainCss(base.ascii ?? base.eastAsia ?? 'Calibri')} }`,
     )
     // no size anywhere (HWP exports): Word's built-in default is 10pt, not the editor's 11pt
     const sizeHalf = normal?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 20
@@ -938,6 +949,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       }
     }
   }
+  const viaEa = latinViaEastAsiaSlotFor(parsed)
+  const baseEa = docBodyEaFont(parsed)
   for (const info of parsed.styles.values()) {
     const d = info.display
     if (!d) continue
@@ -964,21 +977,33 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         `text-decoration:${[d.underline && 'underline', d.strike && 'line-through'].filter(Boolean).join(' ')}`,
       )
     }
+    // a Latin-only style (font === fontAscii) keeps the inherited East Asian
+    // slot; a style without fonts inherits its paragraph's faces as before
+    const styleSlot = wordSlotFaces(
+      d.fontAscii,
+      d.eastAsiaFont ?? (d.font !== d.fontAscii ? d.font : baseEa),
+      viaEa && !!(d.font || d.fontAscii),
+    )
+    const styleLatin = styleSlot.ascii
     if (d.font) {
       // no ascii slot at all = a genuine eastAsia-only style: its Latin glyphs
       // keep the inherited ascii chain (Word resolves them there, probe 2026-08-23)
-      const styleFamily =
-        d.fontAscii && d.fontAscii !== d.font
+      const styleFamily = viaEa
+        ? cssFontFamily(styleSlot.eastAsia ?? d.font)
+        : d.fontAscii && d.fontAscii !== d.font
           ? cssDualFontFamily(d.fontAscii, d.font)
           : d.fontAscii
             ? cssFontFamily(d.font)
             : cssEaOnlyFontFamily(d.font)
       decls.push(`font-family:${styleFamily}`, ...fontBoxCss(styleFamily))
       if (!d.eaSlotEmpty && (d.eastAsiaFont || d.font !== d.fontAscii))
-        decls.push(`--doc-east-asian-font:${cssFontFamily(d.eastAsiaFont ?? d.font)}`)
+        decls.push(
+          `--doc-east-asian-font:${cssFontFamily(styleSlot.eastAsia ?? d.eastAsiaFont ?? d.font)}`,
+        )
       // the strut alias tail must follow the style's own chain, not the doc base
       if (gridStrut) decls.push(`--doc-grid-strut-tail:${styleFamily}`)
-      if (d.fontAscii) decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)
+      if (d.fontAscii)
+        decls.push(`--doc-latin-chain:${docLatinChainCss(styleLatin ?? d.fontAscii)}`)
       // style-declared EA face re-anchors the CJK line factor for its paragraphs
       // (runs without their own fonts resolve --doc-line-factor-cjk through this);
       // an empty-theme-slot backfill is not a document choice and stays silent
@@ -991,16 +1016,18 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         // hangul the themeFontLang face cannot draw takes Word's fallback face height
         decls.push(`--doc-line-factor-kr:${krLineFactor(d.font)}`)
       }
-    } else if (d.fontAscii) {
+    } else if (styleLatin) {
       decls.push(
-        `font-family:${cssFontFamily(d.fontAscii)}`,
-        ...fontBoxCss(cssFontFamily(d.fontAscii)),
+        `font-family:${cssFontFamily(styleLatin)}`,
+        ...fontBoxCss(cssFontFamily(styleLatin)),
       )
-      if (gridStrut) decls.push(`--doc-grid-strut-tail:${cssFontFamily(d.fontAscii)}`)
-      decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)
+      if (gridStrut) decls.push(`--doc-grid-strut-tail:${cssFontFamily(styleLatin)}`)
+      decls.push(`--doc-latin-chain:${docLatinChainCss(styleLatin)}`)
     }
     // Latin lines of a paragraph style follow the style's own face, not the
     // body font (Cambria headings under a Calibri body: 1.172 vs 1.22)
+    // (empty paragraphs and marks: the ascii face, also under an East Asian
+    // docDefaults language — Word probe 2026-11-02)
     if (d.fontAscii && info.type === 'paragraph') {
       decls.push(`--doc-line-factor-latin:${latinLineFactor(d.fontAscii)}`)
     }
@@ -1170,7 +1197,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       rules.push(`.doc-page :is(${LIST_LINES})${s} { --style-li-left:${pt}pt }`)
       // the toc level ladder (styles.css em padding) only stands in for a style without its own indent
       if (tocLevelOf(info.styleId, parsed.styles) !== null)
-        rules.push(`.doc-page ${s} .doc-toc-line > span:first-child { padding-left:0 }`)
+        rules.push(`.doc-page ${s} .doc-toc-line > .doc-toc-body { --doc-toc-indent:0px }`)
     }
     // w:contextualSpacing: consecutive same-style paragraphs swallow the spacing
     // between them (ListParagraph/ListBullet carry this — Word lists are tight)

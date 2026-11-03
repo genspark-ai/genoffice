@@ -67,6 +67,9 @@ export const IPC_CHANNELS = {
   reopenWorkbook: 'workbook:reopen',
   readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
+  listExternalLinks: 'workbook:list-external-links',
+  updateExternalLinks: 'workbook:update-external-links',
+  revealLinkSource: 'shell:reveal-link-source',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
   /** Slicer/timeline controls the file carries (xl/slicers, xl/timelines) */

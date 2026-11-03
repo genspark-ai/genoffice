@@ -9,6 +9,8 @@ import {
   cssFontFamily,
   cutAdjustedAlias,
   lineHeightFactor,
+  runSlotFaces,
+  wordSlotFaces,
 } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
@@ -724,14 +726,13 @@ export const TextStyleMark = Mark.create({
       if (half <= 2) styles.push('line-height:0')
     }
     if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
-      const ea = mark.attrs.font ? String(mark.attrs.font) : null
-      const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
-      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
       // a Latin-only chain fills both slots (fontAttrsFromFamilyChain), so an
       // unparsed run's font only names an East Asian face when the slots differ
-      const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr && ea !== ascii ? ea : null)
+      const { ascii, eastAsia: ea, declaredEa } = runSlotFaces(mark.attrs)
+      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
+      const explicitEa = declaredEa ? wordSlotFaces(null, declaredEa).eastAsia : null
       if (explicitEa && !mark.attrs.eaSlotEmpty)
-        styles.push(`--doc-east-asian-font:${cssFontFamily(String(explicitEa))}`)
+        styles.push(`--doc-east-asian-font:${cssFontFamily(explicitEa)}`)
       const family = cs
         ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
         : cssRunFontFamily(ascii, ea)
@@ -744,7 +745,7 @@ export const TextStyleMark = Mark.create({
       styles.push(`--doc-run-lh:${lh}`)
     }
     if (!mark.attrs.font && !mark.attrs.fontAscii && !mark.attrs.csFont && tbl?.fontAscii) {
-      const family = cssRunFontFamily(tbl.fontAscii, null)
+      const family = cssRunFontFamily(wordSlotFaces(tbl.fontAscii, null).ascii, null)
       styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
     }
     const charSpacingTwips = mark.attrs.charSpacingTwips ?? tbl?.charSpacingTwips

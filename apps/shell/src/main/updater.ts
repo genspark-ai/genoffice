@@ -624,6 +624,9 @@ export function initAutoUpdater(
   initialChannel: UpdateChannel = 'stable',
   /** Settings › "Check for updates automatically"; read at every background check (genoffice#2127) */
   autoCheckEnabled: () => boolean = () => true,
+  /** Settings › "Install updates silently" (off by default): a background check
+   *  downloads the package quietly and installs it on quit instead of opening the card */
+  silentInstallEnabled: () => boolean = () => false,
 ): void {
   if (started) return
   started = true
@@ -775,7 +778,7 @@ export function initAutoUpdater(
     latestSeenVersion = info.version
     manualDownloadUrl = manualDownloadUrlFor(info)
     log('update available:', info.version)
-    if (quietCheck) {
+    if (quietCheck && silentInstallEnabled()) {
       // quiet path: no card, the package downloads in the background and the
       // app installs it when it quits (genoffice#2389)
       startDownload()

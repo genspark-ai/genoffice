@@ -7,7 +7,7 @@
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { BlockIndex } from '../pagination-index'
-import type { PageCut } from '../pagination-cuts'
+import type { FlowCarry, PageCut } from '../pagination-cuts'
 import type {
   BlockBox,
   PageSlice,
@@ -53,6 +53,8 @@ export interface PageLayout {
   geoms: SectionGeom[]
   hfHeights: SectionHfHeights[]
   rowSplits: RowSplitPatch[]
+  /** float-carry spacers of split floating tables (flow displacement, flowOffsetAt) */
+  carries: FlowCarry[]
 }
 
 /** structural targets in document order (bookmarks carry their name as label) */

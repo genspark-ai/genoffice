@@ -50,7 +50,7 @@ import {
   collectFilterStates,
   collectNoteStates,
 } from './univer-sync'
-import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import type { LazyWorkbookState, PinnedClosureCell, UniverRuntime } from './univer-state'
 
 /** The App refs/state the save flow needs; built fresh per call. */
 export interface SaveContext {
@@ -102,6 +102,83 @@ export interface SaveContext {
 /// "Continue as CSV" — asked once per file, like modern Excel's banner.
 const confirmedCsvSaves = new Set<string>()
 
+/// One formula cell's value the recalc overlay contributes to a save request.
+export type RecalculatedFormulaValue = {
+  sheetId: string
+  row: number
+  column: number
+  value: string | number | boolean | null | { error: string }
+}
+
+/// Recalculated formula results: the engine's values are on screen but
+/// deliberately kept out of the journal (they must not become literals). A save
+/// sends them separately so it refreshes each formula cell's cached `<v>`,
+/// keeping its `<f>`.
+///
+/// A journaled formula is excluded: the overlay may still hold the previous
+/// formula's result when the user saves immediately after entering a
+/// replacement. A sheet whose run kept any cached value is excluded wholesale:
+/// the engine evaluated an incomplete model there, so a dependent of the gap may
+/// carry a clean wrong value (IFERROR over an unsupported precedent collapses to
+/// its literal); the file's own cached results stay, and fullCalcOnLoad already
+/// asks Excel to recalculate the session's edits on open.
+function formulaValueEntry(
+  state: LazyWorkbookState,
+  sheetId: string,
+  key: string,
+  cell: PinnedClosureCell,
+): RecalculatedFormulaValue | null {
+  // #ERROR! is IronCalc's own failure, never a value Excel would cache.
+  if (cell.v === undefined || cell.v === '#ERROR!') return null
+  if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return null
+  const [row, column] = key.split(':').map(Number)
+  if (row === undefined || column === undefined) return null
+  const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
+  return { sheetId, row, column, value }
+}
+
+/**
+ * The formula caches a save refreshes from the external-links panel's overlay:
+ * a fresh sidecar computation, kept out of the engine overlay so an incomplete
+ * engine run cannot release it. These are pending work of their own — a save
+ * with nothing else to write still has to write them.
+ */
+function externalLinkFormulaValues(state: LazyWorkbookState): RecalculatedFormulaValue[] {
+  const values: RecalculatedFormulaValue[] = []
+  for (const [sheetId, cells] of state.recalc?.externalOverlay ?? []) {
+    if (isSheetRemoved(state.editJournal, sheetId)) continue
+    for (const [key, cell] of cells) {
+      const entry = formulaValueEntry(state, sheetId, key, cell)
+      if (entry !== null) values.push(entry)
+    }
+  }
+  return values
+}
+
+/** How many external-link formula caches a save would write (see handleSave's total). */
+export function externalLinkFormulaValueCount(state: LazyWorkbookState): number {
+  return externalLinkFormulaValues(state).length
+}
+
+export function recalculatedFormulaValues(state: LazyWorkbookState): RecalculatedFormulaValue[] {
+  // keyed sheet|row:column so an external-link value overrides an engine value
+  // for the same cell: the panel's sidecar computation is the fresh one
+  const values = new Map<string, RecalculatedFormulaValue>()
+  const add = (entry: RecalculatedFormulaValue) =>
+    values.set(entry.sheetId + '|' + entry.row + ':' + entry.column, entry)
+  for (const [sheetId, cells] of state.recalc?.overlay ?? []) {
+    if (isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)) {
+      continue
+    }
+    for (const [key, cell] of cells) {
+      const entry = formulaValueEntry(state, sheetId, key, cell)
+      if (entry !== null) add(entry)
+    }
+  }
+  for (const entry of externalLinkFormulaValues(state)) add(entry)
+  return [...values.values()]
+}
+
 /** What a save actually did — the MCP bridge needs the outcome, fire-and-forget callers ignore it. */
 export interface SaveOutcome {
   ok: boolean
@@ -109,6 +186,13 @@ export interface SaveOutcome {
   path?: string
   /** the main-process refusal, verbatim, when the save request itself failed */
   error?: string
+  /**
+   * `'no-edits'`: nothing was pending, so no save request was made. Callers
+   * that only need the disk to match the grid (the external-links panel's
+   * pre-Update save) treat this as a no-op success; every other caller keeps
+   * treating it as a failed save.
+   */
+  reason?: 'no-edits'
 }
 
 /**
@@ -236,33 +320,11 @@ export async function handleSave(
             ? {}
             : { fonts: state.editJournal.theme.fonts }),
         }
-  // Recalculated formula results: the engine's values are on screen but
-  // deliberately kept out of the journal (they must not become literals). Send them
-  // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
-  // A journaled formula is excluded: the overlay may still hold the previous
-  // formula's result when the user saves immediately after entering a replacement.
-  // A sheet whose run kept any cached value is excluded wholesale: the engine
-  // evaluated an incomplete model there, so a dependent of the gap may carry a
-  // clean wrong value (IFERROR over an unsupported precedent collapses to its
-  // literal); the file's own cached results stay, and fullCalcOnLoad already
-  // asks Excel to recalculate the session's edits on open.
-  const overlayValues = [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
-    isSheetRemoved(state.editJournal, sheetId) || state.recalc?.incompleteRuns?.has(sheetId)
-      ? []
-      : [...cells].flatMap(([key, cell]) => {
-          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
-          if (cell.v === undefined || cell.v === '#ERROR!') return []
-          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
-          const [row, column] = key.split(':').map(Number)
-          if (row === undefined || column === undefined) return []
-          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
-          return [{ sheetId, row, column, value }]
-        }),
-  )
   // Journaled formulas an MCP batch saw settle (see formula-values.ts) were left
-  // out above because the overlay could be stale; their values are read live here.
+  // out of the overlay above because it could be stale; their values are read
+  // live here.
   const journaledValues = ctx.readCells ? verifiedFormulaValues(ctx.readCells) : []
-  const formulaValues = [...overlayValues, ...journaledValues]
+  const formulaValues = [...recalculatedFormulaValues(state), ...journaledValues]
   // Withheld cells travel in a package part of their own, so they ride with
   // this save rather than in the journal. Copied into the request's own shape
   // so the renderer never hands main a readonly view of its state.
@@ -342,7 +404,11 @@ export async function handleSave(
     // A save with nothing else pending but newly withheld cells or a slicer
     // change is still a save: skipping it would drop the change.
     (redactionStates?.length ?? 0) +
-    (slicerState === null ? 0 : 1)
+    (slicerState === null ? 0 : 1) +
+    // External-link values the panel applied are pending work too: without
+    // this the post-Update save would be skipped as "no edits to save" and the
+    // file would keep the old cached <v>s.
+    externalLinkFormulaValueCount(state)
   // A restored crash-recovery session carries its changes in the workbook
   // bytes themselves, not the journal: a plain Save with nothing pending must
   // still write back to the original file (and clear the recovery copy).
@@ -351,8 +417,10 @@ export async function handleSave(
   // quiet AutoSave may already have moved the work into the backing file.
   const firstSaveAs = mode === 'save' && state.file.unsavedNew === true && !quiet
   if (total === 0 && mode !== 'save-as' && !restoreWriteBack && !firstSaveAs) {
-    if (mode !== 'recovery') ctx.setMessage(t('appNoEditsToSave'))
-    return { ok: false }
+    // A quiet save is background work (autosave, the links panel's pre-Update
+    // save): nothing to write is a no-op there, not a status message.
+    if (mode !== 'recovery' && !quiet) ctx.setMessage(t('appNoEditsToSave'))
+    return { ok: false, reason: 'no-edits' }
   }
   // CSV session: Save keeps the CSV identity — Excel's "keep this format?"
   // question once per file, then the active sheet rides the save request as

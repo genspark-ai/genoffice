@@ -781,13 +781,13 @@ describe('mutation validation: stage-3c-4 lists and fields', () => {
     )
   }
 
-  it('lists-link.doc: PlfLst / level / PlfLfo byte flips end as lists or a LegacyDocError', () => {
+  it('lists-link.doc: PlfLst / level / PlfLfo byte flips end as lists, never an exception', () => {
     const bytes = stageFixture('lists-link.doc')
     const doc = openLegacyDoc(bytes)
     const random = seededRandom(0x3c40_0001)
     const levelsStart = doc.fib.fcPlfLst + doc.fib.lcbPlfLst
     const levelsEnd = doc.fib.fcPlfLfo
-    const outcomes = { lists: 0, rejected: 0 }
+    const outcomes = { intact: 0, degraded: 0 }
     for (let index = 0; index < 30; index++) {
       const table = doc.table.slice()
       let position: number
@@ -796,17 +796,18 @@ describe('mutation validation: stage-3c-4 lists and fields', () => {
         position = levelsStart + Math.floor(random() * Math.max(1, levelsEnd - levelsStart))
       else position = doc.fib.fcPlfLfo + Math.floor(random() * doc.fib.lcbPlfLfo)
       table[position] = (table[position] ?? 0) ^ (1 + Math.floor(random() * 255))
-      try {
-        const result = parseListTables(doc.fib, table)
-        expect(Array.isArray([...result.lists.keys()])).toBe(true)
-        outcomes.lists++
-      } catch (error) {
-        expect(error).toBeInstanceOf(LegacyDocError)
-        outcomes.rejected++
-      }
+      const result = parseListTables(doc.fib, table)
+      expect(Array.isArray([...result.lists.keys()])).toBe(true)
+      if (
+        result.warnings.some(
+          (warning) => warning.includes('invalid') || warning.includes('dropped'),
+        )
+      )
+        outcomes.degraded++
+      else outcomes.intact++
     }
-    expect(outcomes.lists + outcomes.rejected).toBe(30)
-    expect(outcomes.rejected).toBeGreaterThan(0)
+    expect(outcomes.intact + outcomes.degraded).toBe(30)
+    expect(outcomes.degraded).toBeGreaterThan(0)
   })
 
   it('lists-link.doc and rich.doc: file-level flips through conversion stay within the contract', async () => {

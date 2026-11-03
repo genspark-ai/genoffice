@@ -36,6 +36,9 @@ import {
   textHasComplexScript,
   textHasHangul,
   textHasLatinInk,
+  inheritedSlotFace,
+  latinViaEastAsiaSlotOn,
+  runSlotFaces,
 } from '../line-metrics'
 import type {
   NoteRun,
@@ -70,6 +73,7 @@ export type LayoutRunAttrs = {
   sizeHalfPoints?: number | null
   csSize?: number | null
   eaSlotEmpty?: boolean | null
+  rawRPr?: string | null
 }
 
 /** one inline leaf of a paragraph, in document order */
@@ -93,6 +97,18 @@ export interface LayoutPara {
   lineRule?: 'auto' | 'atLeast' | 'exact' | null
 }
 
+/** run attrs with both font slots on the face Word lays them out with (wordSlotFaces) */
+export function slotLaidAttrs<T extends LayoutRunAttrs>(attrs: T): T {
+  if (!latinViaEastAsiaSlotOn() || (!attrs.font && !attrs.fontAscii)) return attrs
+  const slot = runSlotFaces(attrs)
+  return {
+    ...attrs,
+    font: slot.eastAsia,
+    fontAscii: attrs.fontAscii ? slot.ascii : attrs.fontAscii,
+    eastAsiaFont: attrs.eastAsiaFont ? slot.eastAsia : attrs.eastAsiaFont,
+  }
+}
+
 export function layoutParaOf(node: {
   attrs?: Record<string, unknown>
   textContent?: string
@@ -106,7 +122,7 @@ export function layoutParaOf(node: {
       runs.push({
         kind: 'text',
         text: child.text ?? '',
-        attrs: mark ? (mark.attrs as LayoutRunAttrs) : null,
+        attrs: mark ? slotLaidAttrs(mark.attrs as LayoutRunAttrs) : null,
         bare: child.marks.length === 0,
         bold: child.marks.some((m) => m.type.name === 'bold'),
         italic: child.marks.some((m) => m.type.name === 'italic'),
@@ -296,8 +312,12 @@ export function latinParaFactor(para: LayoutPara, scriptVar: string, latinInkOnl
       else undeclared = true
     }
   }
-  if (declaredMax <= 0) return scriptVar
-  return undeclared ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+  // text without rFonts under an East Asian docDefaults language lays out in
+  // the inherited eastAsia face (SimSun 1.3), empty paragraphs keep scriptVar
+  const inherited = inheritedSlotFace()
+  const inheritedVar = inherited && undeclared ? String(lineHeightFactor(inherited)) : scriptVar
+  if (declaredMax <= 0) return inheritedVar
+  return undeclared ? `max(${inheritedVar}, ${declaredMax})` : String(declaredMax)
 }
 
 /**
@@ -992,7 +1012,7 @@ export function layoutParaOfRuns(
       out.push({
         kind: 'text',
         text: run.text,
-        attrs: {
+        attrs: slotLaidAttrs({
           font: run.font ?? null,
           fontAscii: run.fontAscii ?? null,
           eastAsiaFont: run.eastAsiaFont ?? null,
@@ -1001,7 +1021,8 @@ export function layoutParaOfRuns(
           cs: run.cs ?? null,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
           eaSlotEmpty: run.eaSlotEmpty ?? null,
-        },
+          rawRPr: run.rawRPr ?? null,
+        }),
         bare: false,
         bold: !!run.bold,
         italic: !!run.italic,

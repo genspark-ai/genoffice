@@ -193,6 +193,9 @@ export const strings = {
     setAutoUpdateCheck: '自动检查更新',
     setAutoUpdateCheckDesc:
       '关闭后，启动时和后台都不再检查新版本；仍可在“帮助 › 检查更新”中手动检查。',
+    setSilentInstall: '静默安装更新',
+    setSilentInstallDesc:
+      '开启后，后台检查到新版本会静默下载，并在你退出应用时安装，使用过程中不会打扰或重启。关闭则弹出更新提示，由你决定何时更新。',
     updateChannel: '更新通道',
     channelStable: '稳定版',
     channelBeta: 'Beta 版',
@@ -232,6 +235,9 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: '自定义',
     setAiSpellcheck: 'AI 对话拼写检查',
+    setLegacyImportPrompt: '打开旧格式前先提示',
+    setLegacyImportPromptDesc:
+      '打开 .doc、.odt、.hwp、.ods、.odp 等旧格式文件时，先说明哪些内容会转换过来。关闭后直接进入另存为。',
     setDefaultApp: '设为 Office 文档默认程序',
     setDefaultAppDesc: '双击 .docx、.xlsx、.pptx 文件时用 GenOffice 打开。',
     setDefaultAppIs: 'GenOffice 已是默认程序。',
@@ -465,6 +471,7 @@ export const strings = {
     intgSkillsRead: '详情',
     intgSkillsMine: '我的技能',
     intgSkillsRecommended: '推荐',
+    intgSkillsCatAll: '全部',
     intgSkillsCatOffice: '办公',
     intgSkillsCatBusiness: '商务',
     intgSkillsCatData: '数据',
@@ -705,6 +712,9 @@ export const strings = {
     setAutoUpdateCheck: 'Check for updates automatically',
     setAutoUpdateCheckDesc:
       'When off, GenOffice no longer checks for new versions at launch or in the background. You can still check from Help › Check for Updates.',
+    setSilentInstall: 'Install updates silently',
+    setSilentInstallDesc:
+      'When on, a new version found by the background check is downloaded quietly and installed when you quit GenOffice; nothing interrupts you while you work. When off, an update prompt lets you decide when to update.',
     updateChannel: 'Update Channel',
     channelStable: 'Stable',
     channelBeta: 'Beta',
@@ -746,6 +756,9 @@ export const strings = {
     aiFontSizeXLarge: 'Extra large',
     aiFontSizeCustom: 'Custom',
     setAiSpellcheck: 'Spell check in AI chat',
+    setLegacyImportPrompt: 'Ask before converting legacy files',
+    setLegacyImportPromptDesc:
+      'Explain what carries over before opening .doc, .odt, .hwp, .ods or .odp files. When off, Save As opens right away.',
     setDefaultApp: 'Default app for Office documents',
     setDefaultAppDesc: 'Open .docx, .xlsx and .pptx files in GenOffice when double-clicked.',
     setDefaultAppIs: 'GenOffice is already the default.',
@@ -992,6 +1005,7 @@ export const strings = {
     intgSkillsRead: 'Details',
     intgSkillsMine: 'My skills',
     intgSkillsRecommended: 'Recommended',
+    intgSkillsCatAll: 'All',
     intgSkillsCatOffice: 'Office',
     intgSkillsCatBusiness: 'Business',
     intgSkillsCatData: 'Data',
@@ -1235,6 +1249,9 @@ export const strings = {
     setAutoUpdateCheck: 'Tự động kiểm tra cập nhật',
     setAutoUpdateCheckDesc:
       'Khi tắt, GenOffice không còn kiểm tra phiên bản mới khi khởi động hoặc chạy nền. Bạn vẫn có thể kiểm tra trong Trợ giúp › Kiểm tra bản cập nhật.',
+    setSilentInstall: 'Cài đặt cập nhật âm thầm',
+    setSilentInstallDesc:
+      'Khi bật, phiên bản mới được phát hiện ở chế độ nền sẽ tự tải âm thầm và cài khi bạn thoát GenOffice; không làm gián đoạn khi bạn đang làm việc. Khi tắt, một lời nhắc cập nhật sẽ hiện để bạn tự quyết định.',
     updateChannel: 'Kênh cập nhật',
     channelStable: 'Ổn định',
     channelBeta: 'Beta',
@@ -1276,6 +1293,9 @@ export const strings = {
     aiFontSizeXLarge: 'Rất lớn',
     aiFontSizeCustom: 'Tùy chỉnh',
     setAiSpellcheck: 'Kiểm tra chính tả trong trò chuyện AI',
+    setLegacyImportPrompt: 'Hỏi trước khi chuyển đổi tệp cũ',
+    setLegacyImportPromptDesc:
+      'Giải thích nội dung được giữ lại trước khi mở tệp .doc, .odt, .hwp, .ods hoặc .odp. Khi tắt, hộp thoại Lưu dưới dạng mở ngay.',
     setDefaultApp: 'Ứng dụng mặc định cho tài liệu Office',
     setDefaultAppDesc: 'Mở các tệp .docx, .xlsx và .pptx bằng GenOffice khi bấm đúp.',
     setDefaultAppIs: 'GenOffice đã là ứng dụng mặc định.',
@@ -1525,6 +1545,7 @@ export const strings = {
     intgSkillsRead: 'Chi tiết',
     intgSkillsMine: 'Kỹ năng của tôi',
     intgSkillsRecommended: 'Đề xuất',
+    intgSkillsCatAll: 'Tất cả',
     intgSkillsCatOffice: 'Văn phòng',
     intgSkillsCatBusiness: 'Kinh doanh',
     intgSkillsCatData: 'Dữ liệu',
@@ -1769,6 +1790,9 @@ export const strings = {
     setAutoUpdateCheck: 'Güncellemeleri otomatik denetle',
     setAutoUpdateCheckDesc:
       'Kapalıyken GenOffice açılışta veya arka planda yeni sürümleri denetlemez. Yardım › Güncellemeleri Denetle üzerinden yine de denetleyebilirsiniz.',
+    setSilentInstall: 'Güncellemeleri sessizce yükle',
+    setSilentInstallDesc:
+      'Açıkken arka plan denetiminin bulduğu yeni sürüm sessizce indirilir ve GenOffice’ten çıkarken yüklenir; çalışırken hiçbir şey sizi kesmez. Kapalıyken bir güncelleme bildirimi ne zaman güncelleyeceğinize karar vermenizi sağlar.',
     updateChannel: 'Güncelleme Kanalı',
     channelStable: 'Kararlı',
     channelBeta: 'Beta',
@@ -1810,6 +1834,9 @@ export const strings = {
     aiFontSizeXLarge: 'Çok büyük',
     aiFontSizeCustom: 'Özel',
     setAiSpellcheck: 'AI sohbetinde yazım denetimi',
+    setLegacyImportPrompt: 'Eski dosyaları dönüştürmeden önce sor',
+    setLegacyImportPromptDesc:
+      '.doc, .odt, .hwp, .ods veya .odp dosyalarını açmadan önce nelerin aktarılacağını açıklar. Kapalıyken doğrudan Farklı Kaydet açılır.',
     setDefaultApp: 'Office belgeleri için varsayılan uygulama',
     setDefaultAppDesc: '.docx, .xlsx ve .pptx dosyalarını çift tıklandığında GenOffice ile açar.',
     setDefaultAppIs: 'GenOffice zaten varsayılan.',
@@ -2061,6 +2088,7 @@ export const strings = {
     intgSkillsRead: 'Ayrıntılar',
     intgSkillsMine: 'Becerilerim',
     intgSkillsRecommended: 'Önerilen',
+    intgSkillsCatAll: 'Tümü',
     intgSkillsCatOffice: 'Ofis',
     intgSkillsCatBusiness: 'İş',
     intgSkillsCatData: 'Veri',
@@ -2316,6 +2344,9 @@ export const strings = {
     setAutoUpdateCheck: 'アップデートを自動で確認',
     setAutoUpdateCheckDesc:
       'オフにすると、起動時やバックグラウンドで新しいバージョンを確認しなくなります。「ヘルプ › 更新を確認」から手動で確認できます。',
+    setSilentInstall: 'アップデートをサイレントインストール',
+    setSilentInstallDesc:
+      'オンにすると、バックグラウンドで見つかった新バージョンをサイレントにダウンロードし、GenOffice の終了時にインストールします。作業中に中断や再起動はありません。オフの場合は更新の案内が表示され、更新のタイミングを自分で決められます。',
     updateChannel: '更新チャネル',
     channelStable: '安定版',
     channelBeta: 'ベータ版',
@@ -2357,6 +2388,9 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: 'カスタム',
     setAiSpellcheck: 'AI チャットのスペルチェック',
+    setLegacyImportPrompt: '旧形式ファイルの変換前に確認する',
+    setLegacyImportPromptDesc:
+      '.doc、.odt、.hwp、.ods、.odp を開く前に、引き継がれる内容を説明します。オフにすると直接「名前を付けて保存」が開きます。',
     setDefaultApp: 'Office 文書の既定のアプリ',
     setDefaultAppDesc:
       '.docx、.xlsx、.pptx ファイルをダブルクリックしたとき GenOffice で開きます。',
@@ -2610,6 +2644,7 @@ export const strings = {
     intgSkillsRead: '詳細',
     intgSkillsMine: 'マイスキル',
     intgSkillsRecommended: 'おすすめ',
+    intgSkillsCatAll: 'すべて',
     intgSkillsCatOffice: 'オフィス',
     intgSkillsCatBusiness: 'ビジネス',
     intgSkillsCatData: 'データ',
@@ -2859,6 +2894,9 @@ export const strings = {
     setAutoUpdateCheck: '자동으로 업데이트 확인',
     setAutoUpdateCheckDesc:
       '끄면 실행 시나 백그라운드에서 새 버전을 확인하지 않습니다. 도움말 › 업데이트 확인에서 직접 확인할 수 있습니다.',
+    setSilentInstall: '업데이트 자동 설치',
+    setSilentInstallDesc:
+      '켜면 백그라운드 검사에서 발견된 새 버전을 조용히 다운로드하고 GenOffice를 종료할 때 설치합니다. 작업 중에는 방해하거나 다시 시작하지 않습니다. 끄면 업데이트 알림이 표시되어 직접 시점을 정할 수 있습니다.',
     updateChannel: '업데이트 채널',
     channelStable: '안정 버전',
     channelBeta: '베타 버전',
@@ -2899,6 +2937,9 @@ export const strings = {
     aiFontSizeXLarge: '더 크게',
     aiFontSizeCustom: '사용자 지정',
     setAiSpellcheck: 'AI 채팅 맞춤법 검사',
+    setLegacyImportPrompt: '이전 형식 파일 변환 전 확인',
+    setLegacyImportPromptDesc:
+      '.doc, .odt, .hwp, .ods, .odp 파일을 열기 전에 어떤 내용이 유지되는지 안내합니다. 끄면 바로 다른 이름으로 저장이 열립니다.',
     setDefaultApp: 'Office 문서 기본 앱',
     setDefaultAppDesc: '.docx, .xlsx, .pptx 파일을 두 번 클릭하면 GenOffice로 엽니다.',
     setDefaultAppIs: 'GenOffice가 이미 기본 앱입니다.',
@@ -3146,6 +3187,7 @@ export const strings = {
     intgSkillsRead: '상세',
     intgSkillsMine: '내 스킬',
     intgSkillsRecommended: '추천',
+    intgSkillsCatAll: '전체',
     intgSkillsCatOffice: '사무',
     intgSkillsCatBusiness: '비즈니스',
     intgSkillsCatData: '데이터',
@@ -3402,6 +3444,9 @@ export const strings = {
     setAutoUpdateCheck: 'Rechercher automatiquement les mises à jour',
     setAutoUpdateCheckDesc:
       'Désactivé, GenOffice ne recherche plus de nouvelle version au démarrage ni en arrière-plan. Vous pouvez toujours vérifier via Aide › Rechercher des mises à jour.',
+    setSilentInstall: 'Installer les mises à jour silencieusement',
+    setSilentInstallDesc:
+      'Si activé, une nouvelle version détectée en arrière-plan est téléchargée silencieusement et installée à la fermeture de GenOffice ; rien ne vous interrompt pendant le travail. Sinon, une invite de mise à jour vous laisse choisir le moment.',
     updateChannel: 'Canal de mise à jour',
     channelStable: 'Stable',
     channelBeta: 'Bêta',
@@ -3443,6 +3488,9 @@ export const strings = {
     aiFontSizeXLarge: 'Très grande',
     aiFontSizeCustom: 'Personnalisé',
     setAiSpellcheck: 'Correction orthographique dans le chat IA',
+    setLegacyImportPrompt: 'Demander avant de convertir les anciens fichiers',
+    setLegacyImportPromptDesc:
+      'Explique ce qui est conservé avant d’ouvrir un fichier .doc, .odt, .hwp, .ods ou .odp. Désactivé, Enregistrer sous s’ouvre directement.',
     setDefaultApp: 'Application par défaut pour les documents Office',
     setDefaultAppDesc: 'Ouvrir les fichiers .docx, .xlsx et .pptx dans GenOffice par double-clic.',
     setDefaultAppIs: 'GenOffice est déjà l’application par défaut.',
@@ -3700,6 +3748,7 @@ export const strings = {
     intgSkillsRead: 'Détails',
     intgSkillsMine: 'Mes compétences',
     intgSkillsRecommended: 'Recommandées',
+    intgSkillsCatAll: 'Tous',
     intgSkillsCatOffice: 'Bureau',
     intgSkillsCatBusiness: 'Entreprise',
     intgSkillsCatData: 'Données',
@@ -3960,6 +4009,9 @@ export const strings = {
     setAutoUpdateCheck: 'Automatisch nach Updates suchen',
     setAutoUpdateCheckDesc:
       'Wenn aus, sucht GenOffice weder beim Start noch im Hintergrund nach neuen Versionen. Über Hilfe › Nach Updates suchen können Sie weiterhin selbst prüfen.',
+    setSilentInstall: 'Updates still installieren',
+    setSilentInstallDesc:
+      'Wenn aktiviert, wird eine im Hintergrund gefundene neue Version still heruntergeladen und beim Beenden von GenOffice installiert; nichts unterbricht Sie bei der Arbeit. Sonst lässt Sie eine Update-Meldung den Zeitpunkt selbst wählen.',
     updateChannel: 'Update-Kanal',
     channelStable: 'Stabil',
     channelBeta: 'Beta',
@@ -4001,6 +4053,9 @@ export const strings = {
     aiFontSizeXLarge: 'Sehr groß',
     aiFontSizeCustom: 'Benutzerdefiniert',
     setAiSpellcheck: 'Rechtschreibprüfung im KI-Chat',
+    setLegacyImportPrompt: 'Vor dem Konvertieren alter Dateien nachfragen',
+    setLegacyImportPromptDesc:
+      'Erklärt vor dem Öffnen von .doc-, .odt-, .hwp-, .ods- oder .odp-Dateien, was übernommen wird. Ausgeschaltet öffnet sich direkt „Speichern unter“.',
     setDefaultApp: 'Standard-App für Office-Dokumente',
     setDefaultAppDesc: '.docx-, .xlsx- und .pptx-Dateien per Doppelklick in GenOffice öffnen.',
     setDefaultAppIs: 'GenOffice ist bereits die Standard-App.',
@@ -4255,6 +4310,7 @@ export const strings = {
     intgSkillsRead: 'Details',
     intgSkillsMine: 'Meine Skills',
     intgSkillsRecommended: 'Empfohlen',
+    intgSkillsCatAll: 'Alle',
     intgSkillsCatOffice: 'Büro',
     intgSkillsCatBusiness: 'Business',
     intgSkillsCatData: 'Daten',
@@ -4512,6 +4568,9 @@ export const strings = {
     setAutoUpdateCheck: 'Buscar actualizaciones automáticamente',
     setAutoUpdateCheckDesc:
       'Si está desactivado, GenOffice deja de buscar nuevas versiones al iniciar y en segundo plano. Puede seguir comprobándolo en Ayuda › Buscar actualizaciones.',
+    setSilentInstall: 'Instalar actualizaciones en silencio',
+    setSilentInstallDesc:
+      'Si está activado, una nueva versión detectada en segundo plano se descarga en silencio y se instala al salir de GenOffice; nada te interrumpe mientras trabajas. Si está desactivado, un aviso de actualización te deja decidir cuándo actualizar.',
     updateChannel: 'Canal de actualización',
     channelStable: 'Estable',
     channelBeta: 'Beta',
@@ -4553,6 +4612,9 @@ export const strings = {
     aiFontSizeXLarge: 'Muy grande',
     aiFontSizeCustom: 'Personalizado',
     setAiSpellcheck: 'Corrección ortográfica en el chat de IA',
+    setLegacyImportPrompt: 'Preguntar antes de convertir archivos antiguos',
+    setLegacyImportPromptDesc:
+      'Explica qué se conserva antes de abrir archivos .doc, .odt, .hwp, .ods u .odp. Desactivado, se abre directamente Guardar como.',
     setDefaultApp: 'App predeterminada para documentos de Office',
     setDefaultAppDesc: 'Abrir archivos .docx, .xlsx y .pptx en GenOffice al hacer doble clic.',
     setDefaultAppIs: 'GenOffice ya es la app predeterminada.',
@@ -4806,6 +4868,7 @@ export const strings = {
     intgSkillsRead: 'Detalles',
     intgSkillsMine: 'Mis habilidades',
     intgSkillsRecommended: 'Recomendadas',
+    intgSkillsCatAll: 'Todos',
     intgSkillsCatOffice: 'Oficina',
     intgSkillsCatBusiness: 'Negocios',
     intgSkillsCatData: 'Datos',
@@ -5057,6 +5120,9 @@ export const strings = {
     setAutoUpdateCheck: 'ตรวจหาอัปเดตโดยอัตโนมัติ',
     setAutoUpdateCheckDesc:
       'เมื่อปิด GenOffice จะไม่ตรวจหาเวอร์ชันใหม่ตอนเปิดโปรแกรมหรือในเบื้องหลัง คุณยังตรวจเองได้จาก วิธีใช้ › ตรวจหาการอัปเดต',
+    setSilentInstall: 'ติดตั้งอัปเดตแบบเงียบ',
+    setSilentInstallDesc:
+      'เมื่อเปิด เวอร์ชันใหม่ที่ตรวจพบเบื้องหลังจะถูกดาวน์โหลดแบบเงียบและติดตั้งเมื่อคุณออกจาก GenOffice โดยไม่รบกวนระหว่างทำงาน เมื่อปิด จะมีข้อความแจ้งอัปเดตให้คุณตัดสินใจเอง',
     updateChannel: 'ช่องทางอัปเดต',
     channelStable: 'เสถียร',
     channelBeta: 'เบต้า',
@@ -5097,6 +5163,9 @@ export const strings = {
     aiFontSizeXLarge: 'ใหญ่มาก',
     aiFontSizeCustom: 'กำหนดเอง',
     setAiSpellcheck: 'ตรวจการสะกดในแชท AI',
+    setLegacyImportPrompt: 'ถามก่อนแปลงไฟล์รูปแบบเก่า',
+    setLegacyImportPromptDesc:
+      'อธิบายว่าเนื้อหาใดจะถูกแปลงมาก่อนเปิดไฟล์ .doc, .odt, .hwp, .ods หรือ .odp เมื่อปิด จะเปิดบันทึกเป็นทันที',
     setDefaultApp: 'แอปเริ่มต้นสำหรับเอกสาร Office',
     setDefaultAppDesc: 'เปิดไฟล์ .docx, .xlsx และ .pptx ด้วย GenOffice เมื่อดับเบิลคลิก',
     setDefaultAppIs: 'GenOffice เป็นแอปเริ่มต้นอยู่แล้ว',
@@ -5340,6 +5409,7 @@ export const strings = {
     intgSkillsRead: 'รายละเอียด',
     intgSkillsMine: 'สกิลของฉัน',
     intgSkillsRecommended: 'แนะนำ',
+    intgSkillsCatAll: 'ทั้งหมด',
     intgSkillsCatOffice: 'สำนักงาน',
     intgSkillsCatBusiness: 'ธุรกิจ',
     intgSkillsCatData: 'ข้อมูล',
@@ -5592,6 +5662,9 @@ export const strings = {
     setAutoUpdateCheck: 'Periksa pembaruan secara otomatis',
     setAutoUpdateCheckDesc:
       'Jika dimatikan, GenOffice tidak lagi memeriksa versi baru saat dijalankan atau di latar belakang. Anda tetap bisa memeriksa dari Bantuan › Periksa Pembaruan.',
+    setSilentInstall: 'Pasang pembaruan secara senyap',
+    setSilentInstallDesc:
+      'Jika aktif, versi baru yang ditemukan di latar belakang diunduh secara senyap dan dipasang saat Anda keluar dari GenOffice; tidak ada yang mengganggu saat bekerja. Jika nonaktif, sebuah pemberitahuan pembaruan membiarkan Anda menentukan waktunya.',
     updateChannel: 'Saluran Pembaruan',
     channelStable: 'Stabil',
     channelBeta: 'Beta',
@@ -5633,6 +5706,9 @@ export const strings = {
     aiFontSizeXLarge: 'Sangat besar',
     aiFontSizeCustom: 'Kustom',
     setAiSpellcheck: 'Pemeriksaan ejaan di obrolan AI',
+    setLegacyImportPrompt: 'Tanya sebelum mengonversi file lama',
+    setLegacyImportPromptDesc:
+      'Jelaskan apa yang ikut terbawa sebelum membuka file .doc, .odt, .hwp, .ods, atau .odp. Jika nonaktif, Simpan Sebagai langsung terbuka.',
     setDefaultApp: 'Aplikasi default untuk dokumen Office',
     setDefaultAppDesc: 'Buka file .docx, .xlsx, dan .pptx di GenOffice saat diklik dua kali.',
     setDefaultAppIs: 'GenOffice sudah menjadi aplikasi default.',
@@ -5882,6 +5958,7 @@ export const strings = {
     intgSkillsRead: 'Detail',
     intgSkillsMine: 'Skill saya',
     intgSkillsRecommended: 'Disarankan',
+    intgSkillsCatAll: 'Semua',
     intgSkillsCatOffice: 'Perkantoran',
     intgSkillsCatBusiness: 'Bisnis',
     intgSkillsCatData: 'Data',
@@ -6134,6 +6211,9 @@ export const strings = {
     setAutoUpdateCheck: 'Автоматически проверять обновления',
     setAutoUpdateCheckDesc:
       'Если выключено, GenOffice не проверяет новые версии при запуске и в фоне. Проверить вручную можно через Справка › Проверить обновления.',
+    setSilentInstall: 'Устанавливать обновления автоматически',
+    setSilentInstallDesc:
+      'Если включено, новая версия, найденная фоновой проверкой, скачивается незаметно и устанавливается при выходе из GenOffice; во время работы ничто вас не прерывает. Если выключено, появляется предложение обновиться, и вы решаете сами.',
     updateChannel: 'Канал обновлений',
     channelStable: 'Стабильный',
     channelBeta: 'Бета',
@@ -6175,6 +6255,9 @@ export const strings = {
     aiFontSizeXLarge: 'Очень крупный',
     aiFontSizeCustom: 'Другой',
     setAiSpellcheck: 'Проверка орфографии в чате ИИ',
+    setLegacyImportPrompt: 'Спрашивать перед конвертацией старых файлов',
+    setLegacyImportPromptDesc:
+      'Перед открытием файлов .doc, .odt, .hwp, .ods или .odp поясняет, что будет перенесено. Если выключено, сразу открывается «Сохранить как».',
     setDefaultApp: 'Приложение по умолчанию для документов Office',
     setDefaultAppDesc: 'Открывать файлы .docx, .xlsx и .pptx в GenOffice по двойному щелчку.',
     setDefaultAppIs: 'GenOffice уже является приложением по умолчанию.',
@@ -6425,6 +6508,7 @@ export const strings = {
     intgSkillsRead: 'Подробнее',
     intgSkillsMine: 'Мои навыки',
     intgSkillsRecommended: 'Рекомендуемые',
+    intgSkillsCatAll: 'Все',
     intgSkillsCatOffice: 'Офис',
     intgSkillsCatBusiness: 'Бизнес',
     intgSkillsCatData: 'Данные',
@@ -6676,6 +6760,9 @@ export const strings = {
     setAutoUpdateCheck: 'التحقق من التحديثات تلقائيًا',
     setAutoUpdateCheckDesc:
       'عند الإيقاف، لن يتحقق GenOffice من الإصدارات الجديدة عند التشغيل أو في الخلفية. يمكنك التحقق يدويًا من تعليمات › التحقق من التحديثات.',
+    setSilentInstall: 'تثبيت التحديثات بصمت',
+    setSilentInstallDesc:
+      'عند التفعيل، يُحمَّل الإصدار الجديد الذي يكتشفه الفحص في الخلفية بصمت ويُثبَّت عند الخروج من GenOffice، دون أي مقاطعة أثناء العمل. عند الإيقاف، يظهر تنبيه تحديث لتقرر أنت موعد التحديث.',
     updateChannel: 'قناة التحديث',
     channelStable: 'مستقر',
     channelBeta: 'تجريبي',
@@ -6717,6 +6804,9 @@ export const strings = {
     aiFontSizeXLarge: 'كبير جدًا',
     aiFontSizeCustom: 'مخصص',
     setAiSpellcheck: 'التدقيق الإملائي في محادثة الذكاء الاصطناعي',
+    setLegacyImportPrompt: 'السؤال قبل تحويل الملفات القديمة',
+    setLegacyImportPromptDesc:
+      'يوضح ما سيتم نقله قبل فتح ملفات .doc أو .odt أو .hwp أو .ods أو .odp. عند الإيقاف يُفتح «حفظ باسم» مباشرة.',
     setDefaultApp: 'التطبيق الافتراضي لمستندات Office',
     setDefaultAppDesc: 'فتح ملفات .docx و.xlsx و.pptx في GenOffice عند النقر المزدوج.',
     setDefaultAppIs: 'GenOffice هو التطبيق الافتراضي بالفعل.',
@@ -6960,6 +7050,7 @@ export const strings = {
     intgSkillsRead: 'التفاصيل',
     intgSkillsMine: 'مهاراتي',
     intgSkillsRecommended: 'موصى بها',
+    intgSkillsCatAll: 'الكل',
     intgSkillsCatOffice: 'مكتب',
     intgSkillsCatBusiness: 'أعمال',
     intgSkillsCatData: 'بيانات',
@@ -7207,6 +7298,9 @@ export const strings = {
     setAutoUpdateCheck: 'Verificar atualizações automaticamente',
     setAutoUpdateCheckDesc:
       'Desligado, o GenOffice deixa de procurar novas versões ao iniciar e em segundo plano. Você ainda pode verificar em Ajuda › Procurar atualizações.',
+    setSilentInstall: 'Instalar atualizações silenciosamente',
+    setSilentInstallDesc:
+      'Quando ativado, uma nova versão encontrada em segundo plano é baixada silenciosamente e instalada ao sair do GenOffice; nada interrompe seu trabalho. Quando desativado, um aviso de atualização deixa você decidir quando atualizar.',
     updateChannel: 'Canal de atualização',
     channelStable: 'Estável',
     channelBeta: 'Beta',
@@ -7248,6 +7342,9 @@ export const strings = {
     aiFontSizeXLarge: 'Muito grande',
     aiFontSizeCustom: 'Personalizado',
     setAiSpellcheck: 'Verificação ortográfica no chat de IA',
+    setLegacyImportPrompt: 'Perguntar antes de converter arquivos antigos',
+    setLegacyImportPromptDesc:
+      'Explica o que é preservado antes de abrir arquivos .doc, .odt, .hwp, .ods ou .odp. Desativado, Salvar como abre diretamente.',
     setDefaultApp: 'App padrão para documentos do Office',
     setDefaultAppDesc: 'Abrir arquivos .docx, .xlsx e .pptx no GenOffice ao clicar duas vezes.',
     setDefaultAppIs: 'O GenOffice já é o app padrão.',
@@ -7500,6 +7597,7 @@ export const strings = {
     intgSkillsRead: 'Detalhes',
     intgSkillsMine: 'As minhas competências',
     intgSkillsRecommended: 'Recomendadas',
+    intgSkillsCatAll: 'Todos',
     intgSkillsCatOffice: 'Escritório',
     intgSkillsCatBusiness: 'Negócios',
     intgSkillsCatData: 'Dados',
@@ -7748,6 +7846,9 @@ export const strings = {
     setAutoUpdateCheck: 'Controlla automaticamente gli aggiornamenti',
     setAutoUpdateCheckDesc:
       "Se disattivato, GenOffice non cerca più nuove versioni all'avvio o in background. Puoi comunque controllare da Aiuto › Controlla aggiornamenti.",
+    setSilentInstall: 'Installa gli aggiornamenti in silenzio',
+    setSilentInstallDesc:
+      'Se attivo, una nuova versione trovata in background viene scaricata in silenzio e installata alla chiusura di GenOffice; nulla ti interrompe mentre lavori. Se disattivato, un avviso di aggiornamento ti lascia decidere quando aggiornare.',
     updateChannel: 'Canale di aggiornamento',
     channelStable: 'Stabile',
     channelBeta: 'Beta',
@@ -7789,6 +7890,9 @@ export const strings = {
     aiFontSizeXLarge: 'Molto grande',
     aiFontSizeCustom: 'Personalizzato',
     setAiSpellcheck: 'Controllo ortografico nella chat IA',
+    setLegacyImportPrompt: 'Chiedi prima di convertire i file legacy',
+    setLegacyImportPromptDesc:
+      'Spiega cosa viene mantenuto prima di aprire file .doc, .odt, .hwp, .ods o .odp. Se disattivato, Salva con nome si apre subito.',
     setDefaultApp: 'App predefinita per i documenti Office',
     setDefaultAppDesc: 'Apri i file .docx, .xlsx e .pptx in GenOffice con un doppio clic.',
     setDefaultAppIs: 'GenOffice è già l’app predefinita.',
@@ -8040,6 +8144,7 @@ export const strings = {
     intgSkillsRead: 'Dettagli',
     intgSkillsMine: 'Le mie competenze',
     intgSkillsRecommended: 'Consigliate',
+    intgSkillsCatAll: 'Tutti',
     intgSkillsCatOffice: 'Ufficio',
     intgSkillsCatBusiness: 'Business',
     intgSkillsCatData: 'Dati',
@@ -8287,6 +8392,9 @@ export const strings = {
     setAutoUpdateCheck: 'Automatycznie sprawdzaj aktualizacje',
     setAutoUpdateCheckDesc:
       'Po wyłączeniu GenOffice nie sprawdza nowych wersji przy uruchomieniu ani w tle. Nadal możesz sprawdzić ręcznie w Pomoc › Sprawdź aktualizacje.',
+    setSilentInstall: 'Instaluj aktualizacje po cichu',
+    setSilentInstallDesc:
+      'Gdy włączone, nowa wersja znaleziona w tle jest pobierana po cichu i instalowana przy wyjściu z GenOffice; nic nie przerywa pracy. Gdy wyłączone, monit o aktualizacji pozwala samodzielnie wybrać moment.',
     updateChannel: 'Kanał aktualizacji',
     channelStable: 'Stabilny',
     channelBeta: 'Beta',
@@ -8328,6 +8436,9 @@ export const strings = {
     aiFontSizeXLarge: 'Bardzo duży',
     aiFontSizeCustom: 'Niestandardowy',
     setAiSpellcheck: 'Sprawdzanie pisowni w czacie AI',
+    setLegacyImportPrompt: 'Pytaj przed konwersją starych plików',
+    setLegacyImportPromptDesc:
+      'Wyjaśnia, co zostanie przeniesione przed otwarciem plików .doc, .odt, .hwp, .ods lub .odp. Po wyłączeniu od razu otwiera się Zapisz jako.',
     setDefaultApp: 'Domyślna aplikacja dla dokumentów Office',
     setDefaultAppDesc: 'Otwieraj pliki .docx, .xlsx i .pptx w GenOffice po dwukrotnym kliknięciu.',
     setDefaultAppIs: 'GenOffice jest już aplikacją domyślną.',
@@ -8576,6 +8687,7 @@ export const strings = {
     intgSkillsRead: 'Szczegóły',
     intgSkillsMine: 'Moje umiejętności',
     intgSkillsRecommended: 'Polecane',
+    intgSkillsCatAll: 'Wszystkie',
     intgSkillsCatOffice: 'Biuro',
     intgSkillsCatBusiness: 'Biznes',
     intgSkillsCatData: 'Dane',
@@ -8821,6 +8933,9 @@ export const strings = {
     setAutoUpdateCheck: 'Automaticky kontrolovat aktualizace',
     setAutoUpdateCheckDesc:
       'Po vypnutí GenOffice nekontroluje nové verze při spuštění ani na pozadí. Ručně můžete zkontrolovat v Nápověda › Zkontrolovat aktualizace.',
+    setSilentInstall: 'Instalovat aktualizace tiše',
+    setSilentInstallDesc:
+      'Je-li zapnuto, nová verze nalezená na pozadí se tiše stáhne a nainstaluje při ukončení GenOffice; při práci vás nic nepřeruší. Je-li vypnuto, výzva k aktualizaci vám nechá rozhodnout kdy.',
     updateChannel: 'Kanál aktualizací',
     channelStable: 'Stabilní',
     channelBeta: 'Beta',
@@ -9077,6 +9192,9 @@ export const strings = {
     aiFontSizeXLarge: 'Extra velké',
     aiFontSizeCustom: 'Vlastní',
     setAiSpellcheck: 'Kontrola pravopisu v chatu AI',
+    setLegacyImportPrompt: 'Ptát se před převodem starších souborů',
+    setLegacyImportPromptDesc:
+      'Před otevřením souborů .doc, .odt, .hwp, .ods nebo .odp vysvětlí, co se převede. Při vypnutí se rovnou otevře Uložit jako.',
     setDefaultApp: 'Výchozí aplikace pro dokumenty Office',
     setDefaultAppDesc: 'Otevírat soubory .docx, .xlsx a .pptx v GenOffice poklepáním.',
     setDefaultAppIs: 'GenOffice už je výchozí aplikací.',
@@ -9106,6 +9224,7 @@ export const strings = {
     intgSkillsRead: 'Podrobnosti',
     intgSkillsMine: 'Moje dovednosti',
     intgSkillsRecommended: 'Doporučené',
+    intgSkillsCatAll: 'Všechny',
     intgSkillsCatOffice: 'Kancelář',
     intgSkillsCatBusiness: 'Byznys',
     intgSkillsCatData: 'Data',
@@ -9353,6 +9472,9 @@ export const strings = {
     setAutoUpdateCheck: 'Automatisch controleren op updates',
     setAutoUpdateCheckDesc:
       'Uitgeschakeld controleert GenOffice niet meer op nieuwe versies bij het starten of op de achtergrond. Je kunt nog steeds controleren via Help › Controleren op updates.',
+    setSilentInstall: 'Updates stil installeren',
+    setSilentInstallDesc:
+      'Indien aan, wordt een nieuwe versie die op de achtergrond is gevonden stil gedownload en geïnstalleerd wanneer u GenOffice afsluit; niets onderbreekt u tijdens het werk. Indien uit, laat een updatemelding u zelf kiezen wanneer.',
     updateChannel: 'Updatekanaal',
     channelStable: 'Stabiel',
     channelBeta: 'Bèta',
@@ -9394,6 +9516,9 @@ export const strings = {
     aiFontSizeXLarge: 'Extra groot',
     aiFontSizeCustom: 'Aangepast',
     setAiSpellcheck: 'Spellingcontrole in AI-chat',
+    setLegacyImportPrompt: 'Vragen voor het converteren van oude bestanden',
+    setLegacyImportPromptDesc:
+      'Legt uit wat behouden blijft voordat een .doc-, .odt-, .hwp-, .ods- of .odp-bestand wordt geopend. Uitgeschakeld opent direct Opslaan als.',
     setDefaultApp: 'Standaardapp voor Office-documenten',
     setDefaultAppDesc: '.docx-, .xlsx- en .pptx-bestanden in GenOffice openen bij dubbelklikken.',
     setDefaultAppIs: 'GenOffice is al de standaardapp.',
@@ -9644,6 +9769,7 @@ export const strings = {
     intgSkillsRead: 'Details',
     intgSkillsMine: 'Mijn vaardigheden',
     intgSkillsRecommended: 'Aanbevolen',
+    intgSkillsCatAll: 'Alles',
     intgSkillsCatOffice: 'Kantoor',
     intgSkillsCatBusiness: 'Zakelijk',
     intgSkillsCatData: 'Data',
@@ -9890,6 +10016,9 @@ export const strings = {
     setAutoUpdateCheck: 'Semak kemas kini secara automatik',
     setAutoUpdateCheckDesc:
       'Apabila dimatikan, GenOffice tidak lagi menyemak versi baharu semasa dimulakan atau di latar belakang. Anda masih boleh menyemak melalui Bantuan › Semak Kemas Kini.',
+    setSilentInstall: 'Pasang kemas kini secara senyap',
+    setSilentInstallDesc:
+      'Apabila dihidupkan, versi baharu yang ditemui di latar belakang dimuat turun secara senyap dan dipasang apabila anda keluar dari GenOffice; tiada gangguan semasa bekerja. Apabila dimatikan, gesaan kemas kini membiarkan anda memutuskan bila.',
     updateChannel: 'Saluran Kemas Kini',
     channelStable: 'Stabil',
     channelBeta: 'Beta',
@@ -9931,6 +10060,9 @@ export const strings = {
     aiFontSizeXLarge: 'Sangat besar',
     aiFontSizeCustom: 'Tersuai',
     setAiSpellcheck: 'Semakan ejaan dalam sembang AI',
+    setLegacyImportPrompt: 'Tanya sebelum menukar fail lama',
+    setLegacyImportPromptDesc:
+      'Terangkan apa yang dikekalkan sebelum membuka fail .doc, .odt, .hwp, .ods atau .odp. Jika dimatikan, Simpan Sebagai terus dibuka.',
     setDefaultApp: 'Apl lalai untuk dokumen Office',
     setDefaultAppDesc: 'Buka fail .docx, .xlsx dan .pptx dalam GenOffice apabila diklik dua kali.',
     setDefaultAppIs: 'GenOffice sudah menjadi apl lalai.',
@@ -10183,6 +10315,7 @@ export const strings = {
     intgSkillsRead: 'Detail',
     intgSkillsMine: 'Kemahiran saya',
     intgSkillsRecommended: 'Disyorkan',
+    intgSkillsCatAll: 'Semua',
     intgSkillsCatOffice: 'Pejabat',
     intgSkillsCatBusiness: 'Perniagaan',
     intgSkillsCatData: 'Data',
@@ -10426,6 +10559,9 @@ export const strings = {
     setAutoUpdateCheck: 'בדיקת עדכונים אוטומטית',
     setAutoUpdateCheckDesc:
       'כשהאפשרות כבויה, GenOffice לא בודקת גרסאות חדשות בהפעלה או ברקע. עדיין אפשר לבדוק ידנית דרך עזרה › בדוק עדכונים.',
+    setSilentInstall: 'התקנת עדכונים בשקט',
+    setSilentInstallDesc:
+      'כשמופעל, גרסה חדשה שנמצאה ברקע מורדת בשקט ומותקנת ביציאה מ‑GenOffice; שום דבר לא מפריע בזמן העבודה. כשכבוי, הודעת עדכון מאפשרת לכם להחליט מתי לעדכן.',
     updateChannel: 'ערוץ עדכונים',
     channelStable: 'יציב',
     channelBeta: 'בטא',
@@ -10466,6 +10602,9 @@ export const strings = {
     aiFontSizeXLarge: 'גדול מאוד',
     aiFontSizeCustom: 'מותאם אישית',
     setAiSpellcheck: 'בדיקת איות בצ׳אט ה-AI',
+    setLegacyImportPrompt: 'לשאול לפני המרת קבצים ישנים',
+    setLegacyImportPromptDesc:
+      'מסביר מה יישמר לפני פתיחת קובצי ‎.doc, ‎.odt, ‎.hwp, ‎.ods או ‎.odp. כשכבוי, „שמירה בשם” נפתח מיד.',
     setDefaultApp: 'אפליקציית ברירת המחדל למסמכי Office',
     setDefaultAppDesc: 'פתיחת קובצי .docx‏, .xlsx ו‑.pptx ב‑GenOffice בלחיצה כפולה.',
     setDefaultAppIs: 'GenOffice היא כבר ברירת המחדל.',
@@ -10704,6 +10843,7 @@ export const strings = {
     intgSkillsRead: 'פרטים',
     intgSkillsMine: 'הכישורים שלי',
     intgSkillsRecommended: 'מומלצות',
+    intgSkillsCatAll: 'הכול',
     intgSkillsCatOffice: 'משרד',
     intgSkillsCatBusiness: 'עסקים',
     intgSkillsCatData: 'נתונים',
@@ -10949,6 +11089,9 @@ export const strings = {
     setAutoUpdateCheck: 'अपडेट अपने-आप जाँचें',
     setAutoUpdateCheckDesc:
       'बंद होने पर GenOffice शुरू होते समय या बैकग्राउंड में नए संस्करण नहीं जाँचता। आप फिर भी सहायता › अपडेट जांचें से जाँच सकते हैं।',
+    setSilentInstall: 'अपडेट चुपचाप इंस्टॉल करें',
+    setSilentInstallDesc:
+      'चालू होने पर, पृष्ठभूमि जाँच में मिला नया संस्करण चुपचाप डाउनलोड होता है और GenOffice से बाहर निकलते समय इंस्टॉल होता है; काम के दौरान कोई रुकावट नहीं। बंद होने पर, अपडेट सूचना से आप तय करते हैं कि कब अपडेट करना है।',
     updateChannel: 'अपडेट चैनल',
     channelStable: 'स्थिर',
     channelBeta: 'बीटा',
@@ -10990,6 +11133,9 @@ export const strings = {
     aiFontSizeXLarge: 'बहुत बड़ा',
     aiFontSizeCustom: 'कस्टम',
     setAiSpellcheck: 'AI चैट में वर्तनी जाँच',
+    setLegacyImportPrompt: 'पुरानी फ़ाइलें बदलने से पहले पूछें',
+    setLegacyImportPromptDesc:
+      '.doc, .odt, .hwp, .ods या .odp फ़ाइलें खोलने से पहले बताता है कि क्या-क्या बदला जाएगा। बंद होने पर सीधे “इस रूप में सहेजें” खुलता है।',
     setDefaultApp: 'Office दस्तावेज़ों के लिए डिफ़ॉल्ट ऐप',
     setDefaultAppDesc: '.docx, .xlsx और .pptx फ़ाइलें डबल-क्लिक करने पर GenOffice में खोलें।',
     setDefaultAppIs: 'GenOffice पहले से डिफ़ॉल्ट ऐप है।',
@@ -11236,6 +11382,7 @@ export const strings = {
     intgSkillsRead: 'विवरण',
     intgSkillsMine: 'मेरे कौशल',
     intgSkillsRecommended: 'अनुशंसित',
+    intgSkillsCatAll: 'सभी',
     intgSkillsCatOffice: 'ऑफ़िस',
     intgSkillsCatBusiness: 'व्यवसाय',
     intgSkillsCatData: 'डेटा',
@@ -11475,6 +11622,9 @@ export const strings = {
     setAutoUpdateCheck: '自動檢查更新',
     setAutoUpdateCheckDesc:
       '關閉後，啟動時與背景都不再檢查新版本；仍可在「說明 › 檢查更新」中手動檢查。',
+    setSilentInstall: '靜默安裝更新',
+    setSilentInstallDesc:
+      '開啟後，背景檢查到新版本會靜默下載，並在你結束應用程式時安裝，使用過程中不會打擾或重新啟動。關閉則彈出更新提示，由你決定何時更新。',
     updateChannel: '更新通道',
     channelStable: '穩定版',
     channelBeta: 'Beta 版',
@@ -11514,6 +11664,9 @@ export const strings = {
     aiFontSizeXLarge: '特大',
     aiFontSizeCustom: '自訂',
     setAiSpellcheck: 'AI 對話拼字檢查',
+    setLegacyImportPrompt: '開啟舊格式前先提示',
+    setLegacyImportPromptDesc:
+      '開啟 .doc、.odt、.hwp、.ods、.odp 等舊格式檔案時，先說明哪些內容會轉換過來。關閉後直接進入另存新檔。',
     setDefaultApp: '設為 Office 文件預設程式',
     setDefaultAppDesc: '雙擊 .docx、.xlsx、.pptx 檔案時用 GenOffice 開啟。',
     setDefaultAppIs: 'GenOffice 已是預設程式。',
@@ -11746,6 +11899,7 @@ export const strings = {
     intgSkillsRead: '詳情',
     intgSkillsMine: '我的技能',
     intgSkillsRecommended: '推薦',
+    intgSkillsCatAll: '全部',
     intgSkillsCatOffice: '辦公',
     intgSkillsCatBusiness: '商務',
     intgSkillsCatData: '資料',

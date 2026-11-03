@@ -1,4 +1,5 @@
 import type { LineNumbering, SectionInfo } from '@genoffice/docx-engine'
+import type { PageCut } from '../pagination-cuts'
 import { sectionBidi, sectionColGeom } from '../pagination-sections'
 import type { BlockBox, BlockMetaOf } from '../pagination-types'
 import { pageFramesFromGaps } from './pagination-gaps'
@@ -200,6 +201,7 @@ export function syncLineNumbers(
   zoomFactor: number,
   metaOf?: BlockMetaOf,
   first?: { left: number; width: number },
+  cuts?: readonly PageCut[],
 ): void {
   let layer = wrap.querySelector(':scope > .page-line-numbers') as HTMLElement | null
   if (!hasLineNumbering(sections)) {
@@ -213,7 +215,7 @@ export function syncLineNumbers(
   }
   layer.textContent = ''
   applyDocFont(layer, pm)
-  const frames = pageFramesFromGaps(wrap, zoomFactor, first)
+  const frames = pageFramesFromGaps(wrap, zoomFactor, first, cuts)
   const wr = wrap.getBoundingClientRect()
   const lines: CanvasLine[] = []
   for (const b of blocks) {

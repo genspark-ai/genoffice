@@ -71,6 +71,7 @@ const layoutOf = (l: Pick<PageLayout, 'blocks' | 'slices' | 'sections'>): PageLa
   geoms: [],
   hfHeights: [],
   rowSplits: [],
+  carries: [],
   ...l,
 })
 

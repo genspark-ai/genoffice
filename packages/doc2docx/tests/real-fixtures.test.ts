@@ -54,7 +54,7 @@ describe('real Word 97-2003 fixtures', () => {
     expect(paragraphs).toEqual([
       'Legacy DOC text extraction',
       'English paragraph with punctuation: 1, 2, 3.',
-      '中文段落：混合中英文 ABC 测试。',
+      '\u4e2d\u6587\u6bb5\u843d\uff1a\u6df7\u5408\u4e2d\u82f1\u6587 ABC \u6d4b\u8bd5\u3002',
       'Column A\tColumn B',
       '',
       'Emoji and quotes: 😀 “curly” — dash…',
@@ -80,6 +80,6 @@ describe('real Word 97-2003 fixtures', () => {
     const { paragraphs } = readLegacyDocText(fixtureBytes('text-long'))
     expect(paragraphs).toHaveLength(151) // 150 paragraph marks + the final empty one
     expect(paragraphs[0]).toContain('Paragraph 1: The quick brown fox')
-    expect(paragraphs[1]).toContain('第2段')
+    expect(paragraphs[1]).toContain('\u7b2c2\u6bb5')
   })
 })

@@ -53,6 +53,8 @@ import {
   readBodyCapped,
   recoveryCopyDiskNewer,
   configuredAuthorName,
+  readLegacyImportSkip,
+  writeLegacyImportSkip,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
@@ -519,6 +521,7 @@ export async function saveSessionDeckTo(session: Session, filePath: string): Pro
 }
 
 const RECENT_PATH = () => join(app.getPath('userData'), 'slides-recent.json')
+const APP_SETTINGS_PATH = () => join(app.getPath('userData'), 'app-settings.json')
 
 /** Settings → General author name, falling back to the OS account */
 function commentAuthorName(): string {
@@ -799,19 +802,29 @@ async function preparePresentationForOpen(filePath: string): Promise<string | nu
   const extension = deckExtension(filePath)
   if (extension !== 'odp' && extension !== 'otp') return filePath
   const parent = dialogParent()
-  const options = {
-    type: 'warning' as const,
-    message: tm('odpImportMsg', { ext: extension }),
-    detail: tm('odpImportDetail'),
-    buttons: [tm('odpImportConvertBtn'), tm('btnCancel')],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
+  if (!readLegacyImportSkip(APP_SETTINGS_PATH(), 'odp')) {
+    const options = {
+      type: 'warning' as const,
+      message: tm('odpImportMsg', { ext: extension }),
+      detail: tm('odpImportDetail'),
+      buttons: [tm('odpImportConvertBtn'), tm('btnCancel')],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      checkboxLabel: tm('importSkipConfirm'),
+    }
+    const { response, checkboxChecked } = parent
+      ? await dialog.showMessageBox(parent, options)
+      : await dialog.showMessageBox(options)
+    if (response !== 0) return null
+    if (checkboxChecked) {
+      try {
+        writeLegacyImportSkip(APP_SETTINGS_PATH(), 'odp', true)
+      } catch {
+        /* unwritable settings: ask again next time */
+      }
+    }
   }
-  const { response } = parent
-    ? await dialog.showMessageBox(parent, options)
-    : await dialog.showMessageBox(options)
-  if (response !== 0) return null
   const r = await showSaveDialogWithMemory(
     dialog,
     parent,

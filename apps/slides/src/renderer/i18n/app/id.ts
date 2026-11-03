@@ -185,6 +185,7 @@ export const id = {
   appCtxSendToBack: 'Kirim ke Belakang',
   appCtxBringForward: 'Bawa Maju',
   appCtxSendBackward: 'Kirim Mundur',
+  appCtxRotate: 'Putar',
   appCtxRotateLeft90: 'Putar Kiri 90°',
   appCtxRotateRight90: 'Putar Kanan 90°',
   appCtxFlipH: 'Balik Horizontal',

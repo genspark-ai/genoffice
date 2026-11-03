@@ -7,6 +7,7 @@ import {
   decodeInkPayload,
   encodeInkPayload,
   strokeBounds,
+  strokeLayers,
   strokeHitTest,
   type InkAnnotation,
   type InkRaster,
@@ -170,5 +171,33 @@ describe('pmDocToSavePlan saveBlockIndexByDocx', () => {
     expect(plan.saveBlockIndexByDocx.get(0)).toBe(0)
     expect(plan.saveBlockIndexByDocx.has(1)).toBe(false)
     expect(plan.deletedCount).toBe(1)
+  })
+})
+
+describe('pencil layers', () => {
+  const pts = Array.from({ length: 30 }, (_, i) => ({ x: i * 4, y: Math.sin(i / 3) * 10 }))
+  const pencil = { tool: 'pencil' as const, color: '000000', width: 8, points: pts }
+
+  it('grain already drawn stays put while the live stroke grows', () => {
+    const full = strokeLayers(pencil)
+    const partial = strokeLayers({ ...pencil, points: pts.slice(0, 12) })
+    // only the tail point moves: its normal is re-estimated once a next point exists
+    for (let l = 0; l < 3; l++)
+      for (let i = 0; i < 11; i++) expect(partial[l].points[i]).toEqual(full[l].points[i])
+  })
+
+  it('bounds cover every grain layer, not just the polyline', () => {
+    const b = strokeBounds(pencil)
+    for (const layer of strokeLayers(pencil))
+      for (const p of layer.points) {
+        expect(p.x - layer.width / 2).toBeGreaterThanOrEqual(b.x)
+        expect(p.y - layer.width / 2).toBeGreaterThanOrEqual(b.y)
+        expect(p.x + layer.width / 2).toBeLessThanOrEqual(b.x + b.w)
+        expect(p.y + layer.width / 2).toBeLessThanOrEqual(b.y + b.h)
+      }
+  })
+
+  it('payload round-trips the pencil kind', () => {
+    expect(decodeInkPayload(encodeInkPayload(pencil))?.tool).toBe('pencil')
   })
 })

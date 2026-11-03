@@ -1,8 +1,9 @@
 /**
  * Width contract of the Aptos aliases (fonts.generated.css): Word renders Aptos with the
- * real font; the size-adjusted Carlito faces must reproduce its advances so
- * line breaks match. Truth = Word for Mac probe 2026-09-03, sums of per-char
- * origins at 12pt (pymupdf rawdict), expressed in em.
+ * real font; the advance-matched Carlito derivatives (tools/build-metric-fonts.py)
+ * plus the size-adjusted general face must reproduce its advances so line breaks
+ * match. Truth = Word for Mac probe 2026-09-03, sums of per-char origins at 12pt
+ * (pymupdf rawdict), expressed in em.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -27,14 +28,14 @@ function facesOf(family: string, weight: string): Face[] {
     .map((f) => {
       const range = /unicode-range:\s*([^;]+);/.exec(f)?.[1]
       return {
-        adjust: Number(/size-adjust:\s*([\d.]+)%/.exec(f)![1]) / 100,
+        adjust: Number(/size-adjust:\s*([\d.]+)%/.exec(f)?.[1] ?? 100) / 100,
         ranges: range
           ? range.split(',').map((r) => {
               const [a, b] = r.trim().replace('U+', '').split('-')
               return [parseInt(a, 16), parseInt(b ?? a, 16)] as [number, number]
             })
           : null,
-        file: /Carlito-(\w+)\.ttf/.exec(f)![1],
+        file: /url\('(?:\.\/)?([^']+)'\)/.exec(f)![1],
       }
     })
 }
@@ -43,12 +44,16 @@ const fonts = new Map<string, opentype.Font>()
 function font(file: string): opentype.Font {
   let f = fonts.get(file)
   if (!f) {
-    const buf = readFileSync(join(FONT_DIR, `Carlito-${file}.ttf`))
+    const path = file.startsWith('@genoffice/ui/fonts/')
+      ? join(FONT_DIR, file.slice('@genoffice/ui/fonts/'.length))
+      : join(APP_FONT_DIR, file)
+    const buf = readFileSync(path)
     f = opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
     fonts.set(file, f)
   }
   return f
 }
+const CARLITO = '@genoffice/ui/fonts/Carlito-Regular.ttf'
 
 /** later faces win inside their unicode-range (CSS Fonts 4) */
 function widthEm(text: string, faces: Face[]): number {
@@ -72,27 +77,43 @@ describe('Aptos GO reproduces Word Aptos advances', () => {
   const regular = facesOf('Aptos GO', 'normal')
   const bold = facesOf('Aptos GO', 'bold')
 
-  it('declares one general face plus range-limited advance buckets covering letters, digits and the space', () => {
+  it('declares one general Carlito face plus one advance-matched derivative covering Latin', () => {
     for (const faces of [regular, bold]) {
       expect(faces.filter((f) => !f.ranges)).toHaveLength(1)
-      const covered = (cp: number) =>
-        faces.some((f) => f.ranges?.some(([a, b]) => cp >= a && cp <= b))
-      expect(covered(0x20)).toBe(true)
-      expect(covered(0x30)).toBe(true)
-      expect(covered(0x43)).toBe(true) // C, +22% over Carlito
-      expect(covered(0x74)).toBe(true) // t, -10%
+      const derived = faces.filter((f) => f.ranges)
+      expect(derived).toHaveLength(1)
+      expect(derived[0].adjust).toBe(1)
+      expect(derived[0].file).toMatch(/^AptosGO-/)
+      const covered = (cp: number) => derived[0].ranges!.some(([a, b]) => cp >= a && cp <= b)
+      for (const cp of [0x20, 0x30, 0x43, 0x74, 0xa0, 0xe9, 0x2013, 0x20ac])
+        expect(covered(cp)).toBe(true)
     }
   })
 
-  it('no-break space shares the space bucket in every Aptos face', () => {
-    for (const family of ['Aptos GO', 'Aptos Display GO', 'Aptos Narrow GO']) {
+  // one vertical scale for the whole face: a word mixes no glyph heights (the
+  // bucket faces drew S at 1.22x next to t at 0.87x)
+  it('derived glyphs keep one vertical scale over Carlito', () => {
+    const f = font(regular.find((x) => x.ranges)!.file)
+    const c = font(CARLITO)
+    const ys = [...'HISTECxsg'].map((ch) => f.charToGlyph(ch).yMax! / c.charToGlyph(ch).yMax!)
+    expect(Math.max(...ys) / Math.min(...ys) - 1).toBeLessThan(0.005)
+  })
+
+  // derived faces map U+00A0 onto the space glyph (Carlito has none); the
+  // bucket-based Display alias keeps both in the same size-adjust bucket
+  it('no-break space shares the space advance in every Aptos face', () => {
+    for (const family of ['Aptos GO', 'Aptos Narrow GO']) {
       for (const weight of ['normal', 'bold'] as const) {
         const faces = facesOf(family, weight)
-        const pick = (cp: number) =>
-          [...faces].reverse().find((f) => f.ranges?.some(([a, b]) => cp >= a && cp <= b))
-        expect(pick(0xa0)).toBeDefined()
-        expect(pick(0xa0)).toBe(pick(0x20))
+        expect(widthEm('\u00a0', faces)).toBeCloseTo(widthEm(' ', faces), 3)
       }
+    }
+    for (const weight of ['normal', 'bold'] as const) {
+      const faces = facesOf('Aptos Display GO', weight)
+      const pick = (cp: number) =>
+        [...faces].reverse().find((f) => f.ranges?.some(([a, b]) => cp >= a && cp <= b))
+      expect(pick(0xa0)).toBeDefined()
+      expect(pick(0xa0)).toBe(pick(0x20))
     }
   })
 
@@ -119,7 +140,7 @@ describe('Aptos GO reproduces Word Aptos advances', () => {
   })
 
   it('unscaled Carlito would miss by more than 3%', () => {
-    const plain = [{ adjust: 1, ranges: null, file: 'Regular' }]
+    const plain = [{ adjust: 1, ranges: null, file: CARLITO }]
     expect(widthEm(BODY, plain) / 58.2748).toBeLessThan(0.97)
   })
 })
@@ -143,9 +164,9 @@ describe('Aptos Narrow GO reproduces Word Aptos Narrow advances', () => {
     const pangram = 'The quick brown fox jumps over the lazy dog'
     const faces = facesOf('Aptos Narrow GO', 'normal')
     expect(Math.abs(widthEm(pangram, faces) / 17.271 - 1)).toBeLessThan(0.007)
-    expect(
-      widthEm(pangram, [{ adjust: 1, ranges: null, file: 'Regular' }]) / 17.271,
-    ).toBeGreaterThan(1.04)
+    expect(widthEm(pangram, [{ adjust: 1, ranges: null, file: CARLITO }]) / 17.271).toBeGreaterThan(
+      1.04,
+    )
   })
 })
 

@@ -1,0 +1,102 @@
+{
+  "id": "anchor-overhang-keeps-offset",
+  "title": "An anchored picture keeps its posOffset X when it runs past the column into the margin, is pulled back only to the paper edge, and is never displaced by another side-wrapped picture it overlaps",
+  "section": "word-truths.md#L884",
+  "probe_date": "2026-11-02",
+  "class": "render",
+  "source": "build.py -> Word for Mac direct PDF, pymupdf image bboxes; A4 1440 margins (column 72..523.3), Calibri 11, 207 x 129 pt pictures at paragraph posOffset 6.5 pt, distL/distR 9 pt, one case per page",
+  "cases": [
+    { "kind": "pages", "expect": 13 },
+    {
+      "kind": "pictureBoxPt",
+      "block": 0,
+      "expect": { "x": 365, "right": 572 },
+      "note": "margin posOffset 293 pt wrapSquare: 48.7 pt into the right margin, text beside it ends at 356"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 6,
+      "expect": { "x": 365, "right": 572 },
+      "note": "column posOffset 293 pt: same"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 12,
+      "expect": { "x": 388.3, "right": 595.3 },
+      "note": "margin posOffset 400 pt would leave the paper: pulled back to the paper edge"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 18,
+      "expect": { "x": 365, "right": 572 },
+      "note": "wrapText=left: the declared side does not move the picture"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 24,
+      "expect": { "x": 365, "right": 572 },
+      "note": "wrapTopAndBottom keeps the offset too"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 30,
+      "expect": { "x": 272, "right": 479 },
+      "note": "in-column control, posOffset 200 pt"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 36,
+      "expect": { "x": 32, "right": 239 },
+      "note": "column posOffset -40 pt: into the left margin, text resumes at 248"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 42,
+      "expect": { "x": 72, "right": 572 },
+      "note": "500 pt picture at margin 0: the anchor line drops below it"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 54,
+      "expect": { "x": 365, "right": 572 },
+      "note": "60 pt tall picture, same X"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 60,
+      "expect": { "x": 365, "right": 572 },
+      "note": "D1 first of two right-hugging pictures (y 78.5..207.5)"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 64,
+      "expect": { "x": 365, "right": 572 },
+      "note": "D1 second picture (y 168.5..297.5) overlaps the first by 39 pt and still sits at 365 (gen: a CSS float stacked a picture width to the left)"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 70,
+      "expect": { "x": 272, "right": 479 },
+      "note": "D2 in-column pair, first"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 74,
+      "expect": { "x": 272, "right": 479 },
+      "note": "D2 in-column pair, second"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 80,
+      "expect": { "x": 72, "right": 279 },
+      "note": "D3 left picture"
+    },
+    {
+      "kind": "pictureBoxPt",
+      "block": 84,
+      "expect": { "x": 365, "right": 572 },
+      "note": "D3 right picture overlapping the left one vertically stays at 365"
+    }
+  ],
+  "docx": "probe.docx"
+}

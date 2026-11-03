@@ -79,11 +79,11 @@ test.describe('docs No Markup paragraph join', () => {
       await expect(page.locator('.app')).toHaveClass(/rev-display-none/)
       await expect(head).toHaveClass(/doc-para-join-head/)
       await expect(tail).toHaveClass(/doc-para-join-tail/)
-      await expect(head).toHaveCSS('display', 'inline')
+      await expect(tail).toHaveAttribute('data-join-on', '1')
       await expect.poll(() => page.evaluate(lineTops)).toEqual([apart[0], apart[0]])
 
-      // the tail is inline now: its box spans from the shared line, so aim at
-      // the centre of its first text rect instead of the box corner
+      // the tail is lifted onto the shared line: aim at the centre of its first
+      // text rect instead of the box corner
       const target = await tail.evaluate((el) => {
         const r = document.createRange()
         r.selectNodeContents(el.firstChild!)

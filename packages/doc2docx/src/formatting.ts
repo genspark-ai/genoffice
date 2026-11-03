@@ -10,8 +10,17 @@ import type { FibInfo } from './fib'
 import type { PieceTable } from './clx'
 import { readChpxFkp, readPapxFkp, type PapxEntry } from './fkp'
 import { parsePlcBte } from './plcf'
-import { iterateSprms, readSprmI16, readSprmU16, readSprmU8, readSprmU32, type Sprm } from './sprm'
+import {
+  iterateSprms,
+  iterateSprmsLenient,
+  readSprmI16,
+  readSprmU16,
+  readSprmU8,
+  readSprmU32,
+  type Sprm,
+} from './sprm'
 import { createWordControlMapper, mapWordControlChars } from './text'
+import type { FontNames } from './fonts'
 
 /** underline kinds of sprmCKul; 'inherit'/'invert' are the toggle-style operands */
 export type UnderlineKind =
@@ -43,19 +52,51 @@ export interface CharacterFormatting {
   underline?: UnderlineKind
   /** Word's color index (sprmCIco), resolved by palette in stage 3 */
   colorIndex?: number
+  /** sprmCCv RGB color as 'RRGGBB', or 'auto'; wins over colorIndex when both are set */
+  colorRgb?: string
   verticalAlign?: 'baseline' | 'superscript' | 'subscript'
   /** highlight color index (sprmCHighlight) */
   highlight?: number
-  /** font indices (sprmCRgFtc0/1/2), resolved by the font table in stage 3 */
+  /** font indices (sprmCRgFtc0 ascii, 1 East Asian, 2 other/hAnsi, sprmCFtcBi), resolved by the font table */
   ftcAscii?: number
   ftcHAnsi?: number
   ftcEastAsia?: number
+  ftcBi?: number
+  /** font names resolved from the ftc indices through the font table */
+  fontNames?: FontNames
   /** character style index (sprmCIstd) */
   styleIndex?: number
   /** raised/lowered position in half-points (sprmCHpsPos) */
   positionHalfPoints?: number
   /** minimum kerning in half-points (sprmCHpsKern) */
   kerningHalfPoints?: number
+  /** Windows LCIDs (sprmCRgLid0/1): the Latin and the East Asian language of the run */
+  languageId?: number
+  eastAsianLanguageId?: number
+}
+
+export interface TabStop {
+  positionTwips: number
+  alignment: 'left' | 'center' | 'right' | 'decimal' | 'bar'
+  leader?: 'dot' | 'hyphen' | 'underscore' | 'heavy' | 'middleDot'
+}
+
+export interface ParagraphBorder {
+  /** line width in eighths of a point (dptLineWidth) */
+  widthEighths: number
+  /** gap between the text and the line in points (dptSpace) */
+  spacePoints: number
+  /** 'RRGGBB'; undefined = automatic */
+  color?: string
+}
+
+export type ParagraphBorderSide = 'top' | 'left' | 'bottom' | 'right'
+
+/** character-unit indents (sprmPDxcLeft/Left1/Right), in hundredths of a character */
+export interface CharacterIndents {
+  left?: number
+  right?: number
+  firstLine?: number
 }
 
 export interface ParagraphFormatting {
@@ -79,6 +120,31 @@ export interface ParagraphFormatting {
   listId?: number
   inTable?: boolean
   tableRowEnd?: boolean
+  /** custom tab stops after applying sprmPChgTabs / sprmPChgTabsPapx, sorted by position */
+  tabStops?: TabStop[]
+  /** paragraph borders (sprmPBrcXxx80 / sprmPBrcXxx); a 'none' border removes the side */
+  borders?: Partial<Record<ParagraphBorderSide, ParagraphBorder>>
+  charIndents?: CharacterIndents
+}
+
+/** Word color index (sprmCIco 1..16) -> 'RRGGBB' */
+export const COLOR_BY_INDEX: Record<number, string> = {
+  1: '000000',
+  2: '0000FF',
+  3: '00FFFF',
+  4: '00FF00',
+  5: 'FF00FF',
+  6: 'FF0000',
+  7: 'FFFF00',
+  8: 'FFFFFF',
+  9: '000080',
+  10: '008080',
+  11: '008000',
+  12: '800080',
+  13: '800000',
+  14: '808000',
+  15: '808080',
+  16: 'C0C0C0',
 }
 
 /** A run that belongs to a hyperlink; the writer emits a w:hyperlink around it. */
@@ -88,11 +154,35 @@ export interface FormattedLink {
   tooltip?: string
 }
 
+/** A comment anchor emitted between runs: range start, range end or the reference mark. */
+export interface CommentMark {
+  kind: 'start' | 'end' | 'reference'
+  id: number
+}
+
 export interface FormattedRun {
   text: string
   formatting: CharacterFormatting
   /** set when the run's text sits inside a hyperlink field result */
   link?: FormattedLink
+  /** field instruction when the run is the cached result of a live field (PAGE, NUMPAGES, ...) */
+  field?: string
+  /** the run is a footnote/endnote mark (text holds the custom mark, if any) */
+  note?: NoteMark
+  /** an empty run standing for comment anchors at this position */
+  commentMarks?: CommentMark[]
+}
+
+/** A footnote/endnote mark character in the text: a body reference or the note's own mark. */
+export interface NoteMark {
+  cp: number
+  kind: 'footnote' | 'endnote'
+  /** 1-based note id (w:id in the written parts) */
+  id: number
+  /** reference in the body, or the mark that opens the note's own text */
+  role: 'reference' | 'self'
+  /** nAuto 0: the character at cp is the custom mark itself (auto marks are 0x02) */
+  custom: boolean
 }
 
 export interface FormattedParagraph {
@@ -104,6 +194,8 @@ export interface FormattedParagraph {
   formatting: ParagraphFormatting
   /** text runs; concatenating their text reproduces `text` */
   runs: FormattedRun[]
+  /** formatting of the paragraph mark (the CHPX covering the \r); sizes empty paragraphs */
+  markFormatting?: CharacterFormatting
 }
 
 /** the parts of a parsed .doc the formatting layer reads */
@@ -135,9 +227,15 @@ const SPRM_C_HIGHLIGHT = 0x2a0c
 const SPRM_C_RG_FTC0 = 0x4a4f
 const SPRM_C_RG_FTC1 = 0x4a50
 const SPRM_C_RG_FTC2 = 0x4a51
+const SPRM_C_FTC_BI = 0x4a5e
 const SPRM_C_ISTD = 0x4a30
 const SPRM_C_HPS_POS = 0x4845
 const SPRM_C_HPS_KERN = 0x484b
+const SPRM_C_CV = 0x6870
+const SPRM_C_LID0_80 = 0x486d
+const SPRM_C_LID1_80 = 0x486e
+const SPRM_C_LID0 = 0x4873
+const SPRM_C_LID1 = 0x4874
 
 /* Paragraph sprms */
 const SPRM_P_JC80 = 0x2403
@@ -161,6 +259,33 @@ const SPRM_P_F_IN_TABLE = 0x2416
 const SPRM_P_F_TTP = 0x2417
 const SPRM_P_HUGE_PAPX = 0x6645
 const SPRM_P_HUGE_PAPX_2 = 0x6646
+const SPRM_P_CHG_TABS_PAPX = 0xc60d
+const SPRM_P_CHG_TABS = 0xc615
+const SPRM_P_DXC_RIGHT = 0x4455
+const SPRM_P_DXC_LEFT = 0x4456
+const SPRM_P_DXC_LEFT1 = 0x4457
+/** Brc80 paragraph borders (top, left, bottom, right) and their 8-byte Brc twins */
+const BORDER_SIDES_80: Record<number, ParagraphBorderSide> = {
+  0x6424: 'top',
+  0x6425: 'left',
+  0x6426: 'bottom',
+  0x6427: 'right',
+}
+const BORDER_SIDES: Record<number, ParagraphBorderSide> = {
+  0xc64e: 'top',
+  0xc64f: 'left',
+  0xc650: 'bottom',
+  0xc651: 'right',
+}
+const TAB_ALIGNMENTS: TabStop['alignment'][] = ['left', 'center', 'right', 'decimal', 'bar']
+const TAB_LEADERS: Array<TabStop['leader']> = [
+  undefined,
+  'dot',
+  'hyphen',
+  'underscore',
+  'heavy',
+  'middleDot',
+]
 
 const TOGGLE_INHERIT = 0x80
 const TOGGLE_INVERT = 0x81
@@ -287,12 +412,17 @@ function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm, mode: Toggl
     }
     case SPRM_C_RG_FTC1: {
       const value = readSprmU16(sprm.operand)
-      if (value !== undefined) format.ftcHAnsi = value
+      if (value !== undefined) format.ftcEastAsia = value
       break
     }
     case SPRM_C_RG_FTC2: {
       const value = readSprmU16(sprm.operand)
-      if (value !== undefined) format.ftcEastAsia = value
+      if (value !== undefined) format.ftcHAnsi = value
+      break
+    }
+    case SPRM_C_FTC_BI: {
+      const value = readSprmU16(sprm.operand)
+      if (value !== undefined) format.ftcBi = value
       break
     }
     case SPRM_C_ISTD: {
@@ -308,6 +438,23 @@ function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm, mode: Toggl
     case SPRM_C_HPS_KERN: {
       const value = readSprmU16(sprm.operand)
       if (value !== undefined) format.kerningHalfPoints = value
+      break
+    }
+    case SPRM_C_CV: {
+      const color = colorRefOf(sprm.operand, 0)
+      if (color !== undefined) format.colorRgb = color
+      break
+    }
+    case SPRM_C_LID0_80:
+    case SPRM_C_LID0: {
+      const value = readSprmU16(sprm.operand)
+      if (value !== undefined) format.languageId = value
+      break
+    }
+    case SPRM_C_LID1_80:
+    case SPRM_C_LID1: {
+      const value = readSprmU16(sprm.operand)
+      if (value !== undefined) format.eastAsianLanguageId = value
       break
     }
     default:
@@ -330,6 +477,103 @@ export function characterFormattingOf(grpprl: Uint8Array): CharacterFormatting {
   const format: CharacterFormatting = {}
   applyCharacterGrpprl(format, grpprl)
   return format
+}
+
+/** a COLORREF (red, green, blue, fAuto) as 'RRGGBB' or 'auto' */
+function colorRefOf(bytes: Uint8Array, offset: number): string | undefined {
+  if (offset + 4 > bytes.length) return undefined
+  if (bytes[offset + 3] === 0xff) return 'auto'
+  return [bytes[offset]!, bytes[offset + 1]!, bytes[offset + 2]!]
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+}
+
+/** a Brc80 (4 bytes) or Brc (8 bytes); undefined when the side has no border */
+function borderOf(operand: Uint8Array, wide: boolean): ParagraphBorder | undefined | null {
+  if (operand.length < (wide ? 8 : 4)) return undefined
+  const base = wide ? 4 : 0
+  const widthEighths = operand[base]!
+  const brcType = operand[base + 1]!
+  if (brcType === 0 || brcType === 0xff || widthEighths === 0) return null
+  const spacePoints = operand[base + 2 + (wide ? 0 : 1)]! & 0x1f
+  const color = wide ? colorRefOf(operand, 0) : COLOR_BY_INDEX[operand[2]!]
+  return {
+    widthEighths,
+    spacePoints,
+    ...(color !== undefined && color !== 'auto' ? { color } : {}),
+  }
+}
+
+function setBorder(
+  format: ParagraphFormatting,
+  side: ParagraphBorderSide,
+  operand: Uint8Array,
+  wide: boolean,
+): void {
+  const border = borderOf(operand, wide)
+  if (border === undefined) return
+  const borders = { ...format.borders }
+  if (border === null) delete borders[side]
+  else borders[side] = border
+  if (Object.keys(borders).length === 0) delete format.borders
+  else format.borders = borders
+}
+
+/**
+ * sprmPChgTabsPapx / sprmPChgTabs: delete the listed positions from the
+ * inherited stops, then add the new ones (dxa + TBD: jc bits 0-2, leader 3-5).
+ * sprmPChgTabs also carries a close tolerance per deleted stop.
+ */
+function applyTabChange(
+  format: ParagraphFormatting,
+  operand: Uint8Array,
+  withClose: boolean,
+): void {
+  let offset = 0
+  const deleteCount = operand[offset++]
+  if (deleteCount === undefined) return
+  const deleted: number[] = []
+  for (let index = 0; index < deleteCount; index++) {
+    const value = readSprmI16(operand, offset)
+    if (value === undefined) return
+    deleted.push(value)
+    offset += 2
+  }
+  if (withClose) offset += deleteCount * 2
+  const addCount = operand[offset++]
+  if (addCount === undefined) return
+  const added: number[] = []
+  for (let index = 0; index < addCount; index++) {
+    const value = readSprmI16(operand, offset)
+    if (value === undefined) return
+    added.push(value)
+    offset += 2
+  }
+  if (offset + addCount > operand.length) return
+  const stops = (format.tabStops ?? []).filter((stop) => !deleted.includes(stop.positionTwips))
+  added.forEach((positionTwips, index) => {
+    const tbd = operand[offset + index]!
+    const alignment = TAB_ALIGNMENTS[tbd & 0x07] ?? 'left'
+    const leader = TAB_LEADERS[(tbd >> 3) & 0x07]
+    const stop: TabStop = { positionTwips, alignment, ...(leader ? { leader } : {}) }
+    const existing = stops.findIndex((candidate) => candidate.positionTwips === positionTwips)
+    if (existing >= 0) stops[existing] = stop
+    else stops.push(stop)
+  })
+  stops.sort((left, right) => left.positionTwips - right.positionTwips)
+  if (stops.length === 0) delete format.tabStops
+  else format.tabStops = stops
+}
+
+function setCharIndent(
+  format: ParagraphFormatting,
+  key: keyof CharacterIndents,
+  operand: Uint8Array,
+): void {
+  const value = readSprmI16(operand)
+  if (value === undefined) return
+  format.charIndents = { ...format.charIndents, [key]: value }
 }
 
 /** What paragraph-sprm application needs besides the format (huge PAPX reads the Data stream). */
@@ -422,19 +666,69 @@ function applyParagraphSprm(
     case SPRM_P_HUGE_PAPX_2:
       applyHugePapx(format, sprm, context, depth, mode)
       break
-    default:
-      // unknown/unsupported paragraph sprm: skipped by the operand-size rule
+    case SPRM_P_CHG_TABS_PAPX:
+      applyTabChange(format, sprm.operand, false)
       break
+    case SPRM_P_CHG_TABS:
+      applyTabChange(format, sprm.operand, true)
+      break
+    case SPRM_P_DXC_LEFT:
+      setCharIndent(format, 'left', sprm.operand)
+      break
+    case SPRM_P_DXC_LEFT1:
+      setCharIndent(format, 'firstLine', sprm.operand)
+      break
+    case SPRM_P_DXC_RIGHT:
+      setCharIndent(format, 'right', sprm.operand)
+      break
+    default: {
+      const side80 = BORDER_SIDES_80[sprm.opcode]
+      if (side80) setBorder(format, side80, sprm.operand, false)
+      const side = BORDER_SIDES[sprm.opcode]
+      if (side) setBorder(format, side, sprm.operand, true)
+      // other unknown/unsupported paragraph sprms are skipped by the operand-size rule
+      break
+    }
   }
 }
 
 const MAX_HUGE_PAPX_DEPTH = 4
 
+function isHugePapx(opcode: number): boolean {
+  return opcode === SPRM_P_HUGE_PAPX || opcode === SPRM_P_HUGE_PAPX_2
+}
+
 /**
  * sprmPHugePapx: the rest of the paragraph's properties live in the Data
  * stream at the 4-byte FC operand: a signed 16-bit cb followed by the grpprl.
- * A missing Data stream keeps the properties read so far and records a warning.
+ * A missing Data stream or an invalid block records a warning and yields nothing.
  */
+function hugePapxGrpprl(sprm: Sprm, context: ParagraphContext): Uint8Array | undefined {
+  const fc = readSprmU32(sprm.operand)
+  const data = context.source.stream?.('Data')
+  if (fc === undefined || !data) {
+    context.warnings.push(
+      'a paragraph stores extra properties in the Data stream, which this file does not have; they were ignored',
+    )
+    return undefined
+  }
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  if (fc + 2 > data.length) {
+    context.warnings.push(
+      'sprmPHugePapx points outside the Data stream; the extra paragraph properties were ignored',
+    )
+    return undefined
+  }
+  const cb = view.getInt16(fc, true)
+  if (cb <= 0 || fc + 2 + cb > data.length) {
+    context.warnings.push(
+      'sprmPHugePapx has an invalid property block length; the extra paragraph properties were ignored',
+    )
+    return undefined
+  }
+  return data.slice(fc + 2, fc + 2 + cb)
+}
+
 function applyHugePapx(
   format: ParagraphFormatting,
   sprm: Sprm,
@@ -446,30 +740,54 @@ function applyHugePapx(
     context.warnings.push('nested sprmPHugePapx records were ignored (too deep)')
     return
   }
-  const fc = readSprmU32(sprm.operand)
-  const data = context.source.stream?.('Data')
-  if (fc === undefined || !data) {
-    context.warnings.push(
-      'a paragraph stores extra properties in the Data stream, which this file does not have; they were ignored',
-    )
-    return
+  const grpprl = hugePapxGrpprl(sprm, context)
+  if (grpprl) applyParagraphGrpprl(format, grpprl, context, mode, depth + 1)
+}
+
+/**
+ * The grpprl with every sprmPHugePapx replaced by the Data-stream block it
+ * points at, so readers that look for specific sprms (the table reader's TAP
+ * sprms live there) see the paragraph's complete property set.
+ */
+export function expandHugePapx(
+  grpprl: Uint8Array,
+  context: ParagraphContext,
+  depth = 0,
+): Uint8Array {
+  const sprms = readParagraphSprms(grpprl, context)
+  if (!sprms.some((sprm) => isHugePapx(sprm.opcode))) return grpprl
+  const parts: Uint8Array[] = []
+  for (const sprm of sprms) {
+    if (!isHugePapx(sprm.opcode)) {
+      parts.push(grpprl.subarray(sprm.start, sprm.end))
+      continue
+    }
+    if (depth >= MAX_HUGE_PAPX_DEPTH) {
+      context.warnings.push('nested sprmPHugePapx records were ignored (too deep)')
+      continue
+    }
+    const inner = hugePapxGrpprl(sprm, context)
+    if (inner) parts.push(expandHugePapx(inner, context, depth + 1))
   }
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-  if (fc + 2 > data.length) {
-    context.warnings.push(
-      'sprmPHugePapx points outside the Data stream; the extra paragraph properties were ignored',
-    )
-    return
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.length
   }
-  const cb = view.getInt16(fc, true)
-  if (cb <= 0 || fc + 2 + cb > data.length) {
+  return out
+}
+
+/** the sprms of a PAPX grpprl; a truncated tail is reported once and dropped */
+function readParagraphSprms(grpprl: Uint8Array, context: ParagraphContext): Sprm[] {
+  const read = iterateSprmsLenient(grpprl)
+  if (read.truncated !== undefined)
     context.warnings.push(
-      'sprmPHugePapx has an invalid property block length; the extra paragraph properties were ignored',
+      'a paragraph property record is truncated (' +
+        read.truncated +
+        '); the properties after that point were ignored',
     )
-    return
-  }
-  const grpprl = data.slice(fc + 2, fc + 2 + cb)
-  applyParagraphGrpprl(format, grpprl, context, mode, depth + 1)
+  return read.sprms
 }
 
 /** Apply a raw PAPX grpprl to an existing paragraph format (used by the style resolver). */
@@ -480,7 +798,8 @@ export function applyParagraphGrpprl(
   mode: ToggleMode = 'direct',
   depth = 0,
 ): void {
-  for (const sprm of iterateSprms(grpprl)) applyParagraphSprm(format, sprm, context, depth, mode)
+  for (const sprm of readParagraphSprms(grpprl, context))
+    applyParagraphSprm(format, sprm, context, depth, mode)
 }
 
 function paragraphFormattingOf(entry: PapxEntry, context: ParagraphContext): ParagraphFormatting {
@@ -711,13 +1030,17 @@ export function readFormattingDetailed(
   const spans = paragraphSpans(source.rawText)
   const characterRuns = collectCharacterRuns(source)
   const collected = collectParagraphFormatting(source, spans, warnings)
-  const paragraphs = spans.map((span, index) => ({
-    startCp: span.startCp,
-    endCp: span.endCp,
-    text: span.text,
-    formatting: collected.formats.get(index) ?? {},
-    runs: buildRuns(span, characterRuns, source.rawText),
-  }))
+  const paragraphs = spans.map((span, index) => {
+    const mark = characterRuns.find((run) => run.cpStart <= span.endCp && run.cpEnd > span.endCp)
+    return {
+      startCp: span.startCp,
+      endCp: span.endCp,
+      text: span.text,
+      formatting: collected.formats.get(index) ?? {},
+      runs: buildRuns(span, characterRuns, source.rawText),
+      ...(mark ? { markFormatting: mark.formatting } : {}),
+    }
+  })
   return {
     paragraphs,
     paragraphSprms: spans.map(

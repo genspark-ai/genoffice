@@ -95,6 +95,10 @@ export interface WatermarkSpec {
   diagonal?: boolean
   bold?: boolean
   italic?: boolean
+  /** shape box for an explicit font size (Word's Size != Auto); absent = Word's auto box */
+  boxPt?: { widthPt: number; heightPt: number }
+  /** the Size `boxPt` was measured at, so the dialog reopens on it (not written to the file) */
+  sizePt?: number
 }
 
 /** Picture watermark as written by set_watermark / Word's Design tab. */
@@ -160,6 +164,39 @@ export function pictureWatermarkPreviewImage(
     posHRel: 'margin',
     posVRel: 'margin',
     ...(spec.washout !== false ? { washout: { gain: 0.3, blackLevel: 0.35 } } : {}),
+  }
+}
+
+/** Box of the text watermark shape in points (explicit size, or Word's auto box per layout). */
+export function textWatermarkBoxPt(spec: WatermarkSpec): { widthPt: number; heightPt: number } {
+  if (spec.boxPt) return spec.boxPt
+  return spec.diagonal !== false
+    ? { widthPt: 412.4, heightPt: 247.45 }
+    : { widthPt: 527.85, heightPt: 131.95 }
+}
+
+/** The header image a pending text watermark parses back as (see readWatermarkShape). */
+export function textWatermarkPreviewImage(spec: WatermarkSpec): HfImage {
+  const box = textWatermarkBoxPt(spec)
+  return {
+    dataUrl: '',
+    widthPx: Math.round((box.widthPt * 96) / 72),
+    heightPx: Math.round((box.heightPt * 96) / 72),
+    floating: true,
+    behind: true,
+    posH: 'center',
+    posV: 'center',
+    posHRel: 'margin',
+    posVRel: 'margin',
+    ...(spec.diagonal !== false ? { rotationDeg: 315 } : {}),
+    wordArt: {
+      text: spec.text,
+      colorHex: (spec.colorHex ?? 'C0C0C0').replace(/^#/, '').toUpperCase(),
+      opacity: Math.max(0, Math.min(1, spec.opacity ?? 0.5)),
+      fontFamily: spec.fontFamily ?? 'DengXian',
+      ...(spec.bold ? { bold: true } : {}),
+      ...(spec.italic ? { italic: true } : {}),
+    },
   }
 }
 
@@ -271,9 +308,8 @@ export function pictureWatermarkParagraphXml(
 export function watermarkParagraphXml(spec: string | WatermarkSpec): string {
   const wm = typeof spec === 'string' ? { text: spec } : spec
   const diagonal = wm.diagonal !== false
-  const box = diagonal
-    ? 'width:412.4pt;height:247.45pt;rotation:315;'
-    : 'width:527.85pt;height:131.95pt;'
+  const { widthPt, heightPt } = textWatermarkBoxPt(wm)
+  const box = `width:${widthPt}pt;height:${heightPt}pt;${diagonal ? 'rotation:315;' : ''}`
   const opacity = Math.max(0, Math.min(1, wm.opacity ?? 0.5))
   const fill = wm.colorHex ? `#${wm.colorHex.replace(/^#/, '')}` : 'silver'
   const font = escapeXmlAttr(wm.fontFamily ?? 'DengXian')

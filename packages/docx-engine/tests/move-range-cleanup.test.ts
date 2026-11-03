@@ -1,5 +1,5 @@
 /**
- * #2337 (move-range half): Accept/Reject All used to leave the range markers
+ * genoffice#2337 (move-range half): Accept/Reject All used to leave the range markers
  * of a whole-paragraph move in the untouched neighbouring paragraph. The
  * editor rebuilds the moved paragraph from its model (which does not carry
  * the markers), while the neighbour keeps its original bytes — including the

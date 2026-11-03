@@ -157,6 +157,32 @@ describe('resolveFace', () => {
     expect(resolveFace('Fixture Sans Latin', ctxWith(hints))?.family).toBe('Calibri')
   })
 
+  it('a missing name follows its fontTable altName in every slot, Arabic names included', () => {
+    const alt = (altName: string) => ({ altName, charset: '00', family: 'roman' })
+    expect(
+      resolveFace('ae_AlMohanad', ctxWith({ ae_almohanad: alt('Sakkal Majalla') })),
+    ).toMatchObject({
+      family: 'Sakkal Majalla',
+      substituted: true,
+      lineFactor: 1.3965,
+    })
+    expect(resolveFace('ae_AlMohanad', ctxWith({ ae_almohanad: alt('Arial') }))?.family).toBe(
+      'Arial',
+    )
+    // altName beats a sans PANOSE
+    expect(
+      resolveFace(
+        'ProbeAltTimesSans',
+        ctxWith({ probealttimessans: { altName: 'Times New Roman', panose: '020b0604' } }),
+      )?.family,
+    ).toBe('Times New Roman')
+    // without altName a Latin-charset roman entry is Cambria
+    expect(
+      resolveFace('ae_AlMohanad', ctxWith({ ae_almohanad: { charset: '00', family: 'roman' } }))
+        ?.family,
+    ).toBe('Cambria')
+  })
+
   it('routes the East Asian substitutions', () => {
     const HUMAN_GOTHIC = '\ud734\uba3c\uace0\ub515'
     const han = resolveFace('\u6c49\u4eea\u4e66\u5b8b\u4e8cKW', ctxWith())
@@ -174,6 +200,21 @@ describe('resolveFace', () => {
         ?.family,
     ).toBe('Batang')
     expect(resolveFace('Noto Sans CJK SC', ctxWith())?.family).toBe('SimSun')
+    expect(resolveFace('ProbeNoAltEA', ctxWith({ probenoaltea: { charset: '80' } }))?.family).toBe(
+      'Yu Gothic',
+    )
+    expect(
+      resolveFace(
+        'ProbeNoAltEA',
+        ctxWith({ probenoaltea: { charset: '80', altName: 'ProbeNoAltEA' } }),
+      )?.family,
+    ).toBe('Yu Gothic')
+    expect(
+      resolveFace(
+        'ProbeAltMincho',
+        ctxWith({ probealtmincho: { charset: '80', altName: 'MS Mincho' } }),
+      )?.family,
+    ).toBe('MS Mincho')
     expect(resolveFace('BIZ UDPGothic', ctxWith())?.path.at(-1)).toBe('yu gothic')
     expect(resolveFace('DejaVu Sans', ctxWith())?.path.at(-1)).toBe('verdana')
     expect(resolveFace('Noto Naskh Arabic', ctxWith())?.path.at(-1)).toBe('times new roman')
@@ -222,6 +263,18 @@ describe('resolveFace', () => {
           : null,
     })
     expect(resolveFace('Acme Sans', ctx)).toMatchObject({ source: 'embedded', lineFactor: 1.31 })
+  })
+
+  it('lays a family Word ships with its own copy, not the embed', () => {
+    const box = { hheaTotal: 1.4282, ascent: 1.1216, descent: 0.3066, xAvg: null, eastAsian: false }
+    const ctx = storeContext(data, {
+      embedded: (key) => (key === 'century gothic' || key === 'roboto' ? box : null),
+    })
+    expect(resolveFace('Century Gothic', ctx)).toMatchObject({
+      source: 'dfonts',
+      lineFactor: 1.2261,
+    })
+    expect(resolveFace('Roboto', ctx)).toMatchObject({ source: 'embedded', lineFactor: 1.4282 })
   })
 
   it('normalises declared names like the renderer tables', () => {

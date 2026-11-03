@@ -116,8 +116,10 @@ export function createWordControlMapper(): WordControlMapper {
             out += '\t'
             break
           case '\u000b': // vertical tab / line break
-          case '\u000c': // form feed / page break
             out += '\n'
+            break
+          case '\u000c': // page break (section marks are rewritten to \r before mapping)
+            out += '\f'
             break
           case '\u001e': // non-breaking hyphen
             out += '-'
@@ -170,9 +172,27 @@ export function extractBodyText(
       'bad_piece_table',
       `the piece table covers ${ccpText - remaining} of the ${ccpText} body characters`,
     )
-  const rawText = chunks.join('')
+  return textFromRaw(chunks.join(''))
+}
+
+/** The mapped text/paragraph views of a raw body text. */
+export function textFromRaw(rawText: string): LegacyDocText {
   const paragraphs = rawText.split('\r').map(mapWordControlChars)
   return { rawText, text: paragraphs.join('\n'), paragraphs }
+}
+
+/**
+ * A section mark is a 0x0C that also ends its paragraph (the PAPX boundary
+ * follows it); rewrite those to paragraph marks so they neither print as page
+ * breaks nor glue the next paragraph's formatting record to the wrong text.
+ */
+export function normalizeSectionMarks(rawText: string, sectionEndCps: number[]): string {
+  let out = rawText
+  for (const cp of sectionEndCps) {
+    if (cp <= 0 || cp > out.length || out[cp - 1] !== '\u000c') continue
+    out = out.slice(0, cp - 1) + '\r' + out.slice(cp)
+  }
+  return out
 }
 
 /**

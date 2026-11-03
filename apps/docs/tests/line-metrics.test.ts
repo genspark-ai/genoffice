@@ -49,6 +49,7 @@ import {
   lineHeightFactor,
   setEmbeddedLineMetrics,
   symbolBulletLinePt,
+  markerFaceLifts,
   simsunGapLineFactor,
   paraLineFactorCss,
   asciiOnlyCjkFace,
@@ -218,7 +219,8 @@ describe('embedded face line boxes', () => {
     ])
     expect(lineHeightFactor('Fixture Serif')).toBe(1.257)
     expect(lineHeightFactor('fixture serif')).toBe(1.257)
-    expect(lineHeightFactor('Calibri')).toBe(1.2207)
+    // a family Word ships lays out with Word's copy, the embed is ignored
+    expect(lineHeightFactor('Calibri')).toBe(1.22)
     setEmbeddedLineMetrics([])
     expect(lineHeightFactor('Fixture Serif')).toBe(1.172)
   })
@@ -2194,6 +2196,19 @@ describe('symbolBulletLinePt', () => {
     // Cambria 11pt text + Symbol 11pt: 11.059 + 2.444 (Word 15.36-15.6 at 1.15)
     expect(symbolBulletLinePt('Symbol', 11, 'Cambria', 11)).toBe(13.504)
     expect(symbolBulletLinePt('Symbol', 12, null, 12)).toBe(15.065)
+  })
+  it('stands an East Asian bullet face on its hhea ascent plus half its x1.3 leading (Word probe 2026-11-02)', () => {
+    // Malgun Gothic bullet on Times New Roman 11pt: 1.2886 x 11 + 0.2163 x 11 (Word 16.56)
+    expect(symbolBulletLinePt('\ub9d1\uc740 \uace0\ub515', 11, 'Times New Roman', 11)).toBe(16.546)
+    expect(symbolBulletLinePt('Malgun Gothic', 11, 'Times New Roman', 11)).toBe(16.546)
+    // Batang / Gulim 1.0098 x 11 + 2.38 (Word 13.44)
+    expect(symbolBulletLinePt('\ubc14\ud0d5', 11, 'Times New Roman', 11)).toBe(13.472)
+    expect(symbolBulletLinePt('Gulim', 11, 'Times New Roman', 11)).toBe(13.472)
+    // the text already stands in the same face: no lift
+    expect(symbolBulletLinePt('Malgun Gothic', 11, 'Malgun Gothic', 11)).toBeNull()
+    expect(markerFaceLifts('Malgun Gothic')).toBe(true)
+    expect(markerFaceLifts('Times New Roman')).toBe(false)
+    expect(markerFaceLifts('Arial Unicode MS')).toBe(false)
   })
   it('leaves lines alone when the text face is as tall as the bullet face', () => {
     expect(symbolBulletLinePt('Wingdings', 11, 'Calibri', 11)).toBeNull()
