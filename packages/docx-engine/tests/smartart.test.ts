@@ -273,11 +273,45 @@ describe('buildSmartArtParts: the data model', () => {
 })
 
 describe('buildSmartArtParts: the cached drawing', () => {
-  it('writes one shape per node plus the connectors', () => {
+  it('writes a background and a label shape per node plus the connectors', () => {
     const boxes = [...parts.drawingXml.matchAll(/<a:prstGeom prst="roundRect"/g)]
+    const labels = [...parts.drawingXml.matchAll(/<a:prstGeom prst="rect"/g)]
     const lines = [...parts.drawingXml.matchAll(/<a:prstGeom prst="line"/g)]
     expect(boxes.length).toBe(6)
+    expect(labels.length).toBe(6)
     expect(lines.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('keys every drawing shape to a shape-owning presentation point', () => {
+    const shapeIds = [...parts.drawingXml.matchAll(/<dsp:sp modelId="([^"]+)"/g)].map((m) => m[1]!)
+    expect(shapeIds.length).toBeGreaterThan(0)
+
+    const points = pointsOf(parts.dataXml)
+    const pres = points.filter((p) => p.attrs.includes('type="pres"'))
+    const presIds = new Set(pres.map((p) => p.id))
+    const presNames = new Map(pres.map((p) => [p.id, attr(p.body, 'presName')!]))
+
+    // Office keys each shape to the presentation point that owns it: the box
+    // to background, the label to text, the line to the connector node. hierRoot,
+    // composite and hierChild own no shape and must never be a drawing modelId.
+    const shapeOwner = /^(?:background|text)\d*$|^Name\d+$/
+    for (const id of shapeIds) {
+      expect(presIds.has(id), `${id} is not a presentation point`).toBe(true)
+      expect(shapeOwner.test(presNames.get(id)!), `${presNames.get(id)} owns no shape`).toBe(true)
+    }
+    // every node's background and text point carries exactly one shape, and
+    // every connector point carries at least one
+    for (const p of pres) {
+      const name = presNames.get(p.id)!
+      const count = shapeIds.filter((id) => id === p.id).length
+      if (/^(?:background|text)\d*$/.test(name)) {
+        expect(count, `${name} needs one shape`).toBe(1)
+      } else if (/^Name\d+$/.test(name)) {
+        expect(count, `${name} needs a connector shape`).toBeGreaterThan(0)
+      } else {
+        expect(count, `${name} owns no shape`).toBe(0)
+      }
+    }
   })
 
   it('places the shapes inside the frame it declares', () => {
@@ -309,10 +343,12 @@ describe('buildSmartArtParts: the cached drawing', () => {
 })
 
 describe('buildSmartArtParts: the page limit', () => {
-  it('keeps the default frame inside the page column', () => {
-    expect(parts.widthPx).toBeLessThanOrEqual(700)
-    expect(parts.heightPx).toBeLessThanOrEqual(700)
-    expect(parts.widthPx).toBeGreaterThan(0)
+  it('keeps the default frame inside both the A4 and Letter text columns', () => {
+    // 600 px = 6.25 in; the A4 text column is 6.27 in and Letter's 6.5 in.
+    expect(parts.widthPx).toBe(600)
+    expect(parts.widthPx).toBeLessThanOrEqual(600)
+    expect(parts.heightPx).toBeLessThanOrEqual(600)
+    expect(parts.paragraphXml).toContain('cx="5715000"')
     expect(parts.heightPx).toBeGreaterThan(0)
   })
 
@@ -323,17 +359,39 @@ describe('buildSmartArtParts: the page limit', () => {
     }
     for (const options of [{}, { widthPx: 900 }, { maxSizePx: 400 }]) {
       const laid = buildSmartArtParts(wide, options, REL_IDS)
-      const limit = options.maxSizePx ?? 700
+      const limit = options.maxSizePx ?? 600
       expect(laid.widthPx).toBeLessThanOrEqual(limit)
       expect(laid.heightPx).toBeLessThanOrEqual(limit)
-      if (options.widthPx) expect(laid.widthPx).toBeLessThanOrEqual(700)
+      if (options.widthPx) expect(laid.widthPx).toBeLessThanOrEqual(600)
     }
   })
 
   it('honours an explicit frame the user set within the limit', () => {
-    const laid = buildSmartArtParts(tree, { widthPx: 480, maxSizePx: 700 }, REL_IDS)
+    const laid = buildSmartArtParts(tree, { widthPx: 480 }, REL_IDS)
     expect(laid.widthPx).toBe(480)
-    expect(laid.heightPx).toBeLessThanOrEqual(700)
+    expect(laid.heightPx).toBeLessThanOrEqual(600)
+  })
+})
+
+describe('buildSmartArtParts: deep hierarchies', () => {
+  const deepTree: SmartArtNode = {
+    label: 'L1',
+    children: [
+      {
+        label: 'L2',
+        children: [{ label: 'L3', children: [{ label: 'L4', children: [{ label: 'L5' }] }] }],
+      },
+    ],
+  }
+  const deep = buildSmartArtParts(deepTree, {}, REL_IDS)
+
+  it('writes the level-four connector style Word writes for Name23', () => {
+    // The layout repeats its level-three connector (Name23) from child level
+    // four down; Word labels those parChTrans1D4.
+    expect(deep.dataXml).toContain('presName="Name23"')
+    expect(deep.dataXml).toContain('presStyleLbl="parChTrans1D4"')
+    expect(deep.quickStyleXml).toContain('<dgm:styleLbl name="parChTrans1D4">')
+    expect(deep.colorsXml).toContain('<dgm:styleLbl name="parChTrans1D4">')
   })
 })
 

@@ -76,6 +76,21 @@ describe('layoutHierTree', () => {
     }
   })
 
+  it('tags every connector segment with the child connection it draws', () => {
+    const g = layout([tree()])
+    expect(g.lines.length).toBeGreaterThan(0)
+    const boxNodes = new Set(g.boxes.map((b) => b.node))
+    for (const line of g.lines) {
+      expect(line.to, 'every segment belongs to a connection').toBeDefined()
+      expect(boxNodes.has(line.to!)).toBe(true)
+    }
+    // each non-root node's connection is drawn, the shared trunk included
+    const drawn = new Set(g.lines.map((l) => l.to!.texts[0]))
+    for (const b of g.boxes) {
+      if (b.node !== g.boxes[0]!.node) expect(drawn.has(b.node.texts[0])).toBe(true)
+    }
+  })
+
   it('deep all-leaf branches hang: boxes indent 0.25w from the parent left', () => {
     const g = layout([tree()])
     const b2 = box(g, 'B2')

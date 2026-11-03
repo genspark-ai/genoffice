@@ -48,9 +48,9 @@ export interface SmartArtOptions {
   widthPx?: number
   /** frame height in px; defaults to the drawing's own aspect */
   heightPx?: number
-  /** the widest the frame may get, in px; a larger map scales down to fit.
-   *  A reader drops a diagram that is wider than the page, so the default is
-   *  a little under the width of A4's text column. */
+  /** the widest the frame may get, in px; a larger diagram scales down to fit.
+   *  A reader clips a diagram that is wider than the page text column, so the
+   *  default (600 px, 6.25 in) fits both A4 and Letter at 1 in margins. */
   maxSizePx?: number
 }
 
@@ -81,8 +81,9 @@ const DSP_NS = 'http://schemas.microsoft.com/office/drawing/2008/diagram'
 /** EMU per px at 96 dpi. */
 const EMU_PER_PX = 9525
 
-/** The default page limit: a little under an A4/Letter text column. */
-const DEFAULT_MAX_SIZE_PX = 700
+/** The default page limit: 600 px is 6.25 in, just inside the 6.27 in A4
+ *  and 6.5 in Letter text columns at 1 in margins (700 px does not fit A4). */
+const DEFAULT_MAX_SIZE_PX = 600
 
 /** The frame width before the page limit applies. */
 const DEFAULT_WIDTH_PX = 800
@@ -282,9 +283,10 @@ function textStyle(depth: number): string {
 }
 
 function connectorStyle(childDepth: number): string {
-  return childDepth === 2 || childDepth === 3
-    ? ` presStyleLbl="parChTrans1D${childDepth}" presStyleIdx="0" presStyleCnt="2"`
-    : ''
+  // Word writes one label per child level; the layout's repeated level-four
+  // connector (Name23) keeps that label for every deeper level.
+  const label = `parChTrans1D${Math.min(childDepth, LAST_LEVEL)}`
+  return ` presStyleLbl="${label}" presStyleIdx="0" presStyleCnt="2"`
 }
 
 /**
@@ -511,6 +513,7 @@ function styleLabels(): Array<{ name: string; ln: number; fill: number; font: st
     ...textLevels,
     { name: 'parChTrans1D2', ln: 1, fill: 0, font: 'tx1' },
     { name: 'parChTrans1D3', ln: 1, fill: 0, font: 'tx1' },
+    { name: 'parChTrans1D4', ln: 1, fill: 0, font: 'tx1' },
   ]
 }
 
@@ -575,8 +578,10 @@ function buildColorsXml(): string {
       .filter((entry) => entry.name.startsWith('fgAcc'))
       .map((entry) => label(entry.name, '', '', 'lt1'))
       .join('') +
-    label('parChTrans1D2', '', 'accent1', '') +
-    label('parChTrans1D3', '', 'accent1', '') +
+    styleLabels()
+      .filter((entry) => entry.name.startsWith('parChTrans'))
+      .map((entry) => label(entry.name, '', 'accent1', ''))
+      .join('') +
     '</dgm:colorsDef>'
   )
 }
@@ -592,10 +597,19 @@ interface DrawingGeometry {
     y: number
     w: number
     h: number
-    /** the presentation point the shape stands for */
-    presId?: string
+    /** presentation point of the box shape, owned by the background node */
+    backgroundPresId: string
+    /** presentation point of the label shape, owned by the text node */
+    textPresId: string
   }>
-  lines: Array<{ x1: number; y1: number; x2: number; y2: number }>
+  lines: Array<{
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    /** presentation point of the connection this segment draws */
+    presId: string
+  }>
 }
 
 /** The base font of a label, in px, by depth. */
@@ -629,6 +643,11 @@ function labelFontSize(label: string, boxW: number, depth: number): number {
  * the moment the document opens. The coordinates come from the same
  * interpreter that reads the layout's constraint list, so the picture matches
  * the geometry Word produces when it re-lays the diagram out.
+ *
+ * Every shape is keyed the way Office keys its own cached drawings: the box to
+ * the background point, the label to the text point, and each connector
+ * segment to the connector point of the connection it draws. hierRoot,
+ * composite and hierChild own no shape, so they never appear as a modelId.
  */
 function buildDrawingXml(geo: DrawingGeometry): string {
   const sps: string[] = []
@@ -637,18 +656,23 @@ function buildDrawingXml(geo: DrawingGeometry): string {
     depth === 1 ? 'E8663F' : depth === 2 ? '4472C4' : '5B9BD5'
   const textColor = 'FFFFFF'
 
+  /** the shape transform every shape of a box shares */
+  const transform = (x: number, y: number, w: number, h: number): string =>
+    `<a:off x="${Math.round(x * EMU_PER_PX)}" y="${Math.round(y * EMU_PER_PX)}"/>` +
+    `<a:ext cx="${Math.round(w * EMU_PER_PX)}" cy="${Math.round(h * EMU_PER_PX)}"/>`
+
   for (const box of geo.boxes) {
-    const { label, depth, x, y, w, h } = box
+    const { label, depth, x, y, w, h, backgroundPresId, textPresId } = box
     // the text follows the box: a scaled diagram keeps its proportions
     const fontSize = labelFontSize(label, w, depth)
+    // Office keys every shape to the presentation point that owns it: the box
+    // to the background node, the label to the text node (hierRoot and the
+    // composite own no shape).
     sps.push(
-      `<dsp:sp modelId="${box.presId ?? modelId(`dsp:${label}:${x}:${y}`)}">` +
-        '<dsp:nvSpPr>' +
-        `<dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/>` +
-        '</dsp:nvSpPr>' +
+      `<dsp:sp modelId="${backgroundPresId}">` +
+        '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
         '<dsp:spPr>' +
-        `<a:xfrm><a:off x="${Math.round(x * EMU_PER_PX)}" y="${Math.round(y * EMU_PER_PX)}"/>` +
-        `<a:ext cx="${Math.round(w * EMU_PER_PX)}" cy="${Math.round(h * EMU_PER_PX)}"/></a:xfrm>` +
+        `<a:xfrm>${transform(x, y, w, h)}</a:xfrm>` +
         '<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>' +
         `<a:solidFill><a:srgbClr val="${nodeColor(depth)}"/></a:solidFill>` +
         '<a:ln w="12700"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln>' +
@@ -656,6 +680,22 @@ function buildDrawingXml(geo: DrawingGeometry): string {
         '<dsp:style>' +
         '<a:lnRef idx="2"><a:scrgbClr r="0" g="0" b="0"/></a:lnRef>' +
         '<a:fillRef idx="1"><a:scrgbClr r="0" g="0" b="0"/></a:fillRef>' +
+        '<a:effectRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:effectRef>' +
+        '<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef>' +
+        '</dsp:style>' +
+        '</dsp:sp>',
+    )
+    sps.push(
+      `<dsp:sp modelId="${textPresId}">` +
+        '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
+        '<dsp:spPr>' +
+        `<a:xfrm>${transform(x, y, w, h)}</a:xfrm>` +
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
+        '<a:noFill/><a:ln><a:noFill/></a:ln>' +
+        '</dsp:spPr>' +
+        '<dsp:style>' +
+        '<a:lnRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:lnRef>' +
+        '<a:fillRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:fillRef>' +
         '<a:effectRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:effectRef>' +
         '<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef>' +
         '</dsp:style>' +
@@ -669,24 +709,24 @@ function buildDrawingXml(geo: DrawingGeometry): string {
         `<a:t>${escapeXmlText(label)}</a:t></a:r>` +
         '</a:p>' +
         '</dsp:txBody>' +
-        `<dsp:txXfrm><a:off x="${Math.round(x * EMU_PER_PX)}" y="${Math.round(y * EMU_PER_PX)}"/>` +
-        `<a:ext cx="${Math.round(w * EMU_PER_PX)}" cy="${Math.round(h * EMU_PER_PX)}"/></dsp:txXfrm>` +
+        `<dsp:txXfrm>${transform(x, y, w, h)}</dsp:txXfrm>` +
         '</dsp:sp>',
     )
   }
 
-  // the connectors: the interpreter's segments, drawn as lines
-  geo.lines.forEach((line, i) => {
+  // the connectors: the interpreter's segments, each keyed to the connection's
+  // presentation point (the connector node owns the shape, not hierRoot)
+  for (const line of geo.lines) {
     const x = Math.min(line.x1, line.x2)
     const y = Math.min(line.y1, line.y2)
     const cx = Math.abs(line.x2 - line.x1)
     const cy = Math.abs(line.y2 - line.y1)
-    if (cx < 1 && cy < 1) return
+    if (cx < 1 && cy < 1) continue
     // the line preset draws the top left to the bottom right diagonal; a
     // segment that runs the other diagonal needs the vertical flip
     const flipV = line.x2 < line.x1 !== line.y2 < line.y1
     sps.push(
-      `<dsp:sp modelId="${modelId(`dspLine:${i}:${Math.round(x)}:${Math.round(y)}`)}">` +
+      `<dsp:sp modelId="${line.presId}">` +
         '<dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
         '<dsp:spPr>' +
         `<a:xfrm${flipV ? ' flipV="1"' : ''}>` +
@@ -705,7 +745,7 @@ function buildDrawingXml(geo: DrawingGeometry): string {
         '<dsp:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></dsp:txBody>' +
         '</dsp:sp>',
     )
-  })
+  }
 
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
@@ -804,9 +844,8 @@ export function buildSmartArtParts(
     : 0
   const ratio = spanH > 0 ? spanW / spanH : 1
 
-  // The frame: default to the page width and scale the whole diagram down so
-  // neither side outgrows the page limit — an 800 px org chart is wider than a
-  // Letter/A4 text column and gets clipped at the page edge otherwise.
+  // The frame: default to 600 px (inside both the A4 and Letter text columns)
+  // and scale the whole diagram down so neither side outgrows the page limit.
   const limit = options.maxSizePx ?? DEFAULT_MAX_SIZE_PX
   let width = options.widthPx ?? Math.min(DEFAULT_WIDTH_PX, limit)
   let height = options.heightPx ?? Math.round(width / ratio)
@@ -820,21 +859,37 @@ export function buildSmartArtParts(
 
   const laid = layoutHierTree([hierRoot], cons, width, height)
   const geo: DrawingGeometry = {
-    boxes: (laid?.boxes ?? []).map((b) => ({
-      label: b.node.texts.join(' '),
-      depth: nodes.get(b.node)?.depth ?? 1,
-      x: b.x,
-      y: b.y,
-      w: b.w,
-      h: b.h,
-      presId: ids.get(nodes.get(b.node)!)?.hierRoot,
-    })),
-    lines: (laid?.lines ?? []).map((l) => ({
-      x1: l.x,
-      y1: l.y,
-      x2: l.x + l.cx,
-      y2: l.y + l.cy,
-    })),
+    boxes: (laid?.boxes ?? []).flatMap((b) => {
+      const node = nodes.get(b.node)
+      const nodeIds = node ? ids.get(node) : undefined
+      if (!node || !nodeIds) return []
+      return [
+        {
+          label: b.node.texts.join(' '),
+          depth: node.depth,
+          x: b.x,
+          y: b.y,
+          w: b.w,
+          h: b.h,
+          backgroundPresId: nodeIds.background,
+          textPresId: nodeIds.text,
+        },
+      ]
+    }),
+    lines: (laid?.lines ?? []).flatMap((l) => {
+      const node = l.to ? nodes.get(l.to) : undefined
+      const nodeIds = node ? ids.get(node) : undefined
+      if (!nodeIds) return []
+      return [
+        {
+          x1: l.x,
+          y1: l.y,
+          x2: l.x + l.cx,
+          y2: l.y + l.cy,
+          presId: nodeIds.connectorPres,
+        },
+      ]
+    }),
   }
 
   return {

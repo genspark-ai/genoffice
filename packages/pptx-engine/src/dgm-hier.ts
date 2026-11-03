@@ -48,6 +48,11 @@ export interface HierLine {
   y1: number
   x2: number
   y2: number
+  /** The child node of the connection this segment draws. Callers rendering
+   *  the layout use it to key each segment to the connection's presentation
+   *  point; the trunk segment shared by a parent's children points at the
+   *  first child. */
+  to?: HierTreeNode
 }
 
 const DEFAULTS: HierConstraints = {
@@ -163,7 +168,7 @@ function shiftSub(sub: Sub, dx: number, dRow: number, into: Sub, dy: number) {
   }
   for (const b of sub.boxes) into.boxes.push({ node: b.node, cx: b.cx + dx, row: b.row + dRow })
   for (const ln of sub.lines)
-    into.lines.push({ x1: ln.x1 + dx, y1: ln.y1 + dy, x2: ln.x2 + dx, y2: ln.y2 + dy })
+    into.lines.push({ ...ln, x1: ln.x1 + dx, y1: ln.y1 + dy, x2: ln.x2 + dx, y2: ln.y2 + dy })
   into.rows = Math.max(into.rows, dRow + sub.rows)
 }
 
@@ -174,7 +179,7 @@ export function layoutHierTree(
   frameCy: number,
 ): {
   boxes: HierBox[]
-  lines: Array<{ x: number; y: number; cx: number; cy: number }>
+  lines: Array<{ x: number; y: number; cx: number; cy: number; to?: HierTreeNode }>
   boxW: number
 } | null {
   if (!roots.length) return null
@@ -205,7 +210,7 @@ export function layoutHierTree(
       assts.forEach((a, j) => {
         const right = trunkX - cons.sp / 2 - j * (1 + cons.sibSp)
         out.boxes.push({ node: a, cx: right - 0.5, row: 1 })
-        out.lines.push({ x1: right, y1: asstMidY, x2: trunkX, y2: asstMidY })
+        out.lines.push({ x1: right, y1: asstMidY, x2: trunkX, y2: asstMidY, to: a })
         out.l[1] = Math.min(out.l[1] ?? Infinity, right - 1)
         out.r[1] = Math.max(out.r[1] ?? -Infinity, trunkX)
       })
@@ -214,7 +219,7 @@ export function layoutHierTree(
 
     if (!kids.length) {
       // assistant-only: trunk still drops to the assistant elbow
-      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: rowTop(1) + bh / 2 })
+      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: rowTop(1) + bh / 2, to: assts[0] })
       return out
     }
 
@@ -243,11 +248,11 @@ export function layoutHierTree(
       }
       const mid = (offs[0]! + offs[offs.length - 1]!) / 2
       const busY = rowTop(childRow0) - cons.sp / 2
-      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: busY })
+      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: busY, to: kids[0] })
       for (let i = 0; i < subs.length; i++) {
         const cx = offs[i]! - mid
-        out.lines.push({ x1: trunkX, y1: busY, x2: cx, y2: busY })
-        out.lines.push({ x1: cx, y1: busY, x2: cx, y2: rowTop(childRow0) })
+        out.lines.push({ x1: trunkX, y1: busY, x2: cx, y2: busY, to: kids[i] })
+        out.lines.push({ x1: cx, y1: busY, x2: cx, y2: rowTop(childRow0), to: kids[i] })
         shiftSub(subs[i]!, cx, childRow0, out, rowTop(childRow0))
       }
     } else {
@@ -255,15 +260,15 @@ export function layoutHierTree(
       // + hangIndent (mirrored for hangL); each child may itself be a subtree
       let row = childRow0
       let lastMidY = bh
-      for (const sub of subs) {
+      subs.forEach((sub, i) => {
         const cx = mir * (cons.hangIndent - 0.5 + 0.5)
         const midY = rowTop(row) + bh / 2
-        out.lines.push({ x1: trunkX, y1: midY, x2: cx - mir * 0.5, y2: midY })
+        out.lines.push({ x1: trunkX, y1: midY, x2: cx - mir * 0.5, y2: midY, to: kids[i] })
         shiftSub(sub, cx, row, out, rowTop(row))
         lastMidY = midY
         row += sub.rows
-      }
-      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: lastMidY })
+      })
+      out.lines.push({ x1: trunkX, y1: bh, x2: trunkX, y2: lastMidY, to: kids[0] })
     }
     return out
   }
@@ -318,6 +323,7 @@ export function layoutHierTree(
     y: offY + Math.min(ln.y1, ln.y2) * scale,
     cx: Math.abs(ln.x2 - ln.x1) * scale,
     cy: Math.abs(ln.y2 - ln.y1) * scale,
+    ...(ln.to ? { to: ln.to } : {}),
   }))
   return { boxes, lines, boxW: scale }
 }
