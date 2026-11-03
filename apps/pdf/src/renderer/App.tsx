@@ -1118,6 +1118,9 @@ export default function App() {
   // what the user picked from them; empty for the system dialog and on
   // platforms where the CUPS route does not run
   const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
+  // bumped on every printer switch: a slow printerOptions() answer from an
+  // earlier queue must not overwrite the current queue's groups
+  const driverOptionsRequest = useRef(0)
   const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   /** Page-crop dialog: rendered page bitmap + which page it shows */
   const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
@@ -11564,14 +11567,20 @@ export default function App() {
                       className="pdf-modal-input"
                       value={printDevice}
                       onChange={(e) => {
+                        const request = ++driverOptionsRequest.current
                         setPrintDevice(e.target.value)
                         setDriverChoices({})
                         setDriverOptions([])
                         if (e.target.value && IS_MAC)
                           void window.pdfApi
                             .printerOptions(e.target.value)
-                            .then(setDriverOptions)
-                            .catch(() => setDriverOptions([]))
+                            .then((options) => {
+                              if (request === driverOptionsRequest.current)
+                                setDriverOptions(options)
+                            })
+                            .catch(() => {
+                              if (request === driverOptionsRequest.current) setDriverOptions([])
+                            })
                       }}
                     >
                       <option value="">{t('printDefaultPrinter')}</option>
