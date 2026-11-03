@@ -375,7 +375,7 @@ export type DrawingInput =
       color: [number, number, number]
       at: [number, number]
       contents: string
-      /** Annotation author (/T); omitted → 'GenOffice' */
+      /** Annotation author (/T); omitted → the request's annotationAuthor */
       author?: string
       /** Creation time (ms since epoch) → /CreationDate and /M; omitted → save time */
       createdMs?: number
@@ -768,6 +768,9 @@ export interface SavePdfRequest {
       from `encryption.userPassword`. */
   decryption?: { userPassword: string }
   markups: MarkupInput[]
+  /** Author (/T) of the markups and drawings this save adds; a note keeps its own
+      author when it has one. Omitted → 'GenOffice' */
+  annotationAuthor?: string
   /** Saved markup annotations to remove (applied before every other stage) */
   annotDeletes?: AnnotDeleteInput[]
   drawings: DrawingInput[]
