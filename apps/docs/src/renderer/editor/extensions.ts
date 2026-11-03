@@ -2735,6 +2735,9 @@ const tableCellAttrs = {
   clipHeightTwips: { default: null as number | null },
   /** display placeholder for the row's w:gridBefore/w:gridAfter columns (borderless, not saved as w:tc) */
   gridGap: { default: false },
+  /** inert grid space standing in for a merged-away cell no rowspan covers;
+   *  its real cell is rebuilt from the table's continuationCells record */
+  mergeGap: { default: false },
   colspan: { default: 1 },
   rowspan: { default: 1 },
   colwidth: { default: null as number[] | null },
@@ -3196,6 +3199,9 @@ export const DocTable = Node.create({
       tblGridChange: { default: null as Record<string, string> | null },
       originalStructure: { default: null as string | null },
       originalFormatting: { default: null as string | null },
+      /** JSON of the merged-away (vMerge continue) cells: their own tcPr bytes
+       *  and hidden text, keyed row:column (they have no node of their own) */
+      continuationCells: { default: null as string | null },
       blockRevision: { default: null as Record<string, string> | null },
     }
   },
