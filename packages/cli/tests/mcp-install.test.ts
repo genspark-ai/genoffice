@@ -25,7 +25,7 @@ describe('genoffice mcp list', () => {
     expect(r.json().detail.launcher).toBe(LAUNCHER)
     const agents = r.json().detail.agents as Array<Record<string, unknown>>
     expect(agents.map((a) => a.agent).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'cursor', 'gemini', 'opencode', 'windsurf'].sort(),
+      ['claude-code', 'codex', 'copilot', 'cursor', 'dsh', 'gemini', 'opencode', 'windsurf'].sort(),
     )
     expect(agents.find((a) => a.agent === 'cursor')).toMatchObject({
       detected: true,
@@ -174,7 +174,7 @@ describe('genoffice mcp install', () => {
         .map((a: any) => a.agent)
         .sort(),
     ).toEqual(['copilot', 'gemini', 'opencode'])
-    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(4)
+    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(5)
     expect(readJson(join(m.home, '.copilot', 'mcp-config.json')).mcpServers.genoffice).toEqual({
       type: 'local',
       command: LAUNCHER,
@@ -267,12 +267,12 @@ describe('genoffice mcp install summaries', () => {
     const r = await run(['mcp', 'install', 'all', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(r.json().summary).toBe(
-      'nothing registered: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing registered: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
     expect(r.json().warnings).toHaveLength(2)
     const u = await run(['mcp', 'uninstall', 'all', '--json'], { env: m.env })
     expect(u.json().summary).toBe(
-      'nothing removed: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing removed: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
   })
 
