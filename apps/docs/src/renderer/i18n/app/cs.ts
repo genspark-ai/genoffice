@@ -73,6 +73,8 @@ export const cs = {
   appFieldsUpdated: 'Aktualizováno polí: {n}',
   appStyleUpdated: 'Styl „{name}“ aktualizován podle výběru; do dokumentu se zapíše při uložení',
   appStyleCreated: 'Styl „{name}“ vytvořen a použit na výběr',
+  appStyleInstancesSelected: 'Vybráno výskytů stylu „{name}“: {count}',
+  appStyleNoInstances: 'Styl „{name}“ nepoužívá žádný text',
   appPgNumFormatSet: 'Formát čísel stránek nastaven',
   appPageNumFormatTitle: 'Formát čísel stránek',
   appNumberFormat: 'Formát čísla',

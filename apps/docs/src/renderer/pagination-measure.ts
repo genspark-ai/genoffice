@@ -169,7 +169,23 @@ export function alignJoinedParagraphs(
   }
 }
 
-function inFlowRects(el: HTMLElement, range: Range): DOMRect[] {
+/**
+ * A w:position run (text-effects positionDecl) moves its glyphs with
+ * position:relative;top while the line box stays put, so the text rects of a
+ * raised run no longer overlap the line they belong to: put them back before
+ * clustering rects into lines.
+ */
+export function unshiftRunRect(r: DOMRect, text: Node, zoomFactor: number): DOMRect {
+  let dy = 0
+  for (let e = text.parentElement; e && !e.matches(RUN_SHIFT_STOP); e = e.parentElement) {
+    if (e.style.top && e.style.position === 'relative')
+      dy += parseFloat(getComputedStyle(e).top) || 0
+  }
+  return dy ? new DOMRect(r.x, r.y - dy * zoomFactor, r.width, r.height) : r
+}
+const RUN_SHIFT_STOP = 'p, h1, h2, h3, h4, h5, h6, li, td, th, .doc-li, .doc-textbox-para'
+
+function inFlowRects(el: HTMLElement, range: Range, zoomFactor: number): DOMRect[] {
   const out: DOMRect[] = []
   if (typeof range.getClientRects !== 'function') return out
   const skip = (n: Element | null) => !!n?.closest('.page-gap, .page-float-host')
@@ -177,7 +193,8 @@ function inFlowRects(el: HTMLElement, range: Range): DOMRect[] {
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (skip(n.parentElement)) continue
     range.selectNodeContents(n)
-    for (const r of range.getClientRects()) if (r.height > 0 && r.width > 0) out.push(r)
+    for (const r of range.getClientRects())
+      if (r.height > 0 && r.width > 0) out.push(unshiftRunRect(r, n, zoomFactor))
   }
   for (const im of Array.from(el.querySelectorAll('img'))) {
     if (skip(im)) continue
@@ -214,7 +231,7 @@ function alignTails(tails: Element[], zoomFactor: number): void {
     }
     const hcs = getComputedStyle(head)
     const hr = head.getBoundingClientRect()
-    const rects = inFlowRects(head, range)
+    const rects = inFlowRects(head, range, z)
     const lastTop = rects.reduce((m, r) => Math.max(m, r.top), -Infinity)
     if (lastTop === -Infinity) {
       write(t, hr.height / z, 0)
@@ -237,7 +254,7 @@ function alignTails(tails: Element[], zoomFactor: number): void {
     write(t, lh + pad(hcs, 'Bottom'), (lastRight - tr.left) / z - pad(tcs, 'Left'))
     // the first word did not fit after the indent and wrapped, leaving the
     // shared line with a hole: start the tail on its own line instead
-    const first = inFlowRects(t, range)[0]
+    const first = inFlowRects(t, range, z)[0]
     if (first && first.top > lastTop + lh * z * 0.5) write(t, 0, 0)
   }
 }
@@ -541,10 +558,11 @@ export function measureBlocks(
     const floatFlowed = floatTable && el.classList.contains('doc-table-float-flow')
     const lifted =
       el.dataset.anchorLiftBase !== undefined && (parseFloat(el.style.marginTop) || 0) < 0
+    const floatPicture = /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(
+      el.className,
+    )
     const floated =
-      /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(el.className) ||
-      el.classList.contains('doc-para-frame-float') ||
-      (floatTable && !floatFlowed)
+      floatPicture || el.classList.contains('doc-para-frame-float') || (floatTable && !floatFlowed)
     // page/margin-anchored floated table: strip the applied --tblp-dy shift so
     // the engine sees the natural flow position (float margins move only the
     // float's own box, so no gapAccum contribution)
@@ -676,6 +694,9 @@ export function measureBlocks(
       ...(plan ? { dropAtPageTop: plan.dropAtPageTop } : {}),
       ...(plan?.forcedLeadSpacePt ? { forcedLeadSpacePx: (plan.forcedLeadSpacePt * 96) / 72 } : {}),
       ...(floated ? { floated: true } : {}),
+      ...(floatPicture
+        ? { floatPicture: true, anchorDyPx: parseFloat(el.dataset.anchorDy ?? '') || 0 }
+        : {}),
       ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
       ...plannedFloat,
@@ -1055,6 +1076,9 @@ export function applyBlockMeta(
   zoomFactor = 1,
 ): void {
   for (const b of blocks) {
+    // a re-slice of the same blocks must not fold the footnote reservation twice
+    if (b.metaApplied) continue
+    b.metaApplied = true
     // flags edited in the dialog live on the element: they win over the parsed
     // paragraph's meta so a change re-paginates before the document is saved
     const meta = b.docxIndex === undefined ? undefined : metaOf?.(b.docxIndex)
@@ -1064,6 +1088,7 @@ export function applyBlockMeta(
     if (flags.widowControl === false) b.widowControl = false
     if (!meta) continue
     if (meta.modernTableHeaders) b.modernTableHeaders = true
+    if (meta.modernAnchorFloats && (b.floatKeepWhole || b.floatPicture)) b.modernFloatTurn = true
     if (meta.cellWidowOff) b.cellWidowOff = true
     if (meta.breakBefore) b.breakBefore = true
     if (meta.footnoteExtraPx) {

@@ -377,6 +377,35 @@ describe('numFmt "none" with empty lvlText', () => {
   })
 })
 
+describe('empty lvlText', () => {
+  const EMPTY_TEXT_NUMBERING =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:abstractNum w:abstractNumId="0">' +
+    '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:suff w:val="nothing"/><w:lvlText w:val=""/>' +
+    '<w:pPr><w:ind w:left="432" w:hanging="432"/></w:pPr></w:lvl>' +
+    '</w:abstractNum>' +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+    '</w:numbering>'
+
+  it('a decimal level whose lvlText is empty shows nothing, not the counter fallback', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        numberingXml: EMPTY_TEXT_NUMBERING,
+      }),
+    )
+    const markers = computeListMarkers(
+      [
+        { numId: '1', ilvl: 0 },
+        { numId: '1', ilvl: 0 },
+      ],
+      doc.numbering,
+    )
+    expect(markers).toEqual(['', ''])
+  })
+})
+
 describe('w14 custom numFmt (mc:AlternateContent)', () => {
   const alternate = (choiceFmt: string, format: string) =>
     XML_DECL +

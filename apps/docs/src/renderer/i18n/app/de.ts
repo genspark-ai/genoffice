@@ -76,6 +76,8 @@ export const de = {
   appStyleUpdated:
     'Formatvorlage „{name}“ mit der Formatierung der Auswahl aktualisiert; wird beim Speichern in das Dokument geschrieben',
   appStyleCreated: 'Formatvorlage „{name}“ erstellt und auf die Auswahl angewendet',
+  appStyleInstancesSelected: '{count} Vorkommen von „{name}“ ausgewählt',
+  appStyleNoInstances: 'Kein Text verwendet „{name}“',
   appPgNumFormatSet: 'Seitenzahlenformat festgelegt',
   appPageNumFormatTitle: 'Seitenzahlenformat',
   appNumberFormat: 'Zahlenformat',

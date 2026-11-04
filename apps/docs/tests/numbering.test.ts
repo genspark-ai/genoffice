@@ -845,12 +845,13 @@ describe('list marker decorations', () => {
     const render = async (
       lvlTabs: string,
       flags: { indentNotTabStop?: boolean; defaultTabTwips?: number },
+      ind = '<w:ind w:left="300" w:hanging="360"/>',
     ) => {
       const parsed = await parseDocx(
         await buildDocx({
           bodyXml:
             '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' +
-            '<w:ind w:left="300" w:hanging="360"/></w:pPr><w:r><w:t>list text</w:t></w:r></w:p>',
+            `${ind}</w:pPr><w:r><w:t>list text</w:t></w:r></w:p>`,
           numberingXml: numberingXml(
             '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>' +
               `<w:pPr>${lvlTabs}<w:ind w:left="720" w:hanging="360"/></w:pPr>`,
@@ -873,11 +874,16 @@ describe('list marker decorations', () => {
     expect(await render(levelTab, {})).not.toContain('--li-tab')
     // flag on: the level's own tab stop (1080) is the next stop past the marker end (180)
     expect(await render(levelTab, { indentNotTabStop: true })).toContain('--li-tab: 57pt')
-    // no custom stop: the document default grid (420 twips) supplies it
-    expect(await render('', { indentNotTabStop: true, defaultTabTwips: 420 })).toContain(
-      '--li-tab: 24pt',
+    // no custom stop (Word probe 2026-11-03): the hanging indent still stops the
+    // tab when it comes before the next default grid stop (300 < 420 / 720)...
+    expect(await render('', { indentNotTabStop: true, defaultTabTwips: 420 })).not.toContain(
+      '--li-tab',
     )
-    expect(await render('', { indentNotTabStop: true })).toContain('--li-tab: 39pt')
+    expect(await render('', { indentNotTabStop: true })).not.toContain('--li-tab')
+    // ...and the default grid wins when it comes first (marker 360-600, grid 720, indent 1440)
+    const wide = '<w:ind w:left="1440" w:hanging="1080"/>'
+    expect(await render('', { indentNotTabStop: true }, wide)).toContain('--li-tab: 18pt')
+    expect(await render('', {}, wide)).not.toContain('--li-tab')
   })
 
   it('level positive firstLine shifts the marker right of the text indent', async () => {
@@ -1163,5 +1169,17 @@ describe('list marker decorations', () => {
     expect(bullet.el.getAttribute('style')).toContain('--li-marker-font: "Courier New"')
     expect(bullet.el.getAttribute('style')).toContain('--li-marker-lh: 0')
     bullet.destroy()
+  })
+
+  it('the level rPr bold and italic reach the marker as custom properties', async () => {
+    const { el, destroy } = await renderLi(
+      '<w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%1)"/>' +
+        '<w:pPr><w:ind w:left="1440" w:hanging="720"/></w:pPr><w:rPr><w:b/><w:bCs/><w:i/></w:rPr>',
+    )
+    expect(el.getAttribute('data-marker')).toBe('i)')
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain('--li-marker-weight: bold')
+    expect(style).toContain('--li-marker-style: italic')
+    destroy()
   })
 })

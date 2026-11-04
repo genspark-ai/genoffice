@@ -149,6 +149,10 @@ describe('w:noWrap under a fixed table layout', () => {
     expect(tableSpec({ tblFixedLayout: true })[1].style).toContain('--doc-cell-nowrap:normal')
     expect(tableSpec({})[1].style ?? '').not.toContain('--doc-cell-nowrap')
   })
+
+  it('a grid wider than the text column sets the same fallback', () => {
+    expect(tableSpec({ tblOverWide: true })[1].style).toContain('--doc-cell-nowrap:normal')
+  })
 })
 
 function flow() {

@@ -263,6 +263,126 @@ describe('computePageSlices', () => {
   })
 })
 
+describe('anchored drawings at the page bottom (probes 2026-10-13 / 2026-11-03)', () => {
+  const geoms: SectionGeom[] = [
+    { contentHeight: 800, contentWidth: 600, marginBottomPx: 60, forceBreak: false },
+  ]
+  const run = (blocks: BlockBox[], total: number) => {
+    const out: SliceOutputs = { floatPullUps: [] }
+    const slices = computeSectionedSlicesF2(blocks, geoms, total, out)
+    return { slices, pullUps: out.floatPullUps! }
+  }
+  const textAnchor = (extra?: Partial<BlockBox>): BlockBox[] => [
+    block(0, 700),
+    block(700, 20, { floatKeepWhole: true, floatBottom: 1115, floatMaxH: 400, ...extra }),
+    block(720, 20),
+  ]
+
+  it('legacy layout keeps a text anchor on its page and pulls the drawing up to the paper edge', () => {
+    const { slices, pullUps } = run(textAnchor(), 740)
+    expect(slices).toHaveLength(1)
+    expect(pullUps).toEqual([{ blockTop: 700, dyPx: -255 }])
+  })
+
+  it('legacy pull-up measures the slack to the paper edge from the real body bottom (tall footer)', () => {
+    const tallFooter: SectionGeom[] = [
+      { contentHeight: 800, marginBottomPx: 60, firstMarginBottomPx: 120, forceBreak: false },
+    ]
+    const out: SliceOutputs = { floatPullUps: [] }
+    computeSectionedSlicesF2(textAnchor(), tallFooter, 740, out)
+    expect(out.floatPullUps).toEqual([{ blockTop: 700, dyPx: -195 }])
+  })
+
+  it('Word 2013+ turns the page before the anchor when the drawing is taller than the room', () => {
+    const { slices, pullUps } = run(textAnchor({ modernFloatTurn: true }), 740)
+    expect(slices.map((s) => s.start)).toEqual([0, 700])
+    expect(pullUps).toEqual([])
+  })
+
+  it('Word 2013+ pulls a drawing that fits the room up to the body bottom', () => {
+    const blocks = textAnchor({ floatBottom: 820, floatMaxH: 80, modernFloatTurn: true })
+    const { slices, pullUps } = run(blocks, 740)
+    expect(slices).toHaveLength(1)
+    expect(pullUps).toEqual([{ blockTop: 700, dyPx: -20 }])
+  })
+
+  const picture = (extra?: Partial<BlockBox>): BlockBox[] => [
+    block(0, 700),
+    block(700, 400, { floated: true, floatPicture: true, anchorDyPx: 15, widthPx: 300, ...extra }),
+    block(700, 20, { emptyPara: true }),
+    block(720, 20),
+  ]
+
+  it('legacy layout keeps a picture-only anchor on its page, overflowing the bottom margin', () => {
+    const { slices, pullUps } = run(picture(), 740)
+    expect(slices).toHaveLength(1)
+    expect(pullUps).toEqual([{ blockTop: 700, dyPx: -255 }])
+  })
+
+  it('legacy layout still turns when a column-wide picture pushes the anchor line off the body', () => {
+    const { slices, pullUps } = run(picture({ widthPx: 600 }), 740)
+    expect(slices.map((s) => s.start)).toEqual([0, 700])
+    expect(pullUps).toEqual([])
+  })
+
+  it('legacy column-wide picture that fits the room still turns when its anchor line does not land', () => {
+    const { slices, pullUps } = run(picture({ widthPx: 600, height: 80 }), 740)
+    expect(slices.map((s) => s.start)).toEqual([0, 700])
+    expect(pullUps).toEqual([])
+  })
+
+  it('Word 2013+ turns the page before a picture-only anchor that does not fit', () => {
+    const { slices } = run(picture({ modernFloatTurn: true }), 740)
+    expect(slices.map((s) => s.start)).toEqual([0, 700])
+  })
+
+  it('carries a block turning the page past a drawing still overflowing the body', () => {
+    const out: SliceOutputs = { floatPullUps: [], floatCarries: [] }
+    const blocks = [
+      ...picture(),
+      block(740, 200), // does not fit the 60 px left: turns while the picture ends at 860
+    ]
+    const slices = computeSectionedSlicesF2(blocks, geoms, 940, out)
+    expect(slices.map((s) => s.start)).toEqual([0, 860])
+    expect(out.floatCarries).toEqual([{ blockTop: 740, carryPx: 120.1 }])
+    // the spacer applied: the block now starts at the page start and the carry is re-emitted unchanged
+    const carried = blocks.map((b) =>
+      b.top === 740 && b.height === 200 ? { ...b, top: 860.1, carryAppliedPx: 120.1 } : b,
+    )
+    const again = computeSectionedSlicesF2(carried, geoms, 1060.1, out)
+    expect(again.map((s) => s.start)).toEqual([0, 860.1])
+    expect(out.floatCarries).toEqual([{ blockTop: 740, carryPx: 120.1 }])
+  })
+
+  it('a line-less block taller than a titlePg first page but not than a regular page opens the next page', () => {
+    const firstPage: SectionGeom[] = [
+      { contentHeight: 800, firstContentHeight: 500, forceBreak: false },
+    ]
+    const slices = computeSectionedSlicesF2(
+      [block(0, 300), block(300, 600), block(900, 20)],
+      firstPage,
+      920,
+    )
+    expect(slices.map((s) => s.start)).toEqual([0, 300])
+  })
+
+  it('a later forced break opens the next page below the drawing instead of cutting it', () => {
+    const blocks = [
+      block(0, 100),
+      block(100, 20, {
+        floatKeepWhole: true,
+        floatBottom: 500,
+        floatMaxH: 380,
+        modernFloatTurn: true,
+      }),
+      block(120, 20),
+      block(140, 20, { breakBefore: true }),
+    ]
+    const { slices } = run(blocks, 160)
+    expect(slices[1].start).toBeGreaterThanOrEqual(500)
+  })
+})
+
 describe('lineBreakBoundaries', () => {
   const ln = (offset: number, bottom: number) => ({ offset, bottom })
 
@@ -3454,6 +3574,14 @@ describe('measureBlocks — break-only paragraphs', () => {
     expect(blocks[0]).toMatchObject({ height: 112, spaceAfterPx: 5, footnoteExtraPx: 12 })
   })
 
+  it('applyBlockMeta charges a footnote reservation once across re-slices of the same blocks', () => {
+    const blocks = [{ top: 0, height: 100, docxIndex: 0 }]
+    const metaOf = () => ({ footnoteExtraPx: 12 })
+    applyBlockMeta(blocks, metaOf)
+    applyBlockMeta(blocks, metaOf)
+    expect(blocks[0]).toMatchObject({ height: 112, footnoteExtraPx: 12 })
+  })
+
   it('applyBlockMeta resolves footnote bands at their marker offsets', () => {
     const el = document.createElement('p')
     el.getBoundingClientRect = () => ({ top: 100, height: 80 }) as DOMRect
@@ -5845,6 +5973,34 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
     )
     expect(later.slices[0].end).toBe(170)
     expect(later.slices[1].repeatHeader).toEqual({ top: 130, height: 20 })
+  })
+
+  it('a cell whose only line (a picture) cannot fit moves the whole row instead of staying empty on the first page', () => {
+    // cell 0: 5 x 20px text lines, cell 1: one 185px picture line; 100px of
+    // room holds text but no picture: Word moves the row whole (anchored
+    // picture table probe 2026-11-04), it never splits the text away from an
+    // empty picture cell
+    const rows: TableRowBox[] = [
+      { height: 100 },
+      {
+        height: 200,
+        contentBottom: 200,
+        cells: [
+          { ...linesOf(5, 20, 5), alignDy: 0, alignFrac: 0 },
+          { lines: [[5, 190]], childOf: [0], paraOf: [0], alignDy: 0, alignFrac: 0 },
+        ],
+      },
+    ]
+    const out: SliceOutputs = { rowSplits: [] }
+    const slices = computeSectionedSlicesF2([makeTableBlock(0, rows)], page, 300, out)
+    expect(slices.map((s) => [s.start, s.end])).toEqual([
+      [0, 100],
+      [100, 300],
+    ])
+    expect(out.rowSplits).toEqual([])
+    // on a fresh page the picture cell cannot move the row further: the row splits
+    const fresh = planRowSplit(rows[1], 100, 100, () => 100)
+    expect(fresh).not.toBe('nofit')
   })
 
   it('a cell that cannot break legally moves the whole row; a fresh page still pushes it onto the continuation centered', () => {

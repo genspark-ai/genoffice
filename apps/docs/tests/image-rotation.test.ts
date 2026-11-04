@@ -120,7 +120,7 @@ describe('rotated pictures', () => {
     // var() fallback is inside: top / right / bottom / left
     expect(img.getAttribute('style')).toMatch(
       new RegExp(
-        String.raw`margin: 0\.0px max\(100% - calc\(296(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 50\.0px -38\.0px`,
+        String.raw`margin: 0\.0px max\(100% - calc\(296(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(50\.0px \+ clamp\(.*\) min\(-38\.0px, calc\(`,
       ),
     )
     editor.destroy()
@@ -173,7 +173,7 @@ describe('rotated pictures', () => {
     )!
     expect(img.getAttribute('style')).toMatch(
       new RegExp(
-        String.raw`margin: 0\.0px max\(100% - calc\(140(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 10\.0px 20\.0px`,
+        String.raw`margin: 0\.0px max\(100% - calc\(140(\.0)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(10\.0px \+ clamp\(.*\) 20\.0px`,
       ),
     )
     editor.destroy()

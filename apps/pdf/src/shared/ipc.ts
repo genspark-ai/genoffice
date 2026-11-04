@@ -4,6 +4,9 @@ import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-p
 import type { PrintDuplex, PrintJobOptions, PrinterInfo } from '@genoffice/electron-utils/print-job'
 export type { PrintDuplex, PrintJobOptions, PrinterInfo }
 
+/** largest slice readFileChunk hands over IPC; the renderer loops over them */
+export const PDF_READ_CHUNK_BYTES = 8 * 1024 * 1024
+
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',

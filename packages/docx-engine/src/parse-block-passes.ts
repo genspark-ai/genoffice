@@ -1,6 +1,7 @@
 // Whole-document passes run after the block list is built: protected leading
 // breaks, balanced DBCS spacing, image z-order normalization.
 import type { Block, Run, SectionSettings, TableModel, TextboxDisplay } from './types'
+import { charClass, isDoubleByteChar } from './char-class'
 import { EMU_PER_PX } from './parse-xml-text'
 import { stripTextboxes } from './parse-props'
 
@@ -32,6 +33,16 @@ function hostParagraphBreaksBefore(xml: string): boolean {
   return pPr !== undefined && PAGE_BREAK_BEFORE_RE.test(pPr)
 }
 
+function leadsWithPageBreak(xml: string): boolean {
+  const body = stripTextboxes(xml)
+  const br = body.search(PAGE_BR_RE)
+  if (br === -1) return false
+  const textBefore = [...body.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+    .map((m) => m[1])
+    .join('')
+  return textBefore.trim() === ''
+}
+
 export function applyProtectedLeadingBreaks(blocks: Block[]): void {
   for (const b of blocks) {
     if ((b.type !== 'image' && b.type !== 'passthrough') || b.format?.pageBreakBefore) continue
@@ -42,7 +53,13 @@ export function applyProtectedLeadingBreaks(blocks: Block[]): void {
       b.format = { ...b.format, pageBreakBefore: true }
       continue
     }
-    if (b.type !== 'image') continue
+    // a field paragraph (a heading that closes the TOC's fldChar) renders its
+    // result text only: a page break ahead of every visible run turns the page
+    if (b.type === 'passthrough') {
+      if (b.fieldDisplay?.kind === 'text' && !b.fieldDisplay.emptyLine && leadsWithPageBreak(xml))
+        b.format = { ...b.format, pageBreakBefore: true }
+      continue
+    }
     const drawing = xml.search(/<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/)
     const head = xml.slice(0, drawing === -1 ? xml.length : drawing)
     const br = head.search(PAGE_BR_RE)
@@ -80,13 +97,8 @@ export function keepsHangulKanaSingle(font: string | undefined): boolean {
 }
 
 function isHangulOrKana(cp: number): boolean {
-  return (
-    (cp >= 0x1100 && cp <= 0x11ff) ||
-    (cp >= 0x3040 && cp <= 0x30ff) ||
-    (cp >= 0x3130 && cp <= 0x318f) ||
-    (cp >= 0x31f0 && cp <= 0x31ff) ||
-    (cp >= 0xac00 && cp <= 0xd7af)
-  )
+  const c = charClass(cp)
+  return c === 'hangul' || c === 'kana'
 }
 
 function doubledGlyphFraction(text: string, hangulKanaSingle: boolean): number {
@@ -94,14 +106,7 @@ function doubledGlyphFraction(text: string, hangulKanaSingle: boolean): number {
   let n = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
-    const hangulKana = isHangulOrKana(cp)
-    const isWide =
-      hangulKana ||
-      (cp >= 0x2e80 && cp <= 0x9fff) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xff00 && cp <= 0xff60) ||
-      cp >= 0x20000
-    if (isWide && !(hangulKana && hangulKanaSingle)) wide++
+    if (isDoubleByteChar(cp) && !(hangulKanaSingle && isHangulOrKana(cp))) wide++
     n++
   }
   return n > 0 ? wide / n : 0

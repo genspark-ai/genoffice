@@ -1,37 +1,12 @@
-// Regression (feedback row 53): the home-tab style gallery clipped overflowing
-// cards with no way to reach them. The gallery must show a "more styles"
-// expander whenever cards are cut off, and the expander grid must list every style.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Home > Styles (Word for Mac): the Styles button drops down the quick style
+// gallery; a card applies its style and closes the menu. No inline card row.
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { computeFormatState } from '../src/renderer/components/ribbon-format-state'
 import { Ribbon } from '../src/renderer/components/Ribbon'
-
-class FakeResizeObserver {
-  static instances: FakeResizeObserver[] = []
-  targets = new Set<Element>()
-  constructor(private cb: ResizeObserverCallback) {
-    FakeResizeObserver.instances.push(this)
-  }
-  observe(el: Element) {
-    this.targets.add(el)
-  }
-  unobserve(el: Element) {
-    this.targets.delete(el)
-  }
-  disconnect() {
-    this.targets.clear()
-  }
-  static fire(el: Element) {
-    for (const inst of FakeResizeObserver.instances) {
-      if (inst.targets.has(el)) {
-        inst.cb([{ target: el } as ResizeObserverEntry], inst as unknown as ResizeObserver)
-      }
-    }
-  }
-}
 
 function makeEditor(): Editor {
   return new Editor({
@@ -165,31 +140,12 @@ function ribbonProps(editor: Editor) {
   }
 }
 
-/**
- * The gallery wraps whole cards onto a clipped second row; overflow detection
- * reads each card's offsetTop. jsdom has no layout, so emulate it: the first
- * `visibleCount` cards sit on row 0, the rest wrap to a second row.
- */
-function setRowLayout(gallery: Element, visibleCount: number) {
-  const cards = gallery.querySelectorAll<HTMLElement>('.style-card')
-  cards.forEach((card, i) => {
-    const row2 = i >= visibleCount
-    Object.defineProperty(card, 'offsetTop', { configurable: true, value: row2 ? 66 : 0 })
-    Object.defineProperty(card, 'offsetLeft', {
-      configurable: true,
-      value: (row2 ? i - visibleCount : i) * 78,
-    })
-    Object.defineProperty(card, 'offsetWidth', { configurable: true, value: 74 })
-  })
-}
-
-describe('style gallery overflow', () => {
+describe('style gallery button', () => {
   let editor: Editor
   let root: Root
   let container: HTMLElement
 
   beforeEach(() => {
-    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
     editor = makeEditor()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -201,48 +157,38 @@ describe('style gallery overflow', () => {
     act(() => root.unmount())
     container.remove()
     editor.destroy()
-    FakeResizeObserver.instances.length = 0
-    vi.unstubAllGlobals()
   })
 
-  it('shows no expander while every card fits', () => {
-    expect(container.querySelector('.style-gallery')).not.toBeNull()
-    expect(container.querySelectorAll('.style-gallery .style-card').length).toBe(4)
-    expect(container.querySelector('.style-gallery-more')).toBeNull()
+  it('renders only the Styles and Styles Pane buttons, no inline cards', () => {
+    expect(container.querySelector('.rb-styles-gallery')).not.toBeNull()
+    expect(container.querySelector('.rb-styles-pane')).not.toBeNull()
+    expect(container.querySelectorAll('.style-card').length).toBe(0)
+    expect(container.querySelector('.style-gallery-menu')).toBeNull()
   })
 
-  it('shows the expander when cards wrap out of view and hides it when they fit again', () => {
-    const gallery = container.querySelector('.style-gallery')!
-    const wrap = gallery.parentElement!
-    setRowLayout(gallery, 2)
-    act(() => FakeResizeObserver.fire(wrap))
-    expect(container.querySelector('.style-gallery-more')).not.toBeNull()
-    // the gallery is capped right after the last visible card (2 × 78 - 4 gap)
-    expect((gallery as HTMLElement).style.maxWidth).toBe('152px')
-
-    setRowLayout(gallery, 4)
-    act(() => FakeResizeObserver.fire(wrap))
-    expect(container.querySelector('.style-gallery-more')).toBeNull()
-    expect((gallery as HTMLElement).style.maxWidth).toBe('')
-  })
-
-  it('expander opens a grid with every style, and picking one applies it and closes', () => {
-    const gallery = container.querySelector('.style-gallery')!
-    setRowLayout(gallery, 2)
-    act(() => FakeResizeObserver.fire(gallery.parentElement!))
-
-    const more = container.querySelector<HTMLButtonElement>('.style-gallery-more')!
-    expect(more.getAttribute('aria-label')).toBeTruthy()
-    act(() => more.click())
+  it('opens a grid with every style, and picking one applies it and closes', () => {
+    const button = container.querySelector<HTMLButtonElement>('.rb-styles-gallery')!
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    act(() => button.click())
+    expect(button.getAttribute('aria-expanded')).toBe('true')
 
     const menu = container.querySelector('.style-gallery-menu')!
     const cards = menu.querySelectorAll<HTMLButtonElement>('.style-card')
     // the four fallback paragraph styles: nothing is dropped
     expect(cards.length).toBe(4)
+    expect(menu.querySelector('.style-gallery-clear')).not.toBeNull()
 
     editor.commands.setTextSelection(3)
     act(() => cards[1].click()) // Heading 1
     expect(editor.isActive('docHeading', { level: 1 })).toBe(true)
+    expect(container.querySelector('.style-gallery-menu')).toBeNull()
+  })
+
+  it('clicking the button again closes the menu', () => {
+    const button = container.querySelector<HTMLButtonElement>('.rb-styles-gallery')!
+    act(() => button.click())
+    expect(container.querySelector('.style-gallery-menu')).not.toBeNull()
+    act(() => button.click())
     expect(container.querySelector('.style-gallery-menu')).toBeNull()
   })
 })

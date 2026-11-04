@@ -1767,7 +1767,7 @@ function parseExternalLinkCell(input: unknown): ExternalLinkCell {
     (input.number !== undefined &&
       input.number !== null &&
       (typeof input.number !== 'number' || !Number.isFinite(input.number))) ||
-    (input.kind !== undefined && !EXTERNAL_LINK_KINDS.includes(input.kind as ExternalLinkCellKind))
+    (input.kind != null && !EXTERNAL_LINK_KINDS.includes(input.kind as ExternalLinkCellKind))
   ) {
     throw new Error('Invalid external links update response.')
   }
@@ -1777,7 +1777,7 @@ function parseExternalLinkCell(input: unknown): ExternalLinkCell {
     column: input.column,
     formatted: input.formatted,
     ...(input.number === undefined ? {} : { number: input.number as number | null }),
-    ...(input.kind === undefined ? {} : { kind: input.kind as ExternalLinkCellKind }),
+    ...(input.kind == null ? {} : { kind: input.kind as ExternalLinkCellKind }),
     formula: input.formula,
   }
 }

@@ -75,6 +75,8 @@ export const id = {
   appStyleUpdated:
     'Gaya "{name}" diperbarui dengan format pilihan; ditulis ke dokumen saat disimpan',
   appStyleCreated: 'Gaya "{name}" dibuat dan diterapkan ke pilihan',
+  appStyleInstancesSelected: '{count} instans “{name}” dipilih',
+  appStyleNoInstances: 'Tidak ada teks yang memakai “{name}”',
   appPgNumFormatSet: 'Format nomor halaman ditetapkan',
   appPageNumFormatTitle: 'Format Nomor Halaman',
   appNumberFormat: 'Format nomor',

@@ -1,5 +1,5 @@
 /** Seeded round-trip fuzz for the DOCX save pipeline — the in-repo
- *  continuation of the #2381 editors_trial methodology. The external trial
+ *  continuation of the genoffice#2381 editors_trial methodology. The external trial
  *  measured one hand-built document; this suite asserts the same properties
  *  over many random combinations (see helpers/fuzz-docx.ts):
  *

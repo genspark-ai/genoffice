@@ -60,6 +60,7 @@ function state(
     loadingKeys: new Map([['s1', 'key-1']]),
     retryTimers: new Map(),
     frozenStripKeys: new Map([['s1', 's1:0:49:0:9']]),
+    frozenRowStripKeys: new Map([['s1', 's1:0:9']]),
     appliedMerges: new Map(),
     appliedRowKeys: new Map(),
     sheetProtections: new Map(),
@@ -140,6 +141,7 @@ describe('a sidecar crash no longer strands the grid on a dead session', () => {
     expect(lazy.loadedRanges.size).toBe(0)
     expect(lazy.loadingKeys.size).toBe(0)
     expect(lazy.frozenStripKeys.size).toBe(0)
+    expect(lazy.frozenRowStripKeys.size).toBe(0)
   })
 
   it('keeps the session edits made before the crash', async () => {

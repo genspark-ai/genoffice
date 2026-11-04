@@ -116,7 +116,7 @@ describe('indexedRowBoxes', () => {
 describe('VML rule alone in its paragraph', () => {
   it('hides the separator image ProseMirror puts before the rule', () => {
     expect(css).toMatch(
-      /\.ProseMirror-separator:has\(\+ \.doc-inline-rule\)\s*\{\s*display: none !important;/,
+      /\.ProseMirror-separator:has\(\+ \.doc-inline-rule\)[^{]*\{\s*display: none !important;/,
     )
   })
 })

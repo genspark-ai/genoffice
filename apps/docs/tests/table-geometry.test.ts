@@ -67,9 +67,58 @@ describe('table-geometry: over-wide explicit dxa tables (Word probe 2026-10-29)'
     expect(tableWidthCss(modelWidthInput(right, 800), CTX).hold).toBe(false)
   })
 
+  it('over-wide and narrowed grids flag overWide so w:noWrap cells wrap like Word', () => {
+    expect(
+      resolveTableWidth({ ...wide, align: 'center' }, letter, { legacyIndent: false }).overWide,
+    ).toBe(true)
+    const auto: TableModel = { ...wide, dxaWidth: undefined, autoLayout: true }
+    const narrowed = resolveTableWidth(auto, letter, { legacyIndent: false })
+    expect(narrowed.bleed).toBe('none')
+    expect(narrowed.overWide).toBe(true)
+    const fits: TableModel = { ...wide, colWidthsTwips: [3000, 3000, 3000] }
+    expect(resolveTableWidth(fits, letter, { legacyIndent: false }).overWide).toBe(false)
+    // a pct table resolving below its saved grid still has room to grow
+    const pct: TableModel = {
+      ...wide,
+      dxaWidth: undefined,
+      autoLayout: true,
+      widthPct: 50,
+      colWidthsPct: [25, 50, 25],
+    }
+    expect(resolveTableWidth(pct, letter, { legacyIndent: false }).overWide).toBe(false)
+    expect(
+      resolveTableWidth({ ...pct, widthPct: 120 }, letter, { legacyIndent: false }).overWide,
+    ).toBe(true)
+  })
+
   it('a nested table never holds past its cell', () => {
     const css = tableWidthCss(modelWidthInput(wide, 800), { kind: 'nested', surface: 'static' })
     expect(css.hold).toBe(false)
     expect(css.styles).toEqual(['width:min(800px,100%)'])
+  })
+})
+
+describe('table-geometry: fixed-layout grids past the paper', () => {
+  const letter = { avail: 10800, fit: 9360, paper: 12240 }
+  const fixed: TableModel = {
+    rows: [[cell('c0'), cell('c1'), cell('c2'), cell('c3')]],
+    colWidthsTwips: [3024, 3600, 2592, 3024],
+    fixedLayout: true,
+    dxaWidth: true,
+  }
+
+  it('holds the declared columns (Word clips at the paper, never rewraps)', () => {
+    const wider = { ...fixed, colWidthsTwips: [3456, 5616, 3888, 7344] }
+    const geom = resolveTableWidth(wider, letter, { legacyIndent: false })
+    expect(geom.hold).toBe(true)
+    expect(geom.colTwips).toEqual([3456, 5616, 3888, 7344])
+    expect(geom.overWide).toBe(true)
+  })
+
+  it('still clamps a garbage grid wider than two papers', () => {
+    const garbage = { ...fixed, colWidthsTwips: [6236, 130620472, 100, 100] }
+    const geom = resolveTableWidth(garbage, letter, { legacyIndent: false })
+    expect(geom.hold).toBe(false)
+    expect(geom.widthTwips).toBeLessThanOrEqual(12240)
   })
 })

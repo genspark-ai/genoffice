@@ -41,6 +41,8 @@ export type UnderlineKind =
 export interface CharacterFormatting {
   bold?: boolean
   italic?: boolean
+  /** sprmCFBiDi: right-to-left run */
+  rtl?: boolean
   strike?: boolean
   outline?: boolean
   shadow?: boolean
@@ -70,6 +72,10 @@ export interface CharacterFormatting {
   positionHalfPoints?: number
   /** minimum kerning in half-points (sprmCHpsKern) */
   kerningHalfPoints?: number
+  /** expanded/condensed character spacing in twips (sprmCDxaSpace) */
+  spacingTwips?: number
+  /** horizontal character scale in percent (sprmCCharScale) */
+  scalePercent?: number
   /** Windows LCIDs (sprmCRgLid0/1): the Latin and the East Asian language of the run */
   languageId?: number
   eastAsianLanguageId?: number
@@ -99,10 +105,45 @@ export interface CharacterIndents {
   firstLine?: number
 }
 
+/** Positioned paragraph frame (sprmPPc / sprmPDxaAbs / sprmPDyaAbs ...), written as w:framePr. */
+export interface ParagraphFrame {
+  /** sprmPDxaAbs: twips, or the alignment codes -4 center, -8 right, -12 inside, -16 outside */
+  xTwips?: number
+  /** sprmPDyaAbs: twips, or -4 top, -8 center, -12 bottom, -16 inside, -20 outside */
+  yTwips?: number
+  /** sprmPDxaWidth; absent or 0 = auto width */
+  widthTwips?: number
+  /** sprmPDyaHeight (bit 15 = exact); absent or 0 = auto height */
+  heightTwips?: number
+  heightExact?: boolean
+  hAnchor?: 'text' | 'margin' | 'page'
+  vAnchor?: 'text' | 'margin' | 'page'
+  /** sprmPWr (ST_Wrap order) */
+  wrap?: 'auto' | 'notBeside' | 'around' | 'none' | 'tight' | 'through'
+  hSpaceTwips?: number
+  vSpaceTwips?: number
+}
+
+/** wrap/clearance alone (e.g. inherited from a style) does not make the paragraph a frame */
+export function isPositionedFrame(frame: ParagraphFrame | undefined): frame is ParagraphFrame {
+  return (
+    frame !== undefined &&
+    (frame.xTwips !== undefined ||
+      frame.yTwips !== undefined ||
+      frame.hAnchor !== undefined ||
+      Boolean(frame.widthTwips) ||
+      Boolean(frame.heightTwips))
+  )
+}
+
 export interface ParagraphFormatting {
   /** paragraph style index (istd from the PapxInFkp) */
   styleIndex?: number
   alignment?: 'left' | 'center' | 'right' | 'justify' | 'distribute'
+  /** the alignment came from sprmPJc (logical, flips in a bidi paragraph) rather than sprmPJc80 (physical) */
+  alignmentLogical?: boolean
+  /** sprmPFBiDi: right-to-left paragraph */
+  bidi?: boolean
   /** sprmPFKeep: keep lines together */
   keepLines?: boolean
   /** sprmPFKeepFollow: keep with next */
@@ -125,6 +166,17 @@ export interface ParagraphFormatting {
   /** paragraph borders (sprmPBrcXxx80 / sprmPBrcXxx); a 'none' border removes the side */
   borders?: Partial<Record<ParagraphBorderSide, ParagraphBorder>>
   charIndents?: CharacterIndents
+  /** set when any frame sprm is present; Word treats such a paragraph as positioned */
+  frame?: ParagraphFrame
+  /** sprmPShd80 / sprmPShd: the paragraph background as OOXML writes it */
+  shading?: Shading
+}
+
+/** A Shd / Shd80 as OOXML writes it: w:val pattern, w:color (fore), w:fill (back). */
+export interface Shading {
+  pattern: string
+  color?: string
+  fill?: string
 }
 
 /** Word color index (sprmCIco 1..16) -> 'RRGGBB' */
@@ -152,6 +204,8 @@ export interface FormattedLink {
   /** external URL, or '#bookmark' for an internal anchor */
   href: string
   tooltip?: string
+  /** written without the Hyperlink character style (TOC entries) */
+  plain?: boolean
 }
 
 /** A comment anchor emitted between runs: range start, range end or the reference mark. */
@@ -171,6 +225,8 @@ export interface FormattedRun {
   note?: NoteMark
   /** an empty run standing for comment anchors at this position */
   commentMarks?: CommentMark[]
+  /** an empty run standing for the inline picture whose \x01 character sits at this CP */
+  pictureCp?: number
 }
 
 /** A footnote/endnote mark character in the text: a body reference or the note's own mark. */
@@ -231,6 +287,8 @@ const SPRM_C_FTC_BI = 0x4a5e
 const SPRM_C_ISTD = 0x4a30
 const SPRM_C_HPS_POS = 0x4845
 const SPRM_C_HPS_KERN = 0x484b
+const SPRM_C_DXA_SPACE = 0x8840
+const SPRM_C_CHAR_SCALE = 0x4852
 const SPRM_C_CV = 0x6870
 const SPRM_C_LID0_80 = 0x486d
 const SPRM_C_LID1_80 = 0x486e
@@ -240,6 +298,8 @@ const SPRM_C_LID1 = 0x4874
 /* Paragraph sprms */
 const SPRM_P_JC80 = 0x2403
 const SPRM_P_JC = 0x2461
+const SPRM_P_F_BIDI = 0x2441
+const SPRM_C_F_BIDI = 0x085a
 const SPRM_P_F_KEEP = 0x2405
 const SPRM_P_F_KEEP_FOLLOW = 0x2406
 const SPRM_P_F_PAGE_BREAK_BEFORE = 0x2407
@@ -262,8 +322,21 @@ const SPRM_P_HUGE_PAPX_2 = 0x6646
 const SPRM_P_CHG_TABS_PAPX = 0xc60d
 const SPRM_P_CHG_TABS = 0xc615
 const SPRM_P_DXC_RIGHT = 0x4455
+const SPRM_P_SHD80 = 0x442d
+const SPRM_P_SHD = 0xc64d
 const SPRM_P_DXC_LEFT = 0x4456
 const SPRM_P_DXC_LEFT1 = 0x4457
+const SPRM_P_DXA_ABS = 0x8418
+const SPRM_P_DYA_ABS = 0x8419
+const SPRM_P_DXA_WIDTH = 0x841a
+const SPRM_P_PC = 0x261b
+const SPRM_P_WR = 0x2423
+const SPRM_P_DYA_HEIGHT = 0x442b
+const SPRM_P_DYA_FROM_TEXT = 0x842e
+const SPRM_P_DXA_FROM_TEXT = 0x842f
+const FRAME_H_ANCHORS = ['text', 'margin', 'page'] as const
+const FRAME_V_ANCHORS = ['margin', 'page', 'text'] as const
+const FRAME_WRAPS = ['auto', 'notBeside', 'around', 'none', 'tight', 'through'] as const
 /** Brc80 paragraph borders (top, left, bottom, right) and their 8-byte Brc twins */
 const BORDER_SIDES_80: Record<number, ParagraphBorderSide> = {
   0x6424: 'top',
@@ -361,6 +434,9 @@ function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm, mode: Toggl
     case SPRM_CF_ITALIC:
       applyToggle(format, 'italic', sprm.operand, mode)
       break
+    case SPRM_C_F_BIDI:
+      applyToggle(format, 'rtl', sprm.operand, mode)
+      break
     case SPRM_CF_STRIKE:
       applyToggle(format, 'strike', sprm.operand, mode)
       break
@@ -440,6 +516,16 @@ function applyCharacterSprm(format: CharacterFormatting, sprm: Sprm, mode: Toggl
       if (value !== undefined) format.kerningHalfPoints = value
       break
     }
+    case SPRM_C_DXA_SPACE: {
+      const value = readSprmI16(sprm.operand)
+      if (value !== undefined) format.spacingTwips = value
+      break
+    }
+    case SPRM_C_CHAR_SCALE: {
+      const value = readSprmU16(sprm.operand)
+      if (value !== undefined && value > 0) format.scalePercent = value
+      break
+    }
     case SPRM_C_CV: {
       const color = colorRefOf(sprm.operand, 0)
       if (color !== undefined) format.colorRgb = color
@@ -487,6 +573,102 @@ function colorRefOf(bytes: Uint8Array, offset: number): string | undefined {
     .map((channel) => channel.toString(16).padStart(2, '0'))
     .join('')
     .toUpperCase()
+}
+
+/** MS-DOC Ipat -> ST_Shd (0 = clear/auto, 1 = solid foreground) */
+const SHADING_PATTERNS: Record<number, string> = {
+  0: 'clear',
+  1: 'solid',
+  2: 'pct5',
+  3: 'pct10',
+  4: 'pct20',
+  5: 'pct25',
+  6: 'pct30',
+  7: 'pct40',
+  8: 'pct50',
+  9: 'pct60',
+  10: 'pct70',
+  11: 'pct75',
+  12: 'pct80',
+  13: 'pct90',
+  14: 'horzStripe',
+  15: 'vertStripe',
+  16: 'reverseDiagStripe',
+  17: 'diagStripe',
+  18: 'horzCross',
+  19: 'diagCross',
+  20: 'thinHorzStripe',
+  21: 'thinVertStripe',
+  22: 'thinReverseDiagStripe',
+  23: 'thinDiagStripe',
+  24: 'thinHorzCross',
+  25: 'thinDiagCross',
+  35: 'pct5',
+  36: 'pct10',
+  37: 'pct12',
+  38: 'pct15',
+  39: 'pct20',
+  40: 'pct20',
+  41: 'pct25',
+  42: 'pct35',
+  43: 'pct35',
+  44: 'pct37',
+  45: 'pct45',
+  46: 'pct45',
+  47: 'pct50',
+  48: 'pct50',
+  49: 'pct55',
+  50: 'pct60',
+  51: 'pct62',
+  52: 'pct65',
+  53: 'pct65',
+  54: 'pct70',
+  55: 'pct75',
+  56: 'pct80',
+  57: 'pct85',
+  58: 'pct87',
+  59: 'pct90',
+  60: 'pct95',
+  61: 'pct95',
+  62: 'pct95',
+}
+
+function shadingFrom(
+  pattern: number,
+  fore: string | undefined,
+  back: string | undefined,
+): Shading | undefined {
+  const color = fore !== undefined && fore !== 'auto' ? fore : undefined
+  const fill = back !== undefined && back !== 'auto' ? back : undefined
+  if (color === undefined && fill === undefined) return undefined
+  return {
+    pattern: SHADING_PATTERNS[pattern] ?? 'clear',
+    ...(color !== undefined ? { color } : {}),
+    ...(fill !== undefined ? { fill } : {}),
+  }
+}
+
+/** a Shd80 (2 bytes: icoFore 5 bits, icoBack 5 bits, ipat 6 bits); undefined = no shading */
+export function shading80At(bytes: Uint8Array, offset: number): Shading | undefined {
+  if (offset + 2 > bytes.length) return undefined
+  const value = bytes[offset]! | (bytes[offset + 1]! << 8)
+  if (value === 0xffff) return undefined
+  return shadingFrom(value >> 10, COLOR_BY_INDEX[value & 0x1f], COLOR_BY_INDEX[(value >> 5) & 0x1f])
+}
+
+/** a Shd (10 bytes: cvFore, cvBack, ipat); undefined = no shading */
+export function shadingAt(bytes: Uint8Array, offset: number): Shading | undefined {
+  if (offset + 10 > bytes.length) return undefined
+  return shadingFrom(
+    bytes[offset + 8]! | (bytes[offset + 9]! << 8),
+    colorRefOf(bytes, offset),
+    colorRefOf(bytes, offset + 4),
+  )
+}
+
+/** the colour Word paints behind a shaded area (a solid pattern paints the foreground) */
+export function shadingFillOf(shading: Shading): string | undefined {
+  return shading.pattern === 'solid' ? (shading.color ?? shading.fill) : shading.fill
 }
 
 /** a Brc80 (4 bytes) or Brc (8 bytes); undefined when the side has no border */
@@ -594,9 +776,15 @@ function applyParagraphSprm(
     case SPRM_P_JC: {
       const value = readSprmU8(sprm.operand)
       const alignment = value === undefined ? undefined : ALIGNMENTS[value]
-      if (alignment !== undefined) format.alignment = alignment
+      if (alignment !== undefined) {
+        format.alignment = alignment
+        format.alignmentLogical = sprm.opcode === SPRM_P_JC
+      }
       break
     }
+    case SPRM_P_F_BIDI:
+      applyToggle(format, 'bidi', sprm.operand, mode)
+      break
     case SPRM_P_F_KEEP:
       applyToggle(format, 'keepLines', sprm.operand, mode)
       break
@@ -678,8 +866,52 @@ function applyParagraphSprm(
     case SPRM_P_DXC_LEFT1:
       setCharIndent(format, 'firstLine', sprm.operand)
       break
+    case SPRM_P_DXA_ABS:
+    case SPRM_P_DYA_ABS:
+    case SPRM_P_DXA_WIDTH:
+    case SPRM_P_DXA_FROM_TEXT:
+    case SPRM_P_DYA_FROM_TEXT: {
+      const value = readSprmI16(sprm.operand)
+      if (value === undefined) break
+      const frame = (format.frame ??= {})
+      if (sprm.opcode === SPRM_P_DXA_ABS) frame.xTwips = value
+      else if (sprm.opcode === SPRM_P_DYA_ABS) frame.yTwips = value
+      else if (sprm.opcode === SPRM_P_DXA_WIDTH) frame.widthTwips = value
+      else if (sprm.opcode === SPRM_P_DXA_FROM_TEXT) frame.hSpaceTwips = value
+      else frame.vSpaceTwips = value
+      break
+    }
+    case SPRM_P_PC: {
+      const value = readSprmU8(sprm.operand)
+      if (value === undefined) break
+      const frame = (format.frame ??= {})
+      frame.vAnchor = FRAME_V_ANCHORS[(value >> 4) & 3] ?? 'margin'
+      frame.hAnchor = FRAME_H_ANCHORS[(value >> 6) & 3] ?? 'text'
+      break
+    }
+    case SPRM_P_WR: {
+      const value = readSprmU8(sprm.operand)
+      if (value === undefined) break
+      ;(format.frame ??= {}).wrap = FRAME_WRAPS[value] ?? 'auto'
+      break
+    }
+    case SPRM_P_DYA_HEIGHT: {
+      const value = readSprmU16(sprm.operand)
+      if (value === undefined) break
+      const frame = (format.frame ??= {})
+      frame.heightTwips = value & 0x7fff
+      frame.heightExact = (value & 0x8000) !== 0
+      break
+    }
     case SPRM_P_DXC_RIGHT:
       setCharIndent(format, 'right', sprm.operand)
+      break
+    case SPRM_P_SHD80:
+      if (sprm.operand.length >= 2) format.shading = shading80At(sprm.operand, 0)
+      break
+    case SPRM_P_SHD:
+      // SHDOperand's cb is the spra-6 length byte iterateSprms already consumed
+      if (sprm.operand.length >= 10) format.shading = shadingAt(sprm.operand, 0)
       break
     default: {
       const side80 = BORDER_SIDES_80[sprm.opcode]

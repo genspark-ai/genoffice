@@ -93,6 +93,17 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # Inline text-layout decisions (script tests, face predicates, CJK ranges,
+      # compat reads) stay in apps/docs/src/renderer/text-layout/, not in the emitters.
+      - name: Check inline text-layout rules
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:inline-rules
+
       # Line-metric numbers (fonts.css size-adjust/overrides, knownLineFactor)
       # must cite the Word measurement they came from.
       - name: Check font-metric provenance

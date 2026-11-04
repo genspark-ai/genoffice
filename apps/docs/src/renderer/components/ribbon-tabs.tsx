@@ -160,6 +160,26 @@ export function clearParagraphFormatting(editor: Editor): void {
   setParaAttrs(editor, { ...DIRECT_PARA_ATTRS })
 }
 
+/**
+ * Word's Clear Formatting entry: direct character formatting off (a collapsed
+ * caret takes its whole paragraph), then the paragraphs back to the default
+ * style with their direct paragraph formatting dropped. A textbox sub-editor
+ * only clears the runs.
+ */
+export function clearAllFormatting(editor: Editor, sub: Editor | null, styles?: StyleMap): void {
+  const ed = sub ?? editor
+  const { $from, empty } = ed.state.selection
+  const chain = ed.chain().focus()
+  if (empty && $from.parent.isTextblock)
+    chain.setTextSelection({ from: $from.start(), to: $from.end() })
+  chain.unsetAllMarks()
+  if (empty) chain.setTextSelection($from.pos)
+  chain.run()
+  if (sub) return
+  applyParagraphStyleId(editor, defaultParagraphStyleId(styles) ?? null, null)
+  clearParagraphFormatting(editor)
+}
+
 /** Word's Quick Style gallery keys on the shortcuts (Opt+Cmd+0..3) */
 export function applyParagraphStyle(
   editor: Editor,

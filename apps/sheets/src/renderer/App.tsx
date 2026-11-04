@@ -2992,11 +2992,33 @@ export function App({
           const freeze = event.params as
             { subUnitId?: string; ySplit?: number; xSplit?: number } | undefined
           if (freeze?.subUnitId && !isSheetRemoved(state.editJournal, freeze.subUnitId)) {
+            const frozenRows = Math.max(0, freeze.ySplit ?? 0)
+            const frozenColumns = Math.max(0, freeze.xSplit ?? 0)
             recordPageSetup(state.editJournal, freeze.subUnitId, {
-              frozenRows: Math.max(0, freeze.ySplit ?? 0),
-              frozenColumns: Math.max(0, freeze.xSplit ?? 0),
+              frozenRows,
+              frozenColumns,
             })
             setPendingEdits(journalSize(state.editJournal))
+            // The streaming eviction guard and the frozen strip loaders read
+            // the freeze from the parsed file model, which an in-session
+            // freeze never reached — the guard stayed off and the next window
+            // advance null-wiped the pinned rows (gendesk #680: a frozen top
+            // row that "unfreezes" after scrolling — really pinned but blank).
+            // Keep the model in step with the mutation (ribbon, AI op,
+            // undo/redo alike) and refetch the strips for the new split.
+            const sheetMeta = state.file.sheets.find(
+              (candidate) => candidate.id === freeze.subUnitId,
+            )
+            if (sheetMeta) {
+              sheetMeta.freeze =
+                frozenRows === 0 && frozenColumns === 0 ? null : { frozenRows, frozenColumns }
+              state.frozenStripKeys.delete(freeze.subUnitId)
+              state.frozenRowStripKeys.delete(freeze.subUnitId)
+              const frozenSheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+              if (frozenSheet?.getSheetId() === freeze.subUnitId) {
+                void loadVisibleRange(runtime, lazyWorkbookRef, frozenSheet, setMessage)
+              }
+            }
           }
           return
         }
@@ -3178,6 +3200,7 @@ export function App({
           if (structuralOp.kind !== 'move-rows') {
             state.loadedRanges.delete(params.subUnitId)
             state.frozenStripKeys.delete(params.subUnitId)
+            state.frozenRowStripKeys.delete(params.subUnitId)
           }
           // Pinned closure values shift with the model; pinned formulas are
           // dropped — Univer rewrote their references in the model, so a
@@ -3193,6 +3216,7 @@ export function App({
           // The recalc fallback reads the on-disk file; structural edits
           // desync every coordinate, so its overlays must not re-apply.
           state.recalc.overlay.clear()
+          state.recalc.externalOverlay.clear()
           state.recalc.formulaCells.clear()
           const activeSheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
           if (activeSheet?.getSheetId() === params.subUnitId) {
@@ -4948,6 +4972,7 @@ export function App({
       decorationsPendingSheets: new Set(),
       hyperlinkTargets: new Map(),
       frozenStripKeys: new Map(),
+      frozenRowStripKeys: new Map(),
       filterOrigins: new Map(),
       restoredFilterSpans: new Map(),
       showFormulaSheets: new Set(

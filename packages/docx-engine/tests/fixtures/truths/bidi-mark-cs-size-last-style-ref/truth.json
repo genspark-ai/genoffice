@@ -1,0 +1,63 @@
+{
+  "id": "bidi-mark-cs-size-last-style-ref",
+  "title": "The mark of a bidi paragraph is a Cs run (empty line by szCs, w:sz and rtl=0 ignored); duplicate pStyle / rStyle: the last one wins",
+  "section": "word-truths.md#L948",
+  "probe_date": "2026-11-03",
+  "source": "probe bidimark.docx -> bidimark-word.pdf: bidi mark 11.04pt / pitch 12.72, LTR mark 12pt / 13.68, sz 36 mark 11.04, rtl=0 mark 11.04, szCs 40 mark 19.92 / 23.04; corpus headings with Heading1 + MdHeading1 drawn as MdHeading1",
+  "cases": [
+    {
+      "kind": "format",
+      "block": 0,
+      "expect": { "emptyRunSizeHalfPoints": 22 },
+      "note": "bidi mark sized by docDefaults szCs, not Normal sz 24"
+    },
+    { "kind": "linePt", "block": 0, "expect": 12.72, "tol": 0.15, "note": "11pt TNR line" },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 13.68,
+      "tol": 0.15,
+      "note": "LTR control: 12pt line"
+    },
+    {
+      "kind": "format",
+      "block": 2,
+      "expect": { "emptyRunSizeHalfPoints": 22 },
+      "note": "a w:sz on the mark is ignored"
+    },
+    {
+      "kind": "format",
+      "block": 3,
+      "expect": { "emptyRunSizeHalfPoints": 22 },
+      "note": "an explicit rtl=0 on the mark changes nothing"
+    },
+    {
+      "kind": "format",
+      "block": 4,
+      "expect": { "emptyRunSizeHalfPoints": 40 },
+      "note": "the mark's own szCs"
+    },
+    { "kind": "linePt", "block": 4, "expect": 23.04, "tol": 0.2, "note": "20pt TNR line" },
+    {
+      "kind": "blockProps",
+      "block": 5,
+      "expect": { "styleId": "MdHeading1" },
+      "note": "second pStyle wins"
+    },
+    {
+      "kind": "format",
+      "block": 5,
+      "expect": { "effective": { "spacing": { "before": 480 } } },
+      "note": "MdHeading1 space before"
+    },
+    {
+      "kind": "runProps",
+      "block": 5,
+      "run": 0,
+      "expect": { "styleId": "Blue" },
+      "note": "second rStyle wins"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

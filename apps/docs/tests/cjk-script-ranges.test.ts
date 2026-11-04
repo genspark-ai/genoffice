@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cjkScriptRanges, hangulSpaceWideningFor } from '../src/renderer/line-metrics'
+import { cjkScriptRanges, balancedSpaceWideningFor } from '../src/renderer/line-metrics'
 
 describe('cjkScriptRanges', () => {
   const H = '한글'
@@ -19,11 +19,15 @@ describe('cjkScriptRanges', () => {
   })
 })
 
-describe('hangulSpaceWideningFor', () => {
-  it('widens hangul-context spaces only under both compat flags', () => {
-    expect(hangulSpaceWideningFor({ balanceDbcsSpacing: true, useFELayout: true })).toBe(true)
-    expect(hangulSpaceWideningFor({ balanceDbcsSpacing: true })).toBe(false)
-    expect(hangulSpaceWideningFor({ useFELayout: true })).toBe(false)
-    expect(hangulSpaceWideningFor({})).toBe(false)
+describe('balancedSpaceWideningFor', () => {
+  it('needs the balance flag plus useFELayout or a CJK document East Asian face', () => {
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true, useFELayout: true })).toBe(true)
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true }, '\u5b8b\u4f53')).toBe(true)
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true }, 'Malgun Gothic')).toBe(true)
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true }, 'DengXian')).toBe(true)
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true }, 'Calibri')).toBe(false)
+    expect(balancedSpaceWideningFor({ balanceDbcsSpacing: true })).toBe(false)
+    expect(balancedSpaceWideningFor({ useFELayout: true }, '\u5b8b\u4f53')).toBe(false)
+    expect(balancedSpaceWideningFor({})).toBe(false)
   })
 })

@@ -275,9 +275,9 @@ function boxDrawingSegments(paragraphXml: string): Array<{ start: number; end: n
   )
 }
 
-/** How a caller addresses one shape drawing: by its wps:cNvPr id when known, else by box ordinal. */
+/** How a caller addresses one shape drawing: by its cNvPr id when known, else by box ordinal. */
 export interface ShapeDrawingLocation {
-  /** wps:cNvPr id of the owning shape (parsed boxes carry it) */
+  /** wps:cNvPr (or pic:cNvPr for a photo box) id of the owning shape (parsed boxes carry it) */
   shapeId?: string
   /** fallback ordinal among box drawings (generated shapes have no id) */
   boxIndex: number
@@ -291,8 +291,9 @@ function shapeDrawingSegment(
     // an id was given: never fall back to a different drawing
     const found = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).find(
       (seg) =>
-        /<wps:cNvPr\b[^>]*\bid="([^"]+)"/.exec(paragraphXml.slice(seg.start, seg.end))?.[1] ===
-        location.shapeId,
+        /<(?:wps|pic):cNvPr\b[^>]*\bid="([^"]+)"/.exec(
+          paragraphXml.slice(seg.start, seg.end),
+        )?.[1] === location.shapeId,
     )
     return found ?? null
   }

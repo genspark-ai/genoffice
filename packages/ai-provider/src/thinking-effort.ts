@@ -90,9 +90,8 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   }
   if (/(^|\/)claude/.test(id)) {
     // the family spelling is optional: the model field is free text
-    const version = /(?:^|\/)(?:claude-)?(?:(?:opus|sonnet|haiku|fable)-)?(\d+)(?:[.-](\d+))?/.exec(
-      id,
-    )
+    const version =
+      /(?:^|\/)(?:claude-)?(?:(?:opus|sonnet|haiku|fable)-)?(\d+)(?:[.-](\d{1,2})(?!\d))?/.exec(id)
     const major = version ? Number(version[1]) : 0
     const minor = version && version[2] !== undefined ? Number(version[2]) : 0
     // 5.x extends adaptive effort past high; 4.6 introduced it, older ids 400
@@ -118,7 +117,7 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   // xAI's grok takes the OpenAI-style effort field on the current lineup and
   // states reasoning cannot be disabled; xhigh exists from grok-4.6 on.
   if (/(^|\/)grok-/.test(id)) {
-    const version = /(?:^|\/)grok-(\d+)(?:[.-](\d+))?/.exec(id)
+    const version = /(?:^|\/)grok-(\d+)(?:[.-](\d{1,2})(?!\d))?/.exec(id)
     const major = version ? Number(version[1]) : 0
     const minor = version && version[2] !== undefined ? Number(version[2]) : 0
     const levels = major > 4 || (major === 4 && minor >= 6) ? GROK_XHIGH_LEVELS : GROK_LEVELS

@@ -42,7 +42,7 @@ const cardOf = (over: Partial<NotePopupCard['picture']> = {}): NotePopupCard => 
     row: 3,
     column: 2,
     author: 'Alice',
-    text: '老照片扫描件',
+    text: '\u8001\u7167\u7247\u626b\u63cf\u4ef6',
     dataUrl: 'data:image/png;base64,AAA',
     ...over,
   },
@@ -62,7 +62,9 @@ describe('NotePictureHoverCard', () => {
     expect(card).not.toBeNull()
     expect(card!.querySelector('.np-author')?.textContent).toBe('Alice')
     expect(card!.querySelector('.np-image')?.getAttribute('src')).toBe('data:image/png;base64,AAA')
-    expect(card!.querySelector('.np-text')?.textContent).toBe('老照片扫描件')
+    expect(card!.querySelector('.np-text')?.textContent).toBe(
+      '\u8001\u7167\u7247\u626b\u63cf\u4ef6',
+    )
     await act(async () => {
       card!.querySelector<HTMLButtonElement>('.np-remove')!.click()
     })
@@ -87,7 +89,7 @@ describe('NotePictureHoverCard', () => {
             row: 3,
             column: 2,
             author: 'Alice',
-            text: '老照片扫描件',
+            text: '\u8001\u7167\u7247\u626b\u63cf\u4ef6',
           },
         },
         sessionId: undefined,
@@ -96,7 +98,9 @@ describe('NotePictureHoverCard', () => {
     )
     expect(document.querySelector('.note-hover-card .np-image')).toBeNull()
     // the text still shows: the popup itself carries only the note text
-    expect(document.querySelector('.note-hover-card .np-text')?.textContent).toBe('老照片扫描件')
+    expect(document.querySelector('.note-hover-card .np-text')?.textContent).toBe(
+      '\u8001\u7167\u7247\u626b\u63cf\u4ef6',
+    )
   })
 
   it('stays unpositioned when Univer has no popup box to anchor under', async () => {

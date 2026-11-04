@@ -1,27 +1,20 @@
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { asciiFamilyResolver, runFaceDecls } from '../text-layout/run-faces'
+import {
+  inlineRunsOf,
+  inlineSegments,
+  segmentsOfRun,
+  type InlineSegments,
+} from '../text-layout/inline-segments'
 import {} from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
 import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import {
-  autospaceLatinFirst,
   autospaceMode,
-  autospacePadBetween,
-  autospacePadClass,
-  autospacePadScale,
-  autospaceSeams,
-  latinAutospaceGapEm,
-  codePointLengthAt,
-  type AutospaceMode,
   cssAutoLineMult,
-  cssCsFontFamily,
-  hangulSpaceOffsets,
-  hangulSpaceWideningOn,
-  krNoBreakOffsets,
+  balancedSpaceWideningOn,
   cjkDeclaredLineFactor,
-  cssFontFamily,
-  cssRunFontFamily,
-  cutAdjustedAlias,
   cssGridLineBase,
   cssLineHeight,
   isCjk,
@@ -30,10 +23,7 @@ import {
   runLetterSpacingCss,
   fontKerningCss,
   textHasComplexScript,
-  textHasHangul,
   SPACE_ONLY_RE,
-  runSlotFaces,
-  wordSlotFaces,
 } from '../line-metrics'
 import {
   custGeomBackgroundCss,
@@ -104,7 +94,6 @@ import {
   cellClipStyle,
   borderWidthPx,
   cellPadCss,
-  asciiFamilyResolver,
   type AsciiFamilyOf,
   type ListNumberingStorage,
   modelEdgeBorders,
@@ -1906,8 +1895,6 @@ export function textboxBoxStyle(
     .join(';')
 }
 
-const AUTOSPACE_PAD_ATTRS = { class: 'doc-autospace-pad' }
-const HANGUL_SPACE_ATTRS = { class: 'doc-hangul-space' }
 const KR_WJ_SPEC = ['span', { class: 'doc-kr-wj' }]
 
 /** paragraph styleId -> inherited ascii face of the open document (the editor's
@@ -1917,64 +1904,32 @@ export function setStaticAsciiResolver(getStorage: () => ListNumberingStorage | 
   staticAsciiOf = asciiFamilyResolver(getStorage)
 }
 
-/** texts directly before/after a run inside its paragraph (empty = none); prevFace = the
- *  ascii face of the text before (its Latin -> CJK seam gap); face = this run's ascii face
- *  after inheritance; krNoBreak = Korean word-wrap paragraph (word-joiner at punctuation seams) */
-export type RunNeighbours = {
-  prev?: string
-  next?: string
-  prevFace?: string
-  face?: string
-  krNoBreak?: boolean
+const EMPTY_SEGMENTS: InlineSegments = { segments: [], joiners: [] }
+
+/** a plain cell paragraph (one unstyled run) with its inline segments applied */
+function plainTextSpecs(text: string): unknown[] {
+  const run = { text, offset: 0, size: text.length, attrs: null }
+  return splitBySegments(
+    text,
+    inlineSegments({
+      runs: [run],
+      autospace: true,
+      inheritedAscii: staticAsciiOf(undefined),
+      inheritedEa: null,
+      wordWrap: true,
+      balancedSpaces: balancedSpaceWideningOn(),
+      justified: false,
+      simsunGapLineHeight: null,
+    }),
+  )
 }
 
-/**
- * static-DOM counterpart of the editor's autospace pad and hangul-space
- * decorations: the character after each CJK-Latin boundary (and the first one
- * when leadPad) carries the pad margin; a space with a hangul neighbour gets
- * the half-width space face
- */
-function padSegments(
-  text: string,
-  pads: AutospaceMode | null,
-  leadPad: boolean,
-  neighbours: RunNeighbours,
-  face?: string,
-): unknown[] {
-  const wraps: Array<[number, number, object]> = []
-  if (pads) {
-    const cls = autospacePadClass(pads)
-    const attrs = pads === true ? AUTOSPACE_PAD_ATTRS : { class: cls }
-    const attrsFor = (latinFirst: boolean, latinFace: string | undefined) => {
-      const scale = latinFirst ? autospacePadScale(latinAutospaceGapEm(latinFace), pads) : 1
-      return scale === 1
-        ? attrs
-        : { class: `${cls} doc-autospace-pad-le`, style: `--doc-autospace-pad-le:${scale}` }
-    }
-    const seams = autospaceSeams(text, pads).map((s) => ({ ...s, face }))
-    if (leadPad && text) {
-      seams.unshift({
-        at: 0,
-        latinFirst: autospaceLatinFirst(neighbours.prev ?? ''),
-        face: neighbours.prevFace,
-      })
-    }
-    for (const seam of seams) {
-      wraps.push([
-        seam.at,
-        seam.at + codePointLengthAt(text, seam.at),
-        attrsFor(seam.latinFirst, seam.face),
-      ])
-    }
-  }
-  if (hangulSpaceWideningOn()) {
-    for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
-      wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
-    }
-  }
-  const joiners = neighbours.krNoBreak ? krNoBreakOffsets(text, neighbours.prev) : []
+/** text split by the inline segments of its run: wrapped class/style spans and
+ *  U+2060 word-joiner spans (static-DOM counterpart of the editor's decorations) */
+function splitBySegments(text: string, segs: InlineSegments): unknown[] {
+  const wraps = [...segs.segments].sort((x, y) => x.from - y.from)
+  const joiners = segs.joiners
   if (wraps.length === 0 && joiners.length === 0) return [text]
-  wraps.sort((a, b) => a[0] - b[0])
   const out: unknown[] = []
   let start = 0
   let j = 0
@@ -1985,11 +1940,14 @@ function padSegments(
       out.push(KR_WJ_SPEC)
     }
   }
-  for (const [from, end, attrs] of wraps) {
-    emitJoinersBefore(from)
-    if (from > start) out.push(text.slice(start, from))
-    out.push(['span', attrs, text.slice(from, end)])
-    start = end
+  for (const seg of wraps) {
+    emitJoinersBefore(seg.from)
+    if (seg.from > start) out.push(text.slice(start, seg.from))
+    const attrs: Record<string, string> = {}
+    if (seg.cls) attrs.class = seg.cls
+    if (seg.style) attrs.style = seg.style
+    out.push(['span', attrs, text.slice(seg.from, seg.to)])
+    start = seg.to
   }
   emitJoinersBefore(text.length)
   if (start < text.length) out.push(text.slice(start))
@@ -1997,16 +1955,12 @@ function padSegments(
 }
 
 /** run → styled <span> (+ inline <img>) specs, shared by textbox and table-cell rendering */
-export function runSpanSpecs(
-  run: Run,
-  autoSpace?: AutoSpace,
-  leadPad = false,
-  neighbours: RunNeighbours = {},
-): DomSpec[] {
+export function runSpanSpecs(run: Run, autoSpace?: AutoSpace, segs?: InlineSegments): DomSpec[] {
   const out: DomSpec[] = []
   // a run can carry both w:t text and a w:drawing; the text renders before the
   // image (generate.ts / the editable path keep the same order)
-  if (run.text !== '' || !run.image) out.push(textSpanSpec(run, autoSpace, leadPad, neighbours))
+  if (run.text !== '' || !run.image)
+    out.push(textSpanSpec(run, autoSpace, segs ?? runSegments([run], autoSpace)[0]))
   if (run.image?.rule) {
     const decls = inlineRuleDecls({ ...run.image.rule, sizeHalfPoints: run.sizeHalfPoints })
     out.push([
@@ -2030,37 +1984,14 @@ export function runSpanSpecs(
   return out
 }
 
-/** the run face declarations marks.ts emits: the chain, its --doc-run-ff twin
- *  (doc-style-css re-heads it with the strut face in .doc-grid-strut
- *  paragraphs), the face's own line factor (.doc-mixed-face) and the explicit
- *  East Asian face */
-function runFaceDecls(run: Run, cs: string | undefined): { decls: string[]; family?: string } {
-  if (!run.font && !run.fontAscii && !cs) return { decls: [] }
-  // a Latin-only chain fills both slots, so an unparsed run's font only names
-  // an East Asian face when the slots differ
-  const { ascii, eastAsia: ea, declaredEa } = runSlotFaces(run)
-  const decls: string[] = []
-  const explicitEa = declaredEa ? wordSlotFaces(null, declaredEa).eastAsia : null
-  if (explicitEa && !run.eaSlotEmpty)
-    decls.push(`--doc-east-asian-font:${cssFontFamily(explicitEa)}`)
-  const family = cs
-    ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
-    : cssRunFontFamily(ascii, ea)
-  decls.push(`font-family:${family}`, `--doc-run-ff:${family}`)
-  const lh = Math.max(...[cs, ascii ?? ea].filter(Boolean).map((f) => lineHeightFactor(f!)))
-  decls.push(`--doc-run-lh:${lh}`)
-  return { decls, family }
-}
-
 function textSpanSpec(
   run: Run,
   autoSpace?: AutoSpace,
-  leadPad = false,
-  neighbours: RunNeighbours = {},
+  segs: InlineSegments = EMPTY_SEGMENTS,
 ): DomSpec {
   // the cs chain sizes complex-script text, and every character of an rtl run (marks.ts)
   const cs = run.csFont && (run.cs || textHasComplexScript(run.text)) ? run.csFont : undefined
-  const face = runFaceDecls(run, cs)
+  const face = runFaceDecls(run, cs ?? null)
   const letterSpacing = runLetterSpacingCss(run)
   const kerning = fontKerningCss(run)
   const runStyle = [
@@ -2086,13 +2017,7 @@ function textSpanSpec(
   ]
     .filter(Boolean)
     .join(';')
-  const content = padSegments(
-    run.text,
-    autospaceMode(autoSpace),
-    leadPad,
-    neighbours,
-    neighbours.face ?? run.fontAscii ?? run.font,
-  )
+  const content = splitBySegments(run.text, segs)
   // hyperlink runs keep the editable path's look (.doc-link) and real href;
   // App-level click handling prevents in-place navigation (jump on mod+click)
   const attrs: Record<string, string> = {}
@@ -2103,7 +2028,7 @@ function textSpanSpec(
   // cs-slot run: styles.css .doc-cs-mixed collapses its line box
   if (cs) attrs['data-cs'] = ''
   // bold/italic cut of a per-cut size-adjusted alias: .doc-cut-adjusted collapses its line box
-  if (face.family && cutAdjustedAlias(face.family)) attrs['data-cut-adj'] = ''
+  if (face.cutAdjusted) attrs['data-cut-adj'] = ''
   if (run.link?.href) {
     attrs.class = [run.link.plain ? 'doc-link doc-link-plain' : 'doc-link', revClass]
       .filter(Boolean)
@@ -2115,54 +2040,37 @@ function textSpanSpec(
   return ['span', attrs, ...content]
 }
 
-/** text directly touching run k on one side; a picture (drawn after its run's
- *  text) breaks adjacency like the editor's non-text inlines, empty runs are skipped */
-function adjacentRunText(runs: Run[], k: number, step: 1 | -1): string {
-  if (step > 0 && runs[k].image) return ''
-  for (let j = k + step; j >= 0 && j < runs.length; j += step) {
-    const r = runs[j]
-    if (step < 0 && r.image) return ''
-    if (r.text !== '') return r.text
-    if (r.image) return ''
-  }
-  return ''
-}
-
-/** run spans with pads at run-boundary CJK-Latin seams (empty runs keep their span, no pad);
- *  para = the paragraph's style id (inherited ascii face) and wordWrap (Korean no-break seams) */
-function runSpansWithPads(
+/** run spans with the paragraph's inline segments applied (pads at CJK-Latin seams,
+ *  balanced spaces, Korean no-break joiners, hinted quotes); para = the paragraph's style
+ *  id (inherited ascii face) and wordWrap */
+export function runSpansWithPads(
   runs: Run[],
   autoSpace?: AutoSpace,
   para?: { styleId?: string; wordWrap?: boolean },
 ): DomSpec[] {
-  const out: DomSpec[] = []
-  let prevText = ''
-  let prevFace: string | undefined
-  let inherited: string | undefined
-  const faceOf = (run: Run): string | undefined => {
-    const own = run.fontAscii ?? run.font
-    if (own) return own
-    if (inherited === undefined) inherited = staticAsciiOf(para?.styleId) ?? ''
-    return inherited || undefined
-  }
-  const krNoBreak = para?.wordWrap !== false && textHasHangul(runs.map((r) => r.text).join(''))
-  runs.forEach((run, k) => {
-    let leadPad = false
-    const neighbours: RunNeighbours = {
-      prev: adjacentRunText(runs, k, -1),
-      next: adjacentRunText(runs, k, 1),
-      prevFace,
-      krNoBreak,
-    }
-    if (run.text !== '') {
-      const mode = autospaceMode(autoSpace)
-      leadPad = mode !== null && autospacePadBetween(prevText, run.text, mode)
-      prevText = run.text
-      prevFace = neighbours.face = faceOf(run)
-    }
-    out.push(...runSpanSpecs(run, autoSpace, leadPad, neighbours))
+  const segs = runSegments(runs, autoSpace, para)
+  return runs.flatMap((run, k) => runSpanSpecs(run, autoSpace, segs[k]))
+}
+
+/** the paragraph-level segments of a run list, split per run; a run rendered
+ *  alone (field result, stray line) is its own one-run paragraph */
+function runSegments(
+  runs: Run[],
+  autoSpace?: AutoSpace,
+  para?: { styleId?: string; wordWrap?: boolean },
+): InlineSegments[] {
+  const { runs: inline, byRun } = inlineRunsOf(runs)
+  const all = inlineSegments({
+    runs: inline,
+    autospace: autospaceMode(autoSpace),
+    inheritedAscii: staticAsciiOf(para?.styleId),
+    inheritedEa: null,
+    wordWrap: para?.wordWrap !== false,
+    balancedSpaces: balancedSpaceWideningOn(),
+    justified: false,
+    simsunGapLineHeight: null,
   })
-  return out
+  return byRun.map((r) => segmentsOfRun(all, r))
 }
 
 /** camelCase style record (hf-dom helpers) as inline CSS text */
@@ -2210,6 +2118,9 @@ export function renderTextboxSpec(
   const style = textboxBoxStyle(box, opts)
   const boxAttrs: Record<string, string> = {
     class: textboxIsFilled(box) ? 'doc-textbox doc-textbox-filled' : 'doc-textbox',
+  }
+  if (box.picture) {
+    boxAttrs.class += ' doc-textbox-picture'
   }
   if (style) boxAttrs.style = style
   // page-absolute V rendered from the anchor: syncFloatShifts re-pins it
@@ -2450,23 +2361,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
               p,
             )
           })
-        : cell.paras.map((p) =>
-            cellParaSpec(
-              p === ''
-                ? []
-                : [
-                    ...padSegments(
-                      p,
-                      true,
-                      false,
-                      { krNoBreak: textHasHangul(p) },
-                      staticAsciiOf(undefined) ?? undefined,
-                    ),
-                  ],
-              p,
-              null,
-            ),
-          )
+        : cell.paras.map((p) => cellParaSpec(p === '' ? [] : plainTextSpecs(p), p, null))
       // nested tables spliced in at their paragraph anchors (cells with them are never editable)
       const nested = cell.nestedTables ?? []
       const anchorOf = (i: number) =>

@@ -42,6 +42,12 @@ interface EmfConvertOptions {
      * 'ms shell dlg': 'Tahoma' }`. Applied to GDI, WMF, and EMF+ text.
      */
     fontFamilyMap?: Record<string, string>;
+    /**
+     * Optional decoder for text drawn with a legacy symbol face (Symbol,
+     * Wingdings, ...): returns the Unicode equivalent of the whole run, or
+     * null to fall back to the U+F0xx private-use form.
+     */
+    symbolTextMap?: (family: string, text: string) => string | null;
 }
 /**
  * Converts an EMF (Enhanced Metafile) binary buffer to a PNG data-URL string

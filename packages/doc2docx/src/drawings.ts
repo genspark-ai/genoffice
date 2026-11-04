@@ -22,6 +22,14 @@ export type PictureMediaType =
 
 export type PictureExtension = 'png' | 'jpeg' | 'wmf' | 'emf' | 'bmp' | 'tiff'
 
+/** cropped-away part of each side of the source picture, in 1/1000 of a percent (a:srcRect) */
+export interface PictureCrop {
+  l: number
+  t: number
+  r: number
+  b: number
+}
+
 export interface PictureMedia {
   mediaType: PictureMediaType
   extension: PictureExtension
@@ -55,6 +63,7 @@ interface FloatingShapeBase {
 export interface FloatingPicture extends FloatingShapeBase {
   kind: 'picture'
   media: PictureMedia
+  crop?: PictureCrop
 }
 
 export interface FloatingTextBox extends FloatingShapeBase {
@@ -67,6 +76,8 @@ export interface FloatingTextBox extends FloatingShapeBase {
   /** left, top, right, bottom text insets in EMU */
   insetsEmu: [number, number, number, number]
   verticalAnchor: 't' | 'ctr' | 'b'
+  /** rotated text (msotxflBtoT -> vert270, the top-to-bottom flows -> vert); undefined = horizontal */
+  textDirection?: 'vert' | 'vert270'
   autoFit: boolean
   content: HeaderFooterStory
 }
@@ -103,12 +114,18 @@ const REC_SECONDARY_OPT = 0xf121
 const REC_TERTIARY_OPT = 0xf122
 const FBSE_BYTES = 36
 const OPT_PIB = 0x0104
+/** cropFromTop/Bottom/Left/Right: 16.16 fixed-point fractions of the source picture */
+const OPT_CROP_FROM_TOP = 0x0100
+const OPT_CROP_FROM_BOTTOM = 0x0101
+const OPT_CROP_FROM_LEFT = 0x0102
+const OPT_CROP_FROM_RIGHT = 0x0103
 const OPT_TXID = 0x0080
 const OPT_DX_TEXT_LEFT = 0x0081
 const OPT_DY_TEXT_TOP = 0x0082
 const OPT_DX_TEXT_RIGHT = 0x0083
 const OPT_DY_TEXT_BOTTOM = 0x0084
 const OPT_ANCHOR_TEXT = 0x0087
+const OPT_TEXT_FLOW = 0x0088
 const OPT_TEXT_BOOLEANS = 0x00bf
 const OPT_FILL_COLOR = 0x0181
 const OPT_FILL_BOOLEANS = 0x01bf
@@ -391,6 +408,47 @@ function readRect(bytes: Uint8Array, offset: number): Rect {
   }
 }
 
+/** a 16.16 fixed fraction -> 1/1000 percent; cropping away everything or more is ignored */
+/** 16.16 fixed-point fraction -> thousandths of a percent; negative sides (padding) are kept, as Word does */
+function cropFraction(value: number | undefined): number {
+  if (value === undefined) return 0
+  const signed = value | 0
+  if (signed <= -0x10000 || signed >= 0x10000) return 0
+  return Math.round((signed * 100000) / 0x10000)
+}
+
+function shapeCrop(props: Map<number, number>): PictureCrop | undefined {
+  const crop: PictureCrop = {
+    l: cropFraction(props.get(OPT_CROP_FROM_LEFT)),
+    t: cropFraction(props.get(OPT_CROP_FROM_TOP)),
+    r: cropFraction(props.get(OPT_CROP_FROM_RIGHT)),
+    b: cropFraction(props.get(OPT_CROP_FROM_BOTTOM)),
+  }
+  if (crop.l + crop.r >= 100000 || crop.t + crop.b >= 100000) return undefined
+  return crop.l || crop.t || crop.r || crop.b ? crop : undefined
+}
+
+/**
+ * Crop of the inline picture whose OfficeArt shape container starts at or
+ * shortly after `offset` (a PICF may carry a picture name before it). Word
+ * stores inline crops in the shape's OPT, not in the PICF twip fields.
+ */
+export function inlineShapeCrop(
+  bytes: Uint8Array,
+  offset: number,
+  limit: number,
+): PictureCrop | undefined {
+  const dv = view(bytes)
+  for (let at = offset; at + 8 <= Math.min(limit, offset + 512); at++) {
+    if (dv.getUint16(at + 2, true) !== REC_SP_CONTAINER || (dv.getUint16(at, true) & 0x0f) !== 0x0f)
+      continue
+    const record = readRecord(bytes, at, limit)
+    if (!record) return undefined
+    return shapeCrop(parseSpContainer(bytes, record).props)
+  }
+  return undefined
+}
+
 function parseSpContainer(bytes: Uint8Array, record: RecordHeader): Shape {
   const shape: Shape = { spid: 0, flags: 0, shapeType: 0, props: new Map(), children: [] }
   const dv = view(bytes)
@@ -563,6 +621,13 @@ function textBoxStyle(
     return value === undefined || value > 0x7fffffff ? DEFAULT_INSETS_EMU[index]! : value
   }
   const anchorText = props.get(OPT_ANCHOR_TEXT) ?? 0
+  const textFlow = props.get(OPT_TEXT_FLOW) ?? 0
+  const textDirection =
+    textFlow === 2
+      ? 'vert270'
+      : textFlow === 1 || textFlow === 3 || textFlow === 5
+        ? 'vert'
+        : undefined
   return {
     geometry: SHAPE_GEOMETRY[shape.shapeType] ?? 'rect',
     ...(filled ? { fill: colorHex(props.get(OPT_FILL_COLOR) ?? 0xffffff) ?? 'FFFFFF' } : {}),
@@ -581,6 +646,7 @@ function textBoxStyle(
       inset(OPT_DY_TEXT_BOTTOM, 3),
     ],
     verticalAnchor: anchorText % 3 === 1 ? 'ctr' : anchorText % 3 === 2 ? 'b' : 't',
+    ...(textDirection ? { textDirection } : {}),
     autoFit: optBoolean(props, OPT_TEXT_BOOLEANS, 0x02, false),
   }
 }
@@ -730,7 +796,9 @@ export function parseFloatingPictures(
           continue
         }
         const media = mediaFor(leaf.shape.pib!)
-        if (media) out.push({ ...base, kind: 'picture', media })
+        if (!media) continue
+        const crop = shapeCrop(leaf.shape.props)
+        out.push({ ...base, kind: 'picture', media, ...(crop ? { crop } : {}) })
       }
     }
     if (claims.unclaimed().length > 0)

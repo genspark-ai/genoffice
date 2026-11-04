@@ -11,6 +11,7 @@
  * <w:tbl>, inline PNG/JPEG pictures as <w:drawing> and text boxes as anchored
  * wps shapes; footnotes/endnotes go to their own parts.
  */
+import { compatOptionsOf } from './compat'
 import JSZip from 'jszip'
 import {
   buildBlankDocx,
@@ -23,17 +24,24 @@ import {
 } from '@genoffice/docx-engine'
 import {
   COLOR_BY_INDEX,
+  characterFormattingOf,
+  shadingFillOf,
   type FormattedParagraph,
+  type Shading,
   type FormattedRun,
   type ParagraphFormatting,
+  type ParagraphFrame,
+  isPositionedFrame,
 } from './formatting'
 import type { HeaderFooterStory, SectionHeaderFooter } from './headers'
+import { fontNamesFor } from './fonts'
 import type { LegacyNote, NoteKind } from './notes'
 import { EMU_PER_TWIP, type ImageBlock } from './images'
 import {
   PICTURE_EXTENSIONS,
   type FloatingShape,
   type FloatingTextBox,
+  type PictureCrop,
   type PictureMediaType,
 } from './drawings'
 import {
@@ -43,7 +51,8 @@ import {
   type ListLevel,
   type ListTables,
 } from './lists'
-import type { SectionBreakType, SectionInfo } from './sections'
+import type { PageBorders, SectionBreakType, SectionColumns, SectionInfo } from './sections'
+import type { FontEntry } from './fonts'
 import type { LegacyComment } from './comments'
 import type {
   BodyBlock,
@@ -54,9 +63,12 @@ import type {
   ParagraphPictures,
   TableBorders,
   TableCell,
+  TableCellPadding,
   TableModel,
+  TablePosition,
   TableRow,
 } from './tables'
+import { forEachTableCell } from './tables'
 import type { LegacyDocLayout, LegacyDocModel } from './index'
 
 /** Word highlight index (sprmCHighlight 1..16) -> OOXML w:highlight name */
@@ -111,6 +123,7 @@ export function toDocxRun(run: FormattedRun): Run {
   const out: Run = { text: run.text }
   if (formatting.bold) out.bold = true
   if (formatting.italic) out.italic = true
+  if (formatting.rtl) out.rtl = true
   if (formatting.strike) out.strike = true
   if (formatting.underline !== undefined && UNDERLINE_KINDS.has(formatting.underline))
     out.underline = true
@@ -118,6 +131,11 @@ export function toDocxRun(run: FormattedRun): Run {
     out.sizeHalfPoints = formatting.fontSizeHalfPoints
   if (formatting.verticalAlign === 'superscript' || formatting.verticalAlign === 'subscript')
     out.vertAlign = formatting.verticalAlign
+  if (formatting.spacingTwips) out.charSpacingTwips = formatting.spacingTwips
+  if (formatting.scalePercent !== undefined && formatting.scalePercent !== 100)
+    out.charScalePct = formatting.scalePercent
+  if (formatting.kerningHalfPoints !== undefined) out.kernHalfPoints = formatting.kerningHalfPoints
+  if (formatting.positionHalfPoints) out.positionHalfPoints = formatting.positionHalfPoints
   if (formatting.highlight !== undefined) {
     const highlight = HIGHLIGHT_BY_INDEX[formatting.highlight]
     if (highlight !== undefined) out.highlight = highlight
@@ -142,6 +160,7 @@ export function toDocxRun(run: FormattedRun): Run {
     out.link = {
       href: run.link.href,
       ...(run.link.tooltip ? { tooltip: run.link.tooltip } : {}),
+      ...(run.link.plain ? { plain: true } : {}),
     }
   }
   if (run.field) out.text = FIELD_OPEN + run.field + FIELD_SPLIT + run.text + FIELD_CLOSE
@@ -154,7 +173,31 @@ export function toDocxRun(run: FormattedRun): Run {
     out.text = run.commentMarks
       .map((mark) => COMMENT_MARK_OPEN + mark.kind[0] + mark.id + COMMENT_MARK_CLOSE)
       .join('')
+  if (run.pictureCp !== undefined) out.text = PICTURE_OPEN + run.pictureCp + PICTURE_CLOSE
   return out
+}
+
+/* private-use markers standing for an inline picture run (its \x01 CP) inside the paragraph text */
+const PICTURE_OPEN = '\ue008'
+const PICTURE_CLOSE = '\ue009'
+const PICTURE_RUN = new RegExp(
+  '<w:r>(?:(?!</w:r>).)*?<w:t xml:space="preserve">' +
+    PICTURE_OPEN +
+    '(\\d+)' +
+    PICTURE_CLOSE +
+    '</w:t></w:r>',
+  'g',
+)
+
+/** replace the picture marker runs by their drawing runs (markers without a picture are dropped) */
+function expandPictureRuns(xml: string, runsByCp: Map<number, string>): string {
+  if (!xml.includes(PICTURE_OPEN)) return xml
+  return xml.replace(PICTURE_RUN, (_match, cp: string) => {
+    const run = runsByCp.get(Number(cp))
+    if (run === undefined) return ''
+    runsByCp.delete(Number(cp))
+    return run
+  })
 }
 
 /* private-use markers standing for comment anchors (kind letter + id) inside a run's text */
@@ -286,7 +329,16 @@ function expandNoteRuns(xml: string): string {
 /** Map stage-2 paragraph formatting to docx-engine's ParaFormat (undefined when empty). */
 export function toParaFormat(formatting: ParagraphFormatting): ParaFormat | undefined {
   const out: ParaFormat = {}
-  if (formatting.alignment !== undefined) out.align = formatting.alignment
+  if (formatting.bidi) out.bidi = true
+  if (formatting.alignment !== undefined) {
+    const flip = formatting.bidi && formatting.alignmentLogical
+    out.align =
+      flip && formatting.alignment === 'left'
+        ? 'right'
+        : flip && formatting.alignment === 'right'
+          ? 'left'
+          : formatting.alignment
+  }
   if (formatting.indentLeftTwips !== undefined) out.indentLeft = formatting.indentLeftTwips
   if (formatting.indentRightTwips !== undefined) out.indentRight = formatting.indentRightTwips
   if (formatting.indentFirstLineTwips !== undefined)
@@ -295,6 +347,10 @@ export function toParaFormat(formatting: ParagraphFormatting): ParaFormat | unde
   if (formatting.spacingAfterTwips !== undefined) out.spaceAfter = formatting.spacingAfterTwips
   if (formatting.keepNext) out.keepNext = true
   if (formatting.keepLines) out.keepLines = true
+  if (formatting.shading) {
+    const fill = shadingFillOf(formatting.shading)
+    if (fill !== undefined) out.shadingFill = fill
+  }
   if (formatting.pageBreakBefore) out.pageBreakBefore = true
   if (formatting.lineSpacing !== undefined) {
     if (formatting.lineSpacing.multiple) {
@@ -354,14 +410,66 @@ function paragraphBlock(entry: {
   return block
 }
 
+const FRAME_X_ALIGNS: Record<number, string> = {
+  [-4]: 'center',
+  [-8]: 'right',
+  [-12]: 'inside',
+  [-16]: 'outside',
+}
+const FRAME_Y_ALIGNS: Record<number, string> = {
+  [-4]: 'top',
+  [-8]: 'center',
+  [-12]: 'bottom',
+  [-16]: 'inside',
+  [-20]: 'outside',
+}
+
+/** w:framePr for a positioned paragraph; a negative alignment code becomes xAlign/yAlign */
+export function framePrXml(frame: ParagraphFrame): string {
+  const attrs: string[] = []
+  if (frame.widthTwips) attrs.push(`w:w="${frame.widthTwips}"`)
+  if (frame.heightTwips) {
+    attrs.push(`w:h="${frame.heightTwips}"`)
+    attrs.push(`w:hRule="${frame.heightExact ? 'exact' : 'atLeast'}"`)
+  }
+  if (frame.hSpaceTwips) attrs.push(`w:hSpace="${frame.hSpaceTwips}"`)
+  if (frame.vSpaceTwips) attrs.push(`w:vSpace="${frame.vSpaceTwips}"`)
+  attrs.push(`w:wrap="${frame.wrap ?? 'auto'}"`)
+  attrs.push(`w:vAnchor="${frame.vAnchor ?? 'margin'}"`)
+  attrs.push(`w:hAnchor="${frame.hAnchor ?? 'text'}"`)
+  const x = frame.xTwips ?? 0
+  const xAlign = FRAME_X_ALIGNS[x]
+  attrs.push(xAlign ? `w:xAlign="${xAlign}"` : `w:x="${x}"`)
+  const y = frame.yTwips ?? 0
+  const yAlign = FRAME_Y_ALIGNS[y]
+  attrs.push(yAlign ? `w:yAlign="${yAlign}"` : `w:y="${y}"`)
+  return `<w:framePr ${attrs.join(' ')}/>`
+}
+
+/** framePr follows pStyle/keepNext/keepLines/pageBreakBefore in CT_PPrBase */
+const PPR_BEFORE_FRAME =
+  /^(<w:pPr>)((?:<w:(?:pStyle|keepNext|keepLines|pageBreakBefore)\b[^>]*\/>)*)/
+
+function withFramePr(xml: string, framePr: string): string {
+  if (xml === '<w:p/>') return '<w:p><w:pPr>' + framePr + '</w:pPr></w:p>'
+  const open = xml.match(/^<w:p(?: [^>]*)?>/)![0]
+  const rest = xml.slice(open.length)
+  if (!rest.startsWith('<w:pPr>')) return open + '<w:pPr>' + framePr + '</w:pPr>' + rest
+  return (
+    open + rest.replace(PPR_BEFORE_FRAME, (_m, pPr: string, lead: string) => pPr + lead + framePr)
+  )
+}
+
 /** generateParagraphXml plus the paragraph mark's rPr, which docx-engine's block model does not carry */
 function paragraphXml(
   entry: { paragraph: FormattedParagraph; list?: ParagraphListInfo; styleId?: string },
   context: GenerateContext,
 ): string {
-  const xml = expandCommentMarks(
+  let xml = expandCommentMarks(
     expandNoteRuns(expandFieldRuns(generateParagraphXml(paragraphBlock(entry), context))),
   )
+  if (isPositionedFrame(entry.paragraph.formatting.frame))
+    xml = withFramePr(xml, framePrXml(entry.paragraph.formatting.frame))
   const mark = entry.paragraph.markFormatting
   if (!mark) return xml
   const rPr = mergeRPrModel('', toDocxRun({ text: '', formatting: mark }), false)
@@ -390,6 +498,10 @@ const NOTES_PATH: Record<NoteKind, string> = {
 const HEADER_REL_TYPE = `${WORD_REL_NAMESPACE}/header`
 const FOOTER_REL_TYPE = `${WORD_REL_NAMESPACE}/footer`
 const SETTINGS_REL_TYPE = `${WORD_REL_NAMESPACE}/settings`
+const FONT_TABLE_PATH = 'word/fontTable.xml'
+const FONT_TABLE_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml'
+const FONT_TABLE_REL_TYPE = `${WORD_REL_NAMESPACE}/fontTable`
 const NOTES_REL_TYPE: Record<NoteKind, string> = {
   footnote: `${WORD_REL_NAMESPACE}/footnotes`,
   endnote: `${WORD_REL_NAMESPACE}/endnotes`,
@@ -448,8 +560,10 @@ const STORY_NAMESPACES =
 function storyParagraphsXml(
   story: HeaderFooterStory,
   pictures: PictureRefs,
-  kind: 'body' | 'header' | 'footer',
+  kind: StoryKind,
 ): string {
+  if (story.blocks)
+    return generateBodyBlocksXml(story.blocks, pictures, GENERATE_CONTEXT, new Map(), kind)
   const runsFor = (index: number): { leading: string; trailing: string } => {
     let leading = (story.pictures?.get(index) ?? [])
       .map((picture) => anchoredShapeRunXml(picture, pictures, kind))
@@ -622,7 +736,51 @@ const SECTION_TYPES: Record<SectionBreakType, string> = {
   oddPage: 'oddPage',
 }
 
-/** the generated <w:sectPr> (CT_SectPr order: references, type, pgSz, pgMar, ...) */
+function pgNumTypeXml(section: SectionInfo): string {
+  const attrs: string[] = []
+  if (section.pageNumberFormat && section.pageNumberFormat !== 'decimal')
+    attrs.push(`w:fmt="${section.pageNumberFormat}"`)
+  if (section.pageNumberStart !== undefined) attrs.push(`w:start="${section.pageNumberStart}"`)
+  return attrs.length > 0 ? `<w:pgNumType ${attrs.join(' ')}/>` : ''
+}
+
+/** w:cols for a multi-column section; explicit widths are written as w:col children */
+function colsXml(columns: SectionColumns | undefined): string {
+  if (!columns || columns.count <= 1) return ''
+  const widths = columns.widths
+  const explicit = widths !== undefined && widths.length === columns.count
+  const attrs =
+    `w:num="${columns.count}"` +
+    ` w:space="${columns.spaceTwips}"` +
+    (columns.separator ? ' w:sep="1"' : '') +
+    (explicit ? ' w:equalWidth="0"' : '')
+  if (!explicit) return `<w:cols ${attrs}/>`
+  const cols = widths
+    .map((width, index) => {
+      const space = columns.spacings?.[index]
+      return index < widths.length - 1
+        ? `<w:col w:w="${width}" w:space="${space ?? columns.spaceTwips}"/>`
+        : `<w:col w:w="${width}"/>`
+    })
+    .join('')
+  return `<w:cols ${attrs}>${cols}</w:cols>`
+}
+
+function pgBordersXml(borders: PageBorders | undefined): string {
+  if (!borders) return ''
+  const sides = W_BORDER_SIDES.filter((side) => borders.sides[side])
+    .map((side) => borderXml(side, borders.sides[side], borders.sides[side]!.spacePoints))
+    .join('')
+  if (!sides) return ''
+  return (
+    `<w:pgBorders w:offsetFrom="${borders.offsetFrom}"` +
+    (borders.display ? ` w:display="${borders.display}"` : '') +
+    (borders.zOrder ? ` w:zOrder="${borders.zOrder}"` : '') +
+    `>${sides}</w:pgBorders>`
+  )
+}
+
+/** the generated <w:sectPr> (CT_SectPr order: references, type, pgSz, pgMar, pgBorders, ...) */
 function sectPrXml(section: SectionInfo, references: string): string {
   const orient = section.orientation === 'landscape' ? ' w:orient="landscape"' : ''
   const { margins } = section
@@ -635,6 +793,9 @@ function sectPrXml(section: SectionInfo, references: string): string {
     `<w:pgMar w:top="${margins.top}" w:right="${margins.right}" w:bottom="${margins.bottom}"` +
     ` w:left="${margins.left}" w:header="${margins.header}" w:footer="${margins.footer}"` +
     ` w:gutter="${margins.gutter}"/>` +
+    pgBordersXml(section.pageBorders) +
+    pgNumTypeXml(section) +
+    colsXml(section.columns) +
     (section.titlePage ? '<w:titlePg/>' : '') +
     docGridXml(section) +
     '</w:sectPr>'
@@ -644,7 +805,7 @@ function sectPrXml(section: SectionInfo, references: string): string {
 const W_BORDER_SIDES = ['top', 'left', 'bottom', 'right'] as const
 
 /** one border element: the parsed line style, or Word's default single 0.5pt line */
-function borderXml(side: string, line?: BorderLine): string {
+function borderXml(side: string, line?: BorderLine, spacePoints = 0): string {
   return (
     '<w:' +
     side +
@@ -652,7 +813,9 @@ function borderXml(side: string, line?: BorderLine): string {
     (line?.style ?? 'single') +
     '" w:sz="' +
     (line?.widthEighths ?? 4) +
-    '" w:space="0" w:color="' +
+    '" w:space="' +
+    spacePoints +
+    '" w:color="' +
     (line?.color ?? 'auto') +
     '"/>'
   )
@@ -669,47 +832,128 @@ function tableBordersXml(borders: TableBorders, styles: BorderStyles = {}): stri
     borders.insideVertical
   if (!visible) return ''
   const sides =
-    W_BORDER_SIDES.map((side) => borderXml(side, styles[side])).join('') +
-    borderXml('insideH', styles.insideHorizontal) +
-    borderXml('insideV', styles.insideVertical)
+    W_BORDER_SIDES.filter((side) => borders[side])
+      .map((side) => borderXml(side, styles[side]))
+      .join('') +
+    (borders.insideHorizontal ? borderXml('insideH', styles.insideHorizontal) : '') +
+    (borders.insideVertical ? borderXml('insideV', styles.insideVertical) : '')
   return '<w:tblBorders>' + sides + '</w:tblBorders>'
 }
 
-function cellBordersXml(cell: TableCell): string {
+/** the table-level border each side of a cell would inherit (outer edge or inside line) */
+interface CellEdges {
+  firstRow: boolean
+  lastRow: boolean
+  firstCell: boolean
+  lastCell: boolean
+  table: TableBorders
+}
+
+function inheritedBorder(side: (typeof W_BORDER_SIDES)[number], edges: CellEdges): boolean {
+  const { table } = edges
+  if (side === 'top') return edges.firstRow ? table.top : table.insideHorizontal
+  if (side === 'bottom') return edges.lastRow ? table.bottom : table.insideHorizontal
+  if (side === 'left') return edges.firstCell ? table.left : table.insideVertical
+  return edges.lastCell ? table.right : table.insideVertical
+}
+
+/** a TC80 side that is off must be written as nil where the table borders would otherwise draw it */
+function cellBordersXml(cell: TableCell, edges?: CellEdges): string {
   if (!cell.borders) return ''
-  const visible = W_BORDER_SIDES.filter((side) => cell.borders![side])
-  if (visible.length === 0) return ''
+  const sides = W_BORDER_SIDES.filter(
+    (side) => cell.borders![side] || (edges !== undefined && inheritedBorder(side, edges)),
+  )
+  if (sides.length === 0) return ''
   return (
     '<w:tcBorders>' +
-    visible.map((side) => borderXml(side, cell.borderStyles?.[side])).join('') +
+    sides
+      .map((side) =>
+        cell.borders![side]
+          ? borderXml(side, cell.borderStyles?.[side])
+          : '<w:' + side + ' w:val="nil"/>',
+      )
+      .join('') +
     '</w:tcBorders>'
   )
 }
 
-function tableCellXml(cell: TableCell, context: GenerateContext, pictures: PictureRefs): string {
+function shadingXml(shading: Shading): string {
+  return (
+    '<w:shd w:val="' +
+    shading.pattern +
+    '" w:color="' +
+    (shading.color ?? 'auto') +
+    '" w:fill="' +
+    (shading.fill ?? 'auto') +
+    '"/>'
+  )
+}
+
+/** w:tblCellMar / w:tcMar: the sides that are set, in schema order */
+function cellMarginsXml(element: string, padding: TableCellPadding): string {
+  const sides = W_BORDER_SIDES.filter((side) => padding[side] !== undefined)
+  if (sides.length === 0) return ''
+  return (
+    '<w:' +
+    element +
+    '>' +
+    sides.map((side) => '<w:' + side + ' w:w="' + padding[side] + '" w:type="dxa"/>').join('') +
+    '</w:' +
+    element +
+    '>'
+  )
+}
+
+type StoryKind = 'body' | 'header' | 'footer'
+
+function tableCellXml(
+  cell: TableCell,
+  context: GenerateContext,
+  pictures: PictureRefs,
+  story: StoryKind = 'body',
+  edges?: CellEdges,
+): string {
   const properties = ['<w:tcW w:w="' + cell.widthTwips + '" w:type="dxa"/>']
   if (cell.gridSpan > 1) properties.push('<w:gridSpan w:val="' + cell.gridSpan + '"/>')
   if (cell.verticalMerge === 'restart') properties.push('<w:vMerge w:val="restart"/>')
   else if (cell.verticalMerge === 'continue') properties.push('<w:vMerge/>')
-  const borders = cellBordersXml(cell)
+  const borders = cellBordersXml(cell, edges)
   if (borders !== '') properties.push(borders)
+  if (cell.shading) properties.push(shadingXml(cell.shading))
+  if (cell.padding) properties.push(cellMarginsXml('tcMar', cell.padding))
+  if (cell.vertAlign) properties.push('<w:vAlign w:val="' + cell.vertAlign + '"/>')
+  const nestedBefore = (index: number): string =>
+    (cell.nestedTables?.get(index) ?? [])
+      .map((table) => generateTableXml(table, context, pictures, story))
+      .join('')
+  // a cell always ends with a paragraph, also after a trailing nested table
   const paragraphs =
-    cell.paragraphs.length === 0
-      ? '<w:p/>'
-      : cell.paragraphs
-          .map((paragraph, index) => {
-            const runs = pictureRunsOf(cell.paragraphPictures?.get(index), pictures)
-            return withPictureRuns(
-              paragraphXml({ paragraph, list: cell.paragraphLists?.get(index) }, context),
-              runs.leading,
-              runs.trailing,
-            )
-          })
-          .join('')
+    cell.paragraphs
+      .map((paragraph, index) => {
+        return (
+          nestedBefore(index) +
+          withParagraphPictures(
+            paragraphXml({ paragraph, list: cell.paragraphLists?.get(index) }, context),
+            cell.paragraphPictures?.get(index),
+            pictures,
+            story,
+          )
+        )
+      })
+      .join('') +
+    (cell.paragraphs.length === 0 || cell.nestedTables?.has(cell.paragraphs.length)
+      ? nestedBefore(cell.paragraphs.length) + '<w:p/>'
+      : '')
   return '<w:tc><w:tcPr>' + properties.join('') + '</w:tcPr>' + paragraphs + '</w:tc>'
 }
 
-function tableRowXml(row: TableRow, context: GenerateContext, pictures: PictureRefs): string {
+function tableRowXml(
+  row: TableRow,
+  context: GenerateContext,
+  pictures: PictureRefs,
+  story: StoryKind = 'body',
+  rowEdges?: Pick<CellEdges, 'firstRow' | 'lastRow' | 'table'>,
+): string {
   const properties: string[] = []
   if (row.cantSplit) properties.push('<w:cantSplit/>')
   if (row.heightTwips !== undefined)
@@ -725,8 +969,43 @@ function tableRowXml(row: TableRow, context: GenerateContext, pictures: PictureR
   return (
     '<w:tr>' +
     trPr +
-    row.cells.map((cell) => tableCellXml(cell, context, pictures)).join('') +
+    row.cells
+      .map((cell, index) =>
+        tableCellXml(
+          cell,
+          context,
+          pictures,
+          story,
+          rowEdges && {
+            ...rowEdges,
+            firstCell: index === 0,
+            lastCell: index === row.cells.length - 1,
+          },
+        ),
+      )
+      .join('') +
     '</w:tr>'
+  )
+}
+
+/** w:tblpPr (+ w:tblOverlap) of a floating table; the negative codes map like paragraph frames */
+function tablePositionXml(position: TablePosition | undefined): string {
+  if (!position) return ''
+  const attrs: string[] = []
+  if (position.leftFromText) attrs.push(`w:leftFromText="${position.leftFromText}"`)
+  if (position.rightFromText) attrs.push(`w:rightFromText="${position.rightFromText}"`)
+  if (position.topFromText) attrs.push(`w:topFromText="${position.topFromText}"`)
+  if (position.bottomFromText) attrs.push(`w:bottomFromText="${position.bottomFromText}"`)
+  attrs.push(`w:vertAnchor="${position.vAnchor ?? 'margin'}"`)
+  attrs.push(`w:horzAnchor="${position.hAnchor ?? 'text'}"`)
+  const x = position.xTwips ?? 0
+  const xAlign = FRAME_X_ALIGNS[x]
+  attrs.push(xAlign ? `w:tblpXSpec="${xAlign}"` : `w:tblpX="${x}"`)
+  const y = position.yTwips ?? 0
+  const yAlign = FRAME_Y_ALIGNS[y]
+  attrs.push(yAlign ? `w:tblpYSpec="${yAlign}"` : `w:tblpY="${y}"`)
+  return (
+    `<w:tblpPr ${attrs.join(' ')}/>` + (position.noOverlap ? '<w:tblOverlap w:val="never"/>' : '')
   )
 }
 
@@ -735,18 +1014,30 @@ export function generateTableXml(
   table: TableModel,
   context: GenerateContext = GENERATE_CONTEXT,
   pictures: PictureRefs = NO_PICTURES,
+  story: StoryKind = 'body',
 ): string {
   const tableProperties = [
+    tablePositionXml(table.position),
     '<w:tblW w:w="0" w:type="auto"/>',
     ...(table.alignment ? ['<w:jc w:val="' + table.alignment + '"/>'] : []),
     tableBordersXml(table.borders, table.borderStyles),
+    ...(table.shading ? [shadingXml(table.shading)] : []),
     '<w:tblLayout w:type="fixed"/>',
+    cellMarginsXml('tblCellMar', table.cellPadding),
   ].filter((part) => part !== '')
   const grid =
     '<w:tblGrid>' +
     table.gridWidths.map((width) => '<w:gridCol w:w="' + width + '"/>').join('') +
     '</w:tblGrid>'
-  const rows = table.rows.map((row) => tableRowXml(row, context, pictures)).join('')
+  const rows = table.rows
+    .map((row, index) =>
+      tableRowXml(row, context, pictures, story, {
+        firstRow: index === 0,
+        lastRow: index === table.rows.length - 1,
+        table: table.borders,
+      }),
+    )
+    .join('')
   return '<w:tbl><w:tblPr>' + tableProperties.join('') + '</w:tblPr>' + grid + rows + '</w:tbl>'
 }
 
@@ -762,7 +1053,23 @@ const NO_PICTURES: PictureRefs = {
   nextDocPrId: () => 1,
 }
 
-function pictureGraphicXml(rId: string, docPrId: number, cx: number, cy: number): string {
+/** a:srcRect in 1/1000 of a percent; omitted when nothing is cropped */
+function srcRectXml(crop: PictureCrop | undefined): string {
+  if (!crop) return ''
+  const sides = (['l', 't', 'r', 'b'] as const)
+    .filter((side) => crop[side] !== 0)
+    .map((side) => ` ${side}="${crop[side]}"`)
+    .join('')
+  return sides === '' ? '' : `<a:srcRect${sides}/>`
+}
+
+function pictureGraphicXml(
+  rId: string,
+  docPrId: number,
+  cx: number,
+  cy: number,
+  crop?: PictureCrop,
+): string {
   const name = 'Picture ' + docPrId
   return (
     '<wp:docPr id="' +
@@ -781,7 +1088,9 @@ function pictureGraphicXml(rId: string, docPrId: number, cx: number, cy: number)
     '<pic:cNvPicPr/></pic:nvPicPr>' +
     '<pic:blipFill><a:blip r:embed="' +
     rId +
-    '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '"/>' +
+    srcRectXml(crop) +
+    '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
     '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' +
     cx +
     '" cy="' +
@@ -803,7 +1112,7 @@ function inlinePictureRunXml(image: ImageBlock, pictures: PictureRefs): string {
     '" cy="' +
     cy +
     '"/>' +
-    pictureGraphicXml(pictures.relIdFor(image), pictures.nextDocPrId(), cx, cy) +
+    pictureGraphicXml(pictures.relIdFor(image), pictures.nextDocPrId(), cx, cy, image.crop) +
     '</wp:inline></w:drawing></w:r>'
   )
 }
@@ -832,7 +1141,7 @@ function textBoxGraphicXml(
     `<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
     `<a:prstGeom prst="${box.geometry}"><a:avLst/></a:prstGeom>${fill}${line}</wps:spPr>` +
     `<wps:txbx><w:txbxContent>${storyParagraphsXml(box.content, pictures, story)}</w:txbxContent></wps:txbx>` +
-    `<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="${left}" tIns="${top}" rIns="${right}" bIns="${bottom}"` +
+    `<wps:bodyPr rot="0" vert="${box.textDirection ?? 'horz'}" wrap="square" lIns="${left}" tIns="${top}" rIns="${right}" bIns="${bottom}"` +
     ` anchor="${box.verticalAnchor}" anchorCtr="0" upright="1">` +
     (box.autoFit ? '<a:spAutoFit/>' : '<a:noAutofit/>') +
     '</wps:bodyPr></wps:wsp></a:graphicData></a:graphic>'
@@ -886,7 +1195,7 @@ function anchoredShapeRunXml(
     '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
     wrap +
     (picture.kind === 'picture'
-      ? pictureGraphicXml(pictures.relIdFor(picture.media), docPrId, cx, cy)
+      ? pictureGraphicXml(pictures.relIdFor(picture.media), docPrId, cx, cy, picture.crop)
       : textBoxGraphicXml(picture, pictures, docPrId, cx, cy, story)) +
     '</wp:anchor></w:drawing></w:r>'
   )
@@ -905,21 +1214,30 @@ function withPictureRuns(paragraphXml: string, leading: string, trailing = ''): 
   return xml
 }
 
-function pictureRunsOf(
+/** the paragraph with its anchored shapes in front and its inline pictures at their marker runs */
+function withParagraphPictures(
+  paragraphXml: string,
   pictures: ParagraphPictures | undefined,
   refs: PictureRefs,
-): { leading: string; trailing: string } {
-  if (!pictures) return { leading: '', trailing: '' }
+  story: StoryKind = 'body',
+): string {
+  if (!pictures) return paragraphXml
   let leading = (pictures.floating ?? [])
-    .map((picture) => anchoredShapeRunXml(picture, refs))
+    .map((picture) => anchoredShapeRunXml(picture, refs, story))
     .join('')
+  const inline = pictures.inline ?? []
+  const runsByCp = new Map(
+    inline.map((entry) => [entry.image.cp, inlinePictureRunXml(entry.image, refs)]),
+  )
+  const xml = expandPictureRuns(paragraphXml, runsByCp)
   let trailing = ''
-  for (const entry of pictures.inline ?? []) {
-    const run = inlinePictureRunXml(entry.image, refs)
+  for (const entry of inline) {
+    const run = runsByCp.get(entry.image.cp)
+    if (run === undefined) continue
     if (entry.position === 'start') leading += run
     else trailing += run
   }
-  return { leading, trailing }
+  return withPictureRuns(xml, leading, trailing)
 }
 
 /**
@@ -973,13 +1291,26 @@ function blockCpRange(block: BodyBlock): { start: number; end: number } | undefi
       : { start: block.image.cp, end: block.image.cp + 1 }
   let start = Infinity
   let end = -Infinity
-  for (const row of block.table.rows)
-    for (const cell of row.cells)
-      for (const paragraph of cell.paragraphs) {
-        start = Math.min(start, paragraph.startCp)
-        end = Math.max(end, paragraph.endCp)
-      }
+  forEachTableCell(block.table, (cell) => {
+    for (const paragraph of cell.paragraphs) {
+      start = Math.min(start, paragraph.startCp)
+      end = Math.max(end, paragraph.endCp)
+    }
+  })
   return start <= end ? { start, end } : undefined
+}
+
+/**
+ * The body text ends with a paragraph mark, so stage 1 always yields one more
+ * (empty) paragraph after the real last one; Word has no such paragraph, and
+ * writing it adds a blank line that can spill onto an extra page.
+ */
+function isTrailingEmptyParagraph(
+  paragraph: { startCp: number; endCp: number; text: string },
+  all: readonly { endCp: number }[],
+): boolean {
+  if (paragraph.text !== '' || paragraph.startCp !== paragraph.endCp) return false
+  return all.length > 1 && all.every((other) => other.endCp <= paragraph.endCp)
 }
 
 export function generateBodyBlocksXml(
@@ -987,30 +1318,50 @@ export function generateBodyBlocksXml(
   pictures: PictureRefs = NO_PICTURES,
   context: GenerateContext = GENERATE_CONTEXT,
   sectionBreaks: SectionBreaks = new Map(),
+  story: StoryKind = 'body',
 ): string {
   const ends = new SectionEndWriter(sectionBreaks)
   let out = ''
-  for (const block of blocks) {
+  const bodyParagraphs = blocks.flatMap((block) =>
+    block.type === 'paragraph'
+      ? [block.paragraph]
+      : block.type === 'image' && block.paragraph
+        ? [block.paragraph]
+        : [],
+  )
+  blocks.forEach((block, index) => {
+    // the paragraph after a final table stays: OOXML requires one
+    if (
+      block.type === 'paragraph' &&
+      blocks[index - 1]?.type !== 'table' &&
+      isTrailingEmptyParagraph(block.paragraph, bodyParagraphs)
+    )
+      return
     const range = blockCpRange(block)
     if (range) out += ends.flush(range.start - 1)
     if (block.type === 'table') {
-      out += generateTableXml(block.table, context, pictures)
+      out += generateTableXml(block.table, context, pictures, story)
     } else if (block.type === 'image') {
-      const run = inlinePictureRunXml(block.image, pictures)
       const xml = block.paragraph
-        ? withPictureRuns(
+        ? withParagraphPictures(
             paragraphXml({ paragraph: block.paragraph, list: block.list }, context),
-            run,
+            { inline: [{ image: block.image, position: 'start' }] },
+            pictures,
+            story,
           )
-        : '<w:p>' + run + '</w:p>'
+        : '<w:p>' + inlinePictureRunXml(block.image, pictures) + '</w:p>'
       out += ends.paragraph(xml, range?.end)
     } else {
-      const runs = pictureRunsOf(block.pictures, pictures)
-      const xml = withPictureRuns(paragraphXml(block, context), runs.leading, runs.trailing)
+      const xml = withParagraphPictures(
+        paragraphXml(block, context),
+        block.pictures,
+        pictures,
+        story,
+      )
       out += ends.paragraph(xml, block.paragraph.endCp)
     }
     if (range) out += ends.flush(range.end)
-  }
+  })
   return out + ends.flush(Infinity)
 }
 
@@ -1087,29 +1438,83 @@ const STYLES_PATH = 'word/styles.xml'
 
 /**
  * The compatibility options Word itself writes when it saves a Word 97-2003
- * document as .docx (compatibilityMode 11 plus the legacy layout switches);
- * without them Word lays the text out with its current rules, which breaks
- * lines differently (e.g. balanced single/double-byte widths).
+ * document as .docx: the Dop Copts flags (compat.ts), then compatibilityMode
+ * 11 plus the Word 2003 layout switches. Without them Word lays the text out
+ * with its current rules, which breaks lines differently (e.g. balanced
+ * single/double-byte widths).
  */
-const LEGACY_COMPAT_XML =
-  '<w:compat><w:spaceForUL/><w:balanceSingleByteDoubleByteWidth/><w:doNotLeaveBackslashAlone/>' +
-  '<w:ulTrailSpace/><w:doNotExpandShiftReturn/><w:adjustLineHeightInTable/><w:useFELayout/>' +
-  '<w:useNormalStyleForList/><w:doNotUseIndentAsNumberingTabStop/><w:useAltKinsokuLineBreakRules/>' +
+const LEGACY_COMPAT_HEAD =
+  '<w:useNormalStyleForList/>' +
+  '<w:doNotUseIndentAsNumberingTabStop/><w:useAltKinsokuLineBreakRules/>' +
   '<w:allowSpaceOfSameStyleInTable/><w:doNotSuppressIndentation/><w:doNotAutofitConstrainedTables/>' +
-  '<w:autofitToFirstFixedWidthCell/><w:displayHangulFixedWidth/><w:splitPgBreakAndParaMark/>' +
+  '<w:autofitToFirstFixedWidthCell/>'
+const LEGACY_COMPAT_TAIL =
+  '<w:displayHangulFixedWidth/><w:splitPgBreakAndParaMark/>' +
   '<w:doNotVertAlignCellWithSp/><w:doNotBreakConstrainedForcedTable/><w:doNotVertAlignInTxbx/>' +
   '<w:useAnsiKerningPairs/><w:cachedColBalance/>' +
   '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="11"/>' +
   '</w:compat>'
 
-function settingsXml(evenAndOddHeaders: boolean, noteKinds: NoteKind[]): string {
+/** word/fontTable.xml: one w:font per distinct SttbfFfn name with Word's substitution hints */
+function fontTableXml(fonts: FontEntry[]): string {
+  const seen = new Set<string>()
+  const entries = fonts.filter((font) => {
+    if (font.name === '' || seen.has(font.name)) return false
+    seen.add(font.name)
+    return true
+  })
+  const hex = (value: number, digits: number): string =>
+    value.toString(16).toUpperCase().padStart(digits, '0')
+  return (
+    `${STORY_XML_DECL}<w:fonts xmlns:w="${W_NAMESPACE}">` +
+    entries
+      .map(
+        (font) =>
+          `<w:font w:name="${escapeXmlText(font.name)}">` +
+          (font.altName ? `<w:altName w:val="${escapeXmlText(font.altName)}"/>` : '') +
+          `<w:panose1 w:val="${[...font.panose].map((byte) => hex(byte, 2)).join('')}"/>` +
+          `<w:charset w:val="${hex(font.charset, 2)}"/>` +
+          `<w:family w:val="${font.family}"/>` +
+          `<w:pitch w:val="${font.pitch}"/>` +
+          `<w:sig w:usb0="${hex(font.signature[0]!, 8)}" w:usb1="${hex(font.signature[1]!, 8)}" w:usb2="${hex(font.signature[2]!, 8)}" w:usb3="${hex(font.signature[3]!, 8)}" w:csb0="${hex(font.signature[4]!, 8)}" w:csb1="${hex(font.signature[5]!, 8)}"/>` +
+          '</w:font>',
+      )
+      .join('') +
+    '</w:fonts>'
+  )
+}
+
+/** farEast: Word keeps useFELayout only for documents saved by an East Asian Word (FibBase.fFarEast) */
+function compatXml(options: string[] = compatOptionsOf(undefined), farEast = false): string {
+  const underline = options.includes('underlineTabInNumList')
+  const flags = options.filter((name) => name !== 'underlineTabInNumList')
+  return (
+    '<w:compat>' +
+    flags.map((name) => `<w:${name}/>`).join('') +
+    (farEast ? '<w:useFELayout/>' : '') +
+    LEGACY_COMPAT_HEAD +
+    (underline ? '<w:underlineTabInNumList/>' : '') +
+    LEGACY_COMPAT_TAIL
+  )
+}
+
+function settingsXml(
+  evenAndOddHeaders: boolean,
+  noteKinds: NoteKind[],
+  defaultTabStopTwips?: number,
+  compatOptions?: string[],
+  farEast = false,
+): string {
   return (
     `${STORY_XML_DECL}<w:settings xmlns:w="${W_NAMESPACE}">` +
+    (defaultTabStopTwips !== undefined
+      ? `<w:defaultTabStop w:val="${defaultTabStopTwips}"/>`
+      : '') +
     (evenAndOddHeaders ? '<w:evenAndOddHeaders/>' : '') +
     noteKinds
       .map((kind) => `<w:${kind}Pr><w:${kind} w:id="-1"/><w:${kind} w:id="0"/></w:${kind}Pr>`)
       .join('') +
-    LEGACY_COMPAT_XML +
+    compatXml(compatOptions, farEast) +
     '</w:settings>'
   )
 }
@@ -1158,6 +1563,7 @@ export function generateBodyParagraphsXml(
   const ends = new SectionEndWriter(sectionBreaks)
   let out = ''
   for (const paragraph of paragraphs) {
+    if (isTrailingEmptyParagraph(paragraph, paragraphs)) continue
     out += ends.flush(paragraph.startCp - 1)
     out += ends.paragraph(paragraphXml({ paragraph }, GENERATE_CONTEXT), paragraph.endCp)
   }
@@ -1181,11 +1587,59 @@ function numberingIndentXml(level: ListLevel): string {
   return attributes.length > 0 ? '<w:ind ' + attributes.join(' ') + '/>' : ''
 }
 
+/**
+ * The level number's run properties (LVL grpprlChpx): font, bold/italic, size
+ * and colour. Fonts resolve through the table without the stylesheet defaults,
+ * so a level that names no font inherits the paragraph's.
+ */
+function numberingRunPropertiesXml(
+  level: ListLevel,
+  fonts: FontEntry[] | undefined,
+): { xml: string; symbolFont: boolean } {
+  const formatting = characterFormattingOf(level.characterSprms)
+  const names = fonts
+    ? fontNamesFor(
+        { names: fonts.map((entry) => entry.name), defaults: {} },
+        {
+          ascii: formatting.ftcAscii,
+          hAnsi: formatting.ftcHAnsi,
+          eastAsia: formatting.ftcEastAsia,
+          cs: formatting.ftcBi,
+        },
+      )
+    : undefined
+  const font = names?.ascii ?? names?.eastAsia
+  const symbolFont =
+    font !== undefined && fonts?.find((entry) => entry.name === font)?.charset === 2
+  let xml = ''
+  if (font !== undefined)
+    xml +=
+      `<w:rFonts w:ascii="${escapeXmlText(font)}"` +
+      (names?.eastAsia ? ` w:eastAsia="${escapeXmlText(names.eastAsia)}"` : '') +
+      ` w:hAnsi="${escapeXmlText(font)}"` +
+      (names?.cs ? ` w:cs="${escapeXmlText(names.cs)}"` : '') +
+      ' w:hint="default"/>'
+  if (formatting.bold) xml += '<w:b/>'
+  if (formatting.italic) xml += '<w:i/>'
+  if (formatting.colorRgb !== undefined) xml += `<w:color w:val="${formatting.colorRgb}"/>`
+  else if (formatting.colorIndex !== undefined && COLOR_BY_INDEX[formatting.colorIndex])
+    xml += `<w:color w:val="${COLOR_BY_INDEX[formatting.colorIndex]}"/>`
+  if (formatting.fontSizeHalfPoints !== undefined)
+    xml += `<w:sz w:val="${formatting.fontSizeHalfPoints}"/><w:szCs w:val="${formatting.fontSizeHalfPoints}"/>`
+  return { xml: xml === '' ? '' : '<w:rPr>' + xml + '</w:rPr>', symbolFont }
+}
+
 /** one w:lvl of a reconstructed list definition */
-function numberingLevelXml(level: ListLevel, ilvl: number): string {
+function numberingLevelXml(level: ListLevel, ilvl: number, fonts?: FontEntry[]): string {
   const bullet = isBulletLevel(level)
   const numberFormat = bullet ? 'bullet' : (NUMBER_FORMATS[level.numberFormat] ?? 'decimal')
-  const levelText = escapeXmlText(levelTextForWriter(level))
+  const runProperties = numberingRunPropertiesXml(level, fonts)
+  // a symbol-font bullet keeps its private-use code so the font draws the glyph Word shows
+  const symbolCode = level.levelText.charCodeAt(0)
+  const levelText =
+    bullet && runProperties.symbolFont && symbolCode >= 0xf020 && symbolCode <= 0xf0ff
+      ? `&#x${symbolCode.toString(16).toUpperCase()};`
+      : escapeXmlText(levelTextForWriter(level))
   const indent = numberingIndentXml(level)
   return (
     '<w:lvl w:ilvl="' +
@@ -1204,6 +1658,7 @@ function numberingLevelXml(level: ListLevel, ilvl: number): string {
     level.alignment +
     '"/>' +
     (indent !== '' ? '<w:pPr>' + indent + '</w:pPr>' : '') +
+    runProperties.xml +
     '</w:lvl>'
   )
 }
@@ -1218,6 +1673,7 @@ function reconstructNumberingXml(
   numbering: string,
   used: Array<{ numId: number; ilfo: number }>,
   tables: ListTables,
+  fonts?: FontEntry[],
 ): string {
   const abstractIdByLsid = new Map<number, number>()
   const abstractXml: string[] = []
@@ -1234,7 +1690,7 @@ function reconstructNumberingXml(
         '<w:abstractNum w:abstractNumId="' +
           abstractId +
           '"><w:multiLevelType w:val="hybridMultilevel"/>' +
-          definition.levels.map(numberingLevelXml).join('') +
+          definition.levels.map((level, ilvl) => numberingLevelXml(level, ilvl, fonts)).join('') +
           '</w:abstractNum>',
       )
     }
@@ -1247,7 +1703,7 @@ function reconstructNumberingXml(
           (override.startAt !== undefined
             ? '<w:startOverride w:val="' + override.startAt + '"/>'
             : '') +
-          (override.level ? numberingLevelXml(override.level, override.ilvl) : '') +
+          (override.level ? numberingLevelXml(override.level, override.ilvl, fonts) : '') +
           '</w:lvlOverride>',
       )
       .join('')
@@ -1381,8 +1837,7 @@ export async function writeLegacyDocx(
     for (const block of body.blocks) {
       if ((block.type === 'paragraph' || block.type === 'image') && block.list) use(block.list)
       if (block.type === 'table')
-        for (const row of block.table.rows)
-          for (const cell of row.cells) cell.paragraphLists?.forEach(use)
+        forEachTableCell(block.table, (cell) => cell.paragraphLists?.forEach(use))
     }
   }
 
@@ -1465,6 +1920,8 @@ export async function writeLegacyDocx(
       ),
     )
 
+  const fontTable =
+    layout?.fonts && layout.fonts.length > 0 ? fontTableXml(layout.fonts) : undefined
   {
     const contentTypesFile = zip.file(CONTENT_TYPES_PATH)
     if (!contentTypesFile) throw new Error('the blank docx template has no [Content_Types].xml')
@@ -1494,6 +1951,9 @@ export async function writeLegacyDocx(
         )
         .join('') +
       `<Override PartName="/${SETTINGS_PATH}" ContentType="${SETTINGS_CONTENT_TYPE}"/>` +
+      (fontTable
+        ? `<Override PartName="/${FONT_TABLE_PATH}" ContentType="${FONT_TABLE_CONTENT_TYPE}"/>`
+        : '') +
       (commentsRelId
         ? `<Override PartName="/${COMMENTS_PATH}" ContentType="${COMMENTS_CONTENT_TYPE}"/>`
         : '')
@@ -1546,7 +2006,10 @@ export async function writeLegacyDocx(
       (commentsRelId
         ? `<Relationship Id="${commentsRelId}" Type="${COMMENTS_REL_TYPE}" Target="comments.xml"/>`
         : '') +
-      `<Relationship Id="rId${nextRelId}" Type="${SETTINGS_REL_TYPE}" Target="settings.xml"/>`
+      `<Relationship Id="rId${nextRelId++}" Type="${SETTINGS_REL_TYPE}" Target="settings.xml"/>` +
+      (fontTable
+        ? `<Relationship Id="rId${nextRelId}" Type="${FONT_TABLE_REL_TYPE}" Target="fontTable.xml"/>`
+        : '')
     relationships = relationships.replace('</Relationships>', `${newRelationships}</Relationships>`)
     zip.file(DOCUMENT_RELS_PATH, relationships)
     for (const part of parts) {
@@ -1572,12 +2035,22 @@ export async function writeLegacyDocx(
     for (const part of noteParts)
       zip.file(NOTES_PATH[part.kind], notesPartXml(part.kind, part.notes))
     if (commentsRelId) zip.file(COMMENTS_PATH, commentsPartXml(comments))
-    zip.file(SETTINGS_PATH, settingsXml(evenAndOddHeaders, noteKinds))
+    zip.file(
+      SETTINGS_PATH,
+      settingsXml(
+        evenAndOddHeaders,
+        noteKinds,
+        layout?.defaultTabStopTwips,
+        layout?.compatOptions,
+        model.fib.farEast,
+      ),
+    )
+    if (fontTable) zip.file(FONT_TABLE_PATH, fontTable)
     if (usedNumbering.length > 0 && body?.lists) {
       const numberingFile = zip.file(NUMBERING_PATH)
       if (numberingFile) {
         const numbering = await numberingFile.async('string')
-        const patched = reconstructNumberingXml(numbering, usedNumbering, body.lists)
+        const patched = reconstructNumberingXml(numbering, usedNumbering, body.lists, layout?.fonts)
         if (patched !== numbering) zip.file(NUMBERING_PATH, patched)
       }
     }
@@ -1624,7 +2097,8 @@ export function conversionWarnings(
     warnings.push('tables are flattened to paragraphs (stage 3a); cell structure is not preserved')
   const { fib } = model
   const layout = options.layout
-  if (layout) warnings.push(...layout.warnings)
+  for (const warning of layout?.warnings ?? [])
+    if (!warnings.includes(warning)) warnings.push(warning)
   const headersConverted = layout !== undefined && layout.headerFooter.length > 0
   if (fib.ccpHdd > 0 && !headersConverted)
     warnings.push('headers are not converted yet; their text is omitted')

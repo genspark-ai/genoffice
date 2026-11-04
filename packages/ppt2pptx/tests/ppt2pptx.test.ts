@@ -65,14 +65,14 @@ describe('convertPptToPptx: editable text', () => {
     const specs: SlideSpec[] = [
       {
         textSequences: [
-          { kind: 0, text: '季度回顾' },
+          { kind: 0, text: '\u5b63\u5ea6\u56de\u987e' },
           { kind: 4, text: 'He said \u0092hi\u0092' },
         ],
       },
     ]
     const texts = await slideTextsOf(pptBytesOf(buildPptStreams(specs)))
     // the cp1252 smart quotes in a TextBytesAtom are named on the way out
-    expect(texts[0]).toEqual(['季度回顾', 'He said ’hi’'])
+    expect(texts[0]).toEqual(['\u5b63\u5ea6\u56de\u987e', 'He said ’hi’'])
     expect(await presentationXmlOf(pptBytesOf(buildPptStreams(specs)))).toContain(
       'cx="9144000" cy="6858000"', // 5760 × 4320 master units = 10 × 7.5 in
     )
@@ -123,6 +123,14 @@ describe('convertPptToPptx: editable text', () => {
     ]
     const texts = await slideTextsOf(pptBytesOf(buildPptStreams(specs)))
     expect(texts[0]).toEqual(['first', 'second bullet text'])
+  })
+
+  it('drops the control characters XML cannot carry', async () => {
+    const specs: SlideSpec[] = [
+      { textSequences: [{ kind: 1, text: 'a\u0001b\u0008c\u000cd\u001be' }] },
+    ]
+    const texts = await slideTextsOf(pptBytesOf(buildPptStreams(specs)))
+    expect(texts[0]).toEqual(['abcde'])
   })
 })
 

@@ -132,6 +132,8 @@ function substituteFor(key: string, hints: FaceHints | undefined): [string, bool
   // a missing Arabic name follows its altName before the Times New Roman rule
   // (corpus 2026-10-27: altName Arial laid out in Arial)
   if (alt && ARABIC_RE.test(key) && !ARABIC_RE.test(faceKey(alt))) return [alt, false]
+  // a Hiragino / HG name with an altName follows it (corpus 2026-11-03: altName Cambria came back Cambria, not Yu Gothic)
+  if (alt && HG_RE.test(key)) return [alt, false]
   for (const [re, target] of SUBSTITUTIONS) if (re.test(key)) return [target, true]
   if (alt) return [alt, false]
   // a missing name whose fontTable sig covers the Arabic code page lays out in

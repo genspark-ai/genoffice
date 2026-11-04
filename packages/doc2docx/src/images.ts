@@ -12,7 +12,14 @@
  * skipped; only a PICF whose header is structurally invalid raises bad_picture.
  */
 import { LegacyDocError, isLegacyDocError } from './errors'
-import { isBlipRecordAt, readBlip, type PictureMedia, type PictureMediaType } from './drawings'
+import {
+  inlineShapeCrop,
+  isBlipRecordAt,
+  readBlip,
+  type PictureCrop,
+  type PictureMedia,
+  type PictureMediaType,
+} from './drawings'
 import { readFormattingDetailed, type FormattingSource, type RawCharacterRun } from './formatting'
 import { iterateSprms, readSprmU8, readSprmU32 } from './sprm'
 
@@ -31,6 +38,12 @@ const PICF_DXA_GOAL = 0x1c
 const PICF_DYA_GOAL = 0x1e
 const PICF_MX = 0x20
 const PICF_MY = 0x22
+const PICF_DXA_CROP_LEFT = 0x24
+const PICF_DYA_CROP_TOP = 0x26
+const PICF_DXA_CROP_RIGHT = 0x28
+const PICF_DYA_CROP_BOTTOM = 0x2a
+/** the size Word gives a picture dimension whose PICF goal is zero or negative */
+const HAIRLINE_TWIPS = 11
 /** 1 twip = 635 EMU */
 export const EMU_PER_TWIP = 635
 
@@ -40,6 +53,7 @@ export interface ImageBlock {
   /** display width/height in twips (PICF dxaGoal/mx, then xExt, then dxaGoal) */
   widthTwips: number
   heightTwips: number
+  crop?: PictureCrop
   mediaType: PictureMediaType
   /** exact image bytes (PNG chunk sequence, JPEG SOI..EOI range, metafile or .bmp) */
   bytes: Uint8Array
@@ -112,8 +126,33 @@ function pictureProperties(run: RawCharacterRun): {
   return { fSpec, fcPic }
 }
 
-/** display size in twips: dxaGoal * |mx| / 1000, then xExt, then dxaGoal */
-function displaySize(data: Uint8Array, fcPic: number): { width: number; height: number } {
+/**
+ * PICF crop twips against the goal size -> a:srcRect thousandths of a percent.
+ * A side that is negative (padding) or a pair that removes the whole picture
+ * is treated as uncropped.
+ */
+function picfCrop(data: Uint8Array, fcPic: number): PictureCrop | undefined {
+  const dxaGoal = i16At(data, fcPic + PICF_DXA_GOAL)
+  const dyaGoal = i16At(data, fcPic + PICF_DYA_GOAL)
+  if (dxaGoal <= 0 || dyaGoal <= 0) return undefined
+  const fraction = (twips: number, goal: number): number =>
+    twips > 0 && twips < goal ? Math.round((twips * 100000) / goal) : 0
+  const crop: PictureCrop = {
+    l: fraction(i16At(data, fcPic + PICF_DXA_CROP_LEFT), dxaGoal),
+    t: fraction(i16At(data, fcPic + PICF_DYA_CROP_TOP), dyaGoal),
+    r: fraction(i16At(data, fcPic + PICF_DXA_CROP_RIGHT), dxaGoal),
+    b: fraction(i16At(data, fcPic + PICF_DYA_CROP_BOTTOM), dyaGoal),
+  }
+  if (crop.l + crop.r >= 100000 || crop.t + crop.b >= 100000) return undefined
+  return crop.l || crop.t || crop.r || crop.b ? crop : undefined
+}
+
+/** display size in twips: (dxaGoal - crop) * |mx| / 1000, then xExt, then dxaGoal */
+function displaySize(
+  data: Uint8Array,
+  fcPic: number,
+  crop: PictureCrop | undefined,
+): { width: number; height: number } {
   const dxaGoal = i16At(data, fcPic + PICF_DXA_GOAL)
   const dyaGoal = i16At(data, fcPic + PICF_DYA_GOAL)
   // mx/my are stored as unsigned 16-bit scaling factors (48000 = 0.5 inch at 15 twips)
@@ -121,11 +160,14 @@ function displaySize(data: Uint8Array, fcPic: number): { width: number; height: 
   const my = u16At(data, fcPic + PICF_MY)
   const xExt = i16At(data, fcPic + PICF_X_EXT)
   const yExt = i16At(data, fcPic + PICF_Y_EXT)
-  let width = mx > 0 && dxaGoal > 0 ? Math.round((dxaGoal * mx) / 1000) : 0
-  let height = my > 0 && dyaGoal > 0 ? Math.round((dyaGoal * my) / 1000) : 0
-  if (width <= 0) width = xExt > 0 ? xExt : dxaGoal
-  if (height <= 0) height = yExt > 0 ? yExt : dyaGoal
-  return { width: Math.abs(width), height: Math.abs(height) }
+  const keptX = crop ? (100000 - crop.l - crop.r) / 100000 : 1
+  const keptY = crop ? (100000 - crop.t - crop.b) / 100000 : 1
+  let width = mx > 0 && dxaGoal > 0 ? Math.round((dxaGoal * keptX * mx) / 1000) : 0
+  let height = my > 0 && dyaGoal > 0 ? Math.round((dyaGoal * keptY * my) / 1000) : 0
+  // Word shows a negative goal as a hairline (11 twips), not as its magnitude
+  if (width <= 0) width = xExt > 0 ? xExt : dxaGoal > 0 ? dxaGoal : HAIRLINE_TWIPS
+  if (height <= 0) height = yExt > 0 ? yExt : dyaGoal > 0 ? dyaGoal : HAIRLINE_TWIPS
+  return { width, height }
 }
 
 /** cut an exact PNG from the signature through the end of the IEND chunk */
@@ -279,7 +321,10 @@ export function parseInlineImages(source: FormattingSource, range?: CpRange): In
       warnings.push(...picWarnings)
       continue
     }
-    const size = displaySize(data, fcPic)
+    // dxaGoal/mx already describe the shape-cropped picture; only PICF twip crops shrink it
+    const shapeCrop = inlineShapeCrop(data, fcPic + cbHeader, fcPic + lcb)
+    const crop = shapeCrop ?? picfCrop(data, fcPic)
+    const size = displaySize(data, fcPic, shapeCrop ? undefined : crop)
     if (size.width <= 0 || size.height <= 0) {
       warnings.push('a picture declares no display size and was omitted')
       continue
@@ -288,6 +333,7 @@ export function parseInlineImages(source: FormattingSource, range?: CpRange): In
       cp,
       widthTwips: size.width,
       heightTwips: size.height,
+      ...(crop ? { crop } : {}),
       mediaType: extracted.mediaType,
       bytes: extracted.bytes,
       warnings: picWarnings,

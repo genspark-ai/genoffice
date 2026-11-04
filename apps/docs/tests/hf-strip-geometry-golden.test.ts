@@ -87,7 +87,10 @@ async function pins(file: string): Promise<StripPin[]> {
         const ownerWidthPx = hfPartWidthPx(sections, i, kind, variant)
         const geom =
           kind === 'header'
-            ? { ...hfHeaderGeom(set), marginLeftPx: (set.marginLeft / 1440) * 96 }
+            ? {
+                ...hfHeaderGeom(set, (parsed.compatibilityMode ?? 0) < 15),
+                marginLeftPx: (set.marginLeft / 1440) * 96,
+              }
             : undefined
         const floats = images
           .filter((im) => im.floating)

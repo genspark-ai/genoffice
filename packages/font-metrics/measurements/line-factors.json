@@ -29,7 +29,7 @@
     {
       "id": "stxihei",
       "stage": "first",
-      "match": "stxihei|\u534e\u6587\u7ec6\u9ed1",
+      "match": "stxihei|华文细黑",
       "factor": 1.79,
       "source": {
         "kind": "probe",
@@ -343,6 +343,32 @@
         "kind": "probe",
         "date": "2026-09-30",
         "probe": "Word probe: Vijaya and every missing Tamil name render as cloud-font Vijaya at 1.00 (9.12/10.56/12.0pt at 9/10.5/12pt)"
+      }
+    },
+    {
+      "id": "thai-sarabun",
+      "stage": "latin",
+      "match": "^th sarabunpsk$",
+      "factor": 1.31,
+      "source": {
+        "kind": "hmtx",
+        "date": "2026-11-03",
+        "fonts": ["TH SarabunPSK (Word DFonts thsarabun.ttf)"],
+        "probe": "hhea 850/460/0 over 1000; Word ships the face and lays it out real"
+      }
+    },
+    {
+      "id": "thai",
+      "stage": "latin",
+      "match": {
+        "ref": "THAI_FONT_RE"
+      },
+      "factor": 1.147,
+      "source": {
+        "kind": "hmtx",
+        "date": "2026-11-03",
+        "fonts": ["Cordia New (Word DFonts cordia.ttc)"],
+        "probe": "hhea 3658/1040/0 over 4096; Word for Mac substitutes Cordia New for the Thai families it does not ship (doc2docx sample 059: TH SarabunIT9 16pt paces 18.4pt)"
       }
     },
     {

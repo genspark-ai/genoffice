@@ -1,17 +1,10 @@
 import { Extension, Mark, combineTransactionSteps, getChangedRanges } from '@tiptap/core'
+import { runFaceDecls } from '../text-layout/run-faces'
 import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import {
-  cssCsFontFamily,
-  cssRunFontFamily,
-  cssFontFamily,
-  cutAdjustedAlias,
-  lineHeightFactor,
-  runSlotFaces,
-  wordSlotFaces,
-} from '../line-metrics'
+import { cssRunFontFamily, wordSlotFaces } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
@@ -686,7 +679,8 @@ export const TextStyleMark = Mark.create({
       // Cs size an rtl run inherits from its style chain: the paragraph strut reads it
       // (markSizeHalfPoints); the paint comes from the .doc-cs style CSS. Never saved
       csSize: { default: null as number | null, rendered: false },
-      // Run.effective bold / italic of an rtl run: painted as doc-cs-(n)b / doc-cs-(n)i
+      // Run.effective bold / italic of an rtl run, or of a run whose character style
+      // toggle XORs against the paragraph style: painted as doc-cs-(n)b / doc-cs-(n)i
       // classes (styles.css) so a user strong/em wrapper still shows. Never saved
       csBold: { default: null as boolean | null, rendered: false },
       csItalic: { default: null as boolean | null, rendered: false },
@@ -726,23 +720,9 @@ export const TextStyleMark = Mark.create({
       if (half <= 2) styles.push('line-height:0')
     }
     if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
-      // a Latin-only chain fills both slots (fontAttrsFromFamilyChain), so an
-      // unparsed run's font only names an East Asian face when the slots differ
-      const { ascii, eastAsia: ea, declaredEa } = runSlotFaces(mark.attrs)
-      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
-      const explicitEa = declaredEa ? wordSlotFaces(null, declaredEa).eastAsia : null
-      if (explicitEa && !mark.attrs.eaSlotEmpty)
-        styles.push(`--doc-east-asian-font:${cssFontFamily(explicitEa)}`)
-      const family = cs
-        ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
-        : cssRunFontFamily(ascii, ea)
-      // --doc-run-ff: doc-style-css re-heads the chain with the strut face in
-      // mixed paragraphs (.doc-grid-strut); font-family stays for DOM readers
-      styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
-      cutAdjusted = cutAdjustedAlias(family)
-      // own-face line factor for cell paragraphs mixing faces (styles.css .doc-mixed-face)
-      const lh = Math.max(...[cs, ascii ?? ea].filter(Boolean).map((f) => lineHeightFactor(f!)))
-      styles.push(`--doc-run-lh:${lh}`)
+      const face = runFaceDecls(mark.attrs, mark.attrs.csFont ? String(mark.attrs.csFont) : null)
+      styles.push(...face.decls)
+      cutAdjusted = face.cutAdjusted
     }
     if (!mark.attrs.font && !mark.attrs.fontAscii && !mark.attrs.csFont && tbl?.fontAscii) {
       const family = cssRunFontFamily(wordSlotFaces(tbl.fontAscii, null).ascii, null)
@@ -820,12 +800,11 @@ export const TextStyleMark = Mark.create({
     // rtl run: the .doc-cs gate in doc-style-css paints the Cs size of its style
     // chain; weight and style come resolved from the engine (includes the table
     // style layer the paragraph-style CSS cannot see)
-    if (mark.attrs.cs) {
-      const cls = ['doc-cs']
-      if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
-      if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
-      attrs['class'] = cls.join(' ')
-    }
+    const cls: string[] = []
+    if (mark.attrs.cs) cls.push('doc-cs')
+    if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
+    if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
+    if (cls.length > 0) attrs['class'] = cls.join(' ')
     // cs-slot run: styles.css .doc-cs-mixed collapses its line box
     if (mark.attrs.csFont) attrs['data-cs'] = ''
     // bold/italic cut of a per-cut size-adjusted alias: styles.css .doc-cut-adjusted collapses its line box

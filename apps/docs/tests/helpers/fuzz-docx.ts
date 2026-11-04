@@ -1,5 +1,5 @@
 /** A seeded generator of varied-but-valid DOCX packages for the round-trip
- *  fuzz suite. The external #2381 trial measured one hand-built hostile
+ *  fuzz suite. The external genoffice#2381 trial measured one hand-built hostile
  *  document; this generator composes the same feature vocabulary (rich runs,
  *  CJK, hyperlinks, tables with gridSpan/vMerge shapes including orphan
  *  continuations, nested tables, images, math, tracked changes, simple fields,
@@ -24,7 +24,16 @@ function rng(seed: number): () => number {
   }
 }
 
-const CJK = ['季度', '营收总结', '附录甲', '审阅', '合并单元格', '第三节', '项目里程碑', '风险登记']
+const CJK = [
+  '\u5b63\u5ea6',
+  '\u8425\u6536\u603b\u7ed3',
+  '\u9644\u5f55\u7532',
+  '\u5ba1\u9605',
+  '\u5408\u5e76\u5355\u5143\u683c',
+  '\u7b2c\u4e09\u8282',
+  '\u9879\u76ee\u91cc\u7a0b\u7891',
+  '\u98ce\u9669\u767b\u8bb0',
+]
 const LATIN = ['Quarterly review', 'Appendix A', 'risk register', 'milestone 12', 'draft v2']
 const REV_AT = 'w:author="Fuzz" w:date="2026-01-01T00:00:00Z"'
 
@@ -118,7 +127,7 @@ function tableXml(r: () => number, seed: number, tableIndex: number): string {
   // per column: where a vMerge restart sits (or none); a later row may then continue it
   const restartAt = new Map<number, number>()
   for (let c = 0; c < cols; c++) if (r() < 0.35) restartAt.set(c, Math.floor(r() * rows))
-  // an orphan continuation in one column of one row (the #2381/#2405 shape)
+  // an orphan continuation in one column of one row (the genoffice#2381/genoffice#2405 shape)
   const orphanCol = r() < 0.3 ? Math.floor(r() * cols) : -1
   const orphanRow = orphanCol >= 0 ? Math.floor(r() * rows) : -1
 
@@ -157,7 +166,7 @@ function tableXml(r: () => number, seed: number, tableIndex: number): string {
             : `t${tableIndex}r${row}c${col}`
       tr +=
         `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>` +
-        `<w:p>${runXml(cellText === 'cont' ? `${CJK[Math.floor(r() * CJK.length)]}续` : cellText, r)}</w:p></w:tc>`
+        `<w:p>${runXml(cellText === 'cont' ? `${CJK[Math.floor(r() * CJK.length)]}\u7eed` : cellText, r)}</w:p></w:tc>`
       col += span
     }
     body += `<w:tr>${tr}</w:tr>`
