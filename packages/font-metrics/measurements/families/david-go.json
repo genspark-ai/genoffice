@@ -1,0 +1,50 @@
+{
+  "family": "David GO",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-11-03",
+    "fonts": ["David (Word DFonts: david.ttf, davidbd.ttf)", "LiberationSerif"],
+    "probe": "advance-matched Liberation Serif derivative (tools/build-metric-fonts.py): hmtx = David DFonts advances exactly (Hebrew letters 0.78-1.29 of Liberation Serif per glyph, Latin a-z identical to Times, digits 0.886, space 0.885); Word paces David at its hhea 0.9839 (corpus 2026-11-03: 11 pt line 360 auto -> 16.3 pt)"
+  },
+  "refit": {
+    "method": "advance-matched",
+    "range": "U+0020-007E, U+00A0-00FF, U+0590-05FF, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB4F",
+    "cuts": {
+      "normal/normal": {
+        "word": "dfonts:david.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-Regular.ttf",
+        "out": "apps/docs/src/renderer/fonts/DavidGO-Regular.ttf"
+      },
+      "bold/normal": {
+        "word": "dfonts:davidbd.ttf",
+        "base": "repo:apps/docs/src/renderer/fonts/LiberationSerif-Bold.ttf",
+        "out": "apps/docs/src/renderer/fonts/DavidGO-Bold.ttf"
+      }
+    }
+  },
+  "note": "David (Windows Hebrew default, shipped inside Office) has no macOS copy, so\nChromium drew Hebrew runs in Lucida Grande / Helvetica, 10-20% wider, and\nbulleted paragraphs wrapped one line more than Word (corpus 2026-11-03,\n174 -> 184 pages). The ranged faces are advance-matched Liberation Serif\nderivatives (Hebrew block, presentation forms, Latin-1, sheqel): David\nadvances in hmtx, outlines scaled horizontally per glyph. The rangeless\nLiberation Serif faces cover the rest at 100% (David's Latin is Times-metric).\nEvery face pins David's hhea box 0.7349 / 0.2490 so the glyph box matches the\nresolver's 0.9839 pitch. Word has no italic cut; both sides synthesize it.",
+  "faces": [
+    {
+      "src": "url('./LiberationSerif-Regular.ttf')",
+      "sizeAdjust": 100,
+      "ascentOverride": 73.49,
+      "descentOverride": 24.9
+    },
+    {
+      "src": "url('./LiberationSerif-Bold.ttf')",
+      "sizeAdjust": 100,
+      "weight": "bold",
+      "ascentOverride": 73.49,
+      "descentOverride": 24.9
+    },
+    {
+      "src": "url('./DavidGO-Regular.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F"
+    },
+    {
+      "src": "url('./DavidGO-Bold.ttf')",
+      "unicodeRange": "U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F",
+      "weight": "bold"
+    }
+  ]
+}

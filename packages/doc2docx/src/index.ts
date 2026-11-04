@@ -5,6 +5,7 @@
  * (stage 3b) and a .docx writer (stage 3a). Tables/images and the docs UI are
  * later stages; the whole package is internal only.
  */
+import { compatOptionsOf } from './compat'
 import { openCompoundFile } from './compound'
 import { parseFib, validateFibTableRanges, type FibInfo } from './fib'
 import { parseClx, type PieceTable } from './clx'
@@ -34,10 +35,16 @@ import { parseFloatingPictures, type FloatingPicturesResult } from './drawings'
 import { parseTextBoxStories, textBoxDocumentStart } from './textboxes'
 import { parseListTables } from './lists'
 import { parseFields } from './fields'
-import { buildLegacyDocBody, type LegacyDocBody } from './tables'
+import {
+  buildLegacyDocBody,
+  collectUnitPapx,
+  type LegacyDocBody,
+  type UnitPapxIndex,
+} from './tables'
 import { parseNotes, type LegacyDocNotes } from './notes'
 import { parseComments, type LegacyComment } from './comments'
 import { LegacyDocError } from './errors'
+import { parseFontEntries, type FontEntry } from './fonts'
 
 export { LEGACY_DOC_ERROR_CODES, LegacyDocError, isLegacyDocError } from './errors'
 export type { LegacyDocErrorCode } from './errors'
@@ -114,7 +121,8 @@ export type {
 } from './formatting'
 export { parseStsh } from './styles'
 export type { Style, StyleKind, StyleSheet } from './styles'
-export { fontNamesFor, parseFontTable } from './fonts'
+export { fontNamesFor, parseFontEntries, parseFontTable } from './fonts'
+export type { FontEntry } from './fonts'
 export type { DefaultFontIndices, FontNames, FontTable } from './fonts'
 export { isBulletLevel, levelTextForWriter, parseListTables } from './lists'
 export type { ListDefinition, ListLevel, ListTables } from './lists'
@@ -157,7 +165,7 @@ export {
 export type { FormattedLinkRange, ParagraphRunRequest } from './resolve'
 export { parseComments } from './comments'
 export type { CommentsResult, CommentsSource, LegacyComment } from './comments'
-export { buildLegacyDocBody } from './tables'
+export { buildLegacyDocBody, forEachTableCell } from './tables'
 export type {
   BodyBlock,
   CellBorders,
@@ -262,8 +270,30 @@ export interface LegacyDocLayout {
   sections: SectionInfo[]
   /** one entry per section (even/odd/first header and footer stories) */
   headerFooter: SectionHeaderFooter[]
+  /** Dop.dxaTab: the default tab stop interval in twips (w:defaultTabStop) */
+  defaultTabStopTwips?: number
+  /** SttbfFfn entries written to word/fontTable.xml */
+  fonts?: FontEntry[]
+  /** w:compat element names selected by the Dop compatibility options */
+  compatOptions?: string[]
   /** non-fatal layout problems (missing header table, flattened columns, ...) */
   warnings: string[]
+}
+
+/** DopBase.dxaTab (MS-DOC 2.7.2) lives 10 bytes into the Dop */
+const DOP_DXA_TAB = 10
+
+function dopOf(doc: LegacyDoc): Uint8Array | undefined {
+  const { fcDop, lcbDop } = doc.fib
+  if (lcbDop <= 0 || fcDop + lcbDop > doc.table.length) return undefined
+  return doc.table.subarray(fcDop, fcDop + lcbDop)
+}
+
+function defaultTabStopOf(doc: LegacyDoc): number | undefined {
+  const { fcDop, lcbDop } = doc.fib
+  if (lcbDop < DOP_DXA_TAB + 2 || fcDop + DOP_DXA_TAB + 2 > doc.table.length) return undefined
+  const value = doc.table[fcDop + DOP_DXA_TAB]! | (doc.table[fcDop + DOP_DXA_TAB + 1]! << 8)
+  return value > 0 && value <= 31680 ? value : undefined
 }
 
 /**
@@ -282,8 +312,23 @@ function wholeTextSource(doc: LegacyDoc): FormattingSource {
 
 function storyFormatter(source: FormattingSource, styles: StyleSheet | undefined): StoryFormatter {
   const read = readFormattingDetailed(source, [])
-  const fields = parseFields(source.rawText).simpleFields
+  const allFields = parseFields(source.rawText)
+  const fields = allFields.simpleFields
+  let papx: UnitPapxIndex | undefined
   return {
+    blocks(startCp, endCp, drawings, images) {
+      papx ??= collectUnitPapx(source, [])
+      const body = buildLegacyDocBody(source, read, {
+        styles,
+        images,
+        drawings,
+        // header hyperlinks stay plain text, as in the paragraph path (no rel allocator for parts)
+        fields: { ...allFields, hyperlinks: [] },
+        range: { startCp, endCp },
+        papx,
+      })
+      return { blocks: body.blocks, warnings: body.warnings }
+    },
     paragraphs(startCp, endCp, noteMarks = []) {
       const out: FormattedParagraph[] = []
       read.paragraphs.forEach((paragraph, index) => {
@@ -375,14 +420,21 @@ function layoutOf(doc: LegacyDoc, stories: Stories): LegacyDocLayout {
     stories.drawings.header,
     images?.images.map((image) => ({ ...image, cp: image.cp - headerStart })),
   )
+  const defaultTabStopTwips = defaultTabStopOf(doc)
+  const fontWarnings: string[] = []
+  const fonts = parseFontEntries(doc.fib, doc.table, fontWarnings)
   return {
     sections,
     headerFooter: headerFooter.stories,
+    ...(defaultTabStopTwips !== undefined ? { defaultTabStopTwips } : {}),
+    ...(fonts.length > 0 ? { fonts } : {}),
+    compatOptions: compatOptionsOf(dopOf(doc)),
     warnings: [
       ...sections.flatMap((section) => section.warnings),
       ...headerFooter.warnings,
       ...(images?.warnings ?? []),
       ...stories.warnings,
+      ...fontWarnings,
     ],
   }
 }

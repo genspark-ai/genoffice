@@ -41,6 +41,7 @@ pub(crate) fn write_package(
     defined_names: &str,
     sheet_xmls: &[String],
     art: &[Option<SheetArt>],
+    styles_xml: &str,
 ) -> Result<(), SidecarError> {
     let file = File::create(target)?;
     let mut writer = ZipWriter::new(file);
@@ -86,7 +87,7 @@ pub(crate) fn write_package(
         &workbook_rels_xml(sheets.len()),
         options,
     )?;
-    add(&mut writer, "xl/styles.xml", STYLES_XML, options)?;
+    add(&mut writer, "xl/styles.xml", styles_xml, options)?;
     for (index, xml) in sheet_xmls.iter().enumerate() {
         add(
             &mut writer,
@@ -334,5 +335,5 @@ fn workbook_rels_xml(sheet_count: usize) -> String {
 }
 
 /// xf 1 = short date (numFmt 14), xf 2 = date+time (numFmt 22).
-const STYLES_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+pub(crate) const STYLES_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="22" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>"#;

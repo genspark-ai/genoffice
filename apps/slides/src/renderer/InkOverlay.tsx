@@ -2,9 +2,10 @@ import React, { useCallback, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import {
-  HIGHLIGHTER_ALPHA,
   inkNodeHitTest,
   inkNodesOf,
+  isPenKind,
+  strokeLayers,
   strokePathD,
   type InkPoint,
   type InkStroke,
@@ -41,8 +42,6 @@ export function InkOverlay({ slide, tool, color, width, onCommit, onErase }: Ink
   const drawingRef = useRef<InkPoint[] | null>(null)
   const erasedRef = useRef<Set<string>>(new Set())
 
-  const drawing = tool === 'pen' || tool === 'highlighter'
-
   const localPoint = (e: ReactPointerEvent): InkPoint => {
     const rect = overlayRef.current!.getBoundingClientRect()
     // rect already includes the zoom; map back to RenderSlide px coordinates by ratio
@@ -67,7 +66,7 @@ export function InkOverlay({ slide, tool, color, width, onCommit, onErase }: Ink
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
-    e.preventDefault()
+    // no preventDefault: the ribbon dismisses its popups on bubbled mousedown
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
     const point = localPoint(e)
     if (tool === 'eraser') {
@@ -97,7 +96,7 @@ export function InkOverlay({ slide, tool, color, width, onCommit, onErase }: Ink
   const onPointerUp = () => {
     const points = drawingRef.current
     drawingRef.current = null
-    if (tool === 'eraser') return
+    if (!isPenKind(tool)) return
     setLivePoints(null)
     if (!points || points.length === 0) return
     onCommit({ tool, color, width, points })
@@ -113,17 +112,20 @@ export function InkOverlay({ slide, tool, color, width, onCommit, onErase }: Ink
       onPointerCancel={onPointerUp}
     >
       <svg className="ink-svg" viewBox={`0 0 ${slide.widthPx} ${slide.heightPx}`} aria-hidden>
-        {livePoints && drawing && (
-          <path
-            d={strokePathD(livePoints)}
-            stroke={`#${color}`}
-            strokeWidth={width}
-            strokeOpacity={tool === 'highlighter' ? HIGHLIGHTER_ALPHA : 1}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
+        {livePoints &&
+          isPenKind(tool) &&
+          strokeLayers({ tool, color, width, points: livePoints }).map((layer, i) => (
+            <path
+              key={i}
+              d={strokePathD(layer.points)}
+              stroke={`#${color}`}
+              strokeWidth={layer.width}
+              strokeOpacity={layer.alpha}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
       </svg>
     </div>
   )

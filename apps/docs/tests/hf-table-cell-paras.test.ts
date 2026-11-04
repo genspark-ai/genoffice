@@ -131,6 +131,55 @@ describe('header table cells keep per-paragraph lines', () => {
   })
 })
 
+describe('vertically merged header table cells', () => {
+  const value: HeaderFooter = {
+    text: 'Tall cell b d',
+    paras: [
+      {
+        runs: [],
+        cells: [
+          { paras: [[{ text: 'Tall' }], [{ text: 'cell' }]], vSpan: 2, widthPct: 30 },
+          { paras: [[{ text: 'b' }]], widthPct: 70 },
+        ],
+      },
+      {
+        runs: [],
+        cells: [
+          { paras: [[]], vMergeContinue: true, widthPct: 30 },
+          { paras: [[{ text: 'd' }]], widthPct: 70 },
+        ],
+      },
+    ],
+  }
+
+  it('the spanning cell overlays its rows and the continuation holds nothing', () => {
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const rows = el.querySelectorAll('.page-hf-row')
+    const span = rows[0].children[0]
+    expect(span.classList.contains('page-hf-cell-vspan')).toBe(true)
+    const body = span.querySelector('.page-hf-cell-vspan-body')
+    expect(body?.querySelectorAll('.page-hf-cell-para')).toHaveLength(2)
+    expect(rows[1].children[0].childNodes).toHaveLength(0)
+    expect(rows[1].children[1].querySelectorAll('.page-hf-cell-para')).toHaveLength(1)
+  })
+})
+
+describe('picture lines with only whitespace text', () => {
+  const image = { dataUrl: 'data:image/png;base64,AA==', widthPx: 40, heightPx: 40, xml: '' }
+  const strip = (text: string) =>
+    makeGapHfEl({
+      kind: 'header',
+      value: { text, paras: [{ runs: [{ text }, { text: '', image }] }] },
+      pageNo: 1,
+      pageTotal: 1,
+    })
+
+  it('the pictures alone size the line; visible text keeps the baseline rule', () => {
+    expect(strip('  ').querySelector('.page-hf-pic-line')).not.toBeNull()
+    expect(strip('Logo').querySelector('.page-hf-pic-line')).toBeNull()
+  })
+})
+
 describe('floating header image positioning', () => {
   const box = {
     pageW: 816,

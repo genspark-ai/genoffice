@@ -70,6 +70,8 @@ export const ar = {
   appFieldsUpdated: 'تم تحديث {n} من الحقول',
   appStyleUpdated: 'تم تحديث النمط "{name}" بتنسيق التحديد؛ سيُكتب في المستند عند الحفظ',
   appStyleCreated: 'تم إنشاء النمط "{name}" وتطبيقه على التحديد',
+  appStyleInstancesSelected: 'تم تحديد {count} من مثيلات "{name}"',
+  appStyleNoInstances: 'لا يوجد نص يستخدم "{name}"',
   appPgNumFormatSet: 'تم تعيين تنسيق أرقام الصفحات',
   appPageNumFormatTitle: 'تنسيق أرقام الصفحات',
   appNumberFormat: 'تنسيق الأرقام',

@@ -273,6 +273,16 @@ function styleDecls(cs: CSSStyleDeclaration, o: StyleOpts): string[] {
   }
   if (cs.verticalAlign && cs.verticalAlign !== 'baseline')
     out.push(`vertical-align:${cs.verticalAlign}`)
+  // paragraphs carry a display-only --doc-lead-shift offset; only raised or
+  // lowered runs (w:position, inline-block when character-scaled) export theirs
+  if (
+    display.startsWith('inline') &&
+    cs.position === 'relative' &&
+    cs.top &&
+    cs.top !== 'auto' &&
+    !isZero(cs.top)
+  )
+    out.push(`position:relative;top:${cs.top}`)
   const sized =
     o.tag === 'img' ||
     o.tag === 'svg' ||

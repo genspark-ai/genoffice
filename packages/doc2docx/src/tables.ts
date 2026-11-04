@@ -28,6 +28,11 @@ import {
   type NoteMark,
   type ParagraphContext,
   type ParagraphFormatting,
+  type ParagraphFrame,
+  isPositionedFrame,
+  type Shading,
+  shading80At,
+  shadingAt,
 } from './formatting'
 import { readPapxFkp } from './fkp'
 import type { LegacyDocNotes } from './notes'
@@ -67,11 +72,42 @@ const SPRM_T_SET_BRC80 = 0x20
 const SPRM_T_SET_BRC = 0x2f
 const SPRM_T_DYA_ROW_HEIGHT = 0x07
 const SPRM_T_TDEF_TABLE = 0x08
-const SPRM_T_CELL_PADDING = 0x34
-/** LibreOffice's table/cell border variants: 0xD612 / 0xD62F / 0xD670 */
-const SPRM_T_BORDER_VARIANTS = new Set([0x12, 0x70])
-/** sprmPItap: table nesting level stored in the paragraph PAPX */
+const SPRM_T_PC = 0x0d
+const SPRM_T_DXA_ABS = 0x0e
+const SPRM_T_DYA_ABS = 0x0f
+const SPRM_T_DXA_FROM_TEXT = 0x10
+const SPRM_T_DYA_FROM_TEXT = 0x11
+const SPRM_T_DXA_FROM_TEXT_RIGHT = 0x1e
+const SPRM_T_DYA_FROM_TEXT_BOTTOM = 0x1f
+const SPRM_T_F_NO_ALLOW_OVERLAP = 0x65
+const POSITION_H_ANCHORS = ['text', 'margin', 'page'] as const
+const POSITION_V_ANCHORS = ['margin', 'page', 'text'] as const
+/** sprmTDxaGapHalf: half the gap between cells, i.e. the default left/right cell margin */
+const SPRM_T_DXA_GAP_HALF = 0x02
+/** sprmTCellPaddingDefault (whole row) and sprmTCellPadding (itcFirst..itcLim) */
+const SPRM_T_CELL_PADDING_DEFAULT = 0x34
+const SPRM_T_CELL_PADDING = 0x32
+/** sprmTVertAlign: itcFirst, itcLim, vertAlign (0 top, 1 center, 2 bottom) */
+const SPRM_T_VERT_ALIGN = 0x2c
+/** sprmTDefTableShd80: one Shd80 per cell */
+const SPRM_T_DEF_TABLE_SHD80 = 0x09
+/** sprmTDefTableShd / 2nd / 3rd: one Shd per cell for cells 0-21 / 22-43 / 44-62 */
+const SPRM_T_DEF_TABLE_SHD: Record<number, number> = { 0x12: 0, 0x16: 22, 0x0c: 44 }
+/** sprmTDefTableShdRaw / 2nd / 3rd: the same cell shading before table-style resolution */
+const SPRM_T_DEF_TABLE_SHD_RAW: Record<number, number> = { 0x70: 0, 0x71: 22, 0x72: 44 }
+/** sprmTSetShd / sprmTSetShdOdd: TableShadeOperand itcFirst, itcLim, Shd (odd = every other cell) */
+const SPRM_T_SET_SHD = 0x2d
+const SPRM_T_SET_SHD_ODD = 0x2e
+/** sprmTSetShdTable: SHDOperand (cb, Shd) for the whole table */
+const SPRM_T_SET_SHD_TABLE = 0x60
+/** Word's default half gap, used when a row has no sprmTDxaGapHalf */
+const DEFAULT_GAP_HALF = 108
+/** sprmPItap / sprmPDtap: table nesting level (absolute / delta) stored in the paragraph PAPX */
 const SPRM_P_ITAP = 0x6649
+const SPRM_P_DTAP = 0x664a
+/** sprmPFInnerTableCell / sprmPFInnerTtp: a paragraph mark that ends an inner cell / inner row */
+const SPRM_P_F_INNER_TABLE_CELL = 0x244b
+const SPRM_P_F_INNER_TTP = 0x244c
 /** TC rgf merge bits (TCAbstractType): fMerged marks continuation cells */
 const TC_MERGED = 0x0002
 const TC_VERT_MERGE = 0x0020
@@ -115,9 +151,16 @@ export interface TableCellPadding {
   right?: number
 }
 
+export type CellVerticalAlign = 'center' | 'bottom'
+
 export interface TableCell {
   /** number of grid columns this cell covers */
   gridSpan: number
+  /** TC80 vertAlign bits / sprmTVertAlign; absent = top */
+  vertAlign?: CellVerticalAlign
+  shading?: Shading
+  /** sprmTCellPadding: this cell's margins (w:tcMar), overriding the table defaults */
+  padding?: TableCellPadding
   /** width in twips (sum of the covered grid columns) */
   widthTwips: number
   /** vertical merge state from the TC rgf bits */
@@ -131,6 +174,8 @@ export interface TableCell {
   paragraphLists?: Map<number, ParagraphListInfo>
   /** pictures anchored in the cell paragraphs, by paragraph index */
   paragraphPictures?: Map<number, ParagraphPictures>
+  /** nested tables, keyed by the index of the cell paragraph that follows them */
+  nestedTables?: Map<number, TableModel[]>
 }
 
 export interface TableRow {
@@ -145,6 +190,22 @@ export interface TableRow {
   heightExact?: boolean
 }
 
+/** Floating table position (sprmTPc / sprmTDxaAbs / sprmTDyaAbs / sprmTDxaFromText ...), written as w:tblpPr. */
+export interface TablePosition {
+  /** twips, or the alignment codes -4 center, -8 right, -12 inside, -16 outside */
+  xTwips?: number
+  /** twips, or -4 top, -8 center, -12 bottom, -16 inside, -20 outside */
+  yTwips?: number
+  hAnchor?: 'text' | 'margin' | 'page'
+  vAnchor?: 'text' | 'margin' | 'page'
+  leftFromText?: number
+  rightFromText?: number
+  topFromText?: number
+  bottomFromText?: number
+  /** sprmTFNoAllowOverlap */
+  noOverlap?: boolean
+}
+
 export interface TableModel {
   /** width of each grid column in twips (start at the first cell boundary) */
   gridWidths: number[]
@@ -154,7 +215,10 @@ export interface TableModel {
   borders: TableBorders
   /** line styles of the visible borders (sprmTTableBorders); sides without one are single 0.5pt */
   borderStyles?: BorderStyles
-  cellPadding?: TableCellPadding
+  /** default cell margins (w:tblCellMar): left/right from sprmTDxaGapHalf, then sprmTCellPaddingDefault */
+  cellPadding: TableCellPadding
+  shading?: Shading
+  position?: TablePosition
   warnings: string[]
 }
 
@@ -168,7 +232,7 @@ export interface ParagraphListInfo {
 /** Pictures anchored inside a paragraph: floating shapes and inline pictures mixed with text. */
 export interface ParagraphPictures {
   floating?: FloatingShape[]
-  /** inline pictures that share the paragraph with text; written at its start or end */
+  /** inline pictures that share the paragraph with text; placed at their run's pictureCp, else at the start or end */
   inline?: Array<{ image: ImageBlock; position: 'start' | 'end' }>
 }
 
@@ -214,6 +278,20 @@ interface TapTableCell {
   wWidth: number
   borders: CellBorders
   borderStyles: BorderStyles
+  vertAlign?: CellVerticalAlign
+  shading?: Shading
+  /** set once a resolved shading sprm wrote this cell, so the Shd80/raw twins no longer apply */
+  shadingResolved?: boolean
+  padding?: TableCellPadding
+}
+
+function defaultTapCell(): TapTableCell {
+  return {
+    rgf: 0,
+    wWidth: 0,
+    borders: { top: false, left: false, bottom: false, right: false },
+    borderStyles: {},
+  }
 }
 
 interface TapTableDefinition {
@@ -231,7 +309,10 @@ interface TapProperties {
   heightExact?: boolean
   borders: TableBorders
   borderStyles: BorderStyles
+  gapHalf?: number
   cellPadding?: TableCellPadding
+  position?: TablePosition
+  shading?: Shading
 }
 
 /** a structural problem of one row or table; the caller falls back to paragraphs */
@@ -286,7 +367,11 @@ const BORDER_STYLES: Record<number, string> = {
 }
 
 /** a Brc80 (4 bytes: width, type, ico, space) or Brc (8 bytes: cv, width, type, space); undefined = no line */
-function borderLineAt(bytes: Uint8Array, offset: number, wide: boolean): BorderLine | undefined {
+export function borderLineAt(
+  bytes: Uint8Array,
+  offset: number,
+  wide: boolean,
+): BorderLine | undefined {
   if (offset + (wide ? 8 : 4) > bytes.length) return undefined
   const base = wide ? offset + 4 : offset
   const widthEighths = bytes[base]!
@@ -348,18 +433,6 @@ function emptyBorders(): TableBorders {
   }
 }
 
-/**
- * LibreOffice writes several table/cell border variants whose operands are
- * arrays of BRC-ish structures with slightly different headers. We do not
- * model them; a visible BRC anywhere in such an operand means the table has
- * visible borders, which the writer flattens to a single-line border set.
- */
-function operandHasVisibleBorder(bytes: Uint8Array): boolean {
-  for (let offset = 0; offset + 4 <= bytes.length; offset += 4)
-    if (visibleBorderCode(bytes, offset)) return true
-  return false
-}
-
 /** toggle-style operand: 0 off, 1 on, 0x80 keep the inherited value, 0x81 invert it */
 function toggleOperand(value: number | undefined, current: boolean): boolean {
   if (value === undefined) return current
@@ -404,15 +477,11 @@ function parseTDefTable(operand: Uint8Array, rowIndex: number): TapTableDefiniti
     const base = tcStart + index * TC_BYTES
     // Word writes rows whose rgTc80 is truncated or absent; the missing cells take default TC80s
     if (base + TC_BYTES > operand.length) {
-      cells.push({
-        rgf: 0,
-        wWidth: 0,
-        borders: { top: false, left: false, bottom: false, right: false },
-        borderStyles: {},
-      })
+      cells.push(defaultTapCell())
       continue
     }
     const rgf = u16At(operand, base)
+    const vertAlign = vertAlignOf((rgf >> 7) & 3)
     const borders: CellBorders = {
       top: visibleBorderCode(operand, base + 4),
       left: visibleBorderCode(operand, base + 8),
@@ -424,9 +493,39 @@ function parseTDefTable(operand: Uint8Array, rowIndex: number): TapTableDefiniti
       const line = borderLineAt(operand, base + 4 + sideIndex * 4, false)
       if (line && borders[side]) borderStyles[side] = line
     })
-    cells.push({ rgf, wWidth: u16At(operand, base + 2), borders, borderStyles })
+    cells.push({
+      rgf,
+      wWidth: u16At(operand, base + 2),
+      borders,
+      borderStyles,
+      ...(vertAlign ? { vertAlign } : {}),
+    })
   }
   return { centers, cells }
+}
+
+function vertAlignOf(value: number | undefined): CellVerticalAlign | undefined {
+  return value === 1 ? 'center' : value === 2 ? 'bottom' : undefined
+}
+
+/** apply `grfbrc`-selected sides of a padding sprm (itcFirst, itcLim, grfbrc, ftsWidth, wWidth) */
+function paddingFrom(operand: Uint8Array, padding: TableCellPadding): boolean {
+  const grfbrc = operand[2]!
+  const ftsWidth = operand[3]!
+  const width = u16At(operand, 4)
+  // only dxa widths are modelled (ftsWidth nil/auto/percent are not used for margins)
+  if (ftsWidth !== 3) return false
+  if (grfbrc & 0x01) padding.top = width
+  if (grfbrc & 0x02) padding.left = width
+  if (grfbrc & 0x04) padding.bottom = width
+  if (grfbrc & 0x08) padding.right = width
+  return true
+}
+
+/** cells itcFirst..itcLim of the row (the TDefTable must already be parsed) */
+function cellRange(properties: TapProperties, operand: Uint8Array): TapTableCell[] {
+  if (!properties.table || operand.length < 2) return []
+  return properties.table.cells.slice(operand[0]!, operand[1]!)
 }
 
 function parseTap(grpprl: Uint8Array, rowIndex: number, warnings: string[]): TapProperties {
@@ -505,49 +604,121 @@ function parseTap(grpprl: Uint8Array, rowIndex: number, warnings: string[]): Tap
       case SPRM_T_TDEF_TABLE:
         properties.table = parseTDefTable(sprm.operand, rowIndex)
         break
-      case SPRM_T_CELL_PADDING: {
+      case SPRM_T_DXA_GAP_HALF: {
+        const value = readSprmI16(sprm.operand)
+        if (value !== undefined && value >= 0) properties.gapHalf = value
+        break
+      }
+      case SPRM_T_CELL_PADDING_DEFAULT: {
         if (sprm.operand.length < 6) {
           warnings.push('the cell padding of row ' + rowIndex + ' is truncated and was ignored')
           break
         }
-        const grfbrc = sprm.operand[2]!
-        const ftsWidth = sprm.operand[3]!
-        const width = u16At(sprm.operand, 4)
-        // only dxa widths are modelled; the fixtures use dxa for every side
-        if (ftsWidth === 3 && width > 0) {
-          const padding = properties.cellPadding ?? {}
-          if (grfbrc & 0x01) padding.top = width
-          if (grfbrc & 0x02) padding.left = width
-          if (grfbrc & 0x04) padding.bottom = width
-          if (grfbrc & 0x08) padding.right = width
-          properties.cellPadding = padding
+        const padding = properties.cellPadding ?? {}
+        if (paddingFrom(sprm.operand, padding)) properties.cellPadding = padding
+        break
+      }
+      case SPRM_T_CELL_PADDING: {
+        if (sprm.operand.length < 6) break
+        for (const cell of cellRange(properties, sprm.operand)) {
+          const padding = cell.padding ?? {}
+          if (paddingFrom(sprm.operand, padding)) cell.padding = padding
         }
         break
       }
-      default:
-        if (SPRM_T_BORDER_VARIANTS.has(operation) && operandHasVisibleBorder(sprm.operand)) {
-          // an unknown border variant: flatten to the single-line border set
-          properties.borders = {
-            top: true,
-            left: true,
-            bottom: true,
-            right: true,
-            insideHorizontal: true,
-            insideVertical: true,
+      case SPRM_T_PC: {
+        const value = readSprmU8(sprm.operand)
+        if (value === undefined) break
+        const position = (properties.position ??= {})
+        position.vAnchor = POSITION_V_ANCHORS[(value >> 4) & 3] ?? 'margin'
+        position.hAnchor = POSITION_H_ANCHORS[(value >> 6) & 3] ?? 'text'
+        break
+      }
+      case SPRM_T_DXA_ABS:
+      case SPRM_T_DYA_ABS:
+      case SPRM_T_DXA_FROM_TEXT:
+      case SPRM_T_DYA_FROM_TEXT:
+      case SPRM_T_DXA_FROM_TEXT_RIGHT:
+      case SPRM_T_DYA_FROM_TEXT_BOTTOM: {
+        const value = readSprmI16(sprm.operand)
+        if (value === undefined) break
+        const position = (properties.position ??= {})
+        if (operation === SPRM_T_DXA_ABS) position.xTwips = value
+        else if (operation === SPRM_T_DYA_ABS) position.yTwips = value
+        else if (operation === SPRM_T_DXA_FROM_TEXT) position.leftFromText = value
+        else if (operation === SPRM_T_DYA_FROM_TEXT) position.topFromText = value
+        else if (operation === SPRM_T_DXA_FROM_TEXT_RIGHT) position.rightFromText = value
+        else position.bottomFromText = value
+        break
+      }
+      case SPRM_T_F_NO_ALLOW_OVERLAP:
+        ;(properties.position ??= {}).noOverlap = toggleOperand(readSprmU8(sprm.operand), false)
+        break
+      case SPRM_T_VERT_ALIGN: {
+        if (sprm.operand.length < 3) break
+        const vertAlign = vertAlignOf(sprm.operand[2])
+        for (const cell of cellRange(properties, sprm.operand)) {
+          if (vertAlign) cell.vertAlign = vertAlign
+          else delete cell.vertAlign
+        }
+        break
+      }
+      case SPRM_T_DEF_TABLE_SHD80: {
+        const cells = properties.table?.cells ?? []
+        for (let itc = 0; itc * 2 + 2 <= sprm.operand.length && itc < cells.length; itc++)
+          setCellShading(cells[itc]!, shading80At(sprm.operand, itc * 2), false)
+        break
+      }
+      case SPRM_T_SET_SHD:
+      case SPRM_T_SET_SHD_ODD: {
+        if (sprm.operand.length < 12) break
+        const shading = shadingAt(sprm.operand, 2)
+        cellRange(properties, sprm.operand).forEach((cell, index) => {
+          if (operation === SPRM_T_SET_SHD_ODD && index % 2 === 0) return
+          setCellShading(cell, shading, true)
+        })
+        break
+      }
+      case SPRM_T_SET_SHD_TABLE: {
+        if (sprm.operand.length < 10) break
+        properties.shading = shadingAt(sprm.operand, 0)
+        break
+      }
+      default: {
+        const first = SPRM_T_DEF_TABLE_SHD[operation] ?? SPRM_T_DEF_TABLE_SHD_RAW[operation]
+        if (first !== undefined) {
+          const resolved = operation in SPRM_T_DEF_TABLE_SHD
+          const cells = properties.table?.cells ?? []
+          for (let index = 0; index * 10 + 10 <= sprm.operand.length; index++) {
+            const cell = cells[first + index]
+            if (cell) setCellShading(cell, shadingAt(sprm.operand, index * 10), resolved)
           }
         }
         // other unknown TAP sprms are skipped by the operand-size rule
         break
+      }
     }
   }
   return properties
 }
 
-/** split the body text into paragraph/cell/row-end units, keeping CP ranges */
-function bodyUnits(rawText: string): BodyUnit[] {
+/**
+ * Word writes the cell shading three times (Shd80, Shd, raw Shd); the
+ * resolved Shd wins and the legacy twins only fill in when it is absent.
+ */
+function setCellShading(cell: TapTableCell, shading: Shading | undefined, resolved: boolean): void {
+  if (cell.shadingResolved && !resolved) return
+  if (resolved) cell.shadingResolved = true
+  if (shading) cell.shading = shading
+  else delete cell.shading
+}
+
+/** split the body text (or one story's CP range) into paragraph/cell/row-end units, keeping CP ranges */
+function bodyUnits(rawText: string, range?: CpRange): BodyUnit[] {
   const units: BodyUnit[] = []
-  let start = 0
-  for (let index = 0; index < rawText.length; index++) {
+  const end = range ? Math.min(range.endCp, rawText.length) : rawText.length
+  let start = range?.startCp ?? 0
+  for (let index = start; index < end; index++) {
     const char = rawText[index]
     if (char === '\r') {
       units.push({
@@ -562,21 +733,31 @@ function bodyUnits(rawText: string): BodyUnit[] {
       start = index + 1
     }
   }
+  // a story range ends on its last paragraph mark; the body keeps its trailing unit
+  if (range && start >= end) return units
   units.push({
     kind: 'paragraph',
     startCp: start,
-    endCp: rawText.length,
-    text: rawText.slice(start),
+    endCp: end,
+    text: rawText.slice(start, end),
   })
   return units
 }
 
-interface UnitPapx {
+export interface CpRange {
+  startCp: number
+  endCp: number
+}
+
+export interface UnitPapx {
   istd: number
   sprms: Uint8Array
 }
 
-function collectUnitPapx(source: FormattingSource, warnings: string[]): Map<number, UnitPapx> {
+/** PAPX entries of the whole text keyed by CP (shared by the body and every story built from the same read) */
+export type UnitPapxIndex = Map<number, UnitPapx>
+
+export function collectUnitPapx(source: FormattingSource, warnings: string[]): UnitPapxIndex {
   const byCp = new Map<number, UnitPapx>()
   const context: ParagraphContext = { source, warnings }
   const plc = parsePlcBte(source.table, source.fib.fcPlcfbtePapx, source.fib.lcbPlcfbtePapx)
@@ -593,24 +774,43 @@ function collectUnitPapx(source: FormattingSource, warnings: string[]): Map<numb
   return byCp
 }
 
-/** the table nesting level a PAPX declares (sprmPItap, 1 for a single-level table) */
-function itapOf(papx: Map<number, UnitPapx>, cp: number): number {
+interface TableDepth {
+  /** sprmPItap (+ sprmPDtap); 1 for a single-level table */
+  itap: number
+  innerCell: boolean
+  innerRowEnd: boolean
+}
+
+/** the table nesting level and inner cell/row-end marks a PAPX declares */
+function tableDepthOf(papx: Map<number, UnitPapx>, cp: number): TableDepth {
+  const depth: TableDepth = { itap: 1, innerCell: false, innerRowEnd: false }
   const entry = papx.get(cp)
-  if (!entry) return 1
-  for (const sprm of iterateSprmsLenient(entry.sprms).sprms)
-    if (sprm.opcode === SPRM_P_ITAP) {
-      if (sprm.operand.length >= 4)
-        return (
-          (sprm.operand[0]! |
-            (sprm.operand[1]! << 8) |
-            (sprm.operand[2]! << 16) |
-            (sprm.operand[3]! << 24)) >>>
-          0
-        )
-      const value = readSprmU16(sprm.operand)
-      if (value !== undefined) return value
+  if (!entry) return depth
+  let itap: number | undefined
+  let delta = 0
+  for (const sprm of iterateSprmsLenient(entry.sprms).sprms) {
+    switch (sprm.opcode) {
+      case SPRM_P_ITAP:
+        itap = readSprmI32(sprm.operand) ?? readSprmU16(sprm.operand)
+        break
+      case SPRM_P_DTAP:
+        delta += readSprmI32(sprm.operand) ?? readSprmI16(sprm.operand) ?? 0
+        break
+      case SPRM_P_F_INNER_TABLE_CELL:
+        depth.innerCell = (readSprmU8(sprm.operand) ?? 0) !== 0
+        break
+      case SPRM_P_F_INNER_TTP:
+        depth.innerRowEnd = (readSprmU8(sprm.operand) ?? 0) !== 0
+        break
     }
-  return 1
+  }
+  depth.itap = Math.max((itap ?? 1) + delta, 0)
+  return depth
+}
+
+function readSprmI32(operand: Uint8Array): number | undefined {
+  if (operand.length < 4) return undefined
+  return operand[0]! | (operand[1]! << 8) | (operand[2]! << 16) | (operand[3]! << 24)
 }
 
 /** paragraph-formatting keys that are structure, not explicit formatting */
@@ -631,6 +831,102 @@ interface RawTable {
   rows: RawRow[]
 }
 
+/** attach the row-end TAP to the collected cells; throws TableProblem on a malformed row */
+function rawRowFor(
+  rowEnd: BodyUnit | undefined,
+  cells: RawCell[],
+  units: BodyUnit[],
+  rowIndex: number,
+  papx: Map<number, UnitPapx>,
+  warnings: string[],
+): RawRow {
+  if (!rowEnd) badTable('a table row has no row-end mark')
+  if (cells.length === 0) badTable('a table row has no cells')
+  const entry = papx.get(rowEnd.startCp)
+  if (!entry || entry.sprms.length === 0) badTable('a table row end has no TAP properties')
+  const tap = parseTap(entry.sprms, rowIndex, warnings)
+  const definition = tap.table
+  if (!definition) badTable('the row end of row ' + rowIndex + ' has no TDefTable')
+  if (definition.cells.length !== cells.length)
+    badTable(
+      'row ' +
+        rowIndex +
+        ' has ' +
+        cells.length +
+        ' cells but its TDefTable declares ' +
+        definition.cells.length,
+    )
+  cells.forEach((cell, cellIndex) => {
+    cell.definition = definition.cells[cellIndex]!
+  })
+  return { rowEnd, cells, tap, units }
+}
+
+type CellSegment = { paragraph: BodyUnit } | { rows: RawRow[]; units: BodyUnit[] }
+
+/**
+ * Split a cell's units into its own paragraphs and the inner tables (itap >
+ * depth). Inner cells end at a paragraph mark with sprmPFInnerTableCell and
+ * inner rows at one with sprmPFInnerTtp, whose PAPX carries the inner TAP.
+ */
+function splitCellUnits(
+  units: BodyUnit[],
+  depth: number,
+  papx: Map<number, UnitPapx>,
+  warnings: string[],
+): CellSegment[] {
+  const segments: CellSegment[] = []
+  let index = 0
+  while (index < units.length) {
+    if (tableDepthOf(papx, units[index]!.startCp).itap <= depth) {
+      segments.push({ paragraph: units[index]! })
+      index++
+      continue
+    }
+    const start = index
+    const rows: RawRow[] = []
+    let cells: RawCell[] = []
+    let pending: BodyUnit[] = []
+    let rowStart = index
+    try {
+      while (index < units.length) {
+        const unit = units[index]!
+        const unitDepth = tableDepthOf(papx, unit.startCp)
+        if (unitDepth.itap <= depth) break
+        index++
+        if (unitDepth.itap !== depth + 1) {
+          pending.push(unit)
+          continue
+        }
+        if (unitDepth.innerRowEnd) {
+          if (pending.length > 0) cells.push({ units: pending, definition: defaultTapCell() })
+          rows.push(
+            rawRowFor(unit, cells, units.slice(rowStart, index), rows.length, papx, warnings),
+          )
+          cells = []
+          pending = []
+          rowStart = index
+        } else if (unitDepth.innerCell) {
+          cells.push({ units: [...pending, unit], definition: defaultTapCell() })
+          pending = []
+        } else pending.push(unit)
+      }
+      if (cells.length > 0 || pending.length > 0) badTable('a nested table row has no row-end mark')
+      if (rows.length === 0) badTable('a nested table has no rows')
+      segments.push({ rows, units: units.slice(start, index) })
+    } catch (error) {
+      if (!(error instanceof TableProblem)) throw error
+      warnings.push(
+        'a nested table could not be reconstructed (' +
+          error.message +
+          '); its text was imported as cell paragraphs',
+      )
+      for (const unit of units.slice(start, index)) segments.push({ paragraph: unit })
+    }
+  }
+  return segments
+}
+
 function buildCellParagraph(
   unit: BodyUnit,
   source: FormattingSource,
@@ -641,6 +937,7 @@ function buildCellParagraph(
   fields: SimpleField[] = [],
   noteMarks: NoteMark[] = [],
   commentMarks: CommentMarkAt[] = [],
+  pictureCps: number[] = [],
 ): FormattedParagraph {
   const entry = papx.get(unit.startCp)
   const request: ParagraphRunRequest = {
@@ -659,6 +956,7 @@ function buildCellParagraph(
     fieldRangesWithin(fields, unit.startCp, unit.endCp),
     noteMarksWithin(noteMarks, unit.startCp, unit.endCp),
     commentMarksWithin(commentMarks, unit.startCp, unit.endCp),
+    pictureCps,
   )
   const text = mapWordControlChars(source.rawText.slice(unit.startCp, unit.endCp))
   const formatting = resolveParagraphFormattingFor(source, styles, request, warnings)
@@ -672,17 +970,48 @@ function buildCellParagraph(
   }
 }
 
+/** clearance or no-overlap flags without a position (sprmTPc / TDxaAbs / TDyaAbs) do not float the table */
+function isPositionedTable(position: TablePosition | undefined): position is TablePosition {
+  return (
+    position !== undefined &&
+    (position.xTwips !== undefined ||
+      position.yTwips !== undefined ||
+      position.hAnchor !== undefined)
+  )
+}
+
+function positionFromFrame(frame: ParagraphFrame | undefined): TablePosition | undefined {
+  if (!isPositionedFrame(frame)) return undefined
+  return {
+    ...(frame.xTwips !== undefined ? { xTwips: frame.xTwips } : {}),
+    ...(frame.yTwips !== undefined ? { yTwips: frame.yTwips } : {}),
+    ...(frame.hAnchor ? { hAnchor: frame.hAnchor } : {}),
+    ...(frame.vAnchor ? { vAnchor: frame.vAnchor } : {}),
+    ...(frame.hSpaceTwips
+      ? { leftFromText: frame.hSpaceTwips, rightFromText: frame.hSpaceTwips }
+      : {}),
+    ...(frame.vSpaceTwips
+      ? { topFromText: frame.vSpaceTwips, bottomFromText: frame.vSpaceTwips }
+      : {}),
+  }
+}
+
 function buildTable(
   raw: RawTable,
   source: FormattingSource,
   read: FormattingRead,
   styles: StyleSheet | undefined,
   papx: Map<number, UnitPapx>,
-  listInfoFor: (formatting: ParagraphFormatting) => ParagraphListInfo | undefined = () => undefined,
+  listInfoFor: (
+    formatting: ParagraphFormatting,
+    directSprms?: Uint8Array,
+  ) => ParagraphListInfo | undefined = () => undefined,
   picturesFor: (unit: BodyUnit) => ParagraphPictures | undefined = () => undefined,
   fields: SimpleField[] = [],
   noteMarks: NoteMark[] = [],
   commentMarks: CommentMarkAt[] = [],
+  pictureCps: number[] = [],
+  depth = 1,
 ): TableModel {
   const tableWarnings: string[] = []
   // normalize each row's boundaries to its first cell boundary (the table's left edge)
@@ -751,30 +1080,75 @@ function buildTable(
         tableBorders.insideHorizontal ||= borders.top || borders.bottom
         tableBorders.insideVertical ||= borders.left || borders.right
       }
-      const paragraphs = rawCell.units.map((unit) =>
-        buildCellParagraph(
-          unit,
-          source,
-          read,
-          styles,
-          papx,
-          tableWarnings,
-          fields,
-          noteMarks,
-          commentMarks,
-        ),
-      )
+      const paragraphs: FormattedParagraph[] = []
+      const paragraphUnits: BodyUnit[] = []
+      const nestedTables = new Map<number, TableModel[]>()
+      const addParagraph = (unit: BodyUnit): void => {
+        paragraphUnits.push(unit)
+        paragraphs.push(
+          buildCellParagraph(
+            unit,
+            source,
+            read,
+            styles,
+            papx,
+            tableWarnings,
+            fields,
+            noteMarks,
+            commentMarks,
+            pictureCps,
+          ),
+        )
+      }
+      for (const segment of splitCellUnits(rawCell.units, depth, papx, tableWarnings)) {
+        if ('paragraph' in segment) {
+          addParagraph(segment.paragraph)
+          continue
+        }
+        try {
+          const inner = buildTable(
+            { rows: segment.rows },
+            source,
+            read,
+            styles,
+            papx,
+            listInfoFor,
+            picturesFor,
+            fields,
+            noteMarks,
+            commentMarks,
+            pictureCps,
+            depth + 1,
+          )
+          tableWarnings.push(...inner.warnings)
+          const at = paragraphs.length
+          nestedTables.set(at, [...(nestedTables.get(at) ?? []), inner])
+        } catch (error) {
+          if (!(error instanceof TableProblem)) throw error
+          tableWarnings.push(
+            'a nested table could not be reconstructed (' +
+              error.message +
+              '); its text was imported as cell paragraphs',
+          )
+          for (const unit of segment.units) addParagraph(unit)
+        }
+      }
       const paragraphLists = new Map<number, ParagraphListInfo>()
       const paragraphPictures = new Map<number, ParagraphPictures>()
       paragraphs.forEach((paragraph, paragraphIndex) => {
-        const list = listInfoFor(paragraph.formatting)
+        const unit = paragraphUnits[paragraphIndex]!
+        const list = listInfoFor(paragraph.formatting, papx.get(unit.startCp)?.sprms ?? EMPTY)
         if (list) paragraphLists.set(paragraphIndex, list)
-        const pictures = picturesFor(rawCell.units[paragraphIndex]!)
+        const pictures = picturesFor(unit)
         if (pictures) paragraphPictures.set(paragraphIndex, pictures)
       })
+      const definitionCell = rawCell.definition
       cells.push({
         gridSpan,
         widthTwips,
+        ...(definitionCell.vertAlign ? { vertAlign: definitionCell.vertAlign } : {}),
+        ...(definitionCell.shading ? { shading: definitionCell.shading } : {}),
+        ...(definitionCell.padding ? { padding: definitionCell.padding } : {}),
         ...(rgf & TC_VERT_RESTART
           ? { verticalMerge: 'restart' as const }
           : rgf & TC_VERT_MERGE
@@ -786,6 +1160,7 @@ function buildTable(
         paragraphs,
         ...(paragraphLists.size > 0 ? { paragraphLists } : {}),
         ...(paragraphPictures.size > 0 ? { paragraphPictures } : {}),
+        ...(nestedTables.size > 0 ? { nestedTables } : {}),
       })
       index = last + 1
     }
@@ -805,7 +1180,22 @@ function buildTable(
     tableBorders.insideVertical ||= row.tap.borders.insideVertical
   })
   const alignment = raw.rows.find((row) => row.tap.alignment !== undefined)?.tap.alignment
-  const cellPadding = raw.rows.find((row) => row.tap.cellPadding !== undefined)?.tap.cellPadding
+  const cellParagraphs = rows.flatMap((row) => row.cells.flatMap((cell) => cell.paragraphs))
+  // Word 97 positions a framed table through its paragraphs; the TAP copy wins when both exist
+  const position =
+    raw.rows.find((row) => isPositionedTable(row.tap.position))?.tap.position ??
+    positionFromFrame(
+      cellParagraphs.find((paragraph) => isPositionedFrame(paragraph.formatting.frame))?.formatting
+        .frame,
+    )
+  if (position) for (const paragraph of cellParagraphs) delete paragraph.formatting.frame
+  const gapHalf = raw.rows.find((row) => row.tap.gapHalf !== undefined)?.tap.gapHalf
+  const cellPadding: TableCellPadding = {
+    left: gapHalf ?? DEFAULT_GAP_HALF,
+    right: gapHalf ?? DEFAULT_GAP_HALF,
+    ...raw.rows.find((row) => row.tap.cellPadding !== undefined)?.tap.cellPadding,
+  }
+  const shading = raw.rows.find((row) => row.tap.shading !== undefined)?.tap.shading
   const borderStyles = raw.rows.find((row) => Object.keys(row.tap.borderStyles).length > 0)?.tap
     .borderStyles
   return {
@@ -814,9 +1204,21 @@ function buildTable(
     ...(alignment ? { alignment } : {}),
     borders: tableBorders,
     ...(borderStyles ? { borderStyles } : {}),
-    ...(cellPadding ? { cellPadding } : {}),
+    cellPadding,
+    ...(shading ? { shading } : {}),
+    ...(position ? { position } : {}),
     warnings: [...new Set(tableWarnings)],
   }
+}
+
+/** visit every cell of a table, including the cells of its nested tables */
+export function forEachTableCell(table: TableModel, visit: (cell: TableCell) => void): void {
+  for (const row of table.rows)
+    for (const cell of row.cells) {
+      visit(cell)
+      for (const nested of cell.nestedTables?.values() ?? [])
+        for (const inner of nested) forEachTableCell(inner, visit)
+    }
 }
 
 /**
@@ -838,12 +1240,15 @@ export function buildLegacyDocBody(
     /** footnote/endnote reference marks in the body (notes.ts) */
     noteMarks?: NoteMark[]
     comments?: LegacyComment[]
+    /** build only this CP range (a header/footer story) instead of the whole text */
+    range?: CpRange
+    papx?: UnitPapxIndex
   } = {},
 ): LegacyDocBody {
   const warnings: string[] = []
   const detailed = read ?? readFormattingDetailed(source, warnings)
-  const units = bodyUnits(source.rawText)
-  const papx = collectUnitPapx(source, warnings)
+  const units = bodyUnits(source.rawText, options.range)
+  const papx = options.papx ?? collectUnitPapx(source, warnings)
   const context: ParagraphContext = { source, warnings }
   // classify the \x07 markers: an empty marker after a cell is a row end;
   // paragraph units whose PAPX says inTable belong to a cell (multi-paragraph cell).
@@ -884,6 +1289,7 @@ export function buildLegacyDocBody(
   const blocks: BodyBlock[] = []
   const imagesByCp = new Map<number, ImageBlock>()
   for (const image of options.images ?? []) imagesByCp.set(image.cp, image)
+  const pictureCps = [...imagesByCp.keys()]
   const consumedImageCps = new Set<number>()
   const consumedDrawings = new Set<FloatingShape>()
   const drawings = options.drawings ?? []
@@ -916,6 +1322,7 @@ export function buildLegacyDocBody(
         endCp: Math.min(link.endCp, endCp),
         href: link.anchor ? (link.target ?? '') + '#' + link.anchor : (link.target ?? ''),
         ...(link.tooltip ? { tooltip: link.tooltip } : {}),
+        ...(link.inToc ? { inToc: true } : {}),
       }))
       .filter((range) => range.href !== '') as FormattedLinkRange[]
   const simpleFields = options.fields?.simpleFields ?? []
@@ -935,9 +1342,30 @@ export function buildLegacyDocBody(
     },
   ])
   const missingListIlfos = new Set<number>()
-  const listInfoFor = (formatting: ParagraphFormatting): ParagraphListInfo | undefined => {
+  // Word layers the LVL indents between the style and the direct PAPX, so a
+  // style indent must not outrank the level's the way a w:ind attribute would
+  const applyLevelIndents = (formatting: ParagraphFormatting, directSprms: Uint8Array): void => {
+    const ilfo = formatting.listId
+    if (ilfo === undefined || ilfo === 0 || !options.lists) return
+    const level = resolveListLevel(
+      options.lists,
+      ilfo,
+      Math.min(Math.max(formatting.listLevel ?? 0, 0), 8),
+    )
+    if (!level) return
+    const direct: ParagraphFormatting = {}
+    applyParagraphGrpprl(direct, directSprms, context, 'inherit')
+    for (const key of ['indentLeftTwips', 'indentFirstLineTwips', 'indentRightTwips'] as const) {
+      if (level[key] !== undefined && direct[key] === undefined) formatting[key] = level[key]
+    }
+  }
+  const listInfoFor = (
+    formatting: ParagraphFormatting,
+    directSprms?: Uint8Array,
+  ): ParagraphListInfo | undefined => {
     const ilfo = formatting.listId
     if (ilfo === undefined || ilfo === 0 || !options.lists) return undefined
+    if (directSprms) applyLevelIndents(formatting, directSprms)
     const lsid = options.lists.overrides.get(ilfo)
     const definition = lsid !== undefined ? options.lists.lists.get(lsid) : undefined
     if (!definition) {
@@ -968,7 +1396,7 @@ export function buildLegacyDocBody(
       papxSprms: entry?.sprms ?? EMPTY,
     }
     const formatting = resolveParagraphFormattingFor(source, options.styles, request, warnings)
-    const list = listInfoFor(formatting)
+    const list = listInfoFor(formatting, request.papxSprms)
     const pictures = picturesFor(unit)
     return {
       type: 'paragraph',
@@ -989,6 +1417,7 @@ export function buildLegacyDocBody(
           fieldRangesWithin(simpleFields, unit.startCp, unit.endCp),
           noteMarksWithin(noteMarks, unit.startCp, unit.endCp),
           commentMarksWithin(commentMarks, unit.startCp, unit.endCp),
+          pictureCps,
         ),
         ...markFormattingEntry(
           resolveParagraphMarkFormatting(detailed, source, options.styles, request, warnings),
@@ -1010,6 +1439,7 @@ export function buildLegacyDocBody(
         simpleFields,
         noteMarks,
         commentMarks,
+        pictureCps,
       )
       blocks.push({ type: 'table', table })
     } catch (error) {
@@ -1071,39 +1501,12 @@ export function buildLegacyDocBody(
           rowEnd = current
           break
         }
-        cells.push({
-          units: [...pending, current],
-          definition: {
-            rgf: 0,
-            wWidth: 0,
-            borders: { top: false, left: false, bottom: false, right: false },
-            borderStyles: {},
-          },
-        })
+        cells.push({ units: [...pending, current], definition: defaultTapCell() })
         pending.length = 0
       }
       const rowUnits = units.slice(rowStart, index)
       try {
-        if (!rowEnd) badTable('a table row has no row-end mark')
-        if (cells.length === 0) badTable('a table row has no cells')
-        const entry = papx.get(rowEnd.startCp)
-        if (!entry || entry.sprms.length === 0) badTable('a table row end has no TAP properties')
-        const tap = parseTap(entry.sprms, rawRows.length, warnings)
-        const definition = tap.table
-        if (!definition) badTable('the row end of row ' + rawRows.length + ' has no TDefTable')
-        if (definition.cells.length !== cells.length)
-          badTable(
-            'row ' +
-              rawRows.length +
-              ' has ' +
-              cells.length +
-              ' cells but its TDefTable declares ' +
-              definition.cells.length,
-          )
-        cells.forEach((cell, cellIndex) => {
-          cell.definition = definition.cells[cellIndex]!
-        })
-        rawRows.push({ rowEnd, cells, tap, units: rowUnits })
+        rawRows.push(rawRowFor(rowEnd, cells, rowUnits, rawRows.length, papx, warnings))
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error
         warnings.push(
@@ -1123,16 +1526,11 @@ export function buildLegacyDocBody(
   for (const block of blocks) {
     if (block.type === 'table') warnings.push(...block.table.warnings)
   }
-  // nested tables are detected through sprmPItap on any table-related PAPX
-  for (const unit of units) {
-    if (unit.kind === 'paragraph') continue
-    if (itapOf(papx, unit.startCp) > 1) {
-      warnings.push('nested tables are not supported yet; the inner table is flattened to text')
-      break
-    }
-  }
   // content this stage still drops, reported once per document
-  if (source.rawText.includes('\u0001') && options.images === undefined)
+  const rangeText = options.range
+    ? source.rawText.slice(options.range.startCp, options.range.endCp)
+    : source.rawText
+  if (rangeText.includes('\u0001') && options.images === undefined)
     warnings.push('images are not converted yet; image placeholders are omitted')
   const unusedImages = (options.images ?? []).filter((image) => !consumedImageCps.has(image.cp))
   if (unusedImages.length > 0) warnings.push('a picture outside any paragraph was omitted')
@@ -1147,8 +1545,7 @@ export function buildLegacyDocBody(
           if (mark.kind === 'reference') referenced.add(mark.id)
   }
   for (const block of blocks) {
-    if (block.type === 'table')
-      for (const row of block.table.rows) for (const cell of row.cells) collect(cell.paragraphs)
+    if (block.type === 'table') forEachTableCell(block.table, (cell) => collect(cell.paragraphs))
     else if (block.paragraph) collect([block.paragraph])
   }
   const comments = (options.comments ?? []).filter((comment) => referenced.has(comment.id))

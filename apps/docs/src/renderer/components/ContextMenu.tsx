@@ -332,7 +332,13 @@ export function EditorContextMenu({
     command(editor.state, editor.view.dispatch)
   }
 
-  const protAttrs = editor.getAttributes('docProtected')
+  // only the object itself (right-click selects it as a node): a text range
+  // that merely spans a picture keeps the text menu
+  const protAttrs =
+    editor.state.selection instanceof NodeSelection &&
+    editor.state.selection.node.type.name === 'docProtected'
+      ? editor.state.selection.node.attrs
+      : null
   const isImage = protAttrs?.blockType === 'image'
   const isFloating =
     isImage ||
@@ -345,6 +351,8 @@ export function EditorContextMenu({
     !editor.state.selection.node.attrs.rule
       ? editor.state.selection.node
       : null
+  // Word's picture menu: clipboard, the picture, wrap / arrange, link, comment
+  const onPicture = !!menu.imageSrc || !!runPicture || isImage
   const currentWrap = runPicture
     ? ((runPicture.attrs.wrap as string | null) ?? null)
     : boxes?.length
@@ -426,13 +434,6 @@ export function EditorContextMenu({
           <div className="ctx-sep" />
         </>
       )}
-      {menu.imageSrc && (
-        <>
-          {item(t('appViewImage'), { onClick: run(() => onViewImage(menu.imageSrc!)) })}
-          {item(t('appSaveImageAs'), { onClick: run(() => onSaveImageAs(menu.imageSrc!)) })}
-          <div className="ctx-sep" />
-        </>
-      )}
       {item(t('appCut'), {
         key: '⌘X',
         disabled: !hasSelection || !canEdit,
@@ -448,14 +449,26 @@ export function EditorContextMenu({
         disabled: !canEdit,
         onClick: run(() => void pasteFromClipboard(editor)),
       })}
-      {item(t('appPastePlain'), {
-        disabled: !canEdit,
-        onClick: run(() => void pasteFromClipboard(editor, 'text')),
-      })}
-      <div className="ctx-sep" />
-      {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
-      {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
-      {inTable && (
+      {!onPicture &&
+        item(t('appPastePlain'), {
+          disabled: !canEdit,
+          onClick: run(() => void pasteFromClipboard(editor, 'text')),
+        })}
+      {menu.imageSrc && (
+        <>
+          <div className="ctx-sep" />
+          {item(t('appViewImage'), { onClick: run(() => onViewImage(menu.imageSrc!)) })}
+          {item(t('appSaveImageAs'), { onClick: run(() => onSaveImageAs(menu.imageSrc!)) })}
+        </>
+      )}
+      {!onPicture && (
+        <>
+          <div className="ctx-sep" />
+          {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
+          {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
+        </>
+      )}
+      {inTable && !onPicture && (
         <>
           <div className="ctx-sep" />
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
@@ -641,7 +654,7 @@ export function EditorContextMenu({
             })}
         </>
       )}
-      {(field || editor.isActive('instrField')) && onUpdateFields && (
+      {!onPicture && (field || editor.isActive('instrField')) && onUpdateFields && (
         <>
           <div className="ctx-sep" />
           {item(t('appUpdateField'), { key: 'F9', onClick: run(() => onUpdateFields()) })}
@@ -658,85 +671,93 @@ export function EditorContextMenu({
           )}
         </>
       )}
-      {editor.isActive('docListItem') && !!editor.getAttributes('docListItem').numId && (
+      {!onPicture &&
+        editor.isActive('docListItem') &&
+        !!editor.getAttributes('docListItem').numId && (
+          <>
+            <div className="ctx-sep" />
+            {item(t('appRestartNumbering'), {
+              disabled: !onRestartNumbering,
+              onClick: run(() => onRestartNumbering?.()),
+            })}
+            {item(t('appContinueNumbering'), {
+              disabled: !onContinueNumbering,
+              onClick: run(() => onContinueNumbering?.()),
+            })}
+            {item(t('appSetNumberingValue'), {
+              disabled: !onSetNumberingValue || !canEdit,
+              onClick: run(() => onSetNumberingValue?.()),
+            })}
+            {item(t('appAdjustListIndents'), {
+              disabled: !onAdjustListIndents || !canEdit,
+              onClick: run(() => onAdjustListIndents?.()),
+            })}
+            <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+              {item(t('appChangeListLevel'), {
+                disabled: !onChangeListLevel || !canEdit,
+                submenuKey: 'listLevel',
+              })}
+              {submenu === 'listLevel' && onChangeListLevel && canEdit && (
+                <div className="ctx-submenu">
+                  {Array.from({ length: 9 }, (_, i) => (
+                    <button
+                      key={i}
+                      className="ctx-item"
+                      aria-current={
+                        (Number(editor.getAttributes('docListItem').ilvl) || 0) === i
+                          ? 'true'
+                          : undefined
+                      }
+                      onClick={run(() => onChangeListLevel(i))}
+                    >
+                      <span className="ctx-label" style={{ paddingLeft: i * 8 }}>
+                        {t('appParaOutlineLevelN', { n: String(i + 1) })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      {!onPicture && (
         <>
           <div className="ctx-sep" />
-          {item(t('appRestartNumbering'), {
-            disabled: !onRestartNumbering,
-            onClick: run(() => onRestartNumbering?.()),
-          })}
-          {item(t('appContinueNumbering'), {
-            disabled: !onContinueNumbering,
-            onClick: run(() => onContinueNumbering?.()),
-          })}
-          {item(t('appSetNumberingValue'), {
-            disabled: !onSetNumberingValue || !canEdit,
-            onClick: run(() => onSetNumberingValue?.()),
-          })}
-          {item(t('appAdjustListIndents'), {
-            disabled: !onAdjustListIndents || !canEdit,
-            onClick: run(() => onAdjustListIndents?.()),
+          {item(t('appSynonyms'), {
+            disabled: !synonymText,
+            ai: true,
+            onClick: run(() => onAiPreset(t('appSynonymsPrompt', { text: synonymText }))),
           })}
           <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
-            {item(t('appChangeListLevel'), {
-              disabled: !onChangeListLevel || !canEdit,
-              submenuKey: 'listLevel',
+            {item(t('appTranslate'), {
+              disabled: !hasSelection,
+              submenuKey: 'translate',
+              ai: true,
             })}
-            {submenu === 'listLevel' && onChangeListLevel && canEdit && (
+            {submenu === 'translate' && hasSelection && (
               <div className="ctx-submenu">
-                {Array.from({ length: 9 }, (_, i) => (
+                {TRANSLATE_LANGS.map(({ code }) => (
                   <button
-                    key={i}
+                    key={code}
                     className="ctx-item"
-                    aria-current={
-                      (Number(editor.getAttributes('docListItem').ilvl) || 0) === i
-                        ? 'true'
-                        : undefined
-                    }
-                    onClick={run(() => onChangeListLevel(i))}
+                    onClick={run(() =>
+                      onAiPreset(
+                        t('appTranslateSelectionPrompt', {
+                          lang: t(appLangKey(code)),
+                          text: selectedText,
+                        }),
+                      ),
+                    )}
                   >
-                    <span className="ctx-label" style={{ paddingLeft: i * 8 }}>
-                      {t('appParaOutlineLevelN', { n: String(i + 1) })}
+                    <span className="ctx-label">
+                      {t('appTranslateTo', { lang: t(appLangKey(code)) })}
                     </span>
                   </button>
                 ))}
               </div>
             )}
           </div>
-        </>
-      )}
-      <div className="ctx-sep" />
-      {item(t('appSynonyms'), {
-        disabled: !synonymText,
-        ai: true,
-        onClick: run(() => onAiPreset(t('appSynonymsPrompt', { text: synonymText }))),
-      })}
-      <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
-        {item(t('appTranslate'), { disabled: !hasSelection, submenuKey: 'translate', ai: true })}
-        {submenu === 'translate' && hasSelection && (
-          <div className="ctx-submenu">
-            {TRANSLATE_LANGS.map(({ code }) => (
-              <button
-                key={code}
-                className="ctx-item"
-                onClick={run(() =>
-                  onAiPreset(
-                    t('appTranslateSelectionPrompt', {
-                      lang: t(appLangKey(code)),
-                      text: selectedText,
-                    }),
-                  ),
-                )}
-              >
-                <span className="ctx-label">
-                  {t('appTranslateTo', { lang: t(appLangKey(code)) })}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      {/* Withholding a span. No AI badge: the item spends the words rather
+          {/* Withholding a span. No AI badge: the item spends the words rather
           than using the model, and the badge would read "Uses AI".
           Text only, deliberately. A picture alone in a paragraph is a *block*
           node (docProtected), which takes no marks at all, and a picture
@@ -744,22 +765,24 @@ export function EditorContextMenu({
           (convert.ts reads the run's node attrs, never the node's marks) — so
           offering it for a picture would hide it for one session and then lose
           the decision on the next save, with nothing to tell the reader. */}
-      {onRedact &&
-        item(t('redactMenuLabel'), {
-          disabled: !canEdit || !hasSelection,
-          onClick: run(onRedact),
-        })}
-      {/* The other half of the item above, and its mirror: offered only when the
+          {onRedact &&
+            item(t('redactMenuLabel'), {
+              disabled: !canEdit || !hasSelection,
+              onClick: run(onRedact),
+            })}
+          {/* The other half of the item above, and its mirror: offered only when the
           selection really carries the mark. Without this the sole way to stop
           withholding a span was to delete the words, which loses the reader's
           own text to undo a decision they made in the editor. Same reason as
           the item beside it for no AI badge — this one only moves a mark. */}
-      {onUnredact &&
-        isRedactedSelection &&
-        item(t('redactShowLabel'), {
-          disabled: !canEdit,
-          onClick: run(onUnredact),
-        })}
+          {onUnredact &&
+            isRedactedSelection &&
+            item(t('redactShowLabel'), {
+              disabled: !canEdit,
+              onClick: run(onUnredact),
+            })}
+        </>
+      )}
       {(isFloating || runPicture) && (
         <>
           <div className="ctx-sep" />
@@ -824,7 +847,7 @@ export function EditorContextMenu({
         item(t('appHyperlinkMenu'), { key: '⌘K', disabled: !canEdit, onClick: run(onLink) })
       )}
       {item(t('appNewComment'), { disabled: !canComment, onClick: run(onNewComment) })}
-      {comment && (
+      {comment && !onPicture && (
         <>
           <div className="ctx-sep" />
           {item(t('appCtxReplyComment'), {
@@ -841,7 +864,7 @@ export function EditorContextMenu({
           })}
         </>
       )}
-      {(revisions?.any || trackChanges) && (
+      {!onPicture && (revisions?.any || trackChanges) && (
         <>
           <div className="ctx-sep" />
           {revisions && revisions.at.length > 0 && (

@@ -12,15 +12,22 @@ import type { PptPresentation, PptSlideText } from './ppt'
 /** PowerPoint measures the slide surface in 1/576-inch master units. */
 const EMU_PER_MASTER_UNIT = 914400 / 576
 
+function xmlLegal(ch: string): boolean {
+  const c = ch.codePointAt(0)!
+  return (c >= 0x20 && c !== 0xfffe && c !== 0xffff) || c === 0x9 || c === 0xa || c === 0xd
+}
+
 function escapeXml(text: string): string {
-  return text
+  return [...text]
+    .filter(xmlLegal)
+    .join('')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
 
-const TITLE_KINDS = new Set([0, 5, 6])
+const TITLE_KINDS = new Set([0, 6]) // 5 is the subtitle
 
 /**
  * one text sequence → a text box stacked down the slide. `id` is the shape's

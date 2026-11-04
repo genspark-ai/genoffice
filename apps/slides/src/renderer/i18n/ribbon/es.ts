@@ -292,16 +292,17 @@ export const es = {
   ribbonGroupSelect: 'Seleccionar',
   ribbonSelectTip: 'Seleccionar: salir del dibujo y volver a la edición de elementos',
   ribbonGroupDrawTools: 'Herramientas de dibujo',
-  ribbonPenTip:
-    'Lápiz: dibujar en la diapositiva (se guarda como imagen de entrada de lápiz en la página); haga clic de nuevo para cancelar',
   ribbonHighlighter: 'Marcador de resaltado',
-  ribbonHighlighterTip:
-    'Marcador de resaltado: trazos gruesos translúcidos; haga clic de nuevo para cancelar',
   ribbonEraserTip:
     'Borrador: haga clic en un trazo o pase por encima para eliminarlo por completo; haga clic de nuevo para cancelar',
   ribbonInkWidthTip: '{w} px',
-  ribbonGroupPenStyle: 'Estilo de lápiz',
-  ribbonGroupHighlighterStyle: 'Estilo de marcador',
+  ribbonPencil: 'Lápiz de grafito',
+  ribbonInkAdd: 'Agregar',
+  ribbonInkAddTip: 'Agregar un lápiz, marcador o lápiz de grafito',
+  ribbonInkDelete: 'Eliminar',
+  ribbonInkThickness: 'Grosor',
+  ribbonInkColors: 'Colores',
+  ribbonGroupPens: 'Lápices',
   ribbonEraseAll: 'Borrar todo',
   ribbonEraseAllTip: 'Eliminar toda la entrada de lápiz de la diapositiva actual',
   ribbonGroupThemes: 'Temas',

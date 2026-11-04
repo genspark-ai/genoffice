@@ -39,11 +39,50 @@ describe('run resolution through the resolver', () => {
     const [char, direct] = doc.blocks[1].runs!
     expect(both.effective!.bold).toBe(false)
     expect(both.effective!.source.bold).toBe('charStyle')
+    expect(both.effective!.styleXor).toEqual(['bold'])
     expect(both.bold).toBeUndefined()
     expect(para.effective!.bold).toBe(true)
+    expect(para.effective!.styleXor).toBeUndefined()
     expect(char.effective!.bold).toBe(true)
+    expect(char.effective!.styleXor).toBeUndefined()
     expect(direct.effective!.bold).toBe(true)
     expect(direct.bold).toBe(true)
+    expect(direct.effective!.styleXor).toBeUndefined()
+  })
+
+  it('a direct toggle or an explicit style off is not an XOR flip', async () => {
+    const extra =
+      '<w:style w:type="character" w:styleId="UnboldChar"><w:name w:val="UnboldChar"/><w:rPr><w:b w:val="0"/></w:rPr></w:style>'
+    const body = p(
+      '<w:pStyle w:val="BoldPara"/>',
+      r('<w:rStyle w:val="BoldChar"/><w:b/>', 'direct') +
+        r('<w:rStyle w:val="UnboldChar"/>', 'off'),
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, stylesXml: styles(extra) }))
+    const [direct, off] = doc.blocks[0].runs!
+    expect(direct.effective!.bold).toBe(true)
+    expect(direct.effective!.styleXor).toBeUndefined()
+    expect(off.effective!.styleXor).toBeUndefined()
+  })
+
+  it('the mark of a bidi paragraph sizes the empty line by the chain Cs size', async () => {
+    const bidiStyles = styles('').replace(
+      '<w:sz w:val="21"/>',
+      '<w:sz w:val="24"/><w:szCs w:val="22"/>',
+    )
+    const body =
+      p('<w:bidi/><w:rPr><w:noProof/></w:rPr>', '') +
+      p('<w:rPr><w:noProof/></w:rPr>', '') +
+      p('<w:bidi/><w:rPr><w:rtl w:val="0"/></w:rPr>', '') +
+      p('<w:bidi/><w:rPr><w:szCs w:val="40"/></w:rPr>', '') +
+      p('<w:bidi/><w:rPr><w:sz w:val="36"/></w:rPr>', '')
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, stylesXml: bidiStyles }))
+    const [bidi, ltr, ltrMark, sized, baseSized] = doc.blocks
+    expect(bidi.format?.emptyRunSizeHalfPoints).toBe(22)
+    expect(ltr.format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(ltrMark.format?.emptyRunSizeHalfPoints).toBe(22)
+    expect(sized.format?.emptyRunSizeHalfPoints).toBe(40)
+    expect(baseSized.format?.emptyRunSizeHalfPoints).toBe(22)
   })
 
   it('two vanish layers leave the run visible; one hides it', async () => {

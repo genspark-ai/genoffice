@@ -36,3 +36,37 @@ export function pushRecentColor(hex: string): void {
     // storage full/unavailable: recents are a convenience, drop silently
   }
 }
+
+/**
+ * History writer for a picker whose native color input previews live: the OS
+ * panel fires a change event per drag movement, and pushing each one floods
+ * all MAX slots with the drag trail of a single pick (gendesk #279). Previewed
+ * values only stage here; exactly one — the last — enters the history, when
+ * the menu closes. A swatch click is a single deliberate pick: it records
+ * immediately and drops any staged preview it supersedes.
+ */
+export interface RecentColorSession {
+  /** Live preview from the native input: stage, don't record. */
+  preview(hex: string): void
+  /** A single-click pick (swatch): record now, discard the staged preview. */
+  commit(hex: string): void
+  /** Menu closing by any path: record the staged preview, if one is left. */
+  close(): void
+}
+
+export function createRecentColorSession(): RecentColorSession {
+  let pending: string | null = null
+  return {
+    preview(hex) {
+      pending = hex
+    },
+    commit(hex) {
+      pending = null
+      pushRecentColor(hex)
+    },
+    close() {
+      if (pending !== null) pushRecentColor(pending)
+      pending = null
+    },
+  }
+}

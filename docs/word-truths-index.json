@@ -1322,6 +1322,64 @@
       "truths": 7,
       "proseOnly": null,
       "fixtures": ["fonttable-altname-missing-cs"]
+    },
+    {
+      "line": 922,
+      "date": "2026-11-03",
+      "title": "2026-11-03 w:position",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": "probe docx kept locally; the rule is a CSS-only change (vertical-align -> relative offset) with no block-height model to pin",
+      "fixtures": []
+    },
+    {
+      "line": 928,
+      "date": "2026-11-03",
+      "title": "2026-11-03 header strip lines: a picture line with only whitespace text is as tall as the picture; vMerge cells overlay their rows",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": "probe docx kept locally; the rules are strip DOM/CSS changes (vertical-align, overlay box) without a block-height model to pin",
+      "fixtures": []
+    },
+    {
+      "line": 935,
+      "date": "2026-11-03",
+      "title": "2026-11-03 side-wrapped anchored picture at the page bottom: the page turn is a compatibilityMode 15 rule, legacy layout overflows the bottom margin",
+      "abridged": false,
+      "truths": 5,
+      "proseOnly": "probe docx kept locally; the rule is a slicer decision (legacy no-turn + pull-up + carry) pinned by apps/docs/tests/pagination.test.ts \"anchored drawings at the page bottom\"",
+      "fixtures": ["render-legacy-side-picture-overflow"]
+    },
+    {
+      "line": 943,
+      "date": "2026-11-03",
+      "title": "2026-11-03 Hiragino names with a fontTable altName follow it; David is Times-metric Latin with its own Hebrew advances",
+      "abridged": false,
+      "truths": 2,
+      "proseOnly": "corpus-derived (production Word PDFs + fontTools over Word DFonts, no synthetic probe); pinned by packages/font-metrics/tests/resolve.test.ts (kana name with/without altName) and apps/docs/tests/font-resolve.test.ts (alias pacing 1.1724, David GO chain, 0.9839)",
+      "fixtures": ["bidi-mark-cs-size-last-style-ref"]
+    },
+    {
+      "line": 959,
+      "date": "2026-11-03",
+      "title": "2026-11-03 Installed Latin-named Korean face",
+      "abridged": false,
+      "truths": 3,
+      "proseOnly": null,
+      "fixtures": [
+        "ea-lang-val-empty-mark",
+        "kr-installed-face-factor",
+        "theme-ea-slot-script-table"
+      ]
+    },
+    {
+      "line": 975,
+      "date": "2026-11-03",
+      "title": "Header wrapTopAndBottom band pushes the strip's own line under compatibilityMode 15; side-wrapped header drawings are body obstacles",
+      "abridged": false,
+      "truths": 4,
+      "proseOnly": null,
+      "fixtures": ["render-hf-anchor-band"]
     }
   ]
 }

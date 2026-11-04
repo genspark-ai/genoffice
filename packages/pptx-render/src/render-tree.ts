@@ -353,6 +353,8 @@ export interface PictureRenderNode extends RenderNodeBase {
   dataUrl?: string
   /** Opaque backdrop behind the image (OLE previews render on a white canvas; metafiles are often transparent) */
   bgColor?: string
+  /** Read-only preview of an embedded OLE object (PowerPoint treats the frame as a shape, not a picture) */
+  ole?: true
   /** Shape fill from the pic's own spPr, always drawn behind the (possibly translucent) image */
   fill?: RenderFill
   /** [dark, light] duotone colors applied to the picture pixels */

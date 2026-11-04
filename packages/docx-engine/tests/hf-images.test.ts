@@ -49,6 +49,29 @@ async function buildHeaderLogoDocx(
   })
 }
 
+describe('header layout-table vMerge', () => {
+  const tc = (w: number, merge: string, text: string) =>
+    `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${merge}</w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+  const header =
+    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:tbl>' +
+    '<w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="6000"/></w:tblGrid>' +
+    `<w:tr>${tc(3000, '<w:vMerge w:val="restart"/>', 'Tall')}${tc(6000, '', 'b')}</w:tr>` +
+    `<w:tr>${tc(3000, '<w:vMerge/>', '')}${tc(6000, '', 'd')}</w:tr>` +
+    `<w:tr>${tc(3000, '<w:vMerge/>', '')}${tc(6000, '', 'f')}</w:tr>` +
+    '</w:tbl></w:hdr>'
+
+  it('marks the restart cell with its row span and the continuations as empty placeholders', async () => {
+    const doc = await parseDocx(await buildHeaderLogoDocx(header))
+    const rows = Object.values(doc.hfParts ?? {})[0].paras
+    expect(rows).toHaveLength(3)
+    expect(rows[0].cells![0]).toMatchObject({ vSpan: 3 })
+    expect(rows[0].cells![1].vSpan).toBeUndefined()
+    expect(rows[1].cells![0]).toMatchObject({ vMergeContinue: true })
+    expect(rows[1].cells![0].vSpan).toBeUndefined()
+    expect(rows[2].cells![0]).toMatchObject({ vMergeContinue: true })
+  })
+})
+
 describe('header/footer images (display-only Logo)', () => {
   it('parses header images with size, text paragraphs unaffected', async () => {
     const doc = await parseDocx(await buildHeaderLogoDocx())

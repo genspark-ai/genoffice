@@ -947,6 +947,7 @@ export function PaginationPreview({
   section,
   canvasTop,
   sections,
+  legacyBands,
   mirrorMargins = false,
   delSectBreaks,
   hfParts,
@@ -988,6 +989,8 @@ export function PaginationPreview({
   /** canvas column mode: 'uniform' = whole-page CSS multicol, 'mixed' = per-block layout decorations */
   colMode: 'none' | 'uniform' | 'mixed'
   hf: HfSet
+  /** compatibilityMode < 15 header band rule (hfStripGeom) */
+  legacyBands?: boolean
   /** unsaved Design → Watermark edit: hide the parsed watermark shape, draw `pendingWatermark` instead */
   watermarkDirty?: boolean
   /** the unsaved watermark as the header image it will parse back as (text or picture) */
@@ -1162,7 +1165,7 @@ export function PaginationPreview({
                         : undefined,
                   }
                 },
-            { titlePg: hf.titlePg, evenOddHf: hf.evenOddHf },
+            { titlePg: hf.titlePg, evenOddHf: hf.evenOddHf, legacyBands },
           )
           const geoms = sectionGeoms(live, hfHs, hf.evenOddHf)
           // when the canvas column layout is inactive, measure as full-width single flow; the geometry drops column flow to match
@@ -1187,7 +1190,7 @@ export function PaginationPreview({
               : { value: strips.footer, images: strips.footerImages }
           },
           () => canvasContentW,
-          hfStripGeom(section),
+          hfStripGeom(section, legacyBands),
           hf.titlePg,
           hf.evenOddHf,
         )
@@ -1867,7 +1870,7 @@ export function PaginationPreview({
                         ? { width: parts.headerColumnPx }
                         : undefined
                     }
-                    boxGeom={{ ...hfStripGeom(s), columnW: parts.headerColumnPx }}
+                    boxGeom={{ ...hfStripGeom(s, legacyBands), columnW: parts.headerColumnPx }}
                   />
                 )}
                 {slice.repeatHeader && !slice.regions && (
@@ -2213,7 +2216,7 @@ export function PaginationPreview({
                         ? { width: parts.footerColumnPx }
                         : undefined
                     }
-                    boxGeom={{ ...hfStripGeom(s), columnW: parts.footerColumnPx }}
+                    boxGeom={{ ...hfStripGeom(s, legacyBands), columnW: parts.footerColumnPx }}
                   />
                 )}
                 <div className="pv-pageno">{i + 1}</div>

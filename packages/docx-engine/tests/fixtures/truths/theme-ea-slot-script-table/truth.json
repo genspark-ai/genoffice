@@ -1,0 +1,93 @@
+{
+  "id": "theme-ea-slot-script-table",
+  "title": "A filled theme EA slot still yields to the script table's face for themeFontLang eastAsia; without a table the literal a:ea typeface stands",
+  "section": "word-truths.md#L964",
+  "probe_date": "2026-11-03",
+  "source": "build.py (ko / reverse / no-table / ja) -> Word for Mac direct PDFs p1, p3, p4, p2; pymupdf rawdict span fonts and char origins",
+  "class": "pure",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "blockFace",
+      "block": 1,
+      "expect": "\ub9d1\uc740 \uace0\ub515",
+      "note": "a:ea Batang + Hang Malgun under ko-KR, minorEastAsia in all three slots -> MalgunGothic, pitch 20.64-20.88 at 12pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 20.85,
+      "tol": 0.3,
+      "note": "12 x 1.7371"
+    },
+    {
+      "kind": "blockFace",
+      "block": 3,
+      "expect": "\ub9d1\uc740 \uace0\ub515",
+      "note": "eastAsiaTheme alone (ascii Times New Roman) -> MalgunGothic hangul"
+    },
+    {
+      "kind": "runProps",
+      "block": 5,
+      "run": 0,
+      "expect": {
+        "fontAscii": "\ub9d1\uc740 \uace0\ub515"
+      },
+      "note": "Latin digits through asciiTheme=minorEastAsia -> MalgunGothic 20.64-20.88"
+    },
+    {
+      "kind": "blockFace",
+      "block": 7,
+      "expect": "\ub9d1\uc740 \uace0\ub515",
+      "note": "majorEastAsia -> the majorFont Hang entry (MalgunGothic)"
+    },
+    {
+      "kind": "blockFace",
+      "block": 9,
+      "expect": "\ubc14\ud0d5",
+      "note": "control: literal rFonts Batang, pitch 15.6"
+    },
+    {
+      "kind": "linePt",
+      "block": 9,
+      "expect": 15.6,
+      "tol": 0.15
+    },
+    {
+      "kind": "blockFace",
+      "block": 1,
+      "docx": "probe-reverse.docx",
+      "expect": "\ubc14\ud0d5",
+      "note": "a:ea Malgun + Hang Batang -> Batang 15.6: the table decides, not a Malgun preference"
+    },
+    {
+      "kind": "blockFace",
+      "block": 1,
+      "docx": "probe-notable.docx",
+      "expect": "\ubc14\ud0d5",
+      "note": "no script table -> the literal Batang 15.6"
+    },
+    {
+      "kind": "blockFace",
+      "block": 1,
+      "docx": "probe-ja.docx",
+      "expect": "\u6e38\u660e\u671d",
+      "note": "a:ea MS Mincho + Jpan Yu Mincho under ja-JP -> YuMincho-Regular 17.04-17.28"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "docx": "probe-ja.docx",
+      "expect": 17.28,
+      "tol": 0.3,
+      "note": "12 x 1.44"
+    },
+    {
+      "kind": "blockFace",
+      "block": 7,
+      "docx": "probe-ja.docx",
+      "expect": "\uff2d\uff33 \u660e\u671d",
+      "note": "control: literal MS Mincho 15.6"
+    }
+  ]
+}

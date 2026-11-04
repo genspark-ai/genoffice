@@ -35,6 +35,14 @@ describe('slides contextual ribbon tabs', () => {
     expect(contextElementTypeForNode(textGroup)).toBe('textShape')
   })
 
+  it('an OLE preview is a shape (PowerPoint shows Shape Format for embedded objects)', () => {
+    const plain = { type: 'picture' } as unknown as RenderNode
+    const ole = { type: 'picture', ole: true } as unknown as RenderNode
+    expect(contextElementTypeForNode(plain)).toBe('picture')
+    expect(contextElementTypeForNode(ole)).toBe('shape')
+    expect(contextualTabFor(ole)).toBe('shapeFormat')
+  })
+
   it('auto-switches for dedicated object tools but only reveals the shape tab', () => {
     expect(autoContextTabForElement('picture')).toBe('pictureFormat')
     expect(autoContextTabForElement('mixed')).toBe('pictureFormat')

@@ -293,16 +293,17 @@ export const it = {
   ribbonGroupSelect: 'Seleziona',
   ribbonSelectTip: 'Seleziona: esci dal disegno e torna alla modifica degli elementi',
   ribbonGroupDrawTools: 'Strumenti di Disegno',
-  ribbonPenTip:
-    'Penna: disegna sulla diapositiva (salvato come immagine di input penna nella pagina); fai clic di nuovo per annullare',
   ribbonHighlighter: 'Evidenziatore',
-  ribbonHighlighterTip:
-    'Evidenziatore: tratti spessi semitrasparenti; fai clic di nuovo per annullare',
   ribbonEraserTip:
     'Gomma: fai clic su un tratto o trascina su di esso per eliminarlo; fai clic di nuovo per annullare',
   ribbonInkWidthTip: '{w} px',
-  ribbonGroupPenStyle: 'Stile Penna',
-  ribbonGroupHighlighterStyle: 'Stile Evidenziatore',
+  ribbonPencil: 'Matita',
+  ribbonInkAdd: 'Aggiungi',
+  ribbonInkAddTip: 'Aggiungi una penna, un evidenziatore o una matita',
+  ribbonInkDelete: 'Elimina',
+  ribbonInkThickness: 'Spessore',
+  ribbonInkColors: 'Colori',
+  ribbonGroupPens: 'Penne',
   ribbonEraseAll: 'Cancella Tutto',
   ribbonEraseAllTip: "Elimina tutto l'input penna dalla diapositiva corrente",
   ribbonGroupThemes: 'Temi',

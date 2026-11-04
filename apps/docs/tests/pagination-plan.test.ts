@@ -316,6 +316,14 @@ describe('buildBlockPlan: P2 space before', () => {
     expect(plansOf(pbb(400), legacy)[1].forcedLeadSpacePt).toBe(0)
     expect(plansOf(pbb(0), legacy)[1].forcedLeadSpacePt).toBe(20)
     expect(plansOf(pbb(200))[1].forcedLeadSpacePt).toBeUndefined()
+    // body-level bookmark markers between the two are not paragraphs
+    const marker = {
+      type: 'docProtected',
+      attrs: { blockType: 'passthrough', invisibleMarker: true },
+    }
+    expect(plansOf([pbb(200)[0], marker, marker, pbb(200)[1]], legacy)[3].forcedLeadSpacePt).toBe(
+      10,
+    )
     expect(
       plansOf([para([text('a')]), para([text('b')], { spaceBefore: 400 })], legacy)[1]
         .forcedLeadSpacePt,

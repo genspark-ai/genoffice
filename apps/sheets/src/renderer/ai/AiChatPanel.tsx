@@ -29,6 +29,12 @@ import {
   SentAttachments,
   truncateCardName,
 } from '@genoffice/ui'
+import { useI18n, type TFunc } from '../i18n/locale'
+import { AiSkillChips, AiSkillsMenu, createFileNav, Markdown } from '@genoffice/ui'
+import { SHEET_NAV_SCHEME } from './sheet-nav'
+import sendEnterOn from '../assets/send-enter-on.png'
+import sendEnterOff from '../assets/send-enter-off.png'
+import sendStop from '../assets/send-stop.png'
 
 export function scopeLabel(range: string, columns: readonly string[] | null, t: TFunc): string {
   if (columns?.length === 1) return t('aiScopeColumn', { name: columns[0] ?? '' })
@@ -37,12 +43,6 @@ export function scopeLabel(range: string, columns: readonly string[] | null, t: 
   }
   return t('aiScopeRange', { range })
 }
-import { useI18n, type TFunc } from '../i18n/locale'
-import { AiSkillChips, AiSkillsMenu, createFileNav, Markdown } from '@genoffice/ui'
-import { SHEET_NAV_SCHEME } from './sheet-nav'
-import sendEnterOn from '../assets/send-enter-on.png'
-import sendEnterOff from '../assets/send-enter-off.png'
-import sendStop from '../assets/send-stop.png'
 
 /** Clipboard bitmap MIME → attachment extension (matches the main process's
  * ATTACHMENT_IMAGE_EXTS) */

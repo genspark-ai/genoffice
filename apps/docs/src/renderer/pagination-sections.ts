@@ -80,18 +80,30 @@ export function effectiveBottomPx(set: SectionSettings, footerPx: number): numbe
 export function singleVariantGeomOf(
   set: SectionSettings,
   hf: SectionHfHeights,
-): Pick<SectionGeom, 'firstContentHeight' | 'evenContentHeight'> {
-  const capacity = (variant: HfVariant) => {
-    const { headerPx, footerPx } = hfVariantReservedPx(hf, variant)
-    return (
-      twipsToPx(set.pageHeight) - effectiveTopPx(set, headerPx) - effectiveBottomPx(set, footerPx)
-    )
-  }
+): Pick<
+  SectionGeom,
+  | 'firstContentHeight'
+  | 'evenContentHeight'
+  | 'marginBottomPx'
+  | 'firstMarginBottomPx'
+  | 'evenMarginBottomPx'
+> {
+  const bottom = (variant: HfVariant) =>
+    effectiveBottomPx(set, hfVariantReservedPx(hf, variant).footerPx)
+  const capacity = (variant: HfVariant) =>
+    twipsToPx(set.pageHeight) -
+    effectiveTopPx(set, hfVariantReservedPx(hf, variant).headerPx) -
+    bottom(variant)
   const base = capacity('default')
   const even = hfHasVariant(hf, 'even') ? capacity('even') : undefined
   return {
-    ...(hfHasVariant(hf, 'first') ? { firstContentHeight: capacity('first') } : {}),
-    ...(even !== undefined && Math.abs(even - base) > 0.01 ? { evenContentHeight: even } : {}),
+    marginBottomPx: bottom('default'),
+    ...(hfHasVariant(hf, 'first')
+      ? { firstContentHeight: capacity('first'), firstMarginBottomPx: bottom('first') }
+      : {}),
+    ...(even !== undefined && Math.abs(even - base) > 0.01
+      ? { evenContentHeight: even, evenMarginBottomPx: bottom('even') }
+      : {}),
   }
 }
 
@@ -897,6 +909,13 @@ export function sectionGeoms(
       ...(vertical ? { vertical } : {}),
       topPx: effectiveTopPx(set, hfOf('default').headerPx),
       pageHeightPx: twipsToPx(set.pageHeight),
+      marginBottomPx: effectiveBottomPx(set, hfOf('default').footerPx),
+      ...(hf && hfHasVariant(hf, 'first')
+        ? { firstMarginBottomPx: effectiveBottomPx(set, hfOf('first').footerPx) }
+        : {}),
+      ...(hf && hfHasVariant(hf, 'even')
+        ? { evenMarginBottomPx: effectiveBottomPx(set, hfOf('even').footerPx) }
+        : {}),
       forceBreak,
       startType: s.startType,
       ...(numberingParity ? { numberingParity } : {}),

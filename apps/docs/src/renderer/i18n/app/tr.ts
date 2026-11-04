@@ -72,6 +72,8 @@ export const tr = {
   appFieldsUpdated: '{n} alan güncellendi',
   appStyleUpdated: '"{name}" stili seçimden güncellendi; kaydedildiğinde belgeye yazılır',
   appStyleCreated: '"{name}" stili oluşturuldu ve seçime uygulandı',
+  appStyleInstancesSelected: '“{name}” stilinin {count} örneği seçildi',
+  appStyleNoInstances: 'Hiçbir metin “{name}” kullanmıyor',
   appPgNumFormatSet: 'Sayfa numarası biçimi ayarlandı',
   appPageNumFormatTitle: 'Sayfa Numarası Biçimi',
   appNumberFormat: 'Sayı biçimi',

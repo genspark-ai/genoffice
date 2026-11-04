@@ -132,6 +132,8 @@ export interface EffectiveRPr {
   shading?: string
   eastAsiaLang?: string
   source: Record<string, PropSource>
+  /** toggles whose style-layer XOR inverted the winning layer's own value (display override) */
+  styleXor?: Array<'bold' | 'italic' | 'strike' | 'vanish'>
 }
 
 export interface ResolveParaOptions {
@@ -592,7 +594,7 @@ function resolveParagraphPropsUncached(
     source,
   }
   const markRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
-  para.mark = resolveRunProps(markRPr, para, ctx)
+  para.mark = resolveRunProps(markRPr, para, ctx, true)
   // a w:specVanish mark is a style separator, never a hidden paragraph
   para.hidden = para.mark.vanish && !(markRPr && onOffOf(markRPr, 'w:specVanish') === true)
   return para
@@ -767,11 +769,17 @@ export function resolveRunProps(
   rPr: XNode | undefined,
   para: EffectivePPr,
   ctx: ResolveCtx,
+  mark = false,
 ): EffectiveRPr {
   const rStyleId = rPr ? attrsOf(findChild(rPr, 'w:rStyle') ?? {})['w:val'] : undefined
   const charStyle = rStyleId ? ctx.styles.get(rStyleId) : undefined
   const paraStyle = para.styleId ? ctx.styles.get(para.styleId) : ctx.defaultParaStyle
+  // the mark of a bidi paragraph reads the Cs twins even with its own w:rtl off
+  // (Word probe 2026-11-03: sz 36 / rtl=0 marks under szCs 22 lay 11pt lines);
+  // w:cs marks the run complex-script outright (a Thai title with w:cs + w:bCs is bold)
   const cs =
+    (mark && para.bidi) ||
+    (rPr ? onOffOf(rPr, 'w:cs') : undefined) === true ||
     ((rPr ? onOffOf(rPr, 'w:rtl') : undefined) ??
       charStyle?.display?.rtl ??
       paraStyle?.display?.rtl ??
@@ -810,6 +818,7 @@ export function resolveRunProps(
       source[t] = 'docDefaults'
     }
   }
+  const styleXor: NonNullable<EffectiveRPr['styleXor']> = []
   for (const [layer, src] of styleLayers) {
     apply(layer, src)
     // toggle properties XOR across the style layers (ECMA-376 §17.7.3)
@@ -828,6 +837,12 @@ export function resolveRunProps(
       acc[t] = direct[t]
       source[t] = 'direct'
     }
+  }
+  // two style layers both turning a toggle on leave it off (Word probe 2026-10-22);
+  // an explicit style off keeps the cascade's own result
+  for (const t of TOGGLES) {
+    if (styleLayers.find(([, src]) => src === source[t])?.[0][t] === true && !acc[t])
+      styleXor.push(t)
   }
 
   const fonts: EffectiveRPr['fonts'] = {}
@@ -853,6 +868,7 @@ export function resolveRunProps(
     ...(acc.bdr ? { bdr: acc.bdr } : {}),
     ...(acc.shading ? { shading: acc.shading } : {}),
     ...(acc.eastAsiaLang ? { eastAsiaLang: acc.eastAsiaLang } : {}),
+    ...(styleXor.length > 0 ? { styleXor } : {}),
     source,
   }
 }

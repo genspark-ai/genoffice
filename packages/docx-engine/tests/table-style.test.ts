@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx, saveDocx } from '../src/index'
+import { generateTableModelXml, parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const GRID_STYLE =
@@ -28,6 +28,115 @@ function styledTable(look: string, extra = ''): string {
 }
 
 describe('table styles (tblStyle display)', () => {
+  it('reads band1Horz / band2Horz tcBorders and lays them under the row cells', async () => {
+    const style =
+      '<w:style w:type="table" w:styleId="Band"><w:name w:val="Band"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="666666"/></w:tcBorders></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="band1Horz"><w:tcPr><w:tcBorders>' +
+      '<w:top w:val="single" w:sz="4" w:space="0" w:color="4EA72E"/>' +
+      '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="4EA72E"/>' +
+      '<w:insideH w:val="nil"/></w:tcBorders></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="band2Horz"><w:tcPr><w:tcMar><w:top w:w="40" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr>' +
+      '</w:style>'
+    const table = (look: string) =>
+      `<w:tbl><w:tblPr><w:tblStyle w:val="Band"/>${look}</w:tblPr>` +
+      row('h1', 'h2') +
+      row('a', 'b', '<w:tcBorders><w:top w:val="nil"/></w:tcBorders>') +
+      row('c', 'd') +
+      row('e', 'f') +
+      '</w:tbl>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    const line = { style: 'single', szEighths: 4, color: '4EA72E' }
+    expect(doc.styles.get('Band')!.tableDisplay?.band1Horz?.borders).toEqual({
+      top: line,
+      bottom: line,
+    })
+    const rows = doc.blocks[0].table!.rows
+    // the header row keeps its own condition; band1 rows carry the band lines (explicit nil on top)
+    expect(rows[0][0].borders).toEqual({
+      bottom: { style: 'single', szEighths: 12, color: '666666' },
+    })
+    expect(rows[1][0].borders).toEqual({ top: { style: 'nil' }, bottom: line })
+    expect(rows[1][1].borders).toEqual({ top: line, bottom: line })
+    expect(rows[2][0].borders).toBeUndefined()
+    expect(rows[2][0].cellMarTwips).toEqual({ top: 40 })
+    expect(rows[3][0].borders).toEqual({ top: line, bottom: line })
+
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:noHBand="1"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    expect(off.blocks[0].table!.rows[1][1].borders).toBeUndefined()
+  })
+
+  it('applies row-level w:tblPrEx borders / cell margins / shading to that row', async () => {
+    const ex =
+      '<w:tblPrEx><w:tblBorders>' +
+      '<w:top w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:left w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:bottom w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:right w:val="single" w:sz="6" w:space="0" w:color="002B49"/>' +
+      '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/>' +
+      '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/>' +
+      '</w:tblBorders><w:tblCellMar><w:top w:w="80" w:type="dxa"/></w:tblCellMar>' +
+      '<w:shd w:val="clear" w:color="auto" w:fill="F0F4F8"/></w:tblPrEx>'
+    const exRow = (a: string, b: string, tcPr = '') =>
+      `<w:tr>${ex}<w:tc>${tcPr ? `<w:tcPr>${tcPr}</w:tcPr>` : ''}<w:p><w:r><w:t>${a}</w:t></w:r></w:p></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>${b}</w:t></w:r></w:p></w:tc></w:tr>`
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        row('h1', 'h2') +
+        exRow(
+          'a',
+          'b',
+          '<w:tcBorders><w:left w:val="nil"/></w:tcBorders><w:tcMar><w:top w:w="20" w:type="dxa"/></w:tcMar>',
+        ) +
+        exRow('c', 'd') +
+        '</w:tbl>',
+    })
+    const doc = await parseDocx(bytes)
+    const table = doc.blocks[0].table!
+    const outer = { style: 'single', szEighths: 6, color: '002B49' }
+    const inner = { style: 'single', szEighths: 4, color: 'D3D3D3' }
+    expect(table.rows[0][0].borders).toBeUndefined()
+    // not the table's first row: the exception's insideH meets the plain row above
+    expect(table.rows[1][0].borders).toEqual({
+      top: inner,
+      bottom: inner,
+      left: { style: 'nil' },
+      right: inner,
+    })
+    expect(table.rows[1][1].borders).toEqual({
+      top: inner,
+      bottom: inner,
+      left: inner,
+      right: outer,
+    })
+    expect(table.rows[1][0].cellMarTwips).toEqual({ top: 20 })
+    expect(table.rows[1][1].cellMarTwips).toEqual({ top: 80 })
+    expect(table.rows[1][1].fill).toBe('F0F4F8')
+    expect(table.rows[2][0].borders).toEqual({
+      top: inner,
+      bottom: outer,
+      left: outer,
+      right: inner,
+    })
+    expect(table.rawTblPrExs?.[1]).toBe(ex)
+    expect(table.rawTblPrExs?.[0]).toBeNull()
+    // a regenerated table still carries the exception bytes on both rows
+    const xml = generateTableModelXml(table, doc.blocks[0].originalXml ?? undefined)
+    expect(xml.split(ex).length - 1).toBe(2)
+  })
+
   it('parses table styles with firstRow / banding and applies them per tblLook', async () => {
     const bytes = await buildDocx({
       bodyXml: styledTable('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),

@@ -287,16 +287,17 @@ export const nl = {
   ribbonGroupSelect: 'Selecteren',
   ribbonSelectTip: 'Selecteren: tekenen afsluiten en terug naar het bewerken van elementen',
   ribbonGroupDrawTools: 'Tekenhulpmiddelen',
-  ribbonPenTip:
-    'Pen: teken op de dia (opgeslagen als inktafbeelding op de pagina); klik nogmaals om te annuleren',
   ribbonHighlighter: 'Markeerstift',
-  ribbonHighlighterTip:
-    'Markeerstift: halfdoorzichtige dikke lijnen; klik nogmaals om te annuleren',
   ribbonEraserTip:
     'Gum: klik op een lijn of sleep eroverheen om deze te verwijderen; klik nogmaals om te annuleren',
   ribbonInkWidthTip: '{w} px',
-  ribbonGroupPenStyle: 'Penstijl',
-  ribbonGroupHighlighterStyle: 'Markeerstiftstijl',
+  ribbonPencil: 'Potlood',
+  ribbonInkAdd: 'Toevoegen',
+  ribbonInkAddTip: 'Pen, markeerstift of potlood toevoegen',
+  ribbonInkDelete: 'Verwijderen',
+  ribbonInkThickness: 'Dikte',
+  ribbonInkColors: 'Kleuren',
+  ribbonGroupPens: 'Pennen',
   ribbonEraseAll: 'Alles wissen',
   ribbonEraseAllTip: 'Alle inkt op de huidige dia verwijderen',
   ribbonGroupThemes: "Thema's",

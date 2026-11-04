@@ -995,6 +995,19 @@ describe('generateImageWithProvider (stability & bfl)', () => {
       }),
     ).rejects.toThrow(/cannot edit/)
   })
+
+  it('BFL: a non-OK poll response fails instead of polling until the timeout', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : jsonResponse({ detail: 'Not authenticated' }, 401),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('bfl', cfg('flux-2-pro'), { prompt: 'a fox' }),
+    ).rejects.toThrow(/401/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
 describe('generateImageWithProvider (mai)', () => {
   const cfg = (imageModel: string) => ({

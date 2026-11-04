@@ -18,6 +18,7 @@ import { decodeWordDocumentRange, mapWordControlChars } from './text'
 import type { SectionInfo } from './sections'
 import type { FloatingShape } from './drawings'
 import type { ImageBlock } from './images'
+import type { BodyBlock } from './tables'
 
 export interface HeaderFooterStory {
   /** mapped story text, paragraphs separated by newlines */
@@ -30,6 +31,8 @@ export interface HeaderFooterStory {
   pictures?: Map<number, FloatingShape[]>
   /** inline pictures of the story, by paragraph index */
   images?: Map<number, StoryInlineImage[]>
+  /** the story rebuilt with real tables (set when the story holds cell marks and a block builder was given) */
+  blocks?: BodyBlock[]
 }
 
 export interface StoryInlineImage {
@@ -41,6 +44,13 @@ export interface StoryInlineImage {
 /** Resolves the formatted paragraphs of a CP range outside the body (header, footnote, endnote documents). */
 export interface StoryFormatter {
   paragraphs(startCp: number, endCp: number, noteMarks?: NoteMark[]): FormattedParagraph[]
+  /** the same CP range through the body block builder (tables, pictures attached to their paragraphs) */
+  blocks?(
+    startCp: number,
+    endCp: number,
+    drawings: FloatingShape[],
+    images: ImageBlock[],
+  ): { blocks: BodyBlock[]; warnings: string[] }
 }
 
 export interface SectionHeaderFooter {
@@ -83,6 +93,12 @@ function u32(bytes: Uint8Array, offset: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true)
 }
 
+/** Dop.fFacingPages (bit 0 of the first byte): without it Word ignores the even stories */
+export function facingPagesOf(fib: FibInfo, table: Uint8Array): boolean {
+  if (fib.lcbDop < 1 || fib.fcDop >= table.length) return true
+  return (table[fib.fcDop]! & 0x01) !== 0
+}
+
 /** map one raw story range to a story, stripping the guard paragraph mark */
 export function mapStory(
   raw: string,
@@ -91,6 +107,7 @@ export function mapStory(
   drawings: FloatingShape[],
   inlineImages: ImageBlock[],
   keepBlank = false,
+  warnings?: string[],
 ): HeaderFooterStory | undefined {
   let text = raw
   if (text.endsWith('\r')) text = text.slice(0, -1)
@@ -114,6 +131,16 @@ export function mapStory(
     if (formatted.length > 1 && formatted[formatted.length - 1]!.text === '') formatted.pop()
     // the formatted read must split the story exactly like the plain mapping
     if (formatted.length === paragraphs.length) story.formatted = formatted
+    if (formatter.blocks && (text.includes('\u0007') || images.length > 0)) {
+      const built = formatter.blocks(
+        startCp,
+        startCp + text.length,
+        drawings.map((drawing) => ({ ...drawing, cp: drawing.cp + startCp })),
+        images.map((image) => ({ ...image, cp: image.cp + startCp })),
+      )
+      if (built.blocks.length > 0) story.blocks = built.blocks
+      warnings?.push(...built.warnings)
+    }
   }
   if (drawings.length > 0) {
     const pictures = new Map<number, FloatingShape[]>()
@@ -200,6 +227,7 @@ export function parseHeaderStories(
     badHdd(
       `the header document (CPs ${headerStart}..${headerStart + headerLength}) lies outside the ${totalCharacters}-character text`,
     )
+  const facingPages = facingPagesOf(fib, table)
   const readStory = (storyIndex: number): HeaderFooterStory | undefined => {
     const relativeStart = Math.min(cps[storyIndex]!, headerLength)
     const relativeEnd = Math.min(cps[storyIndex + 1]!, headerLength)
@@ -228,6 +256,7 @@ export function parseHeaderStories(
           .map((image) => ({ ...image, cp: image.cp - relativeStart })),
         // a later section's blank story is an unlinked, empty header; a zero-length one inherits
         storyIndex >= SEPARATOR_STORIES + STORY_KEYS.length,
+        warnings,
       )
     } catch (error) {
       if (isLegacyDocError(error))
@@ -239,6 +268,7 @@ export function parseHeaderStories(
   for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
     const sectionStories: SectionHeaderFooter = {}
     for (let variant = 0; variant < STORY_KEYS.length; variant++) {
+      if (!facingPages && STORY_KEYS[variant]!.startsWith('even')) continue
       const story = readStory(SEPARATOR_STORIES + sectionIndex * STORY_KEYS.length + variant)
       if (story) sectionStories[STORY_KEYS[variant]!] = story
     }

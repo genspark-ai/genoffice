@@ -1,0 +1,60 @@
+{
+  "id": "ea-lang-val-empty-mark",
+  "title": "docDefaults w:lang w:val=ko-KR sizes empty and space-only paragraphs by the eastAsia face; w:val=en-US keeps the ascii face",
+  "section": "word-truths.md#L964",
+  "probe_date": "2026-11-03",
+  "source": "build.py -> Word for Mac direct PDFs p5 (ko-KR) / p6 (en-US) / p7-p9 (val vs eastAsia split); pymupdf rawdict char origins: marker gaps 67.44 = 3 x 17.28 + 15.6 vs 50.4 = 3 x 12.16 + 13.92",
+  "class": "pure",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "docDefaults",
+      "expect": {
+        "asciiFont": "Calibri",
+        "eastAsiaFont": "Malgun Gothic",
+        "lang": "ko-KR"
+      }
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 1,
+      "expect": {
+        "stylesStartWith": ["--doc-line-factor: 1.72"]
+      },
+      "note": "empty paragraph: Malgun 17.28 = 10 x 1.7371"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 5,
+      "expect": {
+        "stylesStartWith": ["--doc-line-factor: 1.72"]
+      },
+      "note": "space-only paragraph: 17.28 as well"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 17,
+      "expect": {
+        "stylesStartWith": ["--doc-line-factor: 1.72"]
+      },
+      "note": "line=600 empty paragraph 43.2 = 2.5 x 17.28"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 1,
+      "docx": "probe-en.docx",
+      "expect": {
+        "stylesStartWith": ["--doc-line-factor: var(--doc-line-factor-latin"]
+      },
+      "note": "w:val=en-US: Calibri 12.0-12.24"
+    },
+    {
+      "kind": "bodyParaDom",
+      "block": 5,
+      "docx": "probe-en.docx",
+      "expect": {
+        "stylesStartWith": ["--doc-line-factor: var(--doc-line-factor-latin"]
+      }
+    }
+  ]
+}
