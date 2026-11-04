@@ -211,6 +211,10 @@ import { isSelectionDrag, type Point, type SelectionAskAnchor } from './ai/selec
 import { createAiDocument } from './ai/create-document'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
+import {
+  a1RangeToTarget,
+  planTableRefresh,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
 import { traceWorkbookDependents, traceWorkbookPrecedents } from './ai/formula-audit'
 import { createFilesSkill } from './ai/files-skill'
 import { createMergeSkill } from './ai/merge-skill'
@@ -221,6 +225,7 @@ import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
 import type {
   AttachmentAddResult,
   AttachmentMeta,
+  WorkbookConnection as QueryConnection,
   ExternalLinkRow,
   MenuAction,
   RecoveryPromptPayload,
@@ -696,6 +701,8 @@ export function App({
   const [preview, setPreview] = useState<ChangePlan | null>(null)
   const [_revision, setRevision] = useState(0)
   const [workbookFile, setWorkbookFile] = useState<WorkbookFile | null>(null)
+  /// The workbook's refreshable data connections (web queries for now).
+  const [queryConnections, setQueryConnections] = useState<QueryConnection[]>([])
   const [pendingEdits, setPendingEdits] = useState(0)
   /// The note-picture lookup reads the file through a ref: the hover-card
   /// install lives once per runtime while the file changes across loads.
@@ -4546,7 +4553,96 @@ export function App({
     )
   }
 
+  // The workbook's refreshable web queries: the list is read from the package
+  // (the renderer never scans it) and each entry carries the sheet and range
+  // its rows fill — the destination Excel writes, not the queryTable's own.
+  useEffect(() => {
+    const sessionId = workbookFile?.sessionId
+    if (!sessionId) {
+      setQueryConnections([])
+      return
+    }
+    let cancelled = false
+    void window.desktopApi
+      .listWorkbookConnections({ sessionId })
+      .then((result) => {
+        if (!cancelled) setQueryConnections(result.connections)
+      })
+      .catch(() => {
+        if (!cancelled) setQueryConnections([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [workbookFile?.sessionId])
+
+  /**
+   * Refresh one query: main resolves the URL from the workbook and fetches the
+   * table through the SSRF gate, then the plan turns it into grid values for
+   * the range the query fills. Numbers go in as numbers (Excel's web query
+   * does the same — a SUM over a text copy would read zeros), and the whole
+   * writable region is written so cells a shrinking answer no longer fills are
+   * cleared instead of keeping stale rows. A ListObject's header cells are
+   * preserved: Excel repairs the whole table when a header cell differs from
+   * its column name, so the fetched page's header row never overwrites them.
+   */
+  async function refreshQueryConnection(connectionId: string): Promise<void> {
+    const connection = queryConnections.find((c) => c.id === connectionId)
+    const sessionId = workbookFile?.sessionId
+    const runtime = univerRef.current
+    if (!connection || !sessionId || !runtime) return
+    setMessage(t('appQueryRefreshing', { name: connection.name }))
+    try {
+      const table = await window.desktopApi.refreshWorkbookConnection({
+        sessionId,
+        connectionId: connection.id,
+      })
+      const target = a1RangeToTarget(connection.range, connection.sheetName)
+      const worksheet = target
+        ? runtime.univerAPI.getActiveWorkbook()?.getSheetByName(connection.sheetName)
+        : undefined
+      if (!target || !worksheet) throw new Error('The query has no target range.')
+      if (table.headers.length === 0 && table.rows.length === 0) {
+        throw new Error('The query returned no rows.')
+      }
+      const plan = planTableRefresh(target, table, {
+        headerRows: connection.headerRows,
+        totalsRows: connection.totalsRows,
+        hasTable: connection.hasTable,
+      })
+      // Only the writable region is touched: a ListObject's header row and
+      // totals row stay exactly as they were.
+      if (plan.values.length > 0) {
+        const matrix: ICellData[][] = plan.values.map((row) =>
+          row.map((value) => ({ v: value, f: null, si: null, p: null })),
+        )
+        worksheet
+          .getRange(plan.startRow, target.startColumn, plan.values.length, target.width)
+          .setValues(matrix)
+      }
+      // Growing the destination range is out of scope: say so rather than drop
+      // the extra rows silently.
+      if (plan.droppedRows > 0) {
+        setMessage(
+          t('appQueryRefreshedClipped', {
+            name: connection.name,
+            rows: table.rows.length,
+            dropped: plan.droppedRows,
+          }),
+        )
+      } else {
+        setMessage(t('appQueryRefreshed', { name: connection.name, rows: table.rows.length }))
+      }
+    } catch {
+      setMessage(t('appQueryRefreshFailed', { name: connection.name }))
+    }
+  }
+
   function handleRibbonCommand(command: string): void {
+    if (command.startsWith('query-refresh:')) {
+      void refreshQueryConnection(command.slice('query-refresh:'.length))
+      return
+    }
     if (command === 'workbook-change-password') {
       if (lazyWorkbookRef.current?.file.passwordProtected) {
         setChangeWorkbookPasswordOpen(true)
@@ -5767,6 +5863,7 @@ export function App({
         printHost={printHost}
         onClosePrint={() => setPrintHost(null)}
         calcManual={calcManual}
+        queryConnections={queryConnections}
         showFormulas={activeShowFormulas}
         onGoalSeek={(setCell, toValue, byCell) => {
           const runtime = univerRef.current

@@ -1242,6 +1242,13 @@ export const de = {
   appGroupGetData: 'Daten abrufen',
   appFromTextCsv: 'Aus Text/CSV',
   appRefreshAll: 'Alle aktualisieren',
+  appRefreshQuery: 'Abfrage aktualisieren',
+  appQueryConnectionsTitle: 'Abfragen der Arbeitsmappe aktualisieren',
+  appQueryRefreshing: '{name} wird aktualisiert…',
+  appQueryRefreshed: '{name} aktualisiert ({rows} Zeilen)',
+  appQueryRefreshedClipped:
+    '{name} aktualisiert ({rows} Zeilen, {dropped} passten nicht in den Bereich)',
+  appQueryRefreshFailed: '{name} konnte nicht aktualisiert werden',
   appWorkbookNoPivot: 'Keine Pivot-Tabellen in dieser Arbeitsmappe.',
   appRefreshAllTitle: 'Alle Pivot-Tabellen aktualisieren',
   appQueriesConnections: 'Abfragen und Verbindungen',

@@ -28,9 +28,17 @@ export interface WorkbookQuery {
   readonly destination?: {
     readonly sheet: string
     readonly table?: string
+    /// True when the rows live in a ListObject (a table part), not a bare
+    /// range: its header cells must keep matching `tableColumn/@name`.
+    readonly hasTable: boolean
     /// A1 range of the loaded rows, header included.
     readonly range: string
-    /// Data rows (the header row excluded).
+    /// Rows at the top of the range that are the query's header (0 or 1).
+    readonly headerRows: number
+    /// Trailing rows of the range that hold a ListObject's totals row (0 or 1).
+    /// A refresh leaves them alone.
+    readonly totalsRows: number
+    /// Data rows (the header and totals rows excluded).
     readonly rows: number
   }
 }
@@ -187,15 +195,18 @@ export async function listWorkbookQueries(read: PartReader): Promise<WorkbookQue
     const name = attribute(open, 'name')
     const ref = table?.ref ?? (name ? definedRange(workbookXml, name, sheetIndex) : undefined)
     if (!ref || !A1_RANGE.test(ref)) return true
+    // A ListObject stores its counts on the table part; a legacy query table
+    // stores the header flag on the queryTable itself and has no totals row.
+    const headerRows = table ? table.header : countAttribute(open, 'headers', 1) === 0 ? 0 : 1
+    const totalsRows = table?.totals ?? 0
     destinations.set(connectionId, {
       sheet,
       ...(table?.name ? { table: table.name } : {}),
+      hasTable: table !== undefined,
       range: ref,
-      rows: dataRows(
-        ref,
-        table ? table.header : countAttribute(open, 'headers', 1) === 0 ? 0 : 1,
-        table?.totals ?? 0,
-      ),
+      headerRows,
+      totalsRows,
+      rows: dataRows(ref, headerRows, totalsRows),
     })
     return true
   }

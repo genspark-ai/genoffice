@@ -49,6 +49,11 @@ import type {
   ImageSearchResponse,
   GenerateImageResult,
   UserSkillEntry,
+  WorkbookConnection,
+  WorkbookConnectionsRequest,
+  WorkbookConnectionsResult,
+  WorkbookRefreshRequest,
+  WorkbookRefreshResult,
   ExternalLinkCell,
   ExternalLinkCellKind,
   ExternalLinkListStatus,
@@ -222,6 +227,19 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parseFindCellsResult(result)
+  },
+  async listWorkbookConnections(request) {
+    assertWorkbookSessionRequest(request)
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listWorkbookConnections, request)
+    return parseWorkbookConnectionsResult(result)
+  },
+  async refreshWorkbookConnection(request) {
+    assertWorkbookRefreshRequest(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.refreshWorkbookConnection,
+      request,
+    )
+    return parseWorkbookRefreshResult(result)
   },
   async readWorkbookRowOutline(request) {
     const validatedRequest = parseFormulaCellsRequest(request)
@@ -1317,6 +1335,77 @@ function parseCellRecord(cell: unknown): WorkbookRangeResult['cells'][number] {
     ...(cell.styleIndex === undefined ? {} : { styleIndex: cell.styleIndex }),
     ...(rich === undefined ? {} : { rich }),
   }
+}
+
+function assertWorkbookSessionRequest(input: unknown): asserts input is WorkbookConnectionsRequest {
+  if (!isRecord(input) || !isUuid(input.sessionId)) {
+    throw new Error('Invalid workbook-connections request.')
+  }
+}
+
+function assertWorkbookRefreshRequest(input: unknown): asserts input is WorkbookRefreshRequest {
+  // The URL never crosses the IPC boundary: main resolves it from the
+  // workbook's connection part, so this is a connection id, not a fetch target.
+  if (
+    !isRecord(input) ||
+    !isUuid(input.sessionId) ||
+    typeof input.connectionId !== 'string' ||
+    input.connectionId.length === 0 ||
+    input.connectionId.length > 200
+  ) {
+    throw new Error('Invalid workbook-refresh request.')
+  }
+}
+
+function parseWorkbookConnection(input: unknown): WorkbookConnection {
+  const isRowCount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value >= 0
+  if (
+    !isRecord(input) ||
+    typeof input.id !== 'string' ||
+    typeof input.name !== 'string' ||
+    input.kind !== 'web' ||
+    typeof input.source !== 'string' ||
+    typeof input.sheetName !== 'string' ||
+    typeof input.range !== 'string' ||
+    !isRowCount(input.headerRows) ||
+    !isRowCount(input.totalsRows) ||
+    typeof input.hasTable !== 'boolean'
+  ) {
+    throw new Error('Invalid workbook-connections response.')
+  }
+  return {
+    id: input.id,
+    name: input.name,
+    kind: input.kind,
+    source: input.source,
+    sheetName: input.sheetName,
+    range: input.range,
+    headerRows: input.headerRows,
+    totalsRows: input.totalsRows,
+    hasTable: input.hasTable,
+  }
+}
+
+function parseWorkbookConnectionsResult(input: unknown): WorkbookConnectionsResult {
+  if (!isRecord(input) || !Array.isArray(input.connections)) {
+    throw new Error('Invalid workbook-connections response.')
+  }
+  return { connections: input.connections.map(parseWorkbookConnection) }
+}
+
+function parseWorkbookRefreshResult(input: unknown): WorkbookRefreshResult {
+  const isStringArray = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((cell) => typeof cell === 'string')
+  if (
+    !isRecord(input) ||
+    !isStringArray(input.headers) ||
+    !Array.isArray(input.rows) ||
+    !input.rows.every(isStringArray)
+  ) {
+    throw new Error('Invalid workbook-refresh response.')
+  }
+  return { headers: input.headers, rows: input.rows }
 }
 
 function parseFormulaCellsRequest(input: unknown): WorkbookFormulaCellsRequest {

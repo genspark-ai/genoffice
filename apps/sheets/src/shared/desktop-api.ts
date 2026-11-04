@@ -2451,7 +2451,10 @@ export const workbookQueriesResultSchema = z
           .object({
             sheet: z.string().max(1_000),
             table: z.string().max(1_000).optional(),
+            hasTable: z.boolean(),
             range: z.string().max(100),
+            headerRows: z.number().int().min(0),
+            totalsRows: z.number().int().min(0),
             rows: z.number().int().min(0),
           })
           .strict()
@@ -3246,6 +3249,10 @@ export interface DesktopApi {
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
+  /** The workbook's refreshable data connections (web queries for now). */
+  listWorkbookConnections(request: WorkbookConnectionsRequest): Promise<WorkbookConnectionsResult>
+  /** Fetch a web query's table: main resolves its URL from the workbook part. */
+  refreshWorkbookConnection(request: WorkbookRefreshRequest): Promise<WorkbookRefreshResult>
   readWorkbookRowOutline(request: WorkbookFormulaCellsRequest): Promise<WorkbookRowOutlineResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
   listExternalLinks(request: ExternalLinksRequest): Promise<ExternalLinksResult>
@@ -3404,6 +3411,64 @@ export interface GenerateImageResult {
   url?: string
   error?: string
 }
+
+/// A workbook's data connections that can be refreshed: a web query fills a
+/// range on a sheet, and its URL lives in the workbook's connection part.
+/// Text queries are not listed yet: a local path cannot go through the SSRF
+/// gate, so refreshing one would only fail (genoffice#2363 review).
+export const workbookConnectionSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    /** only web queries are refreshable for now */
+    kind: z.literal('web'),
+    /** the URL the query reads */
+    source: z.string(),
+    /** the sheet the query's rows land on */
+    sheetName: z.string(),
+    /** the A1 range the query fills, header row included */
+    range: z.string(),
+    /** rows at the top of the range that are the query's header (0 or 1) */
+    headerRows: z.number().int().min(0),
+    /** trailing rows that hold a ListObject's totals row, left untouched */
+    totalsRows: z.number().int().min(0),
+    /** true when the rows live in a ListObject, whose column names pin the header cells */
+    hasTable: z.boolean(),
+  })
+  .strict()
+
+export const workbookConnectionsRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+  })
+  .strict()
+
+export const workbookConnectionsResultSchema = z
+  .object({
+    connections: z.array(workbookConnectionSchema),
+  })
+  .strict()
+
+export const workbookRefreshRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    /** the connection list's id; main resolves the URL from the workbook */
+    connectionId: z.string().min(1).max(200),
+  })
+  .strict()
+
+export const workbookRefreshResultSchema = z
+  .object({
+    headers: z.array(z.string()),
+    rows: z.array(z.array(z.string())),
+  })
+  .strict()
+
+export type WorkbookConnection = z.infer<typeof workbookConnectionSchema>
+export type WorkbookConnectionsRequest = z.infer<typeof workbookConnectionsRequestSchema>
+export type WorkbookConnectionsResult = z.infer<typeof workbookConnectionsResultSchema>
+export type WorkbookRefreshRequest = z.infer<typeof workbookRefreshRequestSchema>
+export type WorkbookRefreshResult = z.infer<typeof workbookRefreshResultSchema>
 
 export interface UserSkillEntry {
   name: string

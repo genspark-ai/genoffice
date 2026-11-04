@@ -79,6 +79,10 @@ export const IPC_CHANNELS = {
   readLocalImage: 'shell:read-local-image',
   closeWorkbook: 'workbook:close',
   saveWorkbook: 'workbook:save',
+  /** The workbook's refreshable data connections (web queries for now). */
+  listWorkbookConnections: 'workbook:list-connections',
+  /** Fetch a web query's table; main resolves the URL from the connection id. */
+  refreshWorkbookConnection: 'workbook:refresh-connection',
   /** Chunked upload of a large save's cell edits, consumed by the next save */
   saveEditsBegin: 'workbook:save-edits-begin',
   saveEditsChunk: 'workbook:save-edits-chunk',
