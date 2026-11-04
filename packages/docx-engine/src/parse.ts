@@ -1417,6 +1417,13 @@ async function buildBlock(
       if (detect.includes('<a:blip')) await resolveBlipMedia(detect, ctx)
       return buildTextParagraph(base, xml, ctx, true, el.start)
     }
+    // a legacy VML line (v:line) decoration: Word drapes it over the
+    // paragraph's own text line, so keep the text editable and let buildRun
+    // turn the line into a floating rule image at its margin offsets (the same
+    // run-image route the inline VML geometry above takes)
+    if (!detect.includes('<w:object') && /<v:line\b/.test(detect)) {
+      return buildTextParagraph(base, xml, ctx, true, el.start)
+    }
     // OLE embed sharing the paragraph with real text or another drawing: an
     // "Embedded object" block renders only the preview picture, silently
     // dropping the rest. Keep the paragraph on the run-image path (the
@@ -1774,6 +1781,11 @@ async function buildBlock(
       ...(anchoredRule ? { anchorLine: anchorLineOf(xml, ctx) ?? {} } : {}),
       ...(ruleMeta?.imageOffsetYEmu !== undefined && ruleMeta.imageRelV === undefined
         ? { imageOffsetYEmu: ruleMeta.imageOffsetYEmu }
+        : {}),
+      // a connector rule's column-relative X offset: Word draws it inset from
+      // the column start (contract blanks), not flush with the margin
+      ...(ruleMeta?.imageOffsetXEmu !== undefined && ruleMeta.imageRelH === undefined
+        ? { imageOffsetXEmu: ruleMeta.imageOffsetXEmu }
         : {}),
     }
   }
@@ -4997,6 +5009,40 @@ function buildRun(
           }
         }
       }
+    }
+  }
+  // A legacy VML line — a plain <w:pict><v:line> run, or the mc:Fallback twin
+  // of a wps connector whose Choice rendering drops it (contract blanks,
+  // signature rules). Drawn as a thin SVG rule image floating at the anchor's
+  // margin offsets, so the text line keeps its width and the document stays
+  // editable; the pict fragment re-emits verbatim on save like other VML runs.
+  if (!image) {
+    const alt = findChild(rNode, 'mc:AlternateContent')
+    const fallback = alt ? findChild(alt, 'mc:Fallback') : undefined
+    for (const pict of [
+      findChild(rNode, 'w:pict'),
+      fallback ? findChild(fallback, 'w:pict') : undefined,
+    ]) {
+      if (!pict) continue
+      const pictXml = serializeXNode(pict)
+      if (!/<v:line\b/.test(pictXml)) continue
+      const line = vmlShapeSvg(pictXml, vmlShapeTypes)
+      if (!line) continue
+      const lineMeta = vmlImageMeta(pictXml)
+      image = {
+        dataUrl: line.dataUrl,
+        xml: pictXml,
+        widthPx: line.widthPx,
+        heightPx: line.heightPx,
+        ...(lineMeta.imageWrap ? { wrap: lineMeta.imageWrap } : {}),
+        ...(lineMeta.imageOffsetXEmu !== undefined ? { offsetXEmu: lineMeta.imageOffsetXEmu } : {}),
+        ...(lineMeta.imageOffsetYEmu !== undefined ? { offsetYEmu: lineMeta.imageOffsetYEmu } : {}),
+        ...(lineMeta.imagePosH ? { posH: lineMeta.imagePosH } : {}),
+        ...(lineMeta.imagePosV ? { posV: lineMeta.imagePosV } : {}),
+        ...(lineMeta.imageRelH ? { relH: lineMeta.imageRelH } : {}),
+        ...(lineMeta.imageRelV ? { relV: lineMeta.imageRelV } : {}),
+      }
+      break
     }
   }
   if (text === '' && !image) return null
@@ -8492,7 +8538,12 @@ function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
  */
 function vmlImageMeta(xml: string): ImageMeta {
   const meta: ImageMeta = {}
-  const style = /<v:shape [^>]*style="([^"]*)"/.exec(xml)?.[1] ?? ''
+  // v:line reuses the same placement model: a plain VML line (or the
+  // mc:Fallback twin of a wps connector) floats at its margin offsets, too
+  const style =
+    /<v:shape [^>]*style="([^"]*)"/.exec(xml)?.[1] ??
+    /<v:line\b[^>]*\bstyle="([^"]*)"/.exec(xml)?.[1] ??
+    ''
   const w = parseFloat(/(?:^|;)width:([\d.]+)pt/.exec(style)?.[1] ?? '')
   const h = parseFloat(/(?:^|;)height:([\d.]+)pt/.exec(style)?.[1] ?? '')
   if (w > 0) meta.imageWidthPx = Math.round((w / 72) * 96)

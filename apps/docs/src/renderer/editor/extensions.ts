@@ -4399,6 +4399,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
       attrs.class += ' doc-protected-rule-anchored'
       const offY = Number(node.attrs.imageOffsetYEmu ?? 0)
       if (offY) style += `top:${Math.round((offY / 12700) * 100) / 100}pt;`
+      // a connector rule carries a column-relative X offset as well
+      const offX = Number(node.attrs.imageOffsetXEmu ?? 0)
+      if (offX) style += `left:${Math.round((offX / 12700) * 100) / 100}pt;`
       if (style) lineAttrs.style = style
       return [
         'div',

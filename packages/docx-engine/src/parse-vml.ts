@@ -383,7 +383,7 @@ export function vmlWordArtBox(shape: XNode): TextboxDisplay | null {
 /** the shape element of a VML pict, its shapetype templates stripped */
 function vmlPictShape(pict: string): RegExpExecArray | null {
   const body = pict.replace(/<v:shapetype\b[\s\S]*?<\/v:shapetype>/g, '')
-  return /<v:(oval|rect|roundrect|shape)\b([^>]*?)(\/?)>([\s\S]*?<\/v:\1>)?/.exec(body)
+  return /<v:(oval|rect|roundrect|line|shape)\b([^>]*?)(\/?)>([\s\S]*?<\/v:\1>)?/.exec(body)
 }
 
 /** v:shapetype templates of an XML part, by id (shapes point at them with type="#id") */
@@ -413,9 +413,9 @@ function parseTagAttrs(tag: string): Record<string, string> {
 }
 
 /**
- * Textless VML shape (v:oval / v:rect / v:roundrect / straight-path v:shape)
- * with a solid or linear-gradient fill and stroke → SVG data URL at the
- * shape's declared size. Attributes and geometry the shape omits come from
+ * Textless VML shape (v:oval / v:rect / v:roundrect / v:line / straight-path
+ * v:shape) with a solid or linear-gradient fill and stroke → SVG data URL at
+ * the shape's declared size. Attributes and geometry the shape omits come from
  * the v:shapetype it points at (in the pict or in `shapeTypes`). Bails (null)
  * on groups, pictures, text and curved paths so partial art never renders.
  */
@@ -423,7 +423,11 @@ export function vmlShapeSvg(
   pict: string,
   shapeTypes?: Pick<ReadonlyMap<string, Record<string, string>>, 'get'>,
 ): { dataUrl: string; widthPx: number; heightPx: number; style: string } | null {
-  if (/<v:(group|imagedata|textpath|textbox)\b|<w:txbxContent/.test(pict)) return null
+  const isLine = /<v:line\b/.test(pict)
+  if (/<v:(group|textpath|textbox)\b|<w:txbxContent/.test(pict)) return null
+  // a picture twin draws only through its media; the bare <v:imagedata
+  // o:title=""/> WPS stamps on every geometry shape (and on v:line) is noise
+  if (!isLine && /<v:imagedata\b/.test(pict)) return null
   const m = vmlPictShape(pict)
   if (!m) return null
   const [, rawKind, attrText] = m
@@ -434,13 +438,14 @@ export function vmlShapeSvg(
   const a: Record<string, string> = { ...typeAttrs, ...own }
   const style = own['style'] ?? ''
   if (/visibility:\s*hidden/.test(style)) return null
+  const children = m[4] ?? ''
+  const strokeNode = parseTagAttrs(/<v:stroke\b([^>]*)>/.exec(children)?.[1] ?? '')
+  const off = (v: string | undefined) => v === 'f' || v === 'false' || v === '0'
+  if (rawKind === 'line') return vmlLineSvg(style, own, strokeNode, off)
   const w = vmlStyleDimPx(style, 'width')
   const h = vmlStyleDimPx(style, 'height')
   if (!w || !h) return null
-  const children = m[4] ?? ''
   const fillNode = parseTagAttrs(/<v:fill\b([^>]*)>/.exec(children)?.[1] ?? '')
-  const strokeNode = parseTagAttrs(/<v:stroke\b([^>]*)>/.exec(children)?.[1] ?? '')
-  const off = (v: string | undefined) => v === 'f' || v === 'false' || v === '0'
   const filled = !off(a['filled']) && !off(fillNode['on'])
   const color1 = vmlColorHex(a['fillcolor']) ?? 'FFFFFF'
   const color2 = vmlColorHex(fillNode['color2'])
@@ -510,6 +515,95 @@ export function vmlShapeSvg(
     dataUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`,
     widthPx: w,
     heightPx: h,
+    style,
+  }
+}
+
+/** VML point pair ("0,0", "176.35pt,0", "1in,0.5in") → px on both axes */
+function vmlLinePoint(raw: string | undefined): { x: number; y: number } | null {
+  if (!raw) return null
+  const parts = raw
+    .trim()
+    .split(/[,\s]+/)
+    .filter((s) => s !== '')
+  if (parts.length !== 2) return null
+  const x = vmlLengthPx(parts[0])
+  const y = vmlLengthPx(parts[1])
+  return x != null && y != null ? { x, y } : null
+}
+
+/**
+ * v:line → a thin SVG rule image. Word writes the contract blanks as VML
+ * lines whose style carries the box (width:176pt;height:0pt) and whose
+ * from/to attribute is omitted: the line then runs (0,0)→(width,height), so a
+ * zero axis is a plain horizontal / vertical rule. Explicit from/to pairs
+ * (GenOffice's own generated lines use "0,0" → "Wpt,Hpt") are honoured too.
+ */
+function vmlLineSvg(
+  style: string,
+  own: Record<string, string>,
+  strokeNode: Record<string, string>,
+  off: (v: string | undefined) => boolean,
+): { dataUrl: string; widthPx: number; heightPx: number; style: string } | null {
+  if (off(own['stroked']) || off(strokeNode['on'])) return null
+  const weight = vmlLengthPx(strokeNode['weight']) ?? vmlLengthPx(own['strokeweight']) ?? 1
+  const strokePx = Math.max(1, Math.round(weight * 100) / 100)
+  const color = vmlColorHex(strokeNode['color'] ?? own['strokecolor']) ?? '000000'
+  const w = vmlLengthPx(vmlStyleProp(style, 'width'))
+  const h = vmlLengthPx(vmlStyleProp(style, 'height'))
+  const from = vmlLinePoint(own['from'])
+  const to = vmlLinePoint(own['to'])
+  let x1: number
+  let y1: number
+  let x2: number
+  let y2: number
+  let widthPx: number
+  let heightPx: number
+  if (from && to) {
+    // explicit endpoints: the img box is their bounding box plus the stroke
+    const pad = strokePx / 2 + 0.5
+    const minX = Math.min(from.x, to.x)
+    const minY = Math.min(from.y, to.y)
+    widthPx = Math.max(1, Math.ceil(Math.max(from.x, to.x) - minX + pad * 2))
+    heightPx = Math.max(1, Math.ceil(Math.max(from.y, to.y) - minY + pad * 2))
+    x1 = from.x - minX + pad
+    y1 = from.y - minY + pad
+    x2 = to.x - minX + pad
+    y2 = to.y - minY + pad
+  } else if (w != null && w > 0 && (h == null || h === 0)) {
+    // Word's horizontal rule; a 2px img box keeps the stroke crisp
+    widthPx = Math.max(1, Math.round(w))
+    heightPx = Math.max(2, Math.ceil(strokePx) + 1)
+    x1 = 0
+    x2 = widthPx
+    y1 = y2 = heightPx / 2
+  } else if (h != null && h > 0 && (w == null || w === 0)) {
+    // vertical rule (the "caret" screenshots)
+    widthPx = Math.max(2, Math.ceil(strokePx) + 1)
+    heightPx = Math.max(1, Math.round(h))
+    x1 = x2 = widthPx / 2
+    y1 = 0
+    y2 = heightPx
+  } else if (w != null && h != null && w > 0 && h > 0) {
+    // corner to corner, the VML default when both extents are set
+    widthPx = Math.round(w)
+    heightPx = Math.round(h)
+    x1 = 0
+    y1 = 0
+    x2 = widthPx
+    y2 = heightPx
+  } else {
+    return null
+  }
+  const round = (v: number): number => Math.round(v * 10) / 10
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}">` +
+    `<line x1="${round(x1)}" y1="${round(y1)}" x2="${round(x2)}" y2="${round(y2)}" ` +
+    `stroke="#${color}" stroke-width="${strokePx}"/></svg>`
+  return {
+    dataUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+    widthPx,
+    heightPx,
     style,
   }
 }
