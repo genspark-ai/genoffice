@@ -140,7 +140,11 @@ export const CrossCellDrag = Extension.create({
           handleDOMEvents: {
             mousedown: (view, event) => {
               const mouse = event as MouseEvent
-              if (mouse.button !== 0 || mouse.ctrlKey || mouse.metaKey) return false
+              // ctrl/⌘ is multi-select, shift-click is prosemirror-tables'
+              // extend-to-cell — both keep their existing flows
+              if (mouse.button !== 0 || mouse.ctrlKey || mouse.metaKey || mouse.shiftKey) {
+                return false
+              }
               const anchorCell = cellFromTarget(view, mouse.target)
               if (!anchorCell) return false
               // the column-resize handle owns drags starting on the cell edge
@@ -164,10 +168,12 @@ export const CrossCellDrag = Extension.create({
                 // clamp: the head follows the pointer, the anchor stays put
                 const coords = view.posAtCoords({ left: move.clientX, top: move.clientY })
                 if (!coords || coords.pos === anchorPos) return
+                const { anchor, head } =
+                  coords.pos >= anchorPos
+                    ? { anchor: anchorPos, head: coords.pos }
+                    : { anchor: coords.pos, head: anchorPos }
                 view.dispatch(
-                  view.state.tr.setSelection(
-                    TextSelection.create(view.state.doc, anchorPos, coords.pos),
-                  ),
+                  view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, head)),
                 )
               }
               const onUp = (): void => cleanup()

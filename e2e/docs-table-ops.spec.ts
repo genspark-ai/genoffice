@@ -90,10 +90,10 @@ test.describe('docs table operations', () => {
           .nth(col)
 
       // ---- Split Cells… on a merged A1:B1 → 2 rows × 3 columns
-      await cell(0, 0).hover()
-      await editorPage.mouse.down()
-      await cell(0, 1).hover()
-      await editorPage.mouse.up()
+      // a plain drag between cells is a text selection now (genoffice#2329,
+      // Word's behaviour); whole cells select with click + shift-click
+      await cell(0, 0).click()
+      await cell(0, 1).click({ modifiers: ['Shift'] })
       // an existing table only shows its contextual tabs (Word); pick Layout explicitly
       await editorPage.locator('.ribbon-tab', { hasText: 'Table Layout' }).click()
       await editorPage.getByRole('button', { name: 'Merge Cells' }).click()

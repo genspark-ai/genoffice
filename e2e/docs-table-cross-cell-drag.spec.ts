@@ -56,14 +56,17 @@ async function dragAcrossDiagonal(page: import('@playwright/test').Page): Promis
   const first = await table.locator('td').first().boundingBox()
   const last = await table.locator('td').last().boundingBox()
   if (!first || !last) throw new Error('missing cells')
-  // start inside the first cell's text, end inside the last cell's text
-  await page.mouse.move(first.x + 5, first.y + 5)
+  // from the middle of the first cell's text to the middle of the last
+  // cell's: the corners sit in the column-resize handle's edge strip, which
+  // keeps its own drag
+  const sx = first.x + first.width / 2
+  const sy = first.y + first.height / 2
+  const ex = last.x + last.width / 2
+  const ey = last.y + last.height / 2
+  await page.mouse.move(sx, sy)
   await page.mouse.down()
   for (let step = 1; step <= 12; step++) {
-    await page.mouse.move(
-      first.x + 5 + ((last.x + 5 - (first.x + 5)) * step) / 12,
-      first.y + 5 + ((last.y + 5 - (first.y + 5)) * step) / 12,
-    )
+    await page.mouse.move(sx + ((ex - sx) * step) / 12, sy + ((ey - sy) * step) / 12)
     await page.waitForTimeout(30)
   }
   await page.mouse.up()
