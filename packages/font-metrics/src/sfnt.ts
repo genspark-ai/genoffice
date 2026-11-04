@@ -68,14 +68,52 @@ export function readAt(fd: number, pos: number, len: number): Buffer {
   return buf
 }
 
+/** One family-name record of a face's name table, with the language it was
+ *  written for: a face spells its family in several languages, and only the
+ *  English (or Unicode-default) spelling is the canonical one. */
+export interface FamilyNameRecord {
+  /** the name text */
+  name: string
+  /** the record's name id (1 = family, 16 = typographic family) */
+  nameId: number
+  /** the record's platform (0 = Unicode, 1 = Macintosh, 3 = Windows) */
+  platform: number
+  /** the record's language id (a Windows LCID, or the packed Unicode language) */
+  language: number
+}
+
 export interface FaceNames {
   ps: string[]
   families: string[]
   subfamilies: string[]
+  /** every family-name record, with the language id it was written for */
+  familyRecords: FamilyNameRecord[]
+}
+
+/**
+ * A family-name record that spells the face's family in English (or in the
+ * Unicode default): the en-US Windows record, the Unicode record with
+ * language 0, the legacy Macintosh record. Every other record is a localized
+ * spelling of the same face.
+ */
+function isCanonicalRecord(platform: number, language: number): boolean {
+  if (platform === 0) return language === 0 || language === 0x0409
+  if (platform === 3) return language === 0 || language === 0x0409
+  if (platform === 1) return language === 0
+  return false
+}
+
+/** The face's canonical (en-US) family spelling; the first family name when
+ *  the face carries no English record at all. */
+function canonicalFamily(names: FaceNames): string {
+  for (const record of names.familyRecords) {
+    if (isCanonicalRecord(record.platform, record.language)) return record.name
+  }
+  return names.families[0] ?? ''
 }
 
 function parseNames(buf: Buffer): FaceNames {
-  const out: FaceNames = { ps: [], families: [], subfamilies: [] }
+  const out: FaceNames = { ps: [], families: [], subfamilies: [], familyRecords: [] }
   const count = buf.readUInt16BE(2)
   const strBase = buf.readUInt16BE(4)
   for (let i = 0; i < count; i++) {
@@ -83,11 +121,13 @@ function parseNames(buf: Buffer): FaceNames {
     if (r + 12 > buf.length) break
     const platform = buf.readUInt16BE(r)
     const encoding = buf.readUInt16BE(r + 2)
+    const language = buf.readUInt16BE(r + 4)
     const nameId = buf.readUInt16BE(r + 6)
+    const isFamily = nameId === 1 || nameId === 16
     const list =
       nameId === 6
         ? out.ps
-        : nameId === 1 || nameId === 16
+        : isFamily
           ? out.families
           : nameId === 2 || nameId === 17
             ? out.subfamilies
@@ -106,7 +146,9 @@ function parseNames(buf: Buffer): FaceNames {
     } else {
       continue // Mac-platform legacy CJK codepages: not decodable here
     }
-    if (s && !list.includes(s)) list.push(s)
+    if (!s) continue
+    if (!list.includes(s)) list.push(s)
+    if (isFamily) out.familyRecords.push({ name: s, nameId, platform, language })
   }
   return out
 }
@@ -157,6 +199,10 @@ export interface FaceRef {
   offset: number
   /** Normalized family + subfamily text, for style ranking on family matches */
   style: string
+  /** Every family spelling the face carries, the localized ones included */
+  families: readonly string[]
+  /** The face's canonical (en-US) family spelling */
+  canonical: string
 }
 
 export interface FontIndex {
@@ -218,6 +264,8 @@ function indexFile(path: string, index: FontIndex): void {
         path,
         offset,
         style: norm([...names.families, ...names.subfamilies].join(' ')),
+        families: [...names.families],
+        canonical: canonicalFamily(names),
       }
       for (const p of names.ps) if (!index.byPs.has(norm(p))) index.byPs.set(norm(p), face)
       for (const f of names.families) {
@@ -234,12 +282,49 @@ function indexFile(path: string, index: FontIndex): void {
 
 let index: FontIndex | null = null
 
+/** Index every font file under `dir` into `index` (the system font
+ *  directories, or a directory of one's own). */
+export function indexFontDirectory(dir: string, index: FontIndex): void {
+  for (const path of fontFiles(dir, 2)) indexFile(path, index)
+}
+
 export function getFontIndex(): FontIndex {
   if (!index) {
     index = { byPs: new Map(), byFamily: new Map() }
-    for (const dir of fontDirs()) for (const path of fontFiles(dir, 2)) indexFile(path, index)
+    for (const dir of fontDirs()) indexFontDirectory(dir, index)
   }
   return index
+}
+
+/**
+ * The other family spellings of the installed face a declared name belongs to,
+ * the canonical (en-US) one first. A document that declares a CJK font by its
+ * localized name (\u65b9\u6b63\u4eff\u5b8b_GBK) gets the English spelling the browser
+ * resolves (FZFangSong-Z02), and the other way round; a face with a single
+ * spelling yields nothing (genoffice#2449).
+ *
+ * The match is exact after normalization (norm), never fuzzy: a name no
+ * installed face carries has no alias.
+ */
+export function familyAliases(name: string, index: FontIndex = getFontIndex()): readonly string[] {
+  const key = norm(name)
+  if (!key) return []
+  const faces = index.byFamily.get(key)
+  if (!faces?.length) return []
+  const canonical: string[] = []
+  const localized: string[] = []
+  const seen = new Set<string>([key])
+  for (const face of faces) {
+    const canonicalKey = norm(face.canonical)
+    for (const family of face.families ?? []) {
+      const familyKey = norm(family)
+      if (seen.has(familyKey)) continue
+      seen.add(familyKey)
+      if (familyKey === canonicalKey) canonical.push(family)
+      else localized.push(family)
+    }
+  }
+  return [...canonical, ...localized]
 }
 
 // "bolditalic" deliberately has no atomic alternative: a BoldItalic face must yield
