@@ -1,0 +1,26 @@
+{
+  "name": "@genoffice/ppt2pptx",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Legacy PowerPoint 97-2003 import: parse .ppt (OLE2/CFB + MS-PPT records) and rebuild it as .pptx; staged as editable-text foundation, then geometry, then styles",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/doc2docx": "*",
+    "cfb": "^1.2.2",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}
