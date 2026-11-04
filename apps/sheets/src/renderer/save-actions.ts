@@ -35,7 +35,9 @@ import {
 } from './csv-export'
 import type { CellScalar, CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { isErrorResult, verifiedFormulaValues } from './formula-values'
+import { COORDINATE_SHIFTING_OPS } from './formula-cached-fallback'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
 import { showToast } from './toast-bus'
@@ -48,6 +50,7 @@ import {
   collectFilterStates,
   collectNoteStates,
   modelCellValue,
+  recalcResultKeepsCache,
 } from './univer-sync'
 import type { LazyWorkbookState, PinnedClosureCell, UniverRuntime } from './univer-state'
 
@@ -200,6 +203,61 @@ function agreesWithCache(cache: string | number | boolean, live: CellScalar): bo
 }
 
 /**
+ * One cell a save reads live: the key the caller works with ('row:col'), the
+ * A1 address the reader takes, and the file cache to compare against when the
+ * cell is a comparison cell (journal reads carry none: they always
+ * contribute).
+ */
+interface PendingFormulaRead {
+  readonly key: string
+  readonly address: string
+  readonly row: number
+  readonly column: number
+  readonly cache?: string | number | boolean
+}
+
+/**
+ * The A1 address and coordinates of a 'row:col' key.
+ *
+ * The live read speaks A1: the app's cell reader parses every address it is
+ * handed and throws on anything else, so a 'row:col' key would take the
+ * whole sheet's read down with it — and the read is caught, so the sheet
+ * would silently contribute nothing.
+ */
+function locateKey(key: string): { address: string; row: number; column: number } | null {
+  const [rowText, columnText] = key.split(':')
+  const row = Number(rowText)
+  const column = Number(columnText)
+  if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0) return null
+  return { address: formatAddress(row, column), row, column }
+}
+
+/**
+ * True when the sheet saw a row/column renumbering op. The formula text is
+ * then in file coordinates while the cached values and the live grid are in
+ * screen coordinates, so the two cannot be paired up (see univer-sync.ts).
+ */
+function hasCoordinateShift(state: LazyWorkbookState, sheetId: string): boolean {
+  const ops = state.editJournal.structuralOps.get(sheetId)
+  return ops !== undefined && ops.some((op) => COORDINATE_SHIFTING_OPS.has(op.kind))
+}
+
+/**
+ * The formula text of a cell: its own, or the shared group's (a follower
+ * carries no text of its own) — the same resolution the recalc overlay uses.
+ */
+function formulaTextOf(
+  state: LazyWorkbookState,
+  sheetId: string,
+  pending: PendingFormulaRead,
+): string | undefined {
+  return (
+    state.formulaText.get(sheetId)?.get(pending.key) ??
+    state.sharedFormulaGroups.get(sheetId)?.textAt(pending.row, pending.column)
+  )
+}
+
+/**
  * Cache refreshes the recalc overlay cannot contribute, read from the live
  * model at save time (genoffice#2466). In closure 'idle' — the full-load path
  * where Univer's own engine computes every formula — no sidecar recalc ever
@@ -216,8 +274,15 @@ function agreesWithCache(cache: string | number | boolean, live: CellScalar): bo
  * Guards keep the comparison from writing anything dubious: the model must
  * still carry the cell's formula (a withheld or mid-commit cell answers
  * without one), the file cache must be known (unknown means the session never
- * saw the cell's saved form — streaming gap or the cache cap), and cells the
- * recalc or external-link overlays already contribute are skipped.
+ * saw the cell's saved form — streaming gap or the cache cap), cells the
+ * recalc or external-link overlays already contribute are skipped, and the
+ * engine's own verdicts the overlay path refuses to trust (`#NAME?` for a
+ * function the engine lacks, a blank or an error before any edit) never
+ * replace Excel's own cached value.
+ *
+ * A sheet whose rows or columns moved is skipped whole: its formula text is
+ * in file coordinates while its cache and its live grid are in screen
+ * coordinates, so the comparison would pair up the wrong cells.
  */
 export function liveFormulaCacheValues(
   state: LazyWorkbookState,
@@ -225,6 +290,9 @@ export function liveFormulaCacheValues(
 ): RecalculatedFormulaValue[] {
   const journalCells = new Map<string, Set<string>>()
   const journalFormulaCells = new Map<string, string[]>()
+  // Sheets whose content the user changed: a computed blank or error over the
+  // file's cache may then be the true result of the new inputs.
+  const editedSheets = new Set<string>()
   for (const [sheetId, cells] of state.editJournal.cells) {
     if (isSheetRemoved(state.editJournal, sheetId)) continue
     let owned = journalCells.get(sheetId)
@@ -234,6 +302,7 @@ export function liveFormulaCacheValues(
     }
     for (const [key, entry] of cells) {
       owned.add(key)
+      if (entry.hasValue) editedSheets.add(sheetId)
       if (entry.formula !== undefined) {
         const formulas = journalFormulaCells.get(sheetId)
         if (formulas) formulas.push(key)
@@ -242,20 +311,17 @@ export function liveFormulaCacheValues(
     }
   }
 
-  // sheet → keys to read, plus the file cache to compare against when the key
-  // is a comparison cell (journal reads carry none: they always contribute)
-  const reads = new Map<
-    string,
-    { keys: string[]; caches: Map<string, string | number | boolean> }
-  >()
+  // sheet → the cells to read, with the file cache to compare against when
+  // the cell is a comparison cell (journal reads carry none: they always
+  // contribute)
+  const reads = new Map<string, PendingFormulaRead[]>()
   const queue = (sheetId: string, key: string, cache?: string | number | boolean): void => {
-    let entry = reads.get(sheetId)
-    if (!entry) {
-      entry = { keys: [], caches: new Map() }
-      reads.set(sheetId, entry)
-    }
-    entry.keys.push(key)
-    if (cache !== undefined) entry.caches.set(key, cache)
+    const at = locateKey(key)
+    if (at === null) return
+    const pending: PendingFormulaRead = cache === undefined ? { key, ...at } : { key, ...at, cache }
+    const list = reads.get(sheetId)
+    if (list) list.push(pending)
+    else reads.set(sheetId, [pending])
   }
   for (const [sheetId, keys] of journalFormulaCells) {
     for (const key of keys) queue(sheetId, key)
@@ -263,6 +329,10 @@ export function liveFormulaCacheValues(
   let compared = 0
   compare: for (const [sheetId, cells] of state.formulaText) {
     if (isSheetRemoved(state.editJournal, sheetId)) continue
+    // The formula text is in file coordinates after a row/column shift while
+    // the cache and the live grid are in screen coordinates: comparing them
+    // would read (and rewrite) the wrong cells.
+    if (hasCoordinateShift(state, sheetId)) continue
     const cached = state.cachedFormulaValues.get(sheetId)
     if (!cached) continue
     const owned = journalCells.get(sheetId)
@@ -281,29 +351,41 @@ export function liveFormulaCacheValues(
   }
 
   const values: RecalculatedFormulaValue[] = []
-  for (const [sheetId, { keys, caches }] of reads) {
+  for (const [sheetId, pending] of reads) {
     let cells: Record<string, CellState>
     try {
-      cells = read(keys, sheetId)
+      cells = read(
+        pending.map((entry) => entry.address),
+        sheetId,
+      )
     } catch {
       continue
     }
-    for (const key of keys) {
-      const cell = cells[key]
+    for (const entry of pending) {
+      const cell = cells[entry.address]
       // no formula in the model: a withheld cell (redactions answer without
       // one), a cell mid-commit, or a formula already replaced
       if (!cell || cell.formula === undefined) continue
       const live = modelCellValue(cell)
       // `#ERROR!` is IronCalc's own failure, never a value Excel would cache
       if (live === null || live === undefined || live === '#ERROR!') continue
-      const cache = caches.get(key)
-      if (cache !== undefined && agreesWithCache(cache, live)) continue
-      const [row, column] = key.split(':').map(Number)
-      if (row === undefined || column === undefined) continue
+      if (entry.cache !== undefined) {
+        if (agreesWithCache(entry.cache, live)) continue
+        // The guards the recalc overlay applies to a sidecar result (see
+        // univer-sync.ts): a verdict that only means "the engine cannot
+        // compute this" must not replace Excel's own cached value.
+        const formatted = typeof live === 'string' ? live : String(live)
+        const formulaText = formulaTextOf(state, sheetId, entry)
+        if (
+          recalcResultKeepsCache(formatted, formulaText, entry.cache, editedSheets.has(sheetId))
+        ) {
+          continue
+        }
+      }
       values.push({
         sheetId,
-        row,
-        column,
+        row: entry.row,
+        column: entry.column,
         value: isErrorResult(live) ? { error: live } : live,
       })
     }
