@@ -275,6 +275,10 @@ export interface Run {
     wrapDistRightEmu?: number
     /** wp:anchor allowOverlap="0" (display-only collision hint) */
     noOverlap?: boolean
+    /** layoutInCell="1" (default) picture anchored in a table cell: Word keeps
+     *  it inside the cell box (clipped, row grows), not on page coordinates
+     *  (display-only; the xml saves verbatim) */
+    inCell?: boolean
     /** picture outline (pic:spPr a:ln solid fill, display-only) */
     border?: { color: string; widthPt: number }
     /** wp:positionV relativeFrom="line" align="center": the floating picture

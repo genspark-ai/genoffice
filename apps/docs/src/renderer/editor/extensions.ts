@@ -549,6 +549,8 @@ export const DocInlineImage = Node.create({
       xml: { default: '' },
       /** floating (wp:anchor) picture: wrap kind + anchor offsets (display only) */
       wrap: { default: null as string | null },
+      /** layoutInCell="1" picture anchored in a table cell: clipped to the cell box */
+      inCell: { default: false },
       offsetXEmu: { default: null as number | null },
       offsetYEmu: { default: null as number | null },
       relV: { default: null as string | null },
@@ -622,6 +624,44 @@ export const DocInlineImage = Node.create({
     const geom = resolveAnchor(runPictureAnchor(node.attrs), {}, RUN_PICTURE_CTX)
     const pageRelV = geom.pageRelY
     if (wrap === 'front' || wrap === 'behind') {
+      if (node.attrs.inCell) {
+        // layoutInCell="1" anchor inside a table cell: Word keeps the picture in
+        // the cell box. The wrapper is a cell-wide clipping window that reserves
+        // the picture's bottom (so the row grows like Word); the picture stays an
+        // absolute overlay at its cell-relative offset instead of a page position
+        // that would overprint the neighbouring columns.
+        const rawX = Number(node.attrs.offsetXEmu ?? 0) / EMU_PER_PX
+        const rawY = Number(node.attrs.offsetYEmu ?? 0) / EMU_PER_PX
+        const left = Math.max(0, rawX)
+        const top = Math.max(0, rawY)
+        const posH = node.attrs.posH as string | null
+        const x =
+          node.attrs.offsetXEmu != null
+            ? px(left)
+            : posH === 'right'
+              ? 'calc(100% - ' + px(w) + ')'
+              : posH === 'center'
+                ? 'calc(50% - ' + px(w / 2) + ')'
+                : px(left)
+        const bottom = top + (h > 0 ? h : 0)
+        styles.push(
+          'position:absolute;left:' + x + ';top:' + px(top),
+          'max-width:none',
+          'translate:none',
+        )
+        if (xf.length) styles.push('transform:' + xf.join(' '))
+        attrs.style = styles.join(';')
+        if (wrap === 'behind') attrs.class += ' doc-inline-img--behind'
+        return [
+          'span',
+          {
+            class: 'doc-inline-img-anchor doc-inline-img-cell',
+            'data-inline-image-anchor': '1',
+            ...(bottom > 0 ? { style: 'height:' + px(bottom) } : {}),
+          },
+          ['img', attrs],
+        ]
+      }
       // no-wrap / behind-text anchor: absolute overlay at the anchor offset from
       // the hosting paragraph's origin (styles.css positions that paragraph;
       // zero flow footprint, like Word); behind-text drops under the flow via

@@ -2012,6 +2012,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
           heightPx: run.image.heightPx ?? null,
           xml: run.image.xml,
           wrap: run.image.wrap ?? null,
+          inCell: run.image.inCell ?? false,
           offsetXEmu: run.image.offsetXEmu ?? null,
           offsetYEmu: run.image.offsetYEmu ?? null,
           relV: run.image.relV ?? null,

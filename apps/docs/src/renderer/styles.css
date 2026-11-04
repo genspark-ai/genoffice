@@ -7308,6 +7308,21 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: inline;
 }
 
+/* layoutInCell="1" picture anchored in a table cell (docx-engine inCell):
+   Word keeps it inside the cell box — the wrapper is the cell-wide clipping
+   window, its height reserves the picture bottom so the row grows, and the
+   picture itself stays an absolute overlay at its cell-relative offset */
+.doc-inline-img-cell {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: top;
+  /* behind-text pictures keep their z-index:-1 inside the clip, above the cell fill */
+  isolation: isolate;
+}
+
 /* set by the lineFactorLive decoration pass; a stylesheet :has() here OOMed
    Blink's invalidation on long picture-heavy documents */
 .doc-page .doc-anchor-origin {

@@ -6200,6 +6200,15 @@ function extractCell(
       ? ommlFragmentsOf(mathSourceXmlOf(serializeXNode(p)))
       : []
     const runs = extractRuns(p, ctx, mathFragments, [], true, undefined, { eff: eff0, rctx })
+    // layoutInCell="1" (the default) anchored pictures belong to the cell box:
+    // Word confines them to the cell and grows the row instead of positioning
+    // them on the page (layoutInCell="0" keeps the page-anchored path)
+    for (const run of runs) {
+      const image = run.image
+      if (!image || !/<wp:anchor[\s>]/.test(image.xml)) continue
+      if (/layoutInCell\s*=\s*["'](?:0|false)["']/.test(image.xml)) continue
+      image.inCell = true
+    }
     const eff = eff0.indent.chars
       ? resolveParagraphProps(pPr, rctx, {
           charUnits: charUnitsOf(ctx, runs, p, pPr, cellStyleId, docOffset),
