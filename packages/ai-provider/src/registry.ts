@@ -326,6 +326,19 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // the official SDK base_url is https://api.ppio.com/openai; chat rides /v1
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ppio.com/openai/v1'),
   },
+  llmtr: {
+    meta: metaOf('llmtr'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every lab; the namespaced model id,
+    // including an llmtr/ prefix, is sent as-is
+    resolveEndpoint: (config) => {
+      const endpoint = fixedEndpoint('openai-compatible', 'https://llmtr.com/v1')(config)
+      // The free default caps output at 16384 (max_completion_tokens in
+      // GET /v1/models). Above that the stream fails instead of answering a
+      // 400 the output-cap fallback could read, so cap it up front.
+      return config.model === 'qwen/qwen3.8-27b-free' ? { ...endpoint, maxTokens: 16384 } : endpoint
+    },
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

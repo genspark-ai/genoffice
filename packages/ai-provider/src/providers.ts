@@ -462,6 +462,29 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'llmtr',
+    label: 'LLMTR',
+    // Lab-namespaced ids exactly as GET https://llmtr.com/v1/models lists them
+    // (2026-11-04, public endpoint, no key needed); the rest of the catalog
+    // works as-is when typed in. An id that starts with llmtr/ is the catalog
+    // id and is sent unchanged, not stripped as a routing prefix.
+    // Responses-only ids stay out (no Responses protocol here). Image support
+    // follows each id's catalog input_modalities, and the text-only seeded ids
+    // (llmtr/qwen3-8-27b, zai/glm-5.3; deepseek/deepseek-v4-pro via the
+    // DeepSeek V4 rule) are covered by modelLacksVision().
+    models: [
+      'qwen/qwen3.8-27b-free',
+      'llmtr/qwen3-8-27b',
+      'qwen/qwen3.8-max',
+      'deepseek/deepseek-v4-pro',
+      'zai/glm-5.3',
+      'zai/glm-5.3-flash',
+      'moonshot/kimi-k2.6',
+    ],
+    defaultModel: 'qwen/qwen3.8-27b-free',
+    keyPlaceholder: 'llmtr-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

@@ -9,7 +9,7 @@ import type { AiProviderId } from '@genoffice/ai-provider/browser'
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
 // (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas
-// Cloud, Runcrate, OpenCode,
+// Cloud, Runcrate, LLMTR, OpenCode,
 // Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -275,6 +275,16 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   ppio: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6Zm6.53 4.5h-4.1L7.2 12.1h2.9l-1.1 6.4 5.7-7.9h-3l2.83-5.1Z" />
+    </svg>
+  ),
+  // LLMTR's mark (llmtr.com/logo-mark.svg): crescent and star, currentColor
+  llmtr: (
+    <svg viewBox="14 6 38 24" fill="currentColor" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        d="M 38 18 A 11 11 0 1 0 16 18 A 11 11 0 1 0 38 18 Z M 38 18 A 8 8 0 1 0 22 18 A 8 8 0 1 0 38 18 Z"
+      />
+      <polygon points="46,13 47.12,16.45 50.76,16.45 47.82,18.59 48.94,22.05 46,19.91 43.06,22.05 44.18,18.59 41.24,16.45 44.88,16.45" />
     </svg>
   ),
   // Original mark: a rounded square with a chip motif, 24-unit frame

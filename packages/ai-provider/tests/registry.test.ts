@@ -184,6 +184,24 @@ describe('provider registry', () => {
     ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.ppio.com/openai/v1' })
   })
 
+  it('resolves LLMTR without rewriting an llmtr/ catalog id', () => {
+    for (const model of ['qwen/qwen3.8-27b-free', 'llmtr/qwen3-8-27b']) {
+      expect(AI_PROVIDER_ADAPTERS.llmtr.resolveEndpoint(config(model))).toMatchObject({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://llmtr.com/v1',
+      })
+    }
+  })
+
+  it('caps the free LLMTR default at its 16384-token output limit', () => {
+    expect(
+      AI_PROVIDER_ADAPTERS.llmtr.resolveEndpoint(config('qwen/qwen3.8-27b-free')).maxTokens,
+    ).toBe(16384)
+    expect(
+      AI_PROVIDER_ADAPTERS.llmtr.resolveEndpoint(config('llmtr/qwen3-8-27b')).maxTokens,
+    ).toBeUndefined()
+  })
+
   it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
     const spark = AI_PROVIDERS.find((p) => p.id === 'spark')!
     expect(spark.models).toEqual(['spark-x2.5'])
@@ -552,6 +570,16 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('deepseek-ai/DeepSeek-V4.1-Flash-1017')).toBe(false)
     expect(modelLacksVision('zai-org/GLM-5.3-Flash')).toBe(false)
     expect(modelLacksVision('moonshotai/Kimi-K2.6')).toBe(false)
+  })
+
+  it('holds back the text-only LLMTR ids but not its multimodal ones', () => {
+    expect(modelLacksVision('llmtr/qwen3-8-27b')).toBe(true)
+    expect(modelLacksVision('zai/glm-5.3')).toBe(true)
+    expect(modelLacksVision('deepseek/deepseek-v4-pro')).toBe(true)
+    expect(modelLacksVision('qwen/qwen3.8-27b-free')).toBe(false)
+    expect(modelLacksVision('qwen/qwen3.8-max')).toBe(false)
+    expect(modelLacksVision('zai/glm-5.3-flash')).toBe(false)
+    expect(modelLacksVision('moonshot/kimi-k2.6')).toBe(false)
   })
 
   it('records the existing vision heuristics for the CloudGPU ids', () => {

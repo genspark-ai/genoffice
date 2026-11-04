@@ -28,6 +28,7 @@ export type AiProviderId =
   | 'cloudgpu'
   | 'siliconflow'
   | 'ppio'
+  | 'llmtr'
   | 'opencode-zen'
   | 'opencode-go'
   | 'commandcode'

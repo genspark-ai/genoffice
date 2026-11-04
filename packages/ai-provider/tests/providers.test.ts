@@ -135,6 +135,26 @@ describe('provider model catalog', () => {
     expect(siliconflow.keyPlaceholder).toBe('sk-...')
   })
 
+  it('seeds LLMTR with lab-namespaced model ids', () => {
+    const llmtr = AI_PROVIDERS.find((provider) => provider.id === 'llmtr')!
+    expect(llmtr.models).toEqual([
+      'qwen/qwen3.8-27b-free',
+      'llmtr/qwen3-8-27b',
+      'qwen/qwen3.8-max',
+      'deepseek/deepseek-v4-pro',
+      'zai/glm-5.3',
+      'zai/glm-5.3-flash',
+      'moonshot/kimi-k2.6',
+    ])
+    expect(llmtr.defaultModel).toBe('qwen/qwen3.8-27b-free')
+    expect(llmtr.models).toContain(llmtr.defaultModel)
+    expect(llmtr.needsBaseUrl).toBeUndefined()
+    expect(llmtr.keyPlaceholder).toBe('llmtr-...')
+    for (const model of llmtr.models) {
+      expect(model).toMatch(/^[a-z0-9-]+\/[A-Za-z0-9._-]+$/)
+    }
+  })
+
   it('seeds PPIO with lowercase namespaced ids', () => {
     const ppio = AI_PROVIDERS.find((provider) => provider.id === 'ppio')!
     expect(ppio.models).toEqual([

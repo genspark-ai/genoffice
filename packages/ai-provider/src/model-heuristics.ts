@@ -46,6 +46,12 @@ export function modelLacksVision(model: string): boolean {
   // input_modalities ["text"]; zai-org/GLM-5.3 is covered above). Its DeepSeek
   // V4.1 Flash, GLM-5.3-Flash and Kimi K2.6 ids take images and fall through.
   if (/^(?:qwen\/qwen3\.8-flash|openai\/gpt-oss-120b)$/i.test(model)) return true
+  // LLMTR serves these text-only (GET https://llmtr.com/v1/models gives them
+  // input_modalities ["text"]; deepseek/deepseek-v4-pro is covered by the
+  // DeepSeek V4 rule below). qwen/qwen3.8-27b-free, qwen/qwen3.8-max,
+  // zai/glm-5.3-flash and moonshot/kimi-k2.6 take images and fall through.
+  // Matched on the full id so zai/glm-5.3-flash is not caught with glm-5.3.
+  if (/^(?:llmtr\/qwen3-8-27b|zai\/glm-5\.3)$/i.test(model)) return true
   return (
     /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model) ||
     /(^|\/)(?:ling-(?:3\.0-flash(?!-vl)|3\.0-tiny|2\.6-1t|2\.6-flash)|ring-2\.6-1t|longcat-2\.0(?:$|-))/i.test(
