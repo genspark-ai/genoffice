@@ -10,6 +10,12 @@ Tempatnya ialah **Tetapan ▸ Integrasi**. Panel itu mempunyai dua bahagian, dan
 
 **MCP.** Dua laluan ditawarkan: **Dimulakan oleh pembantu (disyorkan)**, di mana anda menambah konfigurasi yang dipaparkan pada klien anda dan pembantu memulakan pelayan itu sendiri, serta **Pelayan HTTP tempatan**, yang dijalankan aplikasi untuk anda. Bagaimanapun, pembantu akhirnya bercakap dengan GenOffice dan anda tidak sekali pun perlu menaip arahan.
 
+**Cuba sekarang** Buka sembang baharu dalam pembantu anda dan minta dengan bahasa biasa, contohnya:
+
+- “Tukar ~/Downloads/report.md kepada dokumen Word”
+- “Buat pembentangan 6 slaid tentang hasil S3 kami”
+- “Tukar budget.xlsx kepada PDF dan buka dalam GenOffice”
+
 ## Mendaftarkannya dari baris arahan
 
 Perkara yang sama daripada satu terminal — inilah laluan lanjutan, dan laluan yang perlu digunakan apabila ejen berada di tempat yang tidak dapat dicari oleh panel:
