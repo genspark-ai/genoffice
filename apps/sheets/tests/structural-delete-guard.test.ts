@@ -97,14 +97,67 @@ describe('structuralDeleteFormulaError', () => {
   })
 
   it('flags deleted rows the same way', async () => {
-    stubFormulas({ sh1: ['=SUM($A$7:$C$7)'] })
+    // the formula sits in A7, outside the deleted row 9
+    stubFormulas({ sh1: ['=SUM($A$9:$C$9)'] })
     const error = await structuralDeleteFormulaError(state(), workbook, {
       op: 'delete_rows',
       sheetId: 'sh1',
-      row: 7,
+      row: 9,
       count: 1,
     })
     expect(error).toContain('deleted rows')
+  })
+
+  it('ignores formulas that are deleted along with their own row or column', async () => {
+    const delRow7 = { op: 'delete_rows', sheetId: 'sh1', row: 7, count: 1 } as const
+    // A7 holds a per-row formula: deleting row 7 removes the formula too
+    stubFormulas({ sh1: ['=B7*C7'] })
+    expect(await structuralDeleteFormulaError(state(), workbook, delRow7)).toBeNull()
+    // A8 refers only to row 7 and survives the deletion
+    stubFormulas({ sh1: ['=B7*C7', '=B7*C7'] })
+    expect(await structuralDeleteFormulaError(state(), workbook, delRow7)).toContain('B7')
+    // the same cell on another sheet survives as well
+    stubFormulas({ sh1: [], sh2: ['=Data!B7*Data!C7'] })
+    expect(await structuralDeleteFormulaError(state(), workbook, delRow7)).not.toBeNull()
+    // a column: A7 sums its own column, which is the one deleted
+    stubFormulas({ sh1: ['=SUM(A1:A5)'] })
+    const delA = { op: 'delete_cols', sheetId: 'sh1', column: 'A', count: 1 } as const
+    expect(await structuralDeleteFormulaError(state(), workbook, delA)).toBeNull()
+  })
+
+  it('ignores shared-formula followers and journal formulas inside the deleted rows', async () => {
+    // D2:D5 filled down from D2 =B2*C2; deleting rows 3-4 removes two followers
+    stubFormulas(
+      { sh1: [] },
+      {
+        sh1: [
+          {
+            si: 0,
+            row: 1,
+            column: 3,
+            formula: '=B2*C2',
+            range: { startRow: 1, endRow: 4, startColumn: 3, endColumn: 3 },
+          },
+        ],
+      },
+    )
+    const journaled = state({
+      editJournal: {
+        cells: new Map([
+          ['sh1', new Map([['2:4', { row: 2, column: 4, hasValue: true, formula: '=B3' }]])],
+        ]),
+        structuralOps: new Map(),
+        sheets: { added: new Set(), removed: new Set() },
+      },
+    })
+    expect(
+      await structuralDeleteFormulaError(journaled, workbook, {
+        op: 'delete_rows',
+        sheetId: 'sh1',
+        row: 3,
+        count: 2,
+      }),
+    ).toBeNull()
   })
 
   it('only considers qualified references on other sheets', async () => {
@@ -200,6 +253,31 @@ describe('structuralDeleteFormulaErrorSync (UI gate)', () => {
     expect(structuralDeleteFormulaErrorSync(full, wb, delD)).toContain('deleted columns')
     const wbOk = syncWorkbook({ sh1: [['', '=SUM(E7:E9)']], sh2: [[]] })
     expect(structuralDeleteFormulaErrorSync(full, wbOk, delD)).toBeNull()
+  })
+
+  it('ignores formulas deleted along with their own row', () => {
+    // D2:D4 hold =B2*C2, =B3*C3, =B4*C4; D5 totals them
+    const perRow = Array.from({ length: 5 }, (_, row) => [
+      '',
+      '',
+      '',
+      row === 0 ? '' : row === 4 ? '=SUM(D2:D4)' : `=B${row + 1}*C${row + 1}`,
+    ])
+    const wb = syncWorkbook({ sh1: perRow, sh2: [[]] })
+    const full = state({ formulaMode: true })
+    const delRow3 = { op: 'delete_rows', sheetId: 'sh1', row: 3, count: 1 } as const
+    expect(structuralDeleteFormulaErrorSync(full, wb, delRow3)).toBeNull()
+    const streamed = state({
+      formulaMode: false,
+      formulaText: new Map([['sh1', new Map([['2:3', '=B3*C3']])]]),
+      sharedFormulaGroups: new Map(),
+    })
+    expect(structuralDeleteFormulaErrorSync(streamed, wb, delRow3)).toBeNull()
+    // a formula in another row that refers only to row 3 is still flagged
+    perRow[3]![3] = '=B3*C3'
+    expect(
+      structuralDeleteFormulaErrorSync(full, syncWorkbook({ sh1: perRow }), delRow3),
+    ).toContain('deleted rows')
   })
 
   it('keeps checking in full-load mode after session structural edits', () => {
