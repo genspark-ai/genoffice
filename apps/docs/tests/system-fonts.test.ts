@@ -1,19 +1,19 @@
 /**
- * Unit tests for the system-font table bridge (the Local Font Access API).
+ * Unit tests for the font alias map (the installed faces' name tables).
  *
  * Covers:
- *   - a weight-qualified declared name keeps its own resolution
- *   - a declared name the browser resolves itself is not aliased to its family
- *   - a rejected queryLocalFonts() does not poison the cache
+ *   - the alias map comes from the main process over IPC
+ *   - the candidate the browser resolves is the one that is used
+ *   - a declared name the browser resolves itself keeps its own weight
+ *   - an alias that arrives later notifies the subscribers
+ *   - the font picker's family list still comes from queryLocalFonts
  */
 
+import type { ParsedDoc } from '@genoffice/docx-engine'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface LocalFontFace {
   readonly family: string
-  readonly fullName: string
-  readonly postscriptName: string
-  readonly style?: string
 }
 
 /** the family at the head of a css font chain */
@@ -49,78 +49,104 @@ function stubQueryLocalFonts(query: () => Promise<readonly LocalFontFace[]>): vo
   ).queryLocalFonts = query
 }
 
+/** the main process answers with the other spellings of the installed faces */
+function stubFontAliases(
+  answer: (names: readonly string[]) => Promise<Record<string, readonly string[]>>,
+): void {
+  ;(window as unknown as { desktop: { fontAliases: unknown } }).desktop = {
+    fontAliases: answer,
+  }
+}
+
 /** a fresh module graph: the font table cache and the alias lookup are
     module state, so each test starts from an empty one */
 async function freshModules() {
   vi.resetModules()
   const systemFonts = await import('../src/renderer/system-fonts')
   const lineMetrics = await import('../src/renderer/line-metrics')
-  return { systemFonts, lineMetrics }
+  const fontCheck = await import('../src/renderer/font-check')
+  return { systemFonts, lineMetrics, fontCheck }
 }
 
 afterEach(() => {
   vi.restoreAllMocks()
   delete (window as unknown as { queryLocalFonts?: unknown }).queryLocalFonts
+  delete (window as unknown as { desktop?: unknown }).desktop
 })
 
-describe('system font table', () => {
-  it('a weight-qualified declared name keeps its own weight', async () => {
-    // nothing resolves here, so the alias map is the only way a declared name
-    // could change: the weight suffix must survive it
+describe('font aliases', () => {
+  it('the alias map comes from the main process', async () => {
+    // the browser resolves the English spelling but not the localized one
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts, lineMetrics } = await freshModules()
+    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('FangSong_GB2312')
+  })
+
+  it('the first candidate the browser resolves is the one that is used', async () => {
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts, lineMetrics } = await freshModules()
+    // the canonical spelling comes first, but only the second one resolves
+    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312', 'No Such Face'] }))
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('FangSong_GB2312')
+  })
+
+  it('a declared name stays when no candidate resolves', async () => {
     stubCanvas([])
     const { systemFonts, lineMetrics } = await freshModules()
-    stubQueryLocalFonts(async () => [
-      {
-        family: 'PingFang SC',
-        fullName: 'PingFang SC',
-        postscriptName: 'PingFangSC-Regular',
-        style: 'Regular',
-      },
-      {
-        family: 'PingFang SC',
-        fullName: 'PingFang SC Semibold',
-        postscriptName: 'PingFangSC-Semibold',
-        style: 'Semibold',
-      },
-    ])
-    await systemFonts.loadSystemFontAliases()
+    stubFontAliases(async () => ({ 仿宋_GB2312: ['No Such Face'] }))
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('仿宋_GB2312')
+  })
+
+  it('a declared name the browser resolves itself keeps its own weight', async () => {
+    // the alias map offers the family, and the browser resolves both, but the
+    // declared name must not collapse to the family
+    stubCanvas(['PingFang SC Semibold', 'PingFang SC'])
+    const { systemFonts, lineMetrics } = await freshModules()
+    stubFontAliases(async () => ({ 'PingFang SC Semibold': ['PingFang SC'] }))
+    await systemFonts.resolveFontAliases(['PingFang SC Semibold'])
     expect(head(lineMetrics.cssFontFamily('PingFang SC Semibold'))).toBe('PingFang SC Semibold')
   })
 
-  it('a declared name the browser resolves itself is not aliased to its family', async () => {
-    // the face reports no style, so its full name reaches the alias map; the
-    // browser resolves the name itself, so the alias must not apply
-    stubCanvas(['Helvetica Neue Light'])
-    const { systemFonts, lineMetrics } = await freshModules()
-    stubQueryLocalFonts(async () => [
-      {
-        family: 'Helvetica Neue',
-        fullName: 'Helvetica Neue Light',
-        postscriptName: 'HelveticaNeue-Light',
-      },
-    ])
-    await systemFonts.loadSystemFontAliases()
-    expect(head(lineMetrics.cssFontFamily('Helvetica Neue Light'))).toBe('Helvetica Neue Light')
+  it('an alias that arrives later notifies the subscribers', async () => {
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts } = await freshModules()
+    const seen: string[][] = []
+    const off = systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
+    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(seen).toEqual([['仿宋_GB2312']])
+    off()
+    // the same answer again changes nothing, so nobody is notified
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(seen).toEqual([['仿宋_GB2312']])
   })
 
-  it('a localized name resolves through the English family the table maps it to', async () => {
-    stubCanvas([])
-    const { systemFonts, lineMetrics } = await freshModules()
-    stubQueryLocalFonts(async () => [
-      {
-        family: 'FZFangSong-Z02',
-        fullName: '\u65b9\u6b63\u4eff\u5b8b_GBK',
-        postscriptName: 'FZFangSong-Z02',
-        style: 'Regular',
-      },
-    ])
-    await systemFonts.loadSystemFontAliases()
-    expect(head(lineMetrics.cssFontFamily('\u65b9\u6b63\u4eff\u5b8b_GBK'))).toBe('FZFangSong-Z02')
+  it('only a declared font counts as covered', async () => {
+    const { fontCheck } = await freshModules()
+    const parsed = {
+      blocks: [{ runs: [{ font: '仿宋_GB2312' }] }],
+      styles: new Map(),
+      docDefaults: {},
+    } as unknown as ParsedDoc
+    expect(fontCheck.docFontsCoveredBy(parsed, ['仿宋_GB2312'])).toEqual(['仿宋_GB2312'])
+    // an alias for a font the document does not declare must not reflow it
+    expect(fontCheck.docFontsCoveredBy(parsed, ['PingFang SC'])).toEqual([])
+  })
+})
+
+describe('system font table', () => {
+  it("the picker's family list still comes from queryLocalFonts", async () => {
+    const { systemFonts } = await freshModules()
+    stubQueryLocalFonts(async () => [{ family: 'PingFang SC' }, { family: 'Helvetica Neue' }])
+    expect(await systemFonts.loadSystemFontFamilies()).toEqual(['Helvetica Neue', 'PingFang SC'])
   })
 
   it('a rejected query does not poison the cache: a later query fills it', async () => {
-    stubCanvas([])
-    const { systemFonts, lineMetrics } = await freshModules()
+    const { systemFonts } = await freshModules()
     let calls = 0
     // the query rejects without transient user activation, which is what a
     // document open runs into
@@ -128,23 +154,15 @@ describe('system font table', () => {
       calls += 1
       throw new Error('NotAllowedError: must be handling a user gesture')
     })
-    await systemFonts.loadSystemFontAliases()
+    expect(await systemFonts.loadSystemFontFamilies()).toEqual([])
     expect(calls).toBe(1)
     // the rejected query is not cached: the next query (the font picker's own
     // click) runs and fills the cache
     stubQueryLocalFonts(async () => {
       calls += 1
-      return [
-        {
-          family: 'FZFangSong-Z02',
-          fullName: '\u65b9\u6b63\u4eff\u5b8b_GBK',
-          postscriptName: 'FZFangSong-Z02',
-          style: 'Regular',
-        },
-      ]
+      return [{ family: 'PingFang SC' }]
     })
-    await systemFonts.loadSystemFontAliases()
+    expect(await systemFonts.loadSystemFontFamilies()).toEqual(['PingFang SC'])
     expect(calls).toBe(2)
-    expect(head(lineMetrics.cssFontFamily('\u65b9\u6b63\u4eff\u5b8b_GBK'))).toBe('FZFangSong-Z02')
   })
 })

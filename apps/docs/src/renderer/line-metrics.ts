@@ -1246,13 +1246,14 @@ function substituteFontFamily(font: string): string | null {
   return lead ? `${lead},${chain}` : chain
 }
 
-/** The system-font alias lookup the renderer populates from queryLocalFonts:
-    a localized (CJK) name maps to the English family the browser resolves.
-    Null until the query completes; cssFontFamily falls through to the
-    default chain until then (genoffice#2449). */
-let fontAliasLookup: ((name: string) => string | null) | null = null
+/** The system-font alias lookup the renderer populates from the installed
+    faces' name tables: a declared family name maps to the face's other
+    spellings, the canonical (en-US) one first. Null until the main process
+    answers; cssFontFamily falls through to the default chain until then
+    (genoffice#2449). */
+let fontAliasLookup: ((name: string) => readonly string[] | null) | null = null
 
-export function setFontAliasLookup(fn: (name: string) => string | null): void {
+export function setFontAliasLookup(fn: (name: string) => readonly string[] | null): void {
   fontAliasLookup = fn
 }
 
@@ -1263,12 +1264,17 @@ function declaredFamily(font: string): string {
 
 export function cssFontFamily(font: string): string {
   // a localized (CJK) name the browser can't match resolves through the
-  // system font table's English family (genoffice#2449). A name the browser
+  // installed face's other spelling (genoffice#2449). A name the browser
   // resolves itself keeps its own weight: "PingFang SC Semibold" must not
   // collapse to the "PingFang SC" family, so the alias applies only to a
-  // declared name that does not resolve here.
-  const alias = fontAliasLookup?.(font)
-  if (alias && !isFontAvailable(declaredFamily(font))) font = alias
+  // declared name that does not resolve here. Which of the face's spellings
+  // the browser takes is decided here too: the first candidate that resolves
+  // wins, and a name that resolves on its own is left alone.
+  const declared = declaredFamily(font)
+  if (!isFontAvailable(declared)) {
+    const candidate = fontAliasLookup?.(declared)?.find((name) => isFontAvailable(name))
+    if (candidate) font = candidate
+  }
   // faces Word lays out directly take the chain of their target face, names it
   // substitutes the chain of the substitute; the name-keyed branches below
   // serve unkeyed targets and the script chains
