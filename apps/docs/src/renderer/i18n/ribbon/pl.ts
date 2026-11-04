@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const pl = {
   ribbonAiCreditNote: 'Używa AI i zużywa kredyty',
@@ -1005,6 +1005,17 @@ export const pl = {
   ribbonMailingsOutput: 'Wynik korespondencji',
   ribbonMailingsOutputPerRecord: 'Jeden dokument na rekord',
   ribbonMailingsOutputSingle: 'Jeden dokument dla wszystkich rekordów',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'Nazwa pliku',
   ribbonMailingsNamePatternPh: 'Puste: użyj pierwszego pola',
   ribbonMailingsFinish: 'Zakończ i scal',

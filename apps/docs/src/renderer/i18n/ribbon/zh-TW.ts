@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const zhTW = {
   ribbonAiCreditNote: '將呼叫 AI 並消耗額度',
@@ -978,6 +978,17 @@ export const zhTW = {
   ribbonMailingsOutput: '合併輸出',
   ribbonMailingsOutputPerRecord: '每筆記錄一個文件',
   ribbonMailingsOutputSingle: '所有記錄合併為一個文件',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: '檔案名稱格式',
   ribbonMailingsNamePatternPh: '留空則使用第一個欄位',
   ribbonMailingsFinish: '完成並合併',

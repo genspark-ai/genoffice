@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const ar = {
   ribbonAiCreditNote: 'يستدعي الذكاء الاصطناعي ويستهلك الرصيد',
@@ -994,6 +994,17 @@ export const ar = {
   ribbonMailingsOutput: 'ناتج الدمج',
   ribbonMailingsOutputPerRecord: 'مستند واحد لكل سجل',
   ribbonMailingsOutputSingle: 'مستند واحد لكل السجلات',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'اسم الملف',
   ribbonMailingsNamePatternPh: 'فارغ: يُستخدم الحقل الأول',
   ribbonMailingsFinish: 'إنهاء الدمج',

@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const es = {
   ribbonAiCreditNote: 'Usa IA y consume créditos',
@@ -1012,6 +1012,17 @@ export const es = {
   ribbonMailingsOutput: 'Salida de la combinación',
   ribbonMailingsOutputPerRecord: 'Un documento por registro',
   ribbonMailingsOutputSingle: 'Un documento para todos los registros',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'Nombre de archivo',
   ribbonMailingsNamePatternPh: 'Vacío: se usa el primer campo',
   ribbonMailingsFinish: 'Finalizar y combinar',

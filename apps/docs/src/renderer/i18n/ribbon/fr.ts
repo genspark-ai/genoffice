@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const fr = {
   ribbonAiCreditNote: "Fait appel à l'IA et consomme des crédits",
@@ -1013,6 +1013,17 @@ export const fr = {
   ribbonMailingsOutput: 'Sortie de fusion',
   ribbonMailingsOutputPerRecord: 'Un document par enregistrement',
   ribbonMailingsOutputSingle: 'Un document pour tous les enregistrements',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'Nom du fichier',
   ribbonMailingsNamePatternPh: 'Vide : le premier champ est utilisé',
   ribbonMailingsFinish: 'Terminer et fusionner',

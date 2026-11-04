@@ -10,6 +10,13 @@ import {
   substituteMergeFields,
   substituteWithCursor,
 } from './template'
+import {
+  cellContentOf,
+  labelSheetDoc,
+  layoutSection,
+  type EnvelopePresetId,
+  type MergePageLayout,
+} from './layout'
 
 /**
  * The output half of the mail merge: the documents the merge writes.
@@ -30,7 +37,7 @@ export interface MergeRange {
 
 /** what the user asked the merge to write */
 export interface MailMergeRequest {
-  /** one document for all the records, or one document per record */
+  /** single / perRecord / labels / envelopes (labels/envelopes require layout) */
   mode: MergeOutputMode
   /** the records to merge */
   records: readonly MergeRecord[]
@@ -40,6 +47,14 @@ export interface MailMergeRequest {
   namePattern: string
   /** the slice of records the merge walks; defaults to the whole list */
   range?: MergeRange
+  /** the paper + label grid for labels, or envelope size for envelopes */
+  layout?: MergePageLayout
+  /** which label stock the user picked (Avery id / 'custom') */
+  labelStock?: 'avery5160' | 'custom'
+  /** custom label grid parameters (only used when labelStock === 'custom') */
+  customGrid?: { paper: 'letter' | 'a4'; columns: number; rows: number }
+  /** envelope size preset (only used when mode === 'envelopes') */
+  envelopePreset?: EnvelopePresetId
 }
 
 /** one merged document, ready to be written */
@@ -68,15 +83,16 @@ export interface MailMergeResponse {
  * The documents a merge writes.
  *
  * The records are first trimmed to the requested range. Then there are two
- * shapes:
+ * families:
  *
- *  - a template without a NEXT field (the "one letter per record" merge): every
- *    record becomes its own letter — perRecord writes one file each, single
- *    stacks them into one document, each letter on its own page;
- *  - a template with a NEXT field (the "one page, many records" merge): the
- *    template is scanned once with a cursor that NEXT advances, so a page that
- *    names three records fills three of them — single writes that one document,
- *    perRecord writes one such document per starting record.
+ *  - **plain** (mode single / perRecord): letters, or envelopes, one per record.
+ *    The NEXT-driven variants follow at the bottom.
+ *  - **labels / envelopes**: multi-up layouts on one page. Labels rides one
+ *    continuous table — a cell per record, rows flowing onto as many pages as
+ *    the records take — so the table's own pagination does the page breaks.
+ *    Envelopes build one letter per record on the envelope paper, one file each.
+ *
+ * genoffice#2097, genoffice#2374.
  */
 export async function buildMailMergeFiles(
   ctx: FileActionContext,
@@ -87,13 +103,43 @@ export async function buildMailMergeFiles(
   const template = editor.getJSON() as PmNode
   const start = request.range?.start ?? 0
   const end = request.range?.end ?? request.records.length - 1
-  // the window the cursor (or the per-record walk) is allowed to touch
   const subset = request.records.slice(
     Math.max(start, 0),
     Math.min(end, request.records.length - 1) + 1,
   )
   if (subset.length === 0) return []
 
+  // --- labels / envelopes: the layout-driven branches -------------------
+  if (request.mode === 'labels' || request.mode === 'envelopes') {
+    const layout = request.layout
+    if (!layout) return []
+    const layoutCtx: FileActionContext = {
+      ...ctx,
+      section: layoutSection(layout, ctx.section),
+      sectionDirty: true,
+    }
+    if (request.mode === 'labels') {
+      const cells = subset.map((record) =>
+        cellContentOf(substituteMergeFields(template, record)),
+      )
+      const bytes = await buildDocBytes(layoutCtx, labelSheetDoc(cells, layout))
+      if (!bytes) return []
+      return [{ name: mergedDocumentName(ctx), bytes }]
+    }
+    // envelopes: one file per record on the envelope's paper
+    const files: MailMergeFile[] = []
+    for (const record of subset) {
+      const bytes = await buildDocBytes(layoutCtx, substituteMergeFields(template, record))
+      if (!bytes) continue
+      files.push({
+        name: `${mergeOutputFileName(request.namePattern, record, request.fields)}.docx`,
+        bytes,
+      })
+    }
+    return files
+  }
+
+  // --- plain letters: split on whether the template carries a NEXT field -
   if (!hasNextField(template)) {
     if (request.mode === 'perRecord') {
       const files: MailMergeFile[] = []
@@ -112,19 +158,17 @@ export async function buildMailMergeFiles(
     return [{ name: mergedDocumentName(ctx), bytes }]
   }
 
-  // a NEXT template: walk a cursor from each starting record, one page per
-  // slotsPerPage (NEXT count + 1). Word repeats the page until records run
-  // out; trailing slots blank, so a short final page does not repeat data.
+  // plain with NEXT: cursor walks one page per slotsPerPage (NEXT count + 1)
   const nextCount = countNextFields(template)
   const slotsPerPage = nextCount + 1
 
   if (request.mode === 'perRecord') {
     const files: MailMergeFile[] = []
     for (let from = 0; from < subset.length; from += slotsPerPage) {
-      const end = from + slotsPerPage - 1
+      const endIdx = from + slotsPerPage - 1
       const bytes = await buildDocBytes(
         ctx,
-        substituteWithCursor(template, subset, from, end),
+        substituteWithCursor(template, subset, from, endIdx),
       )
       if (!bytes) continue
       const name = `${mergeOutputFileName(

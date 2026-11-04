@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const id = {
   ribbonAiCreditNote: 'Menggunakan AI dan menghabiskan kredit',
@@ -1002,6 +1002,17 @@ export const id = {
   ribbonMailingsOutput: 'Keluaran penggabungan',
   ribbonMailingsOutputPerRecord: 'Satu dokumen per record',
   ribbonMailingsOutputSingle: 'Satu dokumen untuk semua record',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'Nama berkas',
   ribbonMailingsNamePatternPh: 'Kosong: memakai bidang pertama',
   ribbonMailingsFinish: 'Selesai dan Gabungkan',

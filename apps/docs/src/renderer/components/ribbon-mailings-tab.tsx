@@ -386,6 +386,7 @@ export function MailingsTab({
           source={source}
           records={activeRecords}
           currentIndex={activeIndex}
+          editor={editor}
           onMerge={onMerge}
           onClose={() => setFinishOpen(false)}
         />

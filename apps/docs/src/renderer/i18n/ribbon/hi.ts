@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const hi = {
   ribbonAiCreditNote: 'AI का उपयोग करता है और क्रेडिट खर्च होते हैं',
@@ -1002,6 +1002,17 @@ export const hi = {
   ribbonMailingsOutput: 'मर्ज आउटपुट',
   ribbonMailingsOutputPerRecord: 'हर रिकॉर्ड के लिए एक दस्तावेज़',
   ribbonMailingsOutputSingle: 'सभी रिकॉर्ड के लिए एक दस्तावेज़',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'फ़ाइल का नाम',
   ribbonMailingsNamePatternPh: 'खाली होने पर पहला फ़ील्ड उपयोग होगा',
   ribbonMailingsFinish: 'समाप्त करें और मर्ज करें',

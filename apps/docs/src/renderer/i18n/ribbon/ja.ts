@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const ja = {
   ribbonAiCreditNote: 'AI を呼び出し、クレジットを消費します',
@@ -1016,6 +1016,17 @@ export const ja = {
   ribbonMailingsOutput: '差し込み出力',
   ribbonMailingsOutputPerRecord: 'レコードごとに 1 つのドキュメント',
   ribbonMailingsOutputSingle: 'すべてのレコードを 1 つのドキュメントに',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'ファイル名',
   ribbonMailingsNamePatternPh: '空欄なら最初のフィールド',
   ribbonMailingsFinish: '差し込み完了',

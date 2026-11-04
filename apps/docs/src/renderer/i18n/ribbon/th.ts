@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const th = {
   ribbonAiCreditNote: 'เรียกใช้ AI และใช้เครดิต',
@@ -989,6 +989,17 @@ export const th = {
   ribbonMailingsOutput: 'ผลลัพธ์การรวม',
   ribbonMailingsOutputPerRecord: 'หนึ่งเอกสารต่อหนึ่งระเบียน',
   ribbonMailingsOutputSingle: 'หนึ่งเอกสารสำหรับทุกระเบียน',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'ชื่อไฟล์',
   ribbonMailingsNamePatternPh: 'เว้นว่างจะใช้ฟิลด์แรก',
   ribbonMailingsFinish: 'เสร็จสิ้นและรวม',

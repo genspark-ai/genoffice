@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const ko = {
   ribbonAiCreditNote: 'AI를 호출하며 크레딧이 소모됩니다',
@@ -1014,6 +1014,17 @@ export const ko = {
   ribbonMailingsOutput: '병합 출력',
   ribbonMailingsOutputPerRecord: '레코드당 문서 하나',
   ribbonMailingsOutputSingle: '모든 레코드를 하나의 문서로',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: '파일 이름',
   ribbonMailingsNamePatternPh: '비워 두면 첫 번째 필드 사용',
   ribbonMailingsFinish: '병합 완료',

@@ -1,4 +1,4 @@
-import type { zh } from './zh'
+﻿import type { zh } from './zh'
 
 export const ru = {
   ribbonAiCreditNote: 'Использует ИИ и расходует кредиты',
@@ -1004,6 +1004,17 @@ export const ru = {
   ribbonMailingsOutput: 'Результат слияния',
   ribbonMailingsOutputPerRecord: 'По одному документу на запись',
   ribbonMailingsOutputSingle: 'Один документ для всех записей',
+  ribbonMailingsOutputPlain: 'Letters',
+  ribbonMailingsOutputLabels: 'Label sheet',
+  ribbonMailingsOutputEnvelopes: 'Envelopes',
+  ribbonMailingsStock5160: 'Avery 5160 (3 × 10)',
+  ribbonMailingsStockCustom: 'Custom grid',
+  ribbonMailingsLabelGridHint: '{grid} on a sheet',
+  ribbonMailingsLabelColumns: 'Columns',
+  ribbonMailingsLabelRows: 'Rows',
+  ribbonMailingsEnvelopeSize: 'Envelope size',
+  ribbonMailingsLabelsDroppedHint: '{n} block(s) in the template are not paragraphs and will be dropped in the labels.',
+  ribbonMailingsEnvelopeNote: 'Only the return-address and delivery-address text on the template is used; Word\'s centred delivery-address frame is not reproduced.',
   ribbonMailingsNamePattern: 'Имя файла',
   ribbonMailingsNamePatternPh: 'Пусто: используется первое поле',
   ribbonMailingsFinish: 'Закончить и выполнить слияние',

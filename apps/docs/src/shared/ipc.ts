@@ -75,8 +75,9 @@ export interface MergeOutputFile {
   data: ArrayBuffer
 }
 
-/** where the merged documents go: one file for all records, or one per record */
-export type MergeOutputMode = 'single' | 'perRecord'
+/** where the merged documents go: one file for all records, one per record, a
+ * label sheet, or one envelope per record */
+export type MergeOutputMode = 'single' | 'perRecord' | 'labels' | 'envelopes'
 
 export interface MergeOutputRequest {
   mode: MergeOutputMode
