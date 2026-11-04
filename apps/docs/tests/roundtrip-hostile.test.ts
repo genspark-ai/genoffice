@@ -151,7 +151,7 @@ describe('hostile docx import fuzz', () => {
 
     it('deeply nested XML hits the tag-depth ceiling without hanging', async () => {
       const depth = 20000
-      let body = '<w:p><w:r><w:t>x</w:t></w:r></w:p>'
+      const body = '<w:p><w:r><w:t>x</w:t></w:r></w:p>'
       const bytes = await buildDocxWithDocumentXml(
         `${'<w:evil>'.repeat(depth)}${body}${'</w:evil>'.repeat(depth)}`,
       )
@@ -160,9 +160,7 @@ describe('hostile docx import fuzz', () => {
 
     it('an attribute bomb hits the attribute ceiling without hanging', async () => {
       const big = 'A'.repeat(8 * 1024 * 1024)
-      const bytes = await buildDocxWithDocumentXml(
-        `<w:p><w:r><w:t x="${big}">x</w:t></w:r></w:p>`,
-      )
+      const bytes = await buildDocxWithDocumentXml(`<w:p><w:r><w:t x="${big}">x</w:t></w:r></w:p>`)
       await attemptPipeline(bytes, false)
     }, 60000)
   })
