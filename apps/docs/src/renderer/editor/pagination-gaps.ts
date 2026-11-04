@@ -1521,10 +1521,12 @@ export function syncFloatShifts(
   floats: Array<{
     el: HTMLElement
     top: number
+    height?: number
     anchorTop?: number
     pinned?: boolean
     pageRelV?: boolean
     pageRelFromPage?: boolean
+    noSpill?: boolean
   }>,
   origin: number,
   factor: number,
@@ -1587,7 +1589,20 @@ export function syncFloatShifts(
     // Y (Word): pinned tops already are page coords, pageRelV tops carry the
     // anchor position. Flow-positioned boxes keep their virtual Y.
     const abs = !!(f.pinned || f.pageRelV)
-    const ref = abs ? (f.anchorTop ?? f.top) + 0.5 : f.top
+    // a paragraph-anchored box rides its anchor paragraph: the page gaps opened
+    // below the anchor must not carry it past the page its anchor is on (a cover
+    // paragraph ending in a section break — issue #2482); a box the page cannot
+    // hold keeps the flow-based placement
+    const held =
+      !abs &&
+      f.anchorTop !== undefined &&
+      layout !== undefined &&
+      anchorPageHoldsFloat(
+        { top: f.top, height: f.height ?? 0, anchorTop: f.anchorTop },
+        layout.cuts,
+      )
+    const anchorRef = (f.anchorTop ?? f.top) + 0.5
+    const ref = abs || held ? anchorRef : f.top
     const place = layout ? fromCuts(ref, abs) : fromDom(ref, abs)
     if (layout && gaps) {
       const dom = fromDom(ref, abs)
@@ -1850,6 +1865,26 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
     const next = drop > 0 ? `${drop}px` : ''
     if (strut.style.paddingTop !== next) strut.style.paddingTop = next
   }
+}
+
+/**
+ * A paragraph-anchored floating box can hang below the paragraph's own line —
+ * a cover's title/subtitle/signature boxes sit hundreds of points below their
+ * anchor — and Word still paints it on the anchor paragraph's page. The canvas
+ * resolves such a box against the page cuts by its own position, so the
+ * page-turn gap opened after a section-break anchor used to drag it onto the
+ * next page over the body (issue #2482). The anchor page can hold the box while
+ * the box's bottom lands inside that page's content window; a box hanging past
+ * the page bottom keeps the flow-based placement.
+ */
+export function anchorPageHoldsFloat(
+  f: { top: number; height: number; anchorTop: number },
+  cuts: readonly PageCut[],
+): boolean {
+  const p = pageOfCut(cuts, f.anchorTop, 0)
+  const page = cuts[Math.max(0, Math.min(p, cuts.length - 1))]
+  if (!page) return false
+  return f.top + f.height <= page.start + page.capacityPx + 0.5
 }
 
 /**
