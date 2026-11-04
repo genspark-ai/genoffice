@@ -6735,7 +6735,7 @@ export default function App() {
             // 150-200 DPI raster pass (genoffice#2347's route, quality half).
             // An encrypted file stays encrypted on disk, which CUPS' pdftopdf
             // cannot open, so those fall through to the raster path below.
-            const r = await window.pdfApi.printFile({ ...job, pages })
+            const r = await window.pdfApi.printFile({ ...job, pages, path: filePath })
             if (!r.ok && r.error) opFailed(r.error)
             return
           }
