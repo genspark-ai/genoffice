@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   filterPageParity,
+  maySpoolOriginal,
   printPdf,
   printScaleForAreas,
   PRINT_DIALOG_TIMEOUT_MS,
@@ -322,5 +323,12 @@ describe('printPdf render scale', () => {
     // NaN pages are skipped and huge pages render at their own reduced scale
     // rather than aborting the whole print
     expect(imgsAtPrintTime).toBe(2)
+  })
+})
+
+describe('maySpoolOriginal', () => {
+  it('spools the original only when the file is not password-protected on disk', () => {
+    expect(maySpoolOriginal(null)).toBe(true)
+    expect(maySpoolOriginal('secret')).toBe(false)
   })
 })

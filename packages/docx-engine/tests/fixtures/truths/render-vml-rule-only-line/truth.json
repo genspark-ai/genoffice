@@ -1,0 +1,76 @@
+{
+  "id": "render-vml-rule-only-line",
+  "title": "A paragraph holding only a VML horizontal rule (v:rect o:hr, hrstd or not) is one line of the rule run's own face and size plus the paragraph spacing, whatever marks wrap the run; a rule taller than that line grows it",
+  "section": "word-truths.md#L899",
+  "probe_date": "2026-11-02",
+  "class": "render",
+  "docx": "probe.docx",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-02), pymupdf control baselines (Calibri 11 pitch 13.44) and the rule's filled rect: Georgia 14 bold run at line 276 -> 18.24 pt paragraph (= 14 x 1.136 x 1.15), the title-page triple rule / Georgia 14 text / rule spans 54.96 between the controls (3 near-equal lines), an inherited Calibri 11 run 13.41 (the mark's Georgia 14 does not size it: 13.41 again), Georgia 14 bold at line 240 15.81, a 6 pt rule under Calibri 11 still 13.41, a 20 pt rule 24.93 (= 19.6 drawn + 2.36 above + the 2.96 descent below), after 160 / line 259 22.53. The stroke is drawn 0.4 pt thinner than declared and its bottom sits one descent above the baseline. gen before the fix: a bold rule run (strong wrapper) measured two lines (39.5 pt) because the trailing-break phantom escaped the span-only selector, and the rule line used the document's Calibri factor instead of Georgia's (19.6 vs 18.24)",
+  "cases": [
+    {
+      "kind": "blockHeightPt",
+      "block": 1,
+      "expect": 18.24,
+      "tol": 0.4,
+      "note": "bold Georgia 14 rule run alone at line 276: one Georgia line, not two"
+    },
+    {
+      "kind": "blockTopDeltaPt",
+      "from": 2,
+      "to": 6,
+      "expect": 68.4,
+      "tol": 0.8,
+      "note": "control to control across rule / Georgia 14 text / rule"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 7,
+      "expect": 13.41,
+      "tol": 0.4,
+      "note": "inherited Calibri 11 run"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 9,
+      "expect": 15.81,
+      "tol": 0.4,
+      "note": "bold Georgia 14 at line 240"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 11,
+      "expect": 13.41,
+      "tol": 0.4,
+      "note": "6 pt rule under Calibri 11: the font line still decides"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 13,
+      "expect": 24.93,
+      "tol": 0.4,
+      "status": "failing",
+      "note": "20 pt rule: Word adds 2.36 above and the descent below (gen 22.95: rule + descent only)"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 15,
+      "expect": 18.24,
+      "tol": 0.4,
+      "note": "o:hr without o:hrstd: the same line"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 17,
+      "expect": 13.41,
+      "tol": 0.4,
+      "note": "run without rPr under a Georgia 14 mark: the run's inherited face sizes the line, not the mark"
+    },
+    {
+      "kind": "blockHeightPt",
+      "block": 19,
+      "expect": 22.53,
+      "tol": 0.4,
+      "note": "after 160 line 259: 13.44 x 1.08 + 8"
+    }
+  ]
+}

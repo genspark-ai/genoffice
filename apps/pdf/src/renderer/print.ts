@@ -1,6 +1,16 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { PrintJobOptions } from '../shared/ipc'
 
+/**
+ * Whether a named-printer job may spool the flushed PDF file itself. A
+ * password-protected document stays encrypted on disk, and CUPS' pdftopdf
+ * cannot open it, so those go through the raster path (pdf.js hands the
+ * decrypted pages to the print dialog instead).
+ */
+export function maySpoolOriginal(diskPassword: string | null): boolean {
+  return diskPassword === null
+}
+
 /** Baseline raster density (previous behavior — quality never drops below this). */
 const BASE_DPI = 150
 /** Target raster density for sharper glyph edges on high-DPI printers. */

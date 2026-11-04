@@ -24,6 +24,8 @@
  *   thread in the Comments panel.
  */
 import type { CommentInfo } from '@genoffice/docx-engine'
+import { PAGE_TURN_SEL } from './pagination-gaps'
+import { pagePaperEdges, pageReaderShadow, type PageCut } from '../pagination-cuts'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Mark as PmMark, Node as PmNode } from '@tiptap/pm/model'
 import { getLang, t } from '../i18n/locale'
@@ -677,20 +679,50 @@ function hiddenLineSeg(p: AnchorPoint, wrapRect: DOMRect, f: number, pos: number
   return { top, bottom: Math.max(bottom, top + 12), pos }
 }
 
-/** Page bands (wrap coords) from the top-level page-gap widgets; one whole-doc band when absent. */
-function pageBandsOf(pm: HTMLElement, wrapRect: DOMRect, wrapH: number, f: number): ChangeLine[] {
-  const gaps = [...pm.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-inline)')]
-    .map((g) => g.getBoundingClientRect())
-    .filter((r) => r.height > 0)
-    .sort((a, b) => a.top - b.top)
-  if (gaps.length === 0) return [{ top: 0, bottom: wrapH }]
-  const bands: ChangeLine[] = []
-  let top = 0
-  for (const g of gaps) {
-    bands.push({ top, bottom: (g.top - wrapRect.top) / f })
-    top = (g.bottom - wrapRect.top) / f
+/** Page bands (wrap coords) split at the top-level page gaps (the cuts' block
+ *  leads, else the widgets); one whole-doc band when absent. */
+function pageBandsOf(
+  pm: HTMLElement,
+  wrapRect: DOMRect,
+  wrapH: number,
+  f: number,
+  cuts?: readonly PageCut[],
+): ChangeLine[] {
+  const build = (gaps: Array<{ top: number; bottom: number }>): ChangeLine[] => {
+    if (gaps.length === 0) return [{ top: 0, bottom: wrapH }]
+    const bands: ChangeLine[] = []
+    let top = 0
+    for (const g of gaps) {
+      bands.push({ top, bottom: g.top })
+      top = g.bottom
+    }
+    bands.push({ top, bottom: wrapH })
+    return bands
   }
-  bands.push({ top, bottom: wrapH })
+  const fromDom = () =>
+    build(
+      [...pm.querySelectorAll<HTMLElement>(`${PAGE_TURN_SEL}:not(.page-gap-inline)`)]
+        .map((g) => g.getBoundingClientRect())
+        .filter((r) => r.height > 0)
+        .sort((a, b) => a.top - b.top)
+        .map((r) => ({ top: (r.top - wrapRect.top) / f, bottom: (r.bottom - wrapRect.top) / f })),
+    )
+  if (!cuts) return fromDom()
+  const pmOff = (pm.getBoundingClientRect().top - wrapRect.top) / f
+  const firstMt = parseFloat(getComputedStyle(pm).paddingTop) || 0
+  const bands = build(
+    pagePaperEdges(cuts, firstMt)
+      .filter((e) => e.gap.kind === 'block' && e.gap.heightPx > 0)
+      .map((e) => ({ top: pmOff + e.gapTop, bottom: pmOff + e.gapBottom })),
+  )
+  if (pageReaderShadow.enabled) {
+    const dom = fromDom()
+    const off =
+      dom.length !== bands.length
+        ? `count ${dom.length} vs ${bands.length}`
+        : dom.map((b, i) => (Math.abs(b.top - bands[i].top) > 1 ? `band ${i}` : '')).find(Boolean)
+    if (off) pageReaderShadow.report('commentBands', dom.length, bands.length, off)
+  }
   return bands
 }
 
@@ -714,6 +746,7 @@ export function syncMarginAnnotations(
   blocks?: AnchorBlock[],
   view?: EditorView,
   handlers?: MarginHandlers,
+  cuts?: readonly PageCut[],
 ): void {
   const f = zoomFactor
   const wrapRect = wrap.getBoundingClientRect()
@@ -900,7 +933,7 @@ export function syncMarginAnnotations(
   const shiftX = (paperNow.left - pmRect.left) / f
   const paperLeft = (paperNow.left - wrapRect.left) / f
   const paperRight = (paperNow.right - wrapRect.left) / f
-  const bands = pageBandsOf(pm, wrapRect, wrapRect.height / f, f)
+  const bands = pageBandsOf(pm, wrapRect, wrapRect.height / f, f, cuts)
   if (revColumn) {
     for (const b of bands) {
       const strip = document.createElement('div')

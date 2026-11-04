@@ -9,6 +9,7 @@ import {
   clampAiCustomFontSize,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
+import { getProviderAdapter, thinkingShapeFor } from '@genoffice/ai-provider/browser'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
 import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
@@ -33,6 +34,7 @@ import type {
   AiMediaProviderId,
   AiMediaProviderMeta,
   AiMediaSettings,
+  AiProtocol,
   AiSearchProviderMeta,
   AiSearchSettings,
   AiSettings,
@@ -500,6 +502,22 @@ function AiModelPane({ t }: { t: TFunc }) {
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
   const modelsText = JSON.stringify(endpoint?.modelProfiles ?? [], null, 2)
+  // The route the configured endpoint will actually take decides whether the
+  // two upper effort rungs are offerable: only the OpenAI Responses API takes
+  // `xhigh`/`max`, while chat-completions gateways 400 on them.
+  let thinkingProtocol: AiProtocol | undefined
+  try {
+    thinkingProtocol = getProviderAdapter(provider).resolveEndpoint(config).protocol
+  } catch {
+    thinkingProtocol = undefined
+  }
+  // the model's family effort surface: the field only renders for families
+  // with a knob (codex runs its own CLI, so its reasoning is not ours to set)
+  const thinkingLevels = isCodex ? [] : thinkingShapeFor(config.model, thinkingProtocol).levels
+  const storedThinking = config.thinking?.[config.model]
+  // a stored pick this family (or route) no longer offers reads as the model
+  // default instead of showing an unsendable level as selected
+  const thinkingValue = thinkingLevels.find((level) => level === storedThinking) ?? ''
   const updateConfig = (patch: Partial<typeof config>) => {
     if (meta?.needsBaseUrl) {
       // the slot mirrors the active endpoint, so the edit lands on the endpoint
@@ -740,6 +758,33 @@ function AiModelPane({ t }: { t: TFunc }) {
           />
         )}
       </div>
+      {thinkingLevels.length > 0 ? (
+        <div className="set-field">
+          <div className="set-field-text">
+            <label className="set-field-label" htmlFor="set-ai-thinking">
+              {t('setAiThinking')}
+            </label>
+          </div>
+          <select
+            id="set-ai-thinking"
+            className="set-input"
+            value={thinkingValue}
+            onChange={(e) => {
+              const thinking = { ...(config.thinking ?? {}) }
+              if (e.target.value === '') delete thinking[config.model]
+              else thinking[config.model] = e.target.value
+              updateConfig({ thinking: Object.keys(thinking).length > 0 ? thinking : undefined })
+            }}
+          >
+            <option value="">{t('setAiThinkingDefault')}</option>
+            {thinkingLevels.map((level) => (
+              <option key={level} value={level}>
+                {level === 'none' ? t('setAiSwitchOff') : level}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       {isCodex ? (
         <div className="set-field">
           <div className="set-field-text">
@@ -1768,11 +1813,13 @@ export function SettingsModal({
   const [tabSleepOn, setTabSleepOn] = useState(true)
   const [restoreSessionOn, setRestoreSessionOn] = useState(false)
   const [autoUpdateCheckOn, setAutoUpdateCheckOn] = useState(true)
+  const [silentInstallOn, setSilentInstallOn] = useState(false)
   const [defaultApp, setDefaultApp] = useState<DefaultAppStatus | null>(null)
   const [defaultAppBusy, setDefaultAppBusy] = useState(false)
   const [defaultAppFailed, setDefaultAppFailed] = useState(false)
   const [aiPrefs, setAiPrefs] = useState<AiPanelPrefs>(DEFAULT_AI_PANEL_PREFS)
   const [authorName, setAuthorName] = useState<AuthorNameSetting>({ value: '', fallback: '' })
+  const [legacyImportPrompt, setLegacyImportPrompt] = useState(true)
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
@@ -1807,6 +1854,9 @@ export function SettingsModal({
     void window.aiOffice.getAiPanelPrefs?.().then((prefs) => {
       if (alive) setAiPrefs(prefs)
     })
+    void window.aiOffice.getLegacyImportPrompt?.().then((v) => {
+      if (alive) setLegacyImportPrompt(v)
+    })
     void window.aiOffice.getAuthorName?.().then((v) => {
       if (alive) setAuthorName(v)
     })
@@ -1815,6 +1865,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getAutoUpdateCheck?.().then((on) => {
       if (alive) setAutoUpdateCheckOn(on)
+    })
+    void window.aiOffice.getSilentInstallUpdate?.().then((on) => {
+      if (alive) setSilentInstallOn(on)
     })
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
@@ -2125,6 +2178,25 @@ export function SettingsModal({
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
+                      <div className="set-field-label">{t('setLegacyImportPrompt')}</div>
+                      <div className="set-field-desc">{t('setLegacyImportPromptDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={legacyImportPrompt}
+                    aria-label={t('setLegacyImportPrompt')}
+                    onClick={() => {
+                      const next = !legacyImportPrompt
+                      setLegacyImportPrompt(next)
+                      void window.aiOffice.setLegacyImportPrompt?.(next).then(setLegacyImportPrompt)
+                    }}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
                       <div className="set-field-label">{t('setAiSpellcheck')}</div>
                       <div className="set-field-desc">{t('setAiSpellcheckDesc')}</div>
                     </div>
@@ -2346,6 +2418,25 @@ export function SettingsModal({
                       const next = !autoUpdateCheckOn
                       setAutoUpdateCheckOn(next)
                       void window.aiOffice.setAutoUpdateCheck?.(next).catch(() => {})
+                    }}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <div className="set-field-label">{t('setSilentInstall')}</div>
+                      <div className="set-field-desc">{t('setSilentInstallDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={silentInstallOn}
+                    aria-label={t('setSilentInstall')}
+                    onClick={() => {
+                      const next = !silentInstallOn
+                      setSilentInstallOn(next)
+                      void window.aiOffice.setSilentInstallUpdate?.(next).catch(() => {})
                     }}
                   />
                 </div>

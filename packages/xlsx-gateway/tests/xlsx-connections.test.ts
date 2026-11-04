@@ -45,7 +45,15 @@ describe('listWorkbookQueries', () => {
         name: 'Rates',
         kind: 'powerQuery',
         description: "Connection to the 'Rates' query in the workbook.",
-        destination: { sheet: 'Rates', table: 'Rates', range: 'A1:C21', rows: 20 },
+        destination: {
+          sheet: 'Rates',
+          table: 'Rates',
+          hasTable: true,
+          range: 'A1:C21',
+          headerRows: 1,
+          totalsRows: 0,
+          rows: 20,
+        },
       },
       { name: 'Sales 2024', kind: 'powerQuery' },
       { name: 'Connection', kind: 'web', source: 'https://example.com/rates.html' },
@@ -59,13 +67,19 @@ describe('listWorkbookQueries', () => {
       'xl/tables/table1.xml':
         '<table id="1" displayName="Rates" ref="A1:C21" totalsRowCount="1" tableType="queryTable"/>',
     }
-    expect((await listWorkbookQueries(reader(totals)))[0]?.destination?.rows).toBe(19)
+    const withTotals = (await listWorkbookQueries(reader(totals)))[0]?.destination
+    expect(withTotals?.rows).toBe(19)
+    expect(withTotals?.headerRows).toBe(1)
+    expect(withTotals?.totalsRows).toBe(1)
+    expect(withTotals?.hasTable).toBe(true)
     const headless = {
       ...parts,
       'xl/tables/table1.xml':
         '<table id="1" displayName="Rates" ref="A1:C21" headerRowCount="0" tableType="queryTable"/>',
     }
-    expect((await listWorkbookQueries(reader(headless)))[0]?.destination?.rows).toBe(21)
+    const withoutHeader = (await listWorkbookQueries(reader(headless)))[0]?.destination
+    expect(withoutHeader?.rows).toBe(21)
+    expect(withoutHeader?.headerRows).toBe(0)
   })
 
   it('finds a legacy query table loaded straight onto a sheet by its defined name', async () => {
@@ -83,7 +97,10 @@ describe('listWorkbookQueries', () => {
     }
     expect((await listWorkbookQueries(reader(legacy)))[2]?.destination).toEqual({
       sheet: 'Notes',
+      hasTable: false,
       range: 'D2:E12',
+      headerRows: 1,
+      totalsRows: 0,
       rows: 10,
     })
   })

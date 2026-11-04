@@ -5291,6 +5291,10 @@ body.vib .slide-list {
   border-radius: 6px;
   box-shadow: var(--slides-shadow-menu);
   padding: 4px;
+  /* Never taller than the viewport: the body scrolls instead (flyouts are fixed-positioned
+     in ContextMenu.tsx so this scroll box cannot clip them) */
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
 }
 
 .shape-gallery-pop {
@@ -5350,18 +5354,15 @@ body.vib .slide-list {
   background: var(--hover);
 }
 
+/* First-frame placement only; the layout effect re-anchors the flyout as position: fixed */
 .ctx-menu.ctx-submenu {
   position: absolute;
   left: 100%;
   top: -5px;
   margin-left: 2px;
-}
-
-.ctx-menu.ctx-submenu.ctx-submenu-left {
-  left: auto;
-  right: 100%;
-  margin-left: 0;
-  margin-right: 2px;
+  /* A wheel over the flyout must not chain into the parent scroll box, whose onScroll
+     would dismiss this flyout while the pointer is still over it */
+  overscroll-behavior: contain;
 }
 
 .ctx-swatches {
@@ -9234,6 +9235,38 @@ body.show-curtain::after {
 }
 .print-options .print-range-input.invalid {
   border-color: var(--danger);
+}
+.print-options .print-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 2px 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+  color: inherit;
+}
+.print-options .print-select:focus {
+  border-color: var(--accent);
+}
+.print-options .print-copies-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.print-options .print-copies-row label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.print-options .print-copies-row .print-range-input {
+  width: 64px;
 }
 .print-page-count {
   margin-top: auto;

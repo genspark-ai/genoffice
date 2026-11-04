@@ -2432,16 +2432,7 @@ function VisualContextMenu({
   // Outside press / window blur / shell chrome press — the shared dismissal
   // (the click-through backdrop below stays as belt and braces). The menu is
   // portaled to the body, so the inside guard must be its own element.
-  useDismissablePopover(true, onClose, { inside: () => [menuRef.current] })
-  const closeRef = useRef(onClose)
-  closeRef.current = onClose
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') closeRef.current()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useDismissablePopover(true, onClose, { inside: () => [menuRef.current], escape: true })
   // Portal to the body: the float-DOM container clips overflowing children.
   return createPortal(
     <div

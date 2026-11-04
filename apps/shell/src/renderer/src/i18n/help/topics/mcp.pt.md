@@ -10,6 +10,12 @@ O GenOffice fala o Model Context Protocol, por isso um agente de programação c
 
 **MCP.** São oferecidas duas vias: **Iniciado pelo assistente (recomendado)**, em que acrescenta a configuração apresentada ao seu cliente e o assistente arranca o servidor sozinho, e o **Servidor HTTP local**, que a aplicação executa por si. De qualquer forma, o assistente acaba a falar com o GenOffice e nunca escreve um comando.
 
+**Experimente** Abra um chat novo no seu assistente e peça com suas palavras, por exemplo:
+
+- “Transforme ~/Downloads/report.md em um documento Word”
+- “Monte uma apresentação de 6 slides sobre nossos resultados do 3º trimestre”
+- “Converta budget.xlsx para PDF e abra no GenOffice”
+
 ## Registá-lo a partir da linha de comando
 
 A mesma coisa a partir de um terminal — esta é a via avançada, e a que deve usar quando o agente está num sítio onde o painel o não consegue encontrar:

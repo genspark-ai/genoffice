@@ -5,12 +5,13 @@
  * the picture was put into the note this session and is not written to the
  * file yet, which is the one case where the bytes are already at hand.
  */
-import { useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import type { WorkbookFile } from '../shared/desktop-api'
 import { useI18n } from './i18n/locale'
+import type { NotePopupCard } from './note-hover-card'
 import {
   collectNotePictures,
   notePicturesPane,
@@ -40,13 +41,13 @@ function Picture({
   sessionId,
   picture,
 }: {
-  readonly sessionId: string
+  readonly sessionId: string | undefined
   readonly picture: NotePicture
 }) {
   // a picture put into the note this session is not in the file yet, so its
   // bytes are already at hand
   if (picture.dataUrl) return <img className="np-image" src={picture.dataUrl} alt="" />
-  if (!picture.imageId) return null
+  if (!picture.imageId || sessionId === undefined) return null
   return <FilePicture sessionId={sessionId} imageId={picture.imageId} />
 }
 
@@ -146,5 +147,91 @@ export function NotePicturesPane({
         )}
       </div>
     </aside>
+  )
+}
+
+/** The card hanging under Univer's note popup while that popup is up: the
+ *  author, the picture and the text of a note that carries a picture. It
+ *  reads its anchor from the popup's own box so the two read as one note. */
+export function NotePictureHoverCard({
+  card,
+  sessionId,
+  onRemove,
+}: {
+  readonly card: NotePopupCard | null
+  readonly sessionId: string | undefined
+  readonly onRemove: (sheetId: string, row: number, column: number) => void
+}): React.JSX.Element | null {
+  const { t } = useI18n()
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [held, setHeld] = useState<NotePopupCard | null>(null)
+  const [inside, setInside] = useState(false)
+  const key = card ? `${card.sheetId}:${card.row}:${card.column}` : ''
+  // a hover (unpinned) popup goes away on pointer-out before the pointer can
+  // reach the card, so remember the last card and keep showing it while the
+  // pointer is inside; a pinned popup keeps the prop non-null anyway
+  useEffect(() => {
+    if (card) setHeld(card)
+  }, [card])
+  const shown = card ?? (inside ? held : null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !card) return
+    const place = (): void => {
+      // Univer's popup root carries data-u-comp="cell-popup" (there is no
+      // .cell-popup class); scope to the editor when it is mounted, fall back
+      // to the page so the card still anchors in tests and before paint
+      const scoped = document.querySelectorAll('#univer-container [data-u-comp="cell-popup"]')
+      const popups =
+        scoped.length > 0 ? scoped : document.querySelectorAll('[data-u-comp="cell-popup"]')
+      const popup = popups[popups.length - 1]
+      if (!popup) return
+      const rect = popup.getBoundingClientRect()
+      const width = el.offsetWidth || 260
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+      const top = Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - 120))
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      // a tall card under a popup near the screen edge moves above it instead
+      if (el.getBoundingClientRect().bottom > window.innerHeight - 8) {
+        el.style.top = `${Math.max(8, rect.top - el.offsetHeight - 6)}px`
+      }
+    }
+    place()
+    // the popup settles a frame after the service announces it (and the
+    // picture loads later), so measure again once things have painted
+    const timer = window.setTimeout(place, 150)
+    return () => window.clearTimeout(timer)
+  }, [key, card])
+
+  if (!shown) return null
+  const { picture } = shown
+  return (
+    <div
+      ref={ref}
+      className="note-hover-card"
+      role="tooltip"
+      onPointerEnter={() => setInside(true)}
+      onPointerLeave={() => {
+        setInside(false)
+        if (!card) setHeld(null)
+      }}
+    >
+      <header>
+        {picture.author && <span className="np-author">{picture.author}</span>}
+        <button
+          type="button"
+          className="np-remove"
+          aria-label={t('appNotePictureRemove')}
+          title={t('appNotePictureRemove')}
+          onClick={() => onRemove(shown.sheetId, shown.row, shown.column)}
+        >
+          ×
+        </button>
+      </header>
+      <Picture sessionId={sessionId} picture={picture} />
+      {picture.text && <p className="np-text">{picture.text}</p>}
+    </div>
   )
 }

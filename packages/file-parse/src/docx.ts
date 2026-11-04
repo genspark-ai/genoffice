@@ -153,6 +153,8 @@ const SKIP_SUBTREES = new Set([
   'w:instrText',
   'w:delInstrText',
   'w:delText',
+  // ruby guide text (furigana, pinyin); the base text is read, as parseDocx does
+  'w:rt',
   'w:rPrChange',
   'w:pPrChange',
   'w:tabs',

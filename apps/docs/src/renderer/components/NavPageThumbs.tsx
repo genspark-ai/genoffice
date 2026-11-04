@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PAGE_TURN_SEL } from '../editor/pagination-gaps'
+import { pagePaperEdges, pageReaderShadow, type PageCut } from '../pagination-cuts'
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { useI18n } from '../i18n/locale'
@@ -34,7 +36,11 @@ const THUMB_MAX_W = 200
  * page gap ends one paper and starts the next, so the thumbnails show exactly what
  * the canvas shows (in-table cuts and mid-paragraph breaks included).
  */
-export function snapshotPages(pm: HTMLElement, zoom: number): ThumbSnapshot | null {
+export function snapshotPages(
+  pm: HTMLElement,
+  zoom: number,
+  cuts?: readonly PageCut[],
+): ThumbSnapshot | null {
   const wrap = pm.closest<HTMLElement>('.page-wrap')
   const docZoom = wrap?.closest<HTMLElement>('.doc-zoom')
   if (!wrap || !docZoom || zoom <= 0) return null
@@ -43,19 +49,52 @@ export function snapshotPages(pm: HTMLElement, zoom: number): ThumbSnapshot | nu
   const pageW = wrapRect.width / zoom
   const pageH =
     parseFloat(getComputedStyle(docZoom).getPropertyValue('--page-h')) || FALLBACK_PAGE_H
-  const starts = [0]
-  const ends: number[] = []
-  for (const gap of pm.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-carry)')) {
-    const r = gap.getBoundingClientRect()
-    if (r.height === 0) continue
-    const cs = getComputedStyle(gap)
-    const mb = parseFloat(cs.getPropertyValue('--gap-mb')) || 0
-    const mt = parseFloat(cs.getPropertyValue('--gap-mt')) || 0
-    ends.push((r.top - wrapRect.top) / zoom + mb)
-    starts.push((r.bottom - wrapRect.top) / zoom - mt)
+  const pagesOf = (edges: Array<{ top: number; prevBottom: number }>): ThumbPage[] => {
+    const starts = [0]
+    const ends: number[] = []
+    for (const e of edges) {
+      ends.push(e.prevBottom)
+      starts.push(e.top)
+    }
+    ends.push(starts[starts.length - 1] + pageH)
+    return starts.map((top, i) => ({ top, height: Math.max(1, ends[i] - top) }))
   }
-  ends.push(starts[starts.length - 1] + pageH)
-  const pages = starts.map((top, i) => ({ top, height: Math.max(1, ends[i] - top) }))
+  const fromDom = () =>
+    pagesOf(
+      [...pm.querySelectorAll<HTMLElement>(PAGE_TURN_SEL)].flatMap((gap) => {
+        const r = gap.getBoundingClientRect()
+        if (r.height === 0) return []
+        const cs = getComputedStyle(gap)
+        const mb = parseFloat(cs.getPropertyValue('--gap-mb')) || 0
+        const mt = parseFloat(cs.getPropertyValue('--gap-mt')) || 0
+        return [
+          {
+            prevBottom: (r.top - wrapRect.top) / zoom + mb,
+            top: (r.bottom - wrapRect.top) / zoom - mt,
+          },
+        ]
+      }),
+    )
+  let pages: ThumbPage[]
+  if (cuts) {
+    const pmOff = (pm.getBoundingClientRect().top - wrapRect.top) / zoom
+    const firstMt = parseFloat(getComputedStyle(pm).paddingTop) || 0
+    pages = pagesOf(
+      pagePaperEdges(cuts, firstMt)
+        .filter((e) => e.gap.heightPx > 0)
+        .map((e) => ({ top: pmOff + e.top, prevBottom: pmOff + e.prevBottom })),
+    )
+    if (pageReaderShadow.enabled) {
+      const dom = fromDom()
+      const off =
+        dom.length !== pages.length
+          ? `count ${dom.length} vs ${pages.length}`
+          : dom
+              .map((p, i) => (Math.abs(p.top - pages[i].top) > 1 ? `page ${i + 1}` : ''))
+              .find(Boolean)
+      if (off) pageReaderShadow.report('thumbPages', dom.length, pages.length, off)
+    }
+  } else pages = fromDom()
   const blocks: ThumbBlock[] = []
   for (const el of Array.from(pm.children) as HTMLElement[]) {
     const r = el.getBoundingClientRect()
@@ -185,12 +224,15 @@ export function NavPageThumbs({
   layoutVersion,
   currentPage,
   hitPositions,
+  cuts,
 }: {
   editor: Editor
   zoom: number
   width: number
   /** bumps when the document or its pagination changed */
   layoutVersion: number
+  /** the current pass's page cuts (page edges); the gap widgets are the fallback */
+  cuts?: () => readonly PageCut[] | undefined
   /** 1-based visible page under the viewport middle (status bar page) */
   currentPage: number
   /** search hit positions: when non-null the tab lists only pages with a hit */
@@ -211,13 +253,13 @@ export function NavPageThumbs({
   useEffect(() => {
     let raf = 0
     const timer = window.setTimeout(() => {
-      raf = requestAnimationFrame(() => setSnap(snapshotPages(editor.view.dom, zoom)))
+      raf = requestAnimationFrame(() => setSnap(snapshotPages(editor.view.dom, zoom, cuts?.())))
     }, 250)
     return () => {
       window.clearTimeout(timer)
       cancelAnimationFrame(raf)
     }
-  }, [editor, zoom, layoutVersion, wrapHeight])
+  }, [editor, zoom, layoutVersion, wrapHeight, cuts])
 
   const hitPages = useMemo(() => {
     if (!snap || !hitPositions) return null

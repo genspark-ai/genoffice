@@ -720,7 +720,7 @@ export function emptyParaMarkFont(
     // an East Asian slot alone leaves the inherited Latin face in charge (Word probe
     // 2026-09-05: a DengXian-only mark lays its line with the ascii face)
     const rf = themedRFonts(a, themeFonts)
-    return rf.ascii ?? rf.hAnsi
+    return rf.ascii
   }
   let font = pPr ? pick(findChild(pPr, 'w:rPr')) : undefined
   if (!font && !markOnly) {

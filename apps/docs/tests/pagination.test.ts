@@ -830,6 +830,23 @@ describe('sectionPageStartSpecs — page-opening sections clear the previous sec
     ]
     expect(sectionPageStartSpecs([block(0, 20, { docxIndex: 0, el: el() })], secsList)).toEqual([])
   })
+
+  it('the block after an explicit page break clears floats too (holdout 040)', () => {
+    const secsList = [sec({}, { startType: 'nextPage', firstBlockIndex: 0, lastBlockIndex: 6 })]
+    const blocks = [
+      block(0, 20, { docxIndex: 0, el: el() }),
+      block(20, 100, { docxIndex: 1, el: el(), floated: true, floatTable: true }),
+      block(24, 20, { docxIndex: 2, el: el(), breakAfter: true }),
+      block(44, 20, { docxIndex: 3, el: el() }),
+      block(64, 20, { docxIndex: 4, el: el(), breakBefore: true }),
+      block(84, 20, { docxIndex: 5, el: el(), breakAfter: true }),
+      block(104, 20, { docxIndex: 6, el: el(), floated: true, breakAfter: true }),
+      block(108, 20, { docxIndex: 7, el: el() }),
+    ]
+    const specs = sectionPageStartSpecs(blocks, secsList)
+    expect(specs.map((sp) => blocks.findIndex((b) => b.el === sp.el))).toEqual([3, 4, 7])
+    expect(specs.every((sp) => sp.sectionPageStart)).toBe(true)
+  })
 })
 
 describe('wrapWidthSig — specs that move line breaks re-trigger one pass', () => {
@@ -5905,6 +5922,25 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
       '.pv-page[data-pv-page="1"] .pv-content tr[data-pv-split="0"] > :nth-child(2) > :nth-child(n+2){transform:translateY(20.0px)}',
       '.pv-page[data-pv-page="2"] .pv-content tr[data-pv-split="0"] > :nth-child(1) > :nth-child(1){clip-path:inset(10.0px 0 5.0px 0)}',
     ])
+  })
+
+  it('rowSplitCss finds the row on an unsliced snapshot block (no tableRows)', () => {
+    const tbl = document.createElement('table')
+    tbl.innerHTML = '<tbody><tr><td><p>a</p></td></tr><tr><td><p>b</p><p>c</p></td></tr></tbody>'
+    const para = document.createElement('p')
+    const blocks: BlockBox[] = [
+      { top: 100, height: 20, el: para },
+      { top: 100, height: 300, el: tbl },
+    ]
+    const css = rowSplitCss(
+      [{ blockTop: 100, row: 1, rules: [{ from: 200, cell: 0, child: 1, tail: true, dy: 20 }] }],
+      blocks,
+      [{ start: 0 }, { start: 200 }],
+    )
+    expect(tbl.querySelectorAll('tr')[1].dataset.pvSplit).toBe('0')
+    expect(css).toBe(
+      '.pv-page[data-pv-page="1"] .pv-content tr[data-pv-split="0"] > :nth-child(1) > :nth-child(n+2){transform:translateY(20.0px)}',
+    )
   })
 
   it('cellLinesOf clusters same-line rects and keeps the topmost rect child/paragraph ids', () => {

@@ -59,8 +59,12 @@ describe('column-relative run pictures ignore the paragraph indent', () => {
     expect(host.classList.contains('doc-anchor-host')).toBe(true)
     expect(host.style.getPropertyValue('--anchor-ind')).toBe('36pt')
     const float = host.querySelector<HTMLElement>('img.doc-inline-img--wrap-square-left')!
-    expect(css(float)).toContain('calc(96.0px-var(--anchor-ind,0px)-var(--anchor-pad,0px))')
-    expect(float.style.getPropertyValue('--obs-left')).toBe('calc(96.0px - var(--anchor-ind,0px))')
+    expect(css(float)).toContain(
+      'calc(clamp(-1*var(--doc-margin-left,0px),96.0px,100%+var(--anchor-ind,0px)+var(--anchor-pad,0px)+var(--doc-margin-right,0px)-96.0px)-var(--anchor-ind,0px)-var(--anchor-pad,0px))',
+    )
+    expect(float.style.getPropertyValue('--obs-left')).toBe(
+      'calc(clamp(-1 * var(--doc-margin-left,0px), 96.0px, 100% + var(--anchor-ind,0px) + var(--doc-margin-right,0px) - 96.0px) - var(--anchor-ind,0px))',
+    )
     expect(overlayHost.style.getPropertyValue('--anchor-ind')).toBe('36pt')
     const overlay = overlayHost.querySelector<HTMLElement>('.doc-inline-img-anchor > img')!
     expect(overlay.style.transform).toContain('translate(calc(96.0px - var(--anchor-ind,0px))')
@@ -74,7 +78,9 @@ describe('column-relative run pictures ignore the paragraph indent', () => {
     const host = editor.view.dom.querySelector<HTMLElement>('p')!
     expect(host.classList.contains('doc-anchor-host')).toBe(false)
     const float = host.querySelector<HTMLElement>('img.doc-inline-img--wrap-square-left')!
-    expect(css(float)).toContain('calc(96.0px-var(--doc-margin-left,0px))')
+    expect(css(float)).toContain(
+      'calc(clamp(-1*var(--doc-margin-left,0px),96.0px-var(--doc-margin-left,0px),100%+var(--doc-margin-right,0px)-96.0px))',
+    )
     expect(css(float)).not.toContain('anchor-ind')
     editor.destroy()
   })

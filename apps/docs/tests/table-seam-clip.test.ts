@@ -96,6 +96,18 @@ describe('markTableSeamSlices', () => {
     expect(slices.some((s) => s.cutTable || s.leadTable)).toBe(false)
   })
 
+  it('reads the table box bottom under its footnote reservation', () => {
+    const noted = { ...block('table', 100, 564), footnoteExtraPx: 64 }
+    const blocks = [block('p', 0, 100), noted, block('p', 600, 30)]
+    const slices: PageSlice[] = [
+      { start: 0, end: 600, section: 0 },
+      { start: 600, end: 700, section: 0 },
+    ]
+    markTableSeamSlices(slices, blocks)
+    expect(slices[1].tailTable).toBe(true)
+    expect(slices[1].cutTable).toBeUndefined()
+  })
+
   it('reads the table box bottom under a folded inter-block gap', () => {
     const gapped = { ...block('table', 100, 508), spaceAfterPx: 8 }
     const blocks = [block('p', 0, 100), gapped, block('p', 608, 100)]

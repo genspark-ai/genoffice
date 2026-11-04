@@ -189,6 +189,19 @@ describe('docxToText (XML scan)', () => {
     expect(text).toBe(`7\ta&b <c> ${CJK}\nnext${WINGDING}-\n###### column head`)
   })
 
+  it('reads ruby (phonetic guide) base text without the guide text', async () => {
+    const BED = String.fromCodePoint(0x5e8a)
+    const FRONT = String.fromCodePoint(0x524d)
+    const ruby = (base: string, rt: string) =>
+      `<w:r><w:ruby><w:rubyPr><w:hps w:val="12"/></w:rubyPr>` +
+      `<w:rt><w:r><w:t>${rt}</w:t></w:r></w:rt>` +
+      `<w:rubyBase><w:r><w:t>${base}</w:t></w:r></w:rubyBase></w:ruby></w:r>`
+    const text = await docxToText(
+      await docx(`<w:p>${ruby(BED, 'chuang')}${ruby(FRONT, 'qian')}<w:r><w:t>,</w:t></w:r></w:p>`),
+    )
+    expect(text).toBe(`${BED}${FRONT},`)
+  })
+
   it('appends footnotes and endnotes under headers, skipping separator notes', async () => {
     const notes = (tag: string, body: string) =>
       `<w:${tag}s ${W}><w:${tag} w:type="separator" w:id="-1">${p('sep')}</w:${tag}>${body}</w:${tag}s>`

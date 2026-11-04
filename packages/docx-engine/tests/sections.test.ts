@@ -1119,3 +1119,73 @@ describe('sectPr w:lnNumType', () => {
     expect([flag('Quiet'), flag('Loud'), flag('Inherit')]).toEqual([true, false, true])
   })
 })
+
+describe('pgBorders writer', () => {
+  const base =
+    '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>' +
+    '</w:sectPr>'
+
+  it('writes shadow/frame/display/zOrder per side and reads them back', async () => {
+    const { applySectionSettings, sectionSettingsFromXml, DEFAULT_SECTION } =
+      await import('../src/section')
+    const side = {
+      val: 'double',
+      widthPt: 1.5,
+      spacePt: 10,
+      color: '1F497D',
+      shadow: true as const,
+    }
+    const xml = applySectionSettings(base, {
+      ...DEFAULT_SECTION,
+      pageBorder: true,
+      pageBorderProps: {
+        display: 'notFirstPage',
+        offsetFrom: 'text',
+        zOrder: 'back',
+        spacePt: 10,
+        widthPt: 1.5,
+        color: '1F497D',
+        sides: { top: side, bottom: { ...side, shadow: undefined, frame: true } },
+      },
+    })
+    expect(xml).toContain(
+      '<w:pgBorders w:zOrder="back" w:display="notFirstPage" w:offsetFrom="text">',
+    )
+    expect(xml).toContain(
+      '<w:top w:val="double" w:sz="12" w:space="10" w:color="1F497D" w:shadow="1"/>',
+    )
+    expect(xml).toContain(
+      '<w:bottom w:val="double" w:sz="12" w:space="10" w:color="1F497D" w:frame="1"/>',
+    )
+    expect(xml).not.toContain('<w:left')
+    const s = sectionSettingsFromXml(xml)
+    expect(s.pageBorderProps?.sides).toEqual({
+      top: side,
+      bottom: { val: 'double', widthPt: 1.5, spacePt: 10, color: '1F497D', frame: true },
+    })
+  })
+
+  it('art sides keep w:sz in points', async () => {
+    const { applySectionSettings, DEFAULT_SECTION } = await import('../src/section')
+    const xml = applySectionSettings(base, {
+      ...DEFAULT_SECTION,
+      pageBorder: true,
+      pageBorderProps: {
+        offsetFrom: 'page',
+        spacePt: 24,
+        widthPt: 16,
+        sides: { top: { val: 'gems', widthPt: 16, spacePt: 24, art: true } },
+      },
+    })
+    expect(xml).toContain('<w:top w:val="gems" w:sz="16" w:space="24" w:color="auto"/>')
+  })
+
+  it('pageBorder without props still writes the legacy box', async () => {
+    const { applySectionSettings, DEFAULT_SECTION } = await import('../src/section')
+    const xml = applySectionSettings(base, { ...DEFAULT_SECTION, pageBorder: true })
+    expect(xml).toContain(
+      '<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="4" w:space="24" w:color="auto"/>',
+    )
+  })
+})

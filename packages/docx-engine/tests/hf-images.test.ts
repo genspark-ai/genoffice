@@ -304,6 +304,50 @@ describe('header/footer images (display-only Logo)', () => {
     expect(svg).toContain('fill="#20093F"')
     expect(svg).toContain('d="M 0 0 L 20 0 L 10 20 Z"')
   })
+
+  it('stroke-only custGeom rule (cy=0 line, wps:style lnRef color) renders as a stroked SVG (header rule)', async () => {
+    const headerXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+      ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
+      ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+      ' xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"' +
+      ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<w:p><w:r><w:drawing><wp:anchor behindDoc="0">' +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="page"><wp:posOffset>682625</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="page"><wp:posOffset>1070610</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="4230370" cy="19050"/><wp:wrapSquare wrapText="bothSides"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">' +
+      '<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm>' +
+      '<a:off x="0" y="0"/><a:ext cx="4230370" cy="19050"/>' +
+      '<a:chOff x="0" y="0"/><a:chExt cx="4230370" cy="19050"/>' +
+      '</a:xfrm></wpg:grpSpPr>' +
+      '<wps:wsp><wps:cNvPr id="2" name="Shape 2"/><wps:cNvSpPr/><wps:spPr>' +
+      '<a:xfrm><a:off x="0" y="0"/><a:ext cx="4230370" cy="0"/></a:xfrm>' +
+      '<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="0" b="0"/>' +
+      '<a:pathLst><a:path w="4230370">' +
+      '<a:moveTo><a:pt x="0" y="0"/></a:moveTo>' +
+      '<a:lnTo><a:pt x="4230370" y="0"/></a:lnTo>' +
+      '</a:path></a:pathLst></a:custGeom>' +
+      '<a:ln w="19050" cap="flat"><a:miter lim="127000"/></a:ln>' +
+      '</wps:spPr><wps:style>' +
+      '<a:lnRef idx="1"><a:srgbClr val="000000"/></a:lnRef>' +
+      '<a:fillRef idx="0"><a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr></a:fillRef>' +
+      '<a:effectRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:effectRef>' +
+      '<a:fontRef idx="none"/></wps:style><wps:bodyPr/></wps:wsp>' +
+      '</wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p></w:hdr>'
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+    const img = doc.headerImages![0]
+    expect(img.floating).toBe(true)
+    expect(img.wrap).toBe('square')
+    expect(img.heightPx).toBe(2)
+    const svg = decodeURIComponent(img.dataUrl.slice('data:image/svg+xml,'.length))
+    expect(svg).toContain('d="M 0 1 L 444.13 1"')
+    expect(svg).toContain('fill="none" stroke="#000000" stroke-width="2"')
+  })
 })
 
 describe('layout-table cell images (header logo in a w:tbl cell)', () => {

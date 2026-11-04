@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { paraDeletionClass } from '../src/renderer/editor/decoration-extensions'
 import { measureBlocks } from '../src/renderer/pagination'
+import { alignJoinedParagraphs } from '../src/renderer/pagination-measure'
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
@@ -87,7 +88,7 @@ describe('paraDeletionClass', () => {
 
 const rule = (selector: string) => {
   const re = new RegExp(
-    `(^|[,\\n])\\s*${selector.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\s*[,{][^}]*}`,
+    `(^|[,\\n])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[,{][^}]*}`,
   )
   return re.exec(css)?.[0] ?? ''
 }
@@ -199,16 +200,15 @@ describe('pending paragraph-mark deletion joins paragraphs in final-text views',
 
   it('a tail carrying a page break stays its own block', () => {
     const pm = document.createElement('div')
-    const add = (top: number, height: number, cls: string, inner: string, inline = false) => {
+    const add = (top: number, height: number, cls: string, inner: string) => {
       const el = document.createElement('p')
       el.className = cls
       el.innerHTML = inner
-      if (inline) el.style.display = 'inline'
       el.getBoundingClientRect = () => rectOf(top, height)
       pm.appendChild(el)
     }
-    add(0, 20, 'doc-para-mark-del doc-para-join-head', 'head', true)
-    add(0, 40, 'doc-para-join-tail', 'tail<br class="doc-page-br">', true)
+    add(0, 20, 'doc-para-mark-del doc-para-join-head', 'head')
+    add(0, 40, 'doc-para-join-tail', 'tail<br class="doc-page-br">')
     const { blocks } = measureBlocks(pm, 0, 1)
     expect(blocks).toHaveLength(2)
     expect(blocks[1].breakAfter).toBe(true)
@@ -220,7 +220,6 @@ describe('pending paragraph-mark deletion joins paragraphs in final-text views',
       const el = document.createElement('p')
       el.className = cls
       el.innerHTML = inner
-      el.style.display = 'inline'
       el.getBoundingClientRect = () => rectOf(top, height)
       pm.appendChild(el)
     }
@@ -229,24 +228,132 @@ describe('pending paragraph-mark deletion joins paragraphs in final-text views',
     expect(measureBlocks(pm, 0, 1).blocks.map((b) => b.height)).toEqual([40])
   })
 
-  it('the joined pair flows inline', () => {
-    expect(rule('.rev-display-none .doc-para-join-tail')).toMatch(/display:\s*inline/)
-    expect(rule('.rev-display-simple .doc-para-join-head')).toMatch(/display:\s*inline/)
+  it('folds a chain of joined paragraphs into the first block', () => {
+    const pm = document.createElement('div')
+    const add = (top: number, height: number, cls: string) => {
+      const el = document.createElement('p')
+      el.className = cls
+      el.textContent = 'x'
+      el.getBoundingClientRect = () => rectOf(top, height)
+      pm.appendChild(el)
+    }
+    add(0, 20, 'doc-para-mark-del doc-para-join-head')
+    add(0, 40, 'doc-para-mark-del doc-para-join-tail doc-para-join-head')
+    add(20, 40, 'doc-para-join-tail')
+    add(60, 20, 'after')
+    expect(measureBlocks(pm, 0, 1).blocks.map((b) => [b.top, b.height])).toEqual([
+      [0, 60],
+      [60, 20],
+    ])
+  })
+
+  it('folds the tail across a hidden fully deleted paragraph', () => {
+    const pm = document.createElement('div')
+    const add = (top: number, height: number, cls: string, hidden = false) => {
+      const el = document.createElement('p')
+      el.className = cls
+      el.textContent = 'x'
+      if (hidden) el.style.display = 'none'
+      el.getBoundingClientRect = () => rectOf(top, height)
+      pm.appendChild(el)
+    }
+    add(0, 20, 'doc-para-mark-del doc-para-join-head')
+    add(20, 0, 'doc-para-del-collapse', true)
+    add(0, 40, 'doc-para-join-tail')
+    const heights = measureBlocks(pm, 0, 1).blocks.map((b) => [b.top, b.height])
+    expect(heights[0]).toEqual([0, 40])
+    expect(heights.some(([, h]) => h === 40 && heights.length <= 2)).toBe(true)
+  })
+
+  it('the tail keeps its block and is lifted onto the head line by the measured vars', () => {
+    expect(rule('.rev-display-none .doc-para-join-tail[data-join-on]')).toMatch(
+      /margin-top:\s*calc\(-1 \* var\(--join-lift[^)]*\)\)\s*!important/,
+    )
+    expect(rule('.rev-display-simple .doc-para-join-tail[data-join-on]')).toMatch(
+      /text-indent:\s*var\(--join-indent[^)]*\)\s*!important/,
+    )
+    expect(css).not.toMatch(/\.doc-para-join-(head|tail)\s*\{[^}]*display:\s*inline/)
+  })
+
+  it('alignJoinedParagraphs lifts the tail by one line and indents it to the head end', () => {
+    const pm = document.createElement('div')
+    const para = (
+      cls: string,
+      text: string,
+      box: { x: number; w: number; top: number; h: number },
+    ) => {
+      const el = document.createElement('p')
+      el.className = cls
+      el.textContent = text
+      el.style.lineHeight = '20px'
+      el.getBoundingClientRect = () =>
+        ({ ...rectOf(box.top, box.h), left: box.x, right: box.x + box.w, width: box.w }) as DOMRect
+      pm.appendChild(el)
+      return el
+    }
+    const head = para('doc-para-mark-del doc-para-join-head', 'head', {
+      x: 30,
+      w: 400,
+      top: 0,
+      h: 40,
+    })
+    const gone = para('doc-para-del-collapse', 'gone', { x: 30, w: 400, top: 40, h: 0 })
+    gone.style.display = 'none'
+    const tail = para('doc-para-join-tail', 'tail', { x: 10, w: 420, top: 40, h: 20 })
+    const line = (top: number, left: number, right: number) =>
+      ({ top, bottom: top + 20, left, right, width: right - left, height: 20 }) as DOMRect
+    const rectsOf = new Map<Node, DOMRect[]>([
+      [head.firstChild!, [line(0, 30, 430), line(20, 30, 150)]],
+      [tail.firstChild!, [line(20, 150, 430)]],
+    ])
+    const proto = Range.prototype as unknown as {
+      getClientRects?: () => DOMRect[]
+      selectNodeContents: (n: Node) => void
+      __node?: Node
+    }
+    const orig = { rects: proto.getClientRects, select: proto.selectNodeContents }
+    proto.selectNodeContents = function (this: typeof proto, n: Node) {
+      this.__node = n
+    }
+    proto.getClientRects = function (this: typeof proto) {
+      return rectsOf.get(this.__node!) ?? []
+    }
+    try {
+      alignJoinedParagraphs(pm, 1)
+      expect(tail.dataset.joinOn).toBe('1')
+      expect(tail.style.getPropertyValue('--join-lift')).toBe('20.00px')
+      expect(tail.style.getPropertyValue('--join-indent')).toBe('140.00px')
+      expect(head.dataset.joinOn).toBeUndefined()
+
+      // the tail's first word wrapped below the shared line: start a new line unindented
+      rectsOf.set(tail.firstChild!, [line(40, 10, 100)])
+      alignJoinedParagraphs(pm, 1)
+      expect(tail.style.getPropertyValue('--join-lift')).toBe('0.00px')
+      expect(tail.style.getPropertyValue('--join-indent')).toBe('0.00px')
+
+      // leaving the final-text views drops the classes and the override
+      head.classList.remove('doc-para-join-head')
+      alignJoinedParagraphs(pm, 1)
+      expect(tail.dataset.joinOn).toBeUndefined()
+    } finally {
+      if (orig.rects) proto.getClientRects = orig.rects
+      else delete proto.getClientRects
+      proto.selectNodeContents = orig.select
+    }
   })
 
   it('measureBlocks folds the tail into the head block instead of counting a break', () => {
     const pm = document.createElement('div')
-    const add = (top: number, height: number, cls: string, inline = false) => {
+    const add = (top: number, height: number, cls: string) => {
       const el = document.createElement('p')
       el.className = cls
       el.textContent = cls || 'x'
-      if (inline) el.style.display = 'inline'
       el.getBoundingClientRect = () => rectOf(top, height)
       pm.appendChild(el)
     }
     add(0, 20, 'before')
-    add(20, 20, 'doc-para-mark-del doc-para-join-head', true)
-    add(20, 40, 'doc-para-join-tail', true)
+    add(20, 20, 'doc-para-mark-del doc-para-join-head')
+    add(20, 40, 'doc-para-join-tail')
     add(60, 20, 'after')
     const { blocks } = measureBlocks(pm, 0, 1)
     expect(blocks.map((b) => [b.top, b.height])).toEqual([

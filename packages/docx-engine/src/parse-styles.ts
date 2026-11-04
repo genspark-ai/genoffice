@@ -611,8 +611,7 @@ function tableStyleDisplayOf(
         else if (smallCapsOn) fmt.caps = 'small'
         else if (capsOn === false || smallCapsOn === false) fmt.caps = 'none'
         const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
-        const fontAscii = rf.ascii ?? rf.hAnsi
-        if (fontAscii) fmt.fontAscii = fontAscii
+        if (rf.ascii) fmt.fontAscii = rf.ascii
         const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
         if (!Number.isNaN(spc)) fmt.charSpacingTwips = spc
       }
@@ -722,9 +721,8 @@ function styleDisplayOf(
     const bdr = bdrNode ? runBorderOf(bdrNode) : undefined
     if (bdr) display.bdr = bdr
     const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
-    const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
-    const fontAscii = rf.ascii ?? rf.hAnsi
-    if (fontAscii) display.fontAscii = fontAscii
+    const font = rf.eastAsia ?? rf.ascii
+    if (rf.ascii) display.fontAscii = rf.ascii
     if (rf.eastAsia && !rf.eaSlotEmpty) display.eastAsiaFont = rf.eastAsia
     if (rf.cs) display.csFont = rf.cs
     if (font) display.font = font

@@ -78,7 +78,7 @@ describe('docStyleCss toc style indent', () => {
   it('a toc style with its own left indent switches off the level ladder padding', () => {
     const css = docStyleCss(parsedWith('TOC2', { indentLeftTwips: 360 }))
     expect(css).toContain(
-      '.doc-page [data-style="TOC2"] .doc-toc-line > span:first-child { padding-left:0 }',
+      '.doc-page [data-style="TOC2"] .doc-toc-line > .doc-toc-body { --doc-toc-indent:0px }',
     )
   })
 

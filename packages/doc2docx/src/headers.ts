@@ -13,14 +13,34 @@
 import { LegacyDocError, isLegacyDocError } from './errors'
 import type { FibInfo } from './fib'
 import type { PieceTable } from './clx'
+import type { FormattedParagraph, NoteMark } from './formatting'
 import { decodeWordDocumentRange, mapWordControlChars } from './text'
 import type { SectionInfo } from './sections'
+import type { FloatingShape } from './drawings'
+import type { ImageBlock } from './images'
 
 export interface HeaderFooterStory {
   /** mapped story text, paragraphs separated by newlines */
   text: string
   /** mapped paragraphs of the story (empty paragraphs included) */
   paragraphs: string[]
+  /** the same paragraphs with resolved formatting, when a StoryFormatter was given */
+  formatted?: FormattedParagraph[]
+  /** floating pictures and text boxes anchored in the story, by paragraph index */
+  pictures?: Map<number, FloatingShape[]>
+  /** inline pictures of the story, by paragraph index */
+  images?: Map<number, StoryInlineImage[]>
+}
+
+export interface StoryInlineImage {
+  image: ImageBlock
+  /** before any text of the paragraph, or after it */
+  position: 'start' | 'end'
+}
+
+/** Resolves the formatted paragraphs of a CP range outside the body (header, footnote, endnote documents). */
+export interface StoryFormatter {
+  paragraphs(startCp: number, endCp: number, noteMarks?: NoteMark[]): FormattedParagraph[]
 }
 
 export interface SectionHeaderFooter {
@@ -64,7 +84,14 @@ function u32(bytes: Uint8Array, offset: number): number {
 }
 
 /** map one raw story range to a story, stripping the guard paragraph mark */
-function mapStory(raw: string): HeaderFooterStory | undefined {
+export function mapStory(
+  raw: string,
+  startCp: number,
+  formatter: StoryFormatter | undefined,
+  drawings: FloatingShape[],
+  inlineImages: ImageBlock[],
+  keepBlank = false,
+): HeaderFooterStory | undefined {
   let text = raw
   if (text.endsWith('\r')) text = text.slice(0, -1)
   const rawParagraphs = text.split('\r')
@@ -72,8 +99,53 @@ function mapStory(raw: string): HeaderFooterStory | undefined {
   if (rawParagraphs.length > 1 && rawParagraphs[rawParagraphs.length - 1] === '')
     rawParagraphs.pop()
   const paragraphs = rawParagraphs.map(mapWordControlChars)
-  if (paragraphs.length === 0 || paragraphs.every((paragraph) => paragraph === '')) return undefined
-  return { text: paragraphs.join('\n'), paragraphs }
+  const images = inlineImages.filter((image) => image.cp < text.length)
+  if (paragraphs.length === 0) return undefined
+  if (
+    !keepBlank &&
+    drawings.length === 0 &&
+    images.length === 0 &&
+    paragraphs.every((paragraph) => paragraph === '')
+  )
+    return undefined
+  const story: HeaderFooterStory = { text: paragraphs.join('\n'), paragraphs }
+  if (formatter) {
+    const formatted = formatter.paragraphs(startCp, startCp + text.length)
+    if (formatted.length > 1 && formatted[formatted.length - 1]!.text === '') formatted.pop()
+    // the formatted read must split the story exactly like the plain mapping
+    if (formatted.length === paragraphs.length) story.formatted = formatted
+  }
+  if (drawings.length > 0) {
+    const pictures = new Map<number, FloatingShape[]>()
+    for (const drawing of drawings) {
+      let index = 0
+      for (let cp = 0; cp < drawing.cp && cp < text.length; cp++) if (text[cp] === '\r') index++
+      index = Math.min(index, paragraphs.length - 1)
+      pictures.set(index, [...(pictures.get(index) ?? []), drawing])
+    }
+    story.pictures = pictures
+  }
+  if (images.length > 0) {
+    const byParagraph = new Map<number, StoryInlineImage[]>()
+    let paragraphStart = 0
+    let index = 0
+    for (const image of images) {
+      while (
+        index < rawParagraphs.length - 1 &&
+        image.cp >= paragraphStart + rawParagraphs[index]!.length + 1
+      ) {
+        paragraphStart += rawParagraphs[index]!.length + 1
+        index++
+      }
+      const before = mapWordControlChars(text.slice(paragraphStart, image.cp))
+      byParagraph.set(index, [
+        ...(byParagraph.get(index) ?? []),
+        { image, position: before === '' ? 'start' : 'end' },
+      ])
+    }
+    story.images = byParagraph
+  }
+  return story
 }
 
 /**
@@ -84,6 +156,9 @@ function mapStory(raw: string): HeaderFooterStory | undefined {
 export function parseHeaderStories(
   source: HeaderStoriesSource,
   sections: SectionInfo[],
+  formatter?: StoryFormatter,
+  drawings: FloatingShape[] = [],
+  inlineImages: ImageBlock[] = [],
 ): HeaderFooterResult {
   const { fib, wordDocument, table, pieces } = source
   const warnings: string[] = []
@@ -136,7 +211,24 @@ export function parseHeaderStories(
         headerStart + relativeStart,
         headerStart + relativeEnd,
       )
-      return mapStory(raw)
+      return mapStory(
+        raw,
+        headerStart + relativeStart,
+        formatter,
+        drawings
+          .filter((drawing) => drawing.cp >= relativeStart && drawing.cp < relativeEnd)
+          // header pictures never push body text: Word lays them out without wrapping
+          .map((drawing) => ({
+            ...drawing,
+            cp: drawing.cp - relativeStart,
+            wrap: 'none' as const,
+          })),
+        inlineImages
+          .filter((image) => image.cp >= relativeStart && image.cp < relativeEnd)
+          .map((image) => ({ ...image, cp: image.cp - relativeStart })),
+        // a later section's blank story is an unlinked, empty header; a zero-length one inherits
+        storyIndex >= SEPARATOR_STORIES + STORY_KEYS.length,
+      )
     } catch (error) {
       if (isLegacyDocError(error))
         badHdd(`header/footer story ${storyIndex} cannot be read: ${error.message}`)

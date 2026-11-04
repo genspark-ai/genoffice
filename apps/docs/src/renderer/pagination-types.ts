@@ -148,6 +148,12 @@ export interface BlockBox {
   /** BlockPlan.dropAtPageTop of a planned block: a natural page lead drops its
    *  space before (absent for plan-less blocks: the section rule decides) */
   dropAtPageTop?: boolean
+  /** BlockPlan.forcedLeadSpacePt (px): the space before an explicit break of
+   *  this block keeps at the page top */
+  forcedLeadSpacePx?: number
+  /** forcedLeadSpacePx folded into spaceBeforePx (foldForcedLeadSpaceBefore):
+   *  the margin the lead's DOM shows below the gap */
+  leadMtPx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
   /** auto-multiple extra leading of one line (px): a page's last line needs only

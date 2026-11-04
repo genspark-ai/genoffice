@@ -76,8 +76,11 @@ import {
   writeJsonAtomic,
   recoveryCopyDiskNewer,
   configuredAuthorName,
+  readLegacyImportSkip,
+  writeLegacyImportSkip,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
+import { fetchRemoteTable } from '@genoffice/electron-utils/remote-table'
 import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 
@@ -124,9 +127,16 @@ import {
 import { parseFileToText } from '@genoffice/file-parse'
 import type { CellEdit, SheetStructuralOps } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
+  readArchiveEntriesText,
   readArchiveEntryText,
   saveWorkbookViaSidecar,
+  type ArchiveClient,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
+import {
+  connectionSourceOf,
+  refreshableQueriesOf,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-connection-refresh'
+import type { PartReader } from '@genoffice/xlsx-gateway/gateway/xlsx-connections'
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 import { listWorkbookQueries } from '@genoffice/xlsx-gateway/gateway/xlsx-connections'
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
@@ -151,9 +161,17 @@ import {
   workbookFindCellsResultSchema,
   workbookRecalcRequestSchema,
   workbookRecalcResultSchema,
+  externalLinksRequestSchema,
+  externalLinksResultSchema,
+  externalLinksUpdateResultSchema,
+  externalLinkRevealRequestSchema,
   workbookMediaRequestSchema,
   workbookMediaResultSchema,
+  workbookConnectionsRequestSchema,
+  workbookConnectionsResultSchema,
   workbookPivotRequestSchema,
+  workbookRefreshRequestSchema,
+  workbookRefreshResultSchema,
   workbookRedactionsRequestSchema,
   workbookRedactionsResultSchema,
   workbookQueriesRequestSchema,
@@ -213,6 +231,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice 只编辑 .xlsx，不编辑 ODF。数值、公式和日期会被转换过来（公式改写为 Excel 语法，无法安全改写的只保留它的当前结果）；图片、合并单元格和列宽行高会一并带过来；边框等样式和图表不会保留。原文件不会被修改，转换出的副本首次保存时另存为 .xlsx。', // public-hygiene: allow
     odsImportConvertBtn: '转换并打开',
+    importSkipConfirm: '下次直接转换，不再提示',
     dlgAddAttachment: '添加附件',
     filterSupported: '支持的文件',
     filterAll: '所有文件',
@@ -276,6 +295,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice edits .xlsx, not ODF. Values, formulas and dates carry over (formulas are rewritten into Excel syntax, and any that cannot be rewritten safely keeps its current result). Pictures, merged cells, column widths and row heights come along too; other styling such as borders, and charts, are not carried over. The original file is never changed; the converted copy saves as .xlsx the first time you save.',
     odsImportConvertBtn: 'Convert and open',
+    importSkipConfirm: 'Convert without asking next time',
     dlgAddAttachment: 'Add Attachments',
     filterSupported: 'Supported Files',
     filterAll: 'All Files',
@@ -344,6 +364,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice chỉnh sửa .xlsx chứ không chỉnh sửa ODF. Giá trị, công thức và ngày tháng sẽ được chuyển đổi (công thức viết lại theo cú pháp Excel, công thức không viết lại an toàn được sẽ giữ kết quả hiện tại). Hình ảnh, ô đã gộp, độ rộng cột và chiều cao hàng cũng được chuyển sang; các định dạng khác như đường viền, và biểu đồ, thì không. Tệp gốc không bao giờ bị sửa; bản sau chuyển đổi sẽ lưu thành .xlsx khi lưu lần đầu.',
     odsImportConvertBtn: 'Chuyển đổi và mở',
+    importSkipConfirm: 'Lần sau chuyển đổi ngay, không hỏi lại',
     dlgAddAttachment: 'Thêm tệp đính kèm',
     filterSupported: 'Các tệp được hỗ trợ',
     filterAll: 'Tất cả các tệp',
@@ -414,6 +435,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice ODF değil, .xlsx düzenler. Değerler, formüller ve tarihler aktarılır (formüller Excel söz dizimine yeniden yazılır; güvenle yeniden yazılamayanlar mevcut sonucunu korur). Resimler, birleştirilmiş hücreler, sütun genişlikleri ve satır yükseklikleri de aktarılır; kenarlıklar gibi diğer biçimlendirmeler ve grafikler aktarılmaz. Özgün dosya asla değiştirilmez; dönüştürülen kopya ilk kaydettiğinizde .xlsx olarak kaydedilir.',
     odsImportConvertBtn: 'Dönüştür ve aç',
+    importSkipConfirm: 'Bir dahaki sefere sormadan dönüştür',
     dlgAddAttachment: 'Ek Ekle',
     filterSupported: 'Desteklenen Dosyalar',
     filterAll: 'Tüm Dosyalar',
@@ -484,6 +506,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice は ODF ではなく .xlsx を編集します。値・数式・日付は変換されます（数式は Excel の構文に書き換えられ、安全に書き換えられないものは現在の値だけが残ります）。画像、結合セル、列の幅と行の高さも引き継がれますが、罫線などその他の書式とグラフは引き継がれません。元のファイルは変更されず、変換後のコピーは最初に保存する際 .xlsx として保存されます。',
     odsImportConvertBtn: '変換して開く',
+    importSkipConfirm: '次回から確認せずに変換する',
     dlgAddAttachment: '添付ファイルを追加',
     filterSupported: 'サポートされているファイル',
     filterAll: 'すべてのファイル',
@@ -555,6 +578,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice은 ODF가 아니라 .xlsx를 편집합니다. 값, 수식, 날짜는 변환됩니다(수식은 Excel 구문으로 다시 쓰이며, 안전하게 다시 쓸 수 없는 수식은 현재 값만 남습니다). 그림, 병합된 셀, 열 너비와 행 높이도 함께 옮겨지지만 테두리 등 그 밖의 서식과 차트는 옮겨지지 않습니다. 원본 파일은 변경되지 않으며, 변환된 사본은 처음 저장할 때 .xlsx로 저장됩니다.',
     odsImportConvertBtn: '변환 후 열기',
+    importSkipConfirm: '다음부터 묻지 않고 변환',
     dlgAddAttachment: '첨부 파일 추가',
     filterSupported: '지원되는 파일',
     filterAll: '모든 파일',
@@ -626,6 +650,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice modifie des .xlsx, pas de l’ODF. Les valeurs, les formules et les dates sont converties (les formules sont réécrites en syntaxe Excel ; celles qui ne peuvent pas l’être en sécurité gardent leur résultat actuel). Les images, les cellules fusionnées, les largeurs de colonne et les hauteurs de ligne sont également reprises ; les autres mises en forme, comme les bordures, et les graphiques ne le sont pas. Le fichier d’origine n’est jamais modifié ; la copie convertie s’enregistre en .xlsx lors du premier enregistrement.',
     odsImportConvertBtn: 'Convertir et ouvrir',
+    importSkipConfirm: 'La prochaine fois, convertir sans demander',
     dlgAddAttachment: 'Ajouter des pièces jointes',
     filterSupported: 'Fichiers pris en charge',
     filterAll: 'Tous les fichiers',
@@ -698,6 +723,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice bearbeitet .xlsx, nicht ODF. Werte, Formeln und Datumsangaben werden konvertiert (Formeln werden in Excel-Syntax umgeschrieben; was sich nicht sicher umschreiben lässt, behält seinen aktuellen Wert). Bilder, verbundene Zellen, Spaltenbreiten und Zeilenhöhen werden ebenfalls übernommen; andere Formatierungen wie Rahmen sowie Diagramme entfallen. Die Originaldatei bleibt unverändert; die konvertierte Kopie wird beim ersten Speichern als .xlsx angelegt.',
     odsImportConvertBtn: 'Konvertieren und öffnen',
+    importSkipConfirm: 'Nächstes Mal ohne Nachfrage konvertieren',
     dlgAddAttachment: 'Anlagen hinzufügen',
     filterSupported: 'Unterstützte Dateien',
     filterAll: 'Alle Dateien',
@@ -769,6 +795,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice edita .xlsx, no ODF. Los valores, las fórmulas y las fechas se convierten (las fórmulas se reescriben con sintaxis de Excel; las que no se pueden reescribir con seguridad conservan su resultado actual). Las imágenes, las celdas combinadas, el ancho de columna y el alto de fila también se conservan; otros formatos, como los bordes, y los gráficos no. El archivo original nunca se modifica; la copia convertida se guarda como .xlsx la primera vez que se guarda.',
     odsImportConvertBtn: 'Convertir y abrir',
+    importSkipConfirm: 'La próxima vez, convertir sin preguntar',
     dlgAddAttachment: 'Agregar datos adjuntos',
     filterSupported: 'Archivos compatibles',
     filterAll: 'Todos los archivos',
@@ -840,6 +867,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice แก้ไข .xlsx ไม่ใช่ ODF ค่า สูตร และวันที่จะถูกแปลง (สูตรเขียนใหม่เป็นไวยากรณ์ Excel และสูตรที่เขียนใหม่อย่างปลอดภัยไม่ได้จะคงค่าปัจจุบันไว้) รูปภาพ เซลล์ที่ผสาน ความกว้างคอลัมน์ และความสูงแถวจะถูกโอนมาด้วย ส่วนการจัดรูปแบบอื่น เช่น เส้นขอบ และแผนภูมิจะไม่ถูกโอนมา ไฟล์ต้นทางจะไม่ถูกแก้ไข และสำเนาที่แปลงแล้วจะบันทึกเป็น .xlsx ในการบันทึกครั้งแรก',
     odsImportConvertBtn: 'แปลงแล้วเปิด',
+    importSkipConfirm: 'ครั้งถัดไปแปลงทันทีโดยไม่ต้องถาม',
     dlgAddAttachment: 'เพิ่มสิ่งที่แนบ',
     filterSupported: 'ไฟล์ที่รองรับ',
     filterAll: 'ไฟล์ทั้งหมด',
@@ -910,6 +938,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice mengedit .xlsx, bukan ODF. Nilai, rumus, dan tanggal ikut terkonversi (rumus ditulis ulang ke sintaks Excel; rumus yang tidak bisa ditulis ulang dengan aman mempertahankan hasilnya). Gambar, sel gabungan, lebar kolom, dan tinggi baris juga ikut dibawa; gaya lain seperti garis tepi, serta grafik, tidak. File asli tidak pernah diubah; hasil konversi disimpan sebagai .xlsx saat penyimpanan pertama.',
     odsImportConvertBtn: 'Konversi dan buka',
+    importSkipConfirm: 'Lain kali langsung konversi tanpa bertanya',
     dlgAddAttachment: 'Tambahkan lampiran',
     filterSupported: 'File yang didukung',
     filterAll: 'Semua file',
@@ -978,6 +1007,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice редактирует .xlsx, а не ODF. Значения, формулы и даты переносятся (формулы переписываются в синтаксис Excel; те, что нельзя переписать безопасно, сохраняют текущий результат). Изображения, объединённые ячейки, ширина столбцов и высота строк тоже переносятся; прочее оформление, например границы, и диаграммы — нет. Исходный файл никогда не изменяется; преобразованная копия при первом сохранении записывается как .xlsx.',
     odsImportConvertBtn: 'Преобразовать и открыть',
+    importSkipConfirm: 'В следующий раз конвертировать без запроса',
     dlgAddAttachment: 'Добавить вложения',
     filterSupported: 'Поддерживаемые файлы',
     filterAll: 'Все файлы',
@@ -1048,6 +1078,7 @@ const tMain = createI18n({
     odsImportDetail:
       'يحرّر GenOffice ملفات ‎.xlsx ولا يحرّر ODF. تُحوَّل القيم والصيغ والتواريخ (تُعاد كتابة الصيغ بصيغة Excel، والصيغ التي لا يمكن إعادة كتابتها بأمان تحتفظ بنتيجتها الحالية). تُنقل أيضًا الصور والخلايا المدمجة وعرض الأعمدة وارتفاع الصفوف؛ أما التنسيقات الأخرى مثل الحدود، والرسوم البيانية، فلا تُنقل. لا يتغيّر الملف الأصلي أبدًا؛ والنسخة المحوّلة تُحفظ بصيغة ‎.xlsx عند أول حفظ.',
     odsImportConvertBtn: 'تحويل وفتح',
+    importSkipConfirm: 'في المرة القادمة، حوّل دون سؤال',
     dlgAddAttachment: 'إضافة مرفقات',
     filterSupported: 'الملفات المدعومة',
     filterAll: 'كل الملفات',
@@ -1115,6 +1146,7 @@ const tMain = createI18n({
     odsImportDetail:
       'O GenOffice edita .xlsx, não ODF. Valores, fórmulas e datas são convertidos (as fórmulas são reescritas na sintaxe do Excel; as que não podem ser reescritas com segurança mantêm o resultado atual). Imagens, células mescladas, largura de coluna e altura de linha também são mantidas; outras formatações, como bordas, e gráficos não são. O arquivo original nunca é alterado; a cópia convertida é salva como .xlsx no primeiro salvamento.',
     odsImportConvertBtn: 'Converter e abrir',
+    importSkipConfirm: 'Da próxima vez, converter sem perguntar',
     dlgAddAttachment: 'Adicionar Anexos',
     filterSupported: 'Arquivos Compatíveis',
     filterAll: 'Todos os Arquivos',
@@ -1185,6 +1217,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice modifica .xlsx, non ODF. Valori, formule e date vengono convertiti (le formule sono riscritte nella sintassi di Excel; quelle che non possono essere riscritte in sicurezza mantengono il risultato attuale). Immagini, celle unite, larghezza colonne e altezza righe vengono riportate; altre formattazioni, come i bordi, e i grafici no. Il file originale non viene mai modificato; la copia convertita si salva come .xlsx al primo salvataggio.',
     odsImportConvertBtn: 'Converti e apri',
+    importSkipConfirm: 'La prossima volta converti senza chiedere',
     dlgAddAttachment: 'Aggiungi allegati',
     filterSupported: 'File supportati',
     filterAll: 'Tutti i file',
@@ -1256,6 +1289,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice edytuje .xlsx, a nie ODF. Wartości, formuły i daty są konwertowane (formuły są przepisywane na składnię Excela; te, których nie można przepisać bezpiecznie, zachowują bieżący wynik). Obrazy, scalone komórki, szerokości kolumn i wysokości wierszy również są przenoszone; inne formatowanie, np. obramowania, oraz wykresy nie. Plik oryginalny nigdy nie jest zmieniany; skonwertowana kopia zapisuje się jako .xlsx przy pierwszym zapisaniu.',
     odsImportConvertBtn: 'Konwertuj i otwórz',
+    importSkipConfirm: 'Następnym razem konwertuj bez pytania',
     dlgAddAttachment: 'Dodaj załączniki',
     filterSupported: 'Obsługiwane pliki',
     filterAll: 'Wszystkie pliki',
@@ -1326,6 +1360,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice upravuje .xlsx, nikoli ODF. Hodnoty, vzorce a data se převedou (vzorce se přepíší do syntaxe Excelu; ty, které nelze přepsat bezpečně, ponechají si aktuální výsledek). Obrázky, sloučené buňky, šířky sloupců a výšky řádků se přenesou také; ostatní formátování, například ohraničení, a grafy se nepřenesou. Původní soubor se nikdy nemění; převedená kopie se při prvním uložení uloží jako .xlsx.',
     odsImportConvertBtn: 'Převést a otevřít',
+    importSkipConfirm: 'Příště převést bez ptaní',
     dlgAddAttachment: 'Přidat přílohy',
     filterSupported: 'Podporované soubory',
     filterAll: 'Všechny soubory',
@@ -1396,6 +1431,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice bewerkt .xlsx, niet ODF. Waarden, formules en datums worden geconverteerd (formules worden herschreven in Excel-syntaxis; formules die niet veilig herschreven kunnen worden houden hun huidige resultaat). Afbeeldingen, samengevoegde cellen, kolombreedtes en rijhoogten worden ook overgenomen; andere opmaak zoals randen, en diagrammen, niet. Het oorspronkelijke bestand wordt nooit gewijzigd; de geconverteerde kop slaat bij het eerste opslaan op als .xlsx.',
     odsImportConvertBtn: 'Converteren en openen',
+    importSkipConfirm: 'Volgende keer converteren zonder te vragen',
     dlgAddAttachment: 'Bijlagen toevoegen',
     filterSupported: 'Ondersteunde bestanden',
     filterAll: 'Alle bestanden',
@@ -1467,6 +1503,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice menyunting .xlsx, bukan ODF. Nilai, formula dan tarikh ditukar (formula ditulis semula dalam sintaks Excel; yang tidak dapat ditulis semula dengan selamat mengekalkan hasil semasanya). Gambar, sel bercantum, lebar lajur dan tinggi baris turut dibawa; gaya lain seperti sempadan, serta carta, tidak. Fail asal tidak pernah diubah; salinan yang ditukar disimpan sebagai .xlsx pada simpanan pertama.',
     odsImportConvertBtn: 'Tukar dan buka',
+    importSkipConfirm: 'Lain kali terus tukar tanpa bertanya',
     dlgAddAttachment: 'Tambah Lampiran',
     filterSupported: 'Fail yang Disokong',
     filterAll: 'Semua Fail',
@@ -1537,6 +1574,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice עורך קבצי .xlsx ולא ODF. ערכים, נוסחאות ותאריכים מומרים (נוסחאות נכתבות מחדש בתחביר Excel; כאלה שאי אפשר לכתוב מחדש בבטחה שומרות על התוצאה הנוכחית). תמונות, תאים ממוזגים, רוחב עמודות וגובה שורות עוברים גם הם; עיצוב אחר כגון גבולות, ותרשימים, לא עוברים. קובץ המקור לעולם אינו משתנה; העותק שהומר נשמר כקובץ .xlsx בשמירה הראשונה.',
     odsImportConvertBtn: 'המר ופתח',
+    importSkipConfirm: 'בפעם הבאה להמיר בלי לשאול',
     dlgAddAttachment: 'הוספת קבצים מצורפים',
     filterSupported: 'קבצים נתמכים',
     filterAll: 'כל הקבצים',
@@ -1602,6 +1640,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice .xlsx संपादित करता है, ODF नहीं। मान, सूत्र और तारीखें बदल दी जाती हैं (सूत्र Excel सिंटैक्स में फिर से लिखे जाते हैं; जिन्हें सुरक्षित रूप से नहीं लिखा जा सका वे अपना वर्तमान मान रखते हैं)। चित्र, मर्ज की गई सेल, कॉलम चौड़ाई और पंक्ति ऊँचाई भी साथ आती हैं; बॉर्डर जैसी अन्य स्टाइलिंग और चार्ट नहीं आते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई प्रति पहली बार सहेजते समय .xlsx के रूप में सहेजी जाती है।',
     odsImportConvertBtn: 'बदलकर खोलें',
+    importSkipConfirm: 'अगली बार बिना पूछे बदलें',
     dlgAddAttachment: 'अनुलग्नक जोड़ें',
     filterSupported: 'समर्थित फ़ाइलें',
     filterAll: 'सभी फ़ाइलें',
@@ -1672,6 +1711,7 @@ const tMain = createI18n({
     odsImportDetail:
       'GenOffice 只編輯 .xlsx，不編輯 ODF。數值、公式與日期會被轉換（公式改寫為 Excel 語法，無法安全改寫的僅保留其目前結果）；圖片、合併儲存格與欄寬列高會一併帶入；框線等其他樣式與圖表不會保留。原始檔案不會被修改，轉換後的複本第一次儲存時會另存為 .xlsx。', // public-hygiene: allow
     odsImportConvertBtn: '轉換並開啟',
+    importSkipConfirm: '下次直接轉換，不再提示',
     dlgAddAttachment: '新增附件',
     filterSupported: '支援的檔案',
     filterAll: '所有檔案',
@@ -1940,6 +1980,39 @@ function sessionFor(event: IpcMainInvokeEvent): SheetsTabSession {
 }
 
 /**
+ * Parts the connection walk reads: the connections part, the workbook and its
+ * relationships, sheet relationship parts, tables and query tables. Worksheet
+ * cell data is never read, so the prefetch stays small even for a big sheet.
+ */
+function isConnectionWalkPart(name: string): boolean {
+  return (
+    name === 'xl/connections.xml' ||
+    name === 'xl/workbook.xml' ||
+    name === 'xl/_rels/workbook.xml.rels' ||
+    name.startsWith('xl/tables/') ||
+    name.startsWith('xl/queryTables/') ||
+    /^xl\/worksheets\/_rels\/[^/]+\.rels$/.test(name)
+  )
+}
+
+/**
+ * A part reader over a session snapshot for the connection walk. The walk asks
+ * for parts by path, so every part it can ask for is fetched in one sidecar
+ * round trip; a part the manifest does not list reads as undefined.
+ */
+async function connectionPartReader(
+  client: ArchiveClient,
+  snapshotPath: string,
+): Promise<PartReader> {
+  const manifest = z
+    .object({ entries: z.array(z.object({ name: z.string() })) })
+    .parse(await client.archiveManifest(snapshotPath))
+  const wanted = manifest.entries.map((entry) => entry.name).filter(isConnectionWalkPart)
+  const texts = await readArchiveEntriesText(client, snapshotPath, wanted)
+  return async (path) => texts.get(path)
+}
+
+/**
  * Local media roots for a sheets renderer: the directories of the workbooks its
  * tab has open, plus the directory sheets stages pasted images in. A tab can
  * hold several workbook sessions, so every open one contributes its directory —
@@ -1975,10 +2048,7 @@ async function openFileDialog(event: IpcMainInvokeEvent, options: OpenDialogOpti
 async function saveFileDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
   // before any pick is remembered, bare-name suggestions anchor in the
   // configurable default save folder instead of Electron's Downloads pin
-  return showSaveDialogWithMemory(
-    dialog,
-    dialogParent(event),
-    options,
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options, () =>
     configuredDefaultSaveDir(app),
   )
 }
@@ -2185,6 +2255,7 @@ export function nudgeQueuedWorkbook(contents: WebContents): void {
 function userDataPath(...parts: string[]): string {
   return join(app.getPath('userData'), ...parts)
 }
+const APP_SETTINGS_PATH = () => join(app.getPath('userData'), 'app-settings.json')
 
 // ── Crash recovery ──────────────────────────────────────────
 // A dirty renderer asks for a recovery copy every 30s; it is written through the
@@ -3237,6 +3308,48 @@ export function registerSheetsIpc(): void {
       cached: z.boolean().optional(),
     })
     .strict()
+  // The external-links handlers are session-bound like the other workbook
+  // handlers: the renderer names a session, never a filesystem path, and main
+  // resolves the path the session was opened from.
+  ipcMain.handle(IPC_CHANNELS.listExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = externalLinksRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    const result = await entry.client.listExternalLinks({ path: session.path })
+    return externalLinksResultSchema.parse(result)
+  })
+  ipcMain.handle(IPC_CHANNELS.updateExternalLinks, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = externalLinksRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // The saved file is what the update must read: the panel saves before it
+    // asks, so the on-disk bytes match the grid the values are applied to.
+    const result = await entry.client.updateExternalLinks({ path: session.path })
+    return externalLinksUpdateResultSchema.parse(result)
+  })
+  // The preload sends this one (fire-and-forget): handle() would make the
+  // renderer's send() a no-op. The renderer names a link index of its session,
+  // never a path, so Locate resolves the source from the session's own listing.
+  ipcMain.on(IPC_CHANNELS.revealLinkSource, (event, input: unknown) => {
+    void (async () => {
+      const request = externalLinkRevealRequestSchema.safeParse(input)
+      const entry = sheetsTabs.get(event.sender.id)
+      if (!request.success || !entry) return
+      const session = entry.sessions.get(request.data.sessionId)
+      if (!session) return
+      try {
+        const listing = await entry.client.listExternalLinks({ path: session.path })
+        const source = listing.links.find((link) => link.index === request.data.index)?.source
+        // Reveal only real files: a missing source is a silent no-op.
+        if (source === null || source === undefined || !existsSync(source)) return
+        shell.showItemInFolder(source)
+      } catch {
+        // Locate is best-effort: a sidecar failure changes nothing on disk
+      }
+    })()
+  })
   ipcMain.handle(IPC_CHANNELS.recalcWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const request = workbookRecalcRequestSchema.parse(input)
@@ -3413,6 +3526,47 @@ export function registerSheetsIpc(): void {
       readArchiveEntryText(entry.client, session.snapshotPath, request.cachePath),
     ])
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
+  })
+
+  // The workbook's refreshable web queries: the walk follows both shapes Excel
+  // writes (a table part's relationship, or a legacy ExternalData_N name) and
+  // returns the sheet and range each query fills. Read from the session
+  // snapshot so the list matches what the renderer shows.
+  ipcMain.handle(IPC_CHANNELS.listWorkbookConnections, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookConnectionsRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    const read = await connectionPartReader(entry.client, session.snapshotPath)
+    return workbookConnectionsResultSchema.parse({ connections: await refreshableQueriesOf(read) })
+  })
+
+  // Refreshing a query: the renderer names only the connection id, and the URL
+  // is resolved from the workbook part here — this IPC is not a fetch proxy.
+  // The fetch still goes through the SSRF gate, because a workbook could name
+  // loopback, a cloud metadata endpoint or a UNC share.
+  ipcMain.handle(IPC_CHANNELS.refreshWorkbookConnection, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookRefreshRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // Only this part is needed, and a workbook without connections has no
+    // listed query to refresh: a missing part means "no such connection".
+    const connectionsXml = await readArchiveEntryText(
+      entry.client,
+      session.snapshotPath,
+      'xl/connections.xml',
+    ).catch(() => undefined)
+    const read: PartReader = async (path) =>
+      path === 'xl/connections.xml' ? connectionsXml : undefined
+    const source = await connectionSourceOf(read, request.connectionId)
+    if (!source) throw new Error('This workbook has no refreshable web query with that id.')
+    const table = await fetchRemoteTable(source)
+    if (!table) throw new Error('Could not read a table from that address.')
+    return workbookRefreshResultSchema.parse({
+      headers: [...table.headers],
+      rows: table.rows.map((row) => [...row]),
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.readWorkbookRedactions, async (event, input: unknown) => {
@@ -4946,6 +5100,7 @@ async function promptOdsImport(
   parent: BrowserWindow | undefined,
   extension: string,
 ): Promise<boolean> {
+  if (readLegacyImportSkip(APP_SETTINGS_PATH(), 'ods')) return true
   const options = {
     type: 'warning' as const,
     message: tm('odsImportMsg', { ext: extension }),
@@ -4954,11 +5109,20 @@ async function promptOdsImport(
     defaultId: 0,
     cancelId: 1,
     noLink: true,
+    checkboxLabel: tm('importSkipConfirm'),
   }
-  const { response } = parent
+  const { response, checkboxChecked } = parent
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options)
-  return response === 0
+  if (response !== 0) return false
+  if (checkboxChecked) {
+    try {
+      writeLegacyImportSkip(APP_SETTINGS_PATH(), 'ods', true)
+    } catch {
+      /* unwritable settings: ask again next time */
+    }
+  }
+  return true
 }
 
 /// .xls, .tsv and the ODF imports (.ods/.ots) open as a converted copy in the temp dir; the session

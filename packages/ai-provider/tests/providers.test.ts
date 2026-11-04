@@ -118,6 +118,56 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds SiliconFlow with lab-namespaced ids and the CN endpoint base', () => {
+    const siliconflow = AI_PROVIDERS.find((provider) => provider.id === 'siliconflow')!
+    expect(siliconflow.models).toEqual([
+      'deepseek-ai/DeepSeek-V4.1-Flash',
+      'deepseek-ai/DeepSeek-V4-Pro',
+      'deepseek-ai/DeepSeek-V3.2',
+      'zai-org/GLM-5.3',
+      'zai-org/GLM-5.3-Flash',
+      'moonshotai/Kimi-K2.7-Code',
+      'Qwen/Qwen3.8-27B',
+    ])
+    expect(siliconflow.defaultModel).toBe('deepseek-ai/DeepSeek-V4-Pro')
+    expect(siliconflow.models).toContain(siliconflow.defaultModel)
+    expect(siliconflow.needsBaseUrl).toBeUndefined()
+    expect(siliconflow.keyPlaceholder).toBe('sk-...')
+  })
+
+  it('seeds PPIO with lowercase namespaced ids', () => {
+    const ppio = AI_PROVIDERS.find((provider) => provider.id === 'ppio')!
+    expect(ppio.models).toEqual([
+      'deepseek/deepseek-v4.1-flash',
+      'deepseek/deepseek-v4-pro',
+      'moonshotai/kimi-k3',
+      'zai-org/glm-5.3',
+      'qwen/qwen3.8-max',
+      'minimax/minimax-m3.1-flash',
+    ])
+    expect(ppio.defaultModel).toBe('deepseek/deepseek-v4.1-flash')
+    expect(ppio.models).toContain(ppio.defaultModel)
+    expect(ppio.needsBaseUrl).toBeUndefined()
+    expect(ppio.keyPlaceholder).toBe('sk-...')
+    for (const model of ppio.models) {
+      expect(model).toBe(model.toLowerCase())
+    }
+  })
+
+  it('seeds Command Code with vendor-prefixed ids and no Claude/GPT/Grok in the list', () => {
+    const cc = AI_PROVIDERS.find((provider) => provider.id === 'commandcode')!
+    expect(cc.label).toBe('Command Code')
+    expect(cc.defaultModel).toBe('zai-org/GLM-5.3')
+    expect(cc.models).toContain(cc.defaultModel)
+    expect(cc.needsBaseUrl).toBeUndefined()
+    for (const model of cc.models) {
+      // the CLI model reference spells every listed open-weight / Gemini id lab-prefixed
+      expect(model).toMatch(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/)
+      // Claude rides a different route; GPT/Grok need the Responses API for tools
+      expect(model).not.toMatch(/(^|\/)(claude-|gpt-|grok-)/)
+      }
+    })
+
   it('seeds cheapaimodel with bare model ids (no vendor prefix)', () => {
     const cheapaimodel = AI_PROVIDERS.find((provider) => provider.id === 'cheapaimodel')!
     expect(cheapaimodel.models).toEqual([

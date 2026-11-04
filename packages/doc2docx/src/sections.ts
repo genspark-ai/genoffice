@@ -16,7 +16,7 @@
  */
 import { LegacyDocError, isLegacyDocError } from './errors'
 import type { FibInfo } from './fib'
-import { iterateSprms, readSprmU16, readSprmU8 } from './sprm'
+import { iterateSprms, readSprmU16, readSprmU32, readSprmU8 } from './sprm'
 
 export interface SectionMargins {
   left: number
@@ -28,6 +28,8 @@ export interface SectionMargins {
   gutter: number
 }
 
+export type SectionBreakType = 'continuous' | 'column' | 'nextPage' | 'evenPage' | 'oddPage'
+
 export interface SectionInfo {
   /** first CP of the section in the document text (main text CPs) */
   startCp: number
@@ -38,8 +40,16 @@ export interface SectionInfo {
   margins: SectionMargins
   orientation: 'portrait' | 'landscape'
   titlePage: boolean
+  /** sprmSBkc: how the section starts (w:type); absent = nextPage */
+  breakType?: SectionBreakType
   /** column count when the SEPX declares columns (only 1 is written) */
   columns?: number
+  /** document grid (sprmSClm / sprmSDyaLinePitch / sprmSDxtCharSpace); no type = pitch kept, no snapping */
+  docGrid?: {
+    type?: 'lines' | 'linesAndChars' | 'snapToChars'
+    linePitchTwips: number
+    charSpace?: number
+  }
   /** non-fatal problems, e.g. multi-column sections that are flattened */
   warnings: string[]
 }
@@ -87,6 +97,7 @@ function u32(bytes: Uint8Array, offset: number): number {
 }
 
 /** section sprm operations (opcode & 0x1FF), MS-DOC 2.6.1 / POI SectionSprmUncompressor */
+const SPRM_S_BKC = 0x09
 const SPRM_S_FTITLE_PAGE = 0x0a
 const SPRM_S_CCOL_M1 = 0x0b
 const SPRM_S_DXA_COLUMNS = 0x0c
@@ -101,6 +112,21 @@ const SPRM_S_DXA_RIGHT = 0x22
 const SPRM_S_DYA_TOP = 0x23
 const SPRM_S_DYA_BOTTOM = 0x24
 const SPRM_S_DZA_GUTTER = 0x25
+const SPRM_S_DXT_CHAR_SPACE = 0x30
+const SPRM_S_DYA_LINE_PITCH = 0x31
+const SPRM_S_CLM = 0x32
+const BREAK_TYPES: Record<number, SectionBreakType> = {
+  0: 'continuous',
+  1: 'column',
+  2: 'nextPage',
+  3: 'evenPage',
+  4: 'oddPage',
+}
+const GRID_TYPES: Record<number, 'lines' | 'linesAndChars' | 'snapToChars'> = {
+  1: 'linesAndChars',
+  2: 'lines',
+  3: 'snapToChars',
+}
 
 /** boolean sprm operand: 0 = off, 1 = on, 0x80 = inherit, 0x81 = invert */
 function applyBoolean(
@@ -125,6 +151,10 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
       badSection(`the SEPX of section ${sectionIndex} is invalid: ${error.message}`)
     throw error
   }
+  // SEPX sprms come in ispmd order (char space, line pitch, then clm): assemble the grid after the walk
+  let gridType: 'lines' | 'linesAndChars' | 'snapToChars' | null | undefined
+  let linePitch: number | undefined
+  let charSpace: number | undefined
   for (const sprm of sprms) {
     const operation = sprm.opcode & 0x1ff
     const byte = readSprmU8(sprm.operand)
@@ -156,6 +186,9 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
         break
       case SPRM_S_DZA_GUTTER:
         if (word !== undefined) draft.margins.gutter = word
+        break
+      case SPRM_S_BKC:
+        if (byte !== undefined && BREAK_TYPES[byte]) draft.breakType = BREAK_TYPES[byte]
         break
       case SPRM_S_FTITLE_PAGE:
         if (byte !== undefined)
@@ -190,11 +223,29 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
       case SPRM_S_NFC_PGN:
         // page number format is not written yet; the default (decimal) is kept
         break
+      case SPRM_S_CLM:
+        if (word !== undefined) gridType = GRID_TYPES[word] ?? null
+        break
+      case SPRM_S_DYA_LINE_PITCH:
+        if (word !== undefined) linePitch = word
+        break
+      case SPRM_S_DXT_CHAR_SPACE: {
+        const value = readSprmU32(sprm.operand)
+        if (value !== undefined) charSpace = value | 0
+        break
+      }
       default:
         // unknown/unsupported section sprm: skipped by the operand-size rule
         break
     }
   }
+  if (gridType || linePitch !== undefined) {
+    draft.docGrid = {
+      ...(gridType ? { type: gridType } : {}),
+      linePitchTwips: linePitch ?? 0,
+      ...(charSpace && gridType && gridType !== 'lines' ? { charSpace } : {}),
+    }
+  } else delete draft.docGrid
   return warnings
 }
 
@@ -202,6 +253,17 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
  * Parse the PlcfSed section table and each section's SEPX. Returns [] when the
  * document carries no section table (the writer then keeps the template sectPr).
  */
+/** The end CPs of every section but the last (the section marks), or [] when the table is unusable. */
+export function sectionMarkCps(fib: FibInfo, table: Uint8Array): number[] {
+  const lcb = fib.lcbPlcfsed
+  if (lcb < PLCFSED_HEADER_BYTES + PLCFSED_ENTRY_BYTES || (lcb - 4) % 16 !== 0) return []
+  if (fib.fcPlcfsed > table.length || lcb > table.length - fib.fcPlcfsed) return []
+  const count = (lcb - 4) / 16
+  const cps: number[] = []
+  for (let index = 1; index < count; index++) cps.push(u32(table, fib.fcPlcfsed + index * 4))
+  return cps.filter((cp) => cp <= fib.ccpText)
+}
+
 export function parseSections(source: SectionSource): SectionInfo[] {
   const { fib, wordDocument, table } = source
   const lcb = fib.lcbPlcfsed

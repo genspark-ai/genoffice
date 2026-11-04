@@ -44,6 +44,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice 只编辑 .pptx，不编辑 ODF。每页会变成一张幻灯片，文字框和图片按原位置摆放；母版、占位符版式、表格和图形样式不会保留。原文件不会被修改，转换出的 .pptx 是一份独立副本，之后的保存都写入它。',
     odpImportConvertBtn: '转换并打开',
+    importSkipConfirm: '下次直接转换，不再提示',
     odpImportFailedTitle: '无法转换 .odp',
     odpImportFailedBody: '文件可能已损坏或不是有效的 ODF 演示文稿。',
     legacyPptBody:
@@ -163,6 +164,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice edits .pptx, not ODF. Each page becomes a slide with its text boxes and pictures placed at their original positions; masters, placeholder layouts, tables and shape styling are not preserved. The original file is never changed; the converted .pptx is a separate copy that later saves write to.',
     odpImportConvertBtn: 'Convert and open',
+    importSkipConfirm: 'Convert without asking next time',
     odpImportFailedTitle: 'Cannot convert this .odp',
     odpImportFailedBody: 'The file may be damaged or not a valid ODF presentation.',
     legacyPptBody:
@@ -283,6 +285,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice chỉnh sửa .pptx chứ không chỉnh sửa ODF. Mỗi trang trở thành một slide với hộp văn bản và hình ảnh đặt đúng vị trí gốc; mẫu trình chiếu, bố cục giữ chỗ, bảng và kiểu hình khối không được giữ lại. Tệp gốc không bao giờ bị sửa; bản .pptx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
     odpImportConvertBtn: 'Chuyển đổi và mở',
+    importSkipConfirm: 'Lần sau chuyển đổi ngay, không hỏi lại',
     odpImportFailedTitle: 'Không thể chuyển đổi .odp này',
     odpImportFailedBody: 'Tệp có thể bị hỏng hoặc không phải bản trình bày ODF hợp lệ.',
     legacyPptBody:
@@ -408,6 +411,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice ODF değil .pptx düzenler. Her sayfa, metin kutuları ve resimleri özgün konumlarına yerleştirilmiş bir slayt olur; asıl slaytlar, yer tutucu düzenleri, tablolar ve şekil stilleri korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .pptx, sonraki kayıtların yazıldığı ayrı bir kopyadır.',
     odpImportConvertBtn: 'Dönüştür ve aç',
+    importSkipConfirm: 'Bir dahaki sefere sormadan dönüştür',
     odpImportFailedTitle: 'Bu .odp dönüştürülemiyor',
     odpImportFailedBody: 'Dosya hasarlı olabilir veya geçerli bir ODF sunusu olmayabilir.',
     legacyPptBody:
@@ -527,6 +531,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice は ODF ではなく .pptx を編集します。各ページがスライドになり、テキストボックスと画像は元の位置に配置されます。マスター・プレースホルダーレイアウト・表・図形スタイルは保持されません。元のファイルは変更されず、変換後の .pptx は独立したコピーとして以後の保存先になります。',
     odpImportConvertBtn: '変換して開く',
+    importSkipConfirm: '次回から確認せずに変換する',
     odpImportFailedTitle: 'この .odp を変換できません',
     odpImportFailedBody:
       'ファイルが破損しているか、有効な ODF プレゼンテーションではない可能性があります。',
@@ -653,6 +658,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice은 ODF가 아니라 .pptx를 편집합니다. 각 페이지가 슬라이드가 되고 텍스트 상자와 이미지는 원래 위치에 배치됩니다. 마스터, 자리 표시자 레이아웃, 표, 도형 스타일은 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .pptx는 이후 저장이 기록되는 독립적인 사본입니다.',
     odpImportConvertBtn: '변환 후 열기',
+    importSkipConfirm: '다음부터 묻지 않고 변환',
     odpImportFailedTitle: '이 .odp을 변환할 수 없습니다',
     odpImportFailedBody: '파일이 손상되었거나 유효한 ODF 프레젠테이션이 아닐 수 있습니다.',
     legacyPptBody:
@@ -775,6 +781,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice modifie des .pptx, pas de l’ODF. Chaque page devient une diapositive, avec les zones de texte et les images à leur position d’origine ; les masques, les dispositions d’espaces réservés, les tableaux et les styles de formes ne sont pas conservés. Le fichier d’origine n’est jamais modifié ; le .pptx converti est une copie distincte où s’effectuent les enregistrements suivants.',
     odpImportConvertBtn: 'Convertir et ouvrir',
+    importSkipConfirm: 'La prochaine fois, convertir sans demander',
     odpImportFailedTitle: 'Impossible de convertir ce .odp',
     odpImportFailedBody:
       'Le fichier est peut-être endommagé ou n’est pas une présentation ODF valide.',
@@ -903,6 +910,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice bearbeitet .pptx, nicht ODF. Jede Seite wird eine Folie, mit Textfeldern und Bildern an ihren ursprünglichen Positionen; Masters, Platzhalterlayouts, Tabellen und Formatstile werden nicht übernommen. Die Originaldatei bleibt unverändert; die konvertierte .pptx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
     odpImportConvertBtn: 'Konvertieren und öffnen',
+    importSkipConfirm: 'Nächstes Mal ohne Nachfrage konvertieren',
     odpImportFailedTitle: 'Diese .odp-Datei kann nicht konvertiert werden',
     odpImportFailedBody:
       'Die Datei ist möglicherweise beschädigt oder keine gültige ODF-Präsentation.',
@@ -1030,6 +1038,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice edita .pptx, no ODF. Cada página se convierte en una diapositiva, con los cuadros de texto y las imágenes en su posición original; los patrones, los diseños de marcadores de posición, las tablas y los estilos de forma no se conservan. El archivo original nunca se modifica; el .pptx convertido es una copia independiente en la que se guardan los cambios posteriores.',
     odpImportConvertBtn: 'Convertir y abrir',
+    importSkipConfirm: 'La próxima vez, convertir sin preguntar',
     odpImportFailedTitle: 'No se puede convertir este .odp',
     odpImportFailedBody: 'El archivo puede estar dañado o no ser una presentación ODF válida.',
     legacyPptBody:
@@ -1155,6 +1164,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice แก้ไข .pptx ไม่ใช่ ODF แต่ละหน้าจะกลายเป็นสไลด์ โดยกล่องข้อความและรูปภาพจะอยู่ตำแหน่งเดิม ส่วนต้นแบบ เลย์เอาต์ตัวยึด ตาราง และสไตล์รูปทรงจะไม่ถูกเก็บไว้ ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .pptx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
     odpImportConvertBtn: 'แปลงแล้วเปิด',
+    importSkipConfirm: 'ครั้งถัดไปแปลงทันทีโดยไม่ต้องถาม',
     odpImportFailedTitle: 'ไม่สามารถแปลงไฟล์ .odp นี้ได้',
     odpImportFailedBody: 'ไฟล์อาจเสียหายหรือไม่ใช่งานนำเสนอ ODF ที่ถูกต้อง',
     legacyPptBody:
@@ -1276,6 +1286,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice mengedit .pptx, bukan ODF. Setiap halaman menjadi satu salindia dengan kotak teks dan gambar pada posisi aslinya; master, tata letak placeholder, tabel, dan gaya bentuk tidak dipertahankan. File asli tidak pernah diubah; salinan .pptx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
     odpImportConvertBtn: 'Konversi dan buka',
+    importSkipConfirm: 'Lain kali langsung konversi tanpa bertanya',
     odpImportFailedTitle: 'Tidak dapat mengonversi .odp ini',
     odpImportFailedBody: 'File mungkin rusak atau bukan presentasi ODF yang valid.',
     legacyPptBody:
@@ -1400,6 +1411,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice редактирует .pptx, а не ODF. Каждая страница становится слайдом, текстовые поля и изображения располагаются на исходных местах; образцы, макеты заполнителей, таблицы и стили фигур не сохраняются. Исходный файл никогда не изменяется; преобразованный .pptx — отдельная копия, в которую записывается дальнейшее сохранение.',
     odpImportConvertBtn: 'Преобразовать и открыть',
+    importSkipConfirm: 'В следующий раз конвертировать без запроса',
     odpImportFailedTitle: 'Не удалось преобразовать этот .odp',
     odpImportFailedBody: 'Возможно, файл повреждён или не является допустимой презентацией ODF.',
     legacyPptBody:
@@ -1525,6 +1537,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'يحرّر GenOffice ملفات ‎.pptx ولا يحرّر ODF. تصبح كل صفحة شريحة، مع مربعات النصوص والصور في مواضعها الأصلية؛ أما الشرائح الرئيسية وتخطيطات العناصر النائبة والجداول وأنماط الأشكال فلا تُحفظ. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.pptx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
     odpImportConvertBtn: 'تحويل وفتح',
+    importSkipConfirm: 'في المرة القادمة، حوّل دون سؤال',
     odpImportFailedTitle: 'تعذّر تحويل هذا الملف ‎.odp',
     odpImportFailedBody: 'قد يكون الملف تالفًا أو ليس عرضًا تقديميًا بصيغة ODF صالحًا.',
     legacyPptBody:
@@ -1646,6 +1659,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'O GenOffice edita .pptx, não ODF. Cada página torna-se um slide, com caixas de texto e imagens nas posições originais; mestres, layouts de espaços reservados, tabelas e estilos de formas não são preservados. O arquivo original nunca é alterado; o .pptx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
     odpImportConvertBtn: 'Converter e abrir',
+    importSkipConfirm: 'Da próxima vez, converter sem perguntar',
     odpImportFailedTitle: 'Não foi possível converter este .odp',
     odpImportFailedBody: 'O arquivo pode estar danificado ou não é uma apresentação ODF válida.',
     legacyPptBody:
@@ -1771,6 +1785,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice modifica .pptx, non ODF. Ogni pagina diventa una diapositiva, con caselle di testo e immagini nelle posizioni originali; schemi, layout dei segnaposto, tabelle e stili delle forme non sono conservati. Il file originale non viene mai modificato; il .pptx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
     odpImportConvertBtn: 'Converti e apri',
+    importSkipConfirm: 'La prossima volta converti senza chiedere',
     odpImportFailedTitle: 'Impossibile convertire questo .odp',
     odpImportFailedBody:
       'Il file potrebbe essere danneggiato o non essere una presentazione ODF valida.',
@@ -1899,6 +1914,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice edytuje .pptx, a nie ODF. Każda strona staje się slajdem, a pola tekstowe i obrazy trafiają na swoje pierwotne pozycje; wzorce, układy symboli zastępczych, tabele i style kształtów nie są zachowywane. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .pptx to niezależna kopia, do której trafiają kolejne zapisy.',
     odpImportConvertBtn: 'Konwertuj i otwórz',
+    importSkipConfirm: 'Następnym razem konwertuj bez pytania',
     odpImportFailedTitle: 'Nie można skonwertować tego pliku .odp',
     odpImportFailedBody: 'Plik może być uszkodzony lub nie jest prawidłową prezentacją ODF.',
     legacyPptBody:
@@ -2024,6 +2040,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice upravuje .pptx, nikoli ODF. Každá stránka se stane snímkem, textová pole a obrázky zůstanou na původních pozicích; předlohy, rozložení zástupných symbolů, tabulky a styly tvarů se nepřevezmou. Původní soubor se nikdy nemění; převedený .pptx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
     odpImportConvertBtn: 'Převést a otevřít',
+    importSkipConfirm: 'Příště převést bez ptaní',
     odpImportFailedTitle: 'Tento soubor .odp nelze převést',
     odpImportFailedBody: 'Soubor může být poškozený nebo to není platná prezentace ODF.',
     legacyPptBody:
@@ -2147,6 +2164,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice bewerkt .pptx, niet ODF. Elke pagina wordt een dia, met tekstvakken en afbeeldingen op hun oorspronkelijke positie; modellen, plaatsaanduidingslay-outs, tabellen en vormstijlen worden niet overgenomen. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .pptx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
     odpImportConvertBtn: 'Converteren en openen',
+    importSkipConfirm: 'Volgende keer converteren zonder te vragen',
     odpImportFailedTitle: 'Deze .odp kan niet worden omgezet',
     odpImportFailedBody: 'Het bestand is mogelijk beschadigd of geen geldige ODF-presentatie.',
     legacyPptBody:
@@ -2272,6 +2290,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice menyunting .pptx, bukan ODF. Setiap halaman menjadi satu slaid, dengan kotak teks dan imej pada kedudukan asalnya; induk, susun atur pemegang tempat, jadual dan gaya bentuk tidak dikekalkan. Fail asal tidak pernah diubah; salinan .pptx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
     odpImportConvertBtn: 'Tukar dan buka',
+    importSkipConfirm: 'Lain kali terus tukar tanpa bertanya',
     odpImportFailedTitle: 'Tidak dapat menukar .odp ini',
     odpImportFailedBody: 'Fail mungkin rosak atau bukan pembentangan ODF yang sah.',
     legacyPptBody:
@@ -2395,6 +2414,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice עורך קבצי ‎.pptx ולא ODF. כל עמוד הופך לשקופית, עם תיבות הטקסט והתמונות במקומן המקורי; גבות, פריסות של מצייני מקום, טבלאות וסגנונות צורות אינם נשמרים. קובץ המקור לעולם אינו משתנה; קובץ ה‑.pptx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
     odpImportConvertBtn: 'המר ופתח',
+    importSkipConfirm: 'בפעם הבאה להמיר בלי לשאול',
     odpImportFailedTitle: 'לא ניתן להמיר את קובץ ה‑.odp הזה',
     odpImportFailedBody: 'ייתכן שהקובץ פגום או שאינו מצגת ODF תקינה.',
     legacyPptBody:
@@ -2514,6 +2534,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice .pptx संपादित करता है, ODF नहीं। हर पृष्ठ एक स्लाइड बन जाता है, टेक्स्ट बॉक्स और चित्र अपनी मूल स्थिति पर रखे जाते हैं; मास्टर, प्लेसहोल्डर लेआउट, तालिकाएँ और आकृति शैलियाँ नहीं रखी जातीं। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .pptx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
     odpImportConvertBtn: 'बदलकर खोलें',
+    importSkipConfirm: 'अगली बार बिना पूछे बदलें',
     odpImportFailedTitle: 'यह .odp बदला नहीं जा सका',
     odpImportFailedBody: 'फ़ाइल क्षतिग्रस्त हो सकती है या मान्य ODF प्रेजेंटेशन नहीं है।',
     legacyPptBody:
@@ -2635,6 +2656,7 @@ export const tMain = createI18n({
     odpImportDetail:
       'GenOffice 只編輯 .pptx，不編輯 ODF。每一頁會變成一張投影片，文字方塊與圖片按原始位置擺放；母片、預留位置版面、表格與圖形樣式不會保留。原始檔案不會被修改，轉換後的 .pptx 是獨立副本，之後的儲存都寫入它。',
     odpImportConvertBtn: '轉換並開啟',
+    importSkipConfirm: '下次直接轉換，不再提示',
     odpImportFailedTitle: '無法轉換這個 .odp',
     odpImportFailedBody: '檔案可能已損壞，或不是有效的 ODF 簡報。',
     legacyPptBody:

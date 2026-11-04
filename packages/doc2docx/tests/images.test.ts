@@ -9,13 +9,16 @@ import {
   openLegacyDoc,
   parseInlineImages,
   readLegacyDocBody,
+  readLegacyDocLayout,
 } from '../src/index'
 import {
   SYNTHETIC_TEXT_OFFSET,
   buildSyntheticDoc,
   encodeChpxFkp,
+  encodePapxFkp,
   encodePicf,
   encodePictureChpx,
+  encodeSprm,
 } from './helpers/synthetic-doc'
 
 function fixtureBytes(name: string): Uint8Array {
@@ -209,6 +212,20 @@ describe('synthetic pictures', () => {
     expect(contentTypes).toContain('<Default Extension="jpeg" ContentType="image/jpeg"/>')
   })
 
+  it('falls back to the raw JPEG when a blip-looking header does not decode', () => {
+    // 0xF01E (PNG blip) header claiming 4000 bytes, then the real JPEG payload
+    const fakeBlip = Uint8Array.from([0x00, 0x6e, 0x1e, 0xf0, 0xa0, 0x0f, 0x00, 0x00])
+    const payload = new Uint8Array([...fakeBlip, ...minimalJpeg()])
+    const data = encodePicf({ payload, xExt: 100, yExt: 100 })
+    const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }], data })
+    const body = readLegacyDocBody(docxBytes)
+    const imageBlock = body.blocks.find((block) => block.type === 'image')
+    expect(imageBlock?.type).toBe('image')
+    if (imageBlock?.type !== 'image') return
+    expect(imageBlock.image.mediaType).toBe('image/jpeg')
+    expect(body.warnings.some((warning) => warning.includes('omitted'))).toBe(false)
+  })
+
   it('warns instead of failing when the Data stream is missing', async () => {
     const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }] })
     const body = readLegacyDocBody(docxBytes)
@@ -289,7 +306,7 @@ describe('synthetic pictures', () => {
     expect((xml.match(/r:embed="rId\d+"/g) ?? []).length).toBe(2)
   })
 
-  it('warns when a picture sits inside a text paragraph or table cell', () => {
+  it('writes a picture that shares its paragraph with text as an inline run', async () => {
     const png = minimalPng()
     const data = encodePicf({ payload: png, xExt: 100, yExt: 100 })
     const docxBytes = syntheticImageDoc({
@@ -299,9 +316,13 @@ describe('synthetic pictures', () => {
     })
     const body = readLegacyDocBody(docxBytes)
     expect(body.blocks.some((block) => block.type === 'image')).toBe(false)
-    expect(
-      body.warnings.some((warning) => warning.includes('inside a table cell or a text paragraph')),
-    ).toBe(true)
+    const paragraph = body.blocks[0]!
+    if (paragraph.type !== 'paragraph') throw new Error('expected a paragraph')
+    expect(paragraph.pictures?.inline?.map((entry) => entry.position)).toEqual(['end'])
+    expect(body.warnings.some((warning) => warning.includes('omitted'))).toBe(false)
+    const { docx } = await convertLegacyDocToDocx(docxBytes)
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).toMatch(/<w:t[^>]*>AB<\/w:t><\/w:r><w:r><w:drawing><wp:inline/)
   })
 })
 
@@ -312,5 +333,74 @@ describe('image parse API', () => {
     expect(result.warnings).toEqual([])
     expect(result.images).toHaveLength(1)
     expect(result.images[0]!.cp).toBe(13)
+  })
+
+  it('keeps a header story that holds only an EMBED picture and writes it inline', async () => {
+    const png = minimalPng()
+    const body = 'Body text\r'
+    const header = '\u0013 EMBED Word.Picture.8  \u0014\u0001\u0015'
+    const cp = body.length + header.indexOf('\u0001')
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: body }],
+      headerStories: [undefined, header, undefined, undefined, undefined, undefined],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET + cp * 2,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + cp * 2 + 2,
+            grpprl: encodePictureChpx(0),
+          },
+        ]),
+      ],
+      dataStream: encodePicf({ payload: png, dxaGoal: 2028, dyaGoal: 1176, mx: 1000, my: 1000 }),
+    })
+    const layout = readLegacyDocLayout(bytes)
+    const story = layout.headerFooter[0]!.oddHeader!
+    expect(story.paragraphs).toEqual([''])
+    expect(story.images?.get(0)).toMatchObject([{ position: 'start' }])
+    expect(readLegacyDocBody(bytes).blocks.some((block) => block.type === 'image')).toBe(false)
+    const { docx, warnings } = await convertLegacyDocToDocx(bytes)
+    expect(warnings).toEqual([])
+    const headerXml = (await zipText(docx, 'word/header1.xml'))!
+    expect(headerXml).toContain('<wp:inline')
+    expect(headerXml).toContain('<wp:extent cx="1287780" cy="746760"/>')
+    expect(await zipText(docx, 'word/_rels/header1.xml.rels')).toMatch(
+      /Target="media\/image1\.png"/,
+    )
+    await expect(parseDocx(docx)).resolves.toBeDefined()
+  })
+
+  it('keeps the paragraph properties of a picture-only paragraph', async () => {
+    const png = minimalPng()
+    const text = 'Title\r\u0001\rBody\r'
+    const cp = 6
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET + cp * 2,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + cp * 2 + 2,
+            grpprl: encodePictureChpx(0),
+          },
+        ]),
+      ],
+      papxFkpPages: [
+        encodePapxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET + cp * 2,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + (cp + 2) * 2,
+            grpprl: encodeSprm(0x2403, [1]),
+          },
+        ]),
+      ],
+      dataStream: encodePicf({ payload: png, xExt: 1440, yExt: 720 }),
+    })
+    const block = readLegacyDocBody(bytes).blocks.find((entry) => entry.type === 'image')
+    if (!block || block.type !== 'image') throw new Error('expected an image block')
+    expect(block.paragraph?.formatting.alignment).toBe('center')
+    const { docx } = await convertLegacyDocToDocx(bytes)
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).toMatch(/<w:p><w:pPr><w:jc w:val="center"\/>.*?<\/w:pPr><w:r><w:drawing>/)
   })
 })

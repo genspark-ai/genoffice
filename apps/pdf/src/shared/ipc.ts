@@ -7,6 +7,7 @@ export type { PrintDuplex, PrintJobOptions, PrinterInfo }
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
+  readFileChunk: 'pdf:read-file-chunk',
   decryptPdf: 'pdf:decrypt',
   save: 'pdf:save',
   pickAttachmentFile: 'pdf:pick-attachment-file',
@@ -57,6 +58,7 @@ export const PDF_CHANNELS = {
   saveAsFlow: 'pdf:save-as-flow',
   printRequest: 'pdf:print-request',
   print: 'pdf:print',
+  printFile: 'pdf:print-file',
   printers: 'pdf:printers',
   fileRenamed: 'pdf:file-renamed',
   getLanguage: 'app:get-language',
@@ -1024,6 +1026,14 @@ export interface PdfApi {
   openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
+  /** one slice of a granted file, with the file's size so the reader loop
+   *  needs no separate stat: a 42 MB one-shot ArrayBuffer over IPC has
+   *  killed renderers before first paint on Windows (genoffice#2366) */
+  readFileChunk(
+    path: string,
+    start: number,
+    end: number,
+  ): Promise<{ data: Uint8Array; fileSize: number }>
   /** Open a password-protected document for editing: plain bytes, the /P the file
       carried, whether a password was needed at all (false: owner-only file) and
       which password opened it (the owner's ignores the /P limits) */
@@ -1188,6 +1198,11 @@ export interface PdfApi {
   /** print this window's print stylesheet output on a named printer ('' = OS default)
    *  without the system dialog; ok=false without error = canceled */
   print(job: PrintJobOptions): Promise<{ ok: boolean; error?: string }>
+  /** macOS CUPS route: spool the flushed file itself through lp — the vector
+   *  original reaches the driver untouched (no rasterization pass). pages are
+   *  1-based file pages; undefined = the whole document. ok=false without
+   *  error = canceled (never happens on this route; both sides report). */
+  printFile(job: PrintJobOptions & { pages?: number[] }): Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */
   listPrinters(): Promise<PrinterInfo[]>
   /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */

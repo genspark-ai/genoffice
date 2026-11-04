@@ -12,7 +12,11 @@ import type { InkInfo, NewInkImage } from '@genoffice/docx-engine'
  * file in our editor restores live, erasable strokes.
  */
 
-export type InkTool = 'select' | 'pen' | 'highlighter' | 'eraser'
+export type InkPenKind = 'pen' | 'highlighter' | 'pencil'
+export type InkTool = 'select' | InkPenKind | 'eraser'
+
+export const isPenKind = (tool: InkTool): tool is InkPenKind =>
+  tool === 'pen' || tool === 'highlighter' || tool === 'pencil'
 
 export interface InkPoint {
   x: number
@@ -20,7 +24,7 @@ export interface InkPoint {
 }
 
 export interface InkStroke {
-  tool: 'pen' | 'highlighter'
+  tool: InkPenKind
   /** hex without '#' */
   color: string
   /** stroke width in px at 100% zoom */
@@ -79,7 +83,7 @@ export function decodeInkPayload(payload: string): InkStroke | null {
       return null
     }
     return {
-      tool: data.tool === 'highlighter' ? 'highlighter' : 'pen',
+      tool: data.tool === 'highlighter' || data.tool === 'pencil' ? data.tool : 'pen',
       color: typeof data.color === 'string' ? data.color : '000000',
       width: typeof data.width === 'number' && data.width > 0 ? data.width : 2,
       points: data.points.map(([x, y]) => ({ x, y })),
@@ -117,25 +121,22 @@ export interface InkBounds {
   h: number
 }
 
-/** bounding box of a stroke including its line width (+1px antialias margin) */
+/** bounding box of every rendered layer including line width (+1px antialias margin) */
 export function strokeBounds(stroke: InkStroke): InkBounds {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
-  for (const p of stroke.points) {
-    if (p.x < minX) minX = p.x
-    if (p.y < minY) minY = p.y
-    if (p.x > maxX) maxX = p.x
-    if (p.y > maxY) maxY = p.y
+  for (const layer of strokeLayers(stroke)) {
+    const pad = layer.width / 2 + 1
+    for (const p of layer.points) {
+      if (p.x - pad < minX) minX = p.x - pad
+      if (p.y - pad < minY) minY = p.y - pad
+      if (p.x + pad > maxX) maxX = p.x + pad
+      if (p.y + pad > maxY) maxY = p.y + pad
+    }
   }
-  const pad = stroke.width / 2 + 1
-  return {
-    x: minX - pad,
-    y: minY - pad,
-    w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2,
-  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
 /** distance from a point to the segment ab */
@@ -173,6 +174,60 @@ export function strokePathD(points: InkPoint[]): string {
 
 export const HIGHLIGHTER_ALPHA = 0.45
 
+/** one polyline of a rendered stroke; pencil strokes fan out into several */
+export interface InkLayer {
+  points: InkPoint[]
+  width: number
+  alpha: number
+}
+
+/**
+ * Jitter seed from the first point only: a live stroke grows by appending, so
+ * the grain already drawn must not move when more points arrive.
+ */
+function jitterSeed(points: InkPoint[], salt: number): number {
+  const p = points[0]
+  return (Math.round(p.x * 10) * 31 + Math.round(p.y * 10) * 7 + salt * 1013) | 0
+}
+
+function mulberry(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Pencil = a soft core line plus two thin grainy side lines wobbling across the
+ * path; the sum reads as graphite instead of a vector pen.
+ */
+export function strokeLayers(stroke: InkStroke): InkLayer[] {
+  if (stroke.tool === 'highlighter')
+    return [{ points: stroke.points, width: stroke.width, alpha: HIGHLIGHTER_ALPHA }]
+  if (stroke.tool === 'pen') return [{ points: stroke.points, width: stroke.width, alpha: 1 }]
+  const spread = stroke.width * 0.45
+  const side = (bias: number): InkPoint[] => {
+    const rand = mulberry(jitterSeed(stroke.points, bias))
+    return stroke.points.map((p, i) => {
+      const prev = stroke.points[Math.max(0, i - 1)]
+      const next = stroke.points[Math.min(stroke.points.length - 1, i + 1)]
+      const len = Math.hypot(next.x - prev.x, next.y - prev.y) || 1
+      const nx = -(next.y - prev.y) / len
+      const ny = (next.x - prev.x) / len
+      const d = (bias + (rand() - 0.5) * 0.8) * spread
+      return { x: p.x + nx * d, y: p.y + ny * d }
+    })
+  }
+  return [
+    { points: stroke.points, width: stroke.width * 0.75, alpha: 0.7 },
+    { points: side(1), width: stroke.width * 0.3, alpha: 0.4 },
+    { points: side(-1), width: stroke.width * 0.3, alpha: 0.4 },
+  ]
+}
+
 // ---- save-time rasterization ----
 
 /** raster output of one annotation: transparent PNG + placement */
@@ -195,16 +250,18 @@ export function rasterizeStroke(stroke: InkStroke): InkRaster {
   ctx.scale(scale, scale)
   ctx.translate(-bounds.x, -bounds.y)
   ctx.strokeStyle = `#${stroke.color}`
-  ctx.lineWidth = stroke.width
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  if (stroke.tool === 'highlighter') ctx.globalAlpha = HIGHLIGHTER_ALPHA
-  ctx.beginPath()
-  const pts = stroke.points
-  ctx.moveTo(pts[0].x, pts[0].y)
-  if (pts.length === 1) ctx.lineTo(pts[0].x + 0.01, pts[0].y)
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
-  ctx.stroke()
+  for (const layer of strokeLayers(stroke)) {
+    ctx.lineWidth = layer.width
+    ctx.globalAlpha = layer.alpha
+    ctx.beginPath()
+    const pts = layer.points
+    ctx.moveTo(pts[0].x, pts[0].y)
+    if (pts.length === 1) ctx.lineTo(pts[0].x + 0.01, pts[0].y)
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+    ctx.stroke()
+  }
   return {
     base64: canvas.toDataURL('image/png').split(',')[1],
     widthPx: Math.max(1, Math.ceil(bounds.w)),

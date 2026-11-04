@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Legacy Word 97-2003 import: parse .doc (OLE2/CFB + FIB/piece table) and rebuild it as .docx; staged as text foundation, then formatting, then styles/tables/images",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./compound": "./src/compound.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
