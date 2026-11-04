@@ -851,6 +851,11 @@ export function hfUsesLegacyHash(value: HeaderFooter): boolean {
   return !value.paras?.some(paraHasPageMark)
 }
 
+/** Word's page-number gallery: the area's content becomes a single paragraph holding the PAGE field */
+export function hfPageNumberOnly(align: 'left' | 'center' | 'right'): HeaderFooter {
+  return { text: PAGE_MARK, pageNumber: true, paras: [{ align, runs: [{ text: PAGE_MARK }] }] }
+}
+
 export function hfHasPageField(value: HeaderFooter | null | undefined): boolean {
   return Boolean(
     value &&

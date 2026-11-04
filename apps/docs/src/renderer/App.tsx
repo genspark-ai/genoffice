@@ -74,7 +74,6 @@ import {
   type WriteProtection,
   mergeFieldName,
   nextNoteId,
-  PAGE_MARK,
   placeholderText,
   type HeaderFooter,
   type HfPictureEdit,
@@ -297,6 +296,7 @@ import {
   bumpHfProbeFontEpoch,
   hfHasPageField,
   hfHasVisibleContent,
+  hfPageNumberOnly,
   hfWithoutPageMarks,
   hfStripGeom,
   makeGapHfEl,
@@ -6845,11 +6845,7 @@ export function App() {
         break
       case 'pageNumber':
         hfEditorRef.current?.exit()
-        commitHfAt(sectionOf(action.kind), action.kind, variant, {
-          text: PAGE_MARK,
-          pageNumber: true,
-          paras: [{ align: action.align, runs: [{ text: PAGE_MARK }] }],
-        })
+        commitHfAt(sectionOf(action.kind), action.kind, variant, hfPageNumberOnly(action.align))
         break
       case 'pageNumberHere':
         if (sub) insertHfField(sub, 'PAGE')
