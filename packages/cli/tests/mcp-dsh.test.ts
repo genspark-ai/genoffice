@@ -62,6 +62,19 @@ describe('the dsh Cordis patch shape', () => {
     expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('registered')
   })
 
+  it('an empty flow sequence (`[]`) is replaced by the insert block, comments kept', () => {
+    const file = join(dir, 'cordis-empty.yml')
+    writeFileSync(file, '# dsh patch\n[]\n')
+    expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('absent')
+    writeMcpEntry('dsh', file, LAUNCH)
+    const text = readFileSync(file, 'utf-8')
+    expect(text.startsWith('# dsh patch\n- insert:')).toBe(true)
+    expect(text).not.toContain('[]\n- insert')
+    expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('registered')
+    expect(removeMcpEntry('dsh', file)).toBe(true)
+    expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('absent')
+  })
+
   it('a genoffice launcher at another path is stale, a foreign command is occupied', () => {
     const file = join(dir, 'cordis-stale.yml')
     writeFileSync(
