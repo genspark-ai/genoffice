@@ -19,6 +19,8 @@ import {
   MINIMAX_BASE_URL,
   OPENAI_IMAGES_BASE_URL,
   getMediaProviderMeta,
+  STABILITY_BASE_URL,
+  BFL_BASE_URL,
 } from './media'
 import type { AiMediaProviderConfig, AiMediaProviderId, AiMediaProviderMeta } from './types'
 
@@ -679,7 +681,236 @@ async function analyzeMediaGemini(
   return text
 }
 
+// ── Microsoft Foundry MAI image API ─────────────────────────────────
+
+/** MAI wants pixel width/height (min 768 each); this grid stays within the
+ * tightest pixel cap (MAI-Image-2.5 models: 1,048,576 pixels) */
+const MAI_SIZES: Record<string, string> = {
+  '1:1': '1024x1024',
+  '16:9': '1344x768',
+  '3:2': '1152x768',
+  '4:3': '1152x864',
+  '9:16': '768x1344',
+  '2:3': '768x1152',
+  '3:4': '864x1152',
+}
+
+async function maiImageResult(label: string, resp: Response): Promise<MediaBlob> {
+  if (!resp.ok) return failFrom(label, resp)
+  const json = await readJson(label, resp)
+  const first = asRecord((json.data as unknown[] | undefined)?.[0])
+  if (typeof first.b64_json === 'string' && first.b64_json) return fromBase64(first.b64_json)
+  throw new Error(`${label} returned no image: ${JSON.stringify(json).slice(0, 200)}`)
+}
+
+async function generateImageMai(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  const base = trimSlash(config.baseUrl || '')
+  const size =
+    input.aspectRatio && input.aspectRatio !== 'auto' ? MAI_SIZES[input.aspectRatio] : undefined
+  const [width, height] = size ? size.split('x').map(Number) : []
+  const auth = { 'api-key': config.apiKey }
+  if (input.references?.length) {
+    // edits ride /mai/v1/images/edits: multipart with the reference images
+    // repeated in the `image` field, at most five per request
+    if (input.references.length > 5) {
+      throw new Error('MAI-Image accepts at most 5 reference images per edit')
+    }
+    const form = new FormData()
+    form.set('model', model)
+    form.set('prompt', input.prompt)
+    input.references.forEach((ref, i) => {
+      const ext = ref.mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
+      form.append(
+        'image',
+        new Blob([toArrayBuffer(ref.bytes)], { type: ref.mime }),
+        ref.name ?? `ref-${i}.${ext}`,
+      )
+    })
+    const resp = await aiFetch(`${base}/mai/v1/images/edits`, {
+      method: 'POST',
+      headers: auth,
+      body: form,
+      signal,
+    })
+    return maiImageResult('MAI image edit failed:', resp)
+  }
+  const resp = await aiFetch(`${base}/mai/v1/images/generations`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      prompt: input.prompt,
+      ...(width && height ? { width, height } : {}),
+    }),
+    signal,
+  })
+  return maiImageResult('MAI image generation failed:', resp)
+}
+
 // ── dispatch ────────────────────────────────────────────────────────
+
+/** Stability's generation endpoint per model id; sd3.5 ids pick the model inside /sd3 */
+function stabilityEndpointOf(model: string): { path: string; sd3Model?: string } {
+  switch (model) {
+    case 'stable-image-ultra':
+      return { path: 'ultra' }
+    case 'stable-image-core':
+      return { path: 'core' }
+    case 'sd3.5-large':
+    case 'sd3.5-large-turbo':
+    case 'sd3.5-medium':
+      return { path: 'sd3', sd3Model: model }
+  }
+  throw new Error(`Unknown Stability AI image model: ${model}`)
+}
+
+/** Stability serves these aspect ratios on the generate endpoints; anything else omits the field */
+const STABILITY_ASPECT_RATIOS = new Set(['1:1', '4:3', '3:4', '16:9', '9:16', '2:3', '3:2'])
+
+async function generateImageStability(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  if (input.references?.length) {
+    throw new Error(
+      'Stability AI cannot edit or reference images here; generate from the prompt alone or pick another image provider.',
+    )
+  }
+  const endpoint = stabilityEndpointOf(model)
+  const form = new FormData()
+  form.set('prompt', input.prompt)
+  form.set('output_format', 'png')
+  if (endpoint.sd3Model !== undefined) form.set('model', endpoint.sd3Model)
+  if (
+    input.aspectRatio &&
+    input.aspectRatio !== 'auto' &&
+    STABILITY_ASPECT_RATIOS.has(input.aspectRatio)
+  ) {
+    form.set('aspect_ratio', input.aspectRatio)
+  }
+  // Accept: image/* makes the API answer the rendered bytes directly instead of
+  // a base64 JSON envelope
+  const resp = await aiFetch(
+    `${trimSlash(config.baseUrl || STABILITY_BASE_URL)}/v2beta/stable-image/generate/${endpoint.path}`,
+    {
+      method: 'POST',
+      headers: { Accept: 'image/*', Authorization: `Bearer ${config.apiKey}` },
+      body: form,
+      signal,
+    },
+  )
+  if (!resp.ok) return failFrom('Stable Image generation failed:', resp)
+  const bytes = await readCapped(resp, 'Stable Image')
+  return { bytes, mime: sniffImageMime(bytes, resp.headers.get('content-type') ?? 'image/png') }
+}
+
+/** BFL serves one endpoint per model; the job is async and polled to a URL */
+function bflPollSleep(guard: AbortSignal, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    guard.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        reject(new Error('FLUX generation timed out or was cancelled'))
+      },
+      { once: true },
+    )
+  })
+}
+
+/** FLUX.2 Pro / FLUX 1.1 take width/height (256..1440, multiples of 32),
+ *  not aspect_ratio; map the UI ratio onto a 1024-long box. */
+function bflDimensions(aspectRatio: string): { width: number; height: number } | null {
+  const match = /^(\d+):(\d+)$/.exec(aspectRatio)
+  if (!match) return null
+  const ratioW = Number(match[1])
+  const ratioH = Number(match[2])
+  if (!(ratioW > 0) || !(ratioH > 0)) return null
+  const long = 1024
+  const round32 = (n: number): number => Math.max(256, Math.round(n / 32) * 32)
+  return ratioW >= ratioH
+    ? { width: long, height: round32((long * ratioH) / ratioW) }
+    : { width: round32((long * ratioW) / ratioH), height: long }
+}
+
+async function generateImageBfl(
+  config: AiMediaProviderConfig,
+  model: string,
+  input: GenerateImageInput,
+  signal: AbortSignal,
+): Promise<MediaBlob> {
+  if (input.references?.length) {
+    throw new Error(
+      'FLUX cannot edit or reference images here; generate from the prompt alone or pick another image provider.',
+    )
+  }
+  const base = trimSlash(config.baseUrl || BFL_BASE_URL)
+  const headers = {
+    'x-key': config.apiKey,
+    'Content-Type': 'application/json',
+    accept: 'application/json',
+  }
+  const body: Record<string, unknown> = { prompt: input.prompt }
+  if (input.aspectRatio && input.aspectRatio !== 'auto') {
+    // only FLUX 3 Image documents aspect_ratio; the others take width/height
+    if (model === 'flux-3-image') {
+      body.aspect_ratio = input.aspectRatio
+    } else {
+      const dimensions = bflDimensions(input.aspectRatio)
+      if (dimensions) Object.assign(body, dimensions)
+    }
+  }
+  const submit = await aiFetch(`${base}/v1/${model}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!submit.ok) return failFrom('FLUX generation failed:', submit)
+  const queued = await readJson('FLUX', submit)
+  const pollUrl =
+    typeof queued.polling_url === 'string' && queued.polling_url
+      ? queued.polling_url
+      : `${base}/v1/get_result?id=${encodeURIComponent(String(queued.id ?? ''))}`
+  // the job is queued server-side; results come as status Ready + sample_url
+  for (;;) {
+    await bflPollSleep(signal, 1_500)
+    const poll = await aiFetch(pollUrl, { headers: { 'x-key': config.apiKey }, signal })
+    const json = await readJson('FLUX result', poll)
+    const status = String(json.status ?? '')
+    if (status === 'Ready') {
+      // BFL's quick start: result.result.sample
+      const result = (json.result ?? {}) as Record<string, unknown>
+      const sample =
+        typeof result.sample === 'string' && result.sample
+          ? result.sample
+          : typeof json.sample_url === 'string' && json.sample_url
+            ? json.sample_url
+            : undefined
+      if (!sample) {
+        throw new Error(`FLUX returned no image URL: ${JSON.stringify(json).slice(0, 200)}`)
+      }
+      return downloadImage('FLUX', sample, signal)
+    }
+    if (
+      status === 'Error' ||
+      status === 'Failed' ||
+      status === 'No Card Generated' ||
+      status === 'Content Moderated' ||
+      status === 'Request Moderated'
+    ) {
+      throw new Error(`FLUX generation failed: ${status}`)
+    }
+  }
+}
 
 function modelOf(
   meta: AiMediaProviderMeta,
@@ -720,6 +951,12 @@ export async function generateImageWithProvider(
       return generateImageDashscope(config, model, input, guard)
     case 'minimax':
       return generateImageMinimax(config, model, input, guard)
+    case 'stability':
+      return generateImageStability(config, model, input, guard)
+    case 'bfl':
+      return generateImageBfl(config, model, input, guard)
+    case 'mai':
+      return generateImageMai(config, model, input, guard)
     case 'openai-images':
       return generateImageOpenAi(provider, config, model, input, guard)
   }
@@ -747,7 +984,8 @@ export async function analyzeMediaWithProvider(
  * without a model-listing endpoint answer 404/405 even for a valid key, so
  * only those two statuses count as a pass when the response is not ok.
  * Every other non-ok status (auth failures, rate limits, server errors)
- * is surfaced as a failure with the status code included.
+ * is surfaced as a failure with the status code included. BFL is the
+ * exception: its probe endpoint authenticates the key, so only a 200 passes.
  */
 export async function testMediaProvider(
   provider: ByokMediaProviderId,
@@ -758,20 +996,44 @@ export async function testMediaProvider(
     const meta = metaOf(provider)
     requireBaseUrl(meta, config)
     const guard = withTimeout(signal, TEST_TIMEOUT_MS)
-    const resp =
-      provider === 'gemini'
-        ? await aiFetch(geminiModelsProbeUrl(config), {
-            headers: { 'x-goog-api-key': config.apiKey },
-            signal: guard,
-          })
-        : await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
-            headers: bearer(config),
-            signal: guard,
-          })
+    // provider-aware credential probes: BFL authenticates with x-key and has
+    // no model listing (the credits endpoint answers 403 without a valid
+    // key and 200 with one), Microsoft Foundry with api-key rather than a
+    // Bearer token
+    let resp: Response
+    if (provider === 'gemini') {
+      resp = await aiFetch(geminiModelsProbeUrl(config), {
+        headers: { 'x-goog-api-key': config.apiKey },
+        signal: guard,
+      })
+    } else if (provider === 'bfl') {
+      // /v1/credits is the only cheap BFL endpoint that checks the key:
+      // it answers 403 without a valid key, 422 for a malformed key and
+      // 200 with the credit balance for a good one
+      const base = trimSlash(config.baseUrl || BFL_BASE_URL)
+      resp = await aiFetch(`${base}/v1/credits`, {
+        headers: { 'x-key': config.apiKey },
+        signal: guard,
+      })
+    } else if (provider === 'microsoft') {
+      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+        headers: { 'api-key': config.apiKey },
+        signal: guard,
+      })
+    } else {
+      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+        headers: bearer(config),
+        signal: guard,
+      })
+    }
     if (resp.ok) return { ok: true }
     // Vendors without a model-listing endpoint answer 404/405 to a valid
-    // key, so those statuses still mean the credentials are usable.
-    if (resp.status === 404 || resp.status === 405) return { ok: true }
+    // key, so those statuses still mean the credentials are usable. BFL is
+    // excluded: its probe endpoint authenticates the key, so a 404 there is
+    // a failure like every other non-ok status.
+    if (provider !== 'bfl' && (resp.status === 404 || resp.status === 405)) {
+      return { ok: true }
+    }
     const body = await readCappedResponseText(resp, {
       maxBytes: MAX_ERROR_BODY_BYTES,
       onOverflow: 'truncate',
