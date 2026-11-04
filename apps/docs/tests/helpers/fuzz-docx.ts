@@ -207,7 +207,7 @@ function sectionRoll(r: () => number): string {
 
 /** A mid-body section break: its own sectPr inside a paragraph's pPr, with a
  *  page size that may differ from the final section's. */
-function sectionBreakXml(r: () => number, index: number): string {
+function sectionBreakXml(r: () => number): string {
   const landscape = r() < 0.4
   const w = landscape ? 16838 : 11906
   const h = landscape ? 11906 : 16838
@@ -236,7 +236,7 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
   const breaks = Math.floor(r() * 3)
   for (let b = 0; b < breaks; b++) {
     const at = 1 + Math.floor(r() * (blocks.length - 1))
-    blocks.splice(at, 0, sectionBreakXml(r, b))
+    blocks.splice(at, 0, sectionBreakXml(r))
   }
   const body = blocks.join('')
   // header/footer knob: either, both, or neither; the footer may carry a PAGE field
