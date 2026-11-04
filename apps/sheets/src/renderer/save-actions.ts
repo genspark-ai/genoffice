@@ -33,9 +33,9 @@ import {
   handleExportCsv,
   serializeActiveSheetCsv,
 } from './csv-export'
-import type { CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import type { CellScalar, CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
-import { verifiedFormulaValues } from './formula-values'
+import { isErrorResult, verifiedFormulaValues } from './formula-values'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
 import { showToast } from './toast-bus'
@@ -47,6 +47,7 @@ import {
   collectDvStates,
   collectFilterStates,
   collectNoteStates,
+  modelCellValue,
 } from './univer-sync'
 import type { LazyWorkbookState, PinnedClosureCell, UniverRuntime } from './univer-state'
 
@@ -168,6 +169,146 @@ export function recalculatedFormulaValues(state: LazyWorkbookState): Recalculate
   }
   for (const entry of externalLinkFormulaValues(state)) add(entry)
   return [...values.values()]
+}
+
+/// One entry per cell, the last list's value winning: callers order their
+/// lists freshest-last (overlay < live comparison < verified journal reads).
+function dedupeFormulaValues(values: RecalculatedFormulaValue[]): RecalculatedFormulaValue[] {
+  const byCell = new Map<string, RecalculatedFormulaValue>()
+  for (const value of values) {
+    byCell.set(value.sheetId + '|' + value.row + ':' + value.column, value)
+  }
+  return [...byCell.values()]
+}
+
+/// How many non-journal formula cells one save compares against its file
+/// cache. Journal-owned cells are always read. The cap exists for streamed
+/// giants, where the overlay and fullCalcOnLoad already carry the fresh
+/// values and reading half a million cells would outgrow the benefit.
+const CACHE_COMPARE_MAX = 50_000
+
+/// Numbers agree within a relative tolerance: a file saved by another engine
+/// can differ in the last ulp of a transcendental result, and rewriting the
+/// sheet for that is noise no reader would ever see. A real change (6 → 10)
+/// sits orders of magnitude outside it.
+function agreesWithCache(cache: string | number | boolean, live: CellScalar): boolean {
+  if (typeof cache === 'number' && typeof live === 'number') {
+    if (!Number.isFinite(live)) return false
+    return Math.abs(cache - live) <= 1e-9 * Math.max(1, Math.abs(cache), Math.abs(live))
+  }
+  return cache === live
+}
+
+/**
+ * Cache refreshes the recalc overlay cannot contribute, read from the live
+ * model at save time (genoffice#2466). In closure 'idle' — the full-load path
+ * where Univer's own engine computes every formula — no sidecar recalc ever
+ * runs, so until now a formula typed into the grid was saved as text alone
+ * (the journal deliberately drops the engine's `fromFormula` results) and a
+ * dependent kept the cached `<v>` from before its precedent's edit. Two kinds:
+ *
+ * - journal-owned formula cells, read unconditionally: the journal is the
+ *   freshest definition of their content and carries no computed value;
+ * - every other formula cell the session knows (`formulaText`) whose live
+ *   value disagrees with the file cache it streamed in under — transitive
+ *   dependents included, since the comparison replaces a dependency graph.
+ *
+ * Guards keep the comparison from writing anything dubious: the model must
+ * still carry the cell's formula (a withheld or mid-commit cell answers
+ * without one), the file cache must be known (unknown means the session never
+ * saw the cell's saved form — streaming gap or the cache cap), and cells the
+ * recalc or external-link overlays already contribute are skipped.
+ */
+export function liveFormulaCacheValues(
+  state: LazyWorkbookState,
+  read: (addresses: string[], sheetId: string) => Record<string, CellState>,
+): RecalculatedFormulaValue[] {
+  const journalCells = new Map<string, Set<string>>()
+  const journalFormulaCells = new Map<string, string[]>()
+  for (const [sheetId, cells] of state.editJournal.cells) {
+    if (isSheetRemoved(state.editJournal, sheetId)) continue
+    let owned = journalCells.get(sheetId)
+    if (!owned) {
+      owned = new Set()
+      journalCells.set(sheetId, owned)
+    }
+    for (const [key, entry] of cells) {
+      owned.add(key)
+      if (entry.formula !== undefined) {
+        const formulas = journalFormulaCells.get(sheetId)
+        if (formulas) formulas.push(key)
+        else journalFormulaCells.set(sheetId, [key])
+      }
+    }
+  }
+
+  // sheet → keys to read, plus the file cache to compare against when the key
+  // is a comparison cell (journal reads carry none: they always contribute)
+  const reads = new Map<
+    string,
+    { keys: string[]; caches: Map<string, string | number | boolean> }
+  >()
+  const queue = (sheetId: string, key: string, cache?: string | number | boolean): void => {
+    let entry = reads.get(sheetId)
+    if (!entry) {
+      entry = { keys: [], caches: new Map() }
+      reads.set(sheetId, entry)
+    }
+    entry.keys.push(key)
+    if (cache !== undefined) entry.caches.set(key, cache)
+  }
+  for (const [sheetId, keys] of journalFormulaCells) {
+    for (const key of keys) queue(sheetId, key)
+  }
+  let compared = 0
+  compare: for (const [sheetId, cells] of state.formulaText) {
+    if (isSheetRemoved(state.editJournal, sheetId)) continue
+    const cached = state.cachedFormulaValues.get(sheetId)
+    if (!cached) continue
+    const owned = journalCells.get(sheetId)
+    const overlay = state.recalc?.overlay.get(sheetId)
+    const external = state.recalc?.externalOverlay.get(sheetId)
+    for (const key of cells.keys()) {
+      if (owned?.has(key)) continue
+      // the overlays already contribute these cells to the save
+      if (overlay?.has(key) || external?.has(key)) continue
+      const cache = cached.get(key)
+      if (cache === undefined) continue
+      if (compared >= CACHE_COMPARE_MAX) break compare
+      compared++
+      queue(sheetId, key, cache)
+    }
+  }
+
+  const values: RecalculatedFormulaValue[] = []
+  for (const [sheetId, { keys, caches }] of reads) {
+    let cells: Record<string, CellState>
+    try {
+      cells = read(keys, sheetId)
+    } catch {
+      continue
+    }
+    for (const key of keys) {
+      const cell = cells[key]
+      // no formula in the model: a withheld cell (redactions answer without
+      // one), a cell mid-commit, or a formula already replaced
+      if (!cell || cell.formula === undefined) continue
+      const live = modelCellValue(cell)
+      // `#ERROR!` is IronCalc's own failure, never a value Excel would cache
+      if (live === null || live === undefined || live === '#ERROR!') continue
+      const cache = caches.get(key)
+      if (cache !== undefined && agreesWithCache(cache, live)) continue
+      const [row, column] = key.split(':').map(Number)
+      if (row === undefined || column === undefined) continue
+      values.push({
+        sheetId,
+        row,
+        column,
+        value: isErrorResult(live) ? { error: live } : live,
+      })
+    }
+  }
+  return values
 }
 
 /** What a save actually did — the MCP bridge needs the outcome, fire-and-forget callers ignore it. */
@@ -315,7 +456,19 @@ export async function handleSave(
   // out of the overlay above because it could be stale; their values are read
   // live here.
   const journaledValues = ctx.readCells ? verifiedFormulaValues(ctx.readCells) : []
-  const formulaValues = [...recalculatedFormulaValues(state), ...journaledValues]
+  // The session's remaining formula cells, also read live at save time: a
+  // formula typed into the grid reaches the journal without a value (the
+  // engine's fromFormula results are dropped on purpose), and a dependent
+  // keeps the cached value from before its precedent's edit — the recalc
+  // overlay only covers the sidecar's streamed-mode windows, never the
+  // engine-backed full-load path (genoffice#2466).
+  const refreshedValues = ctx.readCells ? liveFormulaCacheValues(state, ctx.readCells) : []
+  // freshest last: the overlay's sidecar windows < this save's live reads
+  const formulaValues = dedupeFormulaValues([
+    ...recalculatedFormulaValues(state),
+    ...refreshedValues,
+    ...journaledValues,
+  ])
   // Withheld cells travel in a package part of their own, so they ride with
   // this save rather than in the journal. Copied into the request's own shape
   // so the renderer never hands main a readonly view of its state.
