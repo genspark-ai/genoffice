@@ -151,6 +151,32 @@ describe('font aliases', () => {
     expect(fontCheck.docFontsCoveredBy(parsed, seen[0]!)).toEqual([])
   })
 
+  it('the headless export can wait for the alias request to settle', async () => {
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts } = await freshModules()
+    // the answer lands after the open, so the export must be able to wait
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    stubFontAliases(async () => {
+      await gate
+      return { 仿宋_GB2312: ['FangSong_GB2312'] }
+    })
+    const request = systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    let settled = false
+    const waited = systemFonts.fontAliasesSettled().then(() => {
+      settled = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // the answer has not landed yet, so the export still waits
+    expect(settled).toBe(false)
+    release?.()
+    await request
+    await waited
+    expect(settled).toBe(true)
+  })
+
   it('only a declared font counts as covered', async () => {
     const { fontCheck } = await freshModules()
     const parsed = {

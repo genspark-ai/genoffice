@@ -29,36 +29,56 @@ setFontAliasLookup((name) => aliasMap.get(aliasKey(name)) ?? null)
  * these names. The answer comes over IPC, so it lands after the first layout:
  * the subscribers re-style the document when it does (genoffice#2449).
  */
-export async function resolveFontAliases(names: readonly string[]): Promise<void> {
-  if (!names.length) return
+export function resolveFontAliases(names: readonly string[]): Promise<void> {
+  if (!names.length) return Promise.resolve()
+  const request = queryAliases(names)
+  pendingAliases = request
+  return request
+}
+
+async function queryAliases(names: readonly string[]): Promise<void> {
   let answered: Record<string, readonly string[]>
   try {
     answered = (await window.desktop.fontAliases(names)) ?? {}
   } catch {
     return
   }
-  const added: string[] = []
+  // every answered name is announced, not only the new ones: a document laid
+  // out before the map was filled must still be re-styled
+  const covered: string[] = []
   for (const [name, aliases] of Object.entries(answered)) {
     if (!aliases?.length) continue
-    const known = aliasMap.get(aliasKey(name))
-    if (known && known.length === aliases.length && known.every((a, i) => a === aliases[i]))
-      continue
     aliasMap.set(aliasKey(name), aliases)
-    added.push(name)
+    covered.push(name)
   }
-  if (!added.length) return
-  for (const listener of [...aliasListeners]) listener(added)
+  if (!covered.length) return
+  for (const listener of [...aliasListeners]) listener(covered)
 }
 
 /**
- * Subscribe to the alias map landing. The callback gets the names that just
- * gained an alias, so a document that declares none of them is not reflowed.
+ * Subscribe to the alias map landing. The callback gets the names that have
+ * an alias, so a document that declares none of them is not reflowed.
  */
 export function onFontAliasesChanged(cb: (names: readonly string[]) => void): () => void {
   aliasListeners.add(cb)
   return () => {
     aliasListeners.delete(cb)
   }
+}
+
+/** the alias request of the last open, so a headless export can wait for it */
+let pendingAliases: Promise<void> = Promise.resolve()
+
+/**
+ * Resolves when the alias request of the last open has settled. The headless
+ * export waits for it: the map lands after the first layout, and the export
+ * must not run against the fallback layout the alias replaces (genoffice#2449).
+ */
+export function fontAliasesSettled(timeoutMs = 30_000): Promise<void> {
+  return Promise.race([
+    pendingAliases,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ])
 }
 
 async function queryFamilies(): Promise<readonly string[] | null> {
