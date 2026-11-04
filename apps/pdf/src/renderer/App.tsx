@@ -136,7 +136,7 @@ import {
   remapOutlinePages,
   remapOutlineTree,
 } from './heading-outline'
-import { filterPageParity, printPdf, type PageParity } from './print'
+import { filterPageParity, maySpoolOriginal, printPdf, type PageParity } from './print'
 import { readFileBytes } from './file-bytes'
 import type { PdfEncryptionInput, PdfPermissions, PrintDuplex, PrinterInfo } from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
@@ -6728,6 +6728,16 @@ export default function App() {
       await flushThen(async () => {
         setPrinting(true)
         try {
+          if (job && IS_MAC && maySpoolOriginal(diskPasswordRef.current)) {
+            // macOS named printer: lp spools the flushed file itself — the
+            // vector original reaches the driver untouched, instead of a
+            // 150-200 DPI raster pass (genoffice#2347's route, quality half).
+            // An encrypted file stays encrypted on disk, which CUPS' pdftopdf
+            // cannot open, so those fall through to the raster path below.
+            const r = await window.pdfApi.printFile({ ...job, pages })
+            if (!r.ok && r.error) opFailed(r.error)
+            return
+          }
           const data = await readFileBytes(window.pdfApi, filePath)
           const pdoc = await getDocument({ data, ...DOC_OPTS }).promise
           try {
