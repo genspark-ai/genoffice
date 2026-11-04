@@ -162,6 +162,15 @@ const AGENTS: readonly AgentDef[] = [
     skills: (p) => join(p, 'skills'),
     skillsTarget: false,
   },
+  {
+    // DSH_HOME (default ~/.dsh): the row exists so `agentConfigDir('dsh')`
+    // finds the dotfolder and `genoffice mcp` can write its Cordis patch
+    id: 'dsh',
+    label: 'DeepSeek Harness (dsh)',
+    probe: (env, home) => env.DSH_HOME || join(home, '.dsh'),
+    skills: (p) => join(p, 'skills'),
+    skillsTarget: false,
+  },
 ]
 
 /**

@@ -62,7 +62,7 @@ describe('the dsh Cordis patch shape', () => {
     expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('registered')
   })
 
-  it('a stale command reports stale, an occupied id reports occupied', () => {
+  it('a genoffice launcher at another path is stale, a foreign command is occupied', () => {
     const file = join(dir, 'cordis-stale.yml')
     writeFileSync(
       file,
@@ -73,13 +73,13 @@ describe('the dsh Cordis patch shape', () => {
         '    config:',
         '      serverName: genoffice',
         '      transport: stdio',
-        '      command: /usr/bin/other-launcher',
-        "      args: ['serve']",
+        '      command: /old/path/genoffice',
+        "      args: ['mcp']",
       ].join('\n') + '\n',
     )
     const stale = readMcpEntry('dsh', file, LAUNCH)
     expect(stale.status).toBe('stale')
-    expect(stale.command).toBe('/usr/bin/other-launcher')
+    expect(stale.command).toBe('/old/path/genoffice')
 
     const occupiedFile = join(dir, 'cordis-occupied.yml')
     writeFileSync(
@@ -95,9 +95,58 @@ describe('the dsh Cordis patch shape', () => {
         '      args: []',
       ].join('\n') + '\n',
     )
-    // id matches but the server name doesn't: still ours to replace (the id
-    // is the ownership key DSH reads; the name is the client adapter)
-    expect(readMcpEntry('dsh', occupiedFile, LAUNCH).status).toBe('stale')
+    // the id is the ownership key DSH reads, but a foreign command under it is
+    // not ours to overwrite without --force
+    expect(readMcpEntry('dsh', occupiedFile, LAUNCH).status).toBe('occupied')
+  })
+
+  it('writes the env the packaged app needs to run as Node', () => {
+    const snippet = mcpSnippet('dsh', { ...LAUNCH, env: { ELECTRON_RUN_AS_NODE: '1' } })
+    expect(snippet).toContain('env:')
+    expect(snippet).toContain("ELECTRON_RUN_AS_NODE: '1'")
+  })
+
+  it('doubles a single quote in a scalar and rewrites Windows paths in the args too', () => {
+    const snippet = mcpSnippet('dsh', {
+      command: 'C:\\Program Files\\GenOffice\\genoffice.exe',
+      args: ['C:\\Program Files\\GenOffice\\genoffice.cjs', "it's"],
+      env: undefined,
+    })
+    expect(snippet).toContain('command: C:/Program Files/GenOffice/genoffice.exe')
+    expect(snippet).toContain("args: ['C:/Program Files/GenOffice/genoffice.cjs', 'it''s']")
+  })
+
+  it('leaves the rest of the patch byte for byte', () => {
+    const file = join(dir, 'cordis-bytes.yml')
+    const original = [
+      '# a comment the user wrote',
+      '',
+      '- insert:',
+      '  - id: mcp-other',
+      "    name: '@deepseek-ai/dsh-mcp-client'",
+      '    config:',
+      '      serverName: other',
+      '      transport: stdio',
+      '      command: /usr/bin/other',
+      '      args: []',
+      '',
+    ].join('\n')
+    writeFileSync(file, original)
+    writeMcpEntry('dsh', file, LAUNCH)
+    const written = readFileSync(file, 'utf-8')
+    expect(written.startsWith(original)).toBe(true)
+    expect(written).toContain('mcp-genoffice')
+    removeMcpEntry('dsh', file)
+    expect(readFileSync(file, 'utf-8')).toBe(original)
+  })
+
+  it('a file that is not a top-level sequence is left for a manual edit', () => {
+    const file = join(dir, 'cordis-mapping.yml')
+    const original = 'profile: web\nplugins: []\n'
+    writeFileSync(file, original)
+    expect(readMcpEntry('dsh', file, LAUNCH).status).toBe('manual')
+    writeMcpEntry('dsh', file, LAUNCH)
+    expect(readFileSync(file, 'utf-8')).toBe(original)
   })
 
   it('the CJK sheet-name test file round-trips through a real write', () => {

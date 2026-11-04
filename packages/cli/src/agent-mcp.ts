@@ -49,8 +49,6 @@ interface TomlShape {
     A scalar union won't do — the file has no top-level key to hang a map on. */
 interface YamlShape {
   kind: 'yaml-cordis'
-  /** the entry this shape writes into the insert list */
-  entry: (launch: McpLaunch) => Record<string, unknown>
 }
 
 interface McpAgentDef {
@@ -136,21 +134,7 @@ const MCP_AGENTS: readonly McpAgentDef[] = [
     id: 'dsh',
     // DSH_HOME (default ~/.dsh): the home-level patch outranks every profile
     file: (dir) => join(dir, 'cordis.patch.yml'),
-    shape: {
-      kind: 'yaml-cordis',
-      entry: (l) => ({
-        id: 'mcp-genoffice',
-        name: '@deepseek-ai/dsh-mcp-client',
-        config: {
-          serverName: MCP_SERVER_NAME,
-          transport: 'stdio',
-          command: l.command,
-          args: l.args,
-          toolCallTimeoutMs: 180_000, // render/convert-to-pdf can take a few seconds
-          failOnStartupError: false,
-        },
-      }),
-    },
+    shape: { kind: 'yaml-cordis' },
   },
 ]
 
@@ -281,21 +265,52 @@ function yamlIndent(line: string): number {
   return line.length - trimmed.length === 0 ? 0 : Math.floor((line.length - trimmed.length) / 2)
 }
 
-/** Split the patch into top-level blocks: each starts at indent 0 with `- `. */
-function cordisBlocks(text: string): string[][] {
-  const blocks: string[][] = []
-  let current: string[] | null = null
-  for (const line of text.split('\n')) {
+/** A single-quoted YAML scalar: a quote inside it is escaped by doubling. */
+function yamlScalar(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+/** A Windows path in the patch: DSH reads the forward-slash form. */
+function yamlPath(value: string): string {
+  return value.replace(/\\/g, '/')
+}
+
+/**
+ * The top-level blocks of the patch: each starts at indent 0 with `- `, with
+ * the line range it spans. A block ends before the next one starts, and the
+ * blank lines and comments after its last line belong to the file, not to the
+ * block — so splicing one out leaves the rest of the file byte for byte.
+ */
+function cordisBlockRanges(lines: string[]): Array<[number, number]> {
+  const starts: number[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
     if (line.trim() === '' || line.trim().startsWith('#')) continue
-    if (yamlIndent(line) === 0 && line.trimStart().startsWith('- ')) {
-      if (current) blocks.push(current)
-      current = [line]
-    } else if (current) {
-      current.push(line)
-    }
+    if (yamlIndent(line) === 0 && line.trimStart().startsWith('- ')) starts.push(i)
   }
-  if (current) blocks.push(current)
-  return blocks
+  return starts.map((start, k) => {
+    const limit = k + 1 < starts.length ? starts[k + 1]! : lines.length
+    let end = limit
+    while (end > start) {
+      const last = lines[end - 1]!.trim()
+      if (last !== '' && !last.startsWith('#')) break
+      end--
+    }
+    return [start, end] as [number, number]
+  })
+}
+
+/**
+ * The patch is a top-level YAML sequence of insert blocks. Anything else (a
+ * top-level mapping, say) we do not edit: appending an insert block to it
+ * would not be YAML, so the file is reported for a manual edit instead.
+ */
+function cordisIsSequence(lines: string[]): boolean {
+  for (const line of lines) {
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+    return yamlIndent(line) === 0 && line.trimStart().startsWith('- ')
+  }
+  return true
 }
 
 /** The `id:` and `serverName:` values inside one insert block. */
@@ -317,26 +332,55 @@ function isGenofficeCordisBlock(block: string[]): boolean {
   return id === 'mcp-genoffice' || serverName === MCP_SERVER_NAME
 }
 
-function cordisState(text: string, _launch: McpLaunch): McpEntryState {
-  for (const block of cordisBlocks(text)) {
-    if (!isGenofficeCordisBlock(block)) continue
-    const commandLine = block.find((l) => /^\s*command:\s*/.test(l))
-    const command = commandLine
-      ? commandLine
-          .replace(/^\s*command:\s*/, '')
-          .trim()
-          .replace(/^['"]|['"]$/g, '')
-      : null
-    // the block is ours by id: registered when it launches a genoffice binary
-    if (command !== null && isGenofficeLauncher(command)) return { status: 'registered', command }
-    return { status: command !== null ? 'stale' : 'occupied', command }
+/** The line range of the block this app owns, or null when there is none. */
+function cordisOwnRange(lines: string[]): [number, number] | null {
+  for (const [start, end] of cordisBlockRanges(lines)) {
+    if (isGenofficeCordisBlock(lines.slice(start, end))) return [start, end]
   }
-  return { status: 'absent', command: null }
+  return null
+}
+
+/** The `command:` and `args:` of one insert block. */
+function cordisLaunchOf(block: string[]): { command: string | null; args: string[] } {
+  const commandLine = block.find((l) => /^\s*command:\s*/.test(l))
+  const command = commandLine
+    ? commandLine
+        .replace(/^\s*command:\s*/, '')
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+    : null
+  const argsLine = block.find((l) => /^\s*args:\s*/.test(l))
+  const args: string[] = []
+  if (argsLine) {
+    const raw = argsLine.replace(/^\s*args:\s*/, '').trim()
+    const inner = raw.startsWith('[') && raw.endsWith(']') ? raw.slice(1, -1) : ''
+    for (const part of inner.split(',')) {
+      const value = part.trim().replace(/^['"]|['"]$/g, '')
+      if (value) args.push(value)
+    }
+  }
+  return { command, args }
+}
+
+function cordisState(text: string, launch: McpLaunch): McpEntryState {
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return { status: 'manual', command: null }
+  const own = cordisOwnRange(lines)
+  if (!own) return { status: 'absent', command: null }
+  const block = lines.slice(own[0], own[1])
+  const { command, args } = cordisLaunchOf(block)
+  // the block is ours by id: registered when it says exactly what we would write
+  if (block.join('\n').trim() === cordisEntryLines(launch).join('\n').trim())
+    return { status: 'registered', command }
+  // ours, but written for another install path: stale, and ours to update.
+  // A foreign command under our id is occupied — not ours to overwrite.
+  return { status: isGenofficeLauncher(command, args) ? 'stale' : 'occupied', command }
 }
 
 function cordisEntryLines(launch: McpLaunch): string[] {
-  const c = launch.command.replace(/\\/g, '/')
-  const args = launch.args.map((a) => `'${a.replace(/'/g, "\\'")}'`).join(', ')
+  const command = yamlPath(launch.command)
+  const args = launch.args.map((a) => yamlScalar(yamlPath(a))).join(', ')
+  const env = Object.entries(launch.env ?? {})
   return [
     '- insert:',
     '  - id: mcp-genoffice',
@@ -344,8 +388,11 @@ function cordisEntryLines(launch: McpLaunch): string[] {
     '    config:',
     '      serverName: genoffice',
     '      transport: stdio',
-    `      command: ${c}`,
+    `      command: ${command}`,
     `      args: [${args}]`,
+    // the packaged Windows app runs as Node; without the env DSH would start
+    // the GUI instead of the MCP server
+    ...(env.length ? ['      env:', ...env.map(([k, v]) => `        ${k}: ${yamlScalar(v)}`)] : []),
     '      toolCallTimeoutMs: 180000',
     '      failOnStartupError: false',
   ]
@@ -355,19 +402,26 @@ function cordisSnippet(launch: McpLaunch): string {
   return cordisEntryLines(launch).join('\n')
 }
 
+/** Splice our block into the patch, leaving every other line byte for byte. */
 function cordisUpsert(text: string, launch: McpLaunch): string {
-  const kept = cordisBlocks(text).filter((b) => !isGenofficeCordisBlock(b))
-  const body = kept.map((b) => b.join('\n')).join('\n')
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return text
   const ours = cordisEntryLines(launch)
-  const out = body.length ? `${body}\n${ours.join('\n')}\n` : `${ours.join('\n')}\n`
-  return out
+  const own = cordisOwnRange(lines)
+  if (!own) {
+    const head = text.length === 0 || text.endsWith('\n') ? text : `${text}\n`
+    return `${head}${ours.join('\n')}\n`
+  }
+  return [...lines.slice(0, own[0]), ...ours, ...lines.slice(own[1])].join('\n')
 }
 
+/** Drop our block; every other line keeps its bytes. */
 function cordisRemove(text: string): string {
-  const blocks = cordisBlocks(text)
-  const kept = blocks.filter((b) => !isGenofficeCordisBlock(b))
-  if (kept.length === blocks.length) return text
-  return kept.map((b) => b.join('\n')).join('\n') + (kept.length ? '\n' : '')
+  const lines = text.split('\n')
+  if (!cordisIsSequence(lines)) return text
+  const own = cordisOwnRange(lines)
+  if (!own) return text
+  return [...lines.slice(0, own[0]), ...lines.slice(own[1])].join('\n')
 }
 
 const LAUNCHER_NAMES = new Set(['genoffice', 'genoffice.cmd', 'genoffice.exe'])

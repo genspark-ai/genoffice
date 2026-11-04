@@ -196,6 +196,24 @@ describe('genoffice mcp install', () => {
     expect(existsSync(join(m.home, '.cursor', 'mcp.json'))).toBe(true)
   })
 
+  it('finds dsh in its dotfolder and writes the Cordis patch', async () => {
+    const m = fakeMachine(['.dsh'])
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.code).toBe(0)
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'dsh')).toMatchObject({
+      detected: true,
+      config: join(m.home, '.dsh', 'cordis.patch.yml'),
+    })
+
+    const r = await run(['mcp', 'install', 'dsh', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    expect(r.json().detail.agents[0].status).toBe('installed')
+    const patch = readFileSync(join(m.home, '.dsh', 'cordis.patch.yml'), 'utf-8')
+    expect(patch).toContain('id: mcp-genoffice')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'")
+    expect(patch).toContain(`command: ${LAUNCHER}`)
+  })
+
   it('writes Claude Code user scope into .claude.json at the top level, honouring CLAUDE_CONFIG_DIR', async () => {
     const m = fakeMachine(['.claude'])
     const file = join(m.home, '.claude.json')
