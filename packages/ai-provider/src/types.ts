@@ -242,7 +242,15 @@ export interface AiMediaSettings {
 
 /** web/image search backends; Parallel and Keenable take a user key or run free and keyless */
 export type AiSearchProviderId =
-  'genspark' | 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
+  | 'genspark'
+  | 'serper'
+  | 'serply'
+  | 'searchapi'
+  | 'tavily'
+  | 'parallel'
+  | 'exa'
+  | 'firecrawl'
+  | 'keenable'
 
 export interface AiSearchProviderMeta {
   id: AiSearchProviderId
