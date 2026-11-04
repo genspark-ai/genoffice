@@ -118,6 +118,24 @@ describe('ScriptFonts and IME composition', () => {
 
     expect(decorated(editor)).toEqual(['（看各种文件各种）'])
   })
+
+  // A Japanese or Korean IME (and a raw-pinyin Enter commit) has the final
+  // text in the DOM before compositionend, so ProseMirror dispatches nothing
+  // and the mapped set stays: the characters appended at the end of the run
+  // would keep the Latin face until the next non-IME edit touches the block.
+  it('decorates a committed run that no transaction changed', async () => {
+    const editor = open(['日本語'])
+    const caret = 1 + '日本語'.length
+    editor.commands.setTextSelection(caret)
+    const view = startComposition(editor)
+    view.dispatch(view.state.tr.insertText('にゅうりょく', caret))
+    view.dispatch(view.state.tr.insertText('入力', caret, caret + 'にゅうりょく'.length))
+
+    view.dom.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(decorated(editor)).toEqual(['日本語入力'])
+  })
 })
 
 describe('ScriptFonts spans stay East-Asian-primary', () => {
