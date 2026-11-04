@@ -1,5 +1,6 @@
 import { ScriptFonts } from './script-fonts'
 import { MultiSelect } from './multi-select'
+import { CrossCellDrag } from './cross-cell-drag'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
@@ -7463,6 +7464,7 @@ export const editorExtensions = [
   DelMark,
   UndoRedo,
   MultiSelect,
+  CrossCellDrag,
   SearchHighlightExtension,
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
