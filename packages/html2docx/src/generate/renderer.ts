@@ -250,7 +250,7 @@ class Generator {
         return withExternalBorderSpacing(
           context,
           new Paragraph({
-            heading: HEADING_LEVELS[Math.min(node.level, 6) - 1],
+            heading: HEADING_LEVELS[Math.max(1, Math.min(node.level ?? 1, 6)) - 1],
             children: withBookmarks(makeNodeRuns(context, node, this.images), node.bookmarks),
             keepNext: this.forceKeepNext
               ? true
@@ -267,7 +267,7 @@ class Generator {
       }
 
       case 'para': {
-        if (!node.runs.length) return []
+        if (!node.runs?.length) return []
         if (node.style?.shading && node.style?.colorBar) {
           return renderColorBar(this, node)
         }
@@ -310,7 +310,7 @@ class Generator {
           // callers that persist/debug IR remain compatible.
           const item = Array.isArray(entry) ? { runs: entry, style: {} } : entry
           const opts = paraOptions(context, item.style)
-          const markerWidthPx = Math.max(10, Math.min(16, (item.runs[0]?.sizePx || 14) * 0.8))
+          const markerWidthPx = Math.max(10, Math.min(16, (item.runs?.[0]?.sizePx || 14) * 0.8))
           opts.indent = {
             left: context.pxToTwips(item.indentLeftPx || node.indentLeftPx || 22),
             hanging: context.pxToTwips(markerWidthPx),
