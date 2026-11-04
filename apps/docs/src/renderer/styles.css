@@ -926,10 +926,34 @@ html.genoffice-popover-open .ribbon-tabs {
  * in the compact band they came out at 62-64px starting at top:-13 — taller
  * than the 38px band, so `overflow-y: hidden` sliced the font and size pickers
  * in half and cut the top off every style card. The band was never too short;
- * these were never made shorter. */
-.ribbon-compact .style-card {
-  width: 46px;
+ * these were never made shorter.
+ *
+ * Scoped to `.style-gallery .style-card` (the inline row): the overflow menu
+ * reuses the same card, and the unscoped rule crushed its 74×62 cards to
+ * 46×30 there too — the one place the full preview was still meant to show. */
+.ribbon-compact .style-gallery .style-card {
+  /* Label-only at 30px: the card is a column of the style's own preview (up
+   * to 20px type) over the 10.5px name, which is ~34px into a 28px box — both
+   * halves clipped, neither readable. The name is what identifies the command
+   * on a band of textless icons, so it stays and the preview goes (the full
+   * preview lives on in the overflow menu and the styles pane). Width follows
+   * the name instead of a fixed 46px, which ellipsized "No Spacing" even
+   * though showing the name is now the card's whole job. */
+  width: auto;
+  min-width: 46px;
   height: 30px;
+  padding: 0 7px;
+}
+
+/* The preview leaves the flow entirely. The rb-big label treatment (absolute
+ * + clip-path) also works visually, but an absolutely-positioned box's
+ * containing block is the wrap (the nearest positioned ancestor), and on CI
+ * Linux the wrap's scrollable overflow then grew by the stacked rows' worth
+ * of previews, inflating ribbon-body's scrollHeight past the band. display:
+ * none has no containing block at all; the button's accessible name comes
+ * from the label either way. */
+.ribbon-compact .style-gallery .style-card-preview {
+  display: none;
 }
 
 /* Every control the compact band has to hold was measured, not guessed: with
