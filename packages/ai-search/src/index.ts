@@ -1,11 +1,11 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
- * then Serply, Tavily, Parallel (whose free Search MCP answers keyless), Exa, Firecrawl and
- * Keenable (keyless only when selected), before the DuckDuckGo last resort. Runs in the main
- * process (Node fetch / child process) to avoid renderer CORS; the Serper key reuses
- * SERPER_API_KEY, the Serply key reuses SERPLY_API_KEY, the Tavily key reuses TAVILY_API_KEY,
- * Parallel uses PARALLEL_API_KEY, Exa uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY and
- * Keenable uses KEENABLE_API_KEY.
+ * then Serply, SearchApi, Tavily, Parallel (whose free Search MCP answers keyless), Exa,
+ * Firecrawl and Keenable (keyless only when selected), before the DuckDuckGo last resort. Runs
+ * in the main process (Node fetch / child process) to avoid renderer CORS; the Serper key reuses
+ * SERPER_API_KEY, the Serply key reuses SERPLY_API_KEY, the SearchApi key reuses
+ * SEARCHAPI_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses PARALLEL_API_KEY, Exa
+ * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY and Keenable uses KEENABLE_API_KEY.
  * For Genspark auth see ./gsk.ts (GenOffice sign-in or explicit GSK_API_KEY).
  */
 
@@ -27,6 +27,7 @@ export * from './search-tools'
 
 const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
 const SERPLY_KEY = () => process.env.SERPLY_API_KEY ?? ''
+const SEARCHAPI_KEY = () => process.env.SEARCHAPI_API_KEY ?? ''
 const TAVILY_KEY = () => process.env.TAVILY_API_KEY ?? ''
 const PARALLEL_KEY = () => process.env.PARALLEL_API_KEY ?? ''
 const EXA_KEY = () => process.env.EXA_API_KEY ?? ''
@@ -35,26 +36,29 @@ const KEENABLE_KEY = () => process.env.KEENABLE_API_KEY ?? ''
 
 /**
  * Backend selection for one search. Keys default to the SERPER_API_KEY /
- * SERPLY_API_KEY / TAVILY_API_KEY / PARALLEL_API_KEY env vars; settings-driven callers (search-tools.ts) pass the
- * user's key and turn gsk off so the chosen backend runs first.
+ * SERPLY_API_KEY / SEARCHAPI_API_KEY / TAVILY_API_KEY / PARALLEL_API_KEY env vars; settings-driven
+ * callers (search-tools.ts) pass the user's key and turn gsk off so the chosen backend runs first.
  */
 export interface SearchOptions {
   /** false = skip the Genspark backend (cloud tools off, or a BYOK search provider is active) */
   useGsk?: boolean
   serperKey?: string
   serplyKey?: string
+  searchapiKey?: string
   tavilyKey?: string
   parallelKey?: string
   exaKey?: string
   firecrawlKey?: string
   keenableKey?: string
   /** which backend to try first (default serper) */
-  prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
+  prefer?:
+    'serper' | 'serply' | 'searchapi' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
 }
 
 const SEARCH_BACKENDS = new Set([
   'serper',
   'serply',
+  'searchapi',
   'tavily',
   'parallel',
   'exa',
@@ -68,6 +72,7 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     useGsk: o.useGsk ?? true,
     serperKey: o.serperKey ?? SERPER_KEY(),
     serplyKey: o.serplyKey ?? SERPLY_KEY(),
+    searchapiKey: o.searchapiKey ?? SEARCHAPI_KEY(),
     tavilyKey: o.tavilyKey ?? TAVILY_KEY(),
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
     exaKey: o.exaKey ?? EXA_KEY(),
@@ -163,6 +168,51 @@ async function serplyWebSearch(
           if (results.length >= maxResults) break
         }
         return results.length ? { results, method: 'serply' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
+/** SearchApi's Google results API authenticates with a Bearer token on a GET query string. */
+const SEARCHAPI_HEADERS = (key: string) => ({
+  Authorization: `Bearer ${key}`,
+  'User-Agent': 'genoffice',
+})
+
+/**
+ * SearchApi Google web search; null when the key is empty, the call fails, or nothing comes
+ * back. Google no longer honors a result count, so one call returns one page (up to 10 organic
+ * rows) and the limit is applied locally.
+ */
+async function searchapiWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    const params = new URLSearchParams({ engine: 'google', q: query })
+    return await fetchWithTimeout(
+      `https://www.searchapi.io/api/v1/search?${params}`,
+      { headers: SEARCHAPI_HEADERS(key) },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(await resp.json())
+        const raw: unknown[] = Array.isArray(data.organic_results) ? data.organic_results : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          const o = asRecord(item)
+          if (typeof o.link !== 'string' || !/^https?:\/\//i.test(o.link)) continue
+          results.push({
+            title: String(o.title ?? ''),
+            url: o.link,
+            snippet: String(o.snippet ?? ''),
+          })
+          if (results.length >= maxResults) break
+        }
+        return results.length ? { results, method: 'searchapi' } : null
       },
     )
   } catch {
@@ -455,12 +505,13 @@ export async function webSearch(
       const r = await gskWebSearch(q, max)
       if (r.results.length) return { ...r, method: 'gsk' }
     } catch {
-      /* fall back to Serper/Serply/Tavily/Parallel/DuckDuckGo */
+      /* fall back to Serper/Serply/SearchApi/Tavily/Parallel/DuckDuckGo */
     }
   }
   const keyed = {
     serper: () => serperWebSearch(o.serperKey, q, max),
     serply: () => serplyWebSearch(o.serplyKey, q, max),
+    searchapi: () => searchapiWebSearch(o.searchapiKey, q, max),
     tavily: () => tavilyWebSearch(o.tavilyKey, q, max),
     parallel: () => parallelWebSearch(o.parallelKey, q, max),
     exa: () => exaWebSearch(o.exaKey, q, max),
@@ -469,9 +520,18 @@ export async function webSearch(
   }
   const order = [
     o.prefer,
-    ...(['serper', 'serply', 'tavily', 'parallel', 'exa', 'firecrawl', 'keenable'] as const).filter(
-      (id) => id !== o.prefer,
-    ),
+    ...(
+      [
+        'serper',
+        'serply',
+        'searchapi',
+        'tavily',
+        'parallel',
+        'exa',
+        'firecrawl',
+        'keenable',
+      ] as const
+    ).filter((id) => id !== o.prefer),
   ]
   for (const id of order) {
     const r = await keyed[id]()
@@ -503,17 +563,20 @@ export async function imageSearch(
       const images = filterUsableImages(await gskImageSearch(q, max))
       if (images.length) return { images, method: 'gsk' }
     } catch {
-      /* fall back to Serper/Serply/DuckDuckGo */
+      /* fall back to Serper/Serply/SearchApi/DuckDuckGo */
     }
   }
-  // Tavily and Parallel have no image endpoint; Serper and Serply are the keyed image backends
-  const keyed = [
-    () => serperImageSearch(o.serperKey, q, max),
-    () => serplyImageSearch(o.serplyKey, q, max),
-  ]
-  if (o.prefer === 'serply') keyed.reverse()
-  for (const run of keyed) {
-    const r = await run()
+  // Tavily and Parallel have no image endpoint; Serper, Serply and SearchApi are the keyed
+  // image backends. Serper goes first unless another one is the preferred provider.
+  const keyed = {
+    serper: () => serperImageSearch(o.serperKey, q, max),
+    serply: () => serplyImageSearch(o.serplyKey, q, max),
+    searchapi: () => searchapiImageSearch(o.searchapiKey, q, max),
+  }
+  const order = (['serper', 'serply', 'searchapi'] as const).filter((id) => id !== o.prefer)
+  if (o.prefer in keyed) order.unshift(o.prefer as keyof typeof keyed)
+  for (const id of order) {
+    const r = await keyed[id]()
     // A backend that only offered unusable (tiny) images falls through to the next one
     if (r && r.images.length > 0) {
       const usable = filterUsableImages(r.images)
@@ -622,6 +685,45 @@ async function serplyImageSearch(
       if (images.length >= max) break
     }
     return images.length ? { images, method: 'serply' } : null
+  } catch {
+    return null
+  }
+}
+
+/** SearchApi returns a fixed page of Google Images results, so the limit is applied locally. */
+async function searchapiImageSearch(
+  key: string,
+  q: string,
+  max: number,
+): Promise<{ images: ImageSearchResult[]; method: string } | null> {
+  if (!key) return null
+  try {
+    const data = await fetchWithTimeout(
+      `https://www.searchapi.io/api/v1/search?${new URLSearchParams({ engine: 'google_images', q })}`,
+      { headers: SEARCHAPI_HEADERS(key) },
+      async (resp) => (resp.ok ? asRecord(await resp.json()) : null),
+    )
+    if (!data) return null
+    const raw: unknown[] = Array.isArray(data.images) ? data.images : []
+    const images: ImageSearchResult[] = []
+    for (const item of raw) {
+      const result = asRecord(item)
+      const original = asRecord(result.original)
+      const source = asRecord(result.source)
+      const imageUrl = String(original.link ?? result.thumbnail ?? '')
+      if (!/^https?:\/\//i.test(imageUrl) || isCopyrightHost(imageUrl)) continue
+      const entry: ImageSearchResult = {
+        title: String(result.title ?? ''),
+        imageUrl,
+        sourceUrl: String(source.link ?? ''),
+        source: String(source.name ?? safeHost(source.link)),
+      }
+      if (typeof original.width === 'number' && original.width > 0) entry.width = original.width
+      if (typeof original.height === 'number' && original.height > 0) entry.height = original.height
+      images.push(entry)
+      if (images.length >= max) break
+    }
+    return images.length ? { images, method: 'searchapi' } : null
   } catch {
     return null
   }
