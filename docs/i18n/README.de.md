@@ -100,7 +100,7 @@ Prompt gesteuert wird, den du im Panel nachlesen kannst.
 </tr>
 <tr>
 <td><b>Bau es</b> — aus einem einzigen Satz fügt der Agent ein Summary-Tabellenblatt mit echten <code>SUMIF</code>s nach Region und Kategorie hinzu, fügt ein Säulendiagramm ein und wendet die 43 Änderungen als einen einzigen, rückgängig machbaren Vorgang an.</td>
-<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung, Formel-Tracing und Bilder, die als native Rich Values von Excel in Zellen eingebettet sind — Excel zeigt sie beim erneuten Öffnen weiterhin in der Zelle.</td>
+<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung, Formel-Tracing und Bilder, die als native Rich Values von Excel in Zellen eingebettet sind — Excel zeigt sie beim erneuten Öffnen weiterhin in der Zelle.Zellnotizen können ein Bild tragen, das unter dem Notiz-Popup erscheint.</td>
 </tr>
 </table>
 
@@ -264,13 +264,13 @@ sowie Bild-/Audio-/Videoanalyse.
 
 **Oder bring deinen eigenen Schlüssel mit.** Unter Einstellungen → KI stehen
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
+Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
 jeden OpenAI-kompatiblen Endpunkt (Basis-URL + Schlüssel), einschließlich
 lokaler Modell-Server. Suche und Medien haben eigene Anbieter je Fähigkeit
-unter KI-Medien & Suche: Serper, Serply, Tavily, Parallel, Keenable, Exa oder
+unter KI-Medien & Suche: Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa oder
 Firecrawl für die Websuche – Keenable kommt ebenfalls ohne Schlüssel aus, ein
 Schlüssel hebt nur die Ratenlimits – und OpenAI, Gemini, Doubao/Seedream, GLM,
-Grok, Qwen, MiniMax oder jeder OpenAI-kompatible Bild-Endpunkt für
+Grok, Qwen, MiniMax, Stability, FLUX oder jeder OpenAI-kompatible Bild-Endpunkt für
 Bildgenerierung und Bild-/Videoanalyse.
 
 Die gesamte Suite bringt ein helles, ein dunkles und einen
@@ -285,7 +285,7 @@ Farben des Dokuments.
 Ein Skill ist eine `SKILL.md`, die der KI sagt, wie sie eine Aufgabe gut erledigt: einen Wochenbericht, eine NDA, einen Unterrichtsplan.
 GenOffice liefert eine Sammlung mit und nimmt deine eigenen an, im selben Format, das Coding-Agenten verwenden.
 
-- **Einstellungen → Skills.** Einen empfohlenen Skill **installieren** oder einen Ordner, ein Zip oder eine einzelne `SKILL.md` **importieren**. Beim Import wird nichts ausgeführt.
+- **Einstellungen → Skills.** Einen empfohlenen Skill **installieren** oder einen Ordner, ein Zip oder eine einzelne `SKILL.md` **importieren**. Beim Import wird nichts ausgeführt. Der Tab **Alle** listet den ganzen empfohlenen Katalog an einem Ort auf, mit Beschreibungen in der Sprache der App.
 - **Im Chat.** Das **+**-Menü neben dem Eingabefeld eines KI-Panels öffnen, **Skills** wählen, einen ankreuzen, senden. Der Skill geht nur mit dieser Nachricht mit.
 
 ---
@@ -469,6 +469,8 @@ Das AppImage läuft direkt: installiere die FUSE-2-Laufzeit
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Auf einem Chromebook laufen dieselben Pakete in der Linux-Umgebung (Crostini) — Details in [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 
