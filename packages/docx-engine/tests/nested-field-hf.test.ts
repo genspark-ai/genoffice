@@ -65,6 +65,76 @@ async function buildNestedFieldDocx(): Promise<Uint8Array> {
   })
 }
 
+/** The same DOCPROPERTY field, but the child's cached result is a display run
+ *  (w:t) instead of field code (w:instrText). */
+const NESTED_FIELD_HEADER_WT_CACHE =
+  XML_DECL +
+  '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+  'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+  '<w:p><w:r>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> DOCPROPERTY  "STR</w:instrText>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> PAGE  \\* MERGEFORMAT </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:t>2</w:t>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '<w:instrText xml:space="preserve">"  \\* MERGEFORMAT </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:r><w:rPr><w:b/></w:rPr><w:t>Strana druhá</w:t></w:r>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '</w:r></w:p></w:hdr>'
+
+/** { = { PAGE } - 1 } — a formula field whose instruction holds the child. */
+const FORMULA_FIELD_HEADER =
+  XML_DECL +
+  '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+  '<w:p><w:r>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> = </w:instrText>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> PAGE </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:t>2</w:t>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '<w:instrText xml:space="preserve"> - 1 </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:t>1</w:t>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '</w:r></w:p></w:hdr>'
+
+/** { IF … } whose cached result holds a nested PAGE field. */
+const RESULT_NESTED_FIELD_HEADER =
+  XML_DECL +
+  '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+  '<w:p><w:r>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> IF </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:fldChar w:fldCharType="begin"/>' +
+  '<w:instrText xml:space="preserve"> PAGE </w:instrText>' +
+  '<w:fldChar w:fldCharType="separate"/>' +
+  '<w:t>7</w:t>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '<w:fldChar w:fldCharType="end"/>' +
+  '</w:r></w:p></w:hdr>'
+
+async function headerDocx(headerXml: string): Promise<Uint8Array> {
+  return buildDocx({
+    bodyXml: '<w:p><w:r><w:t>Body text.</w:t></w:r></w:p>',
+    sectPrExtra: '<w:headerReference w:type="default" r:id="rId20"/>',
+    extraRels:
+      '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+    extraParts: [
+      {
+        path: 'word/header1.xml',
+        xml: headerXml,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+      },
+    ],
+  })
+}
+
 describe('nested complex field in header (genoffice#2458)', () => {
   it('the outer DOCPROPERTY cache survives without a PAGE marker prefix', async () => {
     const doc = await parseDocx(await buildNestedFieldDocx())
@@ -106,5 +176,79 @@ describe('nested complex field in header (genoffice#2458)', () => {
     )
     expect(doc.headerHasPageNumber).toBe(true)
     expect(doc.headerText).toContain(PAGE_MARK)
+  })
+
+  it('the same DOCPROPERTY with the child cache in a display run keeps the outer cache alone', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>Body text.</w:t></w:r></w:p>',
+        sectPrExtra: '<w:headerReference w:type="default" r:id="rId20"/>',
+        extraRels:
+          '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+        extraParts: [
+          {
+            path: 'word/header1.xml',
+            xml: NESTED_FIELD_HEADER_WT_CACHE,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+          },
+          {
+            path: 'docProps/custom.xml',
+            xml: CUSTOM_XML,
+            contentType: 'application/vnd.openxmlformats-officedocument.custom-properties+xml',
+          },
+        ],
+      }),
+    )
+    const text = doc.headerText ?? ''
+    // the child's stale cache ("2") must not ride along with the outer cache
+    expect(text).not.toContain('2')
+    expect(text).toContain('Strana druhá')
+    expect(doc.headerHasPageNumber).toBe(false)
+  })
+
+  it('a formula field keeps its own result, not the child page number', async () => {
+    const doc = await parseDocx(await headerDocx(FORMULA_FIELD_HEADER))
+    const text = doc.headerText ?? ''
+    // "{ = { PAGE } - 1 }": the child's PAGE is field code, so only the
+    // formula's own cached result displays — not the child's stale "2"
+    expect(text).toBe('1')
+    expect(text).not.toContain('2')
+    expect(doc.headerHasPageNumber).toBe(false)
+  })
+
+  it('a nested PAGE in the cached result still becomes a page marker', async () => {
+    const doc = await parseDocx(await headerDocx(RESULT_NESTED_FIELD_HEADER))
+    const text = doc.headerText ?? ''
+    expect(text).toContain(PAGE_MARK)
+    expect(text).not.toContain('7')
+    expect(doc.headerHasPageNumber).toBe(true)
+  })
+
+  it('a parent field with no instruction of its own is not a PAGE field', async () => {
+    // the parent's own instruction is a space; the PAGE belongs to the child.
+    // The parent's instruction is its own — a child's instruction must not
+    // make the parent a page-number field.
+    const doc = await parseDocx(
+      await headerDocx(
+        XML_DECL +
+          '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          '<w:p><w:r>' +
+          '<w:fldChar w:fldCharType="begin"/>' +
+          '<w:instrText xml:space="preserve"> </w:instrText>' +
+          '<w:fldChar w:fldCharType="begin"/>' +
+          '<w:instrText xml:space="preserve"> PAGE </w:instrText>' +
+          '<w:fldChar w:fldCharType="separate"/>' +
+          '<w:t>2</w:t>' +
+          '<w:fldChar w:fldCharType="end"/>' +
+          '<w:fldChar w:fldCharType="separate"/>' +
+          '<w:t>cached</w:t>' +
+          '<w:fldChar w:fldCharType="end"/>' +
+          '</w:r></w:p></w:hdr>',
+      ),
+    )
+    const text = doc.headerText ?? ''
+    expect(text).toBe('cached')
+    expect(text).not.toContain(PAGE_MARK)
   })
 })

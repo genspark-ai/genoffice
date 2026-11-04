@@ -6949,6 +6949,148 @@ async function parseSettingsFlag(zip: JSZip, tag: string): Promise<boolean> {
   return xmlFlagOn(await file.async('string'), tag)
 }
 
+/** A complex field in the part XML: its own span, its own instruction text and
+ *  the fields nested inside it. */
+interface FieldFrame {
+  /** where the begin element starts */
+  start: number
+  /** where the end element ends */
+  end: number
+  /** the field's own instruction text (its own instrText runs only) */
+  instr: string
+  /** where the field's own separate element starts; -1 when it has none */
+  separateStart: number
+  /** where the field's own separate element ends; -1 when it has none */
+  separateEnd: number
+  /** the fields nested inside this one, in the order they appear */
+  children: FieldFrame[]
+}
+
+/** The field tokens of a part: the fldChar markers and the instruction runs.
+ *  The element bodies are bounded (a fldChar carries no content, an instrText
+ *  carries its instruction), so the scan never walks the whole part twice. */
+const FIELD_TOKEN_RE =
+  /<w:fldChar\b[^>]*?\/>|<w:fldChar\b[^>]*?>\s*<\/w:fldChar>|<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/g
+
+/**
+ * The complex fields of a part, as a tree. A field's span runs from its begin
+ * to the end that closes it — counting the nested fields, so a child's end
+ * does not close the parent (genoffice#2458). Each field carries only its own
+ * instruction text: a nested child's instruction belongs to the child.
+ */
+function parseFieldTree(xml: string): FieldFrame[] {
+  const roots: FieldFrame[] = []
+  const stack: FieldFrame[] = []
+  for (const match of xml.matchAll(FIELD_TOKEN_RE)) {
+    const token = match[0]
+    const at = match.index
+    if (token.startsWith('<w:instrText')) {
+      const top = stack[stack.length - 1]
+      if (top) top.instr += token.replace(/<[^>]+>/g, '')
+      continue
+    }
+    const type = /\bw:fldCharType\s*=\s*["'](begin|separate|end)["']/.exec(token)?.[1]
+    if (type === 'begin') {
+      const frame: FieldFrame = {
+        start: at,
+        end: -1,
+        instr: '',
+        separateStart: -1,
+        separateEnd: -1,
+        children: [],
+      }
+      const parent = stack[stack.length - 1]
+      if (parent) parent.children.push(frame)
+      else roots.push(frame)
+      stack.push(frame)
+      continue
+    }
+    if (type === 'separate') {
+      const top = stack[stack.length - 1]
+      if (top && top.separateEnd < 0) {
+        top.separateStart = at
+        top.separateEnd = at + token.length
+      }
+      continue
+    }
+    if (type === 'end') {
+      const frame = stack.pop()
+      if (frame) frame.end = at + token.length
+    }
+  }
+  return roots
+}
+
+/**
+ * A region of the part with the fields inside it rewritten: every nested field
+ * is replaced by its display text.
+ */
+function renderFieldRegion(
+  xml: string,
+  from: number,
+  to: number,
+  children: FieldFrame[],
+  page: { hasPageNumber: boolean },
+): string {
+  let text = ''
+  let pos = from
+  for (const child of children) {
+    if (child.start < from || child.end > to) continue
+    text += xml.slice(pos, child.start)
+    text += renderField(xml, child, page)
+    pos = child.end
+  }
+  return text + xml.slice(pos, to)
+}
+
+/**
+ * The display text of one field: a page-number marker for a PAGE/NUMPAGES
+ * field, its cached result for anything else. A field's instruction is field
+ * code and never displays, so the nested fields inside it drop out with it —
+ * only the ones inside the cached result are rewritten.
+ */
+function renderField(xml: string, field: FieldFrame, page: { hasPageNumber: boolean }): string {
+  const span = xml.slice(field.start, field.end)
+  const cached = field.separateEnd < 0 ? '' : xml.slice(field.separateEnd, field.end)
+  // Word formats the number with the result run's rPr; the separate run's
+  // rPr (first in the span) is only the field-code formatting
+  const resultRun = cached
+    .match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g)
+    ?.find((run) => run.includes('<w:t'))
+  const rPr =
+    (resultRun && /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(resultRun)?.[0]) ||
+    (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(span)?.[0] ?? '')
+  // the span starts inside the begin run and ends inside the end run, so
+  // the replacement closes/reopens the enclosing w:r to stay balanced
+  // (the leftover edge runs end up empty and are dropped later)
+  const emit = (inner: string) => `</w:r>${inner}<w:r>`
+  // classify by the leading keyword: a nested child field's PAGE inside a
+  // DOCPROPERTY instruction must not make the parent a PAGE field
+  // (genoffice#2458 — the span is matched by nesting depth, so the parent's
+  // instruction is its own and the child's instruction stays the child's)
+  if (/^\s*SECTIONPAGES\b/.test(field.instr)) {
+    return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
+  }
+  if (/^\s*NUMPAGES\b/.test(field.instr)) {
+    return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
+  }
+  if (/^\s*PAGE\b/.test(field.instr)) {
+    page.hasPageNumber = true
+    return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
+  }
+  // Keep the original run boundaries: separate/result/end may share a run,
+  // whose rPr is outside this span. Rewrapping only complete result runs
+  // drops those edge fragments and their formatting.
+  if (field.separateEnd < 0) return emit('')
+  const prefix = xml.slice(field.start, field.separateEnd)
+  const instruction = prefix
+    .replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '')
+    .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
+    .replace(/<w:fldChar[^>]*?(?:\/>|>[\s\S]*?<\/w:fldChar>)/g, '')
+  const result = renderFieldRegion(xml, field.separateEnd, field.end, field.children, page)
+  return instruction + result.replace(/<w:fldChar[^>]*?(?:\/>|>[\s\S]*?<\/w:fldChar>)/g, '')
+}
+
 /** header/footer part XML -> display content (PAGE fields shown as PAGE_MARK) */
 function hfContentFromXml(
   xml: string,
@@ -6980,52 +7122,24 @@ function hfContentFromXml(
   // Fallback); keeping both prints the content twice (e.g. duplicated "— PAGE —"
   // page numbers), so only the Choice branch feeds text/paragraph extraction
   let cleaned = xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
-  cleaned = cleaned.replace(
-    /<w:fldChar[^>]*w:fldCharType\s*=\s*["']begin["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)[\s\S]*?<w:fldChar[^>]*w:fldCharType\s*=\s*["']end["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)/g,
-    (span) => {
-      const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
-        .map((m) => m.replace(/<[^>]+>/g, ''))
-        .join('')
-      const cached =
-        /<w:fldChar[^>]*w:fldCharType\s*=\s*["']separate["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)([\s\S]*)$/.exec(
-          span,
-        )?.[1]
-      // Word formats the number with the result run's rPr; the separate run's
-      // rPr (first in the span) is only the field-code formatting
-      const resultRun = cached
-        ?.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g)
-        ?.find((run) => run.includes('<w:t'))
-      const rPr =
-        (resultRun && /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(resultRun)?.[0]) ||
-        (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(span)?.[0] ?? '')
-      // the span starts inside the begin run and ends inside the end run, so
-      // the replacement closes/reopens the enclosing w:r to stay balanced
-      // (the leftover edge runs end up empty and are dropped later)
-      const emit = (inner: string) => `</w:r>${inner}<w:r>`
-      // classify by the leading keyword: a nested child field's PAGE inside a
-      // DOCPROPERTY instruction must not make the parent a PAGE field
-      // (genoffice#2458 — the lazy begin-to-end span stops at the nested end,
-      // concatenating the child's instrText into the parent's instruction)
-      if (/^\s*SECTIONPAGES\b/.test(instr)) {
-        return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
-      }
-      if (/^\s*NUMPAGES\b/.test(instr)) {
-        return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
-      }
-      if (/^\s*PAGE\b/.test(instr)) {
-        hasPageNumber = true
-        return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
-      }
-      // Keep the original run boundaries: separate/result/end may share a run,
-      // whose rPr is outside this span. Rewrapping only complete result runs
-      // drops those edge fragments and their formatting.
-      if (cached === undefined) return emit('')
-      const prefix = span.slice(0, span.length - cached.length)
-      return (prefix.replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '') + cached)
-        .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
-        .replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, '')
-    },
-  )
+  // rewrite the complex fields by nesting depth: a child's end must not close
+  // its parent (genoffice#2458 — the lazy begin-to-end span stopped at the
+  // nested end and took the child's separate/cache for the parent's)
+  if (cleaned.includes('<w:fldChar')) {
+    const page = { hasPageNumber: false }
+    const roots = parseFieldTree(cleaned)
+    let out = ''
+    let pos = 0
+    for (const field of roots) {
+      if (field.end < 0) continue
+      out += cleaned.slice(pos, field.start)
+      out += renderField(cleaned, field, page)
+      pos = field.end
+    }
+    out += cleaned.slice(pos)
+    cleaned = out
+    hasPageNumber = page.hasPageNumber
+  }
   // <w:fldSimple w:instr=" PAGE "> single-element field form
   cleaned = cleaned.replace(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
