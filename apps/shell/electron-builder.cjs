@@ -26,6 +26,9 @@
  * users can still install local font files.
  */
 
+// Buffer comes from node:buffer, not the global: this file is evaluated
+// inside a vm sandbox (the packaging tests) that has no Buffer global.
+const { Buffer } = require('node:buffer')
 const { execFileSync } = require('node:child_process')
 const { closeSync, existsSync, openSync, readFileSync, readSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
@@ -92,30 +95,31 @@ const WIN_SIDECAR =
   winSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ?? winSidecarCandidates[0]
 
 // GENOFFICE_LINUX_ARM64=1 — package the arm64 Linux artifacts instead of x64.
-// CI runs it as a second electron-builder pass (own BUILD_DIR) after the x64
-// pass, mirroring the Windows arm64 pass: the two never share an output dir or
-// a sidecar path. The sidecar comes from cargo's host-native target/release
-// when the build host is arm64 Linux itself (a native ubuntu-arm64 runner needs
-// no cross toolchain), or from an explicit cross-compilation triple otherwise —
-// and beforePack checks the ELF machine type either way, because
+// Config support only: no CI job runs a second Linux pass yet, and whether
+// Linux arm64 joins the release matrix is decided on the maintainers' side.
+// With the flag set the AppImage/deb/rpm targets switch to arm64, and the
+// sidecar has to be an aarch64 build — cargo's host-native target/release when
+// the build host is arm64 Linux itself (a native ubuntu-arm64 runner needs no
+// cross toolchain), or an explicit cross-compilation triple otherwise.
+// beforePack checks the ELF machine type either way, because
 // electron-builder exits 0 on a missing/odd extraResources source and would
 // otherwise ship Sheets dead on every install.
 const linuxArm64 = process.env.GENOFFICE_LINUX_ARM64 === '1'
-const linuxSidecarTarget = 'aarch64-unknown-linux-gnu'
-// The x64 pass keeps the historical host-native source (unchanged behavior);
-// the arm64 pass prefers an explicit cross-compilation triple dir and also
-// accepts a native arm64 Linux host's plain build.
-const LINUX_SIDECAR_X64 = '../sheets/native/xlsx-engine/target/release/xlsx-sidecar'
-const linuxSidecarArm64Candidates = [
+const linuxSidecarTarget = linuxArm64 ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
+// Mirrors the Windows candidate list above: the explicit triple first, then
+// cargo's plain host-native output — but only when the host really is the
+// packaged architecture, so an arm64 host can never hand its native sidecar
+// to an x64 package (and the other way round). The x64 pass therefore keeps
+// the historical host-native source on an x64 Linux host.
+const linuxSidecarCandidates = [
   `../sheets/native/xlsx-engine/target/${linuxSidecarTarget}/release/xlsx-sidecar`,
-  ...(process.platform === 'linux' && process.arch === 'arm64'
+  ...(process.platform === 'linux' && (process.arch === 'arm64') === linuxArm64
     ? ['../sheets/native/xlsx-engine/target/release/xlsx-sidecar']
     : []),
 ]
-const LINUX_SIDECAR = linuxArm64
-  ? (linuxSidecarArm64Candidates.find((rel) => existsSync(join(__dirname, rel))) ??
-    linuxSidecarArm64Candidates[0])
-  : LINUX_SIDECAR_X64
+const LINUX_SIDECAR =
+  linuxSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ??
+  linuxSidecarCandidates[0]
 
 function assertExtraResourceSources() {
   for (const rel of [
@@ -743,16 +747,17 @@ const config = {
   // same source mac uses. So no `arch` is pinned here beyond the flag below:
   // electron-builder defaults to the build host's architecture, which is the
   // only one the sidecar was actually built for — and GENOFFICE_LINUX_ARM64=1
-  // (the second release pass, mirroring GENOFFICE_WIN_ARM64) switches every
-  // target to arm64, where the sidecar must come from a native arm64 host or
-  // an explicit cross build (see linuxSidecarArm64Candidates and the ELF check).
+  // switches every target to arm64, where the sidecar must come from a native
+  // arm64 host or an explicit cross build (see linuxSidecarCandidates and the
+  // ELF check). That flag is config support only: no second Linux pass runs
+  // anywhere yet, so the arm64 artifacts are not produced by this repo.
   linux: {
     // AppImage (self-contained, any distro) + deb (apt install, pulls in the
     // GTK/NSS runtime deps) + rpm (dnf/zypper install on Fedora / RHEL /
     // openSUSE). Default artifact names are kept on purpose —
     // GenOffice-<v>.AppImage / genoffice_<v>_amd64.deb — because the public
     // README download links and the already-published linux-v0.5.149 release
-    // use them. The arm64 pass reuses the ${arch}-templated deb/rpm names
+    // use them. The arm64 targets reuse the ${arch}-templated deb/rpm names
     // (genoffice_<v>_arm64.deb).
     target: [
       { target: 'AppImage', arch: [linuxArm64 ? 'arm64' : 'x64'] },
@@ -866,12 +871,15 @@ const config = {
     if (context.electronPlatformName === 'linux') {
       const sidecar = join(__dirname, LINUX_SIDECAR)
       if (!existsSync(sidecar)) {
+        // The candidate list is picked by the flag, so the x64 pass never
+        // points at an aarch64 build (and the arm64 pass never at an x64 one).
+        const hint = linuxArm64
+          ? 'cross-build with "cargo zigbuild --release --target aarch64-unknown-linux-gnu", ' +
+            'or build natively on an arm64 Linux host'
+          : 'run "npm run native:build -w @genoffice/sheets" on an x64 Linux host, ' +
+            'or cross-build with "cargo zigbuild --release --target x86_64-unknown-linux-gnu"'
         throw new Error(
-          `linux extraResources source missing: ${linuxSidecarArm64Candidates.join(' or ')} ` +
-            (linuxArm64
-              ? `(cross-build with "cargo zigbuild --release --target ${linuxSidecarTarget}", ` +
-                'or build natively on an arm64 Linux host)'
-              : '(run "npm run native:build -w @genoffice/sheets")'),
+          `linux extraResources source missing: ${linuxSidecarCandidates.join(' or ')} (${hint})`,
         )
       }
       assertLinuxSidecarArch(sidecar, linuxArm64)
