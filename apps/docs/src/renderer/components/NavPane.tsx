@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useDismissablePopover } from '@genoffice/ui'
 import type { PageCut } from '../pagination-cuts'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
@@ -720,22 +721,11 @@ function NavMenu({
     setPos({ left, top })
   }, [menu])
 
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('blur', onClose)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('blur', onClose)
-    }
-  }, [onClose])
+  // unified dismissal: outside press, Escape, window blur
+  useDismissablePopover(heading != null, onClose, {
+    inside: () => [ref.current],
+    escape: true,
+  })
 
   if (!heading) return null
   const item = (label: string, onClick: () => void, disabled = false) => (
