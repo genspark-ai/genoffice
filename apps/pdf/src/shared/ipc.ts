@@ -1205,7 +1205,9 @@ export interface PdfApi {
    *  original reaches the driver untouched (no rasterization pass). pages are
    *  1-based file pages; undefined = the whole document. ok=false without
    *  error = canceled (never happens on this route; both sides report). */
-  printFile(job: PrintJobOptions & { pages?: number[] }): Promise<{ ok: boolean; error?: string }>
+  printFile(
+    job: PrintJobOptions & { path: string; pages?: number[] },
+  ): Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */
   listPrinters(): Promise<PrinterInfo[]>
   /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */
