@@ -1256,11 +1256,19 @@ export function setFontAliasLookup(fn: (name: string) => string | null): void {
   fontAliasLookup = fn
 }
 
+/** the declared family at the head of a font string ("Foo", serif -> Foo) */
+function declaredFamily(font: string): string {
+  return font.split(',')[0].replace(/['"]/g, '').trim()
+}
+
 export function cssFontFamily(font: string): string {
   // a localized (CJK) name the browser can't match resolves through the
-  // system font table's English family (genoffice#2449)
+  // system font table's English family (genoffice#2449). A name the browser
+  // resolves itself keeps its own weight: "PingFang SC Semibold" must not
+  // collapse to the "PingFang SC" family, so the alias applies only to a
+  // declared name that does not resolve here.
   const alias = fontAliasLookup?.(font)
-  if (alias) font = alias
+  if (alias && !isFontAvailable(declaredFamily(font))) font = alias
   // faces Word lays out directly take the chain of their target face, names it
   // substitutes the chain of the substitute; the name-keyed branches below
   // serve unkeyed targets and the script chains

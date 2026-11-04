@@ -501,9 +501,12 @@ export async function loadFile(
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
-    // populate the localized-name alias map before the first render: the
-    // font pipeline consults it when the browser can't match a CJK name
-    await loadSystemFontAliases()
+    // populate the localized-name alias map: the font pipeline consults it
+    // when the browser can't match a CJK name. The query needs transient
+    // user activation, which an open often lacks (window boot, a native
+    // open dialog, an AI-created document), so it never blocks the open: a
+    // rejected query is not cached and a later one fills the map (genoffice#2449)
+    void loadSystemFontAliases()
     await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return 'superseded'
@@ -658,9 +661,12 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
-    // populate the localized-name alias map before the first render: the
-    // font pipeline consults it when the browser can't match a CJK name
-    await loadSystemFontAliases()
+    // populate the localized-name alias map: the font pipeline consults it
+    // when the browser can't match a CJK name. The query needs transient
+    // user activation, which an open often lacks (window boot, a native
+    // open dialog, an AI-created document), so it never blocks the open: a
+    // rejected query is not cached and a later one fills the map (genoffice#2449)
+    void loadSystemFontAliases()
     await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return
