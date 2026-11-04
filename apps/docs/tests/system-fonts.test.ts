@@ -74,6 +74,12 @@ afterEach(() => {
   delete (window as unknown as { desktop?: unknown }).desktop
 })
 
+// the font pipeline's module graph is heavy: import it once at file scope so
+// the transform is paid while the file is collected, not inside a test's
+// timeout (the dynamic imports below re-evaluate it, but the transform is
+// already cached)
+await import('../src/renderer/line-metrics')
+
 describe('font aliases', () => {
   it('the alias map comes from the main process', async () => {
     // the browser resolves the English spelling but not the localized one
@@ -119,10 +125,30 @@ describe('font aliases', () => {
     stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
     await systemFonts.resolveFontAliases(['仿宋_GB2312'])
     expect(seen).toEqual([['仿宋_GB2312']])
+    // the same answer announces again: a document laid out before the map was
+    // filled must still be re-styled
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(seen).toEqual([['仿宋_GB2312'], ['仿宋_GB2312']])
     off()
-    // the same answer again changes nothing, so nobody is notified
+    // an unsubscribed listener hears nothing more
+    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    expect(seen).toEqual([['仿宋_GB2312'], ['仿宋_GB2312']])
+  })
+
+  it('an alias the document does not declare covers nothing', async () => {
+    stubCanvas(['FangSong_GB2312'])
+    const { systemFonts, fontCheck } = await freshModules()
+    const seen: string[][] = []
+    systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
+    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
     await systemFonts.resolveFontAliases(['仿宋_GB2312'])
     expect(seen).toEqual([['仿宋_GB2312']])
+    const parsed = {
+      blocks: [{ runs: [{ font: 'SimSun' }] }],
+      styles: new Map(),
+      docDefaults: {},
+    } as unknown as ParsedDoc
+    expect(fontCheck.docFontsCoveredBy(parsed, seen[0]!)).toEqual([])
   })
 
   it('only a declared font counts as covered', async () => {
