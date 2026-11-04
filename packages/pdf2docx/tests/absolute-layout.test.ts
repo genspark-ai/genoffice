@@ -188,3 +188,42 @@ describe('absolute layout keeps same-row units apart', () => {
     expect(texts).toHaveLength(1)
   })
 })
+
+describe('repeated page furniture in absolute layout', () => {
+  /** four pages, each with the same header, a page-number footer and its own body */
+  async function reportPdf(): Promise<Uint8Array> {
+    const { PDFDocument, StandardFonts } = await import('pdf-lib')
+    const doc = await PDFDocument.create()
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    for (let i = 0; i < 4; i += 1) {
+      const page = doc.addPage([612, 792])
+      page.drawText('ACME QUARTERLY REPORT', { x: 72, y: 750, size: 12, font })
+      page.drawText(`Body of page ${i + 1}, which is different on every page.`, {
+        x: 72,
+        y: 500,
+        size: 12,
+        font,
+      })
+      page.drawText(`Page ${i + 1} of 4`, { x: 280, y: 40, size: 10, font })
+    }
+    return doc.save()
+  }
+
+  it('keeps the header and page number on every slide; docx still lifts them out', async () => {
+    const pdfium = await loadPdfium()
+    const pdf = await reportPdf()
+
+    const docx = await convertPdfToDocx(pdf, { pdfium })
+    expect(docx.warnings.some((w) => w.startsWith('headers/footers:'))).toBe(true)
+
+    const result = await convertPdfToPptx(pdf, { pdfium })
+    expect(result.warnings.some((w) => w.startsWith('headers/footers:'))).toBe(false)
+    const opened = await openPptx(result.pptx)
+    expect(opened.deck.slides).toHaveLength(4)
+    opened.deck.slides.forEach((slide, i) => {
+      const text = JSON.stringify(slide.elements)
+      expect(text).toContain('ACME QUARTERLY REPORT')
+      expect(text).toContain(`Page ${i + 1} of 4`)
+    })
+  })
+})
