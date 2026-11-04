@@ -279,6 +279,42 @@ describe('liveFormulaCacheValues', () => {
     ).toEqual([{ sheetId: 'sheet-1', row: 1, column: 1, value: { error: '#DIV/0!' } }])
   })
 
+  it('an edit on another sheet lets a dependent write its computed blank or error', () => {
+    // Sheet 2 sums a cell the user emptied on sheet 1: the blank is the true
+    // result, not a capability gap, so the flag is workbook-wide.
+    const journal = new Map([['sheet-1', new Map([['0:0', { value: null, hasValue: true }]])]])
+    const read = reader(new Map([['sheet-2', { A1: cellOf('#DIV/0!', '=1/Sheet1!A1') }]]))
+    expect(
+      liveFormulaCacheValues(
+        state({
+          journal,
+          formulas: new Map([['sheet-2', new Map([['0:0', '=1/Sheet1!A1']])]]),
+          cached: new Map([['sheet-2', new Map([['0:0', 0.5]])]]),
+        }),
+        read,
+      ),
+    ).toEqual([{ sheetId: 'sheet-2', row: 0, column: 0, value: { error: '#DIV/0!' } }])
+  })
+
+  it('a formula-only journal entry counts as an edit', () => {
+    const journal = new Map([
+      ['sheet-1', new Map([['0:0', { formula: '=1', value: null, hasValue: false }]])],
+    ])
+    const read = reader(
+      new Map([['sheet-1', { A1: cellOf(1, '=1'), B2: cellOf('#DIV/0!', '=A2/A3') }]]),
+    )
+    expect(
+      liveFormulaCacheValues(
+        state({
+          journal,
+          formulas: new Map([['sheet-1', new Map([['1:1', '=A2/A3']])]]),
+          cached: new Map([['sheet-1', new Map([['1:1', 42]])]]),
+        }),
+        read,
+      ),
+    ).toContainEqual({ sheetId: 'sheet-1', row: 1, column: 1, value: { error: '#DIV/0!' } })
+  })
+
   it('skips the comparison on a sheet whose rows shifted', () => {
     // The formula text is in file coordinates after an insert, while the cache
     // and the live grid are in screen coordinates: comparing them would
