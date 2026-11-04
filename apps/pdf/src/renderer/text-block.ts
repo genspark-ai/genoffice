@@ -39,6 +39,14 @@ interface Frag {
   font?: string
 }
 
+/** Left/right/center edge agreement tolerance, in font sizes */
+const EDGE_TOL_EM = 0.6
+/** Widest first-line or hanging indent a left-set paragraph carries, in font sizes */
+const MAX_INDENT_EM = 2.5
+
+/** Bullet or enumerator opening a list item: `•`, `1.`, `(2)`, `3)`, `1、`, `（4）` */
+const LIST_MARKER = /^(?:[•◦▪▫‣⁃●○■□◆◇►▶➢✓✔]|[(（]?\d{1,2}(?:[.)]\s|[）、]))/
+
 const median = (nums: number[]): number => {
   const s = [...nums].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)]!
@@ -249,6 +257,7 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
   // leaves at most the next line's first wrap-unit unfilled, so an internal
   // line falling shorter than that is a paragraph end, not a wrapped line.
   // Left-set text only: centered/right-set lines are ragged on the right by design.
+  // A line that a wrap cannot explain starts a new paragraph too (startsNewParagraph).
   for (let i = open.length - 1; i >= 0; i--) {
     const p = open[i]!
     if (p.lines.length < 2) continue
@@ -259,14 +268,17 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
       x2 = Math.max(x2, l.rect[2])
     }
     const fs = dominant(p.lines.map((l) => [l.fontSize, l.rect[2] - l.rect[0]]))
-    if (inferAlign(p.lines, x1, x2, fs) !== 'left') continue
+    const leftSet = inferAlign(p.lines, x1, x2, fs) === 'left'
     const parts: Para[] = []
     let cur: Para = { lines: [p.lines[0]!], leads: [] }
     for (let j = 1; j < p.lines.length; j++) {
       const prev = p.lines[j - 1]!
       const ln = p.lines[j]!
       const shortfall = x2 - prev.rect[2]
-      if (shortfall > firstTokenWidth(ln.text, ln.fontSize) + ln.fontSize * 1.5) {
+      if (
+        (leftSet && shortfall > firstTokenWidth(ln.text, ln.fontSize) + ln.fontSize * 1.5) ||
+        startsNewParagraph(cur.lines, ln, fs, leftSet)
+      ) {
         parts.push(cur)
         cur = { lines: [ln], leads: [] }
       } else {
@@ -303,7 +315,9 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
     let cur: Para = { lines: [p.lines[0]!], leads: [] }
     for (let i = 1; i < p.lines.length; i++) {
       const lead = p.leads[i - 1]!
-      if (lead > med * 1.45) {
+      // Paragraph spacing of a third of the leading (6pt after 14pt lines) is a
+      // boundary; baselines inside one paragraph drift far less
+      if (lead > med * 1.25) {
         split.push(cur)
         cur = { lines: [p.lines[i]!], leads: [] }
       } else {
@@ -336,6 +350,26 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
   })
 }
 
+/** Whether `ln` cannot be a wrapped continuation of the paragraph `lines` (top to
+    bottom): it opens a list item, it follows a lone first line set in another font
+    (a same-size heading), or, in left-set text, its left edge leaves the paragraph's
+    body edge (the second line's: the first may be indented or hung). The first two
+    do not depend on the alignment: wrapped list items justified to one right edge
+    read as right-set. */
+function startsNewParagraph(
+  lines: BlockLine[],
+  ln: BlockLine,
+  fontSize: number,
+  leftSet: boolean,
+): boolean {
+  if (LIST_MARKER.test(ln.text.trimStart())) return true
+  const first = lines[0]!
+  if (lines.length === 1 && first.font && ln.font && first.font !== ln.font) return true
+  if (!leftSet) return false
+  if (lines.length === 1) return Math.abs(ln.rect[0] - first.rect[0]) > fontSize * MAX_INDENT_EM
+  return Math.abs(ln.rect[0] - lines[1]!.rect[0]) > fontSize * EDGE_TOL_EM
+}
+
 /** Which edge the lines agree on BEST. Left check skips the first line (indent);
     right check skips the last (a paragraph's short closing line); center uses
     every line. Similar-width centered/right lines share the left edge within the
@@ -349,7 +383,7 @@ function inferAlign(
   fontSize: number,
 ): 'left' | 'center' | 'right' {
   if (lines.length < 2) return 'left'
-  const tol = fontSize * 0.6
+  const tol = fontSize * EDGE_TOL_EM
   const mid = (x1 + x2) / 2
   // Skipping leaves a two-line block with a single left/right witness whose edge
   // defines the block extent (deviation 0 by construction), so left would always
@@ -374,7 +408,7 @@ function inferAlign(
     // A small left-edge shift with flush right edges is a first-line indent or a
     // hanging indent — a left-set paragraph either way, not right alignment
     const shift = Math.abs(lines[0]!.rect[0] - lines[1]!.rect[0])
-    if (shift > tol && shift <= fontSize * 2.5) return 'left'
+    if (shift > tol && shift <= fontSize * MAX_INDENT_EM) return 'left'
   }
   if (centerDev <= tol && centerDev <= rightDev) return 'center'
   if (!two) {
@@ -387,7 +421,12 @@ function inferAlign(
     const restX1 = Math.min(...rest.map((l) => l.rect[0]))
     const restDev = Math.max(...rest.map((l) => l.rect[0] - restX1))
     const inset = restX1 - x1
-    if (lines[0]!.rect[0] - x1 <= tol && restDev <= tol && inset > tol && inset <= fontSize * 2.5) {
+    if (
+      lines[0]!.rect[0] - x1 <= tol &&
+      restDev <= tol &&
+      inset > tol &&
+      inset <= fontSize * MAX_INDENT_EM
+    ) {
       return 'left'
     }
   }
