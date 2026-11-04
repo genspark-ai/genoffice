@@ -16,6 +16,7 @@
     "./headless-export": "./src/headless-export.ts",
     "./main-proxy": "./src/main-proxy.ts",
     "./print-cups": "./src/print-cups.ts",
+    "./printer-options": "./src/printer-options.ts",
     "./print-job": "./src/print-job.ts",
     "./print-window": "./src/print-window.ts",
     "./remote-image": "./src/remote-image.ts",

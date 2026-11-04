@@ -8,6 +8,7 @@
 /// given the direct print.
 
 import { spawn } from 'node:child_process'
+import { isValidOptionName, isValidOptionValue } from './printer-options'
 
 export interface CupsPrintJob {
   /** CUPS queue name; undefined = the system's default destination */
@@ -15,6 +16,9 @@ export interface CupsPrintJob {
   copies?: number
   collate?: boolean
   duplexMode?: 'simplex' | 'longEdge' | 'shortEdge'
+  /** driver options the dialog picked from the queue's advertised groups
+   * (quality, color, media type) — passed through as `-o name=value` */
+  driverOptions?: readonly { readonly name: string; readonly value: string }[]
 }
 
 const SIDES: Record<NonNullable<CupsPrintJob['duplexMode']>, string> = {
@@ -31,6 +35,11 @@ export function lpArgumentsFor(job: CupsPrintJob): string[] {
   if (job.copies !== undefined) args.push('-n', String(job.copies))
   if (job.collate !== undefined) args.push('-o', job.collate ? 'Collate=True' : 'Collate=False')
   if (job.duplexMode !== undefined) args.push('-o', `sides=${SIDES[job.duplexMode]}`)
+  for (const option of job.driverOptions ?? []) {
+    // charset re-checked here: these strings become spawn arguments
+    if (isValidOptionName(option.name) && isValidOptionValue(option.value))
+      args.push('-o', `${option.name}=${option.value}`)
+  }
   return args
 }
 
