@@ -23,6 +23,16 @@ export interface BuildDocxOptions {
   binaryParts?: Array<{ path: string; base64: string; extension: string; contentType: string }>
   /** extra sectPr children inserted first (headerReference/footerReference…) */
   sectPrExtra?: string
+  /** full replacement <w:sectPr>…</w:sectPr> for the body (pgSz/pgMar and any
+   *  section property, e.g. landscape or columns); header/footer references
+   *  are injected at the front when headerXml/footerXml are set. Ignoring
+   *  sectPrExtra, which only ever prepends children to the default sectPr. */
+  sectPrXml?: string
+  /** inner XML of word/header1.xml (a <w:hdr> wrapper, its relationship, the
+   *  content-type override and the sectPr headerReference are all automatic) */
+  headerXml?: string
+  /** inner XML of word/footer1.xml, wired the same way as headerXml */
+  footerXml?: string
   /** extra attributes on the <w:document> root (e.g. xml:space="preserve") */
   docRootExtraAttrs?: string
 }
@@ -68,6 +78,12 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     options.withImage ? '<Default Extension="png" ContentType="image/png"/>' : '',
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',
+    options.headerXml !== undefined
+      ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+      : '',
+    options.footerXml !== undefined
+      ? '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+      : '',
     withNumbering
       ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
       : '',
@@ -99,6 +115,12 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
       ? '<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>'
       : '',
     options.extraRels ?? '',
+    options.headerXml !== undefined
+      ? '<Relationship Id="rIdH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
+      : '',
+    options.footerXml !== undefined
+      ? '<Relationship Id="rIdF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
+      : '',
   ].join('')
   zip.file(
     'word/_rels/document.xml.rels',
@@ -110,14 +132,23 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     options.stylesXml ?? `${STYLES_XML_OPEN}${options.extraStylesXml ?? ''}</w:styles>`,
   )
   if (withNumbering) zip.file('word/numbering.xml', options.numberingXml ?? NUMBERING_XML)
+  if (options.headerXml !== undefined)
+    zip.file('word/header1.xml', `${XML_DECL}<w:hdr ${DOC_NS}>${options.headerXml}</w:hdr>`)
+  if (options.footerXml !== undefined)
+    zip.file('word/footer1.xml', `${XML_DECL}<w:ftr ${DOC_NS}>${options.footerXml}</w:ftr>`)
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)
   for (const part of options.binaryParts ?? []) zip.file(part.path, part.base64, { base64: true })
 
-  const sectPr =
+  const baseSectPr =
+    options.sectPrXml ??
     `<w:sectPr>${options.sectPrExtra ?? ''}<w:pgSz w:w="11906" w:h="16838"/>` +
-    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
-    '</w:sectPr>'
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '</w:sectPr>'
+  const hfRefs =
+    (options.headerXml !== undefined ? '<w:headerReference w:type="default" r:id="rIdH1"/>' : '') +
+    (options.footerXml !== undefined ? '<w:footerReference w:type="default" r:id="rIdF1"/>' : '')
+  const sectPr = hfRefs ? baseSectPr.replace('<w:sectPr>', `<w:sectPr>${hfRefs}`) : baseSectPr
   zip.file(
     'word/document.xml',
     `${XML_DECL}<w:document ${DOC_NS}${options.docRootExtraAttrs ? ` ${options.docRootExtraAttrs}` : ''}><w:body>${options.bodyXml}${sectPr}</w:body></w:document>`,
