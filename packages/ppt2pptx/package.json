@@ -14,7 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@genoffice/doc2docx": "*",
+    "@genoffice/compound-file": "*",
     "cfb": "^1.2.2",
     "jszip": "^3.10.1"
   },
