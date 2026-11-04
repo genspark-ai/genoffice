@@ -14,10 +14,10 @@ import {
  * The recipient list: the records the merge draws on, and the ones the user
  * takes out of it.
  *
- * 筛选 and 排序 open Word's 筛选和排序 dialog: two tabs (筛选记录 / 排序记录),
- * the filter rows are 域 + 比较关系 + 比较对象 joined with 且/或, the sort tab
- * takes up to three levels. The dialog works on a draft — 确定 applies it,
- * 取消 leaves the list as it was.
+ * The Filter and Sort buttons open a two-tab dialog (Filter Records / Sort
+ * Records). Filter rows are field + operator + value, joined with and/or;
+ * Sort offers up to three levels. Changes are drafted — OK applies them,
+ * Cancel leaves the list as it was.
  */
 
 export interface MergeRecipientListProps {
@@ -230,7 +230,7 @@ export function MergeRecipientList({
       e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
-  // Esc closes the 筛选和排序 dialog before it closes the recipient list
+  // Esc closes the Filter/Sort dialog before it closes the recipient list
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && tab) {
       e.preventDefault()

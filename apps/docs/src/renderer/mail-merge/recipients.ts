@@ -97,7 +97,7 @@ export function viewRecipients(
   let rows = records.map((record, index) => ({ index, record }))
   const active = conditions.filter((c) => c.field !== '')
   if (active.length > 0) {
-    // conditions fold left to right: the first one decides, then each 且/或
+    // conditions fold left to right: the first one decides, then each join
     // picks how the one below it joins in
     rows = rows.filter(({ record }) => {
       let keep = matches(record, active[0])
@@ -108,7 +108,7 @@ export function viewRecipients(
       return keep
     })
   }
-  // sort levels apply in order: 排序依据 first, then 第二依据, then 第三依据
+  // sort levels apply in order: the primary field first, then the two fallbacks
   const levels = sorts.filter((s) => s.field !== '')
   if (levels.length > 0) {
     rows = [...rows].sort((a, b) => {

@@ -164,6 +164,41 @@ export function mergeAllRecords(doc: PmNode, records: readonly MergeRecord[]): P
   return { ...doc, content }
 }
 
+/**
+ * A NEXT template spanning every record, one page per slotsPerPage window.
+ *
+ * Word repeats the page until records run out — a template with 2 NEXTs fits
+ * 3 records per page, so 30 records produce 10 pages. Each page is built by
+ * substituteWithCursor, then pageBreakBefore stitches them together the same
+ * way mergeAllRecords does for per-letter pages. Trailing pages that run past
+ * the record list come out blank, matching Word's behaviour. genoffice#2097,
+ * genoffice#2374.
+ */
+export function mergeNextPages(
+  doc: PmNode,
+  records: readonly MergeRecord[],
+  slotsPerPage: number,
+): PmNode {
+  if (slotsPerPage <= 0) slotsPerPage = 1
+  const content: PmNode[] = []
+  const totalPages = Math.max(1, Math.ceil(records.length / slotsPerPage))
+  for (let page = 0; page < totalPages; page++) {
+    const startIndex = page * slotsPerPage
+    const endIndex = (page + 1) * slotsPerPage - 1
+    const merged = substituteWithCursor(doc, records, startIndex, endIndex)
+    const pageBlocks = merged.content ?? []
+    pageBlocks.forEach((block, blockIndex) => {
+      const copy = page === 0 ? block : withoutUniqueAnchors(block)
+      if (page === 0 || blockIndex !== 0) {
+        content.push(copy)
+        return
+      }
+      content.push({ ...copy, attrs: { ...(copy.attrs ?? {}), pageBreakBefore: true } })
+    })
+  }
+  return { ...doc, content }
+}
+
 function withoutUniqueAnchors(node: PmNode): PmNode {
   const out: PmNode = { ...node }
   if (out.attrs && 'bookmarks' in out.attrs && out.attrs.bookmarks) {
@@ -185,21 +220,25 @@ function withoutUniqueAnchors(node: PmNode): PmNode {
  * a "one page, many records" merge rather than the "one letter per record" one.
  */
 export function hasNextField(doc: PmNode): boolean {
-  let found = false
+  return countNextFields(doc) > 0
+}
+
+/**
+ * The number of NEXT fields the template holds. One page holds
+ * NEXT_count + 1 records (the first record, then each NEXT brings one more).
+ */
+export function countNextFields(doc: PmNode): number {
+  let count = 0
   const walk = (node: PmNode): void => {
-    if (found) return
     const mark = node.marks?.find((m) => m.type === FIELD_MARK)
     if (mark) {
       const [keyword] = splitInstruction(String(mark.attrs?.instr ?? ''))
-      if (keyword === 'NEXT') {
-        found = true
-        return
-      }
+      if (keyword === 'NEXT') count++
     }
     for (const child of node.content ?? []) walk(child)
   }
   walk(doc)
-  return found
+  return count
 }
 
 /**
@@ -248,7 +287,10 @@ function walkContent(
       // the NEXT field itself leaves nothing behind
       continue
     }
-    const value = mark ? fieldValue(instr, records[Math.min(cursor.value, endIndex)] ?? {}) : null
+    // Word leaves trailing slots blank when the cursor runs past the window;
+    // we do the same here instead of repeating the last record. genoffice#2374
+    const activeRecord = cursor.value <= endIndex ? records[cursor.value] : null
+    const value = mark ? fieldValue(instr, activeRecord ?? {}) : null
     if (value === null) {
       fieldInstr = null
       fieldSeen = false

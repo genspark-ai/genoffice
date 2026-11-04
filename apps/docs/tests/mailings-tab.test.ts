@@ -110,7 +110,7 @@ describe('the Mailings tab', () => {
     expect(onInsertField).toHaveBeenCalledWith(mergeFieldInstruction('FirstName'))
   })
 
-  it('inserts a NEXT rule when the user clicks 下一条记录', () => {
+  it('inserts a NEXT rule when the user clicks the next-record button', () => {
     const view = renderMailings()
     const fieldButton = [...view.querySelectorAll<HTMLButtonElement>('button.rb-big')].find(
       (b) => b.textContent === t('ribbonMailingsInsertField'),

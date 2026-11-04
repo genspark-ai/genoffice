@@ -2941,7 +2941,7 @@ export function App() {
         .run()
       setStatus(t('appFieldInserted', { instr }))
     },
-    [editor, fieldValue, t],
+    [editor, fieldValue],
   )
 
   /** F9: recompute all inline field caches (PAGE/NUMPAGES/date-time/file name); REF/TOC are recomputed when Word opens the file */

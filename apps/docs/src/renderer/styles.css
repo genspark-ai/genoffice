@@ -15788,13 +15788,13 @@ tr > .page-gap-cut {
 
 .rb-field-next {
   font-weight: 600;
-  color: var(--color-accent, #1a73e8);
+  color: var(--accent);
 }
 
 .rb-drop-sep {
   height: 1px;
   margin: 4px 0;
-  background: var(--color-border, #e0e0e0);
+  background: var(--border);
 }
 
 .modal .mailmerge-range-num {
@@ -15803,7 +15803,7 @@ tr > .page-gap-cut {
   margin: 0;
   padding: 0 6px;
   font-size: 12px;
-  border: 1px solid var(--color-border, #ccc);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface);
   color: var(--color-text-primary);

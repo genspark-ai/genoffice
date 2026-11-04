@@ -3,8 +3,10 @@ import type { MergeOutputMode } from '../../shared/ipc'
 import { buildDocBytes, type FileActionContext } from '../file-actions'
 import type { PmNode } from '../editor/convert'
 import {
+  countNextFields,
   hasNextField,
   mergeAllRecords,
+  mergeNextPages,
   substituteMergeFields,
   substituteWithCursor,
 } from './template'
@@ -110,13 +112,19 @@ export async function buildMailMergeFiles(
     return [{ name: mergedDocumentName(ctx), bytes }]
   }
 
-  // a NEXT template: walk a cursor from each starting record
+  // a NEXT template: walk a cursor from each starting record, one page per
+  // slotsPerPage (NEXT count + 1). Word repeats the page until records run
+  // out; trailing slots blank, so a short final page does not repeat data.
+  const nextCount = countNextFields(template)
+  const slotsPerPage = nextCount + 1
+
   if (request.mode === 'perRecord') {
     const files: MailMergeFile[] = []
-    for (let from = 0; from < subset.length; from++) {
+    for (let from = 0; from < subset.length; from += slotsPerPage) {
+      const end = from + slotsPerPage - 1
       const bytes = await buildDocBytes(
         ctx,
-        substituteWithCursor(template, subset, from, subset.length - 1),
+        substituteWithCursor(template, subset, from, end),
       )
       if (!bytes) continue
       const name = `${mergeOutputFileName(
@@ -130,7 +138,7 @@ export async function buildMailMergeFiles(
   }
   const bytes = await buildDocBytes(
     ctx,
-    substituteWithCursor(template, subset, 0, subset.length - 1),
+    mergeNextPages(template, subset, slotsPerPage),
   )
   if (!bytes) return []
   return [{ name: mergedDocumentName(ctx), bytes }]

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { MergeDataSource } from '../../shared/ipc'
+import type { MergeOutputMode } from '../../shared/ipc'
 import type { MergeRecord } from '@genoffice/docx-engine'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import { useI18n } from '../i18n/locale'
@@ -32,6 +33,8 @@ export function MergeFinishDialog({
 }: MergeFinishDialogProps) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
+  const [mode, setMode] = useState<MergeOutputMode>('single')
+  const [namePattern, setNamePattern] = useState('')
   const [range, setRange] = useState<'all' | 'current' | 'fromTo'>('all')
   const [from, setFrom] = useState(1)
   const [to, setTo] = useState(Math.max(records.length, 1))
@@ -59,11 +62,10 @@ export function MergeFinishDialog({
     setDone('')
     try {
       const result = await onMerge({
-        // every record goes into one document, each letter on its own page
-        mode: 'single',
+        mode,
         records,
         fields: source.fields,
-        namePattern: '',
+        namePattern,
         range: rangeWindow(),
       })
       if (result.canceled) {
@@ -155,6 +157,42 @@ export function MergeFinishDialog({
               />
             </label>
           </div>
+        </div>
+
+        <div className="mailmerge-section">
+          <div className="mailmerge-label">{t('ribbonMailingsOutput')}</div>
+          <div className="modal-row mailmerge-option-row">
+            <label className="mailmerge-radio">
+              <input
+                type="radio"
+                name="mailmerge-output"
+                checked={mode === 'single'}
+                onChange={() => setMode('single')}
+              />
+              {t('ribbonMailingsOutputSingle')}
+            </label>
+            <label className="mailmerge-radio">
+              <input
+                type="radio"
+                name="mailmerge-output"
+                checked={mode === 'perRecord'}
+                onChange={() => setMode('perRecord')}
+              />
+              {t('ribbonMailingsOutputPerRecord')}
+            </label>
+          </div>
+          {mode === 'perRecord' && (
+            <div className="modal-row mailmerge-option-row">
+              <span className="mailmerge-name-label">{t('ribbonMailingsNamePattern')}</span>
+              <input
+                type="text"
+                className="mailmerge-name-input"
+                placeholder={t('ribbonMailingsNamePatternPh')}
+                value={namePattern}
+                onChange={(e) => setNamePattern(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         {error && <div className="modal-error">{error}</div>}

@@ -154,7 +154,9 @@ export function MailingsTab({
    * Swap the editor's document for the active record's merged values, so the
    * fields read as the record rather than as «Name». emitUpdate:false keeps the
    * editor's dirty flag and the autosave out of it — previewing is a view, not
-   * an edit. A second press restores the document with the fields back.
+   * an edit. addToHistory:false keeps the preview out of the undo stack so
+   * Ctrl+Z during preview does not desync the saved snapshot. A second press
+   * restores the document with the fields back.
    */
   const togglePreview = () => {
     if (!previewingRef.current) {
@@ -162,14 +164,18 @@ export function MailingsTab({
       if (!record) return
       savedRef.current = editor.getJSON() as PmNode
       editor.setEditable(false)
-      editor.commands.setContent(previewDoc(savedRef.current, record) as never, {
-        emitUpdate: false,
-      })
+      editor.chain().setMeta('addToHistory', false).setContent(
+        previewDoc(savedRef.current, record) as never,
+        { emitUpdate: false },
+      ).run()
       previewingRef.current = true
       setPreviewing(true)
     } else {
       if (savedRef.current) {
-        editor.commands.setContent(savedRef.current as never, { emitUpdate: false })
+        editor.chain().setMeta('addToHistory', false).setContent(
+          savedRef.current as never,
+          { emitUpdate: false },
+        ).run()
       }
       savedRef.current = null
       editor.setEditable(true)
@@ -183,16 +189,20 @@ export function MailingsTab({
     if (!previewingRef.current || !savedRef.current) return
     const record = activeRecords[activeIndex]
     if (record)
-      editor.commands.setContent(previewDoc(savedRef.current, record) as never, {
-        emitUpdate: false,
-      })
+      editor.chain().setMeta('addToHistory', false).setContent(
+        previewDoc(savedRef.current, record) as never,
+        { emitUpdate: false },
+      ).run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex])
 
   // a new data source means the saved document is stale: leave the preview
   useEffect(() => {
     if (!previewingRef.current || !savedRef.current) return
-    editor.commands.setContent(savedRef.current as never, { emitUpdate: false })
+    editor.chain().setMeta('addToHistory', false).setContent(
+      savedRef.current as never,
+      { emitUpdate: false },
+    ).run()
     savedRef.current = null
     editor.setEditable(true)
     previewingRef.current = false
@@ -204,7 +214,10 @@ export function MailingsTab({
   useEffect(
     () => () => {
       if (previewingRef.current && savedRef.current) {
-        editor.commands.setContent(savedRef.current as never, { emitUpdate: false })
+        editor.chain().setMeta('addToHistory', false).setContent(
+          savedRef.current as never,
+          { emitUpdate: false },
+        ).run()
         editor.setEditable(true)
       }
     },

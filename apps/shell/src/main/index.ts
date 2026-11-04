@@ -7119,8 +7119,10 @@ app.whenReady().then(async () => {
       const oldPid = Number(readFileSync(devPidFile(), 'utf-8').trim())
       if (Number.isFinite(oldPid) && oldPid > 0 && oldPid !== process.pid) {
         // pid-recycling guard: only kill if that pid is still an Electron process
-        const cmd = execSync(`ps -o command= -p ${oldPid}`).toString()
-        if (cmd.includes('Electron')) process.kill(oldPid, 'SIGKILL')
+        const cmd = (process.platform === 'win32'
+          ? execSync(`tasklist /FI "PID eq ${oldPid}" /NH /FO CSV`).toString()
+          : execSync(`ps -o command= -p ${oldPid}`).toString())
+        if (/electron|genoffice/i.test(cmd)) process.kill(oldPid, 'SIGKILL')
       }
     } catch {
       // no previous instance recorded / already gone (ps exits non-zero)
