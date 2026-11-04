@@ -745,7 +745,7 @@ const config = {
   // only one the sidecar was actually built for — and GENOFFICE_LINUX_ARM64=1
   // (the second release pass, mirroring GENOFFICE_WIN_ARM64) switches every
   // target to arm64, where the sidecar must come from a native arm64 host or
-  // an explicit cross build (see linuxSidecarCandidates and the ELF check).
+  // an explicit cross build (see linuxSidecarArm64Candidates and the ELF check).
   linux: {
     // AppImage (self-contained, any distro) + deb (apt install, pulls in the
     // GTK/NSS runtime deps) + rpm (dnf/zypper install on Fedora / RHEL /
@@ -867,7 +867,7 @@ const config = {
       const sidecar = join(__dirname, LINUX_SIDECAR)
       if (!existsSync(sidecar)) {
         throw new Error(
-          `linux extraResources source missing: ${linuxSidecarCandidates.join(' or ')} ` +
+          `linux extraResources source missing: ${linuxSidecarArm64Candidates.join(' or ')} ` +
             (linuxArm64
               ? `(cross-build with "cargo zigbuild --release --target ${linuxSidecarTarget}", ` +
                 'or build natively on an arm64 Linux host)'
