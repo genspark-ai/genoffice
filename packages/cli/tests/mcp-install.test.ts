@@ -25,7 +25,7 @@ describe('genoffice mcp list', () => {
     expect(r.json().detail.launcher).toBe(LAUNCHER)
     const agents = r.json().detail.agents as Array<Record<string, unknown>>
     expect(agents.map((a) => a.agent).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'cursor', 'gemini', 'opencode', 'windsurf'].sort(),
+      ['claude-code', 'codex', 'copilot', 'cursor', 'dsh', 'gemini', 'opencode', 'windsurf'].sort(),
     )
     expect(agents.find((a) => a.agent === 'cursor')).toMatchObject({
       detected: true,
@@ -174,7 +174,7 @@ describe('genoffice mcp install', () => {
         .map((a: any) => a.agent)
         .sort(),
     ).toEqual(['copilot', 'gemini', 'opencode'])
-    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(4)
+    expect(rows.filter((a: any) => a.status === 'not_detected').length).toBe(5)
     expect(readJson(join(m.home, '.copilot', 'mcp-config.json')).mcpServers.genoffice).toEqual({
       type: 'local',
       command: LAUNCHER,
@@ -194,6 +194,24 @@ describe('genoffice mcp install', () => {
     const forced = await run(['mcp', 'install', 'cursor', '--force', '--json'], { env: m.env })
     expect(forced.code).toBe(0)
     expect(existsSync(join(m.home, '.cursor', 'mcp.json'))).toBe(true)
+  })
+
+  it('finds dsh in its dotfolder and writes the Cordis patch', async () => {
+    const m = fakeMachine(['.dsh'])
+    const listed = await run(['mcp', 'list', '--json'], { env: m.env })
+    expect(listed.code).toBe(0)
+    expect(listed.json().detail.agents.find((a: any) => a.agent === 'dsh')).toMatchObject({
+      detected: true,
+      config: join(m.home, '.dsh', 'cordis.patch.yml'),
+    })
+
+    const r = await run(['mcp', 'install', 'dsh', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    expect(r.json().detail.agents[0].status).toBe('installed')
+    const patch = readFileSync(join(m.home, '.dsh', 'cordis.patch.yml'), 'utf-8')
+    expect(patch).toContain('id: mcp-genoffice')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'")
+    expect(patch).toContain(`command: ${LAUNCHER}`)
   })
 
   it('writes Claude Code user scope into .claude.json at the top level, honouring CLAUDE_CONFIG_DIR', async () => {
@@ -267,12 +285,12 @@ describe('genoffice mcp install summaries', () => {
     const r = await run(['mcp', 'install', 'all', '--json'], { env: m.env })
     expect(r.code).toBe(0)
     expect(r.json().summary).toBe(
-      'nothing registered: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing registered: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
     expect(r.json().warnings).toHaveLength(2)
     const u = await run(['mcp', 'uninstall', 'all', '--json'], { env: m.env })
     expect(u.json().summary).toBe(
-      'nothing removed: 5 agent(s) not detected, 2 agent(s) left alone (see warnings)',
+      'nothing removed: 6 agent(s) not detected, 2 agent(s) left alone (see warnings)',
     )
   })
 
