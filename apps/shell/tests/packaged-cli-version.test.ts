@@ -11,9 +11,21 @@ const shellPackage = JSON.parse(readFileSync(resolve(shellRoot, 'package.json'),
 }
 const CLI_BUNDLE_REL = '../../packages/cli/dist/genoffice.cjs'
 
+// ELF e_machine values the linux packaging guard reads out of the sidecar.
+const ELF_X86_64 = 0x3e
+const ELF_AARCH64 = 0xb7
+
 interface Rebuild {
   script: string
   appVersion: string | undefined
+}
+
+/** A 20-byte ELF header (e_ident + e_machine) for the given architecture. */
+function elfHeader(machine: number): Buffer {
+  const header = Buffer.alloc(20)
+  header.write('\x7fELF', 0, 'latin1')
+  header.writeUInt16LE(machine, 18)
+  return header
 }
 
 /**
@@ -25,8 +37,17 @@ function loadConfig(opts: {
   baked: string
   extraMetadataVersion?: string
   rebuildApplies?: boolean
+  /** e_machine the fake linux sidecar reports (defaults to x86_64). */
+  sidecarMachine?: number
+  /** Extra env for the packaged config, e.g. GENOFFICE_LINUX_ARM64=1. */
+  env?: Record<string, string>
+  /** Whether the fake linux sidecar exists at all (false → missing source). */
+  sidecarExists?: boolean
 }): {
-  config: { beforePack: (context: { electronPlatformName: string }) => Promise<void> }
+  config: {
+    beforePack: (context: { electronPlatformName: string }) => Promise<void>
+    linux?: { target?: Array<{ target: string; arch: string[] }> }
+  }
   rebuilds: Rebuild[]
 } {
   const rebuilds: Rebuild[] = []
@@ -35,7 +56,12 @@ function loadConfig(opts: {
   runInNewContext(readFileSync(resolve(shellRoot, 'electron-builder.cjs'), 'utf8'), {
     module: configModule,
     __dirname: shellRoot,
-    process: { platform: 'linux', arch: 'x64', env: {}, execPath: '/usr/bin/node' },
+    process: {
+      platform: 'linux',
+      arch: 'x64',
+      env: { ...opts.env },
+      execPath: '/usr/bin/node',
+    },
     require: (id: string) => {
       if (id === './package.json') return shellPackage
       if (id === 'node:child_process') {
@@ -50,7 +76,8 @@ function loadConfig(opts: {
       if (id === 'node:fs') {
         return {
           ...require(id),
-          existsSync: () => true,
+          existsSync: (path: string) =>
+            String(path).endsWith('xlsx-sidecar') ? opts.sidecarExists !== false : true,
           readFileSync: (path: string, encoding: string) => {
             if (String(path).endsWith('genoffice.cjs')) {
               return `const __cliAppVersion = ${JSON.stringify(baked)};\n`
@@ -62,6 +89,16 @@ function loadConfig(opts: {
             }
             return require('node:fs').readFileSync(path, encoding as BufferEncoding)
           },
+          // The linux packaging guard reads the sidecar's ELF header to learn
+          // its architecture: serve the header of the requested one.
+          openSync: () => 42,
+          readSync: (_fd: number, buffer: Buffer, offset: number, length: number) => {
+            const header = elfHeader(opts.sidecarMachine ?? ELF_X86_64)
+            const count = Math.min(length, header.length)
+            header.copy(buffer, offset, 0, count)
+            return count
+          },
+          closeSync: () => undefined,
         }
       }
       return require(id)
@@ -70,6 +107,7 @@ function loadConfig(opts: {
   const config = configModule.exports as {
     beforePack: (context: { electronPlatformName: string }) => Promise<void>
     extraMetadata?: { version?: string }
+    linux?: { target?: Array<{ target: string; arch: string[] }> }
   }
   if (opts.extraMetadataVersion) {
     config.extraMetadata = { ...(config.extraMetadata ?? {}), version: opts.extraMetadataVersion }
@@ -115,5 +153,69 @@ describe('packaged CLI version agreement', () => {
     const shipped = (config as unknown as { extraResources: Array<{ from: string }> })
       .extraResources
     expect(shipped.some((entry) => entry.from === CLI_BUNDLE_REL)).toBe(true)
+  })
+})
+
+describe('linux sidecar architecture guard', () => {
+  it('packages an x86_64 sidecar into the x64 linux targets', async () => {
+    const { config } = loadConfig({ baked: shellPackage.version, sidecarMachine: ELF_X86_64 })
+    await config.beforePack({ electronPlatformName: 'linux' })
+    const targets = config.linux?.target ?? []
+    expect(targets.length).toBeGreaterThan(0)
+    expect(targets.every((entry) => entry.arch[0] === 'x64')).toBe(true)
+  })
+
+  it('packages an aarch64 sidecar into the arm64 linux targets', async () => {
+    const { config } = loadConfig({
+      baked: shellPackage.version,
+      sidecarMachine: ELF_AARCH64,
+      env: { GENOFFICE_LINUX_ARM64: '1' },
+    })
+    await config.beforePack({ electronPlatformName: 'linux' })
+    const targets = config.linux?.target ?? []
+    expect(targets.length).toBeGreaterThan(0)
+    expect(targets.every((entry) => entry.arch[0] === 'arm64')).toBe(true)
+  })
+
+  it('refuses an aarch64 sidecar in an x64 package', async () => {
+    const { config } = loadConfig({ baked: shellPackage.version, sidecarMachine: ELF_AARCH64 })
+    await expect(config.beforePack({ electronPlatformName: 'linux' })).rejects.toThrow(
+      /linux sidecar is aarch64 but this package ships x86_64/,
+    )
+  })
+
+  it('refuses an x86_64 sidecar in an arm64 package', async () => {
+    const { config } = loadConfig({
+      baked: shellPackage.version,
+      sidecarMachine: ELF_X86_64,
+      env: { GENOFFICE_LINUX_ARM64: '1' },
+    })
+    await expect(config.beforePack({ electronPlatformName: 'linux' })).rejects.toThrow(
+      /linux sidecar is x86_64 but this package ships aarch64/,
+    )
+  })
+
+  it('names the x64 sidecar candidates when the x64 source is missing', async () => {
+    const { config } = loadConfig({ baked: shellPackage.version, sidecarExists: false })
+    const message = await config.beforePack({ electronPlatformName: 'linux' }).then(
+      () => '',
+      (err: unknown) => (err as Error).message,
+    )
+    expect(message).toContain('x86_64-unknown-linux-gnu')
+    expect(message).not.toContain('aarch64-unknown-linux-gnu')
+  })
+
+  it('names the arm64 sidecar candidates when the arm64 source is missing', async () => {
+    const { config } = loadConfig({
+      baked: shellPackage.version,
+      sidecarExists: false,
+      env: { GENOFFICE_LINUX_ARM64: '1' },
+    })
+    const message = await config.beforePack({ electronPlatformName: 'linux' }).then(
+      () => '',
+      (err: unknown) => (err as Error).message,
+    )
+    expect(message).toContain('aarch64-unknown-linux-gnu')
+    expect(message).not.toContain('x86_64-unknown-linux-gnu')
   })
 })
