@@ -984,7 +984,8 @@ export async function analyzeMediaWithProvider(
  * without a model-listing endpoint answer 404/405 even for a valid key, so
  * only those two statuses count as a pass when the response is not ok.
  * Every other non-ok status (auth failures, rate limits, server errors)
- * is surfaced as a failure with the status code included.
+ * is surfaced as a failure with the status code included. BFL is the
+ * exception: its probe endpoint authenticates the key, so only a 200 passes.
  */
 export async function testMediaProvider(
   provider: ByokMediaProviderId,
@@ -996,8 +997,9 @@ export async function testMediaProvider(
     requireBaseUrl(meta, config)
     const guard = withTimeout(signal, TEST_TIMEOUT_MS)
     // provider-aware credential probes: BFL authenticates with x-key and has
-    // no model listing (a bogus job id answers 404 for a valid key), Microsoft
-    // Foundry with api-key rather than a Bearer token
+    // no model listing (the credits endpoint answers 403 without a valid
+    // key and 200 with one), Microsoft Foundry with api-key rather than a
+    // Bearer token
     let resp: Response
     if (provider === 'gemini') {
       resp = await aiFetch(geminiModelsProbeUrl(config), {
@@ -1005,8 +1007,11 @@ export async function testMediaProvider(
         signal: guard,
       })
     } else if (provider === 'bfl') {
+      // /v1/credits is the only cheap BFL endpoint that checks the key:
+      // it answers 403 without a valid key, 422 for a malformed key and
+      // 200 with the credit balance for a good one
       const base = trimSlash(config.baseUrl || BFL_BASE_URL)
-      resp = await aiFetch(`${base}/v1/get_result?id=00000000-0000-0000-0000-000000000000`, {
+      resp = await aiFetch(`${base}/v1/credits`, {
         headers: { 'x-key': config.apiKey },
         signal: guard,
       })
@@ -1023,10 +1028,12 @@ export async function testMediaProvider(
     }
     if (resp.ok) return { ok: true }
     // Vendors without a model-listing endpoint answer 404/405 to a valid
-    // key, so those statuses still mean the credentials are usable.
-    if (resp.status === 404 || resp.status === 405) return { ok: true }
-    // BFL answers 400 for a well-formed but unknown job id on a valid key
-    if (provider === 'bfl' && resp.status === 400) return { ok: true }
+    // key, so those statuses still mean the credentials are usable. BFL is
+    // excluded: its probe endpoint authenticates the key, so a 404 there is
+    // a failure like every other non-ok status.
+    if (provider !== 'bfl' && (resp.status === 404 || resp.status === 405)) {
+      return { ok: true }
+    }
     const body = await readCappedResponseText(resp, {
       maxBytes: MAX_ERROR_BODY_BYTES,
       onOverflow: 'truncate',

@@ -599,18 +599,44 @@ describe('testMediaProvider', () => {
 })
 
 describe('endpoint composition with a query string in the base URL', () => {
-  it('BFL probes with x-key against get_result and accepts 404 for a valid key', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ detail: 'not found' }, 404))
+  it('BFL probes with x-key against credits and fails on an unauthenticated response', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ detail: 'Not authenticated' }, 403))
     vi.stubGlobal('fetch', fetchMock)
     const res = await testMediaProvider('bfl', {
       apiKey: 'k',
       imageModel: '',
       analysisModel: '',
     })
-    expect(res).toEqual({ ok: true })
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/403/)
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toContain('/v1/get_result?id=')
+    expect(url).toBe('https://api.bfl.ai/v1/credits')
     expect((init.headers as Record<string, string>)['x-key']).toBe('k')
+  })
+
+  it('BFL accepts only a 200 from the credits probe', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ credits: 12.5 })),
+    )
+    const ok = await testMediaProvider('bfl', {
+      apiKey: 'good',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(ok).toEqual({ ok: true })
+    // a malformed key is rejected with 422, which is not a valid-key answer
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ detail: 'Invalid API key format' }, 422)),
+    )
+    const rejected = await testMediaProvider('bfl', {
+      apiKey: 'bad',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(rejected.ok).toBe(false)
+    expect(rejected.error).toMatch(/422/)
   })
 
   it('Microsoft probes with api-key so a bad key fails instead of passing as 404', async () => {
