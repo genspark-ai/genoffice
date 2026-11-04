@@ -189,6 +189,36 @@ function nestedTableXml(r: () => number): string {
  *  what the body actually references — an unreferenced media/numbering part or
  *  hyperlink relationship would be pruned by the save and is not a fidelity
  *  signal, so the generator never produces orphans. */
+/** A section-properties roll for the final sectPr: portrait/landscape,
+ *  column count, titlePg — all optional, always a valid minimal sectPr. */
+function sectionRoll(r: () => number): string {
+  const landscape = r() < 0.3
+  const w = landscape ? 16838 : 11906
+  const h = landscape ? 11906 : 16838
+  const orient = landscape ? ' w:orient="landscape"' : ''
+  const cols = r() < 0.25 ? `<w:cols w:num="${1 + Math.floor(r() * 2)}" w:space="708"/>` : ''
+  const titlePg = r() < 0.2 ? '<w:titlePg/>' : ''
+  return (
+    `<w:sectPr><w:pgSz w:w="${w}" w:h="${h}"${orient}/>` +
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+    `${cols}${titlePg}</w:sectPr>`
+  )
+}
+
+/** A mid-body section break: its own sectPr inside a paragraph's pPr, with a
+ *  page size that may differ from the final section's. */
+function sectionBreakXml(r: () => number): string {
+  const landscape = r() < 0.4
+  const w = landscape ? 16838 : 11906
+  const h = landscape ? 11906 : 16838
+  const orient = landscape ? ' w:orient="landscape"' : ''
+  return (
+    `<w:p><w:pPr><w:sectPr><w:pgSz w:w="${w}" w:h="${h}"${orient}/>` +
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+    '</w:sectPr></w:pPr></w:p>'
+  )
+}
+
 export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
   const r = rng(seed * 7919 + 17)
   const blocks: string[] = [`<w:p><w:r><w:t>Anchor seed ${seed}</w:t></w:r></w:p>`]
@@ -202,11 +232,30 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
     else if (pick < 0.9) blocks.push(MATH_PARAGRAPH_XML)
     else blocks.push(paraXml(r, seed, i))
   }
+  // section breaks (0-2), each after a random block (never before the anchor)
+  const breaks = Math.floor(r() * 3)
+  for (let b = 0; b < breaks; b++) {
+    const at = 1 + Math.floor(r() * (blocks.length - 1))
+    blocks.splice(at, 0, sectionBreakXml(r))
+  }
   const body = blocks.join('')
+  // header/footer knob: either, both, or neither; the footer may carry a PAGE field
+  const headerXml =
+    r() < 0.4
+      ? `<w:p>${runXml(`${CJK[Math.floor(r() * CJK.length)]} header ${seed}`, r)}</w:p>`
+      : undefined
+  const footerXml =
+    r() < 0.4
+      ? `<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>${runXml(` footer ${seed}`, r)}</w:p>`
+      : undefined
+  const sectionKnob = r() < 0.45
   return buildDocx({
     bodyXml: body,
     withNumbering: body.includes('<w:numPr>'),
     withImage: body.includes('r:embed='),
+    headerXml,
+    footerXml,
+    sectPrXml: sectionKnob ? sectionRoll(r) : undefined,
     extraRels: body.includes('rId20')
       ? '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>'
       : undefined,
