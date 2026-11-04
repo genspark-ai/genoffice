@@ -419,7 +419,11 @@ describe('synthetic stylesheets: broken chains', () => {
     const resolved = readResolvedLegacyDocModel(bytes)
     const direct = readLegacyDocModel(bytes)
     expect(resolved.warnings).toEqual([])
-    expect(resolved.paragraphs[0]!.formatting).toEqual({ styleIndex: 0, alignment: 'center' })
+    expect(resolved.paragraphs[0]!.formatting).toEqual({
+      styleIndex: 0,
+      alignment: 'center',
+      alignmentLogical: true,
+    })
     expect(resolved.paragraphs).toEqual(direct.paragraphs)
   })
 })

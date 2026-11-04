@@ -289,15 +289,17 @@ export const ja = {
   ribbonGroupSelect: '選択',
   ribbonSelectTip: '選択：描画を終了して要素の編集に戻る',
   ribbonGroupDrawTools: '描画ツール',
-  ribbonPenTip:
-    'ペン：スライド上に手書き（ページ上のインク画像として保存）；もう一度クリックで解除',
   ribbonHighlighter: '蛍光ペン',
-  ribbonHighlighterTip: '蛍光ペン：半透明の太い線；もう一度クリックで解除',
   ribbonEraserTip:
     '消しゴム：ストロークをクリックまたはなぞって 1 本ごと削除；もう一度クリックで解除',
   ribbonInkWidthTip: '{w} ピクセル',
-  ribbonGroupPenStyle: 'ペンのスタイル',
-  ribbonGroupHighlighterStyle: '蛍光ペンのスタイル',
+  ribbonPencil: '鉛筆',
+  ribbonInkAdd: '追加',
+  ribbonInkAddTip: 'ペン、蛍光ペン、鉛筆を追加',
+  ribbonInkDelete: '削除',
+  ribbonInkThickness: '太さ',
+  ribbonInkColors: '色',
+  ribbonGroupPens: 'ペン',
   ribbonEraseAll: 'すべて消去',
   ribbonEraseAllTip: '現在のスライドのすべてのインクを削除',
   // Design

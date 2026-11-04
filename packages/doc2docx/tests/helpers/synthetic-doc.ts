@@ -110,6 +110,8 @@ export interface SyntheticDocOptions {
   /** raw PlcfSed override + pair-6 lcb override (corrupt-section tests) */
   plcfSed?: Uint8Array
   lcbPlcfsed?: number
+  /** write a Dop with fFacingPages set/cleared (no Dop at all when omitted) */
+  facingPages?: boolean
   /** raw PlcfHdd override + pair-11 lcb override (corrupt-header tests) */
   plcfHdd?: Uint8Array
   lcbPlcfhdd?: number
@@ -132,7 +134,7 @@ export interface SyntheticDocOptions {
   plfLfo?: Uint8Array
   lcbPlfLfo?: number
   /** font table names (SttbfFfn, FIB pair 15); array position = ftc */
-  fonts?: string[]
+  fonts?: Array<string | SyntheticFont>
   /** raw SttbfFfn override + pair-15 lcb override (corrupt-font-table tests) */
   sttbfFfn?: Uint8Array
   lcbSttbfFfn?: number
@@ -142,6 +144,8 @@ export interface SyntheticDocOptions {
   floatingShapes?: SyntheticFloatingShape[]
   /** comments: stories appended after the header text, PlcfandRef/PlcfandTxt, authors and annotation bookmarks */
   comments?: SyntheticComment[]
+  /** raw Dop bytes (table stream, FIB pair 31) */
+  dop?: Uint8Array
   /** leave FIB pair 5 empty although ccpAtn > 0 (degradation test) */
   omitPlcfandTxt?: boolean
   /** pair-4 lcb override (corrupt comment table test) */
@@ -429,12 +433,35 @@ export function encodeStsh(
 }
 
 /** an SttbfFfn font table: cData, cbExtra 0, then one FFN (cbFfnM1 + 39 header bytes + UTF-16 name) per font */
-export function encodeSttbfFfn(names: string[]): Uint8Array {
-  const bytes: number[] = [...u16le(names.length), 0, 0]
-  for (const name of names) {
+/** One synthetic FFN record (a bare string is a name with zeroed hints). */
+export interface SyntheticFont {
+  name: string
+  altName?: string
+  /** ff family code (0 auto .. 5 decorative) */
+  family?: number
+  /** prq pitch code (0 default, 1 fixed, 2 variable) */
+  pitch?: number
+  charset?: number
+  /** 20 hex digits */
+  panose?: string
+  trueType?: boolean
+}
+
+export function encodeSttbfFfn(fonts: Array<string | SyntheticFont>): Uint8Array {
+  const bytes: number[] = [...u16le(fonts.length), 0, 0]
+  for (const font of fonts) {
+    const entry = typeof font === 'string' ? { name: font } : font
     const ffn: number[] = new Array(39).fill(0)
-    for (const char of name) ffn.push(...u16le(char.charCodeAt(0)))
+    ffn[0] = (entry.pitch ?? 0) | (entry.trueType ? 0x04 : 0) | ((entry.family ?? 0) << 4)
+    ffn[3] = entry.charset ?? 0
+    if (entry.altName) ffn[4] = entry.name.length + 1
+    entry.panose?.match(/../g)?.forEach((pair, index) => (ffn[5 + index] = parseInt(pair, 16)))
+    for (const char of entry.name) ffn.push(...u16le(char.charCodeAt(0)))
     ffn.push(0, 0)
+    if (entry.altName) {
+      for (const char of entry.altName) ffn.push(...u16le(char.charCodeAt(0)))
+      ffn.push(0, 0)
+    }
     bytes.push(ffn.length, ...ffn)
   }
   return Uint8Array.from(bytes)
@@ -636,15 +663,8 @@ export function encodeTableRowPapx(row: SyntheticTableRow, itap = 1): Uint8Array
   if (row.cantSplit) parts.push(encodeTapSprm(0x03, [1]))
   if (row.header) parts.push(encodeTapSprm(0x04, [1]))
   if (row.rowHeightTwips !== undefined) {
-    const value = row.rowHeightTwips
-    parts.push(
-      encodeTapSprm(0x07, [
-        value & 0xff,
-        (value >> 8) & 0xff,
-        (value >> 16) & 0xff,
-        (value >> 24) & 0xff,
-      ]),
-    )
+    const value = row.rowHeightTwips & 0xffff
+    parts.push(encodeTapSprm(0x07, [value & 0xff, (value >> 8) & 0xff]))
   }
   if (row.tableBorders) {
     const visible = [4, 1, 1, 0]
@@ -793,14 +813,25 @@ export interface SyntheticPicfOptions {
   lcb?: number
   /** override the PICF cbHeader for corrupt-PICF tests */
   cbHeader?: number
+  /** PICF twip crops: dxaCropLeft, dyaCropTop, dxaCropRight, dyaCropBottom */
+  crop?: [number, number, number, number]
+  /** put an inline OfficeArt shape container with these OPT properties before the payload */
+  shapeProps?: Array<[number, number]>
 }
 
 /** A PICF (0x44-byte header) followed by the picture payload. */
 export function encodePicf(options: SyntheticPicfOptions): Uint8Array {
   const header = new Uint8Array(0x44)
   const view = new DataView(header.buffer)
-  const out = new Uint8Array(header.length + options.payload.length)
-  out.set(options.payload, header.length)
+  const shape = options.shapeProps
+    ? officeArtRecord(
+        0xf004,
+        0,
+        concatBytes([fspRecord(1024, 0x0a00, 75), optRecord(options.shapeProps)]),
+        true,
+      )
+    : new Uint8Array(0)
+  const out = concatBytes([header, shape, options.payload])
   const lcb = options.lcb ?? out.length
   const cbHeader = options.cbHeader ?? 0x44
   view.setUint32(0, lcb >>> 0, true)
@@ -812,6 +843,9 @@ export function encodePicf(options: SyntheticPicfOptions): Uint8Array {
   view.setInt16(0x1e, options.dyaGoal ?? 0, true)
   view.setUint16(0x20, (options.mx ?? 0) & 0xffff, true)
   view.setUint16(0x22, (options.my ?? 0) & 0xffff, true)
+  ;(options.crop ?? [0, 0, 0, 0]).forEach((value, index) =>
+    view.setInt16(0x24 + index * 2, value, true),
+  )
   out.set(header, 0)
   return out
 }
@@ -1650,8 +1684,8 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
     // comment tables follow the shape and text box tables at the end of the table stream
     const commentPairs: Array<[number, { fc: number; lcb: number }]> = []
     const commentParts: Uint8Array[] = []
+    let cursor = plcfHdrTxbxTxtFc + (headerTextBoxes.table?.length ?? 0)
     if (comments) {
-      let cursor = plcfHdrTxbxTxtFc + (headerTextBoxes.table?.length ?? 0)
       const pairIndex: Record<keyof CommentTables, number> = {
         plcfandRef: 4,
         plcfandTxt: 5,
@@ -1671,6 +1705,15 @@ export function buildSyntheticDoc(options: SyntheticDocOptions = {}): Uint8Array
         cursor += bytes.length
       }
       shapeTables = concatBytes([shapeTables, ...commentParts])
+    }
+    let dop = options.dop
+    if (!dop && options.facingPages !== undefined) {
+      dop = new Uint8Array(500)
+      dop[0] = options.facingPages ? 0x01 : 0x00
+    }
+    if (dop) {
+      commentPairs.push([31, { fc: cursor, lcb: dop.length }])
+      shapeTables = concatBytes([shapeTables, dop])
     }
     const word = new Uint8Array(
       nextPage * SYNTHETIC_FKP_PAGE_BYTES + sepxTotal + (shapes?.delayBlips.length ?? 0),

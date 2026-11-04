@@ -4,6 +4,8 @@ import type { ParsedDocFull, StyleInfo } from '@genoffice/docx-engine'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { docStyleCss } from '../src/renderer/doc-style-css'
 import {
+  inheritedMarkFace,
+  krLineFactor,
   latinViaEastAsiaSlotFor,
   lineHeightFactor,
   setLatinViaEastAsiaSlot,
@@ -182,13 +184,48 @@ describe('docDefaults East Asian w:lang w:val lays Latin out with the eastAsia s
     // empty paragraphs keep the ascii face's height (Word probe 2026-11-02)
     expect(base).toContain('--doc-line-factor-latin:1.15')
     expect(ko).toMatch(/--doc-latin-chain:[^;}]*GenOffice SimSun Latin/)
+    // without the rule Arial leads; a Latin eastAsia slot still sends CJK glyphs to
+    // SimSun (Word probe 2026-11-04 e4: docDefaults Calibri in every slot draws Han in SimSun)
     const en = docStyleCss(parsedWith({ asciiFont: 'Arial', eastAsiaFont: 'Arial', lang: 'en-US' }))
-    expect(BASE.exec(en)![1]).toContain('Arial')
-    expect(BASE.exec(en)![1]).not.toContain('SimSun')
+    expect(BASE.exec(en)![1]).toMatch(/^[^,]*Arial/)
+    expect(BASE.exec(en)![1]).toContain('SimSun')
     const batang = docStyleCss(
       parsedWith({ asciiFont: 'Arial', eastAsiaFont: 'Batang', lang: 'ko' }),
     )
     expect(BASE.exec(batang)![1]).toContain('Batang')
     expect(BASE.exec(batang)![1]).not.toContain('Arial')
+  })
+
+  it('a document without any ascii face keeps the Calibri Latin head; SimSun is only the tail', () => {
+    const css = docStyleCss(parsedWith({}))
+    const base = BASE.exec(css)![1]
+    expect(base).toMatch(/^[^,]*Calibri/)
+    expect(base.indexOf("'Latin Sans GO'")).toBeGreaterThan(-1)
+    expect(base.indexOf("'Latin Sans GO'")).toBeLessThan(base.indexOf('SimSun'))
+    const latinChain = /--doc-latin-chain:([^;}]*)/.exec(css)![1]
+    expect(latinChain).not.toContain('SimSun')
+    expect(latinChain).toMatch(/^[^,]*Calibri/)
+  })
+
+  // Word probe 2026-11-03: docDefaults Calibri / Malgun Gothic sz 20 with w:lang
+  // w:val=ko-KR lays empty and space-only paragraphs 17.28 (Malgun), w:val=en-US
+  // 12.2 (Calibri); the 2026-11-02 Arial-everywhere probe kept Arial-height marks
+  it('an empty mark takes the eastAsia face only when that face draws East Asian script', () => {
+    expect(inheritedMarkFace('Calibri')).toBe('Calibri')
+    expect(inheritedMarkFace(null)).toBeNull()
+    setLatinViaEastAsiaSlot(true, 'Malgun Gothic')
+    expect(inheritedMarkFace('Calibri')).toBe('Malgun Gothic')
+    expect(inheritedMarkFace(null)).toBe('Malgun Gothic')
+    setLatinViaEastAsiaSlot(true, 'Arial')
+    expect(inheritedMarkFace('Arial')).toBe('Arial')
+    expect(inheritedMarkFace(null)).toBeNull()
+  })
+
+  it('hangul under a Japanese theme face: MS Mincho hands it to Malgun, the Yu faces to Batang', () => {
+    expect(krLineFactor('\uFF2D\uFF33 \u660E\u671D')).toBe(lineHeightFactor('Malgun Gothic'))
+    expect(krLineFactor('MS Gothic')).toBe(lineHeightFactor('Malgun Gothic'))
+    expect(krLineFactor('Yu Mincho')).toBe(lineHeightFactor('Batang'))
+    expect(krLineFactor('\u6e38\u660e\u671d')).toBe(lineHeightFactor('Batang'))
+    expect(krLineFactor('\u6e38\u30b4\u30b7\u30c3\u30af')).toBe(lineHeightFactor('Batang'))
   })
 })

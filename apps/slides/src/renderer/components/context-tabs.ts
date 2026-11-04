@@ -22,6 +22,7 @@ function nodeHasVisibleText(node: RenderNode): boolean {
 
 export function contextElementTypeForNode(node: RenderNode): ContextElementType {
   if (node.type === 'picture' && node.model3d) return 'model3d'
+  if (node.type === 'picture' && node.ole) return 'shape'
   if (node.type === 'table' || node.type === 'chart' || node.type === 'picture') return node.type
   if (node.type === 'shape') return nodeHasVisibleText(node) ? 'textShape' : 'shape'
   if (node.type === 'group') return nodeHasVisibleText(node) ? 'textShape' : 'shape'

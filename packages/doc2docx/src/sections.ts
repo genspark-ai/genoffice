@@ -17,6 +17,7 @@
 import { LegacyDocError, isLegacyDocError } from './errors'
 import type { FibInfo } from './fib'
 import { iterateSprms, readSprmU16, readSprmU32, readSprmU8 } from './sprm'
+import { borderLineAt, type BorderLine } from './tables'
 
 export interface SectionMargins {
   left: number
@@ -30,6 +31,38 @@ export interface SectionMargins {
 
 export type SectionBreakType = 'continuous' | 'column' | 'nextPage' | 'evenPage' | 'oddPage'
 
+export type PageNumberFormat =
+  'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter'
+
+export interface SectionColumns {
+  count: number
+  /** sprmSDxaColumns: default gap between columns */
+  spaceTwips: number
+  /** sprmSFLBetween: vertical rule between columns */
+  separator: boolean
+  /** sprmSDxaColWidth per column (unequal columns, sprmSFEvenlySpaced 0) */
+  widths?: number[]
+  /** sprmSDxaColSpacing per column (gap after that column) */
+  spacings?: number[]
+}
+
+export type PageBorderSide = 'top' | 'left' | 'bottom' | 'right'
+
+export interface PageBorderLine extends BorderLine {
+  /** gap between the line and the text or page edge, in points (dptSpace) */
+  spacePoints: number
+}
+
+export interface PageBorders {
+  /** sprmSPgbProp pgbOffsetFrom: distance measured from the text or from the page edge */
+  offsetFrom: 'text' | 'page'
+  /** sprmSPgbProp pgbApplyTo; absent = all pages */
+  display?: 'firstPage' | 'notFirstPage'
+  /** sprmSPgbProp pgbPageDepth 1: the border is drawn behind the text */
+  zOrder?: 'back'
+  sides: Partial<Record<PageBorderSide, PageBorderLine>>
+}
+
 export interface SectionInfo {
   /** first CP of the section in the document text (main text CPs) */
   startCp: number
@@ -42,14 +75,20 @@ export interface SectionInfo {
   titlePage: boolean
   /** sprmSBkc: how the section starts (w:type); absent = nextPage */
   breakType?: SectionBreakType
-  /** column count when the SEPX declares columns (only 1 is written) */
-  columns?: number
+  /** text columns when the SEPX declares more than one */
+  columns?: SectionColumns
+  /** sprmSNfcPgn; absent = decimal */
+  pageNumberFormat?: PageNumberFormat
+  /** sprmSPgnStart, kept only when sprmSFPgnRestart is set */
+  pageNumberStart?: number
   /** document grid (sprmSClm / sprmSDyaLinePitch / sprmSDxtCharSpace); no type = pitch kept, no snapping */
   docGrid?: {
     type?: 'lines' | 'linesAndChars' | 'snapToChars'
     linePitchTwips: number
     charSpace?: number
   }
+  /** page borders (sprmSBrc*80 / sprmSBrc* + sprmSPgbProp); absent when no side has a line */
+  pageBorders?: PageBorders
   /** non-fatal problems, e.g. multi-column sections that are flattened */
   warnings: string[]
 }
@@ -97,11 +136,17 @@ function u32(bytes: Uint8Array, offset: number): number {
 }
 
 /** section sprm operations (opcode & 0x1FF), MS-DOC 2.6.1 / POI SectionSprmUncompressor */
+const SPRM_S_DXA_COL_WIDTH = 0x03
+const SPRM_S_DXA_COL_SPACING = 0x04
+const SPRM_S_F_EVENLY_SPACED = 0x05
+const SPRM_S_F_L_BETWEEN = 0x06
 const SPRM_S_BKC = 0x09
 const SPRM_S_FTITLE_PAGE = 0x0a
 const SPRM_S_CCOL_M1 = 0x0b
 const SPRM_S_DXA_COLUMNS = 0x0c
 const SPRM_S_NFC_PGN = 0x0e
+const SPRM_S_F_PGN_RESTART = 0x11
+const SPRM_S_PGN_START = 0x1c
 const SPRM_S_DYA_HDR_TOP = 0x17
 const SPRM_S_DYA_HDR_BOTTOM = 0x18
 const SPRM_S_DM_ORIENT_PAGE = 0x1d
@@ -112,6 +157,25 @@ const SPRM_S_DXA_RIGHT = 0x22
 const SPRM_S_DYA_TOP = 0x23
 const SPRM_S_DYA_BOTTOM = 0x24
 const SPRM_S_DZA_GUTTER = 0x25
+const SPRM_S_BRC_TOP_80 = 0x2b
+const SPRM_S_BRC_LEFT_80 = 0x2c
+const SPRM_S_BRC_BOTTOM_80 = 0x2d
+const SPRM_S_BRC_RIGHT_80 = 0x2e
+const SPRM_S_PGB_PROP = 0x2f
+const SPRM_S_BRC_TOP = 0x34
+const SPRM_S_BRC_LEFT = 0x35
+const SPRM_S_BRC_BOTTOM = 0x36
+const SPRM_S_BRC_RIGHT = 0x37
+const PAGE_BORDER_SIDES: Record<number, PageBorderSide> = {
+  [SPRM_S_BRC_TOP_80]: 'top',
+  [SPRM_S_BRC_LEFT_80]: 'left',
+  [SPRM_S_BRC_BOTTOM_80]: 'bottom',
+  [SPRM_S_BRC_RIGHT_80]: 'right',
+  [SPRM_S_BRC_TOP]: 'top',
+  [SPRM_S_BRC_LEFT]: 'left',
+  [SPRM_S_BRC_BOTTOM]: 'bottom',
+  [SPRM_S_BRC_RIGHT]: 'right',
+}
 const SPRM_S_DXT_CHAR_SPACE = 0x30
 const SPRM_S_DYA_LINE_PITCH = 0x31
 const SPRM_S_CLM = 0x32
@@ -121,6 +185,13 @@ const BREAK_TYPES: Record<number, SectionBreakType> = {
   2: 'nextPage',
   3: 'evenPage',
   4: 'oddPage',
+}
+const PAGE_NUMBER_FORMATS: Record<number, PageNumberFormat> = {
+  0: 'decimal',
+  1: 'upperRoman',
+  2: 'lowerRoman',
+  3: 'upperLetter',
+  4: 'lowerLetter',
 }
 const GRID_TYPES: Record<number, 'lines' | 'linesAndChars' | 'snapToChars'> = {
   1: 'linesAndChars',
@@ -141,6 +212,25 @@ function applyBoolean(
 
 type SectionDraft = Omit<SectionInfo, 'startCp' | 'endCp' | 'warnings'>
 
+/** a Brc80 (4 bytes) or Brc (8 bytes) page border; null = the side is explicitly off */
+function pageBorderOf(operand: Uint8Array, wide: boolean): PageBorderLine | null | undefined {
+  if (operand.length < (wide ? 8 : 4)) return undefined
+  const line = borderLineAt(operand, 0, wide)
+  if (!line || operand[wide ? 4 : 0] === 0) return null
+  return { ...line, spacePoints: operand[wide ? 6 : 3]! & 0x1f }
+}
+
+/** sprmSPgbProp PGPInfo: pgbApplyTo bits 0-2, pgbPageDepth bits 3-4, pgbOffsetFrom bit 5 */
+function applyPageBorderProps(borders: PageBorders, value: number): void {
+  const applyTo = value & 0x7
+  if (applyTo === 1) borders.display = 'firstPage'
+  else if (applyTo === 2) borders.display = 'notFirstPage'
+  else delete borders.display
+  if (((value >> 3) & 0x3) === 1) borders.zOrder = 'back'
+  else delete borders.zOrder
+  borders.offsetFrom = value & 0x20 ? 'page' : 'text'
+}
+
 function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number): string[] {
   const warnings: string[] = []
   let sprms
@@ -155,11 +245,33 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
   let gridType: 'lines' | 'linesAndChars' | 'snapToChars' | null | undefined
   let linePitch: number | undefined
   let charSpace: number | undefined
+  // the SEP defaults: one column, 720 twip gap, evenly spaced
+  let columnCount = 1
+  let columnSpace = 720
+  let evenlySpaced = true
+  let separator = false
+  const columnWidths: number[] = []
+  const columnSpacings: number[] = []
+  let pageNumberStart: number | undefined
+  let pageNumberRestart = false
+  const pageBorders: PageBorders = draft.pageBorders
+    ? { ...draft.pageBorders, sides: { ...draft.pageBorders.sides } }
+    : { offsetFrom: 'text', sides: {} }
   for (const sprm of sprms) {
     const operation = sprm.opcode & 0x1ff
     const byte = readSprmU8(sprm.operand)
     const word = readSprmU16(sprm.operand)
+    const borderSide = PAGE_BORDER_SIDES[operation]
+    if (borderSide) {
+      const line = pageBorderOf(sprm.operand, operation >= SPRM_S_BRC_TOP)
+      if (line === null) delete pageBorders.sides[borderSide]
+      else if (line) pageBorders.sides[borderSide] = line
+      continue
+    }
     switch (operation) {
+      case SPRM_S_PGB_PROP:
+        if (word !== undefined) applyPageBorderProps(pageBorders, word)
+        break
       case SPRM_S_DYA_HDR_TOP:
         if (word !== undefined) draft.margins.header = word
         break
@@ -209,19 +321,35 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
             : 'portrait'
         break
       case SPRM_S_CCOL_M1:
-        if (word !== undefined) {
-          draft.columns = word + 1
-          if (draft.columns > 1)
-            warnings.push(
-              'multi-column sections are not supported yet; the section is written as a single column',
-            )
-        }
+        if (word !== undefined) columnCount = word + 1
         break
       case SPRM_S_DXA_COLUMNS:
-        // column width only matters when columns > 1, which is flattened anyway
+        if (word !== undefined) columnSpace = word
         break
+      case SPRM_S_F_EVENLY_SPACED:
+        if (byte !== undefined) evenlySpaced = byte !== 0
+        break
+      case SPRM_S_F_L_BETWEEN:
+        if (byte !== undefined) separator = byte !== 0
+        break
+      case SPRM_S_DXA_COL_WIDTH:
+      case SPRM_S_DXA_COL_SPACING: {
+        // operand: column index (u8) + twips (u16)
+        const index = byte
+        const value = readSprmU16(sprm.operand, 1)
+        if (index === undefined || value === undefined) break
+        ;(operation === SPRM_S_DXA_COL_WIDTH ? columnWidths : columnSpacings)[index] = value
+        break
+      }
       case SPRM_S_NFC_PGN:
-        // page number format is not written yet; the default (decimal) is kept
+        if (byte !== undefined && PAGE_NUMBER_FORMATS[byte])
+          draft.pageNumberFormat = PAGE_NUMBER_FORMATS[byte]
+        break
+      case SPRM_S_PGN_START:
+        if (word !== undefined) pageNumberStart = word
+        break
+      case SPRM_S_F_PGN_RESTART:
+        if (byte !== undefined) pageNumberRestart = byte !== 0
         break
       case SPRM_S_CLM:
         if (word !== undefined) gridType = GRID_TYPES[word] ?? null
@@ -239,6 +367,27 @@ function applySepx(draft: SectionDraft, grpprl: Uint8Array, sectionIndex: number
         break
     }
   }
+  if (columnCount > 1) {
+    const widths = columnWidths.slice(0, columnCount)
+    const explicit = !evenlySpaced && widths.length === columnCount && widths.every((w) => w > 0)
+    draft.columns = {
+      count: columnCount,
+      spaceTwips: columnSpace,
+      separator,
+      ...(explicit ? { widths } : {}),
+      ...(explicit && columnSpacings.length > 0
+        ? {
+            spacings: Array.from(
+              { length: columnCount },
+              (_, i) => columnSpacings[i] ?? columnSpace,
+            ),
+          }
+        : {}),
+    }
+  } else delete draft.columns
+  if (Object.keys(pageBorders.sides).length > 0) draft.pageBorders = pageBorders
+  else delete draft.pageBorders
+  if (pageNumberRestart) draft.pageNumberStart = pageNumberStart ?? 1
   if (gridType || linePitch !== undefined) {
     draft.docGrid = {
       ...(gridType ? { type: gridType } : {}),

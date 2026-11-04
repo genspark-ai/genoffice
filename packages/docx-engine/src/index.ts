@@ -53,7 +53,7 @@ export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS }
 export { LAZY_MEDIA_SCHEME, isLazyMediaPart, lazyMediaUrl, parseLazyMediaUrl } from './lazy-media'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
-export { mergeStyleBorders } from './parse-props'
+export { EMPTY_EA_THEME_FONT, mergeStyleBorders, themeLangEaSlotFont } from './parse-props'
 export {
   APP_PROPERTIES_PATH,
   APP_PROPERTY_KEYS,
@@ -311,3 +311,15 @@ export {
   type CompareSummary,
 } from './compare'
 export { keepsHangulKanaSingle } from './parse-block-passes'
+export {
+  charClass,
+  isCjkLetterChar,
+  isDoubleByteChar,
+  isEastAsianChar,
+  isEastAsianLangTag,
+  isHangulChar,
+  isLatinAlnumChar,
+  textHasEastAsian,
+  textHasHangulChars,
+  type CharClass,
+} from './char-class'

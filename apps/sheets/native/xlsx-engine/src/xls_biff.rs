@@ -1,7 +1,9 @@
 //! The binary layer of an .xls workbook (BIFF8 inside an OLE2 container),
 //! walked record by record for the parts calamine does not expose: the
 //! workbook drawing group (embedded pictures), per-sheet drawing shapes,
-//! column widths (COLINFO) and hand-set row heights (ROW). Everything here is
+//! column widths (COLINFO), hand-set row heights (ROW), and the cell
+//! formatting layer (`xls_styles`) with the XF index of every cell, row and
+//! column that carries one. Everything here is
 //! best-effort — a stream that refuses to parse yields empty collections, and
 //! the conversion keeps the cell data calamine already read.
 
@@ -10,11 +12,20 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::escher::{self, Blip};
+use crate::xls_styles::XlsStyles;
 
 /// Per-sheet binary extras calamine does not surface.
 pub(crate) struct XlsSheetBinary {
     /// (first column, last column, width in 1/256 character units), 0-based.
     pub(crate) col_infos: Vec<(u16, u16, u16)>,
+    /// (first column, last column, XF index) for columns given a format of
+    /// their own; the sheet default (0xF) and the general XF are left out.
+    pub(crate) col_styles: Vec<(u16, u16, u16)>,
+    /// (row, XF index) for rows formatted as a whole.
+    pub(crate) row_styles: Vec<(u16, u16)>,
+    /// XF index of every cell record, blanks included — a bordered empty
+    /// cell exists in the file only through its format.
+    pub(crate) cell_styles: Vec<(u16, u16, u16)>,
     /// (row, height in twips, set by hand) for every row the file describes;
     /// the flag separates heights someone chose from the sheet's default
     /// echoed back, and only the former are worth writing to the conversion.
@@ -29,6 +40,7 @@ pub(crate) struct XlsBinary {
     pub(crate) blips: Vec<Blip>,
     /// One entry per BOUNDSHEET, in sheet order.
     pub(crate) sheets: Vec<XlsSheetBinary>,
+    pub(crate) styles: XlsStyles,
 }
 
 /// Reads the .xls binary layer. `None` when the file is not an OLE2 workbook
@@ -105,12 +117,16 @@ fn walk(data: &[u8]) -> XlsBinary {
         .iter()
         .map(|_| XlsSheetBinary {
             col_infos: Vec::new(),
+            col_styles: Vec::new(),
+            row_styles: Vec::new(),
+            cell_styles: Vec::new(),
             row_heights: Vec::new(),
             drawing: None,
         })
         .collect();
 
     let mut dgg: Vec<u8> = Vec::new();
+    let mut styles = XlsStyles::default();
     let mut current: Option<usize> = None;
     let mut index = 0usize;
     while index < records.len() {
@@ -125,11 +141,14 @@ fn walk(data: &[u8]) -> XlsBinary {
             continue;
         }
         match current {
-            None => {
-                if record.id == 0x00EB {
-                    dgg.extend_from_slice(&payload_with_continues(data, &records, index));
-                }
-            }
+            None => match record.id {
+                0x00EB => dgg.extend_from_slice(&payload_with_continues(data, &records, index)),
+                0x0031 => styles.push_font(payload(data, record)),
+                0x041E => styles.push_format(payload(data, record)),
+                0x00E0 => styles.push_xf(payload(data, record)),
+                0x0092 => styles.set_palette(payload(data, record)),
+                _ => {}
+            },
             Some(sheet) => match record.id {
                 0x00EC => {
                     let bytes = payload_with_continues(data, &records, index);
@@ -142,6 +161,12 @@ fn walk(data: &[u8]) -> XlsBinary {
                     let last = u16::from_le_bytes([bytes[2], bytes[3]]);
                     let width = u16::from_le_bytes([bytes[4], bytes[5]]);
                     sheets[sheet].col_infos.push((first, last, width));
+                    if record.len >= 8 {
+                        let ixfe = u16::from_le_bytes([bytes[6], bytes[7]]);
+                        if ixfe != 0 && ixfe != 0x0F {
+                            sheets[sheet].col_styles.push((first, last, ixfe));
+                        }
+                    }
                 }
                 0x0208 if record.len >= 14 => {
                     let bytes = payload(data, record);
@@ -154,6 +179,47 @@ fn walk(data: &[u8]) -> XlsBinary {
                             .row_heights
                             .push((row, twips, grbit & 0x0040 != 0));
                     }
+                    // bit 0x80 (fGhostDirty) says the row carries a format
+                    if record.len >= 16 && grbit & 0x0080 != 0 {
+                        let ixfe = u16::from_le_bytes([bytes[14], bytes[15]]) & 0x0FFF;
+                        if ixfe != 0x0F {
+                            sheets[sheet].row_styles.push((row, ixfe));
+                        }
+                    }
+                }
+                // single-cell records all open with rw, col, ixfe
+                0x0201 | 0x0203 | 0x027E | 0x00FD | 0x0204 | 0x0006 | 0x0205 | 0x00D6
+                    if record.len >= 6 =>
+                {
+                    let bytes = payload(data, record);
+                    let row = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    let col = u16::from_le_bytes([bytes[2], bytes[3]]);
+                    let ixfe = u16::from_le_bytes([bytes[4], bytes[5]]);
+                    sheets[sheet].cell_styles.push((row, col, ixfe));
+                }
+                // MULBLANK: rw, colFirst, ixfe per column, colLast
+                0x00BE if record.len >= 8 => {
+                    let bytes = payload(data, record);
+                    let row = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    let first = u16::from_le_bytes([bytes[2], bytes[3]]);
+                    for (offset, chunk) in bytes[4..record.len - 2].chunks_exact(2).enumerate() {
+                        let ixfe = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        sheets[sheet]
+                            .cell_styles
+                            .push((row, first + offset as u16, ixfe));
+                    }
+                }
+                // MULRK: rw, colFirst, (ixfe, rk) per column, colLast
+                0x00BD if record.len >= 12 => {
+                    let bytes = payload(data, record);
+                    let row = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    let first = u16::from_le_bytes([bytes[2], bytes[3]]);
+                    for (offset, chunk) in bytes[4..record.len - 2].chunks_exact(6).enumerate() {
+                        let ixfe = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        sheets[sheet]
+                            .cell_styles
+                            .push((row, first + offset as u16, ixfe));
+                    }
                 }
                 _ => {}
             },
@@ -162,5 +228,9 @@ fn walk(data: &[u8]) -> XlsBinary {
     }
 
     let blips = escher::parse_blips(&dgg);
-    XlsBinary { blips, sheets }
+    XlsBinary {
+        blips,
+        sheets,
+        styles,
+    }
 }

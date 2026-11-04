@@ -11,6 +11,7 @@ const FIB_BASE_BYTES = 32
 /** FibBase.flags bits */
 const FLAG_ENCRYPTED = 0x0100
 const FLAG_WHICH_TABLE_STREAM = 0x0200
+const FLAG_FAR_EAST = 0x4000
 const FLAG_OBFUSCATED = 0x8000
 
 /** one fc/lcb pair of FibRgFcLcb97: a byte range in the table stream */
@@ -26,6 +27,8 @@ export interface FibInfo {
   flags: number
   encrypted: boolean
   obfuscated: boolean
+  /** FibBase.fFarEast: last saved by an East Asian Word (FE layout compat flags) */
+  farEast: boolean
   /** the stream that holds the CLX, STSH, PAPX/CHPX and other tables */
   tableStream: '0Table' | '1Table'
   /** characters in the main document story (this stage reads only this range) */
@@ -296,6 +299,7 @@ export function parseFib(wordDocument: Uint8Array): FibInfo {
     flags,
     encrypted,
     obfuscated,
+    farEast: (flags & FLAG_FAR_EAST) !== 0,
     tableStream,
     ccpText,
     ccpFtn,

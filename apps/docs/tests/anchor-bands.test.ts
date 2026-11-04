@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { syncAnchorBands, syncFloatShifts } from '../src/renderer/editor/pagination-gaps'
+import type { PageCut } from '../src/renderer/pagination-cuts'
 
 const rectOf = (top: number, height: number) =>
   ({ top, bottom: top + height, height, width: 100, left: 0, right: 100 }) as DOMRect
@@ -233,5 +234,69 @@ describe('syncAnchorBands lifts the next anchor picture into the band', () => {
     pm.append(w, f)
     syncAnchorBands(pm, 1)
     expect(f.style.marginTop).toBe('3.3px')
+  })
+})
+
+describe('syncFloatShifts keeps a flow box on its anchor page', () => {
+  const rectOf2 = (top: number, height: number) =>
+    ({ top, height, bottom: top + height, left: 0, right: 100, width: 100 }) as DOMRect
+  const gap = {
+    kind: 'page' as const,
+    heightPx: 400,
+    marginBottomPx: 0,
+    marginTopPx: 0,
+    marginLeftPx: 0,
+    pullUpPx: 0,
+    repeatHeaderPx: 0,
+    flowTopPx: 30,
+  }
+  // cover paragraph (0..30) ends in a section break: page 1 keeps 770 px of
+  // blank body below it, page 2 starts at virtual 30
+  const cuts = [
+    { start: 0, end: 30, padPx: 770, gapOffsetPx: 0, flowOffsetPx: 0 },
+    { start: 30, end: 830, padPx: 0, gap, gapOffsetPx: 400, flowOffsetPx: 400 },
+  ] as unknown as PageCut[]
+  const setup = (boxTop: number) => {
+    const pm = document.createElement('div')
+    pm.getBoundingClientRect = () => rectOf2(0, 2000)
+    const wrap = document.createElement('div')
+    wrap.className = 'doc-protected doc-protected-floating'
+    const box = document.createElement('div')
+    box.className = 'doc-textbox'
+    box.getBoundingClientRect = () => rectOf2(boxTop, 100)
+    wrap.appendChild(box)
+    pm.append(wrap)
+    return { pm, box }
+  }
+
+  it('a title box offset past the section break stays on the cover page', () => {
+    const { pm, box } = setup(458)
+    syncFloatShifts(pm, [{ el: box, top: 458, height: 100, anchorTop: 0 }], 0, 1, 0, {
+      cuts,
+      carries: [],
+    })
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('')
+  })
+
+  it('a box the anchor page cannot hold still walks to its virtual page', () => {
+    const { pm, box } = setup(900)
+    syncFloatShifts(pm, [{ el: box, top: 900, height: 100, anchorTop: 0 }], 0, 1, 0, {
+      cuts,
+      carries: [],
+    })
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('400.0px')
+  })
+
+  it('a wrapNone box never leaves its anchor page', () => {
+    const { pm, box } = setup(900)
+    syncFloatShifts(
+      pm,
+      [{ el: box, top: 900, height: 100, anchorTop: 0, noSpill: true }],
+      0,
+      1,
+      0,
+      { cuts, carries: [] },
+    )
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('')
   })
 })

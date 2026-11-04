@@ -85,6 +85,11 @@ export function clearMultiSelect(view: EditorView): void {
   view.dispatch(view.state.tr.setMeta(multiSelectKey, { clear: true }))
 }
 
+/** add ranges from outside the click path (the Styles pane's "Select All N Instance(s)") */
+export function addMultiSelectRanges(view: EditorView, ranges: readonly MultiSelectRange[]): void {
+  addRanges(view, ranges)
+}
+
 /** append the ranges that are not added yet; a re-click must not stack copies */
 function addRanges(view: EditorView, ranges: readonly MultiSelectRange[]): void {
   const add: MultiSelectRange[] = []

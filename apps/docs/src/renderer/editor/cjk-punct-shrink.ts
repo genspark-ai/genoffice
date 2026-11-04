@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import { isEastAsianChar, isEastAsianLangTag, isHangulChar } from '@genoffice/docx-engine'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
@@ -90,7 +91,7 @@ export function isCompressible(ch: string): boolean {
 
 /** Word applies its East Asian line rules under a CJK w:lang w:eastAsia or none at all */
 export function usesEastAsianRules(eastAsiaLang: string | null | undefined): boolean {
-  return !eastAsiaLang || /^(ja|zh)(-|$)/i.test(eastAsiaLang)
+  return !eastAsiaLang || isEastAsianLangTag(eastAsiaLang, false)
 }
 
 /** the shrink decoration carries the compressed spacing: the natural base lives on its nearest other ancestor */
@@ -106,7 +107,15 @@ export function shrinkStyle(ch: string, perChar: number, baseLs: number): string
     ? `margin-left:${px(-perChar)}px`
     : `letter-spacing:${px(baseLs - perChar)}px`
 }
-const CJK_RE = /[⺀-〿぀-ヿㇰ-䶿一-鿿豈-﫿＀-￯]/
+
+/** Han / kana paragraph: hangul alone never compresses (the ko-KR rule above) */
+function textHasCjkNoHangul(text: string): boolean {
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    if (isEastAsianChar(cp) && !isHangulChar(cp)) return true
+  }
+  return false
+}
 
 /** voluntary pull cap: Word accepted 25.2% and declined 28.6% per glyph (probes) */
 const VOLUNTARY_CAP = 0.27
@@ -356,7 +365,7 @@ function isCandidate(node: ProseMirrorNode): boolean {
   let is = candidateCache.get(node)
   if (is === undefined) {
     const text = node.textContent
-    is = text.length <= PARA_CHAR_BUDGET && CJK_RE.test(text)
+    is = text.length <= PARA_CHAR_BUDGET && textHasCjkNoHangul(text)
     if (is) {
       is = false
       for (const ch of text) {

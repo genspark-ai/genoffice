@@ -12,6 +12,7 @@ import {
   sectionSettingsFromXml,
   type Block,
   type ParsedDoc,
+  type ParsedDocFull,
   type SectionInfo,
   type SectionSettings,
 } from '@genoffice/docx-engine'
@@ -37,10 +38,16 @@ import {
   wordMetricAliasFace,
   wordSlotFaces,
   latinViaEastAsiaSlotFor,
+  setLatinViaEastAsiaSlot,
 } from '../src/renderer/line-metrics'
+import { docBodyEaFont } from '../src/renderer/doc-style-css'
 import { listFirstLineTw, rowHeightCss, tableRowEatCss } from '../src/renderer/editor/extensions'
 import { resolveTabTarget } from '../src/renderer/editor/decoration-extensions'
-import { resolveDeclaredFace } from '../src/renderer/font-resolve'
+import {
+  prefetchFaces,
+  resolveDeclaredFace,
+  setFontMetricsProvider,
+} from '../src/renderer/font-resolve'
 import { resolveTableWidth } from '../src/renderer/editor/table-geometry'
 import {
   hfRowFloatLeftPx,
@@ -120,7 +127,28 @@ export interface Truth {
   class: 'pure' | 'render'
   status?: 'failing'
   docx?: string
+  /** faces the probe machine had installed: stand in for the main-process font index */
+  installed?: InstalledFace[]
   cases: TruthCase[]
+}
+
+interface InstalledFace {
+  family: string
+  unitsPerEm: number
+  hheaAscender: number
+  hheaDescender: number
+  hheaLineGap: number
+  xAvgCharWidth?: number
+  codePageRange1?: number
+}
+
+async function stubInstalledFaces(faces: InstalledFace[]): Promise<void> {
+  const byKey = new Map(faces.map((f) => [f.family.normalize('NFKC').toLowerCase(), f]))
+  setFontMetricsProvider(async (family) => {
+    const f = byKey.get(family)
+    return f ? ({ ...f, xAvgCharWidth: f.xAvgCharWidth ?? null } as never) : null
+  })
+  await prefetchFaces(faces.map((f) => f.family))
 }
 
 export function loadTruths(cls: 'pure' | 'render'): Array<Truth & { dir: string }> {
@@ -772,6 +800,11 @@ function withEditor<T>(res: Resolved, fn: (editor: Editor) => T): T {
     element: document.createElement('div'),
     extensions: editorExtensions,
   })
+  // the document-language font-slot rule file-actions applies at load time
+  setLatinViaEastAsiaSlot(
+    latinViaEastAsiaSlotFor(res.parsed),
+    docBodyEaFont(res.parsed as ParsedDocFull),
+  )
   try {
     editor.storage.listNumbering.defs = res.parsed.numbering
     editor.storage.listNumbering.styles = res.parsed.styles
@@ -782,6 +815,7 @@ function withEditor<T>(res: Resolved, fn: (editor: Editor) => T): T {
     return fn(editor)
   } finally {
     editor.destroy()
+    setLatinViaEastAsiaSlot(false)
   }
 }
 
@@ -877,6 +911,7 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
         const failing = t.status === 'failing' || c.status === 'failing'
         const run = failing ? it.skip : it
         run(`case ${i}: ${c.kind}${c.note ? ` - ${c.note}` : ''}`, async () => {
+          if (t.installed) await stubInstalledFaces(t.installed)
           const res = await load(t.dir, (c.docx as string | undefined) ?? t.docx)
           setDocFontTable(res.parsed.fontTable)
           try {
@@ -1223,6 +1258,7 @@ describe('executable Word truths (pure formulas over parsed props)', () => {
             }
           } finally {
             setDocFontTable(null)
+            if (t.installed) setFontMetricsProvider(undefined)
           }
         })
       }

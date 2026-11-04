@@ -146,4 +146,22 @@ describe('run direct keys off the resolver', () => {
     expect(run).toMatchObject({ cs: true, bold: false, sizeHalfPoints: 30, rtl: true })
     expect(doc.extras.resolveDiff).toEqual([])
   })
+
+  it('a w:cs run reads the Cs twins without w:rtl; Thai text without either reads w:b', async () => {
+    const doc = await load(
+      p(
+        '',
+        r(
+          '<w:cs/><w:bCs/><w:sz w:val="64"/><w:szCs w:val="44"/>',
+          '\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07',
+        ) + r('<w:b/><w:bCs w:val="0"/>', '\u0e15\u0e39\u0e49'),
+      ),
+    )
+    const [csRun, plain] = doc.blocks[0].runs!
+    expect(csRun).toMatchObject({ cs: true, bold: true, sizeHalfPoints: 44 })
+    expect(csRun.rtl).toBeFalsy()
+    expect(plain).toMatchObject({ bold: true })
+    expect(plain.cs).toBeFalsy()
+    expect(doc.extras.resolveDiff).toEqual([])
+  })
 })

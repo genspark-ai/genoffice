@@ -61,7 +61,8 @@ import { parseDocxOffThread } from './parse-off-thread'
 import { PHASED_APPEND } from './editor/streaming-tail-guard'
 import { docTextLength, docWeight, openTierFor } from './large-document'
 import { documentToMarkdown } from './export-markdown'
-import { docBodyEaFont, docStyleCss } from './doc-style-css'
+import { docStyleCss } from './doc-style-css'
+import { documentTextContext } from './text-layout/document-context'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
@@ -91,13 +92,11 @@ import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import {
-  hangulSpaceWideningFor,
   loadBundledStandIns,
   setAdditiveParagraphSpacing,
   setDocFontTable,
-  setHangulSpaceWidening,
+  setBalancedSpaceWidening,
   setLatinViaEastAsiaSlot,
-  latinViaEastAsiaSlotFor,
 } from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { prefetchFaces } from './font-resolve'
@@ -375,8 +374,9 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
   editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
-  setHangulSpaceWidening(hangulSpaceWideningFor(parsed))
-  setLatinViaEastAsiaSlot(latinViaEastAsiaSlotFor(parsed), docBodyEaFont(parsed))
+  const textCtx = documentTextContext(parsed)
+  setBalancedSpaceWidening(textCtx.balancedSpaces)
+  setLatinViaEastAsiaSlot(textCtx.latinViaEaSlot, textCtx.bodyEaSlot)
   setStaticAsciiResolver(() => editor.storage.listNumbering)
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere

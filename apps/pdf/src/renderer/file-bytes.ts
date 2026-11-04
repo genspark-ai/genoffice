@@ -1,3 +1,5 @@
+import { PDF_READ_CHUNK_BYTES } from '../shared/ipc'
+
 /** Reads a granted file through the chunked IPC route: one invoke per slice
  * instead of a single multi-megabyte ArrayBuffer over IPC — a 42 MB
  * structured-clone deserialization has killed renderers before first paint
@@ -11,8 +13,6 @@ export interface PdfFileChunkApi {
     end: number,
   ): Promise<{ data: Uint8Array; fileSize: number }>
 }
-
-export const PDF_READ_CHUNK_BYTES = 8 * 1024 * 1024
 
 export async function readFileBytes(
   api: PdfFileChunkApi,

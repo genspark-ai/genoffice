@@ -461,13 +461,13 @@ describe('recommendedSkills / installRecommendedSkill', () => {
     mkdirSync(join(rec, 'locales'), { recursive: true })
     writeFileSync(
       join(rec, 'locales', 'zh.json'),
-      JSON.stringify({ fresh: '中文简介', other: 'skill absent from the catalog' }),
+      JSON.stringify({ fresh: '\u4e2d\u6587\u7b80\u4ecb', other: 'skill absent from the catalog' }),
     )
     // the locales dir itself must not surface as a skill
     setUiLang('zh')
     let list = await recommendedSkills(rec, save)
     expect(list.map((s) => s.name)).toEqual(['fresh'])
-    expect(list[0]?.description).toBe('中文简介')
+    expect(list[0]?.description).toBe('\u4e2d\u6587\u7b80\u4ecb')
 
     // a language with no locale file keeps the frontmatter's English
     setUiLang('ja')

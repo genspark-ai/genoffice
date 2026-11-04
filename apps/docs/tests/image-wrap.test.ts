@@ -766,10 +766,11 @@ describe('image wrap in the editor', () => {
     expect(img).toBeTruthy()
     // colW − x − width from the right edge: x=2407073 EMU ≈ 252.7px, w ≈ 299px
     // jsdom folds the margins into a shorthand it cannot split again once a
-    // var() fallback is inside: top / right / bottom / left
+    // var() fallback is inside: top / right / bottom / left (bottom and left
+    // carry the cell-only terms, inert outside a td)
     expect(img.getAttribute('style')).toMatch(
       new RegExp(
-        String.raw`margin: 0\.0px max\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) 0\.0px 12\.0px`,
+        String.raw`margin: 0\.0px max\(100% - calc\(55[12](\.\d)?px - var\(--anchor-ind,0px\) - var\(--anchor-pad,0px\)\), -1 \* var\(--doc-margin-right,0px\)\) calc\(0\.0px \+ clamp\(.*\) min\(12\.0px, calc\(100% - 299\.3px - max\(`,
       ),
     )
     expect(img.style.maxWidth).toBe('none')
@@ -970,6 +971,64 @@ describe('side-wrapped pictures that leave no room for text', () => {
     )
     expect(free.style).toContain('margin-top:-243.1px')
     expect(free['data-cell-lift']).toBeUndefined()
+  })
+
+  it('keeps a layoutInCell side wrap inside its cell and grows the row by the empty line (genoffice#2480)', async () => {
+    const cell = (body: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="3402" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="3402"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:tcPr><w:tcW w:w="3402" w:type="dxa"/></w:tcPr><w:p>${body}</w:p></w:tc></w:tr></w:tbl>`
+    const renderedImg = async (body: string) => {
+      const { editor } = await openImageDoc(cell(body))
+      let attrs: Record<string, string> | undefined
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'docInlineImage') {
+          const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node) as [
+            string,
+            typeof attrs,
+          ]
+          attrs = spec[1]
+        }
+      })
+      const cellClip = editor.view.dom.querySelector('td')?.getAttribute('data-cell-clip')
+      editor.destroy()
+      return { ...attrs!, cellClip: cellClip ?? '' } as Record<string, string>
+    }
+    // 8.5 cm picture centred on the margin band inside a 6 cm cell
+    const centred = anchoredPicture(0, 60000, 3060000, 1764000).replace(
+      /<wp:positionH relativeFrom="column"><wp:posOffset>0<\/wp:posOffset><\/wp:positionH>/,
+      '<wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>',
+    )
+    const inCell = await renderedImg(centred)
+    expect(inCell['data-cell-pic']).toBe('1')
+    expect(inCell.cellClip).toBe('1')
+    // the band X clamps to the paper edge (0 in a cell), the far margin caps the
+    // margin box at the cell width and the row grows by the line it displaces
+    expect(inCell.style).toContain(
+      'margin-left:max(-1 * var(--doc-margin-left,0px), calc(50% - 160.6px',
+    )
+    expect(inCell.style).toMatch(/margin-right:min\(12\.0px, calc\(100% - 321\.3px - max\(/)
+    expect(inCell.style).toMatch(
+      /margin-bottom:calc\(0\.0px \+ clamp\(0px, .* \* 1000, var\(--cell-line,0px\)\)\)/,
+    )
+
+    const free = await renderedImg(centred.replace('layoutInCell="1"', 'layoutInCell="0"'))
+    expect(free['data-cell-pic']).toBeUndefined()
+    expect(free.cellClip).toBe('')
+    expect(free.style).toContain('margin-right:12.0px')
+    expect(free.style).not.toContain('--cell-line')
+
+    // page-relative Y: Word measures it from the cell top
+    const pageRel = await renderedImg(
+      centred.replace(
+        '<wp:positionV relativeFrom="paragraph">',
+        '<wp:positionV relativeFrom="page">',
+      ),
+    )
+    expect(pageRel.style).toContain('--cell-y:6.3px')
+    expect(pageRel.style).toMatch(
+      /margin-top:calc\(min\(0px, calc\(6\.3px - var\(--doc-margin-top,0px\)\)\) \+ var\(--cell-page-y,0px\)\)/,
+    )
   })
 
   it('composes the posOffset Y of a quarter-turned run-level float with its footprint inset', async () => {

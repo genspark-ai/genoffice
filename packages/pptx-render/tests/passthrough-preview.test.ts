@@ -81,6 +81,35 @@ describe('passthrough preview rendering', () => {
     expect(n.dataUrl).toBe('data:img')
     expect(n.box.w).toBeCloseTo(300, 0)
     expect(n.box.h).toBeCloseTo(200, 0)
+    expect(n.ole).toBe(true)
+    expect(n.bgColor).toBe('#FFFFFF')
+  })
+
+  it('ole previewPicture keeps its own spPr fill as the canvas instead of white', () => {
+    const preview: PictureElement = {
+      id: 'p2',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: transform(0, 0, 1, 1),
+      mediaRef: 'ppt/media/image9.png',
+      fill: { type: 'solid', color: '#F7FA90' },
+    }
+    const el: PassthroughElement = {
+      id: 'gf4',
+      type: 'passthrough',
+      kind: 'ole',
+      anchor,
+      transform: transform(0, 0, 9525 * 300, 9525 * 200),
+      previewPicture: preview,
+    }
+    // a metafile preview normally gets the white GDI DC backing; the authored fill replaces it
+    const rs = buildRenderSlide(slideOf([el]), size, {
+      fitWidthPx: 1280,
+      media: () => 'data:image/x-wmf;base64,AA==',
+    })
+    const n = rs.nodes[0] as PictureRenderNode
+    expect(n.fill).toEqual({ kind: 'solid', color: '#F7FA90' })
+    expect(n.bgColor).toBeUndefined()
   })
 
   it('falls back to placeholder chip when no preview exists', () => {

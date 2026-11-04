@@ -44,6 +44,8 @@ import {
   fontBoxCss,
   cssLineHeight,
   krLineFactor,
+  krCharsetRoute,
+  isEaLayoutFace,
   emptyEaSlotHangulFactor,
   cjkDeclaredLineFactor,
   lineHeightFactor,
@@ -69,7 +71,7 @@ import {
   layoutParaOfRuns,
   paraLineFactor,
 } from '../src/renderer/editor/para-layout-spec'
-import { hangulSpaceOffsets } from '../src/renderer/line-metrics'
+import { balancedSpaceOffsets } from '../src/renderer/line-metrics'
 import { prefetchFaces, setFontMetricsProvider } from '../src/renderer/font-resolve'
 
 afterEach(() => setFontMetricsProvider(undefined))
@@ -1230,6 +1232,32 @@ describe('document fontTable substitution hints', () => {
     expect(krLineFactor('\ub2e4\ub78c\uc950\uc11c\uccb42')).toBe(1.3)
   })
 
+  it('an installed Latin-named charset-81 face lays out for real at hhea x 1.3 (corpus 2026-11-03)', async () => {
+    const table = [{ name: 'Pretendard', charset: '81', family: 'auto' }]
+    setDocFontTable(table)
+    expect(lineHeightFactor('Pretendard')).toBe(1.7291)
+    expect(isEaLayoutFace('Pretendard')).toBe(false)
+    stubCanvas(['Pretendard'])
+    setFontMetricsProvider(async (family) =>
+      family === 'pretendard'
+        ? ({
+            unitsPerEm: 2048,
+            hheaAscender: 1950,
+            hheaDescender: -494,
+            hheaLineGap: 0,
+            xAvgCharWidth: 1100,
+            codePageRange1: 0x2008019f,
+          } as never)
+        : null,
+    )
+    await prefetchFaces(['Pretendard'])
+    setDocFontTable(table)
+    expect(krCharsetRoute('Pretendard')).toBeNull()
+    expect(isEaLayoutFace('Pretendard')).toBe(true)
+    expect(lineHeightFactor('Pretendard')).toBe(1.5514)
+    expect(krLineFactor('Pretendard')).toBe(1.5514)
+  })
+
   it('MS Reference Sans Serif takes Verdana metrics and the local() alias', () => {
     expect(lineHeightFactor('MS Reference Sans Serif')).toBe(1.2167)
     expect(cssFontFamily('MS Reference Sans Serif')).toBe(
@@ -1250,7 +1278,7 @@ describe('document fontTable substitution hints', () => {
     stubCanvas(['\ub098\ub214\uba85\uc870', 'NanumMyeongjo'])
     expect(lineHeightFactor('\ub098\ub214\uba85\uc870')).toBe(1.3)
     // spaces keep the Batang subset's 0.333em; hangul-context ones widen
-    // through .doc-hangul-space, not the chain
+    // through .doc-balanced-space, not the chain
     expect(cssFontFamily('\ub098\ub214\uba85\uc870')).toBe(`'\ubc14\ud0d5',${KO_SERIF},serif`)
     // the Latin name keeps the real face (OS asset hhea 1.1504 x 1.3)
     expect(lineHeightFactor('NanumMyeongjo')).toBe(1.4955)
@@ -1278,7 +1306,6 @@ describe('document fontTable substitution hints', () => {
       { name: hanSerif, altName: 'Times New Roman' },
       { name: hanSans, altName: 'Arial' },
     ])
-    expect(isCjkFontName(hanSans)).toBe(false)
     expect(isCjkNamedFont(hanSans)).toBe(true)
     for (const [name, target] of [
       [hangul, 'Arial'],
@@ -2231,32 +2258,42 @@ describe('wordMetricAliasFace', () => {
   })
 })
 
-describe('hangulSpaceOffsets', () => {
+describe('balancedSpaceOffsets', () => {
   const H = '\ud55c\uae00' // two hangul syllables
   const JAMO = '\u3131' // compatibility jamo
 
-  it('flags a U+0020 with a hangul neighbour on either side', () => {
-    expect(hangulSpaceOffsets(`${H} ${H}`)).toEqual([2])
-    expect(hangulSpaceOffsets(`${H} A`)).toEqual([2])
-    expect(hangulSpaceOffsets(`A ${H}`)).toEqual([1])
-    expect(hangulSpaceOffsets(`${JAMO} 1`)).toEqual([1])
-    expect(hangulSpaceOffsets(`${H}  ${H}`)).toEqual([2, 3])
+  it('flags a U+0020 with an East Asian neighbour on either side', () => {
+    expect(balancedSpaceOffsets(`${H} ${H}`)).toEqual([2])
+    expect(balancedSpaceOffsets(`${H} A`)).toEqual([2])
+    expect(balancedSpaceOffsets(`A ${H}`)).toEqual([1])
+    expect(balancedSpaceOffsets(`${JAMO} 1`)).toEqual([1])
+    expect(balancedSpaceOffsets('\u6f22 \u5b57')).toEqual([1])
+    expect(balancedSpaceOffsets('\u3042 \u3044 \u30a2')).toEqual([1, 3])
+    expect(balancedSpaceOffsets('\u3002 A')).toEqual([1])
+    expect(balancedSpaceOffsets('\uff08 A')).toEqual([1])
   })
 
-  it('leaves Latin, digit, punctuation, Han and kana contexts alone', () => {
-    expect(hangulSpaceOffsets('A B 1 2')).toEqual([])
-    expect(hangulSpaceOffsets(`${H}, A`)).toEqual([])
-    expect(hangulSpaceOffsets(`A (${H})`)).toEqual([])
-    expect(hangulSpaceOffsets('\u6f22 \u5b57')).toEqual([])
-    expect(hangulSpaceOffsets('\u3042 \u3044 \u30a2')).toEqual([])
-    expect(hangulSpaceOffsets(`${H}\u00a0${H}`)).toEqual([])
+  it('flags every space of a run of two or more, whatever surrounds it', () => {
+    expect(balancedSpaceOffsets(`${H}  ${H}`)).toEqual([2, 3])
+    expect(balancedSpaceOffsets('AB  CD')).toEqual([2, 3])
+    expect(balancedSpaceOffsets('AB   CD')).toEqual([2, 3, 4])
+    expect(balancedSpaceOffsets('A ', '', ' B')).toEqual([1])
+    expect(balancedSpaceOffsets(' B', 'A ')).toEqual([0])
+  })
+
+  it('leaves a lone space between Latin letters, digits or ASCII punctuation alone', () => {
+    expect(balancedSpaceOffsets('A B 1 2')).toEqual([])
+    expect(balancedSpaceOffsets('a.b, c;d: e')).toEqual([])
+    expect(balancedSpaceOffsets(`${H}, A`)).toEqual([])
+    expect(balancedSpaceOffsets(`A (${H})`)).toEqual([])
+    expect(balancedSpaceOffsets(`${H}\u00a0${H}`)).toEqual([])
   })
 
   it('reads the neighbour across the text edges', () => {
-    expect(hangulSpaceOffsets(' A', H)).toEqual([0])
-    expect(hangulSpaceOffsets('A ', '', H)).toEqual([1])
-    expect(hangulSpaceOffsets(' A', 'B')).toEqual([])
-    expect(hangulSpaceOffsets('A ', 'B', '')).toEqual([])
+    expect(balancedSpaceOffsets(' A', H)).toEqual([0])
+    expect(balancedSpaceOffsets('A ', '', H)).toEqual([1])
+    expect(balancedSpaceOffsets(' A', 'B')).toEqual([])
+    expect(balancedSpaceOffsets('A ', 'B', '')).toEqual([])
   })
 })
 

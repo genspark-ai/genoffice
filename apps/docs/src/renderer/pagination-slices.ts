@@ -236,6 +236,8 @@ function cutOnRowSeam(table: BlockBox, y: number): boolean {
 /** minimum room a bandKeep block needs on the page (its anchor line, px):
  *  with less, the anchor itself moves to the next page like any line */
 const BAND_KEEP_MIN_H = 14
+/** narrowest side gap text still wraps into beside a picture (px) */
+const WRAP_SLIVER_PX = 36
 
 export function computePageSlices(
   blocks: BlockBox[],
@@ -393,6 +395,13 @@ let rowSplitOverflows = 0
 
 /** capacity of one page of a section: the titlePg first page, then the
  *  even-page variant, in hfVariantOf's order */
+/** body bottom to paper edge (px) of the page variant; 0 when the geometry has none */
+export function pageBottomSlackPx(g: SectionGeom, firstOfSection: boolean, pageNo: number): number {
+  if (firstOfSection && g.firstMarginBottomPx !== undefined) return g.firstMarginBottomPx
+  if (g.evenMarginBottomPx !== undefined && pageNo % 2 === 0) return g.evenMarginBottomPx
+  return g.marginBottomPx ?? 0
+}
+
 export function pageCapacityPx(g: SectionGeom, firstOfSection: boolean, pageNo: number): number {
   if (firstOfSection && g.firstContentHeight !== undefined) return g.firstContentHeight
   if (g.evenContentHeight !== undefined && pageNo % 2 === 0) return g.evenContentHeight
@@ -428,6 +437,8 @@ export function computeSectionedSlicesF2(
   if (out?.rowFills) out.rowFills.length = 0
   if (out?.rowSplits) out.rowSplits.length = 0
   if (out?.floatVShifts) out.floatVShifts.length = 0
+  if (out?.floatPullUps) out.floatPullUps.length = 0
+  if (out?.floatCarries) out.floatCarries.length = 0
   if (out?.floatFlows) out.floatFlows.length = 0
   if (out?.floatSplits) out.floatSplits.length = 0
   if (out?.oversizeClips) out.oversizeClips.length = 0
@@ -546,6 +557,10 @@ export function computeSectionedSlicesF2(
   const breakY = (y: number) => Math.max(y, pageFloatBottom, pageStart)
   // bandKeep overflow bottom, consumed by the next startPage (see there)
   let pendingBandBottom = 0
+  // a side-wrapped drawing's overflow: the turning block is carried past it (floatCarries)
+  let pendingBandCarry = false
+  let curFirstOfSection = true
+  const bottomSlack = () => pageBottomSlackPx(geomOf(curSection), curFirstOfSection, curPageNo)
   let curBlockNotes = false
 
   // Safety net: a document legitimately needs at most a few column turns per
@@ -600,8 +615,19 @@ export function computeSectionedSlicesF2(
     // a bandKeep block overflowed the closing page: the next page starts below
     // the true box bottom, or the preview window would cut the box and re-pin it
     if (pendingBandBottom > 0) {
+      const b = blocks[curBi]
+      if (pendingBandCarry && b && y >= b.top - 0.5) {
+        // from the block's own top so every pass re-emits the same spacer; rounded
+        // up so the block lands at or past the page start
+        const natural = b.top - (b.carryAppliedPx ?? 0)
+        if (pendingBandBottom > natural + 0.5) {
+          const carryPx = Math.ceil((pendingBandBottom - natural) * 10) / 10 + 0.1
+          out?.floatCarries?.push({ blockTop: natural, carryPx })
+        }
+      }
       y = Math.max(y, pendingBandBottom)
       pendingBandBottom = 0
+      pendingBandCarry = false
     }
     pageStart = y
     regionTop = 0
@@ -624,6 +650,7 @@ export function computeSectionedSlicesF2(
         ? resume.pageNo
         : pageNoAfter(curPageNo, lastPage?.section ?? -1, section)
     contentH = Math.max(pageCapacityPx(g, firstOfSection, curPageNo), 1)
+    curFirstOfSection = firstOfSection
     pages.push({ section, regions: [], ...(continued ? { continued: true } : {}) })
     openRegion(y, section, headerH, headerTop)
     pageNoteSepPx = curBlockNotes ? FOOTNOTE_SEPARATOR_H : 0
@@ -870,9 +897,12 @@ export function computeSectionedSlicesF2(
     const g = geomOf(curSection)
     const continued = (midPageStart.get(curSection) ?? Infinity) < blocks[curBi].top - 0.5
     const last = pages[pages.length - 1]
+    // a whole push lands in the next column, else on the next page (not a titlePg first page)
     const fresh =
       last?.section === curSection
-        ? colH
+        ? colIdx + 1 < colCount
+          ? colH
+          : Math.max(pageCapacityPx(g, false, pageNoAfter(curPageNo, curSection, curSection)), 1)
         : Math.max(
             pageCapacityPx(g, !continued, pageNoAfter(curPageNo, last?.section ?? -1, curSection)),
             1,
@@ -1148,7 +1178,19 @@ export function computeSectionedSlicesF2(
       // visual top; a page-anchored float that lifts over blank lines fits
       // from its lifted top (Word keeps the picture on their page)
       const lift = pageRelShifts ? Math.min(pageRelShift(), 0) : 0
-      if (!fits(leadNeed + lift) && !colEmpty()) {
+      // legacy layout never turns the page for a side-wrapped picture's own height
+      // (it overflows the bottom margin); only an anchor line pushed below a
+      // column-wide picture past the body turns it (probe 2026-11-03)
+      const sidePicture = !!block.floatPicture && !pageRelShifts
+      const anchorDy = block.anchorDyPx ?? 0
+      const legacyPicture = sidePicture && !block.modernFloatTurn
+      const blocksColumn =
+        (block.widthPx ?? block.fixedWidthPx ?? 0) >=
+        (geomOf(curSection).contentWidth ?? Infinity) - WRAP_SLIVER_PX
+      const next = blocks[bi + 1]
+      const anchorLineH = next?.emptyPara && !next.floated ? next.height : 0
+      const legacyTurn = blocksColumn && !fits(anchorDy + block.height + anchorLineH)
+      if ((legacyPicture ? legacyTurn : !fits(leadNeed + lift)) && !colEmpty()) {
         advance(
           block.lifted && colCount === 1 ? pageStart + regionTop + usedInCol : block.top,
           curSection,
@@ -1158,8 +1200,24 @@ export function computeSectionedSlicesF2(
       if (pageRelShifts) {
         floatDy = pageRelShift()
         out?.floatVShifts?.push({ blockTop: block.top, dyPx: floatDy })
+      } else if (sidePicture) {
+        // pulled up to the body bottom (Word 2013+) or the paper edge (legacy), never above the column top
+        const slack = block.modernFloatTurn ? 0 : bottomSlack()
+        const over = usedInCol + anchorDy + block.height - capColH()
+        const pullUp = Math.max(0, Math.min(over - slack, usedInCol + anchorDy))
+        if (pullUp > 0.5) {
+          floatDy = -pullUp
+          out?.floatPullUps?.push({ blockTop: block.top, dyPx: floatDy })
+        }
+        if (over - pullUp > 0.01) {
+          pendingBandBottom = Math.max(
+            pendingBandBottom,
+            block.top + anchorDy + floatDy + block.height,
+          )
+          pendingBandCarry = true
+        }
       }
-      pageFloatBottom = Math.max(pageFloatBottom, block.top + floatDy + block.height)
+      pageFloatBottom = Math.max(pageFloatBottom, block.top + anchorDy + floatDy + block.height)
       if (splitRows && !fits(floatDy + block.height)) {
         // Word: the portions before the last page fill their pages alone (the
         // anchor paragraph moves with the last portion), so they charge the
@@ -1288,18 +1346,25 @@ export function computeSectionedSlicesF2(
     // page like any table)
     if (block.floatPushWhole && !colEmpty() && !fits(block.height)) startPage(block.top, curSection)
 
-    // side-wrapped drawings hanging from an anchor paragraph: Word pulls a
-    // drawing that would pass the body bottom up to end there, and turns the
-    // page before the anchor when the drawing is taller than the room left
-    if (
-      block.floatKeepWhole &&
-      block.floatBottom !== undefined &&
-      block.floatMaxH !== undefined &&
-      !colEmpty() &&
-      !fits(block.floatBottom - block.top) &&
-      !fits(block.floatMaxH)
-    ) {
-      startPage(block.top, curSection)
+    // side-wrapped drawings of an anchor paragraph: Word 2013+ pulls one passing the
+    // body bottom up to end there and turns the page when it is taller than the room
+    // left; legacy layout overflows the bottom margin (pull-up at the paper edge).
+    // The page window reaches the drawing so a later turn cannot clip it.
+    if (block.floatKeepWhole && block.floatBottom !== undefined && block.floatMaxH !== undefined) {
+      const boxTop = block.floatBottom - block.top - block.floatMaxH
+      const over = () => usedInCol + (block.floatBottom! - block.top) - capColH()
+      if (block.modernFloatTurn && over() > 0.01 && !colEmpty() && !fits(block.floatMaxH)) {
+        startPage(breakY(block.top), curSection)
+      }
+      const slack = block.modernFloatTurn ? 0 : bottomSlack()
+      const pullUp = Math.max(0, Math.min(over() - slack, usedInCol + boxTop))
+      if (pullUp > 0.5) out?.floatPullUps?.push({ blockTop: block.top, dyPx: -pullUp })
+      const bottom = block.floatBottom - pullUp
+      pageFloatBottom = Math.max(pageFloatBottom, bottom)
+      if (over() - pullUp > 0.01) {
+        pendingBandBottom = Math.max(pendingBandBottom, bottom)
+        pendingBandCarry = true
+      }
     }
 
     if (chainColStarts.has(bi) && !colEmpty()) advancePastPad()
@@ -1863,7 +1928,10 @@ export function planRowSplit(
         }
       }
       if (fit > j) progressed = true
-      else if (raw > j) held = true
+      // a cell whose first pending line does not fit at all (a cell-tall picture)
+      // is as illegal to leave empty as a widow-held one: Word moves the row
+      // (v4_anchor_auto probe 2026-11-04); later fragments keep the stall logic
+      else if (raw > j || (frag === 0 && j < c.lines.length)) held = true
       return fit
     })
     // a row splits only when every cell fits or breaks legally: a cell whose

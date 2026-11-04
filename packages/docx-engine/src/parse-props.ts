@@ -682,9 +682,10 @@ export function emptyParaSizeHalfPoints(
 ): number | undefined {
   // an rtl mark is sized by its Cs twin, the chain's szCs when it has none (Word:
   // a `<w:sz 36/><w:rtl/>` mark under a szCs=24 style lays a 12pt empty line)
-  const sizeOf = (rPr: XNode | undefined): string | undefined => {
+  const bidi = pPr ? onOffOf(pPr, 'w:bidi') === true : false
+  const sizeOf = (rPr: XNode | undefined, isMark = false): string | undefined => {
     if (!rPr) return undefined
-    if (onOffOf(rPr, 'w:rtl') === true) {
+    if ((isMark && bidi) || onOffOf(rPr, 'w:rtl') === true) {
       return (
         attrsOf(findChild(rPr, 'w:szCs') ?? {})['w:val'] ??
         (csSizeHalfPoints !== undefined ? String(csSizeHalfPoints) : undefined)
@@ -692,7 +693,7 @@ export function emptyParaSizeHalfPoints(
     }
     return attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val']
   }
-  let sz = pPr ? sizeOf(findChild(pPr, 'w:rPr')) : undefined
+  let sz = pPr ? sizeOf(findChild(pPr, 'w:rPr'), true) : undefined
   if (!sz && !markOnly) {
     for (const r of findChildren(pNode, 'w:r')) {
       const v = sizeOf(findChild(r, 'w:rPr'))
@@ -890,27 +891,40 @@ function emptyEaSlotFont(fonts: ThemeFonts, eaRef: string | undefined): string {
   return themeLangEaSlotFont(fonts, eaRef) ?? EMPTY_EA_THEME_FONT
 }
 
+/** theme script-table face (<a:font script=…>) of the font group for themeFontLang
+ * w:eastAsia. Word lays an EA theme slot with this face whenever the table names one,
+ * over the literal <a:ea> typeface (Word probe 2026-11-03: a:ea Batang + Hang Malgun
+ * under ko-KR -> Malgun, the reverse -> Batang, no table -> the literal; a:ea MS Mincho
+ * + Jpan Yu Mincho under ja-JP -> Yu Mincho). */
+export function themeScriptEaFont(
+  fonts: ThemeFonts,
+  eaRef: string | undefined,
+): string | undefined {
+  const full = fonts.eaLang?.toLowerCase()
+  if (!full || (eaRef !== 'majorEastAsia' && eaRef !== 'minorEastAsia')) return undefined
+  const script = EA_LANG_SCRIPT[full] ?? EA_LANG_SCRIPT[full.split('-')[0]]
+  const table = eaRef === 'majorEastAsia' ? fonts.majorScripts : fonts.minorScripts
+  return (script ? table?.[script] : undefined) || undefined
+}
+
 /** empty-EA-slot face themeFontLang specifically resolves (theme script table first,
  * then the probed per-language defaults); undefined = only the generic DengXian applies */
 export function themeLangEaSlotFont(
   fonts: ThemeFonts,
   eaRef: string | undefined,
 ): string | undefined {
-  const full = fonts.eaLang?.toLowerCase()
-  if (!full) return undefined
-  const lang = full.split('-')[0]
-  const script = EA_LANG_SCRIPT[full] ?? EA_LANG_SCRIPT[lang]
-  const table = eaRef === 'majorEastAsia' ? fonts.majorScripts : fonts.minorScripts
-  const fromScript = script ? table?.[script] : undefined
+  const fromScript = themeScriptEaFont(fonts, eaRef)
   if (fromScript) return fromScript
-  const byLang = EMPTY_EA_SLOT_BY_LANG[lang]
+  const lang = fonts.eaLang?.toLowerCase().split('-')[0]
+  const byLang = lang ? EMPTY_EA_SLOT_BY_LANG[lang] : undefined
   return byLang ? (eaRef === 'majorEastAsia' ? byLang.major : byLang.minor) : undefined
 }
 
 /** w:rFonts with theme references resolved: theme attrs supersede same-slot literal
  * values (ECMA-376 §17.3.2.26). Unresolvable references fall back to the literal,
  * except an empty eastAsia theme slot: Word keeps the theme's authority and renders
- * the theme language's default face, never the leftover literal name (eaSlotEmpty marks this). */
+ * the theme language's default face, never the leftover literal name (eaSlotEmpty marks this).
+ * A filled EA slot still yields to the script table's themeFontLang face (themeScriptEaFont). */
 export function themedRFonts(
   attrs: Record<string, string | undefined>,
   fonts: ThemeFonts | null | undefined,
@@ -944,15 +958,17 @@ export function themedRFonts(
     }
   }
   const eaRef = attrs['w:eastAsiaTheme']
-  const themedEa = themeVal(eaRef)
+  const literalEa = themeVal(eaRef)
   const eaSlotEmpty =
-    !themedEa && !!fonts && (eaRef === 'majorEastAsia' || eaRef === 'minorEastAsia')
+    !literalEa && !!fonts && (eaRef === 'majorEastAsia' || eaRef === 'minorEastAsia')
+  const themedEa = literalEa && fonts ? (themeScriptEaFont(fonts, eaRef) ?? literalEa) : literalEa
   // an empty cs or EA slot likewise keeps the theme's authority over the
   // literal: a Latin slot pointing at minorEastAsia renders the language
   // default EA face (Word probe 2026-09-17: MS Mincho digits under ja-JP)
   const themedOrEmptySlot = (ref: string | undefined): string | undefined => {
     const themed = themeVal(ref)
-    if (themed || !fonts) return themed
+    if (!fonts) return themed
+    if (themed) return themeScriptEaFont(fonts, ref) ?? themed
     if (ref === 'majorBidi' || ref === 'minorBidi') return emptyCsSlotFont(fonts, ref)
     if (ref === 'majorEastAsia' || ref === 'minorEastAsia') return emptyEaSlotFont(fonts, ref)
     return undefined

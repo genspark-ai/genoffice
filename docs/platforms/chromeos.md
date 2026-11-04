@@ -33,17 +33,18 @@ ships). The self-contained AppImage is an alternative that installs nothing:
 chmod +x GenOffice-<version>.AppImage && ./GenOffice-<version>.AppImage
 ```
 
-Files: Crostini shares the device's "My files" folder at `~/` inside Linux, so
-documents opened from or saved to `~/MyFiles/` are visible to the ChromeOS
-Files app and to Android apps. Saving into other Linux paths stays inside the
-container.
+Files: ChromeOS does not share its folders with Linux by default. In the Files
+app, right-click "My files" (or any folder) and choose "Share with Linux"; it
+then appears inside the container at `/mnt/chromeos/MyFiles/`. Documents opened
+from or saved there are visible to the ChromeOS Files app and to Android apps.
+Saving into other Linux paths stays inside the container.
 
 Printing: Crostini forwards CUPS queues from the host; the print dialog lists
 the ChromeOS-configured printers.
 
 Backups: the Linux container's files are included in ChromeOS device backups
-only partially — keep important documents in `~/MyFiles/` so they live on the
-host filesystem.
+only partially — keep important documents under `/mnt/chromeos/MyFiles/` so
+they live on the host filesystem.
 
 Display: the container's Sommelier bridges Linux windows to the ChromeOS
 desktop, over native Wayland or X11; GenOffice needs no display configuration.
@@ -56,7 +57,7 @@ desktop, over native Wayland or X11; GenOffice needs no display configuration.
 - **Google Drive sync**: no Drive integration is built in. Documents live in
   the Linux filesystem; ChromeOS can surface Drive files through the Files app,
   but the Linux container does not mount Drive. Export/save manually, or keep
-  working files in `MyFiles`.
+  working files in the shared `/mnt/chromeos/MyFiles/` folder.
 
 ## Privacy notes
 

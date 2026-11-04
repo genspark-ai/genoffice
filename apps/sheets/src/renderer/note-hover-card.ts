@@ -2,9 +2,10 @@
  * The host card that rides under Univer's note popup: Univer draws a note as
  * a yellow text-only popup (see note-pictures.ts), and a note that carries a
  * picture shows it here instead of nowhere. The trigger is Univer's own note
- * popup service, so the card lives and dies with the popup — hover-temp,
- * pinned, Show All and Prev/Next all surface it, and the card never fights
- * the popup for the same pixels (it hangs below the popup's box).
+ * popup service, so the card lives and dies with the popup — hover-temp and
+ * pinned popups surface it (Show All draws notes as static annotations, not
+ * popups, so it does not), and the card never fights the popup for the same
+ * pixels (it hangs below the popup's box).
  */
 import { SheetsNotePopupService } from '@univerjs/sheets-note-ui'
 

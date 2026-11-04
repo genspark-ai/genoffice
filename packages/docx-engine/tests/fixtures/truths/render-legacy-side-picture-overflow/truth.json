@@ -1,0 +1,54 @@
+{
+  "id": "render-legacy-side-picture-overflow",
+  "title": "Under legacy layout (compatibilityMode 14 or none) a wrapSquare picture anchored to the last paragraph that fits a page stays on that page and overflows the bottom margin, pulled up only at the paper edge; a column-wide picture turns the page only when its anchor line no longer fits below it",
+  "section": "word-truths.md#L935",
+  "probe_date": "2026-11-03",
+  "class": "render",
+  "source": "build.py -> Word for Mac direct PDF (2026-11-03), pymupdf image/line bboxes: A4 pgMar 509/851 (body 25.45 .. 799.37), Arial 11 line 240 after 0, 39 filler lines (line 39 at 506.2), anchor paragraph top 518.8, picture posOffset V 10.95 pt; one nextPage section per case. A: 299.5 pt square at column +133 pt, empty anchor paragraph -> image 529.7-829.2 on page 1, NEXT 531.7 beside it. B: same with 'Anchor text' (519.0) -> identical. C: 330 pt tall -> 511.9-841.9 (pulled up to the paper edge). E: 557.5 x 200 column-wide -> 529.7-729.7, NEXT 742.6 below it. D: 557.5 x 330 column-wide -> filler ends page 5, image at page 6 36.4-366.4, NEXT 379.3",
+  "cases": [
+    { "kind": "pages", "expect": 6 },
+    {
+      "kind": "blockPage",
+      "block": 40,
+      "expect": 1,
+      "note": "A: NEXT stays beside the overflowing picture"
+    },
+    { "kind": "blockPage", "block": 41, "expect": 1 },
+    {
+      "kind": "blockPage",
+      "block": 82,
+      "expect": 2,
+      "note": "B: a text anchor paragraph behaves the same"
+    },
+    {
+      "kind": "blockPage",
+      "block": 124,
+      "expect": 3,
+      "note": "C: the 330 pt picture is pulled up to the paper edge, nothing turns"
+    },
+    {
+      "kind": "blockPage",
+      "block": 166,
+      "expect": 4,
+      "note": "E: the column-wide 200 pt picture fits with its anchor line below it"
+    },
+    { "kind": "blockPage", "block": 206, "expect": 5, "note": "D: the filler ends page 5" },
+    {
+      "kind": "blockPage",
+      "block": 207,
+      "expect": 6,
+      "note": "D: the anchor paragraph of the column-wide 330 pt picture opens page 6"
+    },
+    { "kind": "blockPage", "block": 208, "expect": 6 },
+    {
+      "kind": "blockTopDeltaPt",
+      "from": 164,
+      "to": 166,
+      "expect": 236.4,
+      "tol": 0.6,
+      "note": "E: NEXT 742.6 = picture bottom 729.7 + the anchor paragraph's own 12.65 pt line, pushed under the column-wide picture; gen puts NEXT at the picture bottom (the band wrapper drops the anchor line, open)",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

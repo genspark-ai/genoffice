@@ -1,4 +1,4 @@
-/** Hostile-input fuzz for the DOCX import surface — the #2381 trial's Report D
+/** Hostile-input fuzz for the DOCX import surface — the fuzz trial's Report D
  *  axis, run continuously instead of once. The round-trip suite
  *  (roundtrip-fuzz.test.ts) feeds the pipeline only valid documents; this file
  *  feeds it corrupted ones and asserts the one property that matters for an
