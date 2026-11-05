@@ -244,6 +244,39 @@ describe('grouped and sibling pictures', () => {
     expect(photo.offsetYEmu).toBe(200000 + 190500)
     // document order preserved: the shape paints over the photo
     expect(shape.fill).toBe('C8A24B')
+    // the ribbon tells a picture from a shape by the flag, the save path addresses it by its pic id
+    expect(photo.picture).toBe(true)
+    expect(photo.shapeId).toBe('2')
+    expect(shape.picture).toBeUndefined()
+  })
+
+  it('a behind-text photo sharing its paragraph with a textbox is a picture box with its pic id', async () => {
+    const textbox = anchorParagraph(
+      `<wps:wsp ${WPS_NS}><wps:cNvPr id="4" name="Text Box 4"/><wps:cNvSpPr txBox="1"/><wps:spPr>` +
+        `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm>` +
+        `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `</wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>title</w:t></w:r></w:p>` +
+        `</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>`,
+      SHAPE_URI,
+    ).replace(/<\/w:p>$/, '')
+    const photo =
+      `<w:r><w:drawing><wp:anchor behindDoc="1" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+      `<wp:simplePos x="0" y="0"/>` +
+      `<wp:positionH relativeFrom="column"><wp:posOffset>-100000</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>-200000</wp:posOffset></wp:positionV>` +
+      `<wp:extent cx="952500" cy="476250"/><wp:wrapNone/><wp:docPr id="1" name="Picture 2"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      `<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Picture 2"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm></pic:spPr>` +
+      `</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: textbox + photo, withImage: true }))
+    const boxes = doc.blocks[0].textboxes!
+    expect(boxes.map((b) => b.picture ?? false)).toEqual([false, true])
+    expect(boxes[1].shapeId).toBe('1')
+    expect(boxes[1].behind).toBe(true)
+    expect(boxes[1].readOnly).toBe(true)
+    expect(boxes[0].shapeId).toBe('4')
   })
 
   it('an inline group of pictures carries every picture as a layer of one run image', async () => {

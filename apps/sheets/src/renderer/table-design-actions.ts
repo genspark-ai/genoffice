@@ -475,6 +475,7 @@ function repaintSheet(ctx: TableDesignContext, target: ActiveTarget): void {
   const { state, runtime, worksheet, sheetId } = target
   state.loadedRanges.delete(sheetId)
   state.frozenStripKeys.delete(sheetId)
+  state.frozenRowStripKeys.delete(sheetId)
   void loadVisibleRange(runtime, ctx.lazyWorkbookRef, worksheet, ctx.setMessage)
 }
 

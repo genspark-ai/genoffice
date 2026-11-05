@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import type { ImageWrap, TextboxDisplay } from '@genoffice/docx-engine'
+import { selectedBoxIndex } from './selected-box'
 
 const EMU_PER_PX = 9525
 
@@ -68,18 +69,30 @@ export function boxWithZ(box: TextboxDisplay, z: number): TextboxDisplay {
 
 // ---- commands ----
 
-function selectedShapeBoxes(editor: Editor): TextboxDisplay[] | null {
+/** The addressed box of the selected node (the pressed one in a multi-drawing paragraph). */
+function selectedShapeBox(editor: Editor): TextboxDisplay | null {
   const boxes = editor.getAttributes('docProtected').textboxes as TextboxDisplay[] | null
-  return Array.isArray(boxes) && boxes.length > 0 ? boxes : null
+  if (!Array.isArray(boxes) || boxes.length === 0) return null
+  return boxes[selectedBoxIndex(editor.state)] ?? null
 }
 
-/** Write the first box back, mirroring the mode on the node attrs (dropdown + save-path compatibility). */
-function writeFirstBox(editor: Editor, box: TextboxDisplay, mirror: Record<string, unknown>): void {
-  const boxes = selectedShapeBoxes(editor)!
+/**
+ * Write the addressed box back. The node-attr mirror (dropdown + save-path
+ * compatibility) belongs to the first box only: the save path reads it for
+ * the paragraph anchor the first drawing owns.
+ */
+function writeSelectedBox(
+  editor: Editor,
+  box: TextboxDisplay,
+  mirror: Record<string, unknown>,
+): void {
+  const boxes = editor.getAttributes('docProtected').textboxes as TextboxDisplay[]
+  const index = selectedBoxIndex(editor.state)
+  const textboxes = boxes.map((b, i) => (i === index ? box : b))
   editor
     .chain()
     .focus()
-    .updateAttributes('docProtected', { ...mirror, textboxes: [box, ...boxes.slice(1)] })
+    .updateAttributes('docProtected', index === 0 ? { ...mirror, textboxes } : { textboxes })
     .run()
 }
 
@@ -121,11 +134,11 @@ export function setFloatingWrap(editor: Editor, wrap: string | null): void {
     view.focus()
     return
   }
-  const boxes = selectedShapeBoxes(editor)
-  if (boxes) {
+  const box = selectedShapeBox(editor)
+  if (box) {
     const mode = normalizedShapeWrap(wrap)
     if (mode === undefined) return
-    writeFirstBox(editor, withWrapFields(boxes[0], mode), {
+    writeSelectedBox(editor, withWrapFields(box, mode), {
       imageWrap: mode ?? SHAPE_INLINE_WRAP,
     })
     return
@@ -144,8 +157,8 @@ export function setFloatingWrap(editor: Editor, wrap: string | null): void {
 
 /** Rank of the selection: the shape's box rank, or imageZOrder for an image anchor. */
 function currentZOrder(editor: Editor): number {
-  const boxes = selectedShapeBoxes(editor)
-  if (boxes) return Number(boxes[0].z ?? 0)
+  const box = selectedShapeBox(editor)
+  if (box) return Number(box.z ?? 0)
   return Number(editor.getAttributes('docProtected').imageZOrder ?? 0)
 }
 
@@ -167,10 +180,10 @@ function documentZOrders(editor: Editor, rank: number): number[] {
 }
 
 function setZOrder(editor: Editor, z: number): void {
-  const boxes = selectedShapeBoxes(editor)
-  if (boxes) {
-    const next = boxWithZ(boxes[0], z)
-    writeFirstBox(editor, next, { imageWrap: shapeWrapOf(next), imageZOrder: z })
+  const box = selectedShapeBox(editor)
+  if (box) {
+    const next = boxWithZ(box, z)
+    writeSelectedBox(editor, next, { imageWrap: shapeWrapOf(next), imageZOrder: z })
     return
   }
   const attrs: Record<string, unknown> = { imageZOrder: z }

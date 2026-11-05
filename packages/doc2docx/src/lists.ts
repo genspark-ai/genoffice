@@ -279,7 +279,7 @@ export function parseListTables(fib: FibInfo, table: Uint8Array): ListTables {
   return { lists, overrides, levelOverrides, warnings: [...new Set(warnings)] }
 }
 
-/** OOXML numFmt value for a Word nfc (fallback decimal). */
+/** OOXML numFmt value for a Word nfc (MS-OSHARED MSONFC; fallback decimal). */
 export const NUMBER_FORMATS: Record<number, string> = {
   0: 'decimal',
   1: 'upperRoman',
@@ -301,9 +301,47 @@ export const NUMBER_FORMATS: Record<number, string> = {
   17: 'japaneseDigitalTenThousand',
   18: 'decimalEnclosedCircle',
   19: 'decimalFullWidth2',
-  20: 'japaneseLeadingZero',
+  20: 'aiueoFullWidth',
+  21: 'irohaFullWidth',
+  22: 'decimalZero',
   23: 'bullet',
-  24: 'picture',
+  24: 'ganada',
+  25: 'chosung',
+  26: 'decimalEnclosedFullstop',
+  27: 'decimalEnclosedParen',
+  28: 'decimalEnclosedCircleChinese',
+  29: 'ideographEnclosedCircle',
+  30: 'ideographTraditional',
+  31: 'ideographZodiac',
+  32: 'ideographZodiacTraditional',
+  33: 'taiwaneseCounting',
+  34: 'ideographLegalTraditional',
+  35: 'taiwaneseCountingThousand',
+  36: 'taiwaneseDigital',
+  37: 'chineseCounting',
+  38: 'chineseLegalSimplified',
+  39: 'chineseCountingThousand',
+  40: 'decimal',
+  41: 'koreanDigital',
+  42: 'koreanCounting',
+  43: 'koreanLegal',
+  44: 'koreanDigital2',
+  45: 'hebrew1',
+  46: 'arabicAlpha',
+  47: 'hebrew2',
+  48: 'arabicAbjad',
+  49: 'hindiVowels',
+  50: 'hindiConsonants',
+  51: 'hindiNumbers',
+  52: 'hindiCounting',
+  53: 'thaiLetters',
+  54: 'thaiNumbers',
+  55: 'thaiCounting',
+  56: 'vietnameseCounting',
+  57: 'numberInDash',
+  58: 'russianLower',
+  59: 'russianUpper',
+  255: 'none',
 }
 
 /** the symbol-font bullet glyphs Word writes into the Xst, mapped to text bullets */
@@ -321,7 +359,7 @@ const BULLET_GLYPHS: Record<number, string> = {
 
 /** true when the level is a bullet level in OOXML terms */
 export function isBulletLevel(level: ListLevel): boolean {
-  return level.numberFormat === 23 || level.numberFormat === 24
+  return level.numberFormat === 23
 }
 
 /** the level text the writer should put into w:lvlText */

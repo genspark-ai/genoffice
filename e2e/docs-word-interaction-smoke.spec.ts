@@ -228,7 +228,12 @@ test.describe.serial('docs Word interaction smoke', () => {
     if ((await activeTab().textContent()) !== name) await tab(name).click()
     await expect(activeTab()).toHaveText(name)
   }
-  const gallery = () => editor.locator('.style-gallery')
+  // the Styles button opens the gallery menu; applying a card closes it
+  const gallery = () => editor.locator('.style-gallery-menu')
+  const openGallery = async () => {
+    if ((await gallery().count()) === 0) await editor.locator('.rb-styles-gallery').click()
+    return gallery()
+  }
   const docPage = () => editor.locator('.doc-page').first()
   const para = (text: string) => editor.locator('.doc-page p', { hasText: text }).first()
   const layoutMenuItem = (label: string) =>
@@ -273,10 +278,11 @@ test.describe.serial('docs Word interaction smoke', () => {
   })
 
   test('1 new document: Word gallery, title, heading, body and list', async () => {
-    await expect(gallery().locator('.style-card-label')).toHaveText(WORD_GALLERY)
+    await expect((await openGallery()).locator('.style-card-label')).toHaveText(WORD_GALLERY)
+    await editor.locator('.rb-styles-gallery').click()
     await docPage().click()
     await editor.keyboard.type('Smoke Title', { delay: 10 })
-    await gallery().locator('.style-card[data-style-id="Title"]').click()
+    await (await openGallery()).locator('.style-card[data-style-id="Title"]').click()
     expect((await paraAttrs()).styleId).toBe('Title')
     await editor.keyboard.press('End')
     await editor.keyboard.press('Enter')
@@ -335,9 +341,12 @@ test.describe.serial('docs Word interaction smoke', () => {
     sel = await selection(editor)
     expect(sel.text).toBe(LONG)
 
-    await gallery().locator('.style-card[data-style-id="Strong"]').click()
+    await (await openGallery()).locator('.style-card[data-style-id="Strong"]').click()
     expect((await textAttrs()).styleId).toBe('Strong')
-    await expect(gallery().locator('.style-card[data-style-id="Strong"]')).toHaveClass(/active/)
+    await expect((await openGallery()).locator('.style-card[data-style-id="Strong"]')).toHaveClass(
+      /active/,
+    )
+    await editor.locator('.rb-styles-gallery').click()
 
     await editor.mouse.click(barX, await rowY('gamma0 '), { clickCount: 3 })
     sel = await selection(editor)
@@ -787,7 +796,8 @@ test.describe.serial('docs Word interaction smoke', () => {
     await expect(docPage().locator('.doc-table')).toHaveCount(1)
     await expect(editor.locator('.status-page')).toContainText('of 2')
     await showTab('Home')
-    await expect(gallery().locator('.style-card-label')).toHaveText(WORD_GALLERY)
+    await expect((await openGallery()).locator('.style-card-label')).toHaveText(WORD_GALLERY)
+    await editor.locator('.rb-styles-gallery').click()
     await selectText(editor, 'gamma0')
     expect((await textAttrs()).styleId).toBe('Strong')
   })

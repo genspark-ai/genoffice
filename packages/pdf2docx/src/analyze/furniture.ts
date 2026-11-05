@@ -194,10 +194,11 @@ function hfShell(
 }
 
 /**
- * A page-number slot as an HF entry: the digit run that counts the physical
- * page (value === page+1 on every probe) becomes HF_PAGE_MARK. Slots whose
- * numbers do not track the physical page (offset numbering, roman) stay
- * un-emittable — reproducing them wrong is worse than omitting them.
+ * A page-number slot as an HF entry: every digit run that counts the physical
+ * page (value === page+1 on every probe) becomes HF_PAGE_MARK — a run left
+ * as text would repeat the representative page's number on every page. Slots
+ * whose numbers do not track the physical page (offset numbering, roman)
+ * stay un-emittable — reproducing them wrong is worse than omitting them.
  */
 function pageNoHf(band: 'top' | 'bottom', slot: Slot, firstTextPage: number): FurnitureHf | null {
   const samples = [...slot.lines].sort((a, b) => a.page - b.page)
@@ -213,18 +214,18 @@ function pageNoHf(band: 'top' | 'bottom', slot: Slot, firstTextPage: number): Fu
   }))
   const n = runsPer[0]!.runs.length
   if (n === 0 || runsPer.some((r) => r.runs.length !== n)) return null
-  let k = -1
+  const tracking: number[] = []
   for (let i = 0; i < n; i++) {
-    if (runsPer.every(({ l, runs }) => runs[i]!.value === l.page + 1)) {
-      k = i
-      break
-    }
+    if (runsPer.every(({ l, runs }) => runs[i]!.value === l.page + 1)) tracking.push(i)
   }
-  if (k < 0) return null
+  if (tracking.length === 0) return null
   const rep = runsPer[0]!
   if (rep.text.length > HF_MAX_TEXT_LEN || HAS_RTL_RE.test(rep.text)) return null
-  const run = rep.runs[k]!
-  const text = rep.text.slice(0, run.index) + HF_PAGE_MARK + rep.text.slice(run.index + run.length)
+  let text = rep.text
+  for (const i of tracking.reverse()) {
+    const run = rep.runs[i]!
+    text = text.slice(0, run.index) + HF_PAGE_MARK + text.slice(run.index + run.length)
+  }
   const shell = hfShell(band, rep.l, slot.pages.has(firstTextPage))
   return shell ? { ...shell, text, pageNo: true } : null
 }

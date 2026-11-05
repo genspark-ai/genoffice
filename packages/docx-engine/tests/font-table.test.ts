@@ -112,6 +112,109 @@ async function withDocDefaults(
   return parseDocx(await zip.generateAsync({ type: 'uint8array' }))
 }
 
+/** theme whose minorFont fills the EA slot and carries a script table */
+const filledThemePart = (minorEa: string, scripts: string) => ({
+  path: 'word/theme/theme1.xml',
+  xml:
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+    '<a:themeElements><a:fontScheme name="T">' +
+    `<a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface="${minorEa}"/><a:cs typeface=""/>${scripts}</a:majorFont>` +
+    `<a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="${minorEa}"/><a:cs typeface=""/>${scripts}</a:minorFont>` +
+    '</a:fontScheme></a:themeElements></a:theme>',
+  contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+})
+const BATANG = '\ubc14\ud0d5'
+const MALGUN = '\ub9d1\uc740 \uace0\ub515'
+const MS_MINCHO = '\uff2d\uff33 \u660e\u671d'
+const YU_MINCHO = '\u6e38\u660e\u671d'
+
+// Word probe 2026-11-03: the script table's face for themeFontLang eastAsia beats a
+// filled <a:ea> typeface (Batang + Hang Malgun -> Malgun 20.8pt pitch at 12pt; the
+// reverse -> Batang 15.6; no table -> the literal; MS Mincho + Jpan Yu Mincho -> Yu Mincho)
+describe('filled EA slot vs theme script table', () => {
+  const MINOR3 =
+    '<w:rFonts w:asciiTheme="minorEastAsia" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorEastAsia"/>'
+  const para = (rFonts: string, text: string) =>
+    `<w:p><w:r><w:rPr>${rFonts}</w:rPr><w:t>${text}</w:t></w:r></w:p>`
+  const HANGUL = '\ubcf8\ubb38'
+
+  it('ko-KR: the Hang entry outranks the literal a:ea typeface, Latin slots included', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para(MINOR3, HANGUL),
+        extraParts: [
+          filledThemePart(BATANG, `<a:font script="Hang" typeface="${MALGUN}"/>`),
+          settingsPart('ko-KR'),
+        ],
+      }),
+    )
+    const run = doc.blocks[0].runs![0]
+    expect(run.font).toBe(MALGUN)
+    expect(run.fontAscii).toBe(MALGUN)
+    expect(run.eaSlotEmpty).toBeUndefined()
+  })
+
+  it('ko-KR: a Hang entry naming Batang beats a literal Malgun', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para('<w:rFonts w:eastAsiaTheme="minorEastAsia"/>', HANGUL),
+        extraParts: [
+          filledThemePart(MALGUN, `<a:font script="Hang" typeface="${BATANG}"/>`),
+          settingsPart('ko-KR'),
+        ],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].font).toBe(BATANG)
+  })
+
+  it('without a script table the literal typeface stands', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para(MINOR3, HANGUL),
+        extraParts: [filledThemePart(BATANG, ''), settingsPart('ko-KR')],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].font).toBe(BATANG)
+  })
+
+  it('without themeFontLang the literal typeface stands', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para(MINOR3, HANGUL),
+        extraParts: [filledThemePart(BATANG, `<a:font script="Hang" typeface="${MALGUN}"/>`)],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].font).toBe(BATANG)
+  })
+
+  it('ja-JP: the Jpan entry outranks a literal MS Mincho', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para(MINOR3, '\u672c\u6587'),
+        extraParts: [
+          filledThemePart(MS_MINCHO, `<a:font script="Jpan" typeface="${YU_MINCHO}"/>`),
+          settingsPart('ja-JP'),
+        ],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].font).toBe(YU_MINCHO)
+  })
+
+  it('a Latin theme slot never reads the script table', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para('<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>', 'abc'),
+        extraParts: [
+          filledThemePart(BATANG, `<a:font script="Hang" typeface="${MALGUN}"/>`),
+          settingsPart('ko-KR'),
+        ],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].fontAscii).toBe('Aptos')
+  })
+})
+
 describe('empty EA slot resolution priority', () => {
   const RFONTS = '<w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia"/>'
 

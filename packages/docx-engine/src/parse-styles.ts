@@ -518,7 +518,16 @@ function mergeTableDisplay(
   child: TableStyleDisplay | undefined,
 ): TableStyleDisplay | undefined {
   const merged: TableStyleDisplay = { ...parent, ...(child ?? {}) }
-  const DEEP = ['wholeTable', 'firstRow', 'firstCol', 'lastCol', 'lastRow', 'paraSpacing'] as const
+  const DEEP = [
+    'wholeTable',
+    'firstRow',
+    'firstCol',
+    'lastCol',
+    'lastRow',
+    'band1Horz',
+    'band2Horz',
+    'paraSpacing',
+  ] as const
   for (const key of DEEP) {
     const a = parent[key] as Record<string, unknown> | undefined
     const b = child?.[key] as Record<string, unknown> | undefined
@@ -621,10 +630,14 @@ function tableStyleDisplayOf(
       if (tcMar) fmt.cellMarTwips = tcMar
       Object.assign(fmt, tableParaProps(findChild(cond, 'w:pPr')))
       if (Object.keys(fmt).length > 0) display[type] = fmt
-    } else if (type === 'band1Horz' && fill) {
-      display.band1Fill = fill
-    } else if (type === 'band2Horz' && fill) {
-      display.band2Fill = fill
+    } else if (type === 'band1Horz' || type === 'band2Horz') {
+      if (fill) display[type === 'band1Horz' ? 'band1Fill' : 'band2Fill'] = fill
+      const fmt: TableCondFormat = {}
+      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
+      if (borders) fmt.borders = borders
+      const tcMar = cellMarginsOf(findChild(tcPr ?? {}, 'w:tcMar'))
+      if (tcMar) fmt.cellMarTwips = tcMar
+      if (Object.keys(fmt).length > 0) display[type] = fmt
     }
   }
   const styleTblPr = findChild(styleNode, 'w:tblPr')

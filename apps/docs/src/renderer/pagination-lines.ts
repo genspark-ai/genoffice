@@ -1,7 +1,7 @@
 // DOM line-box sampling for page-crossing blocks (cached per element), the
 // line-split re-slice, table row cut positions and line anchors.
 import { rangeSlot } from './dom-range'
-import { applyBlockMeta, lineLeadPx } from './pagination-measure'
+import { applyBlockMeta, lineLeadPx, unshiftRunRect } from './pagination-measure'
 import { CapacityWindows, SortedYs } from './pagination-index'
 import { blockInlineExtraPx } from './pagination-sections'
 import {
@@ -58,6 +58,8 @@ const PATCH_KEYS = [
   'rowFills',
   'rowSplits',
   'floatVShifts',
+  'floatPullUps',
+  'floatCarries',
   'floatFlows',
   'floatSplits',
   'oversizeClips',
@@ -970,7 +972,7 @@ function rowCutYs(
       range.selectNodeContents(n)
       for (const r of range.getClientRects()) {
         if (r.height <= 0 || r.width <= 0) continue
-        const band = toBand(r)
+        const band = toBand(unshiftRunRect(r, n, zoomFactor))
         bands.push(band)
         addEntry(band, n, para)
         if (para) {
@@ -1254,7 +1256,8 @@ function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
       if (n.parentElement?.closest('.page-gap, .page-float-host')) continue
       range.selectNodeContents(n)
       for (const r of range.getClientRects()) {
-        if (r.height > 0 && r.width > 0) rects.push({ r, node: n as Text })
+        if (r.height > 0 && r.width > 0)
+          rects.push({ r: unshiftRunRect(r, n, zoomFactor), node: n as Text })
       }
     }
   }
@@ -1343,14 +1346,15 @@ export function anchorElement(a: LineAnchor): Element | null {
  * in-table cut markers before the table's first row where they inflate the canvas
  * table by an anonymous-row line-height and skew all pagination measurement below.
  */
-function lineStartCharOffset(node: Text, lineTop: number): number {
+function lineStartCharOffset(node: Text, lineTop: number, zoomFactor: number): number {
   const len = node.length
   if (len === 0) return 0
   const range = charRange()
   const topAt = (i: number): number => {
     range.setStart(node, i)
     range.setEnd(node, i + 1)
-    for (const r of range.getClientRects()) if (r.height > 0) return r.top
+    for (const r of range.getClientRects())
+      if (r.height > 0) return unshiftRunRect(r, node, zoomFactor).top
     // collapsed characters (e.g. wrap-point whitespace) have no rect: treat as belonging to an earlier line
     return -Infinity
   }
@@ -1370,10 +1374,10 @@ function lineStartCharOffset(node: Text, lineTop: number): number {
   return ans
 }
 
-const toAnchor = (ln: { node: Text | Element; top: number }): LineAnchor =>
+const toAnchor = (ln: { node: Text | Element; top: number }, zoomFactor: number): LineAnchor =>
   ln.node instanceof Element
     ? { node: ln.node, charOffset: 0 }
-    : { node: ln.node, charOffset: lineStartCharOffset(ln.node, ln.top) }
+    : { node: ln.node, charOffset: lineStartCharOffset(ln.node, ln.top, zoomFactor) }
 
 /**
  * DOM anchor of the line start matching an in-block virtual Y (offsetInBlock)
@@ -1387,7 +1391,7 @@ export function lineStartAnchor(
   rectsOf: DomLineRectsFn = domLineRects,
 ): LineAnchor | null {
   for (const ln of rectsOf(el, zoomFactor)) {
-    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return toAnchor(ln)
+    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return toAnchor(ln, zoomFactor)
   }
   return null
 }
@@ -1400,20 +1404,21 @@ export function nextLineAnchor(
   rectsOf: DomLineRectsFn = domLineRects,
 ): LineAnchor | null {
   for (const ln of rectsOf(el, zoomFactor)) {
-    if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln)
+    if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln, zoomFactor)
   }
   return null
 }
 
 /** Screen top of a cut anchor's line (the char rect at the anchor, else its parent box) */
-function anchorLineTop(a: LineAnchor): number | null {
+function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = anchorRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
     range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
     // jsdom has no Range.getClientRects: fall through to the parent box
-    for (const r of range.getClientRects?.() ?? []) if (r.height > 0) return r.top
+    for (const r of range.getClientRects?.() ?? [])
+      if (r.height > 0) return unshiftRunRect(r, a.node, zoomFactor).top
   }
   return a.node.parentElement?.getBoundingClientRect().top ?? null
 }
@@ -1481,7 +1486,11 @@ function insideVerticalMerge(row: Element): boolean {
  *  spacer-gif sliver cells); otherwise the zero-height cut marker stays (same-y
  *  bands across cells are not modeled) — returns null. A row inside a vertical
  *  merge never hosts a band (see insideVerticalMerge). */
-export function singleCutCell(row: Element | null, anchor?: LineAnchor | null): Element | null {
+export function singleCutCell(
+  row: Element | null,
+  anchor?: LineAnchor | null,
+  zoomFactor = 1,
+): Element | null {
   const cells = row
     ? Array.from(row.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
     : []
@@ -1495,7 +1504,7 @@ export function singleCutCell(row: Element | null, anchor?: LineAnchor | null): 
   const anchorCell = anchorElement(anchor)?.closest('td, th')
   const host = anchorCell && cells.find((c) => c === anchorCell || c.contains(anchorCell))
   if (!host) return null
-  const cutTop = anchorLineTop(anchor)
+  const cutTop = anchorLineTop(anchor, zoomFactor)
   if (cutTop === null) return null
   for (const c of cells) {
     if (c !== host && cellContentBottom(c) > cutTop + 1) return null

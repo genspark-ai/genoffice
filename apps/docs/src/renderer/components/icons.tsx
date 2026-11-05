@@ -1883,6 +1883,16 @@ export function IconCheckboxChecked(props: IconProps) {
 }
 
 /** Word's Styles Pane glyph: a pane with an "A" beside a list */
+/** Word's Styles button: a tall A with a brush laid across its lower right */
+export function IconStyles(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.3}>
+      <path d="M 1.6 13.4 5.6 2.6 l 4 10.8 M 3 9.6 h 5.2" />
+      <path d="M 9.6 12.2 l 4.3 -4.3 1.3 1.3 -4.3 4.3 q -1 0.9 -2.3 0.5 q 0.3 -1.1 1 -1.8 z" />
+    </Svg>
+  )
+}
+
 export function IconStylesPane(props: IconProps) {
   return (
     <Svg {...props}>

@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { isEastAsianLangTag } from './char-class'
 import type { JSZipObject } from 'jszip'
 import { LAZY_MEDIA_PLACEHOLDER_BYTES, lazyMediaHashOf, lazyMediaUrl } from './lazy-media'
 import { parseCustGeom } from '@genoffice/pptx-engine/custgeom'
@@ -61,6 +62,7 @@ import type {
   CellBorders,
   CellMargins,
   RevisionInfo,
+  RuleOverlay,
   Run,
   SectionSettings,
   SourceInfo,
@@ -1674,7 +1676,9 @@ async function buildBlock(
       !boxTexts.some((t) => t.trim() !== '') &&
       !(hasWsp && textboxes.length > 0)
     ) {
-      return buildTextParagraph(base, xml, ctx, true, el.start)
+      const block = buildTextParagraph(base, xml, ctx, true, el.start)
+      const ruleOverlays = anchoredRuleOverlays(detect, ctx)
+      return ruleOverlays.length > 0 ? { ...block, ruleOverlays } : block
     }
     // Anchored textboxes (code boxes, callout cards): all visible text lives in
     // w:txbxContent. Extract a display-only model so content and box styling
@@ -1774,6 +1778,9 @@ async function buildBlock(
       ...(anchoredRule ? { anchorLine: anchorLineOf(xml, ctx) ?? {} } : {}),
       ...(ruleMeta?.imageOffsetYEmu !== undefined && ruleMeta.imageRelV === undefined
         ? { imageOffsetYEmu: ruleMeta.imageOffsetYEmu }
+        : {}),
+      ...(ruleMeta?.imageOffsetXEmu !== undefined && ruleMeta.imageRelH === undefined
+        ? { imageOffsetXEmu: ruleMeta.imageOffsetXEmu }
         : {}),
     }
   }
@@ -2080,7 +2087,7 @@ function effectiveRunOf(res: RunResolve, rPr: XNode | undefined, key = ''): Effe
 function markSizeOf(eff: EffectivePPr, pPr: XNode | undefined): number | undefined {
   if (eff.mark.source.sizeHalfPoints === 'direct') return eff.mark.sizeHalfPoints
   const markRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
-  if (markRPr && onOffOf(markRPr, 'w:rtl') === true) return eff.mark.sizeHalfPoints
+  if (eff.bidi || (markRPr && onOffOf(markRPr, 'w:rtl') === true)) return eff.mark.sizeHalfPoints
   return undefined
 }
 
@@ -3508,9 +3515,14 @@ function extractTextboxes(
       const cy = parseInt(ext['cy'] ?? '', 10)
       if (!(cx > 0) || !(cy > 0)) return
       const rot = parseInt(attrsOf(xfrm ?? {})['rot'] ?? '', 10)
+      const picId = attrsOf(findChild(findChild(node, 'pic:nvPicPr') ?? {}, 'pic:cNvPr') ?? {})[
+        'id'
+      ]
       const box: TextboxDisplay = {
         paras: [],
         readOnly: true,
+        picture: true,
+        ...(picId ? { shapeId: picId } : {}),
         fillImageDataUrl: dataUrl,
         widthPx: emuToPx(cx * (ctm?.sx ?? 1)),
         heightPx: emuToPx(cy * (ctm?.sy ?? 1)),
@@ -3580,9 +3592,12 @@ function extractTextboxes(
       const extCx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
       const extCy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
       if (dataUrl && Number.isFinite(extCx) && Number.isFinite(extCy)) {
+        const picId = /<pic:cNvPr\b[^>]*\bid="([^"]+)"/.exec(frag)?.[1]
         const box: TextboxDisplay = {
           paras: [],
           readOnly: true,
+          picture: true,
+          ...(picId ? { shapeId: picId } : {}),
           fillImageDataUrl: dataUrl,
           widthPx: emuToPx(extCx),
           heightPx: emuToPx(extCy),
@@ -3983,6 +3998,35 @@ function anchorLineOf(xml: string, ctx: BuildContext): Block['anchorLine'] {
     ...(format ? { format } : {}),
     ...(clear ? { clear } : {}),
   }
+}
+
+/**
+ * Anchored thin lines a text paragraph carries (fill-in blanks drawn as zero-height
+ * wps lines next to "Party A:"). Word positions them from the column left and the
+ * paragraph top regardless of the paragraph's indent; page/margin-relative anchors
+ * stay out (they do not follow the paragraph).
+ */
+function anchoredRuleOverlays(xml: string, ctx: BuildContext): RuleOverlay[] {
+  const out: RuleOverlay[] = []
+  let eff: EffectivePPr | undefined
+  for (const frag of topLevelDrawings(xml)) {
+    if (!frag.includes('<wp:anchor') || !isThinRule(frag)) continue
+    if (frag.includes('<pic:pic') || frag.includes('<w:txbxContent')) continue
+    const meta = drawingAnchorMeta(frag)
+    if (meta.offsetXEmu === undefined || meta.offsetYEmu === undefined) continue
+    if ((meta.relH && meta.relH !== 'column') || (meta.relV && meta.relV !== 'paragraph')) continue
+    eff ??= resolveParagraphPropsXml(xml, resolverOf(ctx))
+    const display = ruleDisplayOf(frag)
+    out.push({
+      xPx: Math.round(meta.offsetXEmu / EMU_PER_PX - eff.indent.left / 15),
+      yPx: Math.round((meta.offsetYEmu / EMU_PER_PX) * 100) / 100,
+      widthPx: display.ruleWidthPx ?? Math.round((meta.extentXEmu ?? 0) / EMU_PER_PX),
+      spaceBeforePx: Math.round((eff.spacing.before / 15) * 100) / 100,
+      ...(display.ruleThicknessPx ? { thicknessPx: display.ruleThicknessPx } : {}),
+      ...(display.ruleColorHex ? { colorHex: display.ruleColorHex } : {}),
+    })
+  }
+  return out
 }
 
 /** anchor line of a stray textbox paragraph with the style chain's tab stops
@@ -5652,6 +5696,7 @@ function extractTableModel(
   // per-cell w:tcW (dxa twips), aligned with rows: grid-repair input
   const rowTcws: Array<Array<number | undefined>> = []
   const rowEdges: Array<ReturnType<typeof rowGridEdges>> = []
+  const rowExceptions: Array<RowPropExceptions | null> = []
   const rowHeightsTwips: Array<number | null> = []
   const rowHeightRules: NonNullable<TableModel['rowHeightRules']> = []
   const repeatHeaderRows: boolean[] = []
@@ -5701,6 +5746,7 @@ function extractTableModel(
       rows.push(cells)
       rowTcws.push(tcws)
       rowEdges.push(rowGridEdges(tr))
+      rowExceptions.push(tablePropExceptionsOf(findChild(tr, 'w:tblPrEx')))
       const trPr = findChild(tr, 'w:trPr')
       cellSpacing = cellSpacing ?? spacingOf(trPr)
       const trH = trPr ? attrsOf(findChild(trPr, 'w:trHeight') ?? {}) : {}
@@ -5715,6 +5761,7 @@ function extractTableModel(
     }
   }
   if (rows.length === 0) return undefined
+  applyRowPropExceptions(rows, rowExceptions)
   applyTableStyleDisplay(rows, findChild(tbl, 'w:tblPr'), ctx)
   // w:gridBefore/w:gridAfter offset rows within the grid: placeholder cells keep
   // the offset visible (inserted after style banding so real cells keep their look)
@@ -5924,6 +5971,59 @@ function cellConds(
   return out
 }
 
+/** w:tblPrEx — table properties one row overrides (the raw bytes still round-trip) */
+interface RowPropExceptions {
+  borders?: TableBorders
+  cellMarTwips?: CellMargins
+  fill?: string
+}
+
+function tablePropExceptionsOf(tblPrEx: XNode | undefined): RowPropExceptions | null {
+  if (!tblPrEx) return null
+  const out: RowPropExceptions = {}
+  const borders = mergedBorderLinesOf(tblPrEx, 'w:tblBorders', true)
+  if (borders) out.borders = borders
+  const mar = cellMarginsOf(findChild(tblPrEx, 'w:tblCellMar'))
+  if (mar) out.cellMarTwips = mar
+  const fill = shdDisplayFill(findChild(tblPrEx, 'w:shd'))
+  if (fill) out.fill = fill
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Word draws a row's w:tblPrEx borders/margins/shading in place of the table-level
+ * ones: resolved onto the row's cells (explicit tcPr stays on top, the table style
+ * below). Outer sides map to the table edge, inner ones to insideH/insideV, so a row
+ * under an exception-free row still meets it with the insideH line (Word draws the
+ * insideH, not the top, between a plain header row and the first exception row).
+ */
+function applyRowPropExceptions(
+  rows: TableCell[][],
+  exceptions: Array<RowPropExceptions | null>,
+): void {
+  rows.forEach((row, r) => {
+    const ex = exceptions[r]
+    if (!ex) return
+    const b = ex.borders
+    row.forEach((cell, c) => {
+      if (b) {
+        const sides: CellBorders = {}
+        const top = r === 0 ? b.top : b.insideH
+        const bottom = r === rows.length - 1 ? b.bottom : b.insideH
+        const left = c === 0 ? b.left : b.insideV
+        const right = c === row.length - 1 ? b.right : b.insideV
+        if (top) sides.top = top
+        if (bottom) sides.bottom = bottom
+        if (left) sides.left = left
+        if (right) sides.right = right
+        if (Object.keys(sides).length > 0) cell.borders = { ...sides, ...(cell.borders ?? {}) }
+      }
+      if (ex.cellMarTwips) cell.cellMarTwips = { ...ex.cellMarTwips, ...(cell.cellMarTwips ?? {}) }
+      if (ex.fill && cell.fill === undefined) cell.fill = ex.fill
+    })
+  })
+}
+
 function applyTableStyleDisplay(
   rows: TableCell[][],
   tblPr: XNode | undefined,
@@ -5944,12 +6044,9 @@ function applyTableStyleDisplay(
     const isFirst = firstRowOn && r === 0
     const isLast = lastRowOn && r === rows.length - 1
     const bandRow = firstRowOn ? r - 1 : r
-    const bandFill =
-      hBandOn && bandRow >= 0
-        ? Math.floor(bandRow / bandSize) % 2 === 0
-          ? ts.band1Fill
-          : ts.band2Fill
-        : undefined
+    const band1 = hBandOn && bandRow >= 0 && Math.floor(bandRow / bandSize) % 2 === 0
+    const band2 = hBandOn && bandRow >= 0 && !band1
+    const bandFill = band1 ? ts.band1Fill : band2 ? ts.band2Fill : undefined
     let col = 0
     for (const cell of row) {
       const span = cell.colSpan ?? 1
@@ -5959,6 +6056,7 @@ function applyTableStyleDisplay(
         isLast ? ts.lastRow : undefined,
         firstColOn && col === 0 ? ts.firstCol : undefined,
         lastColOn && col + span === totalCols ? ts.lastCol : undefined,
+        band1 ? ts.band1Horz : band2 ? ts.band2Horz : undefined,
       ]
       col += span
       if (cell.fill === undefined) {
@@ -6398,6 +6496,10 @@ async function hfImages(
       if (wrap) {
         image.wrap = wrap === 'TopAndBottom' ? 'topBottom' : (wrap.toLowerCase() as HfImage['wrap'])
       }
+      const dist = (attr: string) =>
+        Math.round(Number(new RegExp(`\\b${attr}="(\\d+)"`).exec(anchorTag)?.[1] ?? 0) / EMU_PER_PX)
+      const wrapDistPx = { l: dist('distL'), r: dist('distR'), t: dist('distT'), b: dist('distB') }
+      if (Object.values(wrapDistPx).some((v) => v > 0)) image.wrapDistPx = wrapDistPx
       readAnchorPos(frag, image)
       // the strip can move and resize it (patchHfPicturesXml finds it again by this ordinal)
       if (hfMovablePictureFrag(frag)) image.drawing = drawingOrdinal
@@ -6949,6 +7051,148 @@ async function parseSettingsFlag(zip: JSZip, tag: string): Promise<boolean> {
   return xmlFlagOn(await file.async('string'), tag)
 }
 
+/** A complex field in the part XML: its own span, its own instruction text and
+ *  the fields nested inside it. */
+interface FieldFrame {
+  /** where the begin element starts */
+  start: number
+  /** where the end element ends */
+  end: number
+  /** the field's own instruction text (its own instrText runs only) */
+  instr: string
+  /** where the field's own separate element starts; -1 when it has none */
+  separateStart: number
+  /** where the field's own separate element ends; -1 when it has none */
+  separateEnd: number
+  /** the fields nested inside this one, in the order they appear */
+  children: FieldFrame[]
+}
+
+/** The field tokens of a part: the fldChar markers and the instruction runs.
+ *  The element bodies are bounded (a fldChar carries no content, an instrText
+ *  carries its instruction), so the scan never walks the whole part twice. */
+const FIELD_TOKEN_RE =
+  /<w:fldChar\b[^>]*?\/>|<w:fldChar\b[^>]*?>\s*<\/w:fldChar>|<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/g
+
+/**
+ * The complex fields of a part, as a tree. A field's span runs from its begin
+ * to the end that closes it — counting the nested fields, so a child's end
+ * does not close the parent (genoffice#2458). Each field carries only its own
+ * instruction text: a nested child's instruction belongs to the child.
+ */
+function parseFieldTree(xml: string): FieldFrame[] {
+  const roots: FieldFrame[] = []
+  const stack: FieldFrame[] = []
+  for (const match of xml.matchAll(FIELD_TOKEN_RE)) {
+    const token = match[0]
+    const at = match.index
+    if (token.startsWith('<w:instrText')) {
+      const top = stack[stack.length - 1]
+      if (top) top.instr += token.replace(/<[^>]+>/g, '')
+      continue
+    }
+    const type = /\bw:fldCharType\s*=\s*["'](begin|separate|end)["']/.exec(token)?.[1]
+    if (type === 'begin') {
+      const frame: FieldFrame = {
+        start: at,
+        end: -1,
+        instr: '',
+        separateStart: -1,
+        separateEnd: -1,
+        children: [],
+      }
+      const parent = stack[stack.length - 1]
+      if (parent) parent.children.push(frame)
+      else roots.push(frame)
+      stack.push(frame)
+      continue
+    }
+    if (type === 'separate') {
+      const top = stack[stack.length - 1]
+      if (top && top.separateEnd < 0) {
+        top.separateStart = at
+        top.separateEnd = at + token.length
+      }
+      continue
+    }
+    if (type === 'end') {
+      const frame = stack.pop()
+      if (frame) frame.end = at + token.length
+    }
+  }
+  return roots
+}
+
+/**
+ * A region of the part with the fields inside it rewritten: every nested field
+ * is replaced by its display text.
+ */
+function renderFieldRegion(
+  xml: string,
+  from: number,
+  to: number,
+  children: FieldFrame[],
+  page: { hasPageNumber: boolean },
+): string {
+  let text = ''
+  let pos = from
+  for (const child of children) {
+    if (child.start < from || child.end > to) continue
+    text += xml.slice(pos, child.start)
+    text += renderField(xml, child, page)
+    pos = child.end
+  }
+  return text + xml.slice(pos, to)
+}
+
+/**
+ * The display text of one field: a page-number marker for a PAGE/NUMPAGES
+ * field, its cached result for anything else. A field's instruction is field
+ * code and never displays, so the nested fields inside it drop out with it —
+ * only the ones inside the cached result are rewritten.
+ */
+function renderField(xml: string, field: FieldFrame, page: { hasPageNumber: boolean }): string {
+  const span = xml.slice(field.start, field.end)
+  const cached = field.separateEnd < 0 ? '' : xml.slice(field.separateEnd, field.end)
+  // Word formats the number with the result run's rPr; the separate run's
+  // rPr (first in the span) is only the field-code formatting
+  const resultRun = cached
+    .match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g)
+    ?.find((run) => run.includes('<w:t'))
+  const rPr =
+    (resultRun && /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(resultRun)?.[0]) ||
+    (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(span)?.[0] ?? '')
+  // the span starts inside the begin run and ends inside the end run, so
+  // the replacement closes/reopens the enclosing w:r to stay balanced
+  // (the leftover edge runs end up empty and are dropped later)
+  const emit = (inner: string) => `</w:r>${inner}<w:r>`
+  // classify by the leading keyword: a nested child field's PAGE inside a
+  // DOCPROPERTY instruction must not make the parent a PAGE field
+  // (genoffice#2458 — the span is matched by nesting depth, so the parent's
+  // instruction is its own and the child's instruction stays the child's)
+  if (/^\s*SECTIONPAGES\b/.test(field.instr)) {
+    return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
+  }
+  if (/^\s*NUMPAGES\b/.test(field.instr)) {
+    return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
+  }
+  if (/^\s*PAGE\b/.test(field.instr)) {
+    page.hasPageNumber = true
+    return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
+  }
+  // Keep the original run boundaries: separate/result/end may share a run,
+  // whose rPr is outside this span. Rewrapping only complete result runs
+  // drops those edge fragments and their formatting.
+  if (field.separateEnd < 0) return emit('')
+  const prefix = xml.slice(field.start, field.separateEnd)
+  const instruction = prefix
+    .replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '')
+    .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
+    .replace(/<w:fldChar[^>]*?(?:\/>|>[\s\S]*?<\/w:fldChar>)/g, '')
+  const result = renderFieldRegion(xml, field.separateEnd, field.end, field.children, page)
+  return instruction + result.replace(/<w:fldChar[^>]*?(?:\/>|>[\s\S]*?<\/w:fldChar>)/g, '')
+}
+
 /** header/footer part XML -> display content (PAGE fields shown as PAGE_MARK) */
 function hfContentFromXml(
   xml: string,
@@ -6980,58 +7224,33 @@ function hfContentFromXml(
   // Fallback); keeping both prints the content twice (e.g. duplicated "— PAGE —"
   // page numbers), so only the Choice branch feeds text/paragraph extraction
   let cleaned = xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
-  cleaned = cleaned.replace(
-    /<w:fldChar[^>]*w:fldCharType\s*=\s*["']begin["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)[\s\S]*?<w:fldChar[^>]*w:fldCharType\s*=\s*["']end["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)/g,
-    (span) => {
-      const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
-        .map((m) => m.replace(/<[^>]+>/g, ''))
-        .join('')
-      const cached =
-        /<w:fldChar[^>]*w:fldCharType\s*=\s*["']separate["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)([\s\S]*)$/.exec(
-          span,
-        )?.[1]
-      // Word formats the number with the result run's rPr; the separate run's
-      // rPr (first in the span) is only the field-code formatting
-      const resultRun = cached
-        ?.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g)
-        ?.find((run) => run.includes('<w:t'))
-      const rPr =
-        (resultRun && /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(resultRun)?.[0]) ||
-        (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(span)?.[0] ?? '')
-      // the span starts inside the begin run and ends inside the end run, so
-      // the replacement closes/reopens the enclosing w:r to stay balanced
-      // (the leftover edge runs end up empty and are dropped later)
-      const emit = (inner: string) => `</w:r>${inner}<w:r>`
-      // before PAGE/NUMPAGES: neither word boundary matches inside SECTIONPAGES,
-      // so it used to fall through to the cached result (often dropped, else a stale "1")
-      if (/\bSECTIONPAGES\b/.test(instr)) {
-        return emit(`<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`)
-      }
-      if (/\bNUMPAGES\b/.test(instr)) {
-        return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
-      }
-      if (/\bPAGE\b/.test(instr)) {
-        hasPageNumber = true
-        return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
-      }
-      // Keep the original run boundaries: separate/result/end may share a run,
-      // whose rPr is outside this span. Rewrapping only complete result runs
-      // drops those edge fragments and their formatting.
-      if (cached === undefined) return emit('')
-      const prefix = span.slice(0, span.length - cached.length)
-      return (prefix.replace(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g, '') + cached)
-        .replace(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g, '')
-        .replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, '')
-    },
-  )
+  // rewrite the complex fields by nesting depth: a child's end must not close
+  // its parent (genoffice#2458 — the lazy begin-to-end span stopped at the
+  // nested end and took the child's separate/cache for the parent's)
+  if (cleaned.includes('<w:fldChar')) {
+    const page = { hasPageNumber: false }
+    const roots = parseFieldTree(cleaned)
+    let out = ''
+    let pos = 0
+    for (const field of roots) {
+      if (field.end < 0) continue
+      out += cleaned.slice(pos, field.start)
+      out += renderField(cleaned, field, page)
+      pos = field.end
+    }
+    out += cleaned.slice(pos)
+    cleaned = out
+    hasPageNumber = page.hasPageNumber
+  }
   // <w:fldSimple w:instr=" PAGE "> single-element field form
   cleaned = cleaned.replace(
     /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
-      if (/\bSECTIONPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
-      if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
-      if (/\bPAGE\b/.test(instr)) {
+      if (/^\s*SECTIONPAGES\b/.test(instr))
+        return `<w:r>${rPr}<w:t>${SECTION_PAGES_MARK}</w:t></w:r>`
+      if (/^\s*NUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
+      if (/^\s*PAGE\b/.test(instr)) {
         hasPageNumber = true
         return `<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`
       }
@@ -7214,7 +7433,7 @@ function hfEmptyMarkFont(pPr: XNode | undefined, ctx: BuildContext): string | un
     const declared = src === 'direct' || src === 'paraStyle' || src === 'tableStyle'
     return declared ? fonts.ascii : ea && ea === fonts.ascii ? ea : undefined
   }
-  const eaLang = /^(zh|ja|ko)(-|$)/i.test(mark.eastAsiaLang ?? '')
+  const eaLang = isEastAsianLangTag(mark.eastAsiaLang)
   return (eaLang ? ea : undefined) ?? fonts.ascii
 }
 
@@ -7590,8 +7809,11 @@ function hfTableRowParagraphs(
       const tcMar = cellMarginsOf(findChild(rc.tcPr ?? {}, 'w:tcMar'))
       const mar = tblMar || tcMar ? { ...tblMar, ...tcMar } : undefined
       const borders = hfCellBorders(visualRows, r, bidiVisual ? raw.length - 1 - c : c, tblBorders)
+      const vSpan = rc.vMergeContinue ? 1 : hfVSpanOf(rawRows, r, rc.gridStart)
       return {
         ...content,
+        ...(vSpan > 1 ? { vSpan } : {}),
+        ...(rc.vMergeContinue ? { vMergeContinue: true as const } : {}),
         ...(total > 0 && rc.widthTwips > 0 ? { widthPct: (rc.widthTwips / total) * 100 } : {}),
         ...(absolute ? { widthTwips: rc.widthTwips } : {}),
         ...(borders ? { borders } : {}),
@@ -7613,6 +7835,17 @@ function hfTableRowParagraphs(
     }
   })
   return out
+}
+
+/** rows a w:vMerge restart cell at `col` spans: itself plus the continuation cells below */
+function hfVSpanOf(rows: HfRawCell[][], r: number, col: number): number {
+  let span = 1
+  for (let k = r + 1; k < rows.length; k++) {
+    const under = rows[k].find((x) => x.gridStart <= col && col < x.gridStart + x.span)
+    if (!under?.vMergeContinue) break
+    span++
+  }
+  return span
 }
 
 /** w:tblpPr of a header/footer layout table; undefined when the table is in flow */

@@ -599,6 +599,62 @@ describe('testMediaProvider', () => {
 })
 
 describe('endpoint composition with a query string in the base URL', () => {
+  it('BFL probes with x-key against credits and fails on an unauthenticated response', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ detail: 'Not authenticated' }, 403))
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await testMediaProvider('bfl', {
+      apiKey: 'k',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/403/)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.bfl.ai/v1/credits')
+    expect((init.headers as Record<string, string>)['x-key']).toBe('k')
+  })
+
+  it('BFL accepts only a 200 from the credits probe', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ credits: 12.5 })),
+    )
+    const ok = await testMediaProvider('bfl', {
+      apiKey: 'good',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(ok).toEqual({ ok: true })
+    // a malformed key is rejected with 422, which is not a valid-key answer
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ detail: 'Invalid API key format' }, 422)),
+    )
+    const rejected = await testMediaProvider('bfl', {
+      apiKey: 'bad',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(rejected.ok).toBe(false)
+    expect(rejected.error).toMatch(/422/)
+  })
+
+  it('Microsoft probes with api-key so a bad key fails instead of passing as 404', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: 'unauthorized' }, 401))
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await testMediaProvider('microsoft', {
+      apiKey: 'bad',
+      baseUrl: 'https://res.services.ai.azure.com',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(res.ok).toBe(false)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(headers['api-key']).toBe('bad')
+    expect(headers.authorization).toBeUndefined()
+  })
+
   /** gateway-style base: a path prefix and a pinned query parameter */
   const queryBase = 'https://gw.example.com/v1?key=abc'
 
@@ -843,5 +899,219 @@ describe('a failed media request does not buffer the whole error body', () => {
     expect(failed.ok).toBe(false)
     expect(failed.error).toMatch(/500/)
     expect(pulled()).toBeLessThanOrEqual(128 * 1024)
+  })
+})
+describe('generateImageWithProvider (stability & bfl)', () => {
+  const cfg = (imageModel: string, baseUrl?: string) => ({
+    apiKey: 'k',
+    imageModel,
+    analysisModel: '',
+    ...(baseUrl ? { baseUrl } : {}),
+  })
+  const pngResponse = () =>
+    new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('Stability: multipart to the model endpoint, image bytes back', async () => {
+    const fetchMock = vi.fn(async () => pngResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('stability', cfg('stable-image-ultra'), {
+      prompt: 'a fox',
+      aspectRatio: '16:9',
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.stability.ai/v2beta/stable-image/generate/ultra')
+    expect((init.headers as Record<string, string>).Accept).toBe('image/*')
+    const form = init.body as FormData
+    expect(form.get('prompt')).toBe('a fox')
+    expect(form.get('output_format')).toBe('png')
+    expect(form.get('aspect_ratio')).toBe('16:9')
+    expect(form.get('model')).toBeNull()
+  })
+
+  it('Stability: an sd3.5 id rides the sd3 endpoint with a model field; unknown ids refuse', async () => {
+    const fetchMock = vi.fn(async () => pngResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('stability', cfg('sd3.5-large'), { prompt: 'a fox' })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.stability.ai/v2beta/stable-image/generate/sd3')
+    expect((init.body as FormData).get('model')).toBe('sd3.5-large')
+    await expect(
+      generateImageWithProvider('stability', cfg('sd-1.x'), { prompt: 'x' }),
+    ).rejects.toThrow(/Unknown Stability/)
+  })
+
+  it('BFL: submit, poll to Ready, download the sample', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : url.includes('get_result')
+          ? jsonResponse({ status: 'Ready', result: { sample: 'https://cdn.bfl.example/out.png' } })
+          : pngResponse(),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('bfl', cfg('flux-2-pro'), {
+      prompt: 'a fox',
+      aspectRatio: '9:16',
+    })
+    expect(out.mime).toBe('image/png')
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(submitUrl).toBe('https://api.bfl.ai/v1/flux-2-pro')
+    expect((submitInit.headers as Record<string, string>)['x-key']).toBe('k')
+    // FLUX.2 Pro takes width/height, not aspect_ratio
+    expect(JSON.parse(submitInit.body as string)).toEqual({
+      prompt: 'a fox',
+      width: 576,
+      height: 1024,
+    })
+    const pollInit = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(pollInit[0]).toBe('https://api.bfl.ai/v1/get_result?id=job-1')
+    expect((pollInit[1].headers as Record<string, string>)['x-key']).toBe('k')
+    expect(fetchMock.mock.calls[2]![0]).toBe('https://cdn.bfl.example/out.png')
+  })
+
+  it('BFL: a moderated or errored job surfaces as a failure', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : jsonResponse({ status: 'Content Moderated' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider(
+        'bfl',
+        { apiKey: 'k', baseUrl: 'https://api.bfl.ai', imageModel: 'flux-2-pro', analysisModel: '' },
+        { prompt: 'a fox' },
+      ),
+    ).rejects.toThrow(/Content Moderated/)
+    await expect(
+      generateImageWithProvider('bfl', cfg('flux-2-pro'), {
+        prompt: 'x',
+        references: [{ bytes: PNG, mime: 'image/png' }],
+      }),
+    ).rejects.toThrow(/cannot edit/)
+  })
+
+  it('BFL: a non-OK poll response fails instead of polling until the timeout', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-2-pro')
+        ? jsonResponse({ id: 'job-1', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-1' })
+        : jsonResponse({ detail: 'Not authenticated' }, 401),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateImageWithProvider('bfl', cfg('flux-2-pro'), { prompt: 'a fox' }),
+    ).rejects.toThrow(/401/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+describe('generateImageWithProvider (mai)', () => {
+  const cfg = (imageModel: string) => ({
+    apiKey: 'k',
+    imageModel,
+    analysisModel: '',
+    baseUrl: 'https://res.services.ai.azure.com',
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('generations: JSON to /mai/v1/images/generations with the api-key header and a pixel size', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+      prompt: 'a fox',
+      aspectRatio: '16:9',
+    })
+    expect(out.mime).toBe('image/png')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://res.services.ai.azure.com/mai/v1/images/generations')
+    expect((init.headers as Record<string, string>)['api-key']).toBe('k')
+    expect(JSON.parse(init.body as string)).toEqual({
+      model: 'MAI-Image-2.6',
+      prompt: 'a fox',
+      width: 1344,
+      height: 768,
+    })
+  })
+
+  it('edits: references ride /mai/v1/images/edits as repeated image fields; over five refuses', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+      prompt: 'combine',
+      references: [
+        { bytes: PNG, mime: 'image/png', name: 'a.png' },
+        { bytes: PNG, mime: 'image/png', name: 'b.png' },
+      ],
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://res.services.ai.azure.com/mai/v1/images/edits')
+    expect((init.headers as Record<string, string>)['api-key']).toBe('k')
+    const form = init.body as FormData
+    expect(form.get('model')).toBe('MAI-Image-2.6')
+    expect(form.get('prompt')).toBe('combine')
+    expect(form.getAll('image')).toHaveLength(2)
+    await expect(
+      generateImageWithProvider('microsoft', cfg('MAI-Image-2.6'), {
+        prompt: 'x',
+        references: Array.from({ length: 6 }, () => ({ bytes: PNG, mime: 'image/png' })),
+      }),
+    ).rejects.toThrow(/at most 5/)
+  })
+
+  it('an unmapped or auto aspect ratio omits width/height and the service picks its default', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider('microsoft', cfg('MAI-Image-2.5'), {
+      prompt: 'a fox',
+      aspectRatio: '21:9',
+    })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ model: 'MAI-Image-2.5', prompt: 'a fox' })
+  })
+
+  it('BFL: FLUX 3 Image keeps aspect_ratio, and a Failed job is terminal', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/v1/flux-3-image')
+        ? jsonResponse({ id: 'job-2', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-2' })
+        : url.includes('get_result')
+          ? jsonResponse({
+              status: 'Ready',
+              result: { sample: 'https://cdn.bfl.example/flux3.png' },
+            })
+          : new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'bfl',
+      { apiKey: 'k', baseUrl: 'https://api.bfl.ai', imageModel: 'flux-3-image', analysisModel: '' },
+      {
+        prompt: 'a fox',
+        aspectRatio: '16:9',
+      },
+    )
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(submitUrl).toBe('https://api.bfl.ai/v1/flux-3-image')
+    expect(JSON.parse(submitInit.body as string)).toEqual({ prompt: 'a fox', aspect_ratio: '16:9' })
+
+    const failedMock = vi.fn(async (url: string) =>
+      url.includes('get_result')
+        ? jsonResponse({ status: 'Failed' })
+        : jsonResponse({ id: 'job-3', polling_url: 'https://api.bfl.ai/v1/get_result?id=job-3' }),
+    )
+    vi.stubGlobal('fetch', failedMock)
+    await expect(
+      generateImageWithProvider(
+        'bfl',
+        { apiKey: 'k', baseUrl: 'https://api.bfl.ai', imageModel: 'flux-2-pro', analysisModel: '' },
+        { prompt: 'a fox' },
+      ),
+    ).rejects.toThrow(/Failed/)
   })
 })

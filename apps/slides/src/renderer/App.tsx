@@ -56,7 +56,8 @@ import { runHeadlessPdfExport } from './headless-export'
 import { syncPrivateFonts } from './doc-fonts'
 import { toPickerHex } from './color-input'
 import { InkOverlay } from './InkOverlay'
-import { inkNodesOf, type InkPenSettings, type InkStroke, type InkTool } from './ink'
+import { inkNodesOf, type InkStroke, type InkTool } from './ink'
+import { loadInkPresets, saveInkPresets, type InkPreset } from './ink-presets'
 import type { SlideThemePreset } from './themes'
 import { Ribbon, type FormatCmd, type SlidesViewMode } from './components/Ribbon'
 import {
@@ -526,11 +527,13 @@ export function App() {
   /** Ribbon hover preview: the hovered effect played on the selection without applying */
   const [hoverAnim, setHoverAnim] = useState<{ nonce: number; items: AnimationItem[] } | null>(null)
   const [inkTool, setInkTool] = useState<InkTool>('select')
-  const [inkPen, setInkPen] = useState<InkPenSettings>({ color: 'C00000', width: 2 })
-  const [inkHighlighter, setInkHighlighter] = useState<InkPenSettings>({
-    color: 'FFFF00',
-    width: 10,
-  })
+  const [inkPresets, setInkPresets] = useState<InkPreset[]>(loadInkPresets)
+  const [inkActiveId, setInkActiveId] = useState(() => loadInkPresets()[0]!.id)
+  const inkActive = inkPresets.find((p) => p.id === inkActiveId) ?? inkPresets[0]!
+  const onInkPresets = useCallback((next: InkPreset[]) => {
+    setInkPresets(next)
+    saveInkPresets(next)
+  }, [])
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null)
   /** "Change Shape" gallery popover: anchor point + the shape it retargets */
   const [shapeGalleryAt, setShapeGalleryAt] = useState<{
@@ -3246,18 +3249,13 @@ export function App() {
 
   // ---- Draw (freehand ink): one stroke = one transparent PNG picture element; undo/save use the existing pipeline ----
 
-  const onInkTool = useCallback(
-    (tool: InkTool) => {
-      // Clicking the currently active tool again = cancel (back to select mode)
-      const next = tool !== 'select' && inkTool === tool ? 'select' : tool
-      setInkTool(next)
-      if (next !== 'select') {
-        setSelectedIds([])
-        setEditing(null)
-      }
-    },
-    [inkTool],
-  )
+  const onInkTool = useCallback((tool: InkTool) => {
+    setInkTool(tool)
+    if (tool !== 'select') {
+      setSelectedIds([])
+      setEditing(null)
+    }
+  }, [])
 
   const commitInk = useCallback(
     (stroke: InkStroke) => arrangeActions.commitInk(ctxRef.current, stroke),
@@ -3416,10 +3414,10 @@ export function App() {
         onToggleHidden={() => void toggleHidden()}
         inkTool={inkTool}
         onInkTool={onInkTool}
-        inkPen={inkPen}
-        onInkPen={setInkPen}
-        inkHighlighter={inkHighlighter}
-        onInkHighlighter={setInkHighlighter}
+        inkPresets={inkPresets}
+        inkActiveId={inkActive.id}
+        onInkPresets={onInkPresets}
+        onInkActivate={setInkActiveId}
         inkCount={inkCount}
         onInkClearAll={() => void clearInk()}
         viewMode={viewMode}
@@ -4382,12 +4380,8 @@ export function App() {
                               <InkOverlay
                                 slide={slide}
                                 tool={inkTool}
-                                color={
-                                  inkTool === 'highlighter' ? inkHighlighter.color : inkPen.color
-                                }
-                                width={
-                                  inkTool === 'highlighter' ? inkHighlighter.width : inkPen.width
-                                }
+                                color={inkActive.color}
+                                width={inkActive.width}
                                 onCommit={(stroke) => void commitInk(stroke)}
                                 onErase={(ids) => void eraseInk(ids)}
                               />

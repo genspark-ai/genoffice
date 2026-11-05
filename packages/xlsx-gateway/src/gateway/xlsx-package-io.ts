@@ -148,26 +148,27 @@ export async function readArchiveEntryText(
   }
 }
 
-/// Batch form of readArchiveEntryText: extracts every requested entry in one
-/// sidecar call and returns the decoded texts keyed by entry name. Entries
-/// missing from the result are simply absent from the map (the caller decides
-/// whether that is an error).
+/// One-shot text read of several archive entries via the sidecar (extract to a
+/// temp dir, read, clean up). The sidecar fails the whole request when one of
+/// the names is missing, so the caller must ask for names it knows exist.
 export async function readArchiveEntriesText(
   client: ArchiveClient,
   sourcePath: string,
   entryNames: readonly string[],
 ): Promise<Map<string, string>> {
-  if (entryNames.length === 0) return new Map()
+  const out = new Map<string, string>()
+  if (entryNames.length === 0) return out
   const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-read-'))
   try {
     const extracted = readEntriesResultSchema.parse(
       await client.readEntries({ path: sourcePath, entries: [...entryNames], outputDir: workDir }),
     )
-    const texts = new Map<string, string>()
-    for (const entry of extracted.entries) {
-      texts.set(entry.name, normalizeOoxmlPartPrefix(readFileSync(entry.path, 'utf8')))
+    for (const [index, entry] of extracted.entries.entries()) {
+      const name = entryNames[index]
+      if (name === undefined || !entry.path) continue
+      out.set(name, normalizeOoxmlPartPrefix(readFileSync(entry.path, 'utf8')))
     }
-    return texts
+    return out
   } finally {
     await rm(workDir, { recursive: true, force: true })
   }

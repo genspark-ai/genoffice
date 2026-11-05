@@ -949,6 +949,11 @@ export interface HfTableCell {
   /** cell margins (twips): w:tcMar over w:tblCellMar; absent sides use Word's
    *  defaults (0 top/bottom, 108 left/right) */
   marTwips?: CellMargins
+  /** w:vMerge restart: number of rows the cell spans (its content sizes none
+   *  of them; Word lays it over the merged rows) */
+  vSpan?: number
+  /** w:vMerge continuation: an empty placeholder under the spanning cell */
+  vMergeContinue?: true
   /** paras were flattened out of a nested table: display-only, not editable */
   locked?: true
   /** editor-side: the cell's paragraphs changed; saving regenerates them from
@@ -1115,6 +1120,8 @@ export interface HfImage {
   /** ordinal of its <w:drawing> in the part XML: set on single-picture anchors,
    *  the ones the strip can move and resize (HeaderFooter.pictureEdits keys) */
   drawing?: number
+  /** wp:anchor distL/distR/distT/distB (px): text clearance of a wrapped drawing */
+  wrapDistPx?: { l: number; r: number; t: number; b: number }
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -1746,6 +1753,17 @@ export interface StrayIndent {
   firstLineTwips?: number
 }
 
+/** one anchored rule over a text paragraph; px from the column left / paragraph top (space-before included) */
+export interface RuleOverlay {
+  xPx: number
+  yPx: number
+  widthPx: number
+  /** effective w:spacing before (px): the paragraph box starts below it */
+  spaceBeforePx: number
+  thicknessPx?: number
+  colorHex?: string
+}
+
 export interface Block {
   /** stable id for editor bookkeeping */
   id: string
@@ -1835,6 +1853,9 @@ export interface Block {
    *  paragraph mark): side-wrapped anchored pictures, invisible VML picts.
    *  clear = a w:br w:clear in that paragraph: the line resumes below the floats on that side */
   anchorLine?: { styleId?: string; format?: ParaFormat; clear?: 'all' | 'left' | 'right' }
+  /** anchored thin-line shapes (fill-in blanks, underline rules) a text paragraph
+   *  carries: drawn over the paragraph at their column/paragraph offsets, display only */
+  ruleOverlays?: RuleOverlay[]
   /** paragraph alignment of the image (w:jc) */
   imageAlign?: 'left' | 'center' | 'right'
   /** the drawing paragraph's own w:ind left (twips): an inline text box
@@ -2084,9 +2105,9 @@ export interface TextboxDisplay {
    */
   txbxIndex?: number
   /**
-   * wps:cNvPr id of the owning DrawingML shape. A box with no txbxIndex has
-   * no w:txbxContent yet: its first text commit injects a fresh wps:txbx into
-   * the shape addressed by this id.
+   * wps:cNvPr id of the owning DrawingML shape (pic:cNvPr for a photo box).
+   * A box with no txbxIndex has no w:txbxContent yet: its first text commit
+   * injects a fresh wps:txbx into the shape addressed by this id.
    */
   shapeId?: string
   /**
@@ -2096,6 +2117,8 @@ export interface TextboxDisplay {
    * commit would corrupt the table (sidebars).
    */
   readOnly?: boolean
+  /** a pic:pic sharing its paragraph with other drawings, rendered as a filled box: it is a picture, not a shape */
+  picture?: boolean
   paras: TextboxParaDisplay[]
   /** this box's own wp:anchor offset (EMU); with `floating`, the box positions
    *  absolutely at the offset from the paragraph's flow origin */
@@ -2366,6 +2389,9 @@ export interface TableStyleDisplay {
   band1Fill?: string
   /** even-band row shading (band2Horz) */
   band2Fill?: string
+  /** banded-row cell borders / margins (band1Horz / band2Horz tcPr); fills stay in band*Fill */
+  band1Horz?: TableCondFormat
+  band2Horz?: TableCondFormat
   /** rows per horizontal band (style-level w:tblStyleRowBandSize) */
   rowBandSize?: number
   /** style-level table borders (w:tblPr w:tblBorders); fallback when the document level has none */

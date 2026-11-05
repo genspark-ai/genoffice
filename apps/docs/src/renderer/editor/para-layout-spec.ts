@@ -8,6 +8,7 @@
  * serves the header/footer strip paragraphs (hf-dom, HeaderFooterArea).
  */
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { textParaLineBox } from '../text-layout/para-line-box'
 import {
   asciiOnlyCjkFace,
   autoSpacingPt,
@@ -25,17 +26,18 @@ import {
   facesDiffer,
   fontBoxCss,
   isCjkFontName,
+  isEaLayoutFace,
   lineHeightFactor,
   nonCjkInkRanges,
   paraLineFactorCss,
   runLatinFactorFaces,
   SPACE_ONLY_RE,
   spaceBeforeProp,
-  strutFontCss,
   textHasCjk,
   textHasComplexScript,
   textHasHangul,
   textHasLatinInk,
+  inheritedMarkFace,
   inheritedSlotFace,
   latinViaEastAsiaSlotOn,
   runSlotFaces,
@@ -379,7 +381,7 @@ export function paraMixedDeclaredCjk(para: LayoutPara): boolean {
     if (r.kind !== 'text') continue
     const family = r.attrs?.font ?? r.attrs?.fontAscii
     if (!family) inherited = true
-    else if (isCjkFontName(family)) declaredCjk = true
+    else if (isEaLayoutFace(family)) declaredCjk = true
     if (declaredCjk && inherited) return true
   }
   return false
@@ -419,7 +421,7 @@ export function paraLineFactor(para: LayoutPara): string {
     const emptySlotKr =
       attrs?.eaSlotEmpty === true ? emptyEaSlotHangulFactor(attrs.font ?? null, r.text) : null
     if (emptySlotKr !== null) declaredMax = Math.max(declaredMax, emptySlotKr)
-    else if (family && isCjkFontName(family)) {
+    else if (family && isEaLayoutFace(family)) {
       declaredMax = Math.max(declaredMax, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
     } else undeclaredCjk = true
   }
@@ -434,7 +436,7 @@ export function pictureMarkLineFactor(
   eastAsia: string | null,
 ): string | null {
   if (latin) return String(lineHeightFactor(latin))
-  if (eastAsia && isCjkFontName(eastAsia))
+  if (eastAsia && isEaLayoutFace(eastAsia))
     return String(cjkDeclaredLineFactor(eastAsia) ?? lineHeightFactor(eastAsia))
   return null
 }
@@ -464,6 +466,7 @@ export function perLineFactors(
   )
   const runs: RunFactorRange[] = []
   let offset = 0
+  let cjkOnLatinFace = true
   node.forEach((child) => {
     if (child.isText && child.text) {
       const mark = child.marks.find((m) => m.type.name === 'docTextStyle')
@@ -479,9 +482,11 @@ export function perLineFactors(
       const factor =
         emptySlotKr !== null
           ? String(emptySlotKr)
-          : family && isCjkFontName(family)
+          : family && isEaLayoutFace(family)
             ? String(cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
             : scriptVar
+      if (textHasCjk(child.text) && !(family && !isEaLayoutFace(family) && emptySlotKr === null))
+        cjkOnLatinFace = false
       const style = `--doc-line-factor:${factor}${lh ? `;line-height:${lh}` : ''}`
       for (const r of cjkScriptRanges(child.text)) {
         runs.push({ from: offset + r.from, to: offset + r.to, style })
@@ -496,7 +501,13 @@ export function perLineFactors(
     }
     offset += child.nodeSize
   })
-  return { strut: latinParaFactor(para, 'var(--doc-line-factor-latin,1.2)', true), runs }
+  const strut = latinParaFactor(para, 'var(--doc-line-factor-latin,1.2)', true)
+  // CJK on a Latin-named eastAsia face renders through Word's substitute
+  // (SimSun class): a mixed line then paces at that factor even when the Latin
+  // face is taller (Word probe 2026-11-03, doc2docx 037: Segoe UI 12pt on a
+  // 312-twip grid, CJK + digit lines take one cell while Latin-only lines
+  // take two), so the strut must not out-grow the CJK stretches
+  return { strut: cjkOnLatinFace ? `min(${strut}, ${scriptVar})` : strut, runs }
 }
 
 /**
@@ -812,39 +823,17 @@ export function lineBoxSpec(
     if (textHasHangul(text) && fmt.wordWrap !== false) {
       styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
     }
-    const factor = paraLineFactor(para)
-    styles.push(`--doc-line-factor:${factor}`)
+    const box = textParaLineBox(para, { fontBox: true, leadGapZero: true, strut: !note })
+    const strut = strutHalfPoints(para)
     // strip paragraph: runs without their own w:sz inherit the paragraph /
     // table style's size (hf cells), which .doc-strut-mixed restores through
     // --doc-base-fs; the strip base itself is the Normal size already
-    const strut = strutHalfPoints(para)
     if (hf && ctx.styleSizeHalfPoints && (!strut || strut.mixed)) {
       styles.push(`--doc-base-fs:${ctx.styleSizeHalfPoints / 2}pt`)
       if (!strut) styles.push(`font-size:${ctx.styleSizeHalfPoints / 2}pt`)
     }
-    // CJK lines follow the East Asian factor rule, their glyph rest is unprobed
-    if (textHasCjk(text)) styles.push('--doc-lead-gap:0px')
-    // the strut face follows the runs on every surface: a letterhead of Times
-    // New Roman 8pt lines pitches 9.2 in Word (probe 2026-10-29) and a strip
-    // strut left on the inherited face added ~0.5pt per line through the
-    // strut/run baseline mismatch
-    const fam = paraDeclaredFontFamily(para)
-    const cls = fam
-      ? (paraMixedFaceClass(para, factor) ?? declaredCjkStrutClass(para))
-      : eaStrutClass(para)
-    if (fam) styles.push(`font-family:${fam}`, `--doc-grid-strut-tail:${fam}`, ...fontBoxCss(fam))
-    if (cls) classes.push(cls)
-    const csMixed = paraCsMixedClass(para)
-    if (csMixed) classes.push(csMixed)
-    const cutAdjusted = paraCutAdjustedClass(para)
-    if (cutAdjusted) classes.push(cutAdjusted)
-    // Word's line strut follows run sizes; without this the paragraph inherits the
-    // body size (often larger than table-cell runs) and every line box inflates.
-    // the smallest declared run size carries the strut; larger runs lay their own boxes (strutFontCss)
-    if (strut && !note) {
-      styles.push(...strutFontCss(strut.halfPoints, strut.mixed))
-      if (strut.mixed) classes.push(STRUT_MIXED_CLASS)
-    }
+    styles.push(...box.styles)
+    classes.push(...box.classes)
   } else {
     // Word sizes an empty line by the paragraph mark / empty run, both directions
     if (fmt.emptyRunSize) styles.push(`font-size:${fmt.emptyRunSize / 2}pt`)
@@ -854,7 +843,7 @@ export function lineBoxSpec(
     // 2026-08-25: SimSun 1.30 / DengXian 1.36 / Malgun 1.74 / Calibri 1.24 —
     // each face's own text factor; the earlier Western-only scoping starved
     // CJK marks down to the document factor and doubled their grid rows)
-    const fam = fmt.emptyRunFont ?? null
+    const fam = inheritedMarkFace(fmt.emptyRunFont ?? null)
     if (fam) {
       const chain = cssFontFamily(fam)
       styles.push(

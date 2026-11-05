@@ -180,6 +180,16 @@ describe('detectFurniture: page-tracking mixed headers (P30 B)', () => {
     expect(hf.some((h) => h.pageNo && h.text.includes(HF_PAGE_MARK))).toBe(true)
   })
 
+  it('turns every number that tracks the page into the PAGE field', () => {
+    // "Page 2" frozen into the header of every page would be wrong on all but one
+    const pages = [0, 1, 2, 3].map((i) =>
+      pageOf(i, header(`REF${i + 1} Page ${i + 1} of the 2021 report`), body(`Body ${i}`)),
+    )
+    const { hf } = detectFurniture(pages)
+    expect(hf).toHaveLength(1)
+    expect(hf[0]!.text).toBe(`REF${HF_PAGE_MARK} Page ${HF_PAGE_MARK} of the 2021 report`)
+  })
+
   it('keeps numbered captions whose digits do NOT track the page', () => {
     const pages = [0, 1, 2, 3].map((i) =>
       pageOf(i, header(`Form No.${i + 7} Attachment`), body(`Body ${'z'.repeat(i)}`)),

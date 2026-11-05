@@ -390,7 +390,7 @@ export function insideFloatTable(el: Element): boolean {
  *  the spacer is real flow space, unlike a page gap). */
 export function setFloatVShifts(
   view: EditorView,
-  shifts: Array<{ el: Element; dyPx: number; flow?: boolean; carryPx?: number }>,
+  shifts: Array<{ el: Element; dyPx: number; flow?: boolean; carryPx?: number; pull?: boolean }>,
   batch?: LayoutBatch,
 ): void {
   const decos: Decoration[] = []
@@ -451,6 +451,16 @@ export function setFloatVShifts(
               to,
               { class: 'doc-table-float-flow' },
               { key: `tblp-flow-${i}`, flow: true },
+            ),
+          )
+        } else if (shift.pull) {
+          // display-only lift of a side-wrapped picture (styles.css --float-pull-dy)
+          decos.push(
+            Decoration.node(
+              from,
+              to,
+              { style: `--float-pull-dy:${dy}px` },
+              { key: `float-pull-${i}-${dy}`, pull: dy },
             ),
           )
         } else {
@@ -527,6 +537,9 @@ export interface GapMetrics {
    *  text area ends this far below the gap's top (a dropped picture is anchored
    *  to fit above it, imageDropPages) */
   bodyPad?: number
+  /** the closing page's own bottom margin (px): marginBottom minus the unused
+   *  body remainder and footnote area, where the bottom text boundary sits */
+  bodyMarginBottom?: number
   /** text-area height of the page the gap closes (px, footnotes excluded): with
    *  the previous gap's bottom it places that page's body bottom even when the
    *  page's content ran past it */
@@ -624,6 +637,7 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
   }
   gap.style.height = `${m.marginBottom + GAP_BAND + m.marginTop}px`
   gap.style.setProperty('--gap-mb', `${m.marginBottom}px`)
+  gap.style.setProperty('--gap-body-mb', `${m.bodyMarginBottom ?? m.marginBottom}px`)
   if (m.bodyPad) gap.dataset.bodyPad = m.bodyPad.toFixed(1)
   if (m.bodyHeight) gap.dataset.bodyHeight = m.bodyHeight.toFixed(1)
   gap.style.setProperty('--gap-mt', `${m.marginTop}px`)
@@ -648,7 +662,7 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
     cell.colSpan = Math.max(1, Math.round(cols ?? 1))
     cell.contentEditable = 'false'
     const fill = document.createElement('div')
-    fill.className = 'page-gap-table-fill'
+    fill.className = 'page-gap-table-fill page-gap-paper'
     cell.appendChild(fill)
     gap.appendChild(cell)
     return gap
@@ -656,10 +670,10 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
   gap.className =
     kind === 'cell'
       ? // in-cell gap (single-column in-row table cut): inline gap + opaque bands covering the cell's fill/borders
-        'page-gap page-gap-inline page-gap-cell'
+        'page-gap page-gap-paper page-gap-inline page-gap-cell'
       : kind === 'inline'
-        ? 'page-gap page-gap-inline'
-        : 'page-gap'
+        ? 'page-gap page-gap-paper page-gap-inline'
+        : 'page-gap page-gap-paper'
   gap.style.marginLeft = `-${m.marginLeft}px`
   gap.style.marginRight = `-${m.marginRight}px`
   // inline-block (not block-level): avoids block-in-inline anonymous-box splitting,
@@ -803,20 +817,20 @@ export function setPageGaps(
     }
     // boundaryY in the key: a reused widget must not keep a stale boundary
     // (cols too: a table-structure edit must rebuild the spanning cell)
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0},${Math.round(metrics.pageLeft ?? -1)}`
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.bodyMarginBottom ?? -1},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0},${Math.round(metrics.pageLeft ?? -1)}`
     const build = (as: GapKind) => {
       const el = makeGapEl(metrics, as, gap.cols)
       // margins don't apply to table-rows and cuts are zero-height markers;
       // tables inside mixed-column regions are out of scope anyway (v1)
       if (gap.pullUp && as !== 'cut' && as !== 'table') el.style.marginTop = `-${gap.pullUp}px`
-      if (notes) el.appendChild(notes)
-      if (hfEls && (as === 'block' || as === 'inline' || as === 'cell')) {
-        for (const hf of hfEls) el.appendChild(hf)
-      } else if (hfEls && as === 'table') {
-        // table-row gaps position their strips inside the absolutely-filled cell;
-        // only zero-height cut markers still can't carry them
-        const fill = el.querySelector('.page-gap-table-fill')
-        if (fill) for (const hf of hfEls) fill.appendChild(hf)
+      // notes and header/footer strips live on the gap's paper box; a zero-height
+      // cut marker has none and carries neither
+      const paper = el.classList.contains('page-gap-paper')
+        ? el
+        : el.querySelector('.page-gap-paper')
+      if (paper) {
+        if (notes) paper.appendChild(notes)
+        for (const hf of hfEls ?? []) paper.appendChild(hf)
       }
       return el
     }
@@ -1521,10 +1535,12 @@ export function syncFloatShifts(
   floats: Array<{
     el: HTMLElement
     top: number
+    height?: number
     anchorTop?: number
     pinned?: boolean
     pageRelV?: boolean
     pageRelFromPage?: boolean
+    noSpill?: boolean
   }>,
   origin: number,
   factor: number,
@@ -1581,13 +1597,28 @@ export function syncFloatShifts(
   // reads first: a style write between two getBoundingClientRect calls forces
   // a whole-document layout per float (thousands of anchored pictures hung
   // the renderer for minutes)
+  // Word draws an anchored object on its anchor's page. A flow box whose
+  // virtual Y lies past a cut that follows its anchor (a cover paragraph
+  // ending in a section break, its title boxes offset below it) still sits in
+  // that page's blank remainder: counting the cut's gap would carry it onto
+  // the next page over the body text. Boxes the anchor's page cannot hold
+  // keep the virtual-Y walk (the spill block opened pages for them).
+  const anchorPageHolds = (f: (typeof floats)[number]): boolean => {
+    if (f.anchorTop === undefined) return false
+    if (f.noSpill) return true
+    if (!layout || layout.cuts.length === 0) return false
+    const cut = layout.cuts[pageOfCut(layout.cuts, f.anchorTop + 0.5, 0)]
+    if (!cut || cut.regions) return false
+    return f.top + (f.height ?? 0) <= cut.end + cut.padPx + 1
+  }
   const curTops = floats.map((f) => f.el.getBoundingClientRect().top)
   floats.forEach((f, i) => {
     // page-absolute V boxes render on their ANCHOR's page at the page-relative
     // Y (Word): pinned tops already are page coords, pageRelV tops carry the
-    // anchor position. Flow-positioned boxes keep their virtual Y.
+    // anchor position. Flow-positioned boxes keep their virtual Y, offset by
+    // the gaps above their anchor (or above the box itself once it spills).
     const abs = !!(f.pinned || f.pageRelV)
-    const ref = abs ? (f.anchorTop ?? f.top) + 0.5 : f.top
+    const ref = abs || anchorPageHolds(f) ? (f.anchorTop ?? f.top) + 0.5 : f.top
     const place = layout ? fromCuts(ref, abs) : fromDom(ref, abs)
     if (layout && gaps) {
       const dom = fromDom(ref, abs)

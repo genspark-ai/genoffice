@@ -1,5 +1,6 @@
 import { decompressionStream, streamBytes } from '@genoffice/zip-gate'
 import { convertEmfToDataUrl, convertWmfToDataUrl } from './vendor/emf-converter/index.mjs'
+import { decodeSymbolText } from './symbol-fonts'
 
 const EMF_MIMES = new Set(['image/emf', 'image/x-emf'])
 // localized GDI facenames mapped to their CSS-resolvable names
@@ -106,6 +107,7 @@ export async function metafileToDataUrl(
     const opts = {
       dpiScale: 2,
       fontFamilyMap: FONT_FAMILY_MAP,
+      symbolTextMap: decodeSymbolText,
       ...(raster.maxSidePx ? { maxWidth: raster.maxSidePx, maxHeight: raster.maxSidePx } : {}),
     }
     const result = isEmf

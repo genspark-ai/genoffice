@@ -15,6 +15,7 @@ import {
 import {
   cssAutoLineMult,
   cssRunFontFamily,
+  estimateHfAnchorFloorPx,
   estimateHfHeight,
   runLetterSpacingCss,
 } from '../line-metrics'
@@ -437,10 +438,12 @@ function assignStyle(el: HTMLElement, style: Record<string, string>): void {
 function applyRunStyle(span: HTMLElement, run: Run): void {
   if (run.ins) span.classList.add('doc-ins')
   if (run.del) span.classList.add('doc-del')
-  const cs = run.effective?.cs ? run.effective : undefined
+  const eff = run.effective
+  const cs = eff?.cs ? eff : undefined
   const face = hfRunFace(run)
-  const bold = face.bold ?? cs?.bold
-  const italic = face.italic ?? cs?.italic
+  const bold = face.bold ?? cs?.bold ?? (eff?.styleXor?.includes('bold') ? eff.bold : undefined)
+  const italic =
+    face.italic ?? cs?.italic ?? (eff?.styleXor?.includes('italic') ? eff.italic : undefined)
   assignStyle(
     span,
     effectiveRPrStyle(
@@ -1024,6 +1027,8 @@ export interface HfProbeGeom {
   headerDistPx: number
   /** page x of the strip column: page-relative drawings' side room */
   marginLeftPx?: number
+  /** compatibilityMode < 15 band rule (HfStripGeom.legacyBands) */
+  legacyBands?: boolean
 }
 
 const isStripGeom = (g: HfStripGeom | HfProbeGeom): g is HfStripGeom => 'pageW' in g
@@ -1040,6 +1045,7 @@ function hfEstimateGeom(
     marginTopPx: geom.marginTop,
     headerDistPx: geom.headerStripTop,
     marginLeftPx: geom.stripLeft ?? geom.marginLeft,
+    ...(geom.legacyBands ? { legacyBands: true } : {}),
   }
 }
 
@@ -1094,7 +1100,7 @@ export function hfReservedHeightPx(
   // cell-run images can carry megabytes of base64: key on the dataUrl length only
   const noDataUrl = (k: string, v: unknown) => (k === 'dataUrl' ? String(v).length : v)
   const geomKey = stripGeom
-    ? `s${[stripGeom.marginLeft, stripGeom.marginRight, stripGeom.marginTop, stripGeom.marginBottom, stripGeom.headerStripTop, stripGeom.footerDist, stripGeom.pageW, stripGeom.pageH, stripGeom.stripLeft ?? ''].map((v) => Math.round(Number(v))).join(':')}`
+    ? `s${[stripGeom.marginLeft, stripGeom.marginRight, stripGeom.marginTop, stripGeom.marginBottom, stripGeom.headerStripTop, stripGeom.footerDist, stripGeom.pageW, stripGeom.pageH, stripGeom.stripLeft ?? ''].map((v) => Math.round(Number(v))).join(':')}${stripGeom.legacyBands ? 'L' : ''}`
     : hfProbeGeomKey(value, estGeom)
   const key =
     `${kind}|${Math.round(contentWidthPx)}|${geomKey}|${mountedDocCssSig()}|${hfProbeFontEpoch}|` +
@@ -1151,7 +1157,7 @@ export function hfReservedHeightPx(
     hfHeightCache.set(key, dom)
   }
   if (dom <= 0) return est
-  return Math.max(dom, estimateHfHeight(null, contentWidthPx, images, estGeom))
+  return Math.max(dom, estimateHfAnchorFloorPx(value, contentWidthPx, images, estGeom))
 }
 
 /** a side-wrapped drawing's box in strip coordinates, as the float that shapes the strip's lines */
@@ -1173,6 +1179,9 @@ const HF_SIDE_WRAP_SLIVER_PX = 36
  * (L462, "the next word fits"; a blocked line lands at the drawing's bottom),
  * and never pushes the body below them (L260). A footer strip grows upward,
  * so only its paragraph-relative anchors have a known strip position.
+ * A header wrapTopAndBottom band is a column-wide obstacle under
+ * compatibilityMode 15: the lines it cuts into move below it (probe
+ * 2026-11-03; legacy layout leaves them at the strip top under the band).
  */
 export function hfSideWrapObstacles(
   kind: 'header' | 'footer',
@@ -1184,7 +1193,9 @@ export function hfSideWrapObstacles(
   const stripLeft = geom.stripLeft ?? geom.marginLeft
   const out: HfObstacle[] = []
   for (const img of images) {
-    if (!img.floating || img.behind || !img.wrap || !SIDE_WRAPS.has(img.wrap)) continue
+    if (!img.floating || img.behind || !img.wrap) continue
+    const band = img.wrap === 'topBottom'
+    if (band ? kind !== 'header' || geom.legacyBands : !SIDE_WRAPS.has(img.wrap)) continue
     if (hfImageHangsOnPara(img)) continue
     const w = img.widthPx ?? 0
     const h = Math.max(1, img.heightPx ?? 0)
@@ -1211,6 +1222,10 @@ export function hfSideWrapObstacles(
       top = 0
     }
     if (height <= 0 || right <= 0 || left >= column) continue
+    if (band) {
+      out.push({ side: 'left', top, height, width: column })
+      continue
+    }
     // text order: the gap on the left takes the line when it holds a word,
     // otherwise the line moves past the drawing (probe 2026-10-29 CASE02/04)
     const side: HfObstacle['side'] = left >= HF_SIDE_WRAP_SLIVER_PX ? 'right' : 'left'
@@ -1218,6 +1233,56 @@ export function hfSideWrapObstacles(
     out.push({ side, top, height, width })
   }
   return out.sort((a, b) => a.top - b.top)
+}
+
+/** a header drawing's wrap rectangle in the body: column px, y from the page's body top */
+export interface HfBodyObstacle {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+/**
+ * Side-wrapped header drawings that reach below the body top are obstacles
+ * for the body's lines (probe 2026-11-03: a wrapTight / wrapSquare banner
+ * anchored in the header, behindDoc or not, has the first body lines flow
+ * beside it on every page; the body top itself does not move, L851).
+ */
+export function hfBodyObstacles(
+  images: readonly HfImage[] | undefined,
+  geom: HfStripGeom,
+  bodyTopPx: number,
+): HfBodyObstacle[] {
+  const column = hfStripColumnPx(geom)
+  if (!images?.length || column === undefined || column <= 0) return []
+  const stripLeft = geom.stripLeft ?? geom.marginLeft
+  const out: HfBodyObstacle[] = []
+  for (const img of images) {
+    if (!img.floating || !img.wrap || !SIDE_WRAPS.has(img.wrap)) continue
+    if (hfImageHangsOnPara(img)) continue
+    const w = img.widthPx ?? 0
+    const h = img.heightPx ?? 0
+    if (w <= 0 || h <= 0) continue
+    const pos = hfFloatPagePos(img, {
+      pageW: geom.pageW,
+      pageH: geom.pageH,
+      marginLeft: geom.marginLeft,
+      marginRight: geom.marginRight,
+      marginTop: geom.marginTop,
+      marginBottom: geom.marginBottom,
+      headerDist: geom.headerStripTop,
+      sectMarginTop: geom.marginTop,
+      sectMarginBottom: geom.marginBottom,
+    })
+    const d = img.wrapDistPx ?? { l: 0, r: 0, t: 0, b: 0 }
+    const left = pos.x + (pos.translateX / 100) * w - stripLeft - d.l
+    const top = pos.y + (pos.translateY / 100) * h - bodyTopPx - d.t
+    const rect = { left, right: left + w + d.l + d.r, top, bottom: top + h + d.t + d.b }
+    if (rect.bottom <= 0 || rect.right <= 0 || rect.left >= column) continue
+    out.push(rect)
+  }
+  return out
 }
 
 /** inline styles of the obstacle floats, in document order: a zero-width
@@ -1428,6 +1493,19 @@ function hfRunNodes(
   }
 }
 
+/** the spanning cell's overlay box: inside the cell margins, top-aligned */
+export function hfVSpanBodyStyle(cell: HfTableCell): Record<string, string> {
+  const mar = { ...HF_CELL_MAR, ...cell.marTwips }
+  return { inset: `${px(mar.top)} ${px(mar.right)} auto ${px(mar.left)}` }
+}
+
+/** inline pictures with nothing but whitespace beside them: Word sizes the
+ *  line to the tallest picture alone (probe 2026-11-03; visible text adds its
+ *  descent below the picture bottom as usual) */
+export function hfPictureOnlyLine(runs: Run[]): boolean {
+  return runs.some((r) => r.image && !r.image.rule) && runs.every((r) => r.text.trim() === '')
+}
+
 function hfTabGapNode(widthPx: number): HTMLElement {
   const gap = document.createElement('span')
   gap.className = 'page-hf-tab-gap'
@@ -1538,11 +1616,15 @@ export interface HfStripGeom {
   /** column width the part is laid out at when it differs from the page's own
    *  (a part inherited from a section of another width keeps that width) */
   columnW?: number
+  /** compatibilityMode < 15: a header wrapTopAndBottom drawing clamps to the
+   *  page top and leaves the strip's lines in place (probe 2026-11-03) */
+  legacyBands?: boolean
 }
 
-export function hfStripGeom(set: SectionSettings): HfStripGeom {
+export function hfStripGeom(set: SectionSettings, legacyBands?: boolean): HfStripGeom {
   const px = (twips: number) => (twips / 1440) * 96
   return {
+    ...(legacyBands ? { legacyBands: true } : {}),
     pageW: px(set.pageWidth),
     pageH: px(set.pageHeight),
     marginLeft: px(set.marginLeft),
@@ -1792,6 +1874,21 @@ export function makeGapHfEl(opts: {
           setDkBorder(cellEl, side as 't' | 'b' | 'l' | 'r', css)
         }
         if (geom.diagonals) setDkBackgroundImage(cellEl, geom.diagonals)
+        // a w:vMerge continuation holds nothing (Word ignores its paragraphs);
+        // the spanning cell's content lies over the merged rows without
+        // sizing its own row, like Word
+        if (cell.vMergeContinue) {
+          p.append(cellEl)
+          continue
+        }
+        let paraHost = cellEl
+        if (cell.vSpan && cell.vSpan > 1) {
+          cellEl.classList.add('page-hf-cell-vspan')
+          paraHost = document.createElement('div')
+          paraHost.className = 'page-hf-cell-vspan-body'
+          Object.assign(paraHost.style, hfVSpanBodyStyle(cell))
+          cellEl.append(paraHost)
+        }
         const spansOf = (runs: Run[], host: HTMLElement) =>
           hfRunNodes(runs, host, display, 'page-hf-cell-img')
         // one block line per cell paragraph (Word stacks them; a lone empty
@@ -1808,7 +1905,7 @@ export function makeGapHfEl(opts: {
             paraEl.classList.add(...box.classes)
             if (runs.length === 0) paraEl.textContent = ' '
             spansOf(runs, paraEl)
-            cellEl.append(paraEl)
+            paraHost.append(paraEl)
             return
           }
           tabLines.forEach((line, m) => {
@@ -1828,7 +1925,7 @@ export function makeGapHfEl(opts: {
               spansOf(seg.runs, segEl)
               paraEl.append(segEl)
             }
-            cellEl.append(paraEl)
+            paraHost.append(paraEl)
           })
         })
         p.append(cellEl)
@@ -1900,6 +1997,7 @@ export function makeGapHfEl(opts: {
       continue
     }
     if (para.runs.length === 0) p.textContent = ' '
+    if (hfPictureOnlyLine(para.runs)) p.classList.add('page-hf-pic-line')
     hfRunNodes(para.runs, p, display, 'page-hf-run-img')
     host.append(p)
   }

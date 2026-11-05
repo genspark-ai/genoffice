@@ -3416,6 +3416,12 @@ button {
   cursor: default;
 }
 
+.rb-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 /* Dialog color well (stamp dialog): swatch trigger + the shared picker popover.
    The popover is fixed + anchored so it escapes the modal's overflow-y clip. */
 .pdf-color-well-wrap {

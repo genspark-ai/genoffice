@@ -86,6 +86,42 @@ describe('gap ledger', () => {
   })
 })
 
+describe('gap paper box (every gap kind)', () => {
+  const m = {
+    marginTop: 96,
+    marginBottom: 130,
+    bodyMarginBottom: 96,
+    marginLeft: 90,
+    marginRight: 90,
+  }
+  const kinds = ['block', 'inline', 'cell', 'table'] as const
+  it('every page-turning gap kind owns a .page-gap-paper box carrying the body margin', () => {
+    for (const kind of kinds) {
+      const el = makeGapEl(m, kind, 3)
+      const paper = el.classList.contains('page-gap-paper')
+        ? el
+        : el.querySelector('.page-gap-paper')
+      expect(paper, kind).not.toBeNull()
+      expect(el.style.getPropertyValue('--gap-body-mb'), kind).toBe('96px')
+      expect(el.style.getPropertyValue('--gap-mb'), kind).toBe('130px')
+    }
+  })
+  it('a cut marker has no paper box (zero-height, hosts nothing)', () => {
+    const el = makeGapEl(m, 'cut')
+    expect(el.classList.contains('page-gap-paper')).toBe(false)
+    expect(el.querySelector('.page-gap-paper')).toBeNull()
+  })
+  it('the crop-mark rule targets the paper box only, not individual gap kinds', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+      'utf8',
+    )
+    const marks = css.match(/^[^{}]*page-gap[^{}]*::after[^{]*\{[^}]*--cm-len[^}]*\}/gm) ?? []
+    expect(marks.length).toBeGreaterThan(0)
+    for (const rule of marks) expect(rule).not.toMatch(/page-gap-(block|inline|cell|table|cut)/)
+  })
+})
+
 describe('in-row table cut decorations', () => {
   it('single-cell row: real inline gap band, not a zero-height cut marker', () => {
     const tr = rowOf(1)

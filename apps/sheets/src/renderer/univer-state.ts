@@ -115,6 +115,8 @@ export interface LazyWorkbookState {
   readonly uninstalledDefinedNames: Set<string>
   readonly hyperlinkTargets: Map<string, Map<string, string>>
   readonly frozenStripKeys: Map<string, string>
+  /// Same bookkeeping for the frozen ROW strip (loadFrozenRowStrip).
+  readonly frozenRowStripKeys: Map<string, string>
   /// Where each sheet's filter button came from: the worksheet's own
   /// autoFilter (saveable) or a table part (whose filter lives in the table
   /// XML — editing it is blocked).

@@ -153,6 +153,11 @@ export interface OpenAiRequestOptions {
   bodyExtras?: Record<string, unknown> | undefined
   /** echo `reasoning_content` back on assistant turns; absent = the shipped family heuristic */
   echoReasoning?: boolean | undefined
+  /** OpenAI-style reasoning effort for the families that accept the field
+   * (gpt-5.x chat, o-series, grok); absent = the model's default. Emitted
+   * after `bodyExtras` so the user's stored pick outranks a profile's extras,
+   * the same rule the toggle fields follow. */
+  reasoningEffort?: string | undefined
   /** static headers a user-hosted endpoint needs (merged last, so they win) */
   headers?: Record<string, string> | undefined
   /** stream idle budget override for slow local servers */
@@ -243,6 +248,7 @@ async function openAiCompatibleTurn(
         : {}),
       ...(options.omitTemperature ? {} : { temperature: 0.3 }),
       ...options.bodyExtras,
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
       stream: true,
       // OpenAI-class providers only report usage in a stream when asked (a final
       // chunk with empty choices carries it); strict gateways that reject the
@@ -433,6 +439,7 @@ export async function chatOpenAiCompatible(
       ],
       ...(options.omitTemperature ? {} : { temperature: 0.3 }),
       ...options.bodyExtras,
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
     }),
   })
   wd.touch()

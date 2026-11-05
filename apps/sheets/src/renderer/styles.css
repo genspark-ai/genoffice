@@ -7430,12 +7430,14 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   color: var(--accent);
 }
 
-.note-pictures-pane .np-author {
+.note-pictures-pane .np-author,
+.note-hover-card .np-author {
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.note-pictures-pane .np-remove {
+.note-pictures-pane .np-remove,
+.note-hover-card .np-remove {
   margin-left: auto;
   border: 0;
   background: transparent;
@@ -7447,19 +7449,22 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   cursor: pointer;
 }
 
-.note-pictures-pane .np-remove:hover {
+.note-pictures-pane .np-remove:hover,
+.note-hover-card .np-remove:hover {
   background: var(--hover);
   color: var(--text);
 }
 
-.note-pictures-pane .np-image {
+.note-pictures-pane .np-image,
+.note-hover-card .np-image {
   display: block;
   width: 100%;
   height: auto;
   border-radius: 6px;
 }
 
-.note-pictures-pane .np-image-missing {
+.note-pictures-pane .np-image-missing,
+.note-hover-card .np-image-missing {
   margin: 0;
   padding: 10px;
   border: 1px dashed var(--border);
@@ -7469,10 +7474,36 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   text-align: center;
 }
 
-.note-pictures-pane .np-text {
+.note-pictures-pane .np-text,
+.note-hover-card .np-text {
   margin: 0;
   color: var(--text-muted);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The card under Univer's note popup for a note that carries a picture: it
+   hangs below the popup's own box so author, picture and text read as one
+   note. Reuses the pane's np-* pieces above. */
+.note-hover-card {
+  position: fixed;
+  z-index: 130;
+  width: 260px;
+  max-height: 50vh;
+  overflow: hidden;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.note-hover-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }

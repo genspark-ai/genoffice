@@ -1,3 +1,5 @@
+import { isValidOptionName, isValidOptionValue } from './printer-options'
+
 export type PrintDuplex = 'simplex' | 'longEdge' | 'shortEdge'
 
 /** per-job options chosen in an in-app print dialog; deviceName null = system dialog */
@@ -10,6 +12,9 @@ export interface PrintJobOptions {
    * page): the CUPS print route sizes printToPDF's pages with it instead of
    * Chromium's Letter default. Out of range = dropped, never clamped. */
   pageSizeIn?: { readonly width: number; readonly height: number }
+  /** driver options picked from the queue's advertised groups (quality,
+   * color, media type) — charset-guarded before they become lp arguments */
+  driverOptions?: readonly { readonly name: string; readonly value: string }[]
 }
 
 export interface PrinterInfo {
@@ -29,6 +34,7 @@ export function printJobOptions(raw: unknown): {
   collate?: boolean
   duplexMode?: PrintDuplex
   pageSizeIn?: { readonly width: number; readonly height: number }
+  driverOptions?: { readonly name: string; readonly value: string }[]
 } {
   if (typeof raw !== 'object' || raw === null) return { silent: false }
   const job = raw as Record<string, unknown>
@@ -62,6 +68,19 @@ export function printJobOptions(raw: unknown): {
     size.height <= 200
   ) {
     out.pageSizeIn = { width: size.width, height: size.height }
+  }
+  const driver = job.driverOptions
+  if (Array.isArray(driver) && driver.length > 0) {
+    const clean = driver
+      .slice(0, 16)
+      .filter(
+        (o): o is { name: string; value: string } =>
+          typeof o === 'object' &&
+          o !== null &&
+          isValidOptionName((o as Record<string, unknown>).name) &&
+          isValidOptionValue((o as Record<string, unknown>).value),
+      )
+    if (clean.length > 0) out.driverOptions = clean
   }
   return out
 }

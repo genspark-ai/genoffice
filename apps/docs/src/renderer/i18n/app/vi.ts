@@ -72,6 +72,8 @@ export const vi = {
   appFieldsUpdated: 'Đã cập nhật {n} trường',
   appStyleUpdated: 'Đã cập nhật kiểu "{name}" từ vùng chọn; sẽ được ghi vào tài liệu khi lưu',
   appStyleCreated: 'Đã tạo kiểu "{name}" và áp dụng cho vùng chọn',
+  appStyleInstancesSelected: 'Đã chọn {count} chỗ dùng “{name}”',
+  appStyleNoInstances: 'Không có văn bản nào dùng “{name}”',
   appPgNumFormatSet: 'Đã thiết lập định dạng số trang',
   appPageNumFormatTitle: 'Định dạng số trang',
   appNumberFormat: 'Định dạng số',

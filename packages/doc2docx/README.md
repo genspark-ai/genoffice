@@ -50,13 +50,18 @@ template (`buildBlankDocx`) and emits one `<w:p>` per model paragraph through
 
 - **runs**: bold/italic/strike, underline kinds → `w:u`, font size, superscript/
   subscript, highlight colours, hidden text → `w:vanish`, colours (sprmCCv RGB,
-  else the 16 Word colour indices → hex), and `w:rFonts` ascii/hAnsi/eastAsia/cs
-  resolved through the SttbfFfn font table (run → style chain → STSHI defaults);
+  else the 16 Word colour indices → hex), character spacing/scale/kerning/
+  position (`w:spacing`, `w:w`, `w:kern`, `w:position`), and `w:rFonts` ascii/hAnsi/eastAsia/cs
+  resolved through the SttbfFfn font table (run → style chain → STSHI defaults),
+  and the SttbfFfn entries become `word/fontTable.xml` (`w:altName`,
+  `w:panose1`, `w:charset`, `w:family`, `w:pitch`, `w:sig`) so Word and the
+  renderer can substitute missing faces;
 - **paragraphs**: alignment, left/right/first-line indents (twips plus the
   character-unit `w:firstLineChars` twin), spacing before/after, line spacing
   (multiple → `w:line` in 240ths, negative → exact, positive → atLeast),
   keep-lines / keep-next / page-break-before, custom tab stops (`w:tabs` from
-  sprmPChgTabs/sprmPChgTabsPapx) and paragraph borders (`w:pBdr` from the
+  sprmPChgTabs/sprmPChgTabsPapx, `w:defaultTabStop` from Dop.dxaTab) and
+  paragraph borders (`w:pBdr` from the
   Brc80/Brc sprms);
 - **warnings** name every known gap honestly: unresolved styles (for
   documents whose stylesheet could not be resolved), flattened tables, and
@@ -96,8 +101,11 @@ generated package:
   footer distances, gutter, portrait/landscape and the title-page flag.
   Section sprms are matched by their low 9-bit operation (producers vary the
   spra bits, e.g. LibreOffice writes sprmSDyaTop as 0x9023), each section
-  starts from the blank template's geometry, and multi-column sections are
-  reported as warnings. Malformed tables/SEPX bytes raise \`bad_section\`.
+  starts from the blank template's geometry; text columns (`w:cols`, with
+  per-column widths) and the page-number format/restart (`w:pgNumType`) are
+  written, and page borders (`w:pgBorders` from the sprmSBrc*80 / sprmSBrc*
+  sides plus sprmSPgbProp offset/display/zOrder). Malformed tables/SEPX
+  bytes raise \`bad_section\`.
 - **parseHeaderStories** — the six separator stories plus six stories per
   section (even header, odd header, even footer, odd footer, first header,
   first footer); story CPs are offsets from the header document at
@@ -108,19 +116,24 @@ generated package:
   declares header text without a header table gets a warning instead of failing.
 - **Writer** — replaces the template's trailing \`sectPr\` with the last
   section's geometry (header/footer references, \`pgSz\` with
-  \`w:orient="landscape"\`, \`pgMar\`, \`titlePg\`, \`docGrid\`), always
-  writes the Word 97-2003 compatibility block into settings.xml (what Word
-  itself writes when it saves a .doc as .docx) plus the document languages
+  \`w:orient="landscape"\`, \`pgMar\`, \`titlePg\`, \`docGrid\`), writes
+  the Word 97-2003 compatibility block into settings.xml (the Dop Copts flags
+  plus the compatibility-mode 11 switches, what Word itself writes when it
+  saves a .doc as .docx; \`useFELayout\` only when FibBase.fFarEast is set)
+  plus the document languages
   and Word 97 paragraph defaults into styles.xml, and adds
   \`word/headerN.xml\` / \`word/footerN.xml\` parts with the matching
   [Content_Types].xml overrides and document.xml.rels relationships. Even/odd
   headers need settings.xml (\`w:evenAndOddHeaders\`), which is added only when
-  an even story exists; the odd stories are the default variant and the first
-  stories need \`w:titlePg\`. Header/footer character formatting is plain text
-  for now (tabs and line breaks are kept).
+  an even story exists and Dop.fFacingPages is set (Word keeps the even
+  stories in the file but ignores them otherwise); the odd stories are the
+  default variant and the first stories need \`w:titlePg\`. A story that holds
+  cell marks is rebuilt through the body block builder over its CP range, so
+  header/footer tables are written as real \`w:tbl\` with their pictures
+  attached to the right paragraphs.
 - **Limitations** — multi-section documents are flattened to their last
-  section with an explicit warning; page-number format and footnote/endnote
-  separator stories are not written; header/footer runs carry no bold/size
+  section with an explicit warning; footnote/endnote separator stories are
+  not written; header/footer runs carry no bold/size
   etc. yet.
 
 ## Stage 3c-2 — tables
@@ -136,7 +149,11 @@ sprms of each row-end PAPX, and writes real `w:tbl` tables:
   units, maps each unit to its PAPX entry, parses sprmTDefTable (rgdxaCenter
   cell boundaries plus 20-byte TC descriptors: merge flags, width, four
   BorderCodes) and the other TAP sprms (alignment, cantSplit, table header,
-  row height, table borders, cell padding). Rows share one grid derived from
+  row height, table borders, cell margins from sprmTDxaGapHalf /
+  sprmTCellPaddingDefault / sprmTCellPadding, cell vertical alignment from the
+  TC80 bits and sprmTVertAlign, cell shading from the sprmTDefTableShd80 /
+  sprmTDefTableShd (+2nd/3rd and raw twins) / sprmTSetShd family and table
+  shading from sprmTSetShdTable). Rows share one grid derived from
   the union of their cell boundaries; fMerged continuation cells fold into the
   first cell gridSpan (LibreOffice-flattened merged rows are recovered from
   their wider boundary span), vertical merges map to vMerge restart/continue,
@@ -147,16 +164,22 @@ sprms of each row-end PAPX, and writes real `w:tbl` tables:
   (sprmPHugePapx) is expanded before the TAP is read. Malformed TAP/TDefTable
   data degrades with a warning: the row (or the whole table when no grid can
   be built) is imported as plain paragraphs, a truncated sprm ends the TAP walk.
-- **Writer** — emits `<w:tbl>` with tblW auto, tblBorders (a single 4-eighth
-  point line set when any border is visible), tblLayout fixed, a tblGrid with
-  gridCol widths, trPr (cantSplit, trHeight, tblHeader), tcPr (tcW dxa,
-  gridSpan, vMerge, tcBorders) and the cell paragraphs with their resolved
-  runs, list membership and pictures; tables interleave with body paragraphs in CP order. Table cell
-  padding, cell shading and table styles (e.g. "Table Grid") are parsed but
-  not written (borders come from the TC descriptors); nested tables are
-  flattened with a warning.
-- **Warnings** — malformed rows and nested tables are reported once per
-  document.
+- **Writer** — emits `<w:tbl>` with tblW auto, tblBorders (only the sides the
+  TAP/TC descriptors turn on, as single 4-eighth point lines), tblLayout
+  fixed, a tblGrid with gridCol widths, trPr (cantSplit, trHeight,
+  tblHeader), tcPr (tcW dxa, gridSpan, vMerge, tcBorders — a side the cell
+  turns off is written as `nil` where the table border would draw it — shd,
+  tcMar, vAlign), tblCellMar (always, since the generated package has no
+  table style to supply Word's 108-twip default) and the cell paragraphs with
+  their resolved runs, list membership and pictures; tables interleave with
+  body paragraphs in CP order. Table styles (e.g. "Table Grid") are parsed
+  but not written (borders come from the TC descriptors). Nested tables
+  (sprmPItap > 1: inner cells end at a paragraph mark with
+  sprmPFInnerTableCell, inner rows at one with sprmPFInnerTtp whose PAPX
+  carries the inner TAP) are rebuilt recursively as `w:tbl` blocks inside the
+  enclosing `w:tc`, before the cell paragraph that follows them.
+- **Warnings** — malformed rows and nested tables that cannot be rebuilt are
+  reported once per document; their text stays as plain paragraphs.
 
 ## Stage 3c-3 — pictures (inline and floating)
 
@@ -208,7 +231,9 @@ and writes them as real .docx media parts with drawings:
 - **Limitations** — pictures inside text boxes, footnotes and endnotes are not
   handled yet, tight/through wrapping is written as square, grouped
   non-picture members are dropped, and picture metadata (alt text, borders,
-  hyperlinks, cropping) is not carried over.
+  hyperlinks) is not carried over. Cropping is: PICF twip crops and the
+  OfficeArt cropFrom* properties (inline shape OPT and floating shapes) become
+  `a:srcRect`.
 
 ## Stage 3c-4 — lists/numbering and HYPERLINK fields
 
@@ -240,14 +265,19 @@ ilvl }` list items (a missing list definition is reported and the paragraph
   ranges, and reports unsupported field types or malformed/unclosed fields as
   warnings while keeping the result as plain text.
 - **Writer** — appends one `w:abstractNum` per used lsid (ids from 10, levels
-  with w:start/w:numFmt/w:lvlText/w:lvlJc and the level indents) and one
+  with w:start/w:numFmt/w:lvlText/w:lvlJc, the level indents and the number's
+  `w:rPr` from grpprlChpx; a symbol-font bullet keeps its private-use code) and one
   `w:num` per used ilfo (ids 100 + ilfo) to the blank template numbering.xml
-  (CT_Numbering keeps abstractNum* before num*); numbered paragraphs get
+  (CT_Numbering keeps abstractNum* before num*); the level indents are layered
+  between the style and the direct PAPX like Word does, so a style indent never
+  outranks them; numbered paragraphs get
   `w:numPr` with their direct formatting. Hyperlink result runs are wrapped in
   `w:hyperlink`: external URLs get a relationship with
   `TargetMode="External"`, bookmark links use `w:anchor`; the field
   instruction text never reaches the output, and documents without lists or
-  fields keep the previous writer output.
+  fields keep the previous writer output. A HYPERLINK nested in a TOC field
+  result is written as a plain link: Word ignores the Hyperlink character
+  style there, so the style is neither flattened nor referenced.
 - **Limitations** — unsupported field types are warned and left as plain
   text; EMF/WMF pictures, floating images, footnotes and emitted real .docx
   styles are still later stages.
@@ -257,7 +287,7 @@ ilvl }` list items (a missing list definition is reported and the paragraph
 - **Stage 3c-5**: EMF/WMF conversion, floating images and pictures in
   headers/cells, footnotes/endnotes, emitted real .docx styles instead of
   resolved direct formatting, richer header/footer formatting, real
-  multi-section output and table cell padding/shading/styles; tighter
+  multi-section output and table styles; tighter
   paragraph-count parity.
 - **Stage 3d**: docs import wiring (`.doc` files through File → Open /
   drag-and-drop and the CLI), as core + UI PRs.

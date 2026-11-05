@@ -19,6 +19,8 @@ export interface HyperlinkField {
   anchor?: string
   /** \\o tooltip text */
   tooltip?: string
+  /** the field sits in a TOC field result (Word ignores the Hyperlink style there) */
+  inToc?: boolean
 }
 
 /** A field whose result is kept as a live field in the docx (PAGE, NUMPAGES, SECTIONPAGES). */
@@ -162,7 +164,11 @@ export function parseFields(rawText: string): FieldParseResult {
     }
     const startCp = frame.separatorCp + 1
     if (endCp <= startCp) return
-    hyperlinks.push({ startCp, endCp, ...parsed })
+    const inToc = stack.some(
+      (outer) =>
+        outer.separatorCp !== undefined && /^TOC\b/i.test(cleanInstruction(outer.instruction)),
+    )
+    hyperlinks.push({ startCp, endCp, ...parsed, ...(inToc ? { inToc } : {}) })
   }
   for (let cp = 0; cp < rawText.length; cp++) {
     const char = rawText[cp]

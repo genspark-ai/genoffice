@@ -187,6 +187,50 @@ describe('synthetic pictures', () => {
     expect([...(await zipBytes(docx, 'word/media/image1.png'))!]).toEqual([...png])
   })
 
+  it('turns PICF twip crops into a:srcRect and shrinks the display size', async () => {
+    const png = minimalPng()
+    const data = encodePicf({
+      payload: png,
+      dxaGoal: 2000,
+      dyaGoal: 1000,
+      mx: 1000,
+      my: 1000,
+      crop: [200, 100, 600, 0],
+    })
+    const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }], data })
+    const body = readLegacyDocBody(docxBytes)
+    const imageBlock = body.blocks.find((block) => block.type === 'image')!
+    if (imageBlock.type !== 'image') throw new Error('expected an image block')
+    expect(imageBlock.image.crop).toEqual({ l: 10000, t: 10000, r: 30000, b: 0 })
+    expect(imageBlock.image.widthTwips).toBe(1200)
+    expect(imageBlock.image.heightTwips).toBe(900)
+    const { docx } = await convertLegacyDocToDocx(docxBytes)
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).toContain('<a:srcRect l="10000" t="10000" r="30000"/><a:stretch>')
+  })
+
+  it('reads the crop of the inline OfficeArt shape and keeps dxaGoal as the display size', () => {
+    const png = minimalPng()
+    const data = encodePicf({
+      payload: png,
+      dxaGoal: 2000,
+      dyaGoal: 1000,
+      mx: 1000,
+      my: 1000,
+      shapeProps: [
+        [0x0100, 0x8000],
+        [0x0102, 0x4000],
+      ],
+    })
+    const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }], data })
+    const body = readLegacyDocBody(docxBytes)
+    const imageBlock = body.blocks.find((block) => block.type === 'image')!
+    if (imageBlock.type !== 'image') throw new Error('expected an image block')
+    expect(imageBlock.image.crop).toEqual({ l: 25000, t: 50000, r: 0, b: 0 })
+    expect(imageBlock.image.widthTwips).toBe(2000)
+    expect(imageBlock.image.heightTwips).toBe(1000)
+  })
+
   it('falls back to xExt/yExt and dxaGoal when mx/my are zero', () => {
     const png = minimalPng()
     const data = encodePicf({ payload: png, xExt: 1440, yExt: 720, dxaGoal: 100 })
@@ -319,10 +363,45 @@ describe('synthetic pictures', () => {
     const paragraph = body.blocks[0]!
     if (paragraph.type !== 'paragraph') throw new Error('expected a paragraph')
     expect(paragraph.pictures?.inline?.map((entry) => entry.position)).toEqual(['end'])
+    expect(paragraph.paragraph.runs.map((run) => run.pictureCp ?? run.text)).toEqual(['A', 1, 'B'])
     expect(body.warnings.some((warning) => warning.includes('omitted'))).toBe(false)
     const { docx } = await convertLegacyDocToDocx(docxBytes)
     const xml = (await zipText(docx, 'word/document.xml'))!
-    expect(xml).toMatch(/<w:t[^>]*>AB<\/w:t><\/w:r><w:r><w:drawing><wp:inline/)
+    // the picture stays between its neighbours instead of moving to the paragraph end
+    expect(xml).toMatch(
+      /<w:t[^>]*>A<\/w:t><\/w:r><w:r><w:drawing><wp:inline.*<\/w:drawing><\/w:r><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:t[^>]*>B<\/w:t>/,
+    )
+    expect(xml).not.toContain('\ue008')
+  })
+
+  it('keeps the signed OfficeArt crop so the kept region matches the frame aspect', async () => {
+    const png = minimalPng()
+    const data = encodePicf({
+      payload: png,
+      dxaGoal: 2000,
+      dyaGoal: 1000,
+      mx: 1000,
+      my: 1000,
+      shapeProps: [
+        [0x0100, 0xfffff895], // cropFromTop -1899/65536 (padding)
+        [0x0103, 0x0000c7ae], // cropFromRight 51118/65536
+      ],
+    })
+    const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }], data })
+    const { docx } = await convertLegacyDocToDocx(docxBytes)
+    const xml = (await zipText(docx, 'word/document.xml'))!
+    expect(xml).toContain('<a:srcRect t="-2898" r="78000"/>')
+  })
+
+  it('shows a negative PICF goal as a hairline instead of its magnitude', () => {
+    const png = minimalPng()
+    const data = encodePicf({ payload: png, dxaGoal: 21600, dyaGoal: -29416, mx: 750, my: 1000 })
+    const docxBytes = syntheticImageDoc({ text: '\u0001\r', pictures: [{ cp: 0, fcPic: 0 }], data })
+    const body = readLegacyDocBody(docxBytes)
+    const imageBlock = body.blocks.find((block) => block.type === 'image')!
+    if (imageBlock.type !== 'image') throw new Error('expected an image block')
+    expect(imageBlock.image.widthTwips).toBe(16200)
+    expect(imageBlock.image.heightTwips).toBe(11)
   })
 })
 

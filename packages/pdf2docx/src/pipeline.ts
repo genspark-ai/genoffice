@@ -6,7 +6,7 @@
  */
 import { analyzePage, PAGE_CONFIDENCE_MIN } from './analyze'
 import { classifyPages } from './analyze/canvas'
-import { detectFurniture, type FurnitureHf } from './analyze/furniture'
+import { detectFurniture, type FurnitureHf, type FurnitureResult } from './analyze/furniture'
 import type { ListSeq } from './analyze/lists'
 import {
   extractPage,
@@ -324,18 +324,22 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
 
       // P6: the source document renders its headers/footers/page numbers onto
       // every page — detected across pages and dropped (first occurrence kept)
-      // so they do not repeat through the rebuilt body text
-      const furniture = detectFurniture(
-        extractedPages.map((p) => ({
-          index: p.index,
-          heightPt: p.heightPt,
-          chars: p.chars,
-          skip: p.scanned || p.degraded,
-        })),
-        // cell-data: repeated lines with no header/footer seat keep every
-        // occurrence — deleting data breaks the xlsx promise
-        { keepUnemitted: opts.cellData === true },
-      )
+      // so they do not repeat through the rebuilt body text. Absolute layout
+      // has no body flow: each slide is its page, and the pptx rebuild has no
+      // header/footer seat, so a repeated line stays on every slide.
+      const furniture: FurnitureResult = opts.absoluteLayout
+        ? { drop: extractedPages.map(() => new Set()), droppedLines: 0, hf: [] }
+        : detectFurniture(
+            extractedPages.map((p) => ({
+              index: p.index,
+              heightPt: p.heightPt,
+              chars: p.chars,
+              skip: p.scanned || p.degraded,
+            })),
+            // cell-data: repeated lines with no header/footer seat keep every
+            // occurrence — deleting data breaks the xlsx promise
+            { keepUnemitted: opts.cellData === true },
+          )
       if (furniture.droppedLines > 0) {
         warnings.push(
           `headers/footers: ${furniture.droppedLines} repeated line(s) detected across pages and deduplicated`,

@@ -2514,7 +2514,7 @@
       "font-family": "'Calibri Arabic GO'",
       "font-style": "normal",
       "font-weight": "normal",
-      "size-adjust": "85.5%",
+      "size-adjust": "82%",
       "src": "url('./NotoSansArabic-Regular-subset.woff2') format('woff2')",
       "unicode-range": "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF"
     }
@@ -2678,44 +2678,8 @@
       "font-display": "block",
       "font-family": "'Century Gothic GO'",
       "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "110.6%",
-      "src": "url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0061-007A, U+00DF-00F6, U+00F8-00FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "size-adjust": "95%",
-      "src": "url('./LiberationSans-Regular.ttf')",
-      "unicode-range": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "normal",
       "font-weight": "bold",
       "src": "url('./LiberationSans-Bold.ttf')"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "size-adjust": "101.7%",
-      "src": "url('./LiberationSans-Bold.ttf')",
-      "unicode-range": "U+0061-007A, U+00DF-00F6, U+00F8-00FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "normal",
-      "font-weight": "bold",
-      "size-adjust": "92.7%",
-      "src": "url('./LiberationSans-Bold.ttf')",
-      "unicode-range": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
     },
     {
       "font-display": "block",
@@ -2728,44 +2692,40 @@
       "font-display": "block",
       "font-family": "'Century Gothic GO'",
       "font-style": "italic",
-      "font-weight": "normal",
-      "size-adjust": "110.6%",
-      "src": "url('./LiberationSans-Italic.ttf')",
-      "unicode-range": "U+0061-007A, U+00DF-00F6, U+00F8-00FF"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "italic",
-      "font-weight": "normal",
-      "size-adjust": "95%",
-      "src": "url('./LiberationSans-Italic.ttf')",
-      "unicode-range": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
-    },
-    {
-      "font-display": "block",
-      "font-family": "'Century Gothic GO'",
-      "font-style": "italic",
       "font-weight": "bold",
       "src": "url('./LiberationSans-BoldItalic.ttf')"
     },
     {
       "font-display": "block",
       "font-family": "'Century Gothic GO'",
-      "font-style": "italic",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./CenturyGothicGO-Regular.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'Century Gothic GO'",
+      "font-style": "normal",
       "font-weight": "bold",
-      "size-adjust": "101.7%",
-      "src": "url('./LiberationSans-BoldItalic.ttf')",
-      "unicode-range": "U+0061-007A, U+00DF-00F6, U+00F8-00FF"
+      "src": "url('./CenturyGothicGO-Bold.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'Century Gothic GO'",
+      "font-style": "italic",
+      "font-weight": "normal",
+      "src": "url('./CenturyGothicGO-Italic.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
     },
     {
       "font-display": "block",
       "font-family": "'Century Gothic GO'",
       "font-style": "italic",
       "font-weight": "bold",
-      "size-adjust": "92.7%",
-      "src": "url('./LiberationSans-BoldItalic.ttf')",
-      "unicode-range": "U+0041-005A, U+00C0-00D6, U+00D8-00DE"
+      "src": "url('./CenturyGothicGO-BoldItalic.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122"
     }
   ],
   "Consolas GO": [
@@ -2800,6 +2760,44 @@
       "font-weight": "bold",
       "size-adjust": "91.3%",
       "src": "local('Menlo-BoldItalic'), local('CourierNewPS-BoldItalicMT'), url('./LiberationMono-BoldItalic.ttf')"
+    }
+  ],
+  "David GO": [
+    {
+      "ascent-override": "73.49%",
+      "descent-override": "24.9%",
+      "font-display": "block",
+      "font-family": "'David GO'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "size-adjust": "100%",
+      "src": "url('./LiberationSerif-Regular.ttf')"
+    },
+    {
+      "ascent-override": "73.49%",
+      "descent-override": "24.9%",
+      "font-display": "block",
+      "font-family": "'David GO'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "size-adjust": "100%",
+      "src": "url('./LiberationSerif-Bold.ttf')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'David GO'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./DavidGO-Regular.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'David GO'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "src": "url('./DavidGO-Bold.ttf')",
+      "unicode-range": "U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F"
     }
   ],
   "DengXian GO": [
@@ -3051,6 +3049,16 @@
       "unicode-range": "U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E"
     }
   ],
+  "GenOffice Balanced Space": [
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Balanced Space'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./GenOfficeBalancedSpace.woff2') format('woff2')",
+      "unicode-range": "U+0020"
+    }
+  ],
   "GenOffice Batang": [
     {
       "font-family": "'GenOffice Batang'",
@@ -3095,6 +3103,40 @@
       "unicode-range": "U+0020-007E"
     }
   ],
+  "GenOffice Cordia": [
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Cordia'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./GenOfficeCordia-Regular.woff2') format('woff2')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Cordia'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "src": "url('./GenOfficeCordia-Bold.woff2') format('woff2')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Cordia'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "size-adjust": "64.9%",
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "unicode-range": "U+0000-0DFF, U+0E80-10FFFF"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Cordia'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "size-adjust": "64.3%",
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "unicode-range": "U+0000-0DFF, U+0E80-10FFFF"
+    }
+  ],
   "GenOffice DM Sans": [
     {
       "font-display": "block",
@@ -3137,16 +3179,6 @@
       "font-style": "normal",
       "font-weight": "normal",
       "src": "url('./GenOfficeGothicKR-Regular-subset.woff2') format('woff2')"
-    }
-  ],
-  "GenOffice Hangul Space": [
-    {
-      "font-display": "block",
-      "font-family": "'GenOffice Hangul Space'",
-      "font-style": "normal",
-      "font-weight": "normal",
-      "src": "url('./GenOfficeCheLatinKR.woff2') format('woff2')",
-      "unicode-range": "U+0020"
     }
   ],
   "GenOffice Heiti TC": [
@@ -3251,6 +3283,40 @@
       "font-weight": "normal",
       "src": "url('@genoffice/ui/fonts/Carlito-Regular.ttf') format('truetype')",
       "unicode-range": "U+2070-209F, U+00B2-00B3, U+00B9"
+    }
+  ],
+  "GenOffice Sarabun": [
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Sarabun'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./GenOfficeSarabun-Regular.woff2') format('woff2')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Sarabun'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "src": "url('./GenOfficeSarabun-Bold.woff2') format('woff2')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Sarabun'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "size-adjust": "64.4%",
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "unicode-range": "U+0000-0DFF, U+0E80-10FFFF"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'GenOffice Sarabun'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "size-adjust": "65.7%",
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "unicode-range": "U+0000-0DFF, U+0E80-10FFFF"
     }
   ],
   "GenOffice Serif KR": [

@@ -1,0 +1,44 @@
+{
+  "id": "render-hf-anchor-band",
+  "title": "Header wrapTopAndBottom band pushes the strip's own line under compatibilityMode 15; side-wrapped header drawings are body obstacles",
+  "section": "word-truths.md#L975",
+  "probe_date": "2026-11-03",
+  "class": "render",
+  "source": "hfprobe15.pdf: 8 sections x one header, TNR 12 docDefaults after=0 line=240, compatibilityMode 15, Word for Mac direct PDF, pymupdf first body glyph tops. Portrait A4 pages (top = header dist 48.3pt): C1 picture 75x43.9pt wrapTopAndBottom at paragraph offset -24pt -> body 82.4; C2 offset -70pt / 100pt picture unclamped -> 92.5; C3 offset -60 (wholly above) -> 62.5 (control, unpushed); C4 = C1 with an empty anchor paragraph -> 82.4; C8 offset 0 -> 106.4. Landscape pages C5-C7 (banner wrapTight/wrapSquare, behindDoc or not): body top 72.3 unmoved, lines 1-2 beside the banner. Rendered as body-top deltas against the C3 page",
+  "cases": [
+    { "kind": "pages", "expect": 8 },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 1,
+      "control": 3,
+      "expect": 19.9,
+      "tol": 2.0,
+      "note": "C1: band cuts into the line, line + body move below the picture"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 3,
+      "expect": 30.0,
+      "tol": 2.0,
+      "note": "C2: negative offset not clamped, picture bottom 78.3"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 4,
+      "control": 3,
+      "expect": 19.9,
+      "tol": 2.0,
+      "note": "C4: empty anchor paragraph pushes the same"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 8,
+      "control": 3,
+      "expect": 43.9,
+      "tol": 2.0,
+      "note": "C8: offset 0, line below the picture"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -10,6 +10,12 @@ GenOffice speaks the Model Context Protocol, so a coding agent can read, write a
 
 **MCP.** Two routes are offered: **Started by the assistant (recommended)**, where you add the shown config to your client and the assistant launches the server itself, and **Local HTTP server**, which the app runs for you. Either way the assistant ends up talking to GenOffice and you never type a command.
 
+**Try it** Open a new chat in your assistant and ask in plain words, for example:
+
+- “Turn ~/Downloads/report.md into a Word document”
+- “Make a 6-slide deck about our Q3 results”
+- “Convert budget.xlsx to PDF and open it in GenOffice”
+
 ## Registering it from the command line
 
 The same thing from a terminal — this is the advanced path, and the one to reach for when the agent lives somewhere the pane cannot find:

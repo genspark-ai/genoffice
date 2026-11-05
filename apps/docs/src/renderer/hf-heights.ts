@@ -46,13 +46,13 @@ export function hfVariantHeightsPx(
 export function sectionHfHeights(
   secs: SectionInfo[],
   resolve: (sectionIndex: number, kind: HfKind, variant: HfVariant) => HfStripSource,
-  opts: { titlePg: boolean; evenOddHf: boolean },
+  opts: { titlePg: boolean; evenOddHf: boolean; legacyBands?: boolean },
 ): SectionHfHeights[] {
   return secs.map((s, i) =>
     hfVariantHeightsPx(
       (kind, variant) => resolve(i, kind, variant),
       (kind, variant, owner) => hfPartWidthPx(secs, i, kind, variant, owner),
-      hfStripGeom(s.settings),
+      hfStripGeom(s.settings, opts.legacyBands),
       secs.length === 1 ? opts.titlePg : !!s.titlePg,
       opts.evenOddHf,
     ),

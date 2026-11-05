@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DocProtected, anchorLineSpec } from '../src/renderer/editor/extensions'
+import {
+  DocParagraph,
+  DocProtected,
+  anchorLineSpec,
+  ruleOverlaySpec,
+} from '../src/renderer/editor/extensions'
 
 describe('anchorLineSpec', () => {
   it('lays the line out with the paragraph format but leaves the page break on the picture', () => {
@@ -186,5 +191,61 @@ describe('overlay picture anchor line', () => {
     expect(rule![1]).toMatch(/display:\s*flow-root/)
     const out = render({})
     expect(blocks(out)[0][1].style).toMatch(/margin-top:12(\.0)?pt/)
+  })
+})
+
+describe('anchored decorative rule', () => {
+  it('draws the line at its column and paragraph offsets over the empty anchor line', () => {
+    const out = DocProtected.config.renderHTML!.call(
+      DocProtected as never,
+      {
+        node: {
+          attrs: {
+            blockType: 'passthrough',
+            docxIndex: 4,
+            label: 'Drawing object',
+            decorative: true,
+            ruleWidthPx: 235,
+            imageOffsetXEmu: 467360,
+            imageOffsetYEmu: 3175,
+            anchorLine: { styleId: null },
+          },
+        },
+        HTMLAttributes: {},
+      } as never,
+    ) as unknown as [string, Record<string, string>, ...unknown[]]
+    expect(out[1].class).toContain('doc-protected-rule-anchored')
+    const line = out.slice(2).find((c) => Array.isArray(c) && c[0] === 'span') as
+      [string, Record<string, string>] | undefined
+    expect(line?.[1].class).toBe('doc-rule-line')
+    expect(line?.[1].style).toContain('left:36.8pt;')
+    expect(line?.[1].style).toContain('top:0.25pt;')
+    expect(line?.[1].style).toContain('width:235px;')
+  })
+})
+
+describe('ruleOverlaySpec', () => {
+  it('positions the line from the paragraph box, above a margin space-before', () => {
+    const [tag, attrs] = ruleOverlaySpec({
+      xPx: 49,
+      yPx: 38.13,
+      widthPx: 235,
+      spaceBeforePx: 8,
+      thicknessPx: 2,
+      colorHex: 'FF0000',
+    }) as [string, Record<string, string>]
+    expect(tag).toBe('span')
+    expect(attrs.class).toBe('doc-rule-overlay')
+    expect(attrs.style).toBe('left:49px;top:30.13px;width:235px;height:2px;background:#FF0000;')
+  })
+})
+
+describe('ruleOverlays attribute', () => {
+  it('stays on the original paragraph when Enter splits it', () => {
+    const attr = (DocParagraph.config.addAttributes!.call(DocParagraph as never) as never)[
+      'ruleOverlays'
+    ] as { keepOnSplit?: boolean; rendered?: boolean }
+    expect(attr.keepOnSplit).toBe(false)
+    expect(attr.rendered).toBe(false)
   })
 })

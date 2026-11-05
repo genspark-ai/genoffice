@@ -77,6 +77,8 @@ export const ja = {
   // Styles
   appStyleUpdated: 'スタイル「{name}」を選択範囲の書式で更新しました。保存時に文書へ書き込まれます',
   appStyleCreated: 'スタイル「{name}」を作成し、選択範囲に適用しました',
+  appStyleInstancesSelected: '「{name}」の {count} 箇所を選択しました',
+  appStyleNoInstances: '「{name}」を使っている文字はありません',
   // Page number format
   appPgNumFormatSet: 'ページ番号の書式を設定しました',
   appPageNumFormatTitle: 'ページ番号の書式',

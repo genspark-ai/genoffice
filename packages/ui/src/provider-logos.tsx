@@ -335,6 +335,31 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
 }
 
 /** Inline brand mark sized by the surrounding container (default `.gs-provider-logo`). */
+/** image-only provider ids that have no LLM counterpart; consulted before the custom fallback */
+const MEDIA_LOGOS: Partial<Record<'stability' | 'bfl' | 'microsoft', ReactNode>> = {
+  // Original mark: a layered frame, for layered image pipelines, 24-unit frame
+  stability: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M4 3h16a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2h-6.38l2.2-2.2a1 1 0 0 0-1.42-1.42l-3.91 3.91a1 1 0 0 0 0 1.42l3.91 3.91a1 1 0 0 0 1.42-1.42l-2.2-2.2H20a4 4 0 0 0 4-4V5a4 4 0 0 0-4-4H4a4 4 0 0 0-4 4v6.5a4 4 0 0 0 4 4h6.38l-2.2 2.2a1 1 0 0 0 1.42 1.42l3.91-3.91a1 1 0 0 0 0-1.42L9.6 10.88a1 1 0 0 0-1.42 1.42l2.2 2.2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+    </svg>
+  ),
+  // Original mark: a spark bolt over a horizon line, for generative flux, 24-unit frame
+  bfl: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M13.4 2 6 13h4.4l-1.8 9L16 10.5h-4.2L13.4 2ZM3 19.5h18v2H3v-2Z" />
+    </svg>
+  ),
+  // Original mark: the four-square flag, 21-unit frame
+  microsoft: (
+    <svg viewBox="0 0 21 21" fillRule="evenodd" aria-hidden="true">
+      <rect x="0" y="0" width="10" height="10" fill="#f25022" />
+      <rect x="11" y="0" width="10" height="10" fill="#7fba00" />
+      <rect x="0" y="11" width="10" height="10" fill="#00a4ef" />
+      <rect x="11" y="11" width="10" height="10" fill="#ffb900" />
+    </svg>
+  ),
+}
+
 export function ProviderLogo({
   id,
   className = 'gs-provider-logo',
@@ -344,7 +369,9 @@ export function ProviderLogo({
 }) {
   return (
     <span className={className} aria-hidden="true">
-      {LOGOS[id as AiProviderId] ?? LOGOS.custom}
+      {LOGOS[id as AiProviderId] ??
+        MEDIA_LOGOS[id as 'stability' | 'bfl' | 'microsoft'] ??
+        LOGOS.custom}
     </span>
   )
 }

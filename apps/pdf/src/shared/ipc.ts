@@ -4,6 +4,9 @@ import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-p
 import type { PrintDuplex, PrintJobOptions, PrinterInfo } from '@genoffice/electron-utils/print-job'
 export type { PrintDuplex, PrintJobOptions, PrinterInfo }
 
+/** largest slice readFileChunk hands over IPC; the renderer loops over them */
+export const PDF_READ_CHUNK_BYTES = 8 * 1024 * 1024
+
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
@@ -58,6 +61,7 @@ export const PDF_CHANNELS = {
   saveAsFlow: 'pdf:save-as-flow',
   printRequest: 'pdf:print-request',
   print: 'pdf:print',
+  printFile: 'pdf:print-file',
   printers: 'pdf:printers',
   fileRenamed: 'pdf:file-renamed',
   getLanguage: 'app:get-language',
@@ -375,7 +379,7 @@ export type DrawingInput =
       color: [number, number, number]
       at: [number, number]
       contents: string
-      /** Annotation author (/T); omitted → 'GenOffice' */
+      /** Annotation author (/T); omitted → the request's annotationAuthor */
       author?: string
       /** Creation time (ms since epoch) → /CreationDate and /M; omitted → save time */
       createdMs?: number
@@ -768,6 +772,9 @@ export interface SavePdfRequest {
       from `encryption.userPassword`. */
   decryption?: { userPassword: string }
   markups: MarkupInput[]
+  /** Author (/T) of the markups and drawings this save adds; a note keeps its own
+      author when it has one. Omitted → 'GenOffice' */
+  annotationAuthor?: string
   /** Saved markup annotations to remove (applied before every other stage) */
   annotDeletes?: AnnotDeleteInput[]
   drawings: DrawingInput[]
@@ -1197,6 +1204,13 @@ export interface PdfApi {
   /** print this window's print stylesheet output on a named printer ('' = OS default)
    *  without the system dialog; ok=false without error = canceled */
   print(job: PrintJobOptions): Promise<{ ok: boolean; error?: string }>
+  /** macOS CUPS route: spool the flushed file itself through lp — the vector
+   *  original reaches the driver untouched (no rasterization pass). pages are
+   *  1-based file pages; undefined = the whole document. ok=false without
+   *  error = canceled (never happens on this route; both sides report). */
+  printFile(
+    job: PrintJobOptions & { path: string; pages?: number[] },
+  ): Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */
   listPrinters(): Promise<PrinterInfo[]>
   /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */

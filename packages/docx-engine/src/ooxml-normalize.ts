@@ -434,3 +434,21 @@ export function normalizeOoxmlXml(xml: string): string {
   out += xml.slice(cursor)
   return out
 }
+
+const DUP_STYLE_REF_RE = /(?:<w:([pr])Style\b[^>]*\/>\s*)+(?=<w:\1Style\b[^>]*\/>)/g
+
+/** Cheap pre-check; dedupeStyleRefs is only worth calling when this is true. */
+export function hasDuplicateStyleRefs(xml: string): boolean {
+  DUP_STYLE_REF_RE.lastIndex = 0
+  return DUP_STYLE_REF_RE.test(xml)
+}
+
+/**
+ * Repeated w:pStyle / w:rStyle children of one property set: Word applies the
+ * last one (invalid per schema, written by some Markdown converters as
+ * `Heading1` + `MdHeading1`), so the earlier siblings are dropped here and
+ * every reader, string or node based, sees the winner.
+ */
+export function dedupeStyleRefs(xml: string): string {
+  return xml.replace(DUP_STYLE_REF_RE, '')
+}

@@ -2555,19 +2555,23 @@
 
 /* Calibri ships its own compact Arabic; Carlito has none, so Arabic in a
  * cs="Calibri" run would fall through to Geeza Pro (8.6% wider, taller box).
- * Scale = shaped width of a 57-letter Arabic pangram in Calibri vs the bundled
- * Noto Sans Arabic subset (harfbuzz over the real files, 2026-10-14: 278 vs
- * 325 at 12 pt; bold cut 0.902, synthesized from the regular group). Box
- * pinned to Calibri's hhea 1536/512 over 2048 so the fallback face never
- * lifts a Calibri line.
+ * 2026-10-14 scaled by a 57-letter pangram (278 vs 325 at 12 pt = 0.855). The
+ * ratio is text dependent (the two fonts' letter forms are not proportional):
+ * over a production vocalized naskh body of 1815 words harfbuzz gives 0.833, and
+ * Word breaks its lines 2% tighter than harfbuzz Calibri (its 10-line paragraph,
+ * last line 0.71 of the column, is matched by the greedy model at 0.82; gen still
+ * rendered 11 lines at 0.833), so the face carries 0.82; bold runs (0.878) share the
+ * face because Chromium only synthesizes bold from a face declared normal. Box
+ * pinned to Calibri's hhea 1536/512 over 2048 so the fallback face never lifts a
+ * Calibri line.
  * 
- * Calibri Arabic GO: hmtx 2026-10-14
- * hb-shape of a 57-letter Arabic pangram, 278 vs 325 at 12pt; box = Calibri hhea 1536/512 over 2048
- * fonts: Calibri; NotoSansArabic-Regular-subset.woff2 */
+ * Calibri Arabic GO: hmtx 2026-11-03
+ * harfbuzz shaped width of a production vocalized Arabic body (1815 regular words, 8765 letters, Calibri vs the subset) = 0.833, bold runs 0.878; Word's own breaks run 2% tighter than harfbuzz Calibri (its 10-line paragraph, last line 0.71 of the column, is reproduced by the greedy model at 0.82; 0.833 still gave 11 lines in gen); box = Calibri hhea 1536/512 over 2048
+ * fonts: Calibri, Calibri Bold (Word DFonts); NotoSansArabic-Regular-subset.woff2 */
 @font-face {
   font-family: 'Calibri Arabic GO';
   src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
-  size-adjust: 85.5%;
+  size-adjust: 82%;
   unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
   ascent-override: 75%;
   descent-override: 25%;
@@ -2695,37 +2699,25 @@
 
 /* Century Gothic ships only inside Office (Word's DFonts), so Chromium fell to
  * the Helvetica-class sans: ~9% narrower per body line (hmtx of both fonts,
- * 2026-09-12). Its geometry is not a uniform scale of Liberation Sans: the
- * lowercase runs +10.6% (+1.7% bold), capitals -5% (-7.3% bold), digits, space
- * and punctuation within 1%, so per-case faces carry the adjustment (later
- * faces win inside their unicode-range). Latin-1 accented letters measure
- * the same per-case ratios and share the faces; Latin Extended-A does not. Pitch stays the probed 1.226
- * (`lineHeightFactor`).
+ * 2026-09-12). Its geometry is not a uniform scale of Liberation Sans (per glyph
+ * 0.81-1.43: s 1.29, a 0.81, T 1.43), so 2026-09-12 fitted one size-adjusted face per
+ * case class; the widths matched on average but drifted both ways over long
+ * documents and size-adjust scaled the glyph height with the width, so capitals and
+ * digits sat visibly smaller than the lowercase in one line (13.3/11.4/12.0 pt pieces of
+ * a 12 pt line). The ranged faces are now one advance-matched derivative per cut
+ * (CenturyGothicGO-*.ttf, tools/build-metric-fonts.py): Liberation Sans outlines
+ * scaled horizontally to each Word advance, one vertical factor, Word advances in
+ * hmtx. Production PDFs pace Century Gothic at its hmtx exactly (lowercase and
+ * digits 1.000; capitals 0.96-0.99 only where w:kern is on, not baked in). The
+ * rangeless Liberation Sans face keeps the non-Latin fallback. Pitch stays the probed
+ * 1.226 (`lineHeightFactor`).
  * 
- * Century Gothic GO: hmtx 2026-09-12
- * hmtx per case class
- * fonts: Century Gothic (Word DFonts); LiberationSans */
+ * Century Gothic GO: hmtx 2026-11-03
+ * advance-matched Liberation Sans derivative (tools/build-metric-fonts.py): hmtx = Century Gothic DFonts advances exactly; Word paces Century Gothic at its hmtx (production PDF char origins / hmtx = 1.000 for lowercase and digits, 0.99 for kerned capitals)
+ * fonts: Century Gothic.ttf, Century Gothic Bold.ttf, Century Gothic Italic.ttf, Century Gothic Bold Italic.ttf (Word DFonts); LiberationSans-Regular/Bold/Italic/BoldItalic.ttf */
 @font-face {
   font-family: 'Century Gothic GO';
   src: url('./LiberationSans-Regular.ttf');
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Regular.ttf');
-  size-adjust: 110.6%;
-  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
-  font-weight: normal;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Regular.ttf');
-  size-adjust: 95%;
-  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
   font-weight: normal;
   font-style: normal;
   font-display: block;
@@ -2739,68 +2731,46 @@
 }
 @font-face {
   font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Bold.ttf');
-  size-adjust: 101.7%;
-  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  src: url('./LiberationSans-Italic.ttf');
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Century Gothic GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Century Gothic GO';
+  src: url('./CenturyGothicGO-Regular.ttf');
+  unicode-range: U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Century Gothic GO';
+  src: url('./CenturyGothicGO-Bold.ttf');
+  unicode-range: U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122;
   font-weight: bold;
   font-style: normal;
   font-display: block;
 }
 @font-face {
   font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Bold.ttf');
-  size-adjust: 92.7%;
-  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
-  font-weight: bold;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Italic.ttf');
+  src: url('./CenturyGothicGO-Italic.ttf');
+  unicode-range: U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122;
   font-weight: normal;
   font-style: italic;
   font-display: block;
 }
 @font-face {
   font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Italic.ttf');
-  size-adjust: 110.6%;
-  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
-  font-weight: normal;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-Italic.ttf');
-  size-adjust: 95%;
-  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
-  font-weight: normal;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-BoldItalic.ttf');
-  font-weight: bold;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-BoldItalic.ttf');
-  size-adjust: 101.7%;
-  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
-  font-weight: bold;
-  font-style: italic;
-  font-display: block;
-}
-@font-face {
-  font-family: 'Century Gothic GO';
-  src: url('./LiberationSans-BoldItalic.ttf');
-  size-adjust: 92.7%;
-  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  src: url('./CenturyGothicGO-BoldItalic.ttf');
+  unicode-range: U+0020-007E, U+00A0-017F, U+0192, U+01FA-01FF, U+1E80-1E85, U+1EF2-1EF3, U+2013-2015, U+2017-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+20AC, U+2122;
   font-weight: bold;
   font-style: italic;
   font-display: block;
@@ -2845,6 +2815,56 @@
   size-adjust: 91.3%;
   font-weight: bold;
   font-style: italic;
+  font-display: block;
+}
+
+/* David (Windows Hebrew default, shipped inside Office) has no macOS copy, so
+ * Chromium drew Hebrew runs in Lucida Grande / Helvetica, 10-20% wider, and
+ * bulleted paragraphs wrapped one line more than Word (corpus 2026-11-03,
+ * 174 -> 184 pages). The ranged faces are advance-matched Liberation Serif
+ * derivatives (Hebrew block, presentation forms, Latin-1, sheqel): David
+ * advances in hmtx, outlines scaled horizontally per glyph. The rangeless
+ * Liberation Serif faces cover the rest at 100% (David's Latin is Times-metric).
+ * Every face pins David's hhea box 0.7349 / 0.2490 so the glyph box matches the
+ * resolver's 0.9839 pitch. Word has no italic cut; both sides synthesize it.
+ * 
+ * David GO: hmtx 2026-11-03
+ * advance-matched Liberation Serif derivative (tools/build-metric-fonts.py): hmtx = David DFonts advances exactly (Hebrew letters 0.78-1.29 of Liberation Serif per glyph, Latin a-z identical to Times, digits 0.886, space 0.885); Word paces David at its hhea 0.9839 (corpus 2026-11-03: 11 pt line 360 auto -> 16.3 pt)
+ * fonts: David (Word DFonts: david.ttf, davidbd.ttf); LiberationSerif */
+@font-face {
+  font-family: 'David GO';
+  src: url('./LiberationSerif-Regular.ttf');
+  size-adjust: 100%;
+  ascent-override: 73.49%;
+  descent-override: 24.9%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'David GO';
+  src: url('./LiberationSerif-Bold.ttf');
+  size-adjust: 100%;
+  ascent-override: 73.49%;
+  descent-override: 24.9%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'David GO';
+  src: url('./DavidGO-Regular.ttf');
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'David GO';
+  src: url('./DavidGO-Bold.ttf');
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0591-05C7, U+05D0-05EA, U+05F0-05F4, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+20AA, U+20AC, U+FB1D-FB36, U+FB38-FB3C, U+FB3E, U+FB40-FB41, U+FB43-FB44, U+FB46-FB4F;
+  font-weight: bold;
+  font-style: normal;
   font-display: block;
 }
 
@@ -3117,6 +3137,52 @@
   font-display: block;
 }
 
+/* Word for Mac ships Cordia New and TH SarabunPSK (DFonts) and lays every other Thai
+ * family out as Cordia New (probe 2026-11-03, doc2docx sample 059: 16pt TH SarabunIT9
+ * paces 18.4pt = Cordia hhea 1.147). macOS has neither and Chromium's Thonburi fallback
+ * advances ~1.75x wider at a 1em design size. The Thai faces (Regular and Bold) are Noto
+ * Sans Thai with every outline scaled horizontally to the Word advance of its code point
+ * and vertically to the small Thai design size, mark anchors moved along, advances and
+ * vertical metrics rewritten (tools/build-thai-font.py); the Latin repertoire is
+ * Liberation Sans size-adjusted to the Word face's Latin advances (hmtx sentence ratio
+ * over a mixed-case English sample).
+ * 
+ * GenOffice Cordia: hmtx 2026-11-03
+ * Thai advances per glyph from hmtx, Regular and Bold; Latin ratio 0.649 regular / 0.643 bold
+ * fonts: Cordia New (Word DFonts cordia.ttc); NotoSansThai; LiberationSans */
+@font-face {
+  font-family: 'GenOffice Cordia';
+  src: url('./GenOfficeCordia-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Cordia';
+  src: url('./GenOfficeCordia-Bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Cordia';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 64.9%;
+  unicode-range: U+0000-0DFF, U+0E80-10FFFF;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Cordia';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 64.3%;
+  unicode-range: U+0000-0DFF, U+0E80-10FFFF;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+
 /* Ethiopic faces (Nyala/Ebrima/Abyssinica) are missing on macOS and fall back
  * to Kefa, 1.35-1.4x wider than Word's Nyala. Only routed when an Ethiopic
  * face is declared, so no unicode-range needed; on Windows the declared name
@@ -3131,6 +3197,52 @@
   size-adjust: 72%;
   font-weight: normal;
   font-style: normal;
+}
+
+/* Word for Mac ships Cordia New and TH SarabunPSK (DFonts) and lays every other Thai
+ * family out as Cordia New (probe 2026-11-03, doc2docx sample 059: 16pt TH SarabunIT9
+ * paces 18.4pt = Cordia hhea 1.147). macOS has neither and Chromium's Thonburi fallback
+ * advances ~1.75x wider at a 1em design size. The Thai faces (Regular and Bold) are Noto
+ * Sans Thai with every outline scaled horizontally to the Word advance of its code point
+ * and vertically to the small Thai design size, mark anchors moved along, advances and
+ * vertical metrics rewritten (tools/build-thai-font.py); the Latin repertoire is
+ * Liberation Sans size-adjusted to the Word face's Latin advances (hmtx sentence ratio
+ * over a mixed-case English sample).
+ * 
+ * GenOffice Sarabun: hmtx 2026-11-03
+ * Thai advances per glyph from hmtx, Regular and Bold; Latin ratio 0.644 regular / 0.657 bold
+ * fonts: TH SarabunPSK (Word DFonts thsarabun.ttf); NotoSansThai; LiberationSans */
+@font-face {
+  font-family: 'GenOffice Sarabun';
+  src: url('./GenOfficeSarabun-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Sarabun';
+  src: url('./GenOfficeSarabun-Bold.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Sarabun';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 64.4%;
+  unicode-range: U+0000-0DFF, U+0E80-10FFFF;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Sarabun';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 65.7%;
+  unicode-range: U+0000-0DFF, U+0E80-10FFFF;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
 }
 
 /* Latin stand-in for Microsoft YaHei on machines without it: YaHei's tabular

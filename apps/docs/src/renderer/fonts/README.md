@@ -17,6 +17,7 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 | Aptos Display GO     | OFL 1.1    | Aptos Display (Carlito, adjusted)         |
 | Aptos Narrow GO      | OFL 1.1    | Aptos Narrow (Carlito, adv.-matched)      |
 | Bookman Old Style GO | Apache-2.0 | Bookman Old Style (Caladea, adv.-matched) |
+| Century Gothic GO    | OFL 1.1    | Century Gothic (Liberation Sans, adv.-m.) |
 
 "Carlito GO" (`Carlito-*.ttf`) is a derivative of Carlito 1.103: a build-time patch
 (`tools/patch-carlito-vi.py`) rebuilds Vietnamese precomposed glyphs whose above mark
@@ -33,9 +34,10 @@ pagination model (`tests/helpers/lo-fonts.ts` measures the same set of files).
 
 Registration lives in `fonts.css`; family-name mapping in `cssFontFamily()` of `line-metrics.ts`.
 
-"Aptos GO", "Aptos Narrow GO" and "Bookman Old Style GO" are advance-matched
-derivatives built by `tools/build-metric-fonts.py` (`AptosGO-*.ttf`,
-`AptosNarrowGO-*.ttf` from Carlito, `BookmanOldStyleGO-*.ttf` from Caladea;
+"Aptos GO", "Aptos Narrow GO", "Bookman Old Style GO" and "Century Gothic GO" are
+advance-matched derivatives built by `tools/build-metric-fonts.py` (`AptosGO-*.ttf`,
+`AptosNarrowGO-*.ttf` from Carlito, `BookmanOldStyleGO-*.ttf` from Caladea,
+`CenturyGothicGO-*.ttf` from Liberation Sans;
 manifest `refit.method: advance-matched`). The Word faces are not a scale of
 their stand-ins (per glyph Aptos/Carlito spans 0.87 to 1.22, Bookman/Caladea
 1.0 to 1.96), and a size-adjusted face per advance bucket drew letters of one
@@ -48,7 +50,8 @@ hhea/OS2; GPOS/GSUB/kern and hinting are dropped. The rangeless Carlito /
 Caladea face stays as the non-Latin fallback. Carlito-based files are renamed
 per OFL 1.1 §2. "Aptos Display GO" still uses size-adjust buckets (its source
 lives only in Word's cloud-font cache). Pitch stays Calibri's 1.22 for Aptos
-(`lineHeightFactor`) and the hhea 1.1738 for Bookman.
+(`lineHeightFactor`), the hhea 1.1738 for Bookman and the probed 1.226 for Century
+Gothic.
 `tests/aptos-alias-metrics.test.ts` holds the Word-probed sentence widths
 (2026-09-03, 2026-10-20); the Bookman widths live in the
 `font-bookman-old-style-alias` truth fixture.
@@ -205,6 +208,30 @@ Tamil-letter ratio (`tools/build-tamil-font.py`; shaped sentence R vs Latha
 0.994, every probe sentence within ±2.3%). The face ships no Latin letters
 (upstream Noto Sans Tamil has none); Latin falls through the chain. Renamed
 per OFL ("Noto" is a Reserved Font Name; advances are modified).
+
+## Thai fallback
+
+| Font                                   | Role                                                    |
+| -------------------------------------- | ------------------------------------------------------- |
+| GenOffice Cordia (Regular/Bold woff2)  | Cordia New-metric stand-in for Thai families Word lacks |
+| GenOffice Sarabun (Regular/Bold woff2) | TH SarabunPSK-metric stand-in (Word ships that face)    |
+
+Word for Mac ships Cordia New and TH SarabunPSK in its DFonts and substitutes
+Cordia New for every other Thai family (TH SarabunIT9, Angsana New, the UPC
+faces...; probe 2026-11-03, doc2docx sample 059: 16pt text paces 18.4pt =
+Cordia New hhea 1.147). macOS has neither, and Chromium's Thonburi fallback
+advances ~1.75x wider at a 1em design size, so Thai documents wrapped early and
+overflowed pages. `tools/build-thai-font.py` takes Noto Sans Thai Regular/Bold
+(OFL) and fits each glyph to the Word face: outlines scaled horizontally to the
+Word advance of their code point (variants and ligatures follow the code points
+in their glyph names, marks the median letter factor), one vertical factor
+(median consonant ink height, ~0.72) down to the small Thai design size, GPOS
+mark/mkmk anchors moved with their glyph, `kern` and hinting dropped, advances
+and vertical metrics from the Word face. The Latin repertoire is Liberation Sans
+size-adjusted to the Word face's Latin advances (family manifests
+`genoffice-cordia.json` / `genoffice-sarabun.json`). Renamed per OFL 1.1 ("Noto"
+is a Reserved Font Name). `tests/thai-font-metrics.test.ts` holds the advance
+and ink contract; the line factors (1.147 / 1.31) live in `line-factors.json`.
 
 ## Bengali fallback
 

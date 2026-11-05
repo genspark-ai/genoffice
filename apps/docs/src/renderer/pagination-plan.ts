@@ -529,6 +529,9 @@ export function buildBlockPlan(
       }
     }
     plans.set(node, plan)
+    // a body-level bookmark marker is no paragraph: the spacing neighbours are
+    // the blocks around it
+    if (node.attrs.invisibleMarker) return
     prev = node
     index++
   })

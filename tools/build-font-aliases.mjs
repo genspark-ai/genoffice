@@ -31,7 +31,7 @@ const UI_FONTS = 'packages/ui/src/fonts'
 
 export const SOURCE_KINDS = ['probe', 'hmtx', 'corpus', 'legacy']
 const STAGES = ['first', 'arabic', 'latin', 'last']
-const PATTERN_REFS = ['TAMIL_FONT_RE', 'SEGOE_UI_TEXT_RE', 'NOTO_HAN_REGIONAL_RE']
+const PATTERN_REFS = ['TAMIL_FONT_RE', 'THAI_FONT_RE', 'SEGOE_UI_TEXT_RE', 'NOTO_HAN_REGIONAL_RE']
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export function loadManifest(root = ROOT) {

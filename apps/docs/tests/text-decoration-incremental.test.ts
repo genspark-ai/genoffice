@@ -49,7 +49,7 @@ function rebuilt(editor: Editor, pluginName: string): string[] {
 }
 
 describe('incremental text decorations', () => {
-  it('whitespace-run and hinted-quote decorations follow edits exactly like a rebuild', () => {
+  it('whitespace-run and inline-segment decorations follow edits exactly like a rebuild', () => {
     const editor = new Editor({
       element: document.createElement('div'),
       extensions: editorExtensions,
@@ -63,13 +63,13 @@ describe('incremental text decorations', () => {
       } as never,
     })
     editors.push(editor)
-    for (const name of ['wsRunLineHeight', 'eaHintQuotes']) {
+    for (const name of ['wsRunLineHeight', 'lineFactorLive']) {
       expect(decosOf(editor, name).length).toBeGreaterThan(0)
       expect(decosOf(editor, name)).toEqual(rebuilt(editor, name))
     }
 
     const check = () => {
-      for (const name of ['wsRunLineHeight', 'eaHintQuotes'])
+      for (const name of ['wsRunLineHeight', 'lineFactorLive'])
         expect(decosOf(editor, name)).toEqual(rebuilt(editor, name))
     }
     // typing before the decorated runs shifts them

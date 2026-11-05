@@ -103,6 +103,8 @@ describe('page-relative anchor x', () => {
     const style = await runImageStyle(
       `<w:p>${anchor(COLUMN_H, PAGE_V, '<wp:wrapSquare wrapText="bothSides"/>')}<w:r><w:t>T</w:t></w:r></w:p>`,
     )
-    expect(style).toContain('margin-top:min(0px, calc(2.5px - var(--doc-margin-top,0px)))')
+    expect(style).toContain(
+      'margin-top:calc(min(0px, calc(2.5px - var(--doc-margin-top,0px))) + var(--cell-page-y,0px))',
+    )
   })
 })

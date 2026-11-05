@@ -8,6 +8,7 @@ import {
 } from '../src/renderer/font-resolve'
 import {
   cjkDeclaredLineFactor,
+  cssFontFamily,
   lineHeightFactor,
   setDocFontTable,
   tableLineHeightFactor,
@@ -73,6 +74,19 @@ describe('Latin cutover', () => {
     setDocFontTable([{ name: 'Mont', panose: '00000700' }])
     expect(lineHeightFactor('Mont')).toBe(1.22)
     expect(resolveDeclaredFace('Mont')?.substituted).toBe(true)
+  })
+
+  it('paces a kana-named face routed by its fontTable altName as the alias (corpus 2026-11-03)', () => {
+    const hiragino = '\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W3'
+    expect(lineHeightFactor(hiragino)).toBe(1.4327)
+    setDocFontTable([{ name: hiragino, altName: 'Cambria', charset: '00', family: 'roman' }])
+    expect(lineHeightFactor(hiragino)).toBe(1.1724)
+    expect(resolveDeclaredFace(hiragino)?.family).toBe('Cambria')
+  })
+
+  it('leads David with the advance-matched stand-in', () => {
+    expect(cssFontFamily('David')).toMatch(/^'David','David GO',/)
+    expect(lineHeightFactor('David')).toBe(0.9839)
   })
 
   it('reads the fontTable through setDocFontTable', () => {
