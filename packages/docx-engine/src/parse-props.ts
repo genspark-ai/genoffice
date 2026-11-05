@@ -391,6 +391,11 @@ export const SIMPLE_INLINE_FIELD_RE =
  */
 export const MERGEFIELD_INSTR_RE = /^\s*MERGEFIELD\s+(?:"([^"]*)"|(\S+))/
 
+/** Mail-merge control fields (advance/skip a record). They carry the full
+ * instruction text; Word has no cached result for them, so a ' ' placeholder
+ * marks the run for the merge engine. */
+export const CONTROL_FIELD_RE = /^\s*(NEXT|NEXTIF|SKIPIF)\b/i
+
 /** every fldChar closes inside the paragraph: a stray end (the last TOC entry
  *  carries the TOC field's end) or an unclosed begin must stay byte-preserved */
 export function fieldCharsBalanced(xml: string): boolean {
@@ -488,7 +493,8 @@ export function onlyXeFields(xml: string): boolean {
       /^\s*XE[\s"]/.test(text) ||
       /^\s*REF\s/.test(text) ||
       SIMPLE_INLINE_FIELD_RE.test(text) ||
-      MERGEFIELD_INSTR_RE.test(text)
+      MERGEFIELD_INSTR_RE.test(text) ||
+      CONTROL_FIELD_RE.test(text)
     )
   })
   if (!simpleOk) return false
@@ -505,6 +511,7 @@ export function onlyXeFields(xml: string): boolean {
       ZOTERO_INLINE_FIELD_RE.test(text) ||
       SIMPLE_INLINE_FIELD_RE.test(text) ||
       MERGEFIELD_INSTR_RE.test(text) ||
+      CONTROL_FIELD_RE.test(text) ||
       convertibleHyperlink(text) !== null
     )
   })

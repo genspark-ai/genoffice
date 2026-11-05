@@ -596,4 +596,5 @@ export const es = {
   appCtxResolveComment: 'Resolver comentario',
   appRevisionsAcceptedN: '{n} cambios aceptados',
   appRevisionsRejectedN: '{n} cambios rechazados',
+  appMergeOpened: 'Resultado de la combinación abierto en una pestaña nueva',
 } satisfies Record<keyof typeof zh, string>

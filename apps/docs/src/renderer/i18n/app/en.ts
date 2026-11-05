@@ -584,4 +584,5 @@ export const en = {
   appCtxResolveComment: 'Resolve Comment',
   appRevisionsAcceptedN: '{n} changes accepted',
   appRevisionsRejectedN: '{n} changes rejected',
+  appMergeOpened: 'Merged result opened in a new tab',
 } satisfies Record<keyof typeof zh, string>

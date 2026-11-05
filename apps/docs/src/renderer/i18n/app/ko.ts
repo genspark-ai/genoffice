@@ -615,4 +615,5 @@ export const ko = {
   appCtxResolveComment: '메모 해결',
   appRevisionsAcceptedN: '변경 {n}개 적용됨',
   appRevisionsRejectedN: '변경 {n}개 거부됨',
+  appMergeOpened: '병합 결과를 새 탭에서 열었습니다',
 } satisfies Record<keyof typeof zh, string>

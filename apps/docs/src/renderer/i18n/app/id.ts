@@ -592,4 +592,5 @@ export const id = {
   appCtxResolveComment: 'Selesaikan Komentar',
   appRevisionsAcceptedN: '{n} perubahan diterima',
   appRevisionsRejectedN: '{n} perubahan ditolak',
+  appMergeOpened: 'Hasil penggabungan dibuka di tab baru',
 } satisfies Record<keyof typeof zh, string>

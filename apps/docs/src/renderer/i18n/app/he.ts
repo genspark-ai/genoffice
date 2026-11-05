@@ -581,4 +581,5 @@ export const he = {
   appCtxResolveComment: 'פתור תגובה',
   appRevisionsAcceptedN: '{n} שינויים התקבלו',
   appRevisionsRejectedN: '{n} שינויים נדחו',
+  appMergeOpened: 'תוצאת המיזוג נפתחה בכרטיסייה חדשה',
 } satisfies Record<keyof typeof zh, string>

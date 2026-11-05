@@ -595,4 +595,5 @@ export const ru = {
   appCtxResolveComment: 'Решить примечание',
   appRevisionsAcceptedN: 'Принято исправлений: {n}',
   appRevisionsRejectedN: 'Отклонено исправлений: {n}',
+  appMergeOpened: 'Результат слияния открыт в новой вкладке',
 } satisfies Record<keyof typeof zh, string>

@@ -825,17 +825,28 @@ export async function suggestedSaveAsName(ctx: FileActionContext): Promise<strin
  * live one: the mail merge writes the template with one record's values in it,
  * and the rest of the save (the sections, the headers, the pictures) is the
  * save the document would get anyway.
+ *
+ * `saveOptions.exportAsMerged` marks the save as a merge product, which drops
+ * the template's data-source reference from the package; the template itself
+ * keeps it.
  */
 export async function buildDocBytes(
   ctx: FileActionContext,
   pmOverride?: PmNode,
+  saveOptions: { exportAsMerged?: boolean } = {},
 ): Promise<Uint8Array | null> {
   const generation = docGeneration
   if (ctx.settleFontSettings) ctx = await ctx.settleFontSettings()
   if (docGeneration !== generation) return null
   const { doc, editor } = ctx
   if (!doc || !editor) return null
-  const pmJson = pmOverride ?? (editor.getJSON() as PmNode)
+  // Preview (mail-merge) swaps the editor content for merged values but keeps
+  // the original doc on editor.storage.mailmergePreviewJson — save/export must
+  // use the original so merge-field code survives the round-trip.
+  const storage = editor.storage as unknown as Record<string, unknown>
+  const pmJson = (pmOverride ??
+    (storage.mailmergePreviewJson as PmNode | undefined) ??
+    (editor.getJSON() as PmNode))
   const plan = pmDocToSavePlan(pmJson, doc.parsed.blocks)
   // chart data edits patch the chart's own zip part, not the body XML
   const partXml: Record<string, string> = {}
@@ -906,6 +917,7 @@ export async function buildDocBytes(
   })
   const bytes = await saveDocx(doc.parsed, saveBlocks, {
     pageCount: ctx.pageCount,
+    exportAsMerged: saveOptions.exportAsMerged,
     newPictures: Object.keys(plan.newPictures).length > 0 ? plan.newPictures : undefined,
     trailingSectPrChange: plan.trailingSectPrChange,
     section: ctx.sectionDirty && ctx.section ? ctx.section : undefined,

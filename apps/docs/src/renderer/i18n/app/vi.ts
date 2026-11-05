@@ -587,4 +587,5 @@ export const vi = {
   appCtxResolveComment: 'Giải quyết Bình luận',
   appRevisionsAcceptedN: 'Đã chấp nhận {n} thay đổi',
   appRevisionsRejectedN: 'Đã từ chối {n} thay đổi',
+  appMergeOpened: 'Đã mở kết quả hợp nhất trong tab mới',
 } satisfies Record<keyof typeof zh, string>

@@ -557,6 +557,7 @@ export const zh = {
   appStyleNamePlaceholder: '样式名称',
   appMergeSourceLoaded: '已加载数据源 {name}（{n} 条记录）',
   appMergeWritten: '已写出 {n} 个文档',
+  appMergeOpened: '已在新标签页打开合并结果',
   appMergeNothingToWrite: '没有可写出的文档',
   appReviewPaneTitle: '修订',
   appReviewPaneCount: '{n} 处修订',

@@ -600,4 +600,5 @@ export const nl = {
   appCtxResolveComment: 'Opmerking oplossen',
   appRevisionsAcceptedN: '{n} wijzigingen geaccepteerd',
   appRevisionsRejectedN: '{n} wijzigingen geweigerd',
+  appMergeOpened: 'Samengevoegd resultaat geopend in een nieuw tabblad',
 } satisfies Record<keyof typeof zh, string>

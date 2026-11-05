@@ -600,4 +600,5 @@ export const fr = {
   appCtxResolveComment: 'Résoudre le commentaire',
   appRevisionsAcceptedN: '{n} modifications acceptées',
   appRevisionsRejectedN: '{n} modifications refusées',
+  appMergeOpened: 'Résultat de la fusion ouvert dans un nouvel onglet',
 } satisfies Record<keyof typeof zh, string>

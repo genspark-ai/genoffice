@@ -603,4 +603,5 @@ export const de = {
   appCtxResolveComment: 'Kommentar auflösen',
   appRevisionsAcceptedN: '{n} Änderungen angenommen',
   appRevisionsRejectedN: '{n} Änderungen abgelehnt',
+  appMergeOpened: 'Zusammengeführtes Ergebnis in einem neuen Tab geöffnet',
 } satisfies Record<keyof typeof zh, string>

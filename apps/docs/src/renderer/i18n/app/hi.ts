@@ -589,4 +589,5 @@ export const hi = {
   appCtxResolveComment: 'टिप्पणी हल करें',
   appRevisionsAcceptedN: '{n} परिवर्तन स्वीकार किए गए',
   appRevisionsRejectedN: '{n} परिवर्तन अस्वीकार किए गए',
+  appMergeOpened: 'मर्ज किया गया परिणाम नए टैब में खोला गया',
 } satisfies Record<keyof typeof zh, string>

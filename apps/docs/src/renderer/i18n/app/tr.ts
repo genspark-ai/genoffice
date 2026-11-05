@@ -588,4 +588,5 @@ export const tr = {
   appCtxResolveComment: 'Açıklamayı Çöz',
   appRevisionsAcceptedN: '{n} değişiklik kabul edildi',
   appRevisionsRejectedN: '{n} değişiklik reddedildi',
+  appMergeOpened: 'Birleştirme sonucu yeni sekmede açıldı',
 } satisfies Record<keyof typeof zh, string>

@@ -589,4 +589,5 @@ export const cs = {
   appCtxResolveComment: 'Vyřešit komentář',
   appRevisionsAcceptedN: 'Přijato změn: {n}',
   appRevisionsRejectedN: 'Odmítnuto změn: {n}',
+  appMergeOpened: 'Výsledek sloučení otevřen v nové kartě',
 } satisfies Record<keyof typeof zh, string>

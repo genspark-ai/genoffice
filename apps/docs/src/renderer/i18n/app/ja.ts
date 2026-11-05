@@ -615,4 +615,5 @@ export const ja = {
   appCtxResolveComment: 'コメントを解決',
   appRevisionsAcceptedN: '{n} 件の変更を承諾しました',
   appRevisionsRejectedN: '{n} 件の変更を元に戻しました',
+  appMergeOpened: 'マージ結果を新しいタブで開きました',
 } satisfies Record<keyof typeof zh, string>

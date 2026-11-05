@@ -652,6 +652,25 @@ function firstSheetName(workbookXml: string): string {
   return decodeXmlText(name)
 }
 
+/**
+ * The names of the workbook's sheets, in file order.
+ *
+ * A workbook holds several sheets and the user picks the one the merge reads,
+ * so the sheet names have to be readable before a sheet is read.
+ */
+export async function readSheetNames(buffer: Buffer): Promise<string[]> {
+  const zip = await createBufferEntrySource(buffer)
+  const workbookXml = await zip.readText('xl/workbook.xml')
+  const sheetPattern = /<sheet\b((?:"[^"]*"|'[^']*'|[^>"'])*?)\/?>/g
+  const names: string[] = []
+  let match: RegExpExecArray | null
+  while ((match = sheetPattern.exec(workbookXml)) !== null) {
+    const name = readXmlAttribute(match[1] ?? '', 'name')
+    if (name) names.push(decodeXmlText(name))
+  }
+  return names
+}
+
 /** the zero-based column an A1 address names */
 function columnIndexOf(address: string): number {
   const match = /^\$?([A-Z]+)\$?[0-9]+$/.exec(address)
@@ -659,6 +678,35 @@ function columnIndexOf(address: string): number {
   let column = 0
   for (const character of match[1]!) column = column * 26 + character.charCodeAt(0) - 64
   return column - 1
+}
+
+/** a number written in exponent form, e.g. 1.01E-2 for 0.0101 */
+const EXPONENTIAL_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)[eE][+-]?\d+$/
+
+/** shifts the decimal point so an exponent-form number reads plainly */
+function expandExponent(text: string): string {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text)
+  if (!match) return text
+  const sign = match[1] ?? ''
+  const integer = match[2] ?? ''
+  const digits = `${integer}${match[3] ?? ''}`
+  const point = integer.length + Number(match[4] ?? '0')
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`
+  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`
+}
+
+/**
+ * 0.0101 rather than 1.01E-2. A number keeps the file's own spelling, but a
+ * data source shows the value, so an exponent-form double reads as a plain
+ * decimal. Text cells are left untouched: there the spelling is the data.
+ */
+function plainNumberText(text: string): string {
+  if (!EXPONENTIAL_NUMBER.test(text)) return text
+  const value = Number(text)
+  if (!Number.isFinite(value)) return text
+  const plain = String(value)
+  return EXPONENTIAL_NUMBER.test(plain) ? expandExponent(plain) : plain
 }
 
 /** the text of one cell, whatever the file stored it as */
@@ -681,8 +729,9 @@ function cellText(
   if (type === 'b') return rawValue === '1' ? 'TRUE' : 'FALSE'
   // a number keeps the file's own spelling, except that a date-formatted
   // cell reads as a date, not as the serial the file holds
-  const text = decodeCellText(rawValue)
-  if (asDate && (type === undefined || type === 'n')) {
+  const isNumber = type === undefined || type === 'n'
+  const text = isNumber ? plainNumberText(decodeCellText(rawValue)) : decodeCellText(rawValue)
+  if (asDate && isNumber) {
     const serial = Number(text)
     if (Number.isFinite(serial)) return serialDateText(serial, date1904)
   }

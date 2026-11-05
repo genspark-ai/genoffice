@@ -104,6 +104,7 @@ import type {
   AiSettings,
   MenuCommand,
   MergeDataSource,
+  MergeDataSourceFile,
   OpenDocxResult,
 } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
@@ -787,9 +788,9 @@ export function App() {
   /** a phased open is still streaming the document tail: editor stays read-only */
   const [docLoading, setDocLoading] = useState(false)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
-  const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null>(
-    null,
-  )
+  const bootPendingRef = useRef<
+    Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null
+  >(null)
   const bootHandledRef = useRef(false)
   /** password prompt for an ECMA-376 encrypted docx; submit retries via openDocxDecrypt */
   const [docPwdPrompt, setDocPwdPrompt] = useState<{
@@ -2565,42 +2566,66 @@ export function App() {
   /** the recipient list the user picked; null until they pick one */
   const [mergeSource, setMergeSource] = useState<MergeDataSource | null>(null)
 
-  /** open the file dialog and read the recipient list the user chose */
-  const pickMergeDataSource = useCallback(async () => {
-    const result = await window.desktop.pickMergeDataSource()
-    if (!result) return
-    if (!result.ok) {
-      setStatus(result.error)
-      return
+  /** pick the file the recipient list comes from; null when the user canceled */
+  const pickMergeDataSourceFile = useCallback(async (): Promise<MergeDataSourceFile | null> => {
+    try {
+      const result = await window.desktop.pickMergeDataSource()
+      if (!result) return null
+      if (!result.ok) {
+        setStatus(result.error)
+        return null
+      }
+      return result.file
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return null
     }
-    setMergeSource(result.source)
-    setStatus(
-      t('appMergeSourceLoaded', {
-        name: result.source.name,
-        n: result.source.records.length,
-      }),
-    )
   }, [])
 
-  /** build the merged documents and write them where the user says */
+  /** read the sheet the user confirmed as the recipient list */
+  const readMergeDataSource = useCallback(async (path: string, sheet: string): Promise<boolean> => {
+    try {
+      const result = await window.desktop.readMergeDataSource(path, sheet)
+      if (!result) return false
+      if (!result.ok) {
+        setStatus(result.error)
+        return false
+      }
+      setMergeSource(result.source)
+      setStatus(
+        t('appMergeSourceLoaded', {
+          name: result.source.name,
+          n: result.source.records.length,
+        }),
+      )
+      return true
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }, [])
+
+  /**
+   * Build the merged documents and open them in the app — the 0.12.29 behaviour.
+   * The main process writes each document to a temp file and opens it in a new
+   * tab, so nothing lands on disk unless the user saves it themselves. One file
+   * for the batch/label outputs, one file per record for the per-record and
+   * envelope outputs, all opened where they belong.
+   */
   const mergeMailings = useCallback(
     async (request: MailMergeRequest): Promise<MailMergeResponse> => {
       try {
         const files = await buildMailMergeFiles(fileCtxRef.current, request)
         if (files.length === 0) return { ok: false, error: t('appMergeNothingToWrite') }
-        const written = await window.desktop.writeMergeOutput({
-          mode: request.mode,
-          files: files.map((file) => ({
-            name: file.name,
-            data: file.bytes.buffer.slice(
-              file.bytes.byteOffset,
-              file.bytes.byteOffset + file.bytes.byteLength,
-            ) as ArrayBuffer,
-          })),
-        })
-        if (written.ok) {
-          setStatus(t('appMergeWritten', { n: written.count ?? files.length }))
-        }
+        const payload = files.map((file) => ({
+          name: file.name,
+          data: file.bytes.buffer.slice(
+            file.bytes.byteOffset,
+            file.bytes.byteOffset + file.bytes.byteLength,
+          ) as ArrayBuffer,
+        }))
+        const written = await window.desktop.writeMergeOutput({ mode: request.mode, files: payload })
+        if (written.ok) setStatus(t('appMergeOpened'))
         return written
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -2903,7 +2928,9 @@ export function App() {
   const insertField = useCallback(
     (instr: string) => {
       if (!editor) return
-      const value = fieldValue(instr) || ' '
+      const keyword = instr.trim().split(/\s+/)[0]?.toUpperCase()
+      // NEXT shows as a label, not as the empty result Word would write
+      const value = keyword === 'NEXT' ? t('ribbonMailingsNextLabel') : fieldValue(instr) || ' '
       editor
         .chain()
         .focus()
@@ -7535,7 +7562,8 @@ export function App() {
     onHeader: (next: HeaderFooter) => commitHfAt(0, 'header', headerAreaView, next),
     onPageNumFormat: openPgNumModal,
     onInsertField: insertField,
-    onPickMergeDataSource: () => void pickMergeDataSource(),
+    onPickMergeDataSourceFile: () => pickMergeDataSourceFile(),
+    onReadMergeDataSource: (path: string, sheet: string) => readMergeDataSource(path, sheet),
     onMergeMailings: mergeMailings,
     onFooter: (next: HeaderFooter) => commitHfAt(lastSectionIdx, 'footer', footerAreaView, next),
     onHfAction: (action: HfAction) => onHfAction(action),

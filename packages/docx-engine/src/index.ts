@@ -101,6 +101,10 @@ export {
   type RemovedPartBinding,
 } from './remove-parts'
 export {
+  stripMailMergeSource,
+  stripMailMergeSourceFromZip,
+} from './mail-merge-source'
+export {
   TABLE_HEADER_FILL,
   applyImageWrap,
   applyImageZOrder,

@@ -595,4 +595,5 @@ export const pl = {
   appCtxResolveComment: 'Rozwiąż komentarz',
   appRevisionsAcceptedN: 'Zaakceptowano zmian: {n}',
   appRevisionsRejectedN: 'Odrzucono zmian: {n}',
+  appMergeOpened: 'Wynik scalania otwarty w nowej karcie',
 } satisfies Record<keyof typeof zh, string>

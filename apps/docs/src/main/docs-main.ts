@@ -152,8 +152,12 @@ import type {
   SpellLanguages,
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS, MARKDOWN_MEDIA_DIR_TOKEN, type MarkdownImage } from '../shared/ipc'
-import { MERGE_DATA_SOURCE_EXTENSIONS, readMergeDataSource } from './merge-data-source'
-import { mergeOutputFileName, mergeOutputPath } from './merge-output'
+import {
+  MERGE_DATA_SOURCE_EXTENSIONS,
+  readMergeDataSource,
+  readMergeDataSourceFile,
+} from './merge-data-source'
+import { mergeOutputPath } from './merge-output'
 import { ClickClaims } from '../shared/context-menu-claims'
 import {
   OPENABLE_DOC_EXTENSIONS,
@@ -3590,7 +3594,6 @@ let pendingOpenPath = findOpenableDocPath(process.argv)
 const pendingWindowOpens = new Map<number, string>()
 /** webContents ids that should open as a new blank doc instead of the start screen */
 const pendingNewBlankIds = new Set<number>()
-
 /** mark a docs webContents as "open blank on first consume" (called by the shell for home:new-doc) */
 export function markDocsNewBlank(wcId: number): void {
   pendingNewBlankIds.add(wcId)
@@ -5626,8 +5629,9 @@ export function registerDocsIpc(): void {
     }
   })
 
-  // Mailings tab: pick a local recipient list and read it as a data source.
-  // The file is read here, in the main process, where the file system is.
+  // Mailings tab: pick the local file the recipient list comes from. Only the
+  // file is picked here — the sheet is the user's second step, because a
+  // workbook holds several and the merge reads the one they name.
   ipcMain.handle('docs:merge-data-source', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgMergeDataSource'),
@@ -5641,48 +5645,49 @@ export function registerDocsIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     try {
-      return { ok: true, source: await readMergeDataSource(result.filePaths[0]) }
+      return { ok: true, file: await readMergeDataSourceFile(result.filePaths[0]) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
-  // Mailings tab: write the merged documents. One file for the whole merge
-  // goes where the user says; one file per record goes into a folder they
-  // pick, every name kept unique so two records of the same name do not
-  // overwrite each other. The bytes carry the document's lazily served
-  // pictures, so they are materialized first — the merged file is a document
-  // of its own, not a view of the open one.
-  ipcMain.handle('docs:merge-output', async (event, request: MergeOutputRequest) => {
+  // Mailings tab: read the sheet the user confirmed as the recipient list.
+  ipcMain.handle(
+    'docs:read-merge-data-source',
+    async (_event, path: string, sheetName?: string) => {
+      try {
+        return { ok: true, source: await readMergeDataSource(path, sheetName) }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  // Mailings tab: build the merged documents and open them in the app — the
+  // 0.12.29 behaviour. Each document lands in a temp file a new tab opens like
+  // any other document, so nothing is written to disk unless the user saves it
+  // themselves. The bytes carry the document's lazily served pictures, so they
+  // are materialized first — the merged file is a document of its own.
+  ipcMain.handle('docs:merge-output', async (_event, request: MergeOutputRequest) => {
     const files = Array.isArray(request?.files) ? request.files : []
     if (files.length === 0) return { ok: false, error: 'nothing to write' }
-    const write = async (path: string, data: ArrayBuffer): Promise<void> => {
-      const { bytes } = await materializeLazyDocx(Buffer.from(data))
-      await writeFile(path, bytes)
-    }
     try {
-      if (request.mode === 'single' || request.mode === 'labels') {
-        const file = files[0]!
-        const name = mergeOutputFileName(file.name)
-        const result = await saveDialog(event, {
-          title: tm('dlgSaveAs'),
-          defaultPath: name,
-          filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
-        })
-        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
-        await write(result.filePath, file.data)
-        return { ok: true, path: result.filePath, count: 1 }
-      }
-      const result = await openDialog(event, {
-        title: tm('dlgPickExportDir'),
-        properties: ['openDirectory', 'createDirectory'],
-      })
-      if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
-      const folder = result.filePaths[0]!
+      const tmpDir = await mkdtemp(join(tmpdir(), 'genoffice-merge-'))
+      const paths: string[] = []
       for (const file of files) {
-        await write(mergeOutputPath(folder, file.name), file.data)
+        const { bytes } = await materializeLazyDocx(Buffer.from(file.data))
+        const tmpPath = mergeOutputPath(tmpDir, file.name)
+        await writeFile(tmpPath, bytes)
+        paths.push(tmpPath)
       }
-      return { ok: true, folder, count: files.length }
+      if (shellHooks) {
+        // the shell owns the tabs: open each document in a new tab of this window
+        for (const p of paths) shellHooks.openTab(p)
+      } else {
+        // no shell (standalone docs window): open each in a window of its own
+        for (const p of paths) createDocsWindow(p).show()
+      }
+      return { ok: true, count: files.length }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

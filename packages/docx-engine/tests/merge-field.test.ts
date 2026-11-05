@@ -220,3 +220,23 @@ describe('MERGEFIELD', () => {
     })
   })
 })
+
+describe('mail-merge control fields', () => {
+  it('keeps NEXT as an inline control field instead of dropping it', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: mergeFieldParagraph('NEXT \\* MERGEFORMAT', null),
+      }),
+    )
+    expect(doc.blocks[0].runs).toEqual([{ text: ' ', instrField: 'NEXT \\* MERGEFORMAT' }])
+  })
+
+  it('keeps SKIPIF as an inline control field instead of dropping it', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: mergeFieldParagraph('SKIPIF 1 = 1', null),
+      }),
+    )
+    expect(doc.blocks[0].runs).toEqual([{ text: ' ', instrField: 'SKIPIF 1 = 1' }])
+  })
+})

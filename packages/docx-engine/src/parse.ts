@@ -171,6 +171,7 @@ import {
   checkboxStateOf,
   collectNodes,
   collectTopNodes,
+  CONTROL_FIELD_RE,
   convertibleHyperlink,
   crossParaCommentMarkers,
   emptyParaMarkFont,
@@ -4539,7 +4540,7 @@ function extractRuns(
               },
               rev,
             )
-          } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
+          } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr) || CONTROL_FIELD_RE.test(fieldInstr)) {
             // an unformatted result run would drop to the paragraph default size
             pushRun(
               {
@@ -4691,7 +4692,13 @@ function extractRuns(
     const xe = XE_INSTR_RE.exec(instr)
     const ref = REF_INSTR_RE.exec(instr)
     const merge = MERGEFIELD_INSTR_RE.exec(instr)
-    if (!xe && !ref && !merge && !SIMPLE_INLINE_FIELD_RE.test(instr)) {
+    if (
+      !xe &&
+      !ref &&
+      !merge &&
+      !SIMPLE_INLINE_FIELD_RE.test(instr) &&
+      !CONTROL_FIELD_RE.test(instr)
+    ) {
       walk(childrenOf(node), link, rev)
       return
     }

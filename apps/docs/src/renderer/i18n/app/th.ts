@@ -586,4 +586,5 @@ export const th = {
   appCtxResolveComment: 'แก้ไขข้อคิดเห็นแล้ว',
   appRevisionsAcceptedN: 'ยอมรับ {n} การเปลี่ยนแปลงแล้ว',
   appRevisionsRejectedN: 'ปฏิเสธ {n} การเปลี่ยนแปลงแล้ว',
+  appMergeOpened: 'เปิดผลการรวมในแท็บใหม่',
 } satisfies Record<keyof typeof zh, string>

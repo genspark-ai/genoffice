@@ -576,4 +576,5 @@ export const zhTW = {
   appCtxResolveComment: '解決註解',
   appRevisionsAcceptedN: '已接受 {n} 處變更',
   appRevisionsRejectedN: '已拒絕 {n} 處變更',
+  appMergeOpened: '已在新分頁開啟合併結果',
 } satisfies Record<keyof typeof zh, string>

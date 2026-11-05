@@ -593,4 +593,5 @@ export const ms = {
   appCtxResolveComment: 'Selesaikan Komen',
   appRevisionsAcceptedN: '{n} perubahan diterima',
   appRevisionsRejectedN: '{n} perubahan ditolak',
+  appMergeOpened: 'Hasil gabungan dibuka dalam tab baharu',
 } satisfies Record<keyof typeof zh, string>

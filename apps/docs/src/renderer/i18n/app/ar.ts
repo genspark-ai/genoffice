@@ -584,4 +584,5 @@ export const ar = {
   appCtxResolveComment: 'حل التعليق',
   appRevisionsAcceptedN: 'تم قبول {n} تغييرات',
   appRevisionsRejectedN: 'تم رفض {n} تغييرات',
+  appMergeOpened: 'تم فتح نتيجة الدمج في علامة تبويب جديدة',
 } satisfies Record<keyof typeof zh, string>

@@ -41,3 +41,12 @@ __pycache__/
 # One-off verification tests kept while chasing a fix; promote to a real test
 # file (or delete) instead of committing them under this name.
 _scratch-*
+
+# Local scratch/working files — not pushed to the fork (prep 2026-11-05)
+/_backup_mailmerge/
+/_dev.bat
+/_i18n_a.json
+/_i18n_c.json
+/_i18n_patch.json
+/_test_all.bat
+/_test_fin.bat

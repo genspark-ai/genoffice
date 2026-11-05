@@ -122,6 +122,7 @@ import {
 } from './zotero-doc-props'
 import { applyPropertyChanges, type PropertyChanges } from './doc-properties'
 import { patchHfPicturesXml } from './run-picture'
+import { stripMailMergeSourceFromZip } from './mail-merge-source'
 
 /**
  * Relationship attributes are read quote-agnostically and with any spacing
@@ -395,6 +396,13 @@ export type SaveBlock = (
 export interface SaveOptions {
   /** save timestamp (ISO), written to docProps/core.xml dcterms:modified; default = now */
   savedAt?: string
+  /**
+   * The save is a mail merge product, not the template: drop the data-source
+   * reference (settings.xml w:mailMerge and the relationships it names) so the
+   * merged document carries the values and not the path they came from.
+   * The template keeps its block; only merge output sets this.
+   */
+  exportAsMerged?: boolean
   /**
    * Block-level content controls (w:sdt) for the saved body. `wrap` puts the
    * listed body blocks into one new control (the blocks stay individually
@@ -796,6 +804,7 @@ export async function saveDocx(
     options.themeColors === undefined &&
     options.properties === undefined &&
     options.removeParts === undefined &&
+    options.exportAsMerged !== true &&
     options.contentControls === undefined &&
     (options.partXml === undefined || Object.keys(options.partXml).length === 0) &&
     (options.partBinary === undefined || Object.keys(options.partBinary).length === 0)
@@ -2390,6 +2399,8 @@ export async function saveDocx(
   // metadata scrubs come after every generated/copied part is in place, so a
   // customXml store the save itself created (bibliography sources) is covered too
   if (options.removeParts) await applyRemoveParts(out, options.removeParts)
+  // a merge product keeps the values, not the data source they came from
+  if (options.exportAsMerged) await stripMailMergeSourceFromZip(out)
   // the property write comes last: what the caller asked for wins over the scrub
   if (options.properties) await applyPropertyChanges(out, options.properties)
   return out.generateAsync({
