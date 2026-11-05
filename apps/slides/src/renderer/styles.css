@@ -989,32 +989,21 @@ button {
   padding: 0;
 }
 
-/* Draw tab: the pen tray's pens hang from the tray top with 56px glyphs —
- * twice the compact band. Smaller glyphs, less hang; the held pen stays the
- * one fully visible. */
-.ribbon-compact .pen-tray {
-  align-self: center;
-  height: 36px;
-}
-
-.ribbon-compact .pen-btn svg {
-  width: 34px;
-  height: 34px;
-}
-
-.ribbon-compact .pen-btn {
-  transform: translateY(-7px);
-}
-
-.ribbon-compact .pen-btn:hover:not(:disabled) {
-  transform: translateY(-4px);
-}
-
-/* Ink settings stack swatches over widths (42px); side by side like the
- * docs compact band. */
-.ribbon-compact .ink-settings {
+/* Pen slots stack a 28px glyph over the stroke bar: 58px in a 40px band. */
+.ribbon-compact .ink-pen-slot {
   flex-direction: row;
-  gap: 8px;
+  width: auto;
+  height: 32px;
+  padding: 1px 4px;
+  gap: 4px;
+}
+
+.ribbon-compact .ink-pen-bar {
+  width: 14px;
+}
+
+.ribbon-compact .ink-pen-slot > .rb-caret {
+  position: static;
 }
 
 /* Animations' Timing block stacks three 22px rows (trigger / duration /
@@ -5615,9 +5604,11 @@ body.vib .slide-list {
 .ink-overlay.ink-active {
   pointer-events: auto;
   touch-action: none;
+  user-select: none;
 }
 
 .ink-tool-pen,
+.ink-tool-pencil,
 .ink-tool-highlighter {
   cursor: crosshair;
 }
@@ -5638,77 +5629,134 @@ body.vib .slide-list {
   overflow: visible;
 }
 
-.ink-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  justify-content: center;
-}
+/* ===== Draw tab: pen gallery (one slot per remembered pen, PowerPoint style) ===== */
 
-/* ===== Draw tab: pen tray ===== */
-
-.pen-tray {
-  display: flex;
-  align-items: flex-start;
+.ink-pens {
   gap: 2px;
-  align-self: stretch;
-  padding: 0 10px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  overflow: hidden;
 }
 
-/* pens hang from the tray top; the held pen slides down */
-.pen-btn {
-  border: none;
+.ink-pen-slot {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 44px;
+  height: 58px;
+  padding: 4px 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   background: none;
-  padding: 0 3px;
   cursor: pointer;
-  transform: translateY(-12px);
-  transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-dim);
 }
 
-.pen-btn svg {
-  display: block;
+.ink-pen-slot:not(:disabled):hover {
+  background: var(--hover);
 }
 
-.pen-btn:hover:not(:disabled) {
-  transform: translateY(-6px);
+.ink-pen-slot.active {
+  background: var(--hover);
+  border-color: var(--accent);
 }
 
-.pen-btn.down {
-  transform: translateY(0);
-}
-
-.pen-btn:disabled {
-  opacity: 0.55;
+.ink-pen-slot:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-/* color/width flyout for the held pen */
-.pen-flyout-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
+.ink-pen-glyph {
+  display: inline-flex;
 }
 
-.pen-flyout {
-  position: fixed;
-  z-index: 81;
+.ink-pen-bar {
+  width: 28px;
+  border-radius: 2px;
+}
+
+.ink-pen-slot > .rb-caret {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+}
+
+.ink-pen-pop {
+  min-width: 190px;
+  padding: 8px;
+}
+
+.ink-pen-preview {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: var(--slides-shadow-popup);
+  align-items: center;
+  height: 36px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
 }
 
-/* the pen tray sits flush against the ink settings in the same group */
-.pen-tray + .ink-settings {
-  margin-left: 8px;
+.ink-pen-preview > span {
+  display: block;
+  width: 100%;
+  border-radius: 2px;
+}
+
+.ink-pen-section {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 6px 0 4px;
+}
+
+.ink-pen-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  gap: 6px;
+  padding: 2px;
+}
+
+.ink-pen-grid .ink-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.ink-pen-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  position: relative;
+}
+
+.ink-pen-item:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.ink-pen-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ink-pen-more {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+}
+
+.ink-pen-color-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* 6px so the active swatch's outline (2px + 1px offset) keeps clear air */

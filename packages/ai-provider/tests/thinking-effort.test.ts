@@ -73,6 +73,9 @@ describe('thinkingShapeFor', () => {
     expect(thinkingShapeFor('claude-opus-4-5').levels).toEqual([])
     expect(thinkingShapeFor('claude-haiku-4-5').levels).toEqual([])
     expect(thinkingShapeFor('claude-3-7-sonnet').levels).toEqual([])
+    // a date suffix is not a minor version: 4-20250514 is 4.0, not 4.20250514
+    expect(thinkingShapeFor('claude-sonnet-4-20250514').levels).toEqual([])
+    expect(thinkingShapeFor('claude-opus-4-1-20250805').levels).toEqual([])
     expect(thinkingShapeFor('claude-sonnet-4-6').kind).toBe('anthropic-adaptive')
   })
 
@@ -124,6 +127,10 @@ describe('thinkingShapeFor', () => {
       levels: ['low', 'medium', 'high', 'xhigh'],
     })
     expect(thinkingShapeFor('grok-4.5')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high'],
+    })
+    expect(thinkingShapeFor('grok-4-0709')).toEqual({
       kind: 'openai-effort',
       levels: ['low', 'medium', 'high'],
     })

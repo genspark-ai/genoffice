@@ -287,16 +287,17 @@ export const pl = {
   ribbonGroupSelect: 'Zaznaczanie',
   ribbonSelectTip: 'Zaznaczanie: wyjdź z rysowania i wróć do edycji elementów',
   ribbonGroupDrawTools: 'Narzędzia do rysowania',
-  ribbonPenTip:
-    'Pióro: rysuj na slajdzie (zapisywane jako obraz pisma odręcznego na stronie); kliknij ponownie, aby anulować',
   ribbonHighlighter: 'Zakreślacz',
-  ribbonHighlighterTip:
-    'Zakreślacz: półprzezroczyste grube pociągnięcia; kliknij ponownie, aby anulować',
   ribbonEraserTip:
     'Gumka: kliknij pociągnięcie lub przeciągnij po nim, aby je usunąć; kliknij ponownie, aby anulować',
   ribbonInkWidthTip: '{w} px',
-  ribbonGroupPenStyle: 'Styl pióra',
-  ribbonGroupHighlighterStyle: 'Styl zakreślacza',
+  ribbonPencil: 'Ołówek',
+  ribbonInkAdd: 'Dodaj',
+  ribbonInkAddTip: 'Dodaj pióro, zakreślacz lub ołówek',
+  ribbonInkDelete: 'Usuń',
+  ribbonInkThickness: 'Grubość',
+  ribbonInkColors: 'Kolory',
+  ribbonGroupPens: 'Pióra',
   ribbonEraseAll: 'Wymaż wszystko',
   ribbonEraseAllTip: 'Usuń całe pismo odręczne z bieżącego slajdu',
   ribbonGroupThemes: 'Motywy',

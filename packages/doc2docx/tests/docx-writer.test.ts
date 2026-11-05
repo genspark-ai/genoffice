@@ -196,6 +196,39 @@ describe('toParaFormat mapping', () => {
   })
 })
 
+describe('toDocxRun: character spacing, scale, kerning and position', () => {
+  it('maps the four measures and drops the 100% scale and zero spacing/position', () => {
+    expect(
+      toDocxRun({
+        text: 'x',
+        formatting: {
+          spacingTwips: -20,
+          scalePercent: 80,
+          kerningHalfPoints: 28,
+          positionHalfPoints: 6,
+        },
+      }),
+    ).toEqual({
+      text: 'x',
+      charSpacingTwips: -20,
+      charScalePct: 80,
+      kernHalfPoints: 28,
+      positionHalfPoints: 6,
+    })
+    expect(
+      toDocxRun({
+        text: 'y',
+        formatting: {
+          spacingTwips: 0,
+          scalePercent: 100,
+          kerningHalfPoints: 0,
+          positionHalfPoints: 0,
+        },
+      }),
+    ).toEqual({ text: 'y', kernHalfPoints: 0 })
+  })
+})
+
 describe('toDocxRun: RGB color and hidden text', () => {
   it('prefers the sprmCCv RGB value over the palette index and writes hidden as vanish', () => {
     expect(toDocxRun({ text: 'x', formatting: { colorIndex: 6, colorRgb: 'CC0000' } })).toEqual({
@@ -229,12 +262,14 @@ describe('formatting.doc -> docx round trip', () => {
     paragraphs = paragraphsOf(parsed)
   })
 
-  it('produces a valid docx with every paragraph, including the trailing empty one', () => {
+  it('produces a valid docx with every paragraph except the trailing empty one', () => {
     expect(docx).toBeInstanceOf(Uint8Array)
     expect(docx.length).toBeGreaterThan(1000)
-    expect(paragraphs).toHaveLength(model.paragraphs.length)
-    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.map((paragraph) => paragraph.text))
-    expect(textOf(paragraphs[7]!)).toBe('')
+    expect(model.paragraphs.at(-1)!.text).toBe('')
+    expect(paragraphs).toHaveLength(model.paragraphs.length - 1)
+    expect(paragraphs.map(textOf)).toEqual(
+      model.paragraphs.slice(0, -1).map((paragraph) => paragraph.text),
+    )
     expect(warnings).toEqual([])
   })
 
@@ -295,7 +330,7 @@ describe('formatting.doc -> docx round trip', () => {
   })
 
   it('stage-1 model text and the parsed docx text agree', () => {
-    expect(paragraphs.map(textOf).join('\n')).toBe(model.text)
+    expect(paragraphs.map(textOf).join('\n') + '\n').toBe(model.text)
   })
 
   it('is stable through a docx-engine parse/save round trip', async () => {
@@ -325,8 +360,8 @@ describe('text-basic.doc -> docx round trip', () => {
   })
 
   it('keeps every paragraph text (CJK, emoji, tab, empty paragraph)', () => {
-    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.map((paragraph) => paragraph.text))
-    expect(paragraphs.map(textOf).join('\n')).toBe(model.text)
+    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.slice(0, -1).map((p) => p.text))
+    expect(paragraphs.map(textOf).join('\n') + '\n').toBe(model.text)
     expect(paragraphs.map(textOf)).toContain(
       '\u4e2d\u6587\u6bb5\u843d\uff1a\u6df7\u5408\u4e2d\u82f1\u6587 ABC \u6d4b\u8bd5\u3002',
     )
@@ -394,7 +429,7 @@ describe('generated zip structure', () => {
     const docx = await writeLegacyDocx(model)
     const parsed = await parseDocx(docx)
     expect(paragraphsOf(parsed).map(textOf)).toEqual(
-      model.paragraphs.map((paragraph) => paragraph.text),
+      model.paragraphs.slice(0, -1).map((paragraph) => paragraph.text),
     )
   })
 })
@@ -561,7 +596,7 @@ describe('styles.doc -> docx round trip (resolved stylesheet)', () => {
   })
 
   it('writes every paragraph and no longer warns about unresolved styles', () => {
-    expect(paragraphs.map(textOf)).toEqual(expectedText('styles').split('\n'))
+    expect(paragraphs.map(textOf)).toEqual(expectedText('styles').split('\n').slice(0, -1))
     expect(docx.length).toBeGreaterThan(1000)
     expect(warnings.some((warning) => warning.includes('styles are not resolved'))).toBe(false)
     expect(warnings).toEqual([])
@@ -625,7 +660,7 @@ describe('styles.doc -> docx round trip (resolved stylesheet)', () => {
   })
 
   it('the resolved model agrees with the written paragraphs', () => {
-    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.map((paragraph) => paragraph.text))
+    expect(paragraphs.map(textOf)).toEqual(model.paragraphs.slice(0, -1).map((p) => p.text))
     expect(model.warnings).toEqual([])
   })
 

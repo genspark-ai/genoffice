@@ -123,7 +123,7 @@ describe('table.doc: reconstruction and writer output', () => {
     expect(table.table.rows[0]!.cells.every((cell) => cell.borders?.top === true)).toBe(true)
     expect(table.table.borders.top).toBe(true)
     expect(table.table.rows[0]!.header).toBe(false)
-    expect(table.table.cellPadding).toEqual({ left: 108, right: 108 })
+    expect(table.table.cellPadding).toEqual({ top: 0, left: 108, bottom: 0, right: 108 })
     expect(body.warnings.some((warning) => warning.includes('flattened'))).toBe(false)
   })
 
@@ -232,6 +232,114 @@ describe('synthetic tables', () => {
     expect(xml).toContain('<w:tblBorders>')
   })
 
+  it('writes the TAP position sprms as w:tblpPr', async () => {
+    const row: SyntheticTableRow = { gridWidths: [1000, 1000], cells: [{}, {}] }
+    const bytes = syntheticTableDoc({
+      rows: [row],
+      rowPapxOverride: [
+        concat(
+          encodeTableRowPapx(row),
+          encodeSprm(0x360d, [0xa0]), // TPc: vertical text, horizontal page
+          encodeSprm(0x940e, [0x5d, 0x10]), // TDxaAbs 4189
+          encodeSprm(0x940f, [0x3d, 0x00]), // TDyaAbs 61
+          encodeSprm(0x9410, [0x8e, 0x00]), // TDxaFromText 142
+          encodeSprm(0x941e, [0x8e, 0x00]), // TDxaFromTextRight 142
+          encodeSprm(0x3465, [0x01]), // TFNoAllowOverlap
+        ),
+      ],
+    })
+    const block = readLegacyDocBody(bytes).blocks[0]!
+    if (block.type !== 'table') throw new Error('expected a table block')
+    expect(block.table.position).toEqual({
+      vAnchor: 'text',
+      hAnchor: 'page',
+      xTwips: 4189,
+      yTwips: 61,
+      leftFromText: 142,
+      rightFromText: 142,
+      noOverlap: true,
+    })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain(
+      '<w:tblPr><w:tblpPr w:leftFromText="142" w:rightFromText="142" w:vertAnchor="text"' +
+        ' w:horzAnchor="page" w:tblpX="4189" w:tblpY="61"/><w:tblOverlap w:val="never"/><w:tblW',
+    )
+  })
+
+  it('keeps a table inline when only sprmTFNoAllowOverlap or clearance is set', async () => {
+    const row: SyntheticTableRow = { gridWidths: [1000, 1000], cells: [{}, {}] }
+    const bytes = syntheticTableDoc({
+      rows: [row],
+      rowPapxOverride: [
+        concat(
+          encodeTableRowPapx(row),
+          encodeSprm(0x3465, [0x01]),
+          encodeSprm(0x9410, [0x8e, 0x00]),
+        ),
+      ],
+    })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).not.toContain('<w:tblpPr')
+    expect(xml).not.toContain('<w:tblOverlap')
+  })
+
+  it('turns the paragraph frame of a Word 97 framed table into w:tblpPr and drops the cell frames', async () => {
+    // right-aligned to the margin, 192 twips below the anchor paragraph, 141 twips from text
+    const frame = concat(
+      encodeSprm(0x8418, [0xf8, 0xff]),
+      encodeSprm(0x8419, [0xc0, 0x00]),
+      encodeSprm(0x261b, [0x60]),
+      encodeSprm(0x2423, [0x02]),
+      encodeSprm(0x842f, [0x8d, 0x00]),
+    )
+    const bytes = syntheticTableDoc({
+      rows: [{ gridWidths: [1000, 1000], cells: [{}, {}] }],
+      cellSprms: [[frame, frame]],
+    })
+    const block = readLegacyDocBody(bytes).blocks[0]!
+    if (block.type !== 'table') throw new Error('expected a table block')
+    expect(block.table.position).toEqual({
+      xTwips: -8,
+      yTwips: 192,
+      hAnchor: 'margin',
+      vAnchor: 'text',
+      leftFromText: 141,
+      rightFromText: 141,
+    })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain(
+      '<w:tblpPr w:leftFromText="141" w:rightFromText="141" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="right" w:tblpY="192"/>',
+    )
+    expect(xml).not.toContain('<w:framePr')
+  })
+
+  it('writes a positioned paragraph as w:framePr after the keep flags', async () => {
+    const grpprl = concat(
+      encodeSprm(0x2406, [0x01]), // keepNext
+      encodeSprm(0x8418, [0x96, 0x03]), // x 918
+      encodeSprm(0x8419, [0x11, 0x3b]), // y 15121
+      encodeSprm(0x261b, [0x90]), // page / page
+    )
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: 'Funding\rBody\r' }],
+      papxFkpPages: [
+        encodePapxFkp([
+          { fcStart: SYNTHETIC_TEXT_OFFSET, fcEnd: SYNTHETIC_TEXT_OFFSET + 16, grpprl },
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET + 16,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + 26,
+            defaults: true,
+          },
+        ]),
+      ],
+    })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain(
+      '<w:pPr><w:keepNext/><w:framePr w:wrap="auto" w:vAnchor="page" w:hAnchor="page" w:x="918" w:y="15121"/>',
+    )
+    expect(xml.match(/<w:framePr/g)).toHaveLength(1)
+  })
+
   it('folds fMerged continuation cells into the first cell gridSpan', () => {
     const bytes = syntheticTableDoc({
       rows: [
@@ -331,14 +439,130 @@ describe('synthetic tables', () => {
     expect(tableXml.match(/<w:p>/g) ?? []).toHaveLength(2)
   })
 
-  it('warns once about nested tables (sprmPItap > 1)', () => {
+  it('rebuilds a nested table (itap 2) inside the outer cell, before the following paragraphs', async () => {
+    // outer cell 1: "Intro", inner table [A | B] (inner marks are paragraph marks), "After"
+    const texts = ['Intro\r', 'A\r', 'B\r', '\r', 'After\u0007', 'C2\u0007', '\u0007', 'Tail\r']
+    const innerRow: SyntheticTableRow = { gridWidths: [1000, 1500], cells: [{}, {}] }
+    const outerRow: SyntheticTableRow = { gridWidths: [3000, 2000], cells: [{}, {}] }
+    const inner = (extra: Uint8Array[]): Uint8Array =>
+      concat(encodeSprm(0x2416, [1]), encodeSprm(0x6649, [2, 0, 0, 0]), ...extra)
+    const grpprls = [
+      encodeTableCellPapx(1),
+      inner([encodeSprm(0x244b, [1])]),
+      inner([encodeSprm(0x244b, [1])]),
+      inner([
+        encodeSprm(0x244b, [1]),
+        encodeSprm(0x244c, [1]),
+        encodeTapSprm(0x08, encodeTDefTableOperand(innerRow)),
+      ]),
+      encodeTableCellPapx(1),
+      encodeTableCellPapx(1),
+      encodeTableRowPapx(outerRow),
+      new Uint8Array(0),
+    ]
+    const entries: SyntheticPapxEntry[] = []
+    let text = ''
+    texts.forEach((part, index) => {
+      const fcStart = SYNTHETIC_TEXT_OFFSET + text.length * 2
+      text += part
+      entries.push({
+        fcStart,
+        fcEnd: SYNTHETIC_TEXT_OFFSET + text.length * 2,
+        istd: 0,
+        grpprl: grpprls[index]!,
+      })
+    })
+    const bytes = buildSyntheticDoc({ pieces: [{ text }], papxFkpPages: [encodePapxFkp(entries)] })
+    const body = readLegacyDocBody(bytes)
+    expect(body.blocks.map((block) => block.type)).toEqual(['table', 'paragraph', 'paragraph'])
+    const outer = body.blocks[0]!
+    if (outer.type !== 'table') throw new Error('expected a table block')
+    expect(outer.table.gridWidths).toEqual([3000, 2000])
+    const cell = outer.table.rows[0]!.cells[0]!
+    expect(cell.paragraphs.map((paragraph) => paragraph.text)).toEqual(['Intro', 'After'])
+    const nested = cell.nestedTables?.get(1)
+    expect(nested).toHaveLength(1)
+    expect(nested![0]!.gridWidths).toEqual([1000, 1500])
+    expect(nested![0]!.rows[0]!.cells.map((inner) => inner.paragraphs[0]!.text)).toEqual(['A', 'B'])
+    expect(body.warnings.some((warning) => warning.includes('nested'))).toBe(false)
+    const { docx } = await convertLegacyDocToDocx(bytes)
+    const xml = await documentXml(docx)
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(2)
+    const intro = xml.indexOf('Intro')
+    const innerOpen = xml.indexOf('<w:tbl>', intro)
+    const innerClose = xml.indexOf('</w:tbl>')
+    expect(intro).toBeGreaterThan(xml.indexOf('<w:tc>'))
+    expect(innerOpen).toBeGreaterThan(intro)
+    expect(innerClose).toBeGreaterThan(innerOpen)
+    expect(xml.indexOf('After')).toBeGreaterThan(innerClose)
+    const parsed = await parseDocx(docx)
+    expect(JSON.stringify(parsed)).toContain('After')
+  })
+
+  it('keeps the direct indent of a list paragraph that follows a nested table', () => {
+    const texts = ['Intro\r', 'A\r', 'B\r', '\r', 'After\u0007', 'C2\u0007', '\u0007', 'Tail\r']
+    const innerRow: SyntheticTableRow = { gridWidths: [1000, 1500], cells: [{}, {}] }
+    const outerRow: SyntheticTableRow = { gridWidths: [3000, 2000], cells: [{}, {}] }
+    const inner = (extra: Uint8Array[]): Uint8Array =>
+      concat(encodeSprm(0x2416, [1]), encodeSprm(0x6649, [2, 0, 0, 0]), ...extra)
+    const grpprls = [
+      encodeTableCellPapx(1),
+      inner([encodeSprm(0x244b, [1])]),
+      inner([encodeSprm(0x244b, [1])]),
+      inner([
+        encodeSprm(0x244b, [1]),
+        encodeSprm(0x244c, [1]),
+        encodeTapSprm(0x08, encodeTDefTableOperand(innerRow)),
+      ]),
+      concat(encodeTableCellPapx(1), encodeListParagraphPapx(1), encodeSprm(0x840f, [0xa4, 0x01])),
+      encodeTableCellPapx(1),
+      encodeTableRowPapx(outerRow),
+      new Uint8Array(0),
+    ]
+    const entries: SyntheticPapxEntry[] = []
+    let text = ''
+    texts.forEach((part, index) => {
+      const fcStart = SYNTHETIC_TEXT_OFFSET + text.length * 2
+      text += part
+      entries.push({
+        fcStart,
+        fcEnd: SYNTHETIC_TEXT_OFFSET + text.length * 2,
+        istd: 0,
+        grpprl: grpprls[index]!,
+      })
+    })
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      papxFkpPages: [encodePapxFkp(entries)],
+      lists: [
+        {
+          lsid: 1,
+          simple: true,
+          levels: [{ numberFormat: 0, levelText: '\u0000.', indentLeft: 720 }],
+        },
+      ],
+    })
+    const body = readLegacyDocBody(bytes)
+    const outer = body.blocks[0]!
+    if (outer.type !== 'table') throw new Error('expected a table block')
+    const cell = outer.table.rows[0]!.cells[0]!
+    expect(cell.paragraphs.map((paragraph) => paragraph.text)).toEqual(['Intro', 'After'])
+    expect(cell.paragraphLists?.get(0)).toBeUndefined()
+    expect(cell.paragraphLists?.get(1)).toEqual({ kind: 'ordered', numId: '101', ilvl: 0 })
+    expect(cell.paragraphs[1]!.formatting.indentLeftTwips).toBe(420)
+  })
+
+  it('flattens a nested table whose inner row has no row-end mark, with a warning', () => {
     const bytes = syntheticTableDoc({
       itap: 2,
       rows: [{ gridWidths: [1000], cells: [{}], texts: ['A'] }],
     })
     const body = readLegacyDocBody(bytes)
+    expect(body.blocks[0]!.type).toBe('table')
     expect(
-      body.warnings.filter((warning) => warning.includes('nested tables are not supported')),
+      body.warnings.filter((warning) =>
+        warning.includes('a nested table could not be reconstructed'),
+      ),
     ).toHaveLength(1)
   })
 
@@ -575,5 +799,123 @@ describe('synthetic tables', () => {
     const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
     expect(xml).toContain('<w:top w:val="double" w:sz="18" w:space="0" w:color="auto"/>')
     expect(xml).toContain('<w:bottom w:val="dashed" w:sz="6" w:space="0" w:color="FF0000"/>')
+  })
+  it('writes exact row heights for a negative sprmTDyaRowHeight', async () => {
+    const bytes = syntheticTableDoc({
+      rows: [{ gridWidths: [1000, 1000], cells: [{}, {}], rowHeightTwips: -480 }],
+    })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain('<w:trHeight w:val="480" w:hRule="exact"/>')
+  })
+
+  it('reads cell vertical alignment from the TC80 bits and sprmTVertAlign', async () => {
+    const row: SyntheticTableRow = {
+      gridWidths: [1000, 1000, 1000],
+      cells: [{ rgf: 0x0080 }, { rgf: 0x0100 }, {}],
+      texts: ['A', 'B', 'C'],
+    }
+    const sprms = concat(
+      encodeTableRowPapx(row),
+      encodeTapSprm(0x2c, [2, 3, 1]), // sprmTVertAlign: cell 2 centered
+    )
+    const bytes = syntheticTableDoc({ rows: [row], rowPapxOverride: [sprms] })
+    const table = readLegacyDocBody(bytes).blocks[0]!
+    if (table.type !== 'table') throw new Error('expected a table block')
+    expect(table.table.rows[0]!.cells.map((cell) => cell.vertAlign)).toEqual([
+      'center',
+      'bottom',
+      'center',
+    ])
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain('<w:vAlign w:val="center"/>')
+    expect(xml).toContain('<w:vAlign w:val="bottom"/>')
+  })
+
+  it('shades cells from sprmTDefTableShd80, letting the full Shd win over it', async () => {
+    const row: SyntheticTableRow = { gridWidths: [1000, 1000], cells: [{}, {}], texts: ['A', 'B'] }
+    // Shd80: icoBack 16 (light gray) for cell 0, none for cell 1
+    const shd80 = encodeTapSprm(0x09, [0x00, 0x02, 0x00, 0x00])
+    // Shd: cell 0 fill B3B3B3 (fore auto, ipat clear); cell 1 solid black foreground
+    const shd = encodeTapSprm(0x12, [
+      ...[0, 0, 0, 0xff, 0xb3, 0xb3, 0xb3, 0, 0, 0],
+      ...[0, 0, 0, 0, 0xff, 0xff, 0xff, 0, 1, 0],
+    ])
+    const sprms = concat(
+      encodeTableRowPapx(row),
+      shd80,
+      shd,
+      encodeTapSprm(0x70, [0, 0, 0, 0xff, 1, 2, 3, 0, 0, 0]),
+    )
+    const bytes = syntheticTableDoc({ rows: [row], rowPapxOverride: [sprms] })
+    const table = readLegacyDocBody(bytes).blocks[0]!
+    if (table.type !== 'table') throw new Error('expected a table block')
+    expect(table.table.rows[0]!.cells.map((cell) => cell.shading)).toEqual([
+      { pattern: 'clear', fill: 'B3B3B3' },
+      { pattern: 'solid', color: '000000', fill: 'FFFFFF' },
+    ])
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain('<w:shd w:val="clear" w:color="auto" w:fill="B3B3B3"/>')
+    expect(xml).toContain('<w:shd w:val="solid" w:color="000000" w:fill="FFFFFF"/>')
+  })
+
+  it('keeps the Shd80 shading when no full Shd is present', () => {
+    const row: SyntheticTableRow = { gridWidths: [1000], cells: [{}], texts: ['A'] }
+    const sprms = concat(encodeTableRowPapx(row), encodeTapSprm(0x09, [0x00, 0x02]))
+    const table = readLegacyDocBody(syntheticTableDoc({ rows: [row], rowPapxOverride: [sprms] }))
+      .blocks[0]!
+    if (table.type !== 'table') throw new Error('expected a table block')
+    expect(table.table.rows[0]!.cells[0]!.shading).toEqual({ pattern: 'clear', fill: 'C0C0C0' })
+  })
+
+  it('applies sprmTSetShd (itcFirst, itcLim, Shd) over sprmTDefTableShd', () => {
+    const row: SyntheticTableRow = { gridWidths: [1000, 1000], cells: [{}, {}], texts: ['A', 'B'] }
+    const defShd = encodeTapSprm(0x12, [
+      ...[0, 0, 0, 0xff, 0xb3, 0xb3, 0xb3, 0, 0, 0],
+      ...[0, 0, 0, 0xff, 0xb3, 0xb3, 0xb3, 0, 0, 0],
+    ])
+    const setShd = encodeTapSprm(0x2d, [1, 2, 0, 0, 0, 0xff, 0x92, 0xd0, 0x50, 0, 0, 0])
+    const sprms = concat(encodeTableRowPapx(row), defShd, setShd)
+    const table = readLegacyDocBody(syntheticTableDoc({ rows: [row], rowPapxOverride: [sprms] }))
+      .blocks[0]!
+    if (table.type !== 'table') throw new Error('expected a table block')
+    expect(table.table.rows[0]!.cells.map((cell) => cell.shading)).toEqual([
+      { pattern: 'clear', fill: 'B3B3B3' },
+      { pattern: 'clear', fill: '92D050' },
+    ])
+  })
+
+  it('writes table cell margins from sprmTDxaGapHalf, sprmTCellPaddingDefault and sprmTCellPadding', async () => {
+    const row: SyntheticTableRow = { gridWidths: [1000, 1000], cells: [{}, {}], texts: ['A', 'B'] }
+    const sprms = concat(
+      encodeTapSprm(0x02, [99, 0]), // sprmTDxaGapHalf
+      encodeTableRowPapx(row),
+      encodeTapSprm(0x34, [0, 1, 0x05, 3, 40, 0]), // default top/bottom 40
+      encodeTapSprm(0x32, [1, 2, 0x02, 3, 200, 0]), // cell 1 left 200
+    )
+    const xml = await documentXml(
+      (await convertLegacyDocToDocx(syntheticTableDoc({ rows: [row], rowPapxOverride: [sprms] })))
+        .docx,
+    )
+    expect(xml).toContain(
+      '<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="99" w:type="dxa"/>' +
+        '<w:bottom w:w="40" w:type="dxa"/><w:right w:w="99" w:type="dxa"/></w:tblCellMar>',
+    )
+    expect(xml).toContain('<w:tcMar><w:left w:w="200" w:type="dxa"/></w:tcMar>')
+  })
+
+  it('writes Word default cell margins when the row carries none', async () => {
+    const bytes = syntheticTableDoc({ rows: [{ gridWidths: [1000], cells: [{}] }] })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain(
+      '<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>',
+    )
+  })
+
+  it('writes paragraph shading (sprmPShd) inside table cells', async () => {
+    const row: SyntheticTableRow = { gridWidths: [1000], cells: [{}], texts: ['Title'] }
+    const shd = encodeSprm(0xc64d, [0, 0, 0, 0xff, 0, 0, 0, 0, 0, 0])
+    const bytes = syntheticTableDoc({ rows: [row], cellSprms: [[shd]] })
+    const xml = await documentXml((await convertLegacyDocToDocx(bytes)).docx)
+    expect(xml).toContain('<w:shd w:val="clear" w:color="auto" w:fill="000000"/>')
   })
 })

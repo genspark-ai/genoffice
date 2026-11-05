@@ -82,8 +82,16 @@ describe('real formatting.doc fixture (python-docx document saved as Word 97 by 
   })
 
   it('P2/P3: centered and right-aligned paragraphs (sprmPJc80 + sprmPJc pairs)', () => {
-    expect(model.paragraphs[2]!.formatting).toEqual({ styleIndex: 0, alignment: 'center' })
-    expect(model.paragraphs[3]!.formatting).toEqual({ styleIndex: 0, alignment: 'right' })
+    expect(model.paragraphs[2]!.formatting).toEqual({
+      styleIndex: 0,
+      alignment: 'center',
+      alignmentLogical: true,
+    })
+    expect(model.paragraphs[3]!.formatting).toEqual({
+      styleIndex: 0,
+      alignment: 'right',
+      alignmentLogical: true,
+    })
   })
 
   it('P4: 720 left indent, 360 first-line indent, 1.5 line spacing', () => {
@@ -114,6 +122,8 @@ describe('real formatting.doc fixture (python-docx document saved as Word 97 by 
       styleIndex: 0,
       lineSpacing: { dyaLine: 276, multiple: true },
       alignment: 'left',
+      alignmentLogical: true,
+      bidi: false,
       spacingBeforeTwips: 0,
       spacingAfterTwips: 200,
     })
@@ -213,6 +223,33 @@ describe('synthetic CHPX formatting', () => {
     expect(model.paragraphs[2]!.formatting).toEqual({ styleIndex: 0 })
   })
 
+  it('reads sprmPFBiDi / sprmCFBiDi and tells physical from logical justification', () => {
+    const text = 'x\r'
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      papxFkpPages: [
+        encodePapxFkp([
+          {
+            fcStart: textFc(0),
+            fcEnd: textFc(2),
+            grpprl: concat(sprm(0x2403, [2]), sprm(0x2441, [1])),
+          },
+        ]),
+      ],
+      chpxFkpPages: [
+        encodeChpxFkp([{ fcStart: textFc(0), fcEnd: textFc(2), grpprl: sprm(0x085a, [1]) }]),
+      ],
+    })
+    const paragraph = modelOf(bytes).paragraphs[0]!
+    expect(paragraph.formatting).toEqual({
+      styleIndex: 0,
+      alignment: 'right',
+      alignmentLogical: false,
+      bidi: true,
+    })
+    expect(paragraph.runs[0]!.formatting.rtl).toBe(true)
+  })
+
   it('maps paragraph-level sprms (alignment, indents, spacing, keep flags, lists)', () => {
     const text = 'x\r'
     const grpprl = concat(
@@ -240,6 +277,7 @@ describe('synthetic CHPX formatting', () => {
     expect(modelOf(bytes).paragraphs[0]!.formatting).toEqual({
       styleIndex: 0,
       alignment: 'center',
+      alignmentLogical: true,
       indentLeftTwips: 720,
       indentFirstLineTwips: 360,
       indentRightTwips: 180,
@@ -254,6 +292,35 @@ describe('synthetic CHPX formatting', () => {
       listId: 3,
       inTable: true,
       tableRowEnd: true,
+    })
+  })
+
+  it('reads the positioned-frame sprms into formatting.frame', () => {
+    const grpprl = concat(
+      sprm(0x8418, [0x96, 0x03]), // sprmPDxaAbs 918
+      sprm(0x8419, [0xfc, 0xff]), // sprmPDyaAbs -4 (top)
+      sprm(0x841a, [0xd0, 0x02]), // sprmPDxaWidth 720
+      sprm(0x261b, [0x90]), // sprmPPc: vertical page, horizontal page
+      sprm(0x2423, [0x02]), // sprmPWr around
+      sprm(0x442b, [0x68, 0x81]), // sprmPDyaHeight exact 360
+      sprm(0x842e, [0xb4, 0x00]), // sprmPDyaFromText 180
+      sprm(0x842f, [0x8d, 0x00]), // sprmPDxaFromText 141
+    )
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text: 'x\r' }],
+      papxFkpPages: [encodePapxFkp([{ fcStart: textFc(0), fcEnd: textFc(2), grpprl }])],
+    })
+    expect(modelOf(bytes).paragraphs[0]!.formatting.frame).toEqual({
+      xTwips: 918,
+      yTwips: -4,
+      widthTwips: 720,
+      vAnchor: 'page',
+      hAnchor: 'page',
+      wrap: 'around',
+      heightTwips: 360,
+      heightExact: true,
+      vSpaceTwips: 180,
+      hSpaceTwips: 141,
     })
   })
 
@@ -275,6 +342,26 @@ describe('synthetic CHPX formatting', () => {
     const runs = modelOf(bytes).paragraphs[0]!.runs
     expect(runs[0]!.formatting).toEqual({ colorIndex: 6, colorRgb: 'CC0000' })
     expect(runs[1]!.formatting).toEqual({ colorRgb: 'auto' })
+  })
+
+  it('reads character spacing (sprmCDxaSpace) and horizontal scale (sprmCCharScale)', () => {
+    const text = 'ab\r'
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: textFc(0),
+            fcEnd: textFc(1),
+            grpprl: concat(sprm(0x8840, [0xec, 0xff]), sprm(0x4852, [0x50, 0x00])),
+          },
+          { fcStart: textFc(1), fcEnd: textFc(3), grpprl: sprm(0x8840, [0x1e, 0x00]) },
+        ]),
+      ],
+    })
+    const runs = modelOf(bytes).paragraphs[0]!.runs
+    expect(runs[0]!.formatting).toEqual({ spacingTwips: -20, scalePercent: 80 })
+    expect(runs[1]!.formatting).toEqual({ spacingTwips: 30 })
   })
 
   it('reads tab stops from sprmPChgTabsPapx and sprmPChgTabs (delete, then add)', () => {

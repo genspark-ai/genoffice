@@ -78,6 +78,8 @@ export const ko = {
   appStyleUpdated:
     "스타일 '{name}'을(를) 선택 영역의 서식으로 업데이트했습니다. 저장 시 문서에 기록됩니다",
   appStyleCreated: "스타일 '{name}'을(를) 새로 만들어 선택 영역에 적용했습니다",
+  appStyleInstancesSelected: '“{name}” {count}곳을 선택했습니다',
+  appStyleNoInstances: '“{name}”을(를) 사용하는 텍스트가 없습니다',
   // Page number format
   appPgNumFormatSet: '페이지 번호 서식을 설정했습니다',
   appPageNumFormatTitle: '페이지 번호 서식',

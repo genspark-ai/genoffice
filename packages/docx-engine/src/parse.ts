@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { isEastAsianLangTag } from './char-class'
 import type { JSZipObject } from 'jszip'
 import { LAZY_MEDIA_PLACEHOLDER_BYTES, lazyMediaHashOf, lazyMediaUrl } from './lazy-media'
 import { parseCustGeom } from '@genoffice/pptx-engine/custgeom'
@@ -61,6 +62,7 @@ import type {
   CellBorders,
   CellMargins,
   RevisionInfo,
+  RuleOverlay,
   Run,
   SectionSettings,
   SourceInfo,
@@ -1675,7 +1677,9 @@ async function buildBlock(
       !boxTexts.some((t) => t.trim() !== '') &&
       !(hasWsp && textboxes.length > 0)
     ) {
-      return buildTextParagraph(base, xml, ctx, true, el.start)
+      const block = buildTextParagraph(base, xml, ctx, true, el.start)
+      const ruleOverlays = anchoredRuleOverlays(detect, ctx)
+      return ruleOverlays.length > 0 ? { ...block, ruleOverlays } : block
     }
     // Anchored textboxes (code boxes, callout cards): all visible text lives in
     // w:txbxContent. Extract a display-only model so content and box styling
@@ -1775,6 +1779,9 @@ async function buildBlock(
       ...(anchoredRule ? { anchorLine: anchorLineOf(xml, ctx) ?? {} } : {}),
       ...(ruleMeta?.imageOffsetYEmu !== undefined && ruleMeta.imageRelV === undefined
         ? { imageOffsetYEmu: ruleMeta.imageOffsetYEmu }
+        : {}),
+      ...(ruleMeta?.imageOffsetXEmu !== undefined && ruleMeta.imageRelH === undefined
+        ? { imageOffsetXEmu: ruleMeta.imageOffsetXEmu }
         : {}),
     }
   }
@@ -2081,7 +2088,7 @@ function effectiveRunOf(res: RunResolve, rPr: XNode | undefined, key = ''): Effe
 function markSizeOf(eff: EffectivePPr, pPr: XNode | undefined): number | undefined {
   if (eff.mark.source.sizeHalfPoints === 'direct') return eff.mark.sizeHalfPoints
   const markRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
-  if (markRPr && onOffOf(markRPr, 'w:rtl') === true) return eff.mark.sizeHalfPoints
+  if (eff.bidi || (markRPr && onOffOf(markRPr, 'w:rtl') === true)) return eff.mark.sizeHalfPoints
   return undefined
 }
 
@@ -3509,9 +3516,14 @@ function extractTextboxes(
       const cy = parseInt(ext['cy'] ?? '', 10)
       if (!(cx > 0) || !(cy > 0)) return
       const rot = parseInt(attrsOf(xfrm ?? {})['rot'] ?? '', 10)
+      const picId = attrsOf(findChild(findChild(node, 'pic:nvPicPr') ?? {}, 'pic:cNvPr') ?? {})[
+        'id'
+      ]
       const box: TextboxDisplay = {
         paras: [],
         readOnly: true,
+        picture: true,
+        ...(picId ? { shapeId: picId } : {}),
         fillImageDataUrl: dataUrl,
         widthPx: emuToPx(cx * (ctm?.sx ?? 1)),
         heightPx: emuToPx(cy * (ctm?.sy ?? 1)),
@@ -3581,9 +3593,12 @@ function extractTextboxes(
       const extCx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
       const extCy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
       if (dataUrl && Number.isFinite(extCx) && Number.isFinite(extCy)) {
+        const picId = /<pic:cNvPr\b[^>]*\bid="([^"]+)"/.exec(frag)?.[1]
         const box: TextboxDisplay = {
           paras: [],
           readOnly: true,
+          picture: true,
+          ...(picId ? { shapeId: picId } : {}),
           fillImageDataUrl: dataUrl,
           widthPx: emuToPx(extCx),
           heightPx: emuToPx(extCy),
@@ -3984,6 +3999,35 @@ function anchorLineOf(xml: string, ctx: BuildContext): Block['anchorLine'] {
     ...(format ? { format } : {}),
     ...(clear ? { clear } : {}),
   }
+}
+
+/**
+ * Anchored thin lines a text paragraph carries (fill-in blanks drawn as zero-height
+ * wps lines next to "Party A:"). Word positions them from the column left and the
+ * paragraph top regardless of the paragraph's indent; page/margin-relative anchors
+ * stay out (they do not follow the paragraph).
+ */
+function anchoredRuleOverlays(xml: string, ctx: BuildContext): RuleOverlay[] {
+  const out: RuleOverlay[] = []
+  let eff: EffectivePPr | undefined
+  for (const frag of topLevelDrawings(xml)) {
+    if (!frag.includes('<wp:anchor') || !isThinRule(frag)) continue
+    if (frag.includes('<pic:pic') || frag.includes('<w:txbxContent')) continue
+    const meta = drawingAnchorMeta(frag)
+    if (meta.offsetXEmu === undefined || meta.offsetYEmu === undefined) continue
+    if ((meta.relH && meta.relH !== 'column') || (meta.relV && meta.relV !== 'paragraph')) continue
+    eff ??= resolveParagraphPropsXml(xml, resolverOf(ctx))
+    const display = ruleDisplayOf(frag)
+    out.push({
+      xPx: Math.round(meta.offsetXEmu / EMU_PER_PX - eff.indent.left / 15),
+      yPx: Math.round((meta.offsetYEmu / EMU_PER_PX) * 100) / 100,
+      widthPx: display.ruleWidthPx ?? Math.round((meta.extentXEmu ?? 0) / EMU_PER_PX),
+      spaceBeforePx: Math.round((eff.spacing.before / 15) * 100) / 100,
+      ...(display.ruleThicknessPx ? { thicknessPx: display.ruleThicknessPx } : {}),
+      ...(display.ruleColorHex ? { colorHex: display.ruleColorHex } : {}),
+    })
+  }
+  return out
 }
 
 /** anchor line of a stray textbox paragraph with the style chain's tab stops
@@ -5659,6 +5703,7 @@ function extractTableModel(
   // per-cell w:tcW (dxa twips), aligned with rows: grid-repair input
   const rowTcws: Array<Array<number | undefined>> = []
   const rowEdges: Array<ReturnType<typeof rowGridEdges>> = []
+  const rowExceptions: Array<RowPropExceptions | null> = []
   const rowHeightsTwips: Array<number | null> = []
   const rowHeightRules: NonNullable<TableModel['rowHeightRules']> = []
   const repeatHeaderRows: boolean[] = []
@@ -5708,6 +5753,7 @@ function extractTableModel(
       rows.push(cells)
       rowTcws.push(tcws)
       rowEdges.push(rowGridEdges(tr))
+      rowExceptions.push(tablePropExceptionsOf(findChild(tr, 'w:tblPrEx')))
       const trPr = findChild(tr, 'w:trPr')
       cellSpacing = cellSpacing ?? spacingOf(trPr)
       const trH = trPr ? attrsOf(findChild(trPr, 'w:trHeight') ?? {}) : {}
@@ -5722,6 +5768,7 @@ function extractTableModel(
     }
   }
   if (rows.length === 0) return undefined
+  applyRowPropExceptions(rows, rowExceptions)
   applyTableStyleDisplay(rows, findChild(tbl, 'w:tblPr'), ctx)
   // w:gridBefore/w:gridAfter offset rows within the grid: placeholder cells keep
   // the offset visible (inserted after style banding so real cells keep their look)
@@ -5931,6 +5978,59 @@ function cellConds(
   return out
 }
 
+/** w:tblPrEx — table properties one row overrides (the raw bytes still round-trip) */
+interface RowPropExceptions {
+  borders?: TableBorders
+  cellMarTwips?: CellMargins
+  fill?: string
+}
+
+function tablePropExceptionsOf(tblPrEx: XNode | undefined): RowPropExceptions | null {
+  if (!tblPrEx) return null
+  const out: RowPropExceptions = {}
+  const borders = mergedBorderLinesOf(tblPrEx, 'w:tblBorders', true)
+  if (borders) out.borders = borders
+  const mar = cellMarginsOf(findChild(tblPrEx, 'w:tblCellMar'))
+  if (mar) out.cellMarTwips = mar
+  const fill = shdDisplayFill(findChild(tblPrEx, 'w:shd'))
+  if (fill) out.fill = fill
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Word draws a row's w:tblPrEx borders/margins/shading in place of the table-level
+ * ones: resolved onto the row's cells (explicit tcPr stays on top, the table style
+ * below). Outer sides map to the table edge, inner ones to insideH/insideV, so a row
+ * under an exception-free row still meets it with the insideH line (Word draws the
+ * insideH, not the top, between a plain header row and the first exception row).
+ */
+function applyRowPropExceptions(
+  rows: TableCell[][],
+  exceptions: Array<RowPropExceptions | null>,
+): void {
+  rows.forEach((row, r) => {
+    const ex = exceptions[r]
+    if (!ex) return
+    const b = ex.borders
+    row.forEach((cell, c) => {
+      if (b) {
+        const sides: CellBorders = {}
+        const top = r === 0 ? b.top : b.insideH
+        const bottom = r === rows.length - 1 ? b.bottom : b.insideH
+        const left = c === 0 ? b.left : b.insideV
+        const right = c === row.length - 1 ? b.right : b.insideV
+        if (top) sides.top = top
+        if (bottom) sides.bottom = bottom
+        if (left) sides.left = left
+        if (right) sides.right = right
+        if (Object.keys(sides).length > 0) cell.borders = { ...sides, ...(cell.borders ?? {}) }
+      }
+      if (ex.cellMarTwips) cell.cellMarTwips = { ...ex.cellMarTwips, ...(cell.cellMarTwips ?? {}) }
+      if (ex.fill && cell.fill === undefined) cell.fill = ex.fill
+    })
+  })
+}
+
 function applyTableStyleDisplay(
   rows: TableCell[][],
   tblPr: XNode | undefined,
@@ -5951,12 +6051,9 @@ function applyTableStyleDisplay(
     const isFirst = firstRowOn && r === 0
     const isLast = lastRowOn && r === rows.length - 1
     const bandRow = firstRowOn ? r - 1 : r
-    const bandFill =
-      hBandOn && bandRow >= 0
-        ? Math.floor(bandRow / bandSize) % 2 === 0
-          ? ts.band1Fill
-          : ts.band2Fill
-        : undefined
+    const band1 = hBandOn && bandRow >= 0 && Math.floor(bandRow / bandSize) % 2 === 0
+    const band2 = hBandOn && bandRow >= 0 && !band1
+    const bandFill = band1 ? ts.band1Fill : band2 ? ts.band2Fill : undefined
     let col = 0
     for (const cell of row) {
       const span = cell.colSpan ?? 1
@@ -5966,6 +6063,7 @@ function applyTableStyleDisplay(
         isLast ? ts.lastRow : undefined,
         firstColOn && col === 0 ? ts.firstCol : undefined,
         lastColOn && col + span === totalCols ? ts.lastCol : undefined,
+        band1 ? ts.band1Horz : band2 ? ts.band2Horz : undefined,
       ]
       col += span
       if (cell.fill === undefined) {
@@ -6405,6 +6503,10 @@ async function hfImages(
       if (wrap) {
         image.wrap = wrap === 'TopAndBottom' ? 'topBottom' : (wrap.toLowerCase() as HfImage['wrap'])
       }
+      const dist = (attr: string) =>
+        Math.round(Number(new RegExp(`\\b${attr}="(\\d+)"`).exec(anchorTag)?.[1] ?? 0) / EMU_PER_PX)
+      const wrapDistPx = { l: dist('distL'), r: dist('distR'), t: dist('distT'), b: dist('distB') }
+      if (Object.values(wrapDistPx).some((v) => v > 0)) image.wrapDistPx = wrapDistPx
       readAnchorPos(frag, image)
       // the strip can move and resize it (patchHfPicturesXml finds it again by this ordinal)
       if (hfMovablePictureFrag(frag)) image.drawing = drawingOrdinal
@@ -7338,7 +7440,7 @@ function hfEmptyMarkFont(pPr: XNode | undefined, ctx: BuildContext): string | un
     const declared = src === 'direct' || src === 'paraStyle' || src === 'tableStyle'
     return declared ? fonts.ascii : ea && ea === fonts.ascii ? ea : undefined
   }
-  const eaLang = /^(zh|ja|ko)(-|$)/i.test(mark.eastAsiaLang ?? '')
+  const eaLang = isEastAsianLangTag(mark.eastAsiaLang)
   return (eaLang ? ea : undefined) ?? fonts.ascii
 }
 
@@ -7714,8 +7816,11 @@ function hfTableRowParagraphs(
       const tcMar = cellMarginsOf(findChild(rc.tcPr ?? {}, 'w:tcMar'))
       const mar = tblMar || tcMar ? { ...tblMar, ...tcMar } : undefined
       const borders = hfCellBorders(visualRows, r, bidiVisual ? raw.length - 1 - c : c, tblBorders)
+      const vSpan = rc.vMergeContinue ? 1 : hfVSpanOf(rawRows, r, rc.gridStart)
       return {
         ...content,
+        ...(vSpan > 1 ? { vSpan } : {}),
+        ...(rc.vMergeContinue ? { vMergeContinue: true as const } : {}),
         ...(total > 0 && rc.widthTwips > 0 ? { widthPct: (rc.widthTwips / total) * 100 } : {}),
         ...(absolute ? { widthTwips: rc.widthTwips } : {}),
         ...(borders ? { borders } : {}),
@@ -7737,6 +7842,17 @@ function hfTableRowParagraphs(
     }
   })
   return out
+}
+
+/** rows a w:vMerge restart cell at `col` spans: itself plus the continuation cells below */
+function hfVSpanOf(rows: HfRawCell[][], r: number, col: number): number {
+  let span = 1
+  for (let k = r + 1; k < rows.length; k++) {
+    const under = rows[k].find((x) => x.gridStart <= col && col < x.gridStart + x.span)
+    if (!under?.vMergeContinue) break
+    span++
+  }
+  return span
 }
 
 /** w:tblpPr of a header/footer layout table; undefined when the table is in flow */

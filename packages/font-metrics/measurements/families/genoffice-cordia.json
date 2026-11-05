@@ -1,0 +1,30 @@
+{
+  "family": "GenOffice Cordia",
+  "source": {
+    "kind": "hmtx",
+    "date": "2026-11-03",
+    "fonts": ["Cordia New (Word DFonts cordia.ttc)", "NotoSansThai", "LiberationSans"],
+    "probe": "Thai advances per glyph from hmtx, Regular and Bold; Latin ratio 0.649 regular / 0.643 bold"
+  },
+  "note": "Word for Mac ships Cordia New and TH SarabunPSK (DFonts) and lays every other Thai\nfamily out as Cordia New (probe 2026-11-03, doc2docx sample 059: 16pt TH SarabunIT9\npaces 18.4pt = Cordia hhea 1.147). macOS has neither and Chromium's Thonburi fallback\nadvances ~1.75x wider at a 1em design size. The Thai faces (Regular and Bold) are Noto\nSans Thai with every outline scaled horizontally to the Word advance of its code point\nand vertically to the small Thai design size, mark anchors moved along, advances and\nvertical metrics rewritten (tools/build-thai-font.py); the Latin repertoire is\nLiberation Sans size-adjusted to the Word face's Latin advances (hmtx sentence ratio\nover a mixed-case English sample).",
+  "faces": [
+    {
+      "src": "url('./GenOfficeCordia-Regular.woff2') format('woff2')"
+    },
+    {
+      "src": "url('./GenOfficeCordia-Bold.woff2') format('woff2')",
+      "weight": "bold"
+    },
+    {
+      "src": "url('./LiberationSans-Regular.ttf')",
+      "sizeAdjust": 64.9,
+      "unicodeRange": "U+0000-0DFF, U+0E80-10FFFF"
+    },
+    {
+      "src": "url('./LiberationSans-Bold.ttf')",
+      "sizeAdjust": 64.3,
+      "unicodeRange": "U+0000-0DFF, U+0E80-10FFFF",
+      "weight": "bold"
+    }
+  ]
+}

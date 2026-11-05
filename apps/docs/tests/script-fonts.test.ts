@@ -83,14 +83,14 @@ describe('ScriptFonts and IME composition', () => {
     return view
   }
 
-  // The decoration spans wrap every East Asian run, so the pinyin a Chinese
+  // The decoration spans wrap every East Asian run, so the pinyin a CJK
   // IME keeps in the DOM splits the run in two. Rebuilding the decorations
   // while the composition runs rewrites the text node the composition lives
   // in: Chrome drops the selection with it, the composition is cancelled and
   // the caret lands past the next bracket.
   it('keeps the composing text node intact while a composition runs', () => {
-    const editor = open(['（看各种文件）'])
-    const caret = 1 + '（看各种文件'.length
+    const editor = open(['\uff08\u770b\u5404\u79cd\u6587\u4ef6\uff09'])
+    const caret = 1 + '\uff08\u770b\u5404\u79cd\u6587\u4ef6'.length
     editor.commands.setTextSelection(caret)
     const view = startComposition(editor)
     expect(view.composing).toBe(true)
@@ -100,13 +100,13 @@ describe('ScriptFonts and IME composition', () => {
 
     // the decoration set was not rebuilt: the run stayed one piece and the
     // composing text is still in the node the composition lives in
-    expect(textNodes(view.dom)).toEqual(['（看各种文件gezhong）'])
-    expect(decorated(editor)).toEqual(['（看各种文件gezhong）'])
+    expect(textNodes(view.dom)).toEqual(['\uff08\u770b\u5404\u79cd\u6587\u4ef6gezhong\uff09'])
+    expect(decorated(editor)).toEqual(['\uff08\u770b\u5404\u79cd\u6587\u4ef6gezhong\uff09'])
   })
 
   it('picks the committed characters up once the composition is over', () => {
-    const editor = open(['（看各种文件）'])
-    const caret = 1 + '（看各种文件'.length
+    const editor = open(['\uff08\u770b\u5404\u79cd\u6587\u4ef6\uff09'])
+    const caret = 1 + '\uff08\u770b\u5404\u79cd\u6587\u4ef6'.length
     editor.commands.setTextSelection(caret)
     const view = startComposition(editor)
     view.dispatch(view.state.tr.insertText('gezhong', caret))
@@ -114,9 +114,9 @@ describe('ScriptFonts and IME composition', () => {
     view.dom.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
     expect(view.composing).toBe(false)
     // the commit replaces the pinyin with the chosen characters
-    view.dispatch(view.state.tr.insertText('各种', caret, caret + 'gezhong'.length))
+    view.dispatch(view.state.tr.insertText('\u5404\u79cd', caret, caret + 'gezhong'.length))
 
-    expect(decorated(editor)).toEqual(['（看各种文件各种）'])
+    expect(decorated(editor)).toEqual(['\uff08\u770b\u5404\u79cd\u6587\u4ef6\u5404\u79cd\uff09'])
   })
 
   // A Japanese or Korean IME (and a raw-pinyin Enter commit) has the final
@@ -124,17 +124,39 @@ describe('ScriptFonts and IME composition', () => {
   // and the mapped set stays: the characters appended at the end of the run
   // would keep the Latin face until the next non-IME edit touches the block.
   it('decorates a committed run that no transaction changed', async () => {
-    const editor = open(['日本語'])
-    const caret = 1 + '日本語'.length
+    const editor = open(['\u65e5\u672c\u8a9e'])
+    const caret = 1 + '\u65e5\u672c\u8a9e'.length
     editor.commands.setTextSelection(caret)
     const view = startComposition(editor)
     view.dispatch(view.state.tr.insertText('にゅうりょく', caret))
-    view.dispatch(view.state.tr.insertText('入力', caret, caret + 'にゅうりょく'.length))
+    view.dispatch(
+      view.state.tr.insertText(
+        '\u5165\u529b',
+        caret,
+        caret + '\u306b\u3085\u3046\u308a\u3087\u304f'.length,
+      ),
+    )
 
     view.dom.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(decorated(editor)).toEqual(['日本語入力'])
+    expect(decorated(editor)).toEqual(['\u65e5\u672c\u8a9e\u5165\u529b'])
+  })
+
+  it('skips the deferred rebuild when the next composition has already started', async () => {
+    const editor = open(['\uff08\u770b\u6587\u4ef6\uff09'])
+    const caret = 1 + '\uff08\u770b\u6587\u4ef6'.length
+    editor.commands.setTextSelection(caret)
+    let view = startComposition(editor)
+    view.dom.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    view = startComposition(editor)
+    view.dispatch(view.state.tr.insertText('ge', caret))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(view.composing).toBe(true)
+    // the mapped set still covers the pinyin (a rebuild would drop it);
+    // jsdom's composition handling may render the run as several spans
+    expect(decorated(editor).join('')).toBe('\uff08\u770b\u6587\u4ef6ge\uff09')
   })
 })
 

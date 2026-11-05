@@ -511,9 +511,84 @@ function applyFont(ctx, state, scale = 1) {
   ctx.font = `${italic}${weightPart}${size}px ${family}`;
 }
 var SYMBOL_FONT_RE = /^(wingdings|webdings|symbol$|monotype sorts|zapf ?dingbats|marlett)/i;
-function mapSymbolText(family, text) {
+// WMF strings are byte strings in the writer's ANSI code page. CJK MathType/
+// Office previews carry GBK / Shift_JIS / Big5 / EUC-KR bytes with charset 0
+// and a code-page-encoded facename, so the code page is taken from the
+// LOGFONT charset when set and otherwise inferred from the facename bytes.
+var WMF_CHARSET_CODEPAGE = { 128: "shift_jis", 129: "euc-kr", 134: "gbk", 136: "big5" };
+var BIG5_FACES = /\u7d30\u660e\u9ad4|\u6a19\u6977\u9ad4|\u5fae\u8edf\u6b63\u9ed1\u9ad4|\u83ef\u5eb7/;
+function decodeBytes(label, bytes) {
+  try {
+    return new TextDecoder(label, { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+function detectWmfCodepage(charset, faceBytes) {
+  const byCharset = WMF_CHARSET_CODEPAGE[charset];
+  if (byCharset) return byCharset;
+  if (!faceBytes.some((b) => b >= 128)) return null;
+  const sjis = decodeBytes("shift_jis", faceBytes);
+  if (sjis && /[\u3040-\u30ff\uff01-\uff5e]/.test(sjis)) return "shift_jis";
+  const kr = decodeBytes("euc-kr", faceBytes);
+  if (kr && /[\uac00-\ud7af]/.test(kr)) return "euc-kr";
+  const big5 = decodeBytes("big5", faceBytes);
+  if (big5 && BIG5_FACES.test(big5)) return "big5";
+  return decodeBytes("gbk", faceBytes) ? "gbk" : null;
+}
+function isDbcsLead(label, b) {
+  if (label === "shift_jis") return b >= 129 && b <= 159 || b >= 224 && b <= 252;
+  return b >= 129 && b <= 254;
+}
+// byte string -> { text, units } where units[i] is the byte count of glyph i,
+// so a per-byte Dx array can be folded back to one advance per glyph
+function decodeWmfText(bytes, codepage) {
+  const units = [];
+  if (!codepage) {
+    let text = "";
+    for (let i = 0; i < bytes.length; i++) {
+      text += String.fromCharCode(bytes[i]);
+      units.push(1);
+    }
+    return { text, units };
+  }
+  const decoder = new TextDecoder(codepage);
+  let text = "";
+  for (let i = 0; i < bytes.length; ) {
+    const n = isDbcsLead(codepage, bytes[i]) && i + 1 < bytes.length ? 2 : 1;
+    text += n === 1 && bytes[i] < 128 ? String.fromCharCode(bytes[i]) : decoder.decode(bytes.subarray(i, i + n));
+    units.push(n);
+    i += n;
+  }
+  return { text, units };
+}
+// NUL-terminated at most nChars bytes
+function wmfStringBytes(view, start, nChars) {
+  let n = 0;
+  while (n < nChars && view.getUint8(start + n) !== 0) n++;
+  return new Uint8Array(view.buffer, view.byteOffset + start, n);
+}
+function foldDx(dx, units) {
+  if (!dx) return null;
+  const out = [];
+  let at = 0;
+  for (const n of units) {
+    let sum = 0;
+    for (let k = 0; k < n; k++) sum += dx[at + k] ?? 0;
+    out.push(sum);
+    at += n;
+  }
+  return out;
+}
+function mapSymbolText(family, text, symbolTextMap) {
   if (!SYMBOL_FONT_RE.test((family || "").trim())) {
     return text;
+  }
+  // a host-supplied Unicode decode beats the U+F0xx PUA form, which only
+  // renders where the legacy symbol face itself is installed (Windows)
+  const decoded = symbolTextMap ? symbolTextMap(family, text) : null;
+  if (decoded !== null && decoded !== void 0) {
+    return decoded;
   }
   let out = "";
   for (let i = 0; i < text.length; i++) {
@@ -553,26 +628,44 @@ function dibAverageColor(view, off, end) {
     return "#c0c0c0";
   }
 }
-function drawWmfText(ctx, state, text, x, y) {
-  const mapped = mapSymbolText(state.fontFamily, text);
+function drawWmfText(ctx, state, text, x, y, dx = null) {
+  const mapped = mapSymbolText(state.fontFamily, text, state.symbolTextMap);
   const align = state.textAlign || 0;
   const prevAlign = ctx.textAlign;
   const prevBaseline = ctx.textBaseline;
-  ctx.textAlign = (align & 6) === 6 ? "center" : align & 2 ? "right" : "left";
+  const hAlign = (align & 6) === 6 ? "center" : align & 2 ? "right" : "left";
+  ctx.textAlign = hAlign;
   ctx.textBaseline = (align & 24) === 24 ? "alphabetic" : align & 8 ? "bottom" : "top";
   const esc = state.fontEscapement || 0;
+  // Dx (device px per glyph) keeps the writer's spacing: MathType previews
+  // interleave runs of different fonts/sizes ("Axb" + "=" between x and b)
+  // and rely on the advances, not the substitute font's widths (genoffice#2489).
+  const width = dx ? dx.reduce((a, b) => a + b, 0) : ctx.measureText(mapped).width;
+  const drawRun = (ox, oy) => {
+    if (!dx) {
+      ctx.fillText(mapped, ox, oy);
+      return;
+    }
+    ctx.textAlign = "left";
+    let gx = hAlign === "center" ? ox - width / 2 : hAlign === "right" ? ox - width : ox;
+    const glyphs = Array.from(mapped);
+    for (let i = 0; i < glyphs.length; i++) {
+      ctx.fillText(glyphs[i], gx, oy);
+      gx += dx[i] ?? 0;
+    }
+  };
   if (esc) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(-esc / 10 * Math.PI / 180);
-    ctx.fillText(mapped, 0, 0);
+    drawRun(0, 0);
     ctx.restore();
   } else {
-    ctx.fillText(mapped, x, y);
+    drawRun(x, y);
   }
   ctx.textAlign = prevAlign;
   ctx.textBaseline = prevBaseline;
-  return ctx.measureText(mapped).width;
+  return width;
 }
 function drawTextDecorations(ctx, state, x, y, width, scale = 1) {
   if (!state.fontUnderline && !state.fontStrikeOut) {
@@ -1628,7 +1721,10 @@ function handleExtTextOutW(rCtx, offset, dataOff, recSize) {
     const offDx = view.getUint32(dataOff + 64, true);
     const maxOffset = view.byteLength;
     if (nChars > 0 && offString > 0 && offset + offString + nChars * 2 <= maxOffset) {
-      const text = mapSymbolText(state.fontFamily, readUtf16LE(view, offset + offString, nChars));
+      const rawText = readUtf16LE(view, offset + offString, nChars);
+      const text = mapSymbolText(state.fontFamily, rawText, state.symbolTextMap);
+      // a symbol remap may turn a BMP byte-glyph into a non-BMP character; Dx stays one per source glyph
+      const remapped = text !== rawText;
       if (text.length > 0) {
         const fontScale = Math.abs(gmh(rCtx, 1));
         applyFont(ctx, state, fontScale);
@@ -1697,19 +1793,28 @@ function handleExtTextOutW(rCtx, offset, dataOff, recSize) {
           ctx.textAlign = "left";
           let x = startX;
           let y = baseY;
-          for (let i = 0; i < text.length; i++) {
-            const code = text.charCodeAt(i);
-            // a surrogate pair is one glyph: draw both units together, advance by both dx
-            if (code >= 55296 && code <= 56319 && i + 1 < text.length) {
-              ctx.fillText(text.slice(i, i + 2), x, y);
-              x += gmw(rCtx, (dx[i] ?? 0) + (dx[i + 1] ?? 0));
-              if (dy) y += gmh(rCtx, (dy[i] ?? 0) + (dy[i + 1] ?? 0));
-              i++;
-              continue;
+          if (remapped) {
+            const glyphs = Array.from(text);
+            for (let i = 0; i < glyphs.length; i++) {
+              ctx.fillText(glyphs[i], x, y);
+              x += gmw(rCtx, dx[i] ?? 0);
+              if (dy) y += gmh(rCtx, dy[i] ?? 0);
             }
-            ctx.fillText(text[i], x, y);
-            x += gmw(rCtx, dx[i] ?? 0);
-            if (dy) y += gmh(rCtx, dy[i] ?? 0);
+          } else {
+            for (let i = 0; i < text.length; i++) {
+              const code = text.charCodeAt(i);
+              // a surrogate pair is one glyph: draw both units together, advance by both dx
+              if (code >= 55296 && code <= 56319 && i + 1 < text.length) {
+                ctx.fillText(text.slice(i, i + 2), x, y);
+                x += gmw(rCtx, (dx[i] ?? 0) + (dx[i + 1] ?? 0));
+                if (dy) y += gmh(rCtx, (dy[i] ?? 0) + (dy[i + 1] ?? 0));
+                i++;
+                continue;
+              }
+              ctx.fillText(text[i], x, y);
+              x += gmw(rCtx, dx[i] ?? 0);
+              if (dy) y += gmh(rCtx, dy[i] ?? 0);
+            }
           }
         } else {
           ctx.textAlign = alignHoriz;
@@ -4872,7 +4977,7 @@ function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, rep
     ctx,
     view,
     objectTable: /* @__PURE__ */ new Map(),
-    state: { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, devScale: Math.min(sx, sy) },
+    state: { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, symbolTextMap: replayOptions.symbolTextMap, devScale: Math.min(sx, sy) },
     stateStack: [],
     inPath: false,
     // Defaults form an identity window->viewport mapping in device space, so
@@ -5296,14 +5401,7 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
       if (recSize >= 12) {
         const nChars = view.getInt16(dataOff, true);
         if (nChars > 0 && dataOff + 2 + nChars <= offset + recSize) {
-          let text = "";
-          for (let i = 0; i < nChars; i++) {
-            const ch = view.getUint8(dataOff + 2 + i);
-            if (ch === 0) {
-              break;
-            }
-            text += String.fromCharCode(ch);
-          }
+          const { text } = decodeWmfText(wmfStringBytes(view, dataOff + 2, nChars), state.codepage);
           const strBytes = nChars + nChars % 2;
           const txOff = dataOff + 2 + strBytes;
           if (txOff + 4 <= offset + recSize) {
@@ -5336,25 +5434,27 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
         const hasClipRect = (view.getUint16(dataOff + 6, true) & 4) !== 0;
         const stringOff = dataOff + 8 + (hasClipRect ? 8 : 0);
         if (nChars > 0 && stringOff + nChars <= offset + recSize) {
-          let text = "";
-          for (let i = 0; i < nChars; i++) {
-            const ch = view.getUint8(stringOff + i);
-            if (ch === 0) {
-              break;
-            }
-            text += String.fromCharCode(ch);
+          const bytes = wmfStringBytes(view, stringOff, nChars);
+          const { text, units } = decodeWmfText(bytes, state.codepage);
+          // optional Dx array (one int16 logical advance per byte) follows the even-padded string
+          const dxOff = stringOff + nChars + nChars % 2;
+          let dx = null;
+          if (dxOff + nChars * 2 <= offset + recSize) {
+            dx = new Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) dx[i] = mw(view.getInt16(dxOff + i * 2, true));
+            dx = foldDx(dx, units);
           }
           applyFont(ctx, state, Math.abs(mh(1)));
           ctx.fillStyle = state.textColor;
           // same TA_UPDATECP semantics as META_TEXTOUT above
           if ((state.textAlign & 1) !== 0) {
-            const advance = drawWmfText(ctx, state, text, mx(state.curX), my(state.curY));
+            const advance = drawWmfText(ctx, state, text, mx(state.curX), my(state.curY), dx);
             const unit = mx(1) - mx(0);
             if (advance > 0 && unit !== 0) {
               state.curX += advance / unit;
             }
           } else {
-            drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
+            drawWmfText(ctx, state, text, mx(txCoord), my(ty2), dx);
           }
         }
       }
@@ -5408,7 +5508,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
     }
     return slot;
   };
-  const state = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap };
+  const state = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, symbolTextMap: replayOptions.symbolTextMap };
   const stateStack = [];
   const wCtx = { view, ctx, state, coord };
   let offset = header.headerSize;
@@ -5526,17 +5626,21 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
           // LOGFONT16: Height(2) Width(2) Escapement(2) Orientation(2) Weight(2)
           // Italic/Underline/StrikeOut/CharSet/OutPrec/ClipPrec/Quality/PitchAndFamily(1 each)
           // FaceName at +18 (not +14, which lands in the precision/quality bytes)
-          let family = "";
+          const faceBytes = [];
           for (let i = 0; i < 32 && dataOff + 18 + i < offset + recSize; i++) {
             const ch = view.getUint8(dataOff + 18 + i);
             if (ch === 0) {
               break;
             }
-            family += String.fromCharCode(ch);
+            faceBytes.push(ch);
           }
+          const face = Uint8Array.from(faceBytes);
+          const codepage = detectWmfCodepage(view.getUint8(dataOff + 13), face);
+          const family = decodeWmfText(face, codepage).text;
           const slot = allocObjectSlot();
           objectTable.set(slot, {
             kind: "font",
+            codepage,
             height: Math.abs(view.getInt16(dataOff, true)),
             escapement: view.getInt16(dataOff + 4, true),
             weight: view.getInt16(dataOff + 8, true),
@@ -5569,6 +5673,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
                 state.fontStrikeOut = obj.strikeOut;
                 state.fontFamily = obj.family;
                 state.fontEscapement = obj.escapement || 0;
+                state.codepage = obj.codepage || null;
                 break;
             }
           }
@@ -5714,7 +5819,8 @@ async function convertEmfToDataUrl(buffer, options, recursionDepth = 0) {
   const replayOptions = {
     maxRecords: opts.maxRecords,
     maxRecordsEmfPlus: opts.maxRecords,
-    fontFamilyMap: opts.fontFamilyMap
+    fontFamilyMap: opts.fontFamilyMap,
+    symbolTextMap: opts.symbolTextMap
   };
   try {
     emfLog("=== convertEmfToDataUrl START ===");
@@ -5828,7 +5934,8 @@ async function convertWmfToDataUrl(buffer, options, recursionDepth = 0) {
   const effectiveMaxHeight = opts.maxHeight;
   const replayOptions = {
     maxRecords: opts.maxRecords,
-    fontFamilyMap: opts.fontFamilyMap
+    fontFamilyMap: opts.fontFamilyMap,
+    symbolTextMap: opts.symbolTextMap
   };
   try {
     emfLog(

@@ -106,6 +106,13 @@ export interface BlockBox {
    *  lowest drawing bottom, floatMaxH the tallest drawing */
   floatKeepWhole?: true
   floatMaxH?: number
+  /** compatibilityMode >= 15: the page turn applies and the pull-up stops at the
+   *  body bottom; legacy layout overflows the bottom margin (probe 2026-11-03) */
+  modernFloatTurn?: true
+  /** side-wrapped block picture (picture-only anchor paragraph, CSS float) */
+  floatPicture?: true
+  /** painted offset of a floatPicture's box below its measured slot (px) */
+  anchorDyPx?: number
   /** in-block line boundaries (relative to block top, ascending, each = a line's starting Y): used to split page-crossing blocks by line */
   lineOffsets?: number[]
   /** min lines kept on each side of a split (widow/orphan control): paragraphs 2, table rows 1 (default) */
@@ -163,6 +170,7 @@ export interface BlockBox {
    *  applyBlockMeta (never into spaceAfterPx: page-bottom exemptions must not
    *  hand it back) */
   footnoteExtraPx?: number
+  metaApplied?: boolean
   /** per-reference reservations at their marker offsets (same in-block space
    *  as lineBoxes): a split paragraph charges each note on the page holding
    *  its reference line. Absent = the whole reservation rides the last line. */
@@ -373,6 +381,12 @@ export interface SectionGeom {
   topPx?: number
   /** full page height (px): page-anchored bottom/center keyword targets */
   pageHeightPx?: number
+  /** body bottom to paper edge (px, the larger of pgMar bottom and the footer
+   *  extent): how far a legacy-layout anchored drawing may overflow the body;
+   *  first/even variants like the content heights */
+  marginBottomPx?: number
+  firstMarginBottomPx?: number
+  evenMarginBottomPx?: number
   /** section start forces a page break (nextPage/evenPage/oddPage, or continuous with different page geometry) */
   forceBreak: boolean
   /** section break type: evenPage/oddPage need physical blank pages inserted to align parity */
@@ -431,6 +445,13 @@ export interface FloatSplitPatch {
   carryPx: number
 }
 
+export interface FloatCarryPatch {
+  /** carried block's own virtual top (without the spacer already applied) */
+  blockTop: number
+  /** total spacer height before the block (px) */
+  carryPx: number
+}
+
 /** Single line taller than its column (oversized inline picture): renderer-baked page-bottom clip */
 export interface OversizeClipPatch {
   /** owning block's virtual top (block identity within one layout pass) */
@@ -475,6 +496,10 @@ export interface SliceOutputs {
   rowFills?: RowFillPatch[]
   rowSplits?: RowSplitPatch[]
   floatVShifts?: FloatVShiftPatch[]
+  /** side-wrapped drawings pulled up (dyPx < 0) to the body bottom / paper edge */
+  floatPullUps?: FloatVShiftPatch[]
+  /** blocks turning the page under an overflowing drawing: a flow spacer carries them past it */
+  floatCarries?: FloatCarryPatch[]
   floatFlows?: FloatFlowPatch[]
   floatSplits?: FloatSplitPatch[]
   oversizeClips?: OversizeClipPatch[]
@@ -688,6 +713,8 @@ export interface BlockMeta {
    *  remaining space (or would stay alone at the page bottom) pushes the table to a fresh page, and
    *  widow/orphan control applies inside split cells */
   modernTableHeaders?: boolean
+  /** Word 2013+ anchored-drawing page turn (see BlockBox.modernFloatTurn) */
+  modernAnchorFloats?: boolean
   /** table block: the document default turns widow/orphan control off and no cell paragraph turns it back on */
   cellWidowOff?: true
   /** page-bottom height reserved for footnote refs inside the block (px): merged into the block height (consumes page capacity like Word's note area) */

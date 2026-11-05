@@ -76,6 +76,8 @@ export const ms = {
   appStyleUpdated:
     'Gaya "{name}" dikemas kini dengan format pilihan; ditulis ke dokumen semasa disimpan',
   appStyleCreated: 'Gaya "{name}" dibuat dan digunakan pada pilihan',
+  appStyleInstancesSelected: '{count} tika “{name}” dipilih',
+  appStyleNoInstances: 'Tiada teks menggunakan “{name}”',
   appPgNumFormatSet: 'Format nombor halaman ditetapkan',
   appPageNumFormatTitle: 'Format Nombor Halaman',
   appNumberFormat: 'Format nombor',

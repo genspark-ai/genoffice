@@ -76,6 +76,8 @@ export const nl = {
   appStyleUpdated:
     'Stijl "{name}" bijgewerkt met de opmaak van de selectie; wordt bij het opslaan naar het document geschreven',
   appStyleCreated: 'Stijl "{name}" gemaakt en toegepast op de selectie',
+  appStyleInstancesSelected: '{count} exemplaren van “{name}” geselecteerd',
+  appStyleNoInstances: 'Geen tekst gebruikt “{name}”',
   appPgNumFormatSet: 'Paginanummerindeling ingesteld',
   appPageNumFormatTitle: 'Paginanummerindeling',
   appNumberFormat: 'Getalnotatie',

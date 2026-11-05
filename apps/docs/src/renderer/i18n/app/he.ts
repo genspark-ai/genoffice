@@ -69,6 +69,8 @@ export const he = {
   appFieldsUpdated: 'עודכנו {n} שדות',
   appStyleUpdated: 'הסגנון "{name}" עודכן לפי עיצוב הקטע המסומן; ייכתב למסמך בעת השמירה',
   appStyleCreated: 'הסגנון "{name}" נוצר והוחל על הקטע המסומן',
+  appStyleInstancesSelected: 'נבחרו {count} מופעים של "{name}"',
+  appStyleNoInstances: 'אין טקסט שמשתמש ב"{name}"',
   appPgNumFormatSet: 'תבנית מספרי העמודים הוגדרה',
   appPageNumFormatTitle: 'תבנית מספרי עמודים',
   appNumberFormat: 'תבנית מספור',

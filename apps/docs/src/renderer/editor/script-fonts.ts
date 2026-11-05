@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import { charClass, isEastAsianChar } from '@genoffice/docx-engine'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -6,13 +7,9 @@ import { touchedTopLevelBlocks } from './touched-blocks'
 
 // Font fallback cannot select a script when the Latin face itself covers CJK.
 // Decorations keep the text/runs intact, including undo, copying and DOCX export.
-const eastAsianText =
-  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff01-\uff60\uffe0-\uffee]+/gu
-
 // Halfwidth kana/hangul/symbols share the East Asian face but count as
 // single-byte text for the balanced character grid (Word probe 2026-10-22).
 const halfwidthForm = /[\uff61-\uffdc\uffe8-\uffee]/u
-const halfwidthRun = /[\uff61-\uffdc\uffe8-\uffee]+|[^\uff61-\uffdc\uffe8-\uffee]+/gu
 
 const EAST_ASIAN_CLASS = 'doc-east-asian-font'
 const HALFWIDTH_CLASS = 'doc-east-asian-halfwidth'
@@ -24,11 +21,25 @@ const classFor = (text: string): string =>
 /** East Asian runs in `text`, split so each piece is uniformly half- or full-width */
 export function eastAsianSegments(text: string): { index: number; text: string }[] {
   const out: { index: number; text: string }[] = []
-  for (const match of text.matchAll(eastAsianText)) {
-    for (const part of match[0].matchAll(halfwidthRun)) {
-      out.push({ index: match.index + part.index, text: part[0] })
-    }
+  let start = -1
+  let half = false
+  const flush = (end: number) => {
+    if (start >= 0) out.push({ index: start, text: text.slice(start, end) })
+    start = -1
   }
+  for (let i = 0; i < text.length;) {
+    const cp = text.codePointAt(i)!
+    if (isEastAsianChar(cp)) {
+      const h = charClass(cp) === 'halfwidthEA'
+      if (start >= 0 && h !== half) flush(i)
+      if (start < 0) {
+        start = i
+        half = h
+      }
+    } else flush(i)
+    i += cp > 0xffff ? 2 : 1
+  }
+  flush(text.length)
   return out
 }
 
@@ -64,8 +75,9 @@ export const ScriptFonts = Extension.create({
           // on long files; only the top-level blocks the transaction touched are
           // rescanned, the rest of the set is mapped through the change.
           apply(tr, old) {
+            const composing = editor?.view?.composing
             // an explicit rebuild: the compositionend refresh below
-            if (tr.getMeta(key))
+            if (tr.getMeta(key) && !composing)
               return DecorationSet.create(tr.doc, decorationsIn(tr.doc, 0, tr.doc.content.size))
             if (!tr.docChanged) return old
             // The pinyin an IME keeps in the DOM splits the East Asian run in
@@ -73,7 +85,7 @@ export const ScriptFonts = Extension.create({
             // composition runs in. Chrome drops the selection with the node —
             // the composition is cancelled and the caret lands past the next
             // bracket. Keep the mapped set until the composition commits.
-            if (editor?.view?.composing) return old.map(tr.mapping, tr.doc)
+            if (composing) return old.map(tr.mapping, tr.doc)
             const touched = touchedTopLevelBlocks(tr)
             if (!touched)
               return DecorationSet.create(tr.doc, decorationsIn(tr.doc, 0, tr.doc.content.size))
@@ -95,10 +107,13 @@ export const ScriptFonts = Extension.create({
             // has the final text in the DOM before compositionend, so ProseMirror
             // dispatches nothing and the mapped set stays: text appended at the
             // end of a run would keep the Latin face until the next non-IME
-            // edit. Rebuild once the composition is over.
+            // edit. Rebuild once the composition is over — unless the next one
+            // has already started by the time the timeout fires; its own
+            // compositionend rebuilds then.
             compositionend: (view) => {
               window.setTimeout(() => {
-                if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(key, true))
+                if (!view.isDestroyed && !view.composing)
+                  view.dispatch(view.state.tr.setMeta(key, true))
               })
               return false
             },

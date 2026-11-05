@@ -74,6 +74,8 @@ export const pl = {
   appStyleUpdated:
     'Styl „{name}” zaktualizowano formatem zaznaczenia; zostanie zapisany w dokumencie przy zapisie',
   appStyleCreated: 'Utworzono styl „{name}” i zastosowano go do zaznaczenia',
+  appStyleInstancesSelected: 'Zaznaczono wystąpienia stylu „{name}”: {count}',
+  appStyleNoInstances: 'Żaden tekst nie używa stylu „{name}”',
   appPgNumFormatSet: 'Ustawiono format numerów stron',
   appPageNumFormatTitle: 'Format numeru strony',
   appNumberFormat: 'Format numeracji',

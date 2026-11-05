@@ -134,6 +134,70 @@ export function collectUsedStyleIds(doc: PmNode | null, styles: StyleMap | undef
   return used
 }
 
+/** the paragraph style a text block resolves to: its own id, else its heading level's style, else the default */
+function blockStyleId(node: PmNode, styles: StyleMap): string | undefined {
+  if (typeof node.attrs.styleId === 'string') return node.attrs.styleId
+  if (node.type.name === 'docHeading') {
+    const level = Number(node.attrs.level) || 1
+    return headingStyleId(styles, level) ?? `Heading${level}`
+  }
+  return defaultParagraphStyleId(styles)
+}
+
+/** Styles pane "In use": every paragraph / character style some text block or run resolves to */
+export function collectAllUsedStyleIds(doc: PmNode | null, styles: StyleMap): Set<string> {
+  const used = new Set<string>()
+  if (!doc) return used
+  doc.descendants((node) => {
+    if (!node.isTextblock) return true
+    const id = blockStyleId(node, styles)
+    if (id) used.add(id)
+    node.forEach((child) => {
+      for (const m of child.marks) {
+        if (m.type.name === 'docTextStyle' && typeof m.attrs.styleId === 'string')
+          used.add(m.attrs.styleId)
+      }
+    })
+    return false
+  })
+  return used
+}
+
+export interface DocRange {
+  readonly from: number
+  readonly to: number
+}
+
+/**
+ * Word's "Select All N Instance(s)": the text ranges carrying a style — each
+ * text block resolving to a paragraph style, or each run (adjacent runs merged)
+ * marked with a character style. Empty blocks are skipped: there is nothing to
+ * select in them.
+ */
+export function styleInstanceRanges(doc: PmNode, info: StyleInfo, styles: StyleMap): DocRange[] {
+  const out: DocRange[] = []
+  const push = (from: number, to: number) => {
+    const last = out[out.length - 1]
+    if (last && last.to === from) out[out.length - 1] = { from: last.from, to }
+    else out.push({ from, to })
+  }
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true
+    if (info.type === 'character') {
+      node.forEach((child, offset) => {
+        const hit = child.marks.some(
+          (m) => m.type.name === 'docTextStyle' && m.attrs.styleId === info.styleId,
+        )
+        if (hit) push(pos + 1 + offset, pos + 1 + offset + child.nodeSize)
+      })
+    } else if (node.content.size > 0 && blockStyleId(node, styles) === info.styleId) {
+      push(pos + 1, pos + 1 + node.content.size)
+    }
+    return false
+  })
+  return out
+}
+
 /** gallery / pane highlight: the character style at the caret wins, else the paragraph's style */
 export function activeStyleKey(
   fs: { charStyleId: string | null; paraStyleId: string | null; headingLevel: number | null },

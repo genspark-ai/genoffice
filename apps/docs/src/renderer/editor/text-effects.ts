@@ -55,8 +55,13 @@ export function parseGlowAttr(raw: string): TextGlow | undefined {
   }
 }
 
+/**
+ * w:position moves the glyphs but leaves the line box alone: Word keeps the
+ * line pitch for raised or lowered runs that share the line with an unshifted
+ * run (probe 2026-11-03), so a relative offset rather than vertical-align.
+ */
 export function positionDecl(halfPoints: number): string {
-  return `vertical-align:${halfPoints / 2}pt`
+  return `position:relative;top:${-halfPoints / 2}pt`
 }
 
 /** w:w on a whitespace-free run: {s: scale factor, gapEm: estimated width change in em} */

@@ -69,6 +69,8 @@ export const zhTW = {
   appFieldsUpdated: '已更新 {n} 個功能變數',
   appStyleUpdated: '已用選取範圍格式更新樣式「{name}」,儲存後寫入文件',
   appStyleCreated: '已建立樣式「{name}」並套用到選取範圍',
+  appStyleInstancesSelected: '已選取 {count} 處「{name}」',
+  appStyleNoInstances: '文件中沒有使用「{name}」的文字',
   appPgNumFormatSet: '已設定頁碼格式',
   appPageNumFormatTitle: '頁碼格式',
   appNumberFormat: '編號格式',

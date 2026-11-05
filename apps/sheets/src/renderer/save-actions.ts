@@ -290,9 +290,10 @@ export function liveFormulaCacheValues(
 ): RecalculatedFormulaValue[] {
   const journalCells = new Map<string, Set<string>>()
   const journalFormulaCells = new Map<string, string[]>()
-  // Sheets whose content the user changed: a computed blank or error over the
-  // file's cache may then be the true result of the new inputs.
-  const editedSheets = new Set<string>()
+  // Once content changed anywhere, a computed blank or error over the file's
+  // cache may be the true result of the new inputs: dependents live on other
+  // sheets too, so the flag is workbook-wide like the recalc overlay's.
+  let hasEdits = false
   for (const [sheetId, cells] of state.editJournal.cells) {
     if (isSheetRemoved(state.editJournal, sheetId)) continue
     let owned = journalCells.get(sheetId)
@@ -302,7 +303,7 @@ export function liveFormulaCacheValues(
     }
     for (const [key, entry] of cells) {
       owned.add(key)
-      if (entry.hasValue) editedSheets.add(sheetId)
+      if (entry.hasValue || entry.formula !== undefined) hasEdits = true
       if (entry.formula !== undefined) {
         const formulas = journalFormulaCells.get(sheetId)
         if (formulas) formulas.push(key)
@@ -376,11 +377,7 @@ export function liveFormulaCacheValues(
         // compute this" must not replace Excel's own cached value.
         const formatted = typeof live === 'string' ? live : String(live)
         const formulaText = formulaTextOf(state, sheetId, entry)
-        if (
-          recalcResultKeepsCache(formatted, formulaText, entry.cache, editedSheets.has(sheetId))
-        ) {
-          continue
-        }
+        if (recalcResultKeepsCache(formatted, formulaText, entry.cache, hasEdits)) continue
       }
       values.push({
         sheetId,

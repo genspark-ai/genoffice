@@ -264,8 +264,8 @@
  * Cambria/Calibri; prod corpus 20261020 sample 023 Word PDF: U+0020 0.22em,
  * U+00B7 0.28, curly quotes 0.375, × 0.55 all drawn by Cambria, never the
  * Batang 0.333/0.5 glyphs). Claims Basic Latin incl. the space, Latin-1
- * Supplement and General Punctuation; a flagged hangul-context space is
- * re-wrapped by .doc-hangul-space and unaffected. Serif class only: the
+ * Supplement and General Punctuation; a flagged balanced space is
+ * re-wrapped by .doc-balanced-space and unaffected. Serif class only: the
  * missing-KR chain is always Batang-ward (cssFontFamily). */
 @font-face {
   font-family: 'KR Theme Latin GO';
@@ -315,13 +315,14 @@
   font-display: block;
 }
 
-/* Word lays out a space touching hangul at 0.5em whatever the run font (corpus
- * probe 2026-09-24: Batang 0.49-0.50, Malgun Gothic and Times New Roman spaces
- * inside Korean runs 0.51-0.52em); .doc-hangul-space (styles.css) draws such
- * spaces from the -Che face's half-width space. */
+/* Under balanceSingleByteDoubleByteWidth Word lays out a space beside an East
+ * Asian character or another space at 0.5em whatever the run font (line-metrics
+ * balancedSpaceOffsets); .doc-balanced-space (styles.css) draws such spaces from
+ * this one-glyph face (tools/build-balanced-space-font.py). Its 0.8/0.2 line
+ * box sits inside every CJK face's, so the wrapped span never lifts a line. */
 @font-face {
-  font-family: 'GenOffice Hangul Space';
-  src: url('./GenOfficeCheLatinKR.woff2') format('woff2');
+  font-family: 'GenOffice Balanced Space';
+  src: url('./GenOfficeBalancedSpace.woff2') format('woff2');
   unicode-range: U+0020;
   font-weight: normal;
   font-style: normal;

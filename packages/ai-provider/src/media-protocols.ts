@@ -884,6 +884,7 @@ async function generateImageBfl(
   for (;;) {
     await bflPollSleep(signal, 1_500)
     const poll = await aiFetch(pollUrl, { headers: { 'x-key': config.apiKey }, signal })
+    if (!poll.ok) return failFrom('FLUX generation failed:', poll)
     const json = await readJson('FLUX result', poll)
     const status = String(json.status ?? '')
     if (status === 'Ready') {

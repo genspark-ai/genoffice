@@ -10,7 +10,10 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { applyCase, nextCaseMode, selectionText } from '../src/renderer/editor/case-transform'
 import { stepHangingIndent, stepParagraphIndent } from '../src/renderer/editor/indent'
 import { moveBlocks } from '../src/renderer/editor/move-block'
-import { clearParagraphFormatting } from '../src/renderer/components/ribbon-tabs'
+import {
+  clearAllFormatting,
+  clearParagraphFormatting,
+} from '../src/renderer/components/ribbon-tabs'
 
 function makeEditor(texts: string[] = ['first block', 'second block']): Editor {
   return new Editor({
@@ -140,6 +143,44 @@ describe('clear paragraph formatting (Ctrl+Q)', () => {
     expect(block.attrs.lineSpacing).toBeNull()
     expect(block.attrs.indentLeft).toBeNull()
     expect(editor.state.doc.textContent).toBe('paragraph')
+    editor.destroy()
+  })
+})
+
+describe('Styles pane Clear Formatting', () => {
+  it('strips the whole paragraph\u2019s marks and direct paragraph formatting from a collapsed caret', () => {
+    const editor = makeEditor(['bold words'])
+    selectAll(editor, 1, 11)
+    editor.commands.setMark('bold')
+    editor.commands.updateAttributes('docParagraph', {
+      align: 'center',
+      indentLeft: 720,
+      spaceAfter: 240,
+    })
+    selectAll(editor, 3, 3)
+    clearAllFormatting(editor, null)
+    const block = editor.state.doc.child(0)
+    expect(block.attrs.align).toBeNull()
+    expect(block.attrs.indentLeft).toBeNull()
+    expect(block.attrs.spaceAfter).toBeNull()
+    expect(block.attrs.styleId).toBeNull()
+    expect(block.firstChild!.marks.length).toBe(0)
+    expect(editor.state.selection.from).toBe(3)
+    expect(editor.state.selection.empty).toBe(true)
+    editor.destroy()
+  })
+
+  it('leaves marks outside a ranged selection alone', () => {
+    const editor = makeEditor(['bold words'])
+    selectAll(editor, 1, 3)
+    editor.commands.setMark('bold')
+    selectAll(editor, 9, 11)
+    editor.commands.setMark('bold')
+    selectAll(editor, 1, 5)
+    clearAllFormatting(editor, null)
+    const block = editor.state.doc.child(0)
+    expect(block.firstChild!.marks.length).toBe(0)
+    expect(block.lastChild!.marks.map((m) => m.type.name)).toEqual(['bold'])
     editor.destroy()
   })
 })

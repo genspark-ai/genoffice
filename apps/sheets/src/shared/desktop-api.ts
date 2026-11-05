@@ -2718,7 +2718,8 @@ export type ExternalLinkCellKind = z.infer<typeof externalLinkCellKindSchema>
 // One external-formula cell of an update report. `row` and `column` are
 // 0-based in the report; IronCalc, which computed the value, addresses the
 // same cells 1-based. `kind` is absent when the cell has no usable value (a
-// formula the file never cached), so the host keeps the cell's own cache.
+// formula the file never cached), so the host keeps the cell's own cache;
+// older sidecars spell that as `null`.
 export const externalLinkCellSchema = z
   .object({
     sheet: z.string(),
@@ -2726,7 +2727,7 @@ export const externalLinkCellSchema = z
     column: z.number().int().nonnegative(),
     formatted: z.string(),
     number: z.number().nullable().optional(),
-    kind: externalLinkCellKindSchema.optional(),
+    kind: externalLinkCellKindSchema.nullish(),
     formula: z.string(),
   })
   .strict()

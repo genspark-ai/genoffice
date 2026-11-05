@@ -300,12 +300,20 @@ function cordisBlockRanges(lines: string[]): Array<[number, number]> {
   })
 }
 
+/** The flow-style empty sequence DSH initialises the patch with. */
+function cordisIsEmptyFlowSequence(lines: string[]): boolean {
+  const content = lines.filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
+  return content.length === 1 && content[0]!.trim() === '[]'
+}
+
 /**
- * The patch is a top-level YAML sequence of insert blocks. Anything else (a
- * top-level mapping, say) we do not edit: appending an insert block to it
- * would not be YAML, so the file is reported for a manual edit instead.
+ * The patch is a top-level YAML sequence of insert blocks (block style, or
+ * the empty `[]`). Anything else (a top-level mapping, say) we do not edit:
+ * appending an insert block to it would not be YAML, so the file is reported
+ * for a manual edit instead.
  */
 function cordisIsSequence(lines: string[]): boolean {
+  if (cordisIsEmptyFlowSequence(lines)) return true
   for (const line of lines) {
     if (line.trim() === '' || line.trim().startsWith('#')) continue
     return yamlIndent(line) === 0 && line.trimStart().startsWith('- ')
@@ -409,6 +417,11 @@ function cordisUpsert(text: string, launch: McpLaunch): string {
   const ours = cordisEntryLines(launch)
   const own = cordisOwnRange(lines)
   if (!own) {
+    // `[]` cannot take a block item appended to it: the item replaces it.
+    if (cordisIsEmptyFlowSequence(lines)) {
+      const comments = lines.filter((line) => line.trim().startsWith('#'))
+      return [...comments, ...ours].join('\n') + '\n'
+    }
     const head = text.length === 0 || text.endsWith('\n') ? text : `${text}\n`
     return `${head}${ours.join('\n')}\n`
   }

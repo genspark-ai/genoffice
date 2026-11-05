@@ -203,6 +203,15 @@ describe('resolveFace', () => {
     expect(resolveFace('ProbeNoAltEA', ctxWith({ probenoaltea: { charset: '80' } }))?.family).toBe(
       'Yu Gothic',
     )
+    // Hiragino Kaku Gothic Pro W3 by its kana name: the HG rule without altName, the altName with one
+    const hiragino = '\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W3'
+    expect(resolveFace(hiragino, ctxWith())?.family).toBe('Yu Gothic')
+    const viaAlt = resolveFace(
+      hiragino,
+      ctxWith({ [hiragino.toLowerCase()]: { altName: 'Cambria', charset: '00', family: 'roman' } }),
+    )
+    expect(viaAlt?.family).toBe('Cambria')
+    expect(viaAlt?.exception).toBe(false)
     expect(
       resolveFace(
         'ProbeNoAltEA',

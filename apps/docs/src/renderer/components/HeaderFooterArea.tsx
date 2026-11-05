@@ -16,6 +16,8 @@ import {
   hfImageHangsOnPara,
   hfCellSegStyle,
   hfCellTabLines,
+  hfPictureOnlyLine,
+  hfVSpanBodyStyle,
   hfLeadIndentCss,
   hfIndentOverhangPx,
   hfInkOverhangPx,
@@ -380,23 +382,12 @@ export function HfContent({
         {para.cells.map((cell, j) => {
           const geom = hfCellGeometry(cell)
           const spans = (runs: Run[]) => runSpans(runs, 'page-hf-cell-img')
-          return (
-            <div
-              key={j}
-              className="page-hf-cell"
-              style={{
-                ...geom.style,
-                // document content colors (w:shd / borders) plus their dark-page twins
-                ...(cell.fill ? { backgroundColor: `#${cell.fill}` } : {}),
-                ...dkStyleProps({
-                  ...(cell.fill ? { background: `#${cell.fill}` } : {}),
-                  backgroundImage: geom.diagonals,
-                  borders: geom.borders,
-                }),
-              }}
-            >
-              {/* one block line per cell paragraph (mirrors makeGapHfEl) */}
-              {(cell.paras.length > 0 ? cell.paras : [[]]).map((runs, k) => {
+          const vSpan = !cell.vMergeContinue && (cell.vSpan ?? 1) > 1
+          // vMerge: the continuation holds nothing; the spanning cell's
+          // paragraphs overlay the merged rows without sizing its own row
+          const cellParas = cell.vMergeContinue
+            ? null
+            : (cell.paras.length > 0 ? cell.paras : [[]]).map((runs, k) => {
                 const props = cell.paraProps?.[k]
                 const tabLines = hfCellTabLines(runs, props, geom, para.row, display)
                 if (!tabLines) {
@@ -442,7 +433,29 @@ export function HfContent({
                     </div>
                   )
                 })
-              })}
+              })
+          return (
+            <div
+              key={j}
+              className={vSpan ? 'page-hf-cell page-hf-cell-vspan' : 'page-hf-cell'}
+              style={{
+                ...geom.style,
+                // document content colors (w:shd / borders) plus their dark-page twins
+                ...(cell.fill ? { backgroundColor: `#${cell.fill}` } : {}),
+                ...dkStyleProps({
+                  ...(cell.fill ? { background: `#${cell.fill}` } : {}),
+                  backgroundImage: geom.diagonals,
+                  borders: geom.borders,
+                }),
+              }}
+            >
+              {vSpan ? (
+                <div className="page-hf-cell-vspan-body" style={hfVSpanBodyStyle(cell)}>
+                  {cellParas}
+                </div>
+              ) : (
+                cellParas
+              )}
             </div>
           )
         })}
@@ -455,7 +468,12 @@ export function HfContent({
           return (
             <div
               key={i}
-              className={['page-hf-para', para.frameXAlign && 'page-hf-frame', ...box.classes]
+              className={[
+                'page-hf-para',
+                para.frameXAlign && 'page-hf-frame',
+                hfPictureOnlyLine(para.runs) && 'page-hf-pic-line',
+                ...box.classes,
+              ]
                 .filter(Boolean)
                 .join(' ')}
               style={{ ...box.style, ...margins(i) }}

@@ -288,16 +288,17 @@ export const ms = {
   ribbonGroupSelect: 'Pilih',
   ribbonSelectTip: 'Pilih: keluar daripada lukisan dan kembali mengedit elemen',
   ribbonGroupDrawTools: 'Alat Lukisan',
-  ribbonPenTip:
-    'Pen: lukis pada slaid (disimpan sebagai imej dakwat pada halaman); klik sekali lagi untuk membatalkan',
   ribbonHighlighter: 'Penyerlah',
-  ribbonHighlighterTip:
-    'Penyerlah: lejang tebal separa lutsinar; klik sekali lagi untuk membatalkan',
   ribbonEraserTip:
     'Pemadam: klik atau seret merentasi lejang untuk memadamkannya; klik sekali lagi untuk membatalkan',
   ribbonInkWidthTip: '{w} px',
-  ribbonGroupPenStyle: 'Gaya Pen',
-  ribbonGroupHighlighterStyle: 'Gaya Penyerlah',
+  ribbonPencil: 'Pensel',
+  ribbonInkAdd: 'Tambah',
+  ribbonInkAddTip: 'Tambah pen, penyerlah atau pensel',
+  ribbonInkDelete: 'Padam',
+  ribbonInkThickness: 'Ketebalan',
+  ribbonInkColors: 'Warna',
+  ribbonGroupPens: 'Pen',
   ribbonEraseAll: 'Padam Semua',
   ribbonEraseAllTip: 'Padamkan semua dakwat pada slaid semasa',
   ribbonGroupThemes: 'Tema',

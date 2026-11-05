@@ -74,6 +74,8 @@ export const pt = {
   appStyleUpdated:
     'Estilo "{name}" atualizado com o formato da seleção; gravado no documento ao salvar',
   appStyleCreated: 'Estilo "{name}" criado e aplicado à seleção',
+  appStyleInstancesSelected: '{count} ocorrência(s) de “{name}” selecionada(s)',
+  appStyleNoInstances: 'Nenhum texto usa “{name}”',
   appPgNumFormatSet: 'Formato de número de página definido',
   appPageNumFormatTitle: 'Formato de número de página',
   appNumberFormat: 'Formato de número',

@@ -105,7 +105,10 @@ describe('editor run rendering', () => {
     const spans = await renderSpans(
       '<w:p><w:r><w:rPr><w:position w:val="-8"/></w:rPr><w:t>low</w:t></w:r></w:p>',
     )
-    expect(spans.find((s) => s.textContent === 'low')!.style.verticalAlign).toBe('-4pt')
+    const low = spans.find((s) => s.textContent === 'low')!
+    expect(low.style.position).toBe('relative')
+    expect(low.style.top).toBe('4pt')
+    expect(low.style.verticalAlign).toBe('')
   })
 })
 

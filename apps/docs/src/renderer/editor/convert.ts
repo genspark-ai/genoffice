@@ -151,7 +151,7 @@ export function blocksToPmDoc(
   options: PmDocOptions = {},
 ): PmNode {
   const content: PmNode[] = []
-  for (const block of blocks) {
+  for (const [i, block] of blocks.entries()) {
     if (block.hidden) continue
     content.push(
       blockToPmNode(
@@ -159,6 +159,7 @@ export function blocksToPmDoc(
         sectionRowCapTwips(sections, block.docxIndex),
         sectionWidthBudget(sections, block.docxIndex),
         options,
+        block.type === 'table' ? blocks.slice(i + 1) : [],
       ),
     )
   }
@@ -900,6 +901,7 @@ function blockToPmNode(
   rowCapTwips: number | null = null,
   budget: TableWidthBudget | null = null,
   options: PmDocOptions = {},
+  followers: Block[] = [],
 ): PmNode {
   if (block.altChunk && options.legacyTableIndent)
     options = { ...options, legacyTableIndent: false }
@@ -979,6 +981,7 @@ function blockToPmNode(
           numberingChange: block.numberingChange ? JSON.stringify(block.numberingChange) : null,
           sectPrChange: block.sectPrChange ? JSON.stringify(block.sectPrChange) : null,
           blockRevision: block.blockRevision ?? null,
+          ruleOverlays: block.ruleOverlays ?? null,
           ...formatAttrs(block.format, block.runs),
         },
         content: runsToInline(block.runs ?? []),
@@ -995,6 +998,7 @@ function blockToPmNode(
         budget?.paper ?? null,
         options.legacyTableIndent ?? false,
         options.defaultRun,
+        followers,
       )
       // content-control member tables need the shell for chrome hit-testing
       if (block.sdtShell) node.attrs = { ...node.attrs, sdtShell: JSON.stringify(block.sdtShell) }
@@ -1143,6 +1147,39 @@ export function cellClipTwips(
 /** free side beside a text-anchored float below which Word's side text is only word fragments */
 const FLOAT_SIDE_MIN_TWIPS = 1440
 
+/** Word's per-line "next word fits" test beside a float (truths L858) passes
+ *  trivially when the flow up to the next table has no words — blank or
+ *  whitespace paragraphs and pictures narrower than the room — so the float
+ *  keeps wrapping them; the 1in minimum only approximates the word test.
+ *  Blank lines alone do not qualify: nothing visible sits beside the float and
+ *  the inline flow places the next table where Word does (corpus gate) */
+function floatSideWordless(followers: Block[], roomTwips: number): boolean {
+  const fits = (widthPx: number | undefined) => (widthPx ?? Infinity) * 15 <= roomTwips
+  let picture = false
+  for (const b of followers) {
+    if (b.hidden) continue
+    if (b.type === 'table') {
+      // a floating table is no flow stop: the paragraphs after it still wrap
+      if (b.table?.floatPos) continue
+      return picture
+    }
+    if (b.type === 'image') {
+      if (!fits(b.imageWidthPx)) return false
+      picture = true
+      continue
+    }
+    if (b.type === 'passthrough') return false
+    for (const r of b.runs ?? []) {
+      if (r.text.trim() !== '') return false
+      if (r.image && !r.image.rule) {
+        if (!fits(r.image.widthPx)) return false
+        picture = true
+      }
+    }
+  }
+  return picture
+}
+
 export function tableModelToPmNode(
   model: TableModel,
   docxIndex: number | null = null,
@@ -1153,15 +1190,17 @@ export function tableModelToPmNode(
   paperTwips: number | null = null,
   legacyIndent = false,
   defaults?: RunDefaults,
+  followers: Block[] = [],
 ): PmNode {
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
-  model = resolveTableWidth(
+  const resolved = resolveTableWidth(
     model,
     availTwips != null
       ? { avail: availTwips, fit: fitTwips ?? availTwips, paper: paperTwips ?? availTwips }
       : null,
     { legacyIndent, defaults },
-  ).model
+  )
+  model = resolved.model
   const positions = model.rows.map((row) => {
     let column = 0
     return row.map((cell) => {
@@ -1239,7 +1278,8 @@ export function tableModelToPmNode(
     sideRoom != null &&
     sideRoom.leftEdge &&
     sideRoom.roomTwips < FLOAT_SIDE_MIN_TWIPS &&
-    !bandFloat
+    !bandFloat &&
+    !floatSideWordless(followers, sideRoom.roomTwips)
   const tblFloatSuppressed = tblFloatSource !== null && (minHeightTwips > 12960 || floatNoSideRoom)
   const tblFloat = tblFloatSuppressed ? null : tblFloatSource
   const table: PmNode = {
@@ -1281,6 +1321,7 @@ export function tableModelToPmNode(
       tblAutoFitEdited: false,
       tblFixedLayout: model.fixedLayout ?? false,
       tblDxaWidth: model.dxaWidth ?? false,
+      tblOverWide: resolved.overWide,
       // w:tblpPr supersedes w:tblInd: a float keeps only the legacy cell-margin hang
       indentTwips:
         tblFloat && !(legacyIndent && marginHungFloat(model)) ? null : (model.indentTwips ?? null),
@@ -2070,6 +2111,12 @@ function markLeadRule(nodes: PmNode[]): void {
 
 let nextZoteroFieldId = 1
 
+/** ECMA-376 17.7.3: a toggle both style layers set is off; the CSS cascade cannot see that */
+function styleXorValue(run: Run, key: 'bold' | 'italic'): boolean | null {
+  const eff = run.effective
+  return eff?.styleXor?.includes(key) ? eff[key] : null
+}
+
 function runMarks(run: Run): PmMark[] {
   const marks: PmMark[] = []
   const cs = run.effective?.cs ? run.effective : undefined
@@ -2183,7 +2230,8 @@ function runMarks(run: Run): PmMark[] {
     run.cs ||
     run.rtl !== undefined ||
     run.styleId ||
-    run.rawRPr
+    run.rawRPr ||
+    run.effective?.styleXor?.length
   ) {
     // an inline-block cannot wrap and drops inherited underlines: only
     // whitespace-free, undecorated runs get the real glyph compression
@@ -2246,9 +2294,10 @@ function runMarks(run: Run): PmMark[] {
         themeColor: run.themeColor ?? null,
         // the Cs size an rtl run inherits (strut input only; the .doc-cs style CSS paints it)
         csSize: cs && run.sizeHalfPoints === undefined ? cs.sizeHalfPoints : null,
-        // the resolved weight / style of an rtl run (table style, Cs twins, XOR), display only
-        csBold: cs && run.bold === undefined ? cs.bold : null,
-        csItalic: cs && run.italic === undefined ? cs.italic : null,
+        // the resolved weight / style of an rtl run (table style, Cs twins, XOR) or of a
+        // run whose character style toggle XORs against the paragraph style, display only
+        csBold: run.bold === undefined ? (cs?.bold ?? styleXorValue(run, 'bold')) : null,
+        csItalic: run.italic === undefined ? (cs?.italic ?? styleXorValue(run, 'italic')) : null,
         tblRun: tableStyleRunAttr(run.effective),
       },
     })

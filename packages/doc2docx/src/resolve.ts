@@ -15,6 +15,7 @@ import type {
   CharacterFormatting,
   CommentMark,
   FormattedParagraph,
+  FormattedLink,
   FormattedRun,
   FormattingRead,
   FormattingSource,
@@ -38,6 +39,8 @@ export const DEFAULT_PARAGRAPH_STYLE_ISTD = 0
 /** the Word 97 default character style ("Default Paragraph Font") */
 export const DEFAULT_CHARACTER_STYLE_ISTD = 10
 const SPRM_C_ISTD = 0x4a30
+const STI_HYPERLINK = 85
+const STI_FOLLOWED_HYPERLINK = 87
 const NO_SPRMS = new Uint8Array(0)
 
 interface Resolver {
@@ -112,10 +115,18 @@ function resolveParagraphFormatting(
   return formatting
 }
 
+/** Word draws TOC entries in the paragraph's ink: the Hyperlink style is skipped inside a TOC link */
+function suppressedTocStyle(styles: StyleSheet, istd: number, inTocLink: boolean): boolean {
+  if (!inTocLink) return false
+  const sti = styles.styles.get(istd)?.sti
+  return sti === STI_HYPERLINK || sti === STI_FOLLOWED_HYPERLINK
+}
+
 function resolveCharacterFormatting(
   sprms: Uint8Array,
   paragraphStyles: Style[],
   resolver: Resolver,
+  inTocLink = false,
 ): CharacterFormatting {
   const formatting: CharacterFormatting = {}
   for (const style of paragraphStyles) applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
@@ -130,7 +141,10 @@ function resolveCharacterFormatting(
       applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
   }
   const characterIstd = characterStyleIndex(sprms)
-  if (characterIstd !== undefined) {
+  if (
+    characterIstd !== undefined &&
+    !suppressedTocStyle(resolver.styles, characterIstd, inTocLink)
+  ) {
     for (const style of styleChain(
       resolver.styles,
       characterIstd,
@@ -208,6 +222,7 @@ export interface FormattedLinkRange {
   endCp: number
   href: string
   tooltip?: string
+  inToc?: boolean
 }
 
 /** The result range of a live field (PAGE, NUMPAGES, ...) with its instruction. */
@@ -238,12 +253,14 @@ function runsForRange(
   endCp: number,
   formattingOf: (
     covering: FormattingRead['characterRuns'][number] | undefined,
+    inTocLink?: boolean,
   ) => CharacterFormatting,
   rawText: string,
   linkRanges: FormattedLinkRange[] = [],
   fieldRanges: FormattedFieldRange[] = [],
   noteMarks: NoteMark[] = [],
   commentMarks: CommentMarkAt[] = [],
+  pictureCps: number[] = [],
 ): FormattedRun[] {
   const boundaries = new Set<number>([startCp, endCp])
   for (const run of read.characterRuns) {
@@ -264,6 +281,11 @@ function runsForRange(
   }
   for (const mark of commentMarks)
     if (mark.cp >= startCp && mark.cp <= endCp) boundaries.add(mark.cp)
+  for (const cp of pictureCps) {
+    if (cp < startCp || cp >= endCp) continue
+    boundaries.add(cp)
+    boundaries.add(cp + 1)
+  }
   const points = [...boundaries].sort((left, right) => left - right)
   const mapper = createWordControlMapper()
   const runs: FormattedRun[] = []
@@ -298,10 +320,17 @@ function runsForRange(
     const covering = read.characterRuns.find(
       (run) => run.cpStart <= segmentStart && run.cpEnd >= segmentEnd,
     )
-    const formatting = formattingOf(covering)
     const link = linkRanges.find(
       (range) => range.startCp <= segmentStart && range.endCp >= segmentEnd,
     )
+    const formatting = formattingOf(covering, link?.inToc)
+    const formattedLink: FormattedLink | undefined = link
+      ? {
+          href: link.href,
+          ...(link.tooltip ? { tooltip: link.tooltip } : {}),
+          ...(link.inToc ? { plain: true } : {}),
+        }
+      : undefined
     const field = fieldRanges.find(
       (range) => range.startCp <= segmentStart && range.endCp >= segmentEnd,
     )
@@ -311,15 +340,19 @@ function runsForRange(
       runs.push({ text: note.custom ? text : '', formatting, note })
       continue
     }
+    if (pictureCps.includes(segmentStart)) {
+      runs.push({ text: '', formatting, pictureCp: segmentStart })
+      continue
+    }
     if (text === '') continue
     const previous = runs[runs.length - 1]
     if (
       previous &&
       !previous.note &&
       previous.commentMarks === undefined &&
+      previous.pictureCp === undefined &&
       JSON.stringify(previous.formatting) === JSON.stringify(formatting) &&
-      JSON.stringify(previous.link ?? null) ===
-        JSON.stringify(link ? { href: link.href, tooltip: link.tooltip } : null) &&
+      JSON.stringify(previous.link ?? null) === JSON.stringify(formattedLink ?? null) &&
       previous.field === field?.instruction
     )
       previous.text += text
@@ -327,9 +360,7 @@ function runsForRange(
       runs.push({
         text,
         formatting,
-        ...(link
-          ? { link: { href: link.href, ...(link.tooltip ? { tooltip: link.tooltip } : {}) } }
-          : {}),
+        ...(formattedLink ? { link: formattedLink } : {}),
         ...(field ? { field: field.instruction } : {}),
       })
   }
@@ -407,6 +438,7 @@ export function resolveRunsForRange(
   fieldRanges: FormattedFieldRange[] = [],
   noteMarks: NoteMark[] = [],
   commentMarks: CommentMarkAt[] = [],
+  pictureCps: number[] = [],
 ): FormattedRun[] {
   if (!styles) {
     return runsForRange(
@@ -419,6 +451,7 @@ export function resolveRunsForRange(
       fieldRanges,
       noteMarks,
       commentMarks,
+      pictureCps,
     )
   }
   const resolver: Resolver = { styles, context: { source, warnings }, warn: warnOnce(warnings) }
@@ -432,13 +465,19 @@ export function resolveRunsForRange(
     read,
     request.startCp,
     request.endCp,
-    (covering) =>
-      resolveCharacterFormatting(covering?.sprms ?? NO_SPRMS, paragraphStyles, resolver),
+    (covering, inTocLink) =>
+      resolveCharacterFormatting(
+        covering?.sprms ?? NO_SPRMS,
+        paragraphStyles,
+        resolver,
+        inTocLink === true,
+      ),
     source.rawText,
     linkRanges,
     fieldRanges,
     noteMarks,
     commentMarks,
+    pictureCps,
   )
 }
 

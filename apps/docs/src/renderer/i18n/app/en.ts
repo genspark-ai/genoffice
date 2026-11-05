@@ -72,6 +72,8 @@ export const en = {
   appFieldsUpdated: 'Updated {n} fields',
   appStyleUpdated: 'Style "{name}" updated from the selection; written to the document on save',
   appStyleCreated: 'Style "{name}" created and applied to the selection',
+  appStyleInstancesSelected: '{count} instance(s) of “{name}” selected',
+  appStyleNoInstances: 'No text uses “{name}”',
   appPgNumFormatSet: 'Page number format set',
   appPageNumFormatTitle: 'Page Number Format',
   appNumberFormat: 'Number format',

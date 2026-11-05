@@ -59,10 +59,15 @@ interface WikiSpan {
 function wikiLiterals(text: string): { start: number; end: number; raw: string }[] {
   const out: { start: number; end: number; raw: string }[] = []
   for (let at = 0; at < text.length;) {
-    const match = WIKI_LINK_RE.exec(text.slice(at))
-    if (!match) break
-    out.push({ start: at, end: at + match[0].length, raw: match[0] })
-    at += match[0].length
+    const idx = text.indexOf('[[', at)
+    if (idx < 0) break
+    const match = WIKI_LINK_RE.exec(text.slice(idx))
+    if (!match) {
+      at = idx + 2
+      continue
+    }
+    out.push({ start: idx, end: idx + match[0].length, raw: match[0] })
+    at = idx + match[0].length
   }
   return out
 }

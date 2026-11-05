@@ -13,6 +13,7 @@ import {
 import {
   SYNTHETIC_TEXT_OFFSET,
   buildSyntheticDoc,
+  encodeChpxFkp,
   encodeListParagraphPapx,
   encodePapxFkp,
   encodeSprm,
@@ -39,6 +40,7 @@ function syntheticListDoc(options: {
   lists: SyntheticListDefinition[]
   listOverrides?: number[]
   listLevelOverrides?: Array<SyntheticLevelOverride[] | undefined>
+  fonts?: string[]
 }): Uint8Array {
   const entries: SyntheticPapxEntry[] = options.paragraphs.map((paragraph) => ({
     fcStart: SYNTHETIC_TEXT_OFFSET + paragraph.startCp * 2,
@@ -59,6 +61,7 @@ function syntheticListDoc(options: {
     lists: options.lists,
     ...(options.listOverrides ? { listOverrides: options.listOverrides } : {}),
     ...(options.listLevelOverrides ? { listLevelOverrides: options.listLevelOverrides } : {}),
+    ...(options.fonts ? { fonts: options.fonts } : {}),
   })
 }
 
@@ -122,7 +125,10 @@ describe('lists-link.doc: numbering + hyperlink reconstruction', () => {
     expect(numbering).toContain('<w:abstractNum w:abstractNumId="10">')
     expect(numbering).toContain('<w:abstractNum w:abstractNumId="11">')
     expect(numbering).toContain('<w:numFmt w:val="bullet"/>')
-    expect(numbering).toContain('<w:lvlText w:val="\u2022"/>')
+    // the Symbol-font bullet keeps its private-use code with the level's rFonts
+    expect(numbering).toContain(
+      '<w:lvlText w:val="&#xF0B7;"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr>',
+    )
     expect(numbering).toContain('<w:lvlText w:val="%1."/>')
     expect(numbering).toContain('<w:num w:numId="101">')
     expect(numbering).toContain('<w:num w:numId="104">')
@@ -309,6 +315,37 @@ describe('synthetic list tables', () => {
     expect(levels[1]!.characterSprms).toHaveLength(10)
     expect(levels[1]!.paragraphSprms).toHaveLength(4)
     expect(levels[2]!.levelText).toBe('%3.')
+  })
+
+  it('writes the level number East Asian face next to its Latin face', async () => {
+    const bytes = syntheticListDoc({
+      text: 'One\r',
+      paragraphs: [{ startCp: 0, ilfo: 1 }],
+      fonts: ['Times New Roman', 'Arial', 'SimSun'],
+      lists: [
+        {
+          lsid: 7,
+          simple: true,
+          levels: [
+            {
+              numberFormat: 0,
+              levelText: '\u0000.',
+              characterSprms: new Uint8Array([
+                ...encodeSprm(0x4a4f, [1, 0]),
+                ...encodeSprm(0x4a50, [2, 0]),
+              ]),
+            },
+          ],
+        },
+      ],
+    })
+    const numbering = (await zipText(
+      (await convertLegacyDocToDocx(bytes)).docx,
+      'word/numbering.xml',
+    ))!
+    expect(numbering).toContain(
+      '<w:rFonts w:ascii="Arial" w:eastAsia="SimSun" w:hAnsi="Arial" w:hint="default"/>',
+    )
   })
 
   it('supports a simple (single-level) list', () => {
@@ -520,6 +557,49 @@ describe('synthetic hyperlink conversion', () => {
     expect(rels).toContain('Target="other.docx#chapter1"')
   })
 
+  it('drops the Hyperlink character style inside a TOC entry but keeps it on other links', async () => {
+    // Word ignores the Hyperlink style in TOC field results (probed: black text, no underline)
+    const text =
+      '\u0013 TOC \\o "1-3" \\h \u0014\u0013 HYPERLINK \\l "_Toc1" \u0014Entry\u0015\u0015\r' +
+      'See \u0013 HYPERLINK \\l "_Toc1" \u0014Link\u0015\r'
+    const fields = parseFields(text)
+    expect(fields.hyperlinks.map((link) => link.inToc)).toEqual([true, undefined])
+    const hyperlinkStyle = new Uint8Array([
+      ...encodeSprm(0x2a3e, [0x01]),
+      ...encodeSprm(0x6870, [0x00, 0x00, 0xff, 0x00]),
+    ])
+    const bytes = buildSyntheticDoc({
+      pieces: [{ text }],
+      stshStyles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { name: 'Hyperlink', kind: 'character', sti: 85, chpxSprms: hyperlinkStyle },
+      ],
+      chpxFkpPages: [
+        encodeChpxFkp([
+          {
+            fcStart: SYNTHETIC_TEXT_OFFSET,
+            fcEnd: SYNTHETIC_TEXT_OFFSET + text.length * 2,
+            grpprl: encodeSprm(0x4a30, [0x01, 0x00]),
+          },
+        ]),
+      ],
+    })
+    const runs = readLegacyDocBody(bytes)
+      .blocks.flatMap((block) => (block.type === 'paragraph' ? block.paragraph.runs : []))
+      .filter((run) => run.link !== undefined)
+    expect(runs.map((run) => [run.text, run.link!.plain, run.formatting.colorRgb])).toEqual([
+      ['Entry', true, undefined],
+      ['Link', undefined, '0000FF'],
+    ])
+    const xml = (await zipText((await convertLegacyDocToDocx(bytes)).docx, 'word/document.xml'))!
+    const entry = xml.slice(xml.indexOf('<w:hyperlink'), xml.indexOf('Entry</w:t>'))
+    expect(entry).not.toMatch(/Hyperlink|0000FF|<w:u /)
+    const link = xml.slice(xml.lastIndexOf('<w:hyperlink'), xml.indexOf('Link</w:t>'))
+    expect(link).toContain('<w:rStyle w:val="Hyperlink"/>')
+    expect(link).toContain('<w:color w:val="0000FF"/>')
+    expect(link).toContain('<w:u w:val="single"/>')
+  })
+
   it('passes an Office Open XML file saved under a .doc name through unchanged', async () => {
     const zip = new JSZip()
     zip.file('[Content_Types].xml', '<Types/>')
@@ -554,5 +634,84 @@ describe('synthetic hyperlink conversion', () => {
     expect(xml).toMatch(
       /Page <\/w:t><\/w:r><w:r><w:fldChar w:fldCharType="begin"\/>.*?<w:fldChar w:fldCharType="end"\/><\/w:r><w:r><w:t xml:space="preserve"> end<\/w:t>/,
     )
+  })
+})
+
+describe('NUMBER_FORMATS', () => {
+  it('maps every nfc to a value Word accepts in w:numFmt', async () => {
+    const { NUMBER_FORMATS } = await import('../src/lists')
+    const valid = new Set([
+      'decimal',
+      'upperRoman',
+      'lowerRoman',
+      'upperLetter',
+      'lowerLetter',
+      'ordinal',
+      'cardinalText',
+      'ordinalText',
+      'hex',
+      'chicago',
+      'ideographDigital',
+      'japaneseCounting',
+      'aiueo',
+      'iroha',
+      'decimalFullWidth',
+      'decimalHalfWidth',
+      'japaneseLegal',
+      'japaneseDigitalTenThousand',
+      'decimalEnclosedCircle',
+      'decimalFullWidth2',
+      'aiueoFullWidth',
+      'irohaFullWidth',
+      'decimalZero',
+      'bullet',
+      'ganada',
+      'chosung',
+      'decimalEnclosedFullstop',
+      'decimalEnclosedParen',
+      'decimalEnclosedCircleChinese',
+      'ideographEnclosedCircle',
+      'ideographTraditional',
+      'ideographZodiac',
+      'ideographZodiacTraditional',
+      'taiwaneseCounting',
+      'ideographLegalTraditional',
+      'taiwaneseCountingThousand',
+      'taiwaneseDigital',
+      'chineseCounting',
+      'chineseLegalSimplified',
+      'chineseCountingThousand',
+      'koreanDigital',
+      'koreanCounting',
+      'koreanLegal',
+      'koreanDigital2',
+      'vietnameseCounting',
+      'russianLower',
+      'russianUpper',
+      'none',
+      'numberInDash',
+      'hebrew1',
+      'hebrew2',
+      'arabicAlpha',
+      'arabicAbjad',
+      'hindiVowels',
+      'hindiConsonants',
+      'hindiNumbers',
+      'hindiCounting',
+      'thaiLetters',
+      'thaiNumbers',
+      'thaiCounting',
+      'bahtText',
+      'dollarText',
+    ])
+    for (const [nfc, fmt] of Object.entries(NUMBER_FORMATS))
+      expect(valid.has(fmt), `nfc ${nfc} -> ${fmt}`).toBe(true)
+    expect(NUMBER_FORMATS[20]).toBe('aiueoFullWidth')
+    expect(NUMBER_FORMATS[22]).toBe('decimalZero')
+    expect(NUMBER_FORMATS[0x28]).toBe('decimal')
+    expect(NUMBER_FORMATS[0x2d]).toBe('hebrew1')
+    expect(NUMBER_FORMATS[0x38]).toBe('vietnameseCounting')
+    expect(NUMBER_FORMATS[0x3a]).toBe('russianLower')
+    expect(NUMBER_FORMATS[0xff]).toBe('none')
   })
 })

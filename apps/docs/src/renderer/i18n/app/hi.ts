@@ -73,6 +73,8 @@ export const hi = {
   appFieldsUpdated: '{n} फ़ील्ड अपडेट किए गए',
   appStyleUpdated: 'शैली "{name}" चयन के स्वरूप से अपडेट की गई; सहेजने पर दस्तावेज़ में लिखी जाएगी',
   appStyleCreated: 'शैली "{name}" बनाई गई और चयन पर लागू की गई',
+  appStyleInstancesSelected: '“{name}” के {count} उदाहरण चुने गए',
+  appStyleNoInstances: 'कोई टेक्स्ट “{name}” का उपयोग नहीं करता',
   appPgNumFormatSet: 'पृष्ठ संख्या स्वरूप सेट किया गया',
   appPageNumFormatTitle: 'पृष्ठ संख्या स्वरूप',
   appNumberFormat: 'संख्या स्वरूप',

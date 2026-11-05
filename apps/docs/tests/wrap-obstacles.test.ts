@@ -86,6 +86,7 @@ describe('anchor paragraph page turn (Word probe 2026-10-13)', () => {
     floatKeepWhole: true,
     floatBottom: top + bottom,
     floatMaxH: maxH,
+    modernFloatTurn: true,
   })
 
   it('turns the page when the tallest drawing cannot end at the body bottom', () => {

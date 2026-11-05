@@ -5,11 +5,13 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   activeStyleKey,
   allStyleEntries,
+  collectAllUsedStyleIds,
   collectUsedStyleIds,
   headingStyleId,
   quickStyleEntries,
   styleLabel,
   stylePreviewCss,
+  styleInstanceRanges,
 } from '../src/renderer/style-gallery'
 
 const WORD_GALLERY = [
@@ -160,6 +162,61 @@ describe('quick style gallery (Word order and hiding)', () => {
     const used = collectUsedStyleIds(editor.state.doc, styles)
     expect([...used].sort()).toEqual(['Heading3', 'Heading4', 'HiddenChar'])
     expect(collectUsedStyleIds(null, styles).size).toBe(0)
+    editor.destroy()
+  })
+
+  it('lists every style in use and finds the ranges carrying one (Word Select All)', async () => {
+    const styles = await blankStyles()
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'docHeading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Head' }] },
+          { type: 'docParagraph', content: [{ type: 'text', text: 'body' }] },
+          { type: 'docParagraph' },
+          {
+            type: 'docParagraph',
+            attrs: { styleId: 'Quote' },
+            content: [
+              { type: 'text', text: 'a' },
+              {
+                type: 'text',
+                text: 'bc',
+                marks: [{ type: 'docTextStyle', attrs: { styleId: 'Strong' } }],
+              },
+              {
+                type: 'text',
+                text: 'd',
+                marks: [{ type: 'docTextStyle', attrs: { styleId: 'Strong' } }, { type: 'bold' }],
+              },
+              { type: 'text', text: 'e' },
+            ],
+          },
+        ],
+      },
+    })
+    const doc = editor.state.doc
+    // the empty paragraph still resolves to Normal; headings resolve by level
+    expect([...collectAllUsedStyleIds(doc, styles)].sort()).toEqual([
+      'Heading1',
+      'Normal',
+      'Quote',
+      'Strong',
+    ])
+    expect(collectAllUsedStyleIds(null, styles).size).toBe(0)
+
+    const h1 = styleInstanceRanges(doc, styles.get('Heading1')!, styles)
+    expect(h1).toEqual([{ from: 1, to: 5 }])
+    // Normal: the body paragraph only — nothing to select in the empty one
+    expect(styleInstanceRanges(doc, styles.get('Normal')!, styles)).toEqual([{ from: 7, to: 11 }])
+    // adjacent runs sharing the character style merge into one range
+    const quoteStart = 7 + 6 + 2
+    expect(styleInstanceRanges(doc, styles.get('Strong')!, styles)).toEqual([
+      { from: quoteStart + 1, to: quoteStart + 4 },
+    ])
+    expect(styleInstanceRanges(doc, styles.get('Title')!, styles)).toEqual([])
     editor.destroy()
   })
 
