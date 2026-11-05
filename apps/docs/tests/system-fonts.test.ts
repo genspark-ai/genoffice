@@ -86,8 +86,8 @@ describe('font aliases', () => {
     stubCanvas(['FangSong_GB2312'])
     const { systemFonts, lineMetrics } = await freshModules()
     stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('FangSong_GB2312')
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('FangSong_GB2312')
   })
 
   it('the first candidate the browser resolves is the one that is used', async () => {
@@ -95,16 +95,16 @@ describe('font aliases', () => {
     const { systemFonts, lineMetrics } = await freshModules()
     // the canonical spelling comes first, but only the second one resolves
     stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312', 'No Such Face'] }))
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('FangSong_GB2312')
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('FangSong_GB2312')
   })
 
   it('a declared name stays when no candidate resolves', async () => {
     stubCanvas([])
     const { systemFonts, lineMetrics } = await freshModules()
     stubFontAliases(async () => ({ 仿宋_GB2312: ['No Such Face'] }))
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(head(lineMetrics.cssFontFamily('仿宋_GB2312'))).toBe('仿宋_GB2312')
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('\u4eff\u5b8b_GB2312')
   })
 
   it('a declared name the browser resolves itself keeps its own weight', async () => {
@@ -123,16 +123,16 @@ describe('font aliases', () => {
     const seen: string[][] = []
     const off = systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
     stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(seen).toEqual([['仿宋_GB2312']])
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(seen).toEqual([['\u4eff\u5b8b_GB2312']])
     // the same answer announces again: a document laid out before the map was
     // filled must still be re-styled
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(seen).toEqual([['仿宋_GB2312'], ['仿宋_GB2312']])
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(seen).toEqual([['\u4eff\u5b8b_GB2312'], ['\u4eff\u5b8b_GB2312']])
     off()
     // an unsubscribed listener hears nothing more
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(seen).toEqual([['仿宋_GB2312'], ['仿宋_GB2312']])
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(seen).toEqual([['\u4eff\u5b8b_GB2312'], ['\u4eff\u5b8b_GB2312']])
   })
 
   it('an alias the document does not declare covers nothing', async () => {
@@ -141,8 +141,8 @@ describe('font aliases', () => {
     const seen: string[][] = []
     systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
     stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
-    await systemFonts.resolveFontAliases(['仿宋_GB2312'])
-    expect(seen).toEqual([['仿宋_GB2312']])
+    await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
+    expect(seen).toEqual([['\u4eff\u5b8b_GB2312']])
     const parsed = {
       blocks: [{ runs: [{ font: 'SimSun' }] }],
       styles: new Map(),
@@ -163,7 +163,7 @@ describe('font aliases', () => {
       await gate
       return { 仿宋_GB2312: ['FangSong_GB2312'] }
     })
-    const request = systemFonts.resolveFontAliases(['仿宋_GB2312'])
+    const request = systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     let settled = false
     const waited = systemFonts.fontAliasesSettled().then(() => {
       settled = true
@@ -180,11 +180,13 @@ describe('font aliases', () => {
   it('only a declared font counts as covered', async () => {
     const { fontCheck } = await freshModules()
     const parsed = {
-      blocks: [{ runs: [{ font: '仿宋_GB2312' }] }],
+      blocks: [{ runs: [{ font: '\u4eff\u5b8b_GB2312' }] }],
       styles: new Map(),
       docDefaults: {},
     } as unknown as ParsedDoc
-    expect(fontCheck.docFontsCoveredBy(parsed, ['仿宋_GB2312'])).toEqual(['仿宋_GB2312'])
+    expect(fontCheck.docFontsCoveredBy(parsed, ['\u4eff\u5b8b_GB2312'])).toEqual([
+      '\u4eff\u5b8b_GB2312',
+    ])
     // an alias for a font the document does not declare must not reflow it
     expect(fontCheck.docFontsCoveredBy(parsed, ['PingFang SC'])).toEqual([])
   })

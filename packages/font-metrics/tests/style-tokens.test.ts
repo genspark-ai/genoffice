@@ -8,6 +8,7 @@ const face = (style: string): Parameters<typeof styleScore>[0] => ({
   style,
   families: [],
   canonical: '',
+  familyRecords: [],
 })
 
 describe('styleTokens', () => {

@@ -203,6 +203,8 @@ export interface FaceRef {
   families: readonly string[]
   /** The face's canonical (en-US) family spelling */
   canonical: string
+  /** Every family record of the face, with the name id it was written for */
+  familyRecords: readonly FamilyNameRecord[]
 }
 
 export interface FontIndex {
@@ -266,6 +268,7 @@ function indexFile(path: string, index: FontIndex): void {
         style: norm([...names.families, ...names.subfamilies].join(' ')),
         families: [...names.families],
         canonical: canonicalFamily(names),
+        familyRecords: [...names.familyRecords],
       }
       for (const p of names.ps) if (!index.byPs.has(norm(p))) index.byPs.set(norm(p), face)
       for (const f of names.families) {
@@ -303,6 +306,17 @@ export function getFontIndex(): FontIndex {
  * resolves (FZFangSong-Z02), and the other way round; a face with a single
  * spelling yields nothing (genoffice#2449).
  *
+ * Only the spellings of the same family slot count as aliases: a face writes
+ * its family under two name ids, and the legacy one (1) carries the weight
+ * with it ("Hiragino Sans GB W3") while the typographic one (16) stays
+ * family-wide ("Hiragino Sans GB"). A localized name is matched under the
+ * name id the face writes it under, and only the records under that same id
+ * are aliases of it — a sibling weight face spells its own legacy family
+ * with a weight attached, which is a different family name, not another
+ * spelling of this one. Without that, a family of seven weights would offer
+ * "<Family> W0" as an alias and body text would render in the thinnest
+ * weight whenever the canonical spelling does not resolve.
+ *
  * The match is exact after normalization (norm), never fuzzy: a name no
  * installed face carries has no alias.
  */
@@ -315,13 +329,20 @@ export function familyAliases(name: string, index: FontIndex = getFontIndex()): 
   const localized: string[] = []
   const seen = new Set<string>([key])
   for (const face of faces) {
-    const canonicalKey = norm(face.canonical)
-    for (const family of face.families ?? []) {
-      const familyKey = norm(family)
-      if (seen.has(familyKey)) continue
-      seen.add(familyKey)
-      if (familyKey === canonicalKey) canonical.push(family)
-      else localized.push(family)
+    const records = face.familyRecords ?? []
+    // the name ids this face writes the matched name under
+    const matchedIds = new Set<number>()
+    for (const record of records) {
+      if (norm(record.name) === key) matchedIds.add(record.nameId)
+    }
+    if (matchedIds.size === 0) continue
+    for (const record of records) {
+      if (!matchedIds.has(record.nameId)) continue
+      const recordKey = norm(record.name)
+      if (seen.has(recordKey)) continue
+      seen.add(recordKey)
+      if (isCanonicalRecord(record.platform, record.language)) canonical.push(record.name)
+      else localized.push(record.name)
     }
   }
   return [...canonical, ...localized]
