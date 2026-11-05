@@ -9,7 +9,7 @@ import { writeJsonAtomic } from './atomic-write'
 
 export const LEGACY_IMPORT_SKIP_KEY = 'legacyImportSkipConfirm'
 
-export const LEGACY_IMPORT_KINDS = ['word97', 'odt', 'hwp', 'ods', 'odp'] as const
+export const LEGACY_IMPORT_KINDS = ['word97', 'odt', 'hwp', 'ods', 'odp', 'ppt'] as const
 export type LegacyImportKind = (typeof LEGACY_IMPORT_KINDS)[number]
 
 function readSettings(settingsPath: string): Record<string, unknown> {
