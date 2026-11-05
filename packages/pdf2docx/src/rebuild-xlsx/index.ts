@@ -3,8 +3,8 @@
  * with convertPdfToDocx/convertPdfToPptx (pipeline.ts) and rebuilds each page
  * as one worksheet: tables as cell grids, non-table text as column-A rows.
  *
- * Furniture (repeated headers/footers/page numbers) stays dropped, same as
- * the other exporters; the dedup warning still surfaces.
+ * Furniture (repeated headers/footers/page numbers) moves to the sheet
+ * header/footer when it has a seat and otherwise stays in the cells.
  */
 import {
   extractIrDocument,
