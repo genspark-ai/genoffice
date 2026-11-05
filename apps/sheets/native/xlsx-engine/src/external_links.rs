@@ -1302,7 +1302,7 @@ pub(crate) fn read_external_link_usage(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
 

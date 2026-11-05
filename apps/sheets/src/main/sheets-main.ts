@@ -3366,7 +3366,7 @@ export function registerSheetsIpc(): void {
   // One pick armed at a time: the tab editing a formula arms it, the user
   // clicks a range in another workbook's tab, that tab reports the
   // selection, and main relays it back and re-activates the editor.
-  let pendingWorkbookPick: { pickId: string; sourceWcId: number } | null = null
+  let pendingWorkbookPick: { pickId: string; sourceWcId: number; targetWcId: number } | null = null
   const broadcastPickCancelled = (pickId: string, exceptWcId: number): void => {
     for (const entry of sheetsTabs.values()) {
       if (entry.webContents.id === exceptWcId || entry.webContents.isDestroyed()) continue
@@ -3387,20 +3387,22 @@ export function registerSheetsIpc(): void {
         path: entry.currentPath!,
       })),
   }))
-  ipcMain.handle(IPC_CHANNELS.armWorkbookPick, (event) => {
+  ipcMain.handle(IPC_CHANNELS.armWorkbookPick, (event, input: unknown) => {
+    const { wcId } = z.object({ wcId: z.number().int() }).strict().parse(input)
     const pickId = 'pick-' + randomUUID()
-    pendingWorkbookPick = { pickId, sourceWcId: event.sender.id }
-    for (const entry of sheetsTabs.values()) {
-      if (entry.webContents.id === event.sender.id || entry.webContents.isDestroyed()) continue
-      entry.webContents.send(IPC_CHANNELS.workbookPickArmed, { pickId })
+    pendingWorkbookPick = { pickId, sourceWcId: event.sender.id, targetWcId: wcId }
+    // only the tab holding the selected link's source workbook is armed
+    const target = sheetsTabs.get(wcId)
+    if (target && wcId !== event.sender.id && !target.webContents.isDestroyed()) {
+      target.webContents.send(IPC_CHANNELS.workbookPickArmed, { pickId })
     }
     return { pickId }
   })
   ipcMain.handle(IPC_CHANNELS.sendWorkbookPickSelection, (event, input: unknown) => {
     const selection = workbookPickSelectionSchema.parse(input)
     const pending = pendingWorkbookPick
-    // only the tab the pick was armed against answers, and never the editor
-    if (!pending || pending.pickId !== selection.pickId || event.sender.id === pending.sourceWcId)
+    // only the tab the pick was armed against answers
+    if (!pending || pending.pickId !== selection.pickId || event.sender.id !== pending.targetWcId)
       return
     pendingWorkbookPick = null
     const source = sheetsTabs.get(pending.sourceWcId)

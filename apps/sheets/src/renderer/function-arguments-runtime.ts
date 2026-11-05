@@ -227,11 +227,13 @@ export function createFunctionArgumentsHost(
       })
     },
     pickExternalRange(target, onPick) {
+      if (target.wcId === null) return () => undefined
+      const wcId = target.wcId
       let disposed = false
       let offSelected: (() => void) | null = null
       let pickId: string | null = null
       void (async () => {
-        const armed = await window.desktopApi.armWorkbookPick()
+        const armed = await window.desktopApi.armWorkbookPick(wcId)
         if (disposed) {
           void window.desktopApi.cancelWorkbookPick(armed.pickId)
           return
