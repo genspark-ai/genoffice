@@ -24,6 +24,7 @@ import type { HeaderFooterResult } from './HeaderFooterDialog'
 import { t } from './i18n/locale'
 import { effectivePageBreaks } from './page-break-preview'
 import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './themes'
+import { settleFormulas } from './formula-settle'
 import { startFullLoad } from './full-load'
 import { fitsFullLoad, workbookCellCounts } from './load-budget'
 import { loadVisibleRange } from './univer-sync'
@@ -588,8 +589,9 @@ async function loadWorkbookForPrint(
   return true
 }
 
-/// File → Print: loads a streamed workbook first, then opens the Print
-/// dialog's host; null (after a status message) when it cannot be opened.
+/// File → Print: loads a streamed workbook and settles its formulas first,
+/// then opens the Print dialog's host; null (after a status message) when it
+/// cannot be opened.
 export async function openPrintPreviewHost(
   ctx: PageLayoutContext,
 ): Promise<PrintPreviewHost | null> {
@@ -605,6 +607,8 @@ export async function openPrintPreviewHost(
     })
     if (!loaded) return null
   }
+  await settleFormulas(ctx.univerRef.current)
+  if (ctx.lazyWorkbookRef.current !== state) return null
   return createPrintPreviewHost(ctx)
 }
 
@@ -621,8 +625,10 @@ async function activeSheetPrintPayload(
   }
   const state = ctx.lazyWorkbookRef.current
   if (state && !(await loadWorkbookForPrint(ctx, state, messages))) return null
+  await settleFormulas(ctx.univerRef.current)
 
-  // The load awaited: take the sheet again, it may have changed meanwhile.
+  // The load and the formula pass awaited: take the sheet again, it may have
+  // changed meanwhile.
   const worksheet = activeSheet()
   if (!worksheet) {
     ctx.setMessage(t('appActiveSheetUnavailable'))
@@ -635,56 +641,6 @@ async function activeSheetPrintPayload(
   const document = await sheetPrintDocument(ctx, state, worksheet, {}, null, new Date(), true)
   if (ctx.lazyWorkbookRef.current !== state || activeSheet()?.getSheetId() !== sheetId) return null
   return printRequest([document], `${document.fileName}.pdf`)
-}
-
-/// A cold load reaches preloadComplete before the formula engine's first pass
-/// lands in the model, so an export right after it prints formula cells
-/// empty. Force one calculation pass, wait for its end (bounded) and then let
-/// the model absorb the results (also bounded) — calculationEnd alone was not
-/// enough on a cold start.
-const FORMULA_SETTLE_TIMEOUT_MS = 30_000
-
-async function settleFormulasBeforePrint(ctx: PageLayoutContext): Promise<void> {
-  const runtime = ctx.univerRef.current
-  const workbook = runtime?.univerAPI.getActiveWorkbook()
-  if (!runtime || !workbook) return
-  /** formula cells of the whole workbook whose computed value has not landed */
-  const pendingFormulas = (): number => {
-    const snapshot = workbook.getSnapshot() as unknown as {
-      sheets?: Record<
-        string,
-        {
-          cellData?: Record<string, Record<string, { f?: unknown; v?: unknown }> | undefined>
-        }
-      >
-    } | null
-    let pending = 0
-    for (const sheet of Object.values(snapshot?.sheets ?? {})) {
-      for (const row of Object.values(sheet?.cellData ?? {})) {
-        for (const cell of Object.values(row ?? {})) {
-          if (cell?.f && (cell.v === undefined || cell.v === null)) pending += 1
-        }
-      }
-    }
-    return pending
-  }
-  if (pendingFormulas() === 0) return
-  const formula = runtime.univerAPI.getFormula()
-  const ended = new Promise<void>((resolve) => {
-    const disposable = formula.calculationEnd(() => {
-      disposable?.dispose()
-      resolve()
-    })
-  })
-  formula.executeCalculation()
-  await Promise.race([
-    ended,
-    new Promise<void>((resolve) => setTimeout(resolve, FORMULA_SETTLE_TIMEOUT_MS)),
-  ])
-  const deadline = Date.now() + FORMULA_SETTLE_TIMEOUT_MS
-  while (Date.now() < deadline && pendingFormulas() > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
 }
 
 /// Every visible, non-removed sheet laid out in order: the headless export's
@@ -713,7 +669,7 @@ async function workbookPrintPayload(
   if (ctx.lazyWorkbookRef.current !== state) return null
 
   ctx.setMessage(messages.preparing)
-  await settleFormulasBeforePrint(ctx)
+  await settleFormulas(ctx.univerRef.current)
 
   const activeId = current.getActiveSheet()?.getSheetId()
   const sheets = current

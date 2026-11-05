@@ -70,7 +70,7 @@ GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に�
 </tr>
 <tr>
 <td><b>作ってもらう</b> — 一文の指示だけで、エージェントが地域・カテゴリ別の本物の <code>SUMIF</code> 数式を使った Summary シートを追加し、縦棒グラフを挿入し、43 件の変更をひとまとめの取り消し可能な操作として適用します。</td>
-<td><b>質問する</b> — ワークブックについての質問には、根拠となる考え方と、実際に使用したセルへのクリック可能な引用付きで回答が返ってきます。内部では、自社開発の Rust 製 <code>.xlsx</code> エンジン、ピボットテーブル、スライサー、条件付き書式、数式トレース、そして Excel のネイティブなリッチ値としてセルに埋め込まれた画像が動いています — Excel で開き直しても、画像はセルの中にそのまま残っています。</td>
+<td><b>質問する</b> — ワークブックについての質問には、根拠となる考え方と、実際に使用したセルへのクリック可能な引用付きで回答が返ってきます。内部では、自社開発の Rust 製 <code>.xlsx</code> エンジン、ピボットテーブル、スライサー、条件付き書式、数式トレース、そして Excel のネイティブなリッチ値としてセルに埋め込まれた画像が動いています — Excel で開き直しても、画像はセルの中にそのまま残っています。セルのメモには画像を添付でき、メモのポップアップの下に表示されます。</td>
 </tr>
 </table>
 
@@ -215,13 +215,13 @@ Word ドキュメントを組み立てる様子を見守ることもできます
 動画の解析機能も利用できます。
 
 **あるいは自分のキーを持ち込む。** 設定 → AI には Claude、OpenAI、Gemini、DeepSeek、Kimi、
-GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、OpenCode Zen/Go が並び、さらに任意
+GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、Opper、Cheaper Inference、Atlas Cloud、SiliconFlow、PPIO、Command Code、OpenCode Zen/Go が並び、さらに任意
 の OpenAI 互換エンドポイント（ベース URL + キー、ローカルモデルサーバーを含む）を登録できる
 カスタム枠も用意されています。検索とメディア関連は **AI メディア＆検索** の下で機能ごとに個
-別のプロバイダーを設定できます：Web 検索には Serper、Serply、Tavily、Parallel、Keenable、Exa、
+別のプロバイダーを設定できます：Web 検索には Serper、Serply、SearchApi、Tavily、Parallel、Keenable、Exa、
 Firecrawl のいずれかが使えます — このうち Keenable はキーなしでも使え、キーを設定しても
 レート制限が緩和されるだけです。画像生成と画像／動画解析には OpenAI、Gemini、Doubao/Seedream、GLM、
-Grok、Qwen、MiniMax、または任意の OpenAI 互換の画像エンドポイントが使えます。
+Grok、Qwen、MiniMax、Stability、FLUX、または任意の OpenAI 互換の画像エンドポイントが使えます。
 
 スイート全体でライト・ダーク・システムのテーマに対応しています。テーマが変わるのは画面表示
 だけで、書き出し・印刷・保存されたファイルは常にドキュメント本来の色を保持します。
@@ -233,7 +233,7 @@ Grok、Qwen、MiniMax、または任意の OpenAI 互換の画像エンドポイ
 スキルは `SKILL.md` 一枚で、週報、NDA、授業計画など、ひとつの仕事のやり方を AI に教えます。
 GenOffice には既製スキルが同梱され、コーディングエージェントと同じ形式で自作のものも取り込めます。
 
-- **設定 → スキル。** おすすめスキルを**インストール**するか、フォルダー、zip、または単一の `SKILL.md` を**インポート**します。インポート時に何かが実行されることはありません。
+- **設定 → スキル。** おすすめスキルを**インストール**するか、フォルダー、zip、または単一の `SKILL.md` を**インポート**します。インポート時に何かが実行されることはありません。 **すべて**タブには推奨カタログ全体が一覧で表示され、説明はアプリの言語で表示されます。
 - **チャットで。** どの AI パネルでも入力欄の横の **+** メニューを開き、**スキル**を選んでチェックを入れて送信します。スキルはそのメッセージにだけ添付されます。
 
 ---
@@ -402,6 +402,8 @@ AppImage はそのまま実行できます：FUSE 2 ランタイムをインス�
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Chromebook では、同じパッケージが Linux 環境（Crostini）の中で動きます。詳細は [docs/platforms/chromeos.md](../platforms/chromeos.md) を参照。
 
 </details>
 

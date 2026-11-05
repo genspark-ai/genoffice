@@ -9,6 +9,7 @@ import {
   type HeaderFooter,
   type SaveBlock,
 } from '@genoffice/docx-engine'
+import { hfPageNumberOnly } from '../src/renderer/editor/hf-dom'
 import {
   atHfCellEdge,
   hfDocJson,
@@ -350,12 +351,17 @@ describe('mountHfEditor', () => {
   })
 })
 
+async function blankDocument() {
+  const parsed = await parseDocx(await buildBlankDocx())
+  const saveBlocks: SaveBlock[] = parsed.blocks
+    .filter((b) => !b.hidden && b.docxIndex !== null)
+    .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+  return { parsed, saveBlocks }
+}
+
 describe('edited header saves with its formatting', () => {
   it('bold run, tab, PAGE and NUMPAGES fields survive save and reparse', async () => {
-    const parsed = await parseDocx(await buildBlankDocx())
-    const saveBlocks: SaveBlock[] = parsed.blocks
-      .filter((b) => !b.hidden && b.docxIndex !== null)
-      .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+    const { parsed, saveBlocks } = await blankDocument()
     let committed: HeaderFooter | null = null
     const { handle, editor } = mount({ text: '' }, (next) => (committed = next))
     editor.commands.focus('end')
@@ -374,5 +380,21 @@ describe('edited header saves with its formatting', () => {
     const reparsed = await parseDocx(saved)
     expect(reparsed.headerParas![0].runs[0]).toMatchObject({ text: 'Title', bold: true })
     expect(reparsed.headerHasPageNumber).toBe(true)
+  })
+
+  it('a gallery page number edited in the strip saves the PAGE field, not its placeholder', async () => {
+    const { parsed, saveBlocks } = await blankDocument()
+    let committed: HeaderFooter | null = null
+    const { handle, editor } = mount(hfPageNumberOnly('center'), (next) => (committed = next))
+    editor.commands.focus('start')
+    editor.commands.insertContent('Page ')
+    handle.exit()
+    expect(committed!.pageNumber).toBe(true)
+    const saved = await saveDocx(parsed, saveBlocks, { footer: committed! })
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    const ftr = await zip.file('word/footer1.xml')!.async('string')
+    expect(ftr).toContain('<w:instrText xml:space="preserve"> PAGE </w:instrText>')
+    expect(ftr).not.toContain('#')
+    expect((await parseDocx(saved)).footerHasPageNumber).toBe(true)
   })
 })

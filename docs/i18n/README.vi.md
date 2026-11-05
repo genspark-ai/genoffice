@@ -130,7 +130,7 @@ thay đổi thành một lô hoàn tác được cùng lúc.</td>
 đúng những ô đã dùng dưới dạng trích dẫn bấm được. Bên dưới: một engine
 <code>.xlsx</code> Rust tự phát triển, pivot table, slicer, định dạng có
 điều kiện, truy vết công thức, và ảnh nhúng trong ô dưới dạng rich value
-gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.</td>
+gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.Ghi chú của ô có thể kèm ảnh, hiển thị bên dưới cửa sổ ghi chú.</td>
 </tr>
 </table>
 
@@ -400,12 +400,13 @@ và ảnh, tạo ảnh, cùng phân tích ảnh/âm thanh/video.
 
 **Hoặc mang khoá riêng của bạn.** Settings → AI liệt kê Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud và OpenCode
-Zen/Go, cùng một ô tuỳ biến cho bất kỳ điểm cuối tương thích OpenAI nào
+OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow,
+PPIO, Command Code và OpenCode Zen/Go, cùng một ô tuỳ biến cho bất kỳ điểm cuối tương thích OpenAI nào
 (base URL + khoá), kể cả máy chủ mô hình cục bộ. Search và media có nhà
 cung cấp riêng theo từng khả năng dưới **AI Media & Search**: Serper,
-Serply, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax hoặc bất kỳ điểm
+Serply, SearchApi, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX
+hoặc bất kỳ điểm
 cuối ảnh tương thích OpenAI nào cho tạo ảnh và phân tích ảnh/video, cùng
 DeepSeek V4.1 Flash cho phân tích ảnh.
 
@@ -434,7 +435,7 @@ của tài liệu.
 Skill là một tệp `SKILL.md` chỉ cho AI cách làm tốt một việc: báo cáo tuần, NDA, giáo án.
 GenOffice đi kèm một bộ skill và nhận cả skill của bạn, cùng định dạng mà các agent lập trình dùng.
 
-- **Cài đặt → Skill.** **Cài** một skill được đề xuất, hoặc **Nhập** một thư mục, một tệp zip hay một `SKILL.md` đơn lẻ. Không có gì chạy khi nhập.
+- **Cài đặt → Skill.** **Cài** một skill được đề xuất, hoặc **Nhập** một thư mục, một tệp zip hay một `SKILL.md` đơn lẻ. Không có gì chạy khi nhập. Tab **Tất cả** liệt kê toàn bộ danh mục được đề xuất ở một nơi, với mô tả theo ngôn ngữ của ứng dụng.
 - **Trong trò chuyện.** Mở menu **+** cạnh ô nhập của bất kỳ bảng AI nào, chọn **Skill**, tích một cái rồi gửi. Skill chỉ đi kèm đúng tin nhắn đó.
 
 ---
@@ -625,6 +626,8 @@ AppImage chạy tại chỗ: cài runtime FUSE 2
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Trên Chromebook, các gói này chạy trong môi trường Linux (Crostini) — xem chi tiết tại [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

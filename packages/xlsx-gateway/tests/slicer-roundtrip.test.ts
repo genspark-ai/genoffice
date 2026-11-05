@@ -900,7 +900,8 @@ describe('slicer state through the save planner', () => {
       [], // tabColorStates
       [], // tableEdits
       [], // cellImageAdditions
-      [], // redactionStates
+      null, // externalLinkOps
+      null, // redactionStates
       state,
     )
     const mutation = await assembleWithJsZip(buffer, plan)
@@ -993,6 +994,7 @@ describe('slicer state through the save planner', () => {
       [],
       [],
       null,
+      null,
       { slicers: [{ sheetName: 'Data', ...SLICER_INPUT }], removals: [] },
     )
     const sample = await assembleWithJsZip(buffer, firstPlan)
@@ -1033,6 +1035,7 @@ describe('slicer state through the save planner', () => {
       [],
       [],
       [],
+      null,
       null,
       {
         slicers: [{ sheetName: 'Data', ...SLICER_INPUT }],
@@ -1089,6 +1092,7 @@ describe('slicer state through the save planner', () => {
       [],
       [],
       [],
+      null,
       null,
       {
         slicers: [
