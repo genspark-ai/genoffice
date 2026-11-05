@@ -271,7 +271,8 @@ const INK_CHANNEL_MAX = 120
 const INKLESS_RENDER_SCALE = 3
 
 function luminanceOfHex(hex: string): number {
-  const v = parseInt(hex, 16)
+  const cleaned = (hex ?? '').trim().replace(/^#/, '')
+  const v = parseInt(cleaned, 16)
   if (Number.isNaN(v)) return 0
   const r = (v >> 16) & 0xff
   const g = (v >> 8) & 0xff
