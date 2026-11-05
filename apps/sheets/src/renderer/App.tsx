@@ -2370,7 +2370,7 @@ export function App({
     // Copying in a filtered sheet must skip hidden rows;
     // see filtered-copy.ts for why the built-in hook is not enough.
     const filteredCopyDisposable = installFilteredCopyHook(runtime)
-    // A sorted formula keeps pointing at its own row (sort-formula-refs.ts).
+    // A sort that cuts a shared formula group keeps the rest of the group (sort-formula-refs.ts).
     const sortFormulaRefsDisposable = installSortFormulaRefs(runtime)
     // Excel-compatible TSV plain text (TRUE/FALSE, quoted newlines).
     const tsvClipboardDisposable = installTsvClipboardFix(runtime)
