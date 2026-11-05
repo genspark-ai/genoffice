@@ -20,17 +20,22 @@ vi.mock('../../html/src/main/preview-document', () => ({ buildPreviewDocument: (
 
 import { handleApiRequest, type WebApiDeps } from '../src/web/api'
 
-function fakeRunner(fn: (args: string[]) => CliRunOutcome, calls: string[][] = []): CliRunner {
+function fakeRunner(
+  fn: (args: string[]) => CliRunOutcome | Promise<CliRunOutcome>,
+  calls: string[][] = [],
+): CliRunner {
   return {
     run: async (args: string[]) => {
       calls.push(args)
+      // awaited, so a fake that writes the output file finishes the write
+      // before the caller reads it back
       return fn(args)
     },
   }
 }
 
 function deps(
-  fn: (args: string[]) => CliRunOutcome,
+  fn: (args: string[]) => CliRunOutcome | Promise<CliRunOutcome>,
   calls: string[][] = [],
   dirs: string[] = [],
 ): WebApiDeps {
@@ -50,10 +55,10 @@ describe('web conversion API', () => {
     const dirs: string[] = []
     const pdf = Buffer.from('%PDF-1.7 fake pdf bytes')
     const d = deps(
-      (args) => {
+      async (args) => {
         // the fake "CLI" writes the output the runner promised
         const out = args[args.indexOf('--out') + 1]
-        void writeFile(out, pdf)
+        await writeFile(out, pdf)
         return {
           ok: true,
           code: 0,
