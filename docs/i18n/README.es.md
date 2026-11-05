@@ -99,7 +99,7 @@ el prompt que puedes leer en el panel.
 </tr>
 <tr>
 <td><b>Créala</b> — a partir de una sola frase, el agente añade una hoja Summary con auténticas fórmulas <code>SUMIF</code> por región y categoría, inserta un gráfico de columnas y aplica los 43 cambios como un único lote que se puede deshacer.</td>
-<td><b>Pregúntale</b> — las preguntas sobre el libro se responden con el razonamiento y las celdas exactas usadas, presentadas como citas en las que se puede hacer clic. Por debajo: un motor <code>.xlsx</code> en Rust desarrollado internamente, tablas dinámicas, segmentaciones de datos, formato condicional, trazado de fórmulas e imágenes incrustadas en las celdas como valores enriquecidos nativos de Excel — Excel las vuelve a abrir aún dentro de la celda.</td>
+<td><b>Pregúntale</b> — las preguntas sobre el libro se responden con el razonamiento y las celdas exactas usadas, presentadas como citas en las que se puede hacer clic. Por debajo: un motor <code>.xlsx</code> en Rust desarrollado internamente, tablas dinámicas, segmentaciones de datos, formato condicional, trazado de fórmulas e imágenes incrustadas en las celdas como valores enriquecidos nativos de Excel — Excel las vuelve a abrir aún dentro de la celda.Las notas de celda pueden llevar una imagen, que se muestra bajo la ventana emergente de la nota.</td>
 </tr>
 </table>
 
@@ -262,13 +262,13 @@ Gemini) y los agentes obtienen búsqueda web y de imágenes, generación de
 imágenes, y análisis de imagen/audio/video.
 
 **O usa tu propia clave.** Settings → AI incluye Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty y
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code y
 OpenCode Zen/Go, además de una ranura personalizada para cualquier endpoint
 compatible con OpenAI (URL base + clave), incluidos servidores de modelos
 locales. La búsqueda y los medios tienen sus propios proveedores por
-capacidad en **AI Media & Search**: Serper, Serply, Tavily, Parallel,
+capacidad en **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa o Firecrawl para búsqueda web, y
-OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax o cualquier
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX o cualquier
 endpoint de imágenes compatible con OpenAI para generación de imágenes y
 análisis de imagen/video.
 
@@ -283,7 +283,7 @@ archivos guardados siempre conservan los colores propios del documento.
 Un skill es un `SKILL.md` que le dice a la IA cómo hacer bien una tarea: un informe semanal, un NDA, un plan de clase.
 GenOffice incluye un conjunto y acepta los tuyos, en el mismo formato que usan los agentes de código.
 
-- **Ajustes → Skills.** **Instala** un skill recomendado o **Importa** una carpeta, un zip o un único `SKILL.md`. Al importar no se ejecuta nada.
+- **Ajustes → Skills.** **Instala** un skill recomendado o **Importa** una carpeta, un zip o un único `SKILL.md`. Al importar no se ejecuta nada. La pestaña **Todas** muestra todo el catálogo recomendado en un solo lugar, con descripciones en el idioma de la aplicación.
 - **En un chat.** Abre el menú **+** junto al cuadro de texto de cualquier panel de IA, elige **Skills**, marca uno y envía. El skill solo acompaña a ese mensaje.
 
 ---
@@ -466,6 +466,8 @@ haz que el archivo sea ejecutable y luego ejecútalo:
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+En un Chromebook, los mismos paquetes funcionan dentro del entorno Linux (Crostini): los detalles están en [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

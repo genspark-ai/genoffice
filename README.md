@@ -108,7 +108,7 @@ can read in the panel.
 </tr>
 <tr>
 <td><b>Build it</b> — from one sentence the agent adds a Summary sheet with real <code>SUMIF</code>s by region and category, inserts a column chart, and applies the 43 changes as a single undoable batch.</td>
-<td><b>Ask it</b> — questions about the workbook come back with the reasoning and the exact cells used as clickable citations. Under the hood: an in-house Rust <code>.xlsx</code> engine, pivot tables, slicers, conditional formatting, formula tracing, and pictures embedded in cells as Excel's native rich values — Excel reopens them still in the cell.</td>
+<td><b>Ask it</b> — questions about the workbook come back with the reasoning and the exact cells used as clickable citations. Under the hood: an in-house Rust <code>.xlsx</code> engine, pivot tables, slicers, conditional formatting, formula tracing, and pictures embedded in cells as Excel's native rich values — Excel reopens them still in the cell. Cell notes can carry a picture, shown under the note's popup.</td>
 </tr>
 </table>
 
@@ -313,12 +313,12 @@ web and image search, image generation, and image/audio/video analysis.
 
 **Or bring your own key.** Settings → AI lists Claude, OpenAI, Gemini,
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper,
-Cheaper Inference, Atlas Cloud and OpenCode Zen/Go, plus a custom slot for any OpenAI-compatible endpoint (base
-URL + key), including local model servers. Search and media have their own
+Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code and OpenCode Zen/Go, plus a
+custom slot for any OpenAI-compatible endpoint (base URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
 Keenable, Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
-Qwen, MiniMax or any OpenAI-compatible images endpoint for image generation
-and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
+Qwen, MiniMax, Stability, FLUX or any OpenAI-compatible images endpoint for image
+generation and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
 
 **TypeSafe Jev** reranks the home screen's file search. Under **AI Media & Search →
 Local file search**, switch on Jev search reranking and pick an endpoint:
@@ -344,7 +344,9 @@ report, an NDA, a lesson plan. GenOffice ships a set of them and takes your own,
 in the same format coding agents use.
 
 - **Settings → Skills.** **Install** a recommended skill, or **Import** a
-  folder, a zip or a single `SKILL.md`. Nothing runs on import.
+  folder, a zip or a single `SKILL.md`. Nothing runs on import. The **All** tab
+  lists the whole recommended catalog in one place, with descriptions that
+  follow the app language.
 - **In a chat.** Open the **+** menu next to the composer of any AI panel,
   pick **Skills**, tick one, send. The skill goes along with that message only.
 
@@ -538,6 +540,10 @@ make the file executable, then run it:
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+On a Chromebook, the same packages run inside the Linux environment
+(Crostini) — [docs/platforms/chromeos.md](docs/platforms/chromeos.md) has the
+details.
 
 </details>
 

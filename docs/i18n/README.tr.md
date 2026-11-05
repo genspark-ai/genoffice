@@ -114,7 +114,7 @@ yönlendirilmiştir.
 </tr>
 <tr>
 <td><b>Oluşturun</b> — tek bir cümleden ajan, bölge ve kategoriye göre gerçek <code>SUMIF</code> formülleri içeren bir Summary sayfası ekler, bir sütun grafiği yerleştirir ve 43 değişikliği tek bir geri alınabilir toplu işlem olarak uygular.</td>
-<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir.</td>
+<td><b>Sorun</b> — çalışma kitabıyla ilgili sorular, gerekçesiyle ve kullanılan hücreler tıklanabilir alıntılar olarak geri döner. Arka planda: kendi geliştirdiğimiz Rust tabanlı <code>.xlsx</code> motoru, özet tablolar, dilimleyiciler, koşullu biçimlendirme, formül izleme ve hücrelere Excel'in yerel zengin değerleri olarak gömülen resimler — Excel onları yeniden açtığında hâlâ hücrenin içindedir.Hücre notları bir resim taşıyabilir; resim, notun açılır penceresinin altında gösterilir.</td>
 </tr>
 </table>
 
@@ -326,13 +326,15 @@ analizi kazanır.
 
 **Ya da kendi anahtarınızı getirin.** Ayarlar → AI; Claude, OpenAI, Gemini,
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter,
-Requesty, Opper, Cheaper Inference, Atlas Cloud ve OpenCode Zen/Go'yu, ayrıca
+Requesty, SiliconFlow, PPIO, Command Code, Opper, Cheaper Inference, Atlas Cloud ve OpenCode Zen/Go'yu, ayrıca
 yerel model sunucuları dahil herhangi bir OpenAI uyumlu uç nokta (temel URL +
 anahtar) için özel bir yuvayı listeler. Arama ve medyanın **AI Media &
 Search** altında yetenek başına kendi sağlayıcıları vardır: web araması için
-Serper, Serply, Tavily, Parallel, Keenable, Exa ya da Firecrawl; görsel üretimi
+Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa ya da Firecrawl; görsel üretimi
 ve görsel/video analizi için OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen,
-MiniMax ya da herhangi bir OpenAI uyumlu görsel uç noktası; görsel analizi için
+MiniMax,
+Stability,
+FLUX ya da herhangi bir OpenAI uyumlu görsel uç noktası; görsel analizi için
 ayrıca DeepSeek V4.1 Flash.
 
 **TypeSafe Jev**, ana ekranın dosya aramasını yeniden sıralar. **AI Media &
@@ -363,7 +365,8 @@ de kabul eder.
 
 - **Ayarlar → Skills.** Önerilen bir skill'i **Install** edin ya da bir
   klasörü, bir zip'i veya tek bir `SKILL.md` dosyasını **Import** edin. İçe
-  aktarmada hiçbir şey çalışmaz.
+  aktarmada hiçbir şey çalışmaz. **Tümü** sekmesi, önerilen kataloğun tamamını
+  tek yerde, uygulama dilindeki açıklamalarla listeler.
 - **Bir sohbette.** Herhangi bir yapay zekâ panelinde oluşturucunun yanındaki
   **+** menüsünü açın, **Skills**'i seçin, birini işaretleyin, gönderin. Skill
   yalnızca o mesajla birlikte gider.
@@ -556,6 +559,8 @@ AppImage olduğu yerde çalışır: FUSE 2 çalışma zamanını kurun
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Bir Chromebook’ta aynı paketler Linux ortamında (Crostini) çalışır — ayrıntılar için [docs/platforms/chromeos.md](../platforms/chromeos.md).
 
 </details>
 

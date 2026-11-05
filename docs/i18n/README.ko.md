@@ -99,7 +99,7 @@ OOXML 사본으로 열립니다. 가져오기는 열기 전용이며 — 저장�
 </tr>
 <tr>
 <td><b>직접 만들어 줍니다</b> — 한 문장의 요청만으로 에이전트가 지역 및 카테고리별 실제 <code>SUMIF</code> 수식이 담긴 Summary 시트를 추가하고, 세로 막대형 차트를 삽입하며, 43건의 변경을 실행 취소 가능한 하나의 배치로 적용합니다.</td>
-<td><b>물어보세요</b> — 워크북에 대한 질문에는 근거와 함께, 사용한 정확한 셀이 클릭 가능한 출처로 돌아옵니다. 내부적으로는 자체 개발한 Rust <code>.xlsx</code> 엔진, 피벗 테이블, 슬라이서, 조건부 서식, 수식 추적, 그리고 Excel의 네이티브 rich value로 셀에 삽입되는 그림까지 동작합니다 — Excel에서 다시 열어도 그림은 여전히 그 셀 안에 있습니다.</td>
+<td><b>물어보세요</b> — 워크북에 대한 질문에는 근거와 함께, 사용한 정확한 셀이 클릭 가능한 출처로 돌아옵니다. 내부적으로는 자체 개발한 Rust <code>.xlsx</code> 엔진, 피벗 테이블, 슬라이서, 조건부 서식, 수식 추적, 그리고 Excel의 네이티브 rich value로 셀에 삽입되는 그림까지 동작합니다 — Excel에서 다시 열어도 그림은 여전히 그 셀 안에 있습니다.셀 메모에는 그림을 넣을 수 있으며, 메모 팝업 아래에 표시됩니다.</td>
 </tr>
 </table>
 
@@ -254,14 +254,14 @@ Genspark 프록시(Claude, GPT, Gemini 계열)를 거치고, 에이전트는 웹
 있습니다.
 
 **직접 키를 가져올 수도 있습니다.** 설정 → AI에는 Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty,
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code,
 OpenCode Zen/Go가 있으며, 로컬 모델 서버를 포함한 모든 OpenAI 호환
 엔드포인트(기본 URL + 키)를 위한 사용자 지정 슬롯도 제공됩니다. 검색과
 미디어는 **AI 미디어 및 검색**에서 기능별로 별도 공급자를 설정할 수
-있습니다: 웹 검색은 Serper, Serply, Tavily, Parallel, Keenable, Exa
+있습니다: 웹 검색은 Serper, Serply, SearchApi, Tavily, Parallel, Keenable, Exa
 또는 Firecrawl(Keenable도 키 없이 쓸 수 있으며, 키가 있으면 속도
 제한만 완화됩니다), 이미지 생성과 이미지/비디오 분석은 OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax 또는 OpenAI 호환
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, Stability, FLUX 또는 OpenAI 호환
 이미지 엔드포인트 중에서 선택합니다.
 
 전체 제품군은 라이트, 다크, 시스템 테마를 지원합니다. 테마는 화면에
@@ -275,7 +275,7 @@ Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax 또는 OpenAI 호환
 스킬은 주간 보고서, NDA, 수업 계획처럼 한 가지 일을 잘 해내는 방법을 AI에 알려 주는 `SKILL.md` 파일입니다.
 GenOffice는 스킬 묶음을 기본 제공하고, 코딩 에이전트와 같은 형식의 사용자 스킬도 받습니다.
 
-- **설정 → 스킬.** 추천 스킬을 **설치**하거나 폴더, zip 또는 단일 `SKILL.md`를 **가져옵니다**. 가져오기 시 아무것도 실행되지 않습니다.
+- **설정 → 스킬.** 추천 스킬을 **설치**하거나 폴더, zip 또는 단일 `SKILL.md`를 **가져옵니다**. 가져오기 시 아무것도 실행되지 않습니다. **전체** 탭에는 추천 카탈로그 전체가 한곳에 표시되며, 설명은 앱 언어를 따릅니다.
 - **채팅에서.** 어느 AI 패널에서든 입력창 옆 **+** 메뉴를 열고 **스킬**을 선택해 하나를 체크한 뒤 보냅니다. 스킬은 그 메시지에만 함께 전달됩니다.
 
 ---
@@ -447,6 +447,8 @@ AppImage는 별도 설치 없이 그 자리에서 실행됩니다: FUSE 2 런타
 chmod +x GenOffice-<version>.AppImage
 ./GenOffice-<version>.AppImage
 ```
+
+Chromebook에서는 동일한 패키지가 Linux 환경(Crostini) 안에서 실행됩니다. 자세한 내용은 [docs/platforms/chromeos.md](../platforms/chromeos.md)을 참고하세요.
 
 </details>
 
