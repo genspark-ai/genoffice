@@ -219,6 +219,89 @@ export function transformChartForLinkBreak(chartXml: string, broken: readonly nu
   })
 }
 
+/// The workbook's `[n]` links in index order, each with the part its
+/// workbook-rels relationship points at (`null` when the entry is missing or
+/// its relationship is not an externalLink one).
+export function orderedExternalLinkParts(
+  workbookXml: string,
+  relsXml: string,
+): { n: number; rId: string; part: string | null }[] {
+  // the n-th <externalReference> is link [n]
+  const ordered: { n: number; rId: string }[] = []
+  for (const match of workbookXml.matchAll(/<externalReference\b[^>]*\br:id="([^"]+)"/g)) {
+    ordered.push({ n: ordered.length + 1, rId: match[1]! })
+  }
+  return ordered.map((entry) => {
+    const element =
+      new RegExp(`<Relationship\\b[^>]*\\bId="${entry.rId}"[^>]*/>`).exec(relsXml)?.[0] ?? ''
+    const type = /\bType="([^"]+)"/.exec(element)?.[1] ?? ''
+    if (!type.endsWith('/externalLink')) return { ...entry, part: null }
+    const target = /\bTarget="([^"]+)"/.exec(element)?.[1] ?? ''
+    return { ...entry, part: target.startsWith('/') ? target.slice(1) : `xl/${target}` }
+  })
+}
+
+/// Removes the broken links' `<externalReference>` elements and their
+/// workbook-rels relationships, dropping the `<externalReferences>` wrapper
+/// once empty. Returns the next workbook/rels XML plus the externalLink part
+/// paths to delete (each carries its own `_rels/….rels` with the source
+/// path).
+export function applyWorkbookLinkBreak(
+  workbookXml: string,
+  relsXml: string,
+  broken: readonly number[],
+): { workbookXml: string; relsXml: string; parts: string[] } {
+  const links = orderedExternalLinkParts(workbookXml, relsXml)
+  const brokenEntries = broken
+    .map((n) => links.find((link) => link.n === n))
+    .filter((link): link is { n: number; rId: string; part: string | null } => link !== undefined)
+  let nextWorkbookXml = workbookXml
+  let nextRelsXml = relsXml
+  const parts: string[] = []
+  for (const entry of brokenEntries) {
+    // the element's only attribute is the relationship id (r:id)
+    nextWorkbookXml = nextWorkbookXml.replace(
+      new RegExp(`<externalReference\\b[^>]*\\bid="${entry.rId}"[^>]*/>`),
+      '',
+    )
+    nextRelsXml = removeRelationshipById(nextRelsXml, entry.rId)
+    if (entry.part !== null) parts.push(entry.part)
+  }
+  if (!/<externalReference\b/.test(nextWorkbookXml)) {
+    nextWorkbookXml = nextWorkbookXml.replace(
+      /<externalReferences\b[^>]*>[\s\S]*?<\/externalReferences>/,
+      '',
+    )
+  }
+  return { workbookXml: nextWorkbookXml, relsXml: nextRelsXml, parts }
+}
+
+/// Points the externalLinkPath relationship of one externalLink's rels part
+/// at a new target. Only the Target changes: sheet names and cached values
+/// stay as they are, so values keep coming from the cache until the next
+/// update reads the new source.
+export function retargetExternalLinkRels(relsXml: string, target: string): string {
+  const escaped = target
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+  let done = false
+  const next = relsXml.replace(
+    /<Relationship\b[^>]*\bType="[^"]*\/externalLinkPath"[^>]*>/,
+    (element) => {
+      done = true
+      if (/\bTarget="/.test(element))
+        return element.replace(/\bTarget="[^"]*"/, `Target="${escaped}"`)
+      return element.replace(/\/>$/, ` Target="${escaped}"/>`)
+    },
+  )
+  if (!done) {
+    throw new Error('the external link has no source-path relationship to point elsewhere')
+  }
+  return next
+}
+
 /// Plans the break of the given 1-based link indices: broken formulas become
 /// literals, the links' parts and references disappear, surviving [m] indices
 /// renumber. The source is read; the returned plan is what an assembler

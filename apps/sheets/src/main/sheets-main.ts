@@ -161,6 +161,7 @@ import {
   workbookFindCellsResultSchema,
   workbookRecalcRequestSchema,
   workbookRecalcResultSchema,
+  workbookPickSelectionSchema,
   externalLinksRequestSchema,
   externalLinksResultSchema,
   externalLinksUpdateResultSchema,
@@ -1940,6 +1941,13 @@ export function setSheetsHostWindowHook(
   hostWindowHook = fn
 }
 
+/// The shell registers how to bring a tab (by webContents id) to the front —
+/// the cross-workbook picker re-activates the editing tab after a pick.
+let activateTabHook: ((wcId: number) => void) | null = null
+export function setSheetsActivateTabHook(fn: ((wcId: number) => void) | null): void {
+  activateTabHook = fn
+}
+
 function hostWindowFor(wc: WebContents): BrowserWindow | undefined {
   const own = hostWindowHook?.(wc) ?? BrowserWindow.fromWebContents(wc)
   if (own && !own.isDestroyed()) return own
@@ -1953,6 +1961,10 @@ interface SheetsTabSession {
   readonly aiStreams: Map<string, AbortController>
   /// Chunked uploads of large saves' cell edits, pending their save request.
   readonly saveTransfers: SaveEditsTransferStore
+  /// The file this tab currently shows (merge sources excluded) — what the
+  /// cross-workbook picker matches external links against. null until the
+  /// first open lands; Save As keeps it current.
+  currentPath: string | null
 }
 
 /** per-tab session state, keyed by webContents.id — replaces the old single-window closures
@@ -2090,6 +2102,7 @@ function registerSheetsSession(webContents: WebContents, client: XlsxSidecarClie
     sessions: new Map(),
     aiStreams: new Map(),
     saveTransfers: new SaveEditsTransferStore(),
+    currentPath: null,
   })
   activeSheetsWebContents = webContents
   webContents.once('destroyed', () => {
@@ -3081,6 +3094,7 @@ export function registerSheetsIpc(): void {
       }
       throw error
     }
+    entry.currentPath = path
     // The sidecar open itself can also outlive the tab after the pre-open
     // check. Close the newly registered session instead of stranding it in
     // the detached entry map.
@@ -3328,6 +3342,82 @@ export function registerSheetsIpc(): void {
     // asks, so the on-disk bytes match the grid the values are applied to.
     const result = await entry.client.updateExternalLinks({ path: session.path })
     return externalLinksUpdateResultSchema.parse(result)
+  })
+  // The formula cells referencing each [n] link, with the value a Break would
+  // freeze them at: the file-level usage scan, not the model's view.
+  ipcMain.handle(IPC_CHANNELS.readExternalLinkUsage, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = externalLinksRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    return entry.client.readExternalLinkUsage({ path: session.path })
+  })
+  // Change Source's file picker: the host picks the new source file itself, the
+  // renderer only names the link it belongs to.
+  ipcMain.handle(IPC_CHANNELS.selectExternalLinkSource, async (event) => {
+    const selection = await openFileDialog(event, {
+      properties: ['openFile'],
+      filters: [{ name: tm('filterSpreadsheets'), extensions: WORKBOOK_FILTER_EXTENSIONS }],
+    })
+    if (selection.canceled || selection.filePaths.length === 0) return null
+    return selection.filePaths[0] ?? null
+  })
+  // ── cross-workbook range picking (genoffice#2109) ──────────────────────
+  // One pick armed at a time: the tab editing a formula arms it, the user
+  // clicks a range in another workbook's tab, that tab reports the
+  // selection, and main relays it back and re-activates the editor.
+  let pendingWorkbookPick: { pickId: string; sourceWcId: number } | null = null
+  const broadcastPickCancelled = (pickId: string, exceptWcId: number): void => {
+    for (const entry of sheetsTabs.values()) {
+      if (entry.webContents.id === exceptWcId || entry.webContents.isDestroyed()) continue
+      entry.webContents.send(IPC_CHANNELS.workbookPickCancelled, { pickId })
+    }
+  }
+  ipcMain.handle(IPC_CHANNELS.listWorkbookTabs, (event) => ({
+    tabs: [...sheetsTabs.values()]
+      .filter(
+        (entry) =>
+          entry.webContents.id !== event.sender.id &&
+          !entry.webContents.isDestroyed() &&
+          entry.currentPath !== null,
+      )
+      .map((entry) => ({
+        wcId: entry.webContents.id,
+        name: basename(entry.currentPath!),
+        path: entry.currentPath!,
+      })),
+  }))
+  ipcMain.handle(IPC_CHANNELS.armWorkbookPick, (event) => {
+    const pickId = 'pick-' + randomUUID()
+    pendingWorkbookPick = { pickId, sourceWcId: event.sender.id }
+    for (const entry of sheetsTabs.values()) {
+      if (entry.webContents.id === event.sender.id || entry.webContents.isDestroyed()) continue
+      entry.webContents.send(IPC_CHANNELS.workbookPickArmed, { pickId })
+    }
+    return { pickId }
+  })
+  ipcMain.handle(IPC_CHANNELS.sendWorkbookPickSelection, (event, input: unknown) => {
+    const selection = workbookPickSelectionSchema.parse(input)
+    const pending = pendingWorkbookPick
+    // only the tab the pick was armed against answers, and never the editor
+    if (!pending || pending.pickId !== selection.pickId || event.sender.id === pending.sourceWcId)
+      return
+    pendingWorkbookPick = null
+    const source = sheetsTabs.get(pending.sourceWcId)
+    if (source && !source.webContents.isDestroyed()) {
+      source.webContents.send(IPC_CHANNELS.workbookPickSelected, selection)
+    }
+    broadcastPickCancelled(pending.pickId, pending.sourceWcId)
+    activateTabHook?.(pending.sourceWcId)
+  })
+  ipcMain.handle(IPC_CHANNELS.cancelWorkbookPick, (event, input: unknown) => {
+    const { pickId } = z
+      .object({ pickId: z.string().min(1) })
+      .strict()
+      .parse(input)
+    if (!pendingWorkbookPick || pendingWorkbookPick.pickId !== pickId) return
+    pendingWorkbookPick = null
+    broadcastPickCancelled(pickId, event.sender.id)
   })
   // The preload sends this one (fire-and-forget): handle() would make the
   // renderer's send() a no-op. The renderer names a link index of its session,
@@ -3890,6 +3980,9 @@ export function registerSheetsIpc(): void {
           : {}),
       ...(session.password === undefined ? {} : { password: session.password }),
     })
+    // the swap retargets the tab: a Save As renames the file the picker
+    // matches links against
+    entry.currentPath = (csvInPlace ? session.csvSourcePath : undefined) ?? targetPath
     if (quietUnsavedNew && session.suggestSaveAs !== undefined) {
       // the temp path must not reach the title or recents; the recovery copy
       // is what a crash restores from, so it tracks the saved bytes
@@ -4858,6 +4951,7 @@ async function writeWorkbookTo(
             }),
       })),
       redactionStates,
+      externalLinkOps: request.externalLinkOps,
     })
     if (session.password) {
       const encryptedBytes = encryptOoxml(await readFile(plainTargetPath), session.password)

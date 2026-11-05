@@ -373,8 +373,8 @@ fn join_package_path(base: &str, target: &str) -> String {
     format!("{base}/{target}")
 }
 
-/// The link list without touching any source: what `sheet links` prints and
-/// the panel lists.
+/// The link list with each source's reachability verdict: what `sheet links`
+/// prints (the CLI listing wants the reachability column, so it probes).
 pub(crate) fn read_external_link_statuses(
     workbook: &Path,
 ) -> Result<Vec<ExternalLinkStatus>, SidecarError> {
@@ -931,6 +931,376 @@ fn cell_literal(model: &Model, sheet: u32, row: u32, column: u32) -> Option<Stri
     }
 }
 
+/// The value a break freezes one cell at: the file-cached `<v>` with its
+/// cell type. Mirrors the gateway's `literalCell` spelling one-to-one, so the
+/// cells reported here are exactly the cells a break transform converts.
+/// Struct variants on purpose — serde's internally-tagged enums reject
+/// scalar newtype variants.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum UsageValue {
+    Number { value: f64 },
+    Text { value: String },
+    Bool { value: bool },
+    /// An error result keeps its `t="e"` spelling (`#REF!`, `#NAME?`, …).
+    Error { value: String },
+    Missing,
+}
+
+/// One formula cell that references an external link, as the usage report
+/// carries it. `row`/`column` are 0-based.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalLinkUsageCell {
+    pub sheet: String,
+    pub row: u32,
+    pub column: u32,
+    pub value: UsageValue,
+}
+
+/// Every cell of the workbook that references link `[n]`.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalLinkUsage {
+    pub index: usize,
+    pub cells: Vec<ExternalLinkUsageCell>,
+}
+
+/// Decodes the XML entities a hand-read `<v>`/`<f>` text may carry.
+fn decode_xml_entities(text: &str) -> String {
+    if !text.contains('&') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let (entity, skip): (Option<char>, usize) = if let Some(digits) = tail.strip_prefix("&#x") {
+            match digits.find(';') {
+                Some(end) => (
+                    u32::from_str_radix(&digits[..end], 16).ok().and_then(char::from_u32),
+                    end + 4,
+                ),
+                None => (None, 1),
+            }
+        } else if let Some(digits) = tail.strip_prefix("&#") {
+            match digits.find(';') {
+                Some(end) => (
+                    digits[..end].parse::<u32>().ok().and_then(char::from_u32),
+                    end + 3,
+                ),
+                None => (None, 1),
+            }
+        } else if tail.starts_with("&amp;") {
+            (Some('&'), 5)
+        } else if tail.starts_with("&lt;") {
+            (Some('<'), 4)
+        } else if tail.starts_with("&gt;") {
+            (Some('>'), 4)
+        } else if tail.starts_with("&quot;") {
+            (Some('"'), 6)
+        } else if tail.starts_with("&apos;") {
+            (Some('\''), 6)
+        } else {
+            (None, 1)
+        };
+        match entity {
+            Some(decoded) => out.push(decoded),
+            // not an entity we know: keep the `&` verbatim
+            None => out.push('&'),
+        }
+        rest = &rest[at + skip..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `A1`-style reference → 0-based row and column.
+fn parse_cell_reference(reference: &str) -> Option<(u32, u32)> {
+    let split = reference.find(|ch: char| ch.is_ascii_digit())?;
+    let (letters, digits) = reference.split_at(split);
+    if letters.is_empty() || letters.len() > 3 || digits.is_empty() {
+        return None;
+    }
+    let mut column = 0u32;
+    for ch in letters.chars() {
+        let upper = ch.to_ascii_uppercase();
+        if !upper.is_ascii_uppercase() {
+            return None;
+        }
+        column = column * 26 + u32::from(upper as u8 - b'A') + 1;
+    }
+    let row = digits.parse::<u32>().ok()?;
+    if row == 0 {
+        return None;
+    }
+    Some((row - 1, column - 1))
+}
+
+/// The link indices one formula body references — the same two spellings the
+/// gateway's break transform matches: `'[1]Sheet Name'` (quotes doubled
+/// inside) and `[1]Sheet1` (sheet-name characters run to a delimiter).
+fn link_indexes(body: &str) -> Vec<usize> {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        if chars[at] != '[' {
+            at += 1;
+            continue;
+        }
+        let mut cursor = at + 1;
+        while cursor < chars.len() && chars[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        if cursor == at + 1 || cursor >= chars.len() || chars[cursor] != ']' {
+            at += 1;
+            continue;
+        }
+        let index: usize = chars[at + 1..cursor].iter().collect::<String>().parse().unwrap_or(0);
+        // the bare spelling needs at least one sheet-name character after
+        // `]`; the quoted spelling needs the closing quote of `'[n]…'`
+        let bare = cursor + 1 < chars.len() && is_sheet_name_char(chars[cursor + 1]);
+        let mut quoted = false;
+        if at > 0 && chars[at - 1] == '\'' {
+            let mut scan = cursor + 1;
+            while scan < chars.len() {
+                if chars[scan] == '\'' {
+                    if scan + 1 < chars.len() && chars[scan + 1] == '\'' {
+                        scan += 2;
+                        continue;
+                    }
+                    quoted = true;
+                    break;
+                }
+                scan += 1;
+            }
+        }
+        if (bare || quoted) && index > 0 && !out.contains(&index) {
+            out.push(index);
+        }
+        at = cursor + 1;
+    }
+    out
+}
+
+/// A character the bare `[n]Sheet1` spelling allows inside the sheet name —
+/// the inverse of the gateway's `BARE_REF` terminator set.
+fn is_sheet_name_char(ch: char) -> bool {
+    !matches!(
+        ch,
+        ' ' | '!'
+            | '('
+            | ')'
+            | ','
+            | ';'
+            | '"'
+            | '\''
+            | '^'
+            | '&'
+            | '*'
+            | '<'
+            | '>'
+            | '='
+            | '+'
+            | '-'
+            | '/'
+            | '['
+            | ']'
+    ) && !ch.is_whitespace()
+}
+
+/// Start offset of the next real `<tag` element at or after `from` — one whose
+/// next character ends the name, so `<c` never matches `<cols`.
+fn element_start(xml: &str, tag: &str, from: usize) -> Option<usize> {
+    let mut at = from;
+    while let Some(found) = xml[at..].find(&format!("<{tag}")) {
+        let open = found + at;
+        match xml.as_bytes().get(open + 1 + tag.len()) {
+            Some(b' ') | Some(b'>') | Some(b'/') | Some(b'\t') | Some(b'\n') | Some(b'\r') => {
+                return Some(open)
+            }
+            _ => at = open + 1,
+        }
+    }
+    None
+}
+
+/// `(tag start, body start, body end)` of the first `<tag …>` element at or
+/// after `from`. A self-closing `<tag/>` reports an empty body; the offsets
+/// index the same string the caller slices.
+fn element_span(xml: &str, tag: &str, from: usize) -> Option<(usize, usize, usize)> {
+    let open = element_start(xml, tag, from)?;
+    let after_open = xml[open..].find('>')? + open + 1;
+    // the slice ends at the `>`, so a self-closing tag spells `/>`
+    if xml[open..after_open].ends_with("/>") {
+        return Some((open, after_open, after_open));
+    }
+    let close = xml[after_open..].find(&format!("</{tag}>"))? + after_open;
+    Some((open, after_open, close))
+}
+
+/// Reads one attribute of a tag's opening text (` t="str"`, ` si="2"`).
+fn attribute_value(tag: &str, name: &str) -> Option<String> {
+    let pattern = format!(r#" {name}=""#);
+    let start = tag.find(&pattern)? + pattern.len();
+    let end = tag[start..].find('"')? + start;
+    Some(tag[start..end].to_string())
+}
+
+/// The cell's cached value, spelled the way a break freezes it.
+fn usage_value(cell_open: &str, body: &str) -> UsageValue {
+    let raw = element_span(body, "v", 0).map(|(_open, inner, close)| body[inner..close].to_string());
+    match attribute_value(cell_open, "t").as_deref() {
+        Some("str") => UsageValue::Text {
+            value: raw.map(|v| decode_xml_entities(&v)).unwrap_or_default(),
+        },
+        Some("e") => UsageValue::Error {
+            value: raw.map(|v| decode_xml_entities(&v)).unwrap_or_default(),
+        },
+        Some("b") => UsageValue::Bool {
+            value: raw.as_deref() == Some("1") || raw.as_deref() == Some("true"),
+        },
+        _ => match raw.as_deref() {
+            Some(text) if text.is_empty() => UsageValue::Missing,
+            Some(text) => match text.parse::<f64>() {
+                Ok(value) => UsageValue::Number { value },
+                Err(_) => UsageValue::Text {
+                    value: decode_xml_entities(text),
+                },
+            },
+            None => UsageValue::Missing,
+        },
+    }
+}
+
+/// Scans the workbook's sheet parts for formulas that reference each `[n]`
+/// link and reports every such cell with the literal its cached `<v>` freezes
+/// at. A file-level scan on purpose: it sees exactly the `<f>` bodies and
+/// `t="e"` caches the gateway's break transform sees, where a model pass
+/// would lose the errors.
+pub(crate) fn read_external_link_usage(
+    workbook: &Path,
+) -> Result<Vec<ExternalLinkUsage>, SidecarError> {
+    let mut usages: Vec<ExternalLinkUsage> = Vec::new();
+    let file = match std::fs::File::open(workbook) {
+        Ok(file) => file,
+        Err(_) => return Ok(usages),
+    };
+    let mut archive = zip::ZipArchive::new(file)?;
+    let (workbook_xml, rels_xml) = match (
+        crate::xml_util::read_zip_string(&mut archive, "xl/workbook.xml"),
+        crate::xml_util::read_zip_string(&mut archive, "xl/_rels/workbook.xml.rels"),
+    ) {
+        (Ok(xml), Ok(rels)) => (xml, rels),
+        _ => return Ok(usages),
+    };
+    let rel_targets = relationship_targets(&rels_xml);
+    // worksheet part → sheet name, so the report speaks sheet names
+    let mut sheet_names: HashMap<String, String> = HashMap::new();
+    if let Ok(doc) = roxmltree::Document::parse(&workbook_xml) {
+        for node in doc.descendants() {
+            if node.tag_name().name() != "sheet" {
+                continue;
+            }
+            if let (Some(name), Some(rid)) = (node.attribute("name"), node.attribute("id")) {
+                if let Some(target) = rel_targets.get(rid) {
+                    sheet_names.insert(join_package_path("xl", target), name.to_string());
+                }
+            }
+        }
+    }
+    let mut part_paths: Vec<String> = Vec::new();
+    for index in 0..archive.len() {
+        let Ok(file) = archive.by_index_raw(index) else {
+            continue;
+        };
+        // zip 9 made name() fallible (non-UTF-8 entry names); skip that
+        // entry like the other per-index failures above
+        let Ok(name) = file.name() else {
+            continue;
+        };
+        let name = name.into_owned();
+        if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
+            part_paths.push(name);
+        }
+    }
+    part_paths.sort();
+    for part in part_paths {
+        let xml = match crate::xml_util::read_zip_string(&mut archive, &part) {
+            Ok(xml) => xml,
+            Err(_) => continue,
+        };
+        let sheet_name = sheet_names.get(&part).cloned().unwrap_or_else(|| part.clone());
+        // shared anchors: si → formula body; instances inherit their anchor's
+        let mut shared_bodies: HashMap<String, String> = HashMap::new();
+        let mut cursor = 0;
+        while let Some((open, inner, close)) = element_span(&xml, "f", cursor) {
+            let tag = &xml[open..inner];
+            if tag.contains("t=\"shared\"") && inner < close {
+                if let Some(si) = attribute_value(tag, "si") {
+                    shared_bodies.insert(si, xml[inner..close].to_string());
+                }
+            }
+            cursor = close + 4;
+        }
+        cursor = 0;
+        while let Some((open, inner, close)) = element_span(&xml, "c", cursor) {
+            cursor = close + 4;
+            let cell_open = &xml[open..inner];
+            let body = &xml[inner..close];
+            let Some((_f_open, f_inner, f_close)) = element_span(body, "f", 0) else {
+                continue;
+            };
+            let f_tag = &body[..f_inner];
+            let formula = if f_tag.contains("t=\"shared\"") && f_inner == f_close {
+                // a shared instance carries no body; its anchor's does
+                match attribute_value(f_tag, "si").and_then(|si| shared_bodies.get(&si)) {
+                    Some(shared) => shared.clone(),
+                    None => continue,
+                }
+            } else {
+                body[f_inner..f_close].to_string()
+            };
+            let indexes = link_indexes(&decode_xml_entities(&formula));
+            if indexes.is_empty() {
+                continue;
+            }
+            let Some(reference) = attribute_value(cell_open, "r") else {
+                continue;
+            };
+            let Some((row, column)) = parse_cell_reference(&reference) else {
+                continue;
+            };
+            let value = usage_value(cell_open, body);
+            for index in indexes {
+                let entry = match usages.iter_mut().find(|usage| usage.index == index) {
+                    Some(entry) => entry,
+                    None => {
+                        usages.push(ExternalLinkUsage {
+                            index,
+                            cells: Vec::new(),
+                        });
+                        usages.last_mut().unwrap()
+                    }
+                };
+                entry.cells.push(ExternalLinkUsageCell {
+                    sheet: sheet_name.clone(),
+                    row,
+                    column,
+                    value: value.clone(),
+                });
+            }
+        }
+    }
+    for usage in &mut usages {
+        usage.cells.sort_by_key(|cell| (cell.sheet.clone(), cell.row, cell.column));
+    }
+    usages.sort_by_key(|usage| usage.index);
+    Ok(usages)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1393,4 +1763,110 @@ mod tests {
             None
         );
     }
+
+    /// A minimal three-part workbook for the usage scan: one sheet named
+    /// `Data`, no externalLink parts needed — the scan is formula-text-only.
+    fn write_usage_fixture(path: &Path, sheet1: &str) {
+        let entries = [
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", sheet1),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    /// The usage scan reports every formula cell that references the link
+    /// with the literal its cached `<v>` freezes at — numbers and formula
+    /// string results alike — sorted by position.
+    #[test]
+    fn usage_scan_reports_every_referencing_cell_with_its_cached_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        write_dependent_fixture(&path, "gone.xlsx");
+        let usages = read_external_link_usage(&path).unwrap();
+        assert_eq!(usages.len(), 1);
+        let usage = &usages[0];
+        assert_eq!(usage.index, 1);
+        assert!(usage.cells.iter().all(|cell| cell.sheet == "Sheet1"));
+        let values: Vec<(String, UsageValue)> = usage
+            .cells
+            .iter()
+            .map(|cell| (cell_reference(cell.row, cell.column), cell.value.clone()))
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                ("A1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("B1".to_string(), UsageValue::Number { value: 2.0 }),
+                ("C1".to_string(), UsageValue::Text { value: "Total!".to_string() }),
+                ("A2".to_string(), UsageValue::Number { value: 60.0 }),
+                ("A3".to_string(), UsageValue::Number { value: 9.0 }),
+            ]
+        );
+    }
+
+    /// Shared-formula instances inherit their anchor's body, and an error
+    /// cache keeps its `t="e"` spelling — both land in the report.
+    #[test]
+    fn usage_scan_resolves_shared_instances_and_error_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        super::tests::write_usage_fixture(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="shared" si="0">[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f t="shared" si="0"/><v>84</v></c><c r="C1" t="e"><f>[1]Sheet1!ZZZ9</f><v>#REF!</v></c></row></sheetData></worksheet>"#,
+        );
+        let usages = read_external_link_usage(&path).unwrap();
+        assert_eq!(usages.len(), 1);
+        let values: Vec<(String, UsageValue)> = usages[0]
+            .cells
+            .iter()
+            .map(|cell| (cell_reference(cell.row, cell.column), cell.value.clone()))
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                ("A1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("B1".to_string(), UsageValue::Number { value: 84.0 }),
+                ("C1".to_string(), UsageValue::Error { value: "#REF!".to_string() }),
+            ]
+        );
+    }
+
+    /// Reference detection mirrors the gateway's break transform: `[1]`
+    /// inside a string literal is not a reference, a bare `[1]` needs a
+    /// sheet name after `]`, and the quoted spelling tolerates doubled quotes.
+    #[test]
+    fn usage_reference_detection_matches_the_break_transform() {
+        assert_eq!(link_indexes("\"see [1] notes\"+1"), Vec::<usize>::new());
+        assert_eq!(link_indexes("[1]"), Vec::<usize>::new());
+        assert_eq!(link_indexes("[0]Sheet1!A1"), Vec::<usize>::new());
+        assert_eq!(link_indexes("'[1]My Sheet'!A1+1"), vec![1]);
+        assert_eq!(link_indexes("'[1]It''s'!A1"), vec![1]);
+        assert_eq!(link_indexes("SUM([2]Sheet1!A1:B3)"), vec![2]);
+        assert_eq!(link_indexes("[1]Sheet1!A1+[2]Sheet1!B1"), vec![1, 2]);
+    }
+
+    fn cell_reference(row: u32, column: u32) -> String {
+        let mut letters = String::new();
+        let mut rest = column + 1;
+        while rest > 0 {
+            letters.insert(0, (b'A' + ((rest - 1) % 26) as u8) as char);
+            rest = (rest - 1) / 26;
+        }
+        format!("{letters}{}", row + 1)
+    }
 }
+

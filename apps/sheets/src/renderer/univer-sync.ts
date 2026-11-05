@@ -21,6 +21,7 @@ import {
   IUndoRedoService,
   IUniverInstanceService,
   LifecycleStages,
+  type Nullable,
   RANGE_TYPE,
   VerticalAlign,
   WrapStrategy,
@@ -8363,4 +8364,102 @@ export function applyExternalLinkValues(
     }
   }
   return { applied, sheets: bySheet.size }
+}
+
+const SET_RANGE_VALUES_COMMAND = 'sheet.command.set-range-values'
+
+/** What journalExternalLinkLiterals did, and how to undo it. */
+export interface ExternalLinkLiteralJournal {
+  /** Cells rewritten as literals. */
+  readonly journaled: number
+  /**
+   * Puts the previous cell contents back. The file only gets the break if the
+   * save that carries it lands, so a failed save must not leave the grid
+   * showing literals the workbook does not have.
+   */
+  readonly restore: () => Promise<void>
+}
+
+type CellMatrix = { [row: number]: { [column: number]: ICellData | null } }
+
+/**
+ * Breaks one link's cells in the model (genoffice#2109): every formula cell
+ * the usage scan reported becomes the literal its cached `<v>` holds, through
+ * the set-range-values command so the edit journal records a literal
+ * overwrite. A cell whose cache is an error or empty stays on the formula —
+ * the save-time break transform freezes those file-side (`t="e"` survives
+ * there, a journal edit would not).
+ *
+ * The previous cells are kept so the caller can roll the formulas back when
+ * the save that was supposed to write the break does not happen.
+ */
+export async function journalExternalLinkLiterals(
+  runtime: UniverRuntime,
+  cells: readonly {
+    sheet: string
+    row: number
+    column: number
+    value: { kind: string; value?: number | string | boolean }
+  }[],
+): Promise<ExternalLinkLiteralJournal> {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return { journaled: 0, restore: async () => {} }
+  const unitId = workbook.getId()
+  const commandService = runtime.univer.__getInjector().get(ICommandService)
+  const sheetByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet]),
+  )
+  const patches = new Map<string, CellMatrix>()
+  const previous = new Map<string, CellMatrix>()
+  let journaled = 0
+  for (const cell of cells) {
+    const kind = cell.value.kind
+    if (kind !== 'number' && kind !== 'text' && kind !== 'bool') continue
+    const sheet = sheetByName.get(cell.sheet.toLowerCase())
+    if (!sheet) continue
+    const raw = cell.value.value
+    const patch: ICellData =
+      kind === 'number'
+        ? { v: raw as number, t: CellValueType.NUMBER, f: null, si: null, p: null }
+        : kind === 'bool'
+          ? { v: raw as boolean, t: CellValueType.BOOLEAN, f: null, si: null, p: null }
+          : { v: String(raw), t: CellValueType.STRING, f: null, si: null, p: null }
+    const sheetId = sheet.getSheetId()
+    // the formula (and its cache) the cell holds right now — what a failed
+    // save has to put back
+    const before = (sheet.getSheet().getCellMatrix().getMatrix() as unknown as CellMatrix)[
+      cell.row
+    ]?.[cell.column]
+    const restoreMatrix = previous.get(sheetId) ?? {}
+    restoreMatrix[cell.row] = {
+      ...restoreMatrix[cell.row],
+      [cell.column]: before === undefined || before === null ? null : { ...before },
+    }
+    previous.set(sheetId, restoreMatrix)
+    const matrix = patches.get(sheetId) ?? {}
+    matrix[cell.row] = { ...matrix[cell.row], [cell.column]: patch }
+    patches.set(sheetId, matrix)
+    journaled += 1
+  }
+  const apply = async (entries: ReadonlyMap<string, CellMatrix>): Promise<void> => {
+    for (const [sheetId, matrix] of entries) {
+      const rows = Object.keys(matrix).map(Number)
+      const startRow = Math.min(...rows)
+      const endRow = Math.max(...rows)
+      const columns = rows.flatMap((row) => Object.keys(matrix[row]!).map(Number))
+      await commandService.executeCommand(SET_RANGE_VALUES_COMMAND, {
+        unitId,
+        subUnitId: sheetId,
+        range: {
+          startRow,
+          endRow,
+          startColumn: Math.min(...columns),
+          endColumn: Math.max(...columns),
+        },
+        value: matrix as Nullable<Record<number, Record<number, ICellData>>>,
+      })
+    }
+  }
+  await apply(patches)
+  return { journaled, restore: () => apply(previous) }
 }
