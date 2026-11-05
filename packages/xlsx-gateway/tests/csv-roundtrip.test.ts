@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { csvToXlsxBuffer } from '../src/gateway/csv-import'
+import { buildWorksheetXml, csvToXlsxBuffer, parseCsv } from '../src/gateway/csv-import'
 import {
   applyCellEditsToXlsx,
   assertOnlyTouchedEntriesChanged,
@@ -28,6 +28,14 @@ function shaByPath(entries: readonly { path: string; sha256: string }[]): Map<st
 }
 
 describe('xlsx-gateway csv import round trip', () => {
+  it('writes the worksheet the in-memory build writes', async () => {
+    // the import streams the worksheet into the archive; the bytes it lands
+    // have to be the ones the whole-grid build produces
+    const csv =
+      'name,note,age\n"Doe, John","says ""hi""",30\nAlice,plain,007\n\ncafé ☃ — naïve,1,2\n'
+    expect(await sheetXml(await csvToXlsxBuffer(csv))).toBe(buildWorksheetXml(parseCsv(csv, ',')))
+  })
+
   it('lands commas, quotes, and escaped quotes in the expected cells', async () => {
     const csv = 'name,note,age\n"Doe, John","says ""hi""",30\nAlice,plain,007'
     const cells = await sheetCells(await csvToXlsxBuffer(csv))
