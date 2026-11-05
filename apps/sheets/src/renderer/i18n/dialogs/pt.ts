@@ -86,7 +86,7 @@ export const pt = {
   dlgQueriesLoaded: '{rows} linhas → {target}',
   dlgQueriesConnectionOnly: 'Somente conexão',
   dlgQueriesNote:
-    'A atualização de consultas ainda não é suportada. Elas ficam guardadas no arquivo, então o Excel ainda pode atualizá-las; as linhas mostradas são os últimos resultados salvos.',
+    'A atualização de consultas ainda não é suportada. Elas ficam salvas no arquivo, então o Excel ainda pode atualizá-las; as linhas mostradas são os últimos resultados salvos.',
   dlgQueriesGoHint: 'Clique para selecionar as linhas carregadas',
   dlgQueriesError: 'Não foi possível ler as conexões da pasta de trabalho: {error}',
   dlgPasteSpecialTitle: 'Colar especial',

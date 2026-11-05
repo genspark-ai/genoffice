@@ -7149,11 +7149,11 @@ export const strings = {
     askSend: 'Enviar',
     askStop: 'Parar',
     askHeroTagline:
-      'Marque com estrela os arquivos que você lê com frequência e a IA poderá pesquisá-los e citar a fonte — clique numa citação para abrir.',
+      'Marque com estrela os arquivos que você lê com frequência e a IA poderá pesquisá-los e citar a fonte — clique em uma citação para abrir.',
     askStep1Title: 'Marcar arquivos',
     askStep1Desc: 'Em Recentes ou Pastas, clique na estrela da linha do arquivo',
     askStep2Title: 'Faça perguntas',
-    askStep2Desc: 'Pergunte como num chat, sem abrir nenhum documento antes',
+    askStep2Desc: 'Pergunte como em um chat, sem abrir nenhum documento antes',
     askStep3Title: 'Abrir citações',
     askStep3Desc: 'As respostas citam o arquivo de origem; clique para ir até ele',
     askCtaRecents: 'Marcar de Recentes',
@@ -7320,9 +7320,9 @@ export const strings = {
     setRestoreSession: 'Reabrir os documentos da última vez',
     setRestoreSessionDesc:
       'Os documentos abertos ao fechar o GenOffice são reabertos automaticamente na próxima vez que ele for iniciado.',
-    setTabSleep: 'Suspender separadores inativos',
+    setTabSleep: 'Suspender guias inativas',
     setTabSleepDesc:
-      'Com muitos separadores abertos, os que não vê há algum tempo libertam a memória e reabrem o ficheiro quando regressa. Separadores com alterações por guardar ou fixados nunca são suspensos.',
+      'As guias que você não acessa há algum tempo liberam memória e reabrem o arquivo quando você volta. Guias fixadas ou com alterações não salvas nunca são suspensas.',
     tabSleeping: 'Suspenso',
     setAutoSave: 'Salvar automaticamente todos os documentos',
     setAutoSaveDesc:
@@ -7650,9 +7650,9 @@ export const strings = {
       'Cada entrada é { id, name, vision, maxTokens, alias }; o que não está listado mantém os interruptores acima e as heurísticas embarcadas.',
     setAiEndpointKeyEnv: 'Variável de ambiente da chave',
     setAiEndpointModelsProbed:
-      'As capacidades observadas por esta sonda (vision, maxTokens, contextWindow) são guardadas em cache ao lado do endpoint e valem para os modelos não declarados; a sonda seguinte substitui-as por completo e nada do que está escrito aqui muda.',
+      'As capacidades observadas por esta sonda (vision, maxTokens, contextWindow) são salvas em cache ao lado do endpoint e valem para os modelos não declarados; a sonda seguinte substitui-as por completo e nada do que está escrito aqui muda.',
     setAiEndpointKeyEnvHint:
-      'Se definido, nenhuma chave é guardada aqui; ela é lida dessa variável de ambiente.',
+      'Se definido, nenhuma chave é salva aqui; ela é lida dessa variável de ambiente.',
     setAiEndpointHeadersBad: 'Formato de cabeçalho inválido: cada linha deve ser "Nome: Valor".',
     setAiEndpointModelsBad:
       'Declarações de modelo inválidas: deve ser um array JSON, ex. [{ "id": "m" }].',
