@@ -397,8 +397,20 @@ describe('groupPageBlocks: lines a wrap cannot explain', () => {
     ).toEqual([1, 1])
     expect(
       lineCounts([
-        { t: '1、安装软件包并检查版本', x: 50, y: 700, w: 160, h: 12 },
-        { t: '2、运行安装脚本完成配置', x: 50, y: 686, w: 160, h: 12 },
+        {
+          t: '1、\u5b89\u88c5\u8f6f\u4ef6\u5305\u5e76\u68c0\u67e5\u7248\u672c',
+          x: 50,
+          y: 700,
+          w: 160,
+          h: 12,
+        },
+        {
+          t: '2、\u8fd0\u884c\u5b89\u88c5\u811a\u672c\u5b8c\u6210\u914d\u7f6e',
+          x: 50,
+          y: 686,
+          w: 160,
+          h: 12,
+        },
       ]),
     ).toEqual([1, 1])
   })
@@ -418,9 +430,41 @@ describe('groupPageBlocks: lines a wrap cannot explain', () => {
     expect(
       lineCounts([
         { t: 'Results and discussion', x: 50, y: 700, w: 150, h: 12, font: 'bold' },
-        { t: 'Done.', x: 50, y: 686, w: 40, h: 12, font: 'regular' },
+        {
+          t: 'The measured values confirm the model',
+          x: 50,
+          y: 686,
+          w: 250,
+          h: 12,
+          font: 'regular',
+        },
+        { t: 'across every run.', x: 50, y: 672, w: 110, h: 12, font: 'regular' },
       ]),
-    ).toEqual([1, 1])
+    ).toEqual([1, 2])
+  })
+
+  it('keeps a paragraph whole when its full first line is mostly a bold lead-in', () => {
+    expect(
+      lineCounts([
+        {
+          t: 'Important notice regarding your account – the',
+          x: 50,
+          y: 700,
+          w: 250,
+          h: 12,
+          font: 'bold',
+        },
+        {
+          t: 'terms change on 1 March for every customer',
+          x: 50,
+          y: 686,
+          w: 248,
+          h: 12,
+          font: 'regular',
+        },
+        { t: 'who signed before 2024.', x: 50, y: 672, w: 140, h: 12, font: 'regular' },
+      ]),
+    ).toEqual([3])
   })
 
   it('splits at paragraph spacing of a third of the leading', () => {

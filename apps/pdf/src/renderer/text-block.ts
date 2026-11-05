@@ -277,7 +277,7 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
       const shortfall = x2 - prev.rect[2]
       if (
         (leftSet && shortfall > firstTokenWidth(ln.text, ln.fontSize) + ln.fontSize * 1.5) ||
-        startsNewParagraph(cur.lines, ln, fs, leftSet)
+        startsNewParagraph(cur.lines, ln, fs, leftSet, x2)
       ) {
         parts.push(cur)
         cur = { lines: [ln], leads: [] }
@@ -352,19 +352,25 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
 
 /** Whether `ln` cannot be a wrapped continuation of the paragraph `lines` (top to
     bottom): it opens a list item, it follows a lone first line set in another font
-    (a same-size heading), or, in left-set text, its left edge leaves the paragraph's
-    body edge (the second line's: the first may be indented or hung). The first two
-    do not depend on the alignment: wrapped list items justified to one right edge
-    read as right-set. */
+    that also stops short of the block's right edge `x2` by more than `ln`'s first
+    word (a same-size heading; a full first line in another font is a bold lead-in,
+    or one face pdf.js gave two font ids), or, in left-set text, its left edge
+    leaves the paragraph's body edge (the second line's: the first may be indented
+    or hung). The first two do not depend on the alignment: wrapped list items
+    justified to one right edge read as right-set. */
 function startsNewParagraph(
   lines: BlockLine[],
   ln: BlockLine,
   fontSize: number,
   leftSet: boolean,
+  x2: number,
 ): boolean {
   if (LIST_MARKER.test(ln.text.trimStart())) return true
   const first = lines[0]!
-  if (lines.length === 1 && first.font && ln.font && first.font !== ln.font) return true
+  const headingShortfall = x2 - first.rect[2] > firstTokenWidth(ln.text, ln.fontSize)
+  if (lines.length === 1 && first.font && ln.font && first.font !== ln.font && headingShortfall) {
+    return true
+  }
   if (!leftSet) return false
   if (lines.length === 1) return Math.abs(ln.rect[0] - first.rect[0]) > fontSize * MAX_INDENT_EM
   return Math.abs(ln.rect[0] - lines[1]!.rect[0]) > fontSize * EDGE_TOL_EM
