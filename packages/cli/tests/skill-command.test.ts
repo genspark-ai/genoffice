@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +15,29 @@ function fakeMachine(agents: string[]) {
   const userData = join(home, 'userData')
   mkdirSync(userData)
   return { home, env: { GENOFFICE_HOME: home, GENOFFICE_USER_DATA: userData } }
+}
+
+/** a machine that installed the skill the old way: a copy in ~/.codex/skills, in the ledger */
+function fakeLegacyMachine() {
+  const m = fakeMachine(['.claude', '.codex'])
+  const text = readFileSync(join(REPO, 'skills/genoffice/SKILL.md'), 'utf-8')
+  const legacyPath = join(m.home, '.codex', 'skills', 'genoffice', 'SKILL.md')
+  mkdirSync(join(m.home, '.codex', 'skills', 'genoffice'), { recursive: true })
+  writeFileSync(legacyPath, text)
+  writeFileSync(
+    join(m.env.GENOFFICE_USER_DATA, 'app-settings.json'),
+    JSON.stringify({
+      agentSkillInstalls: {
+        [legacyPath]: {
+          version: bundledVersion,
+          sha256: createHash('sha256').update(text).digest('hex'),
+          at: new Date().toISOString(),
+          channel: 'app',
+        },
+      },
+    }),
+  )
+  return { ...m, legacyPath }
 }
 
 describe('genoffice skill', () => {
@@ -187,5 +211,42 @@ describe('genoffice skill', () => {
     expect(r.json().detail).toMatchObject({ agent: 'agents', status: 'occupied' })
     expect(existsSync(join(m.home, '.claude', 'skills', 'genoffice'))).toBe(false)
     expect(existsSync(join(m.env.GENOFFICE_USER_DATA, 'app-settings.json'))).toBe(false)
+  })
+
+  it('list reports the per-tool copies the shared row replaced', async () => {
+    const m = fakeLegacyMachine()
+    const r = await run(['skill', 'list', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    expect(r.json().detail.legacy).toEqual([
+      {
+        agent: 'codex',
+        label: 'Codex',
+        skills_dir: join(m.home, '.codex', 'skills'),
+        path: m.legacyPath,
+        ours: true,
+      },
+    ])
+    expect(r.json().summary).toContain('1 legacy per-tool skill copy')
+  })
+
+  it('install sweeps the per-tool copy once the shared row holds the skill', async () => {
+    const m = fakeLegacyMachine()
+    const r = await run(['skill', 'install', 'agents', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    expect(existsSync(join(m.home, '.agents', 'skills', 'genoffice', 'SKILL.md'))).toBe(true)
+    expect(existsSync(m.legacyPath)).toBe(false)
+    expect(r.json().warnings.map((w: { code: string }) => w.code)).toContain('legacy_copy_removed')
+    const settings = JSON.parse(
+      readFileSync(join(m.env.GENOFFICE_USER_DATA, 'app-settings.json'), 'utf-8'),
+    )
+    expect(settings.agentSkillInstalls[m.legacyPath]).toBeUndefined()
+  })
+
+  it('keeps the per-tool copy while the shared row holds no skill', async () => {
+    const m = fakeLegacyMachine()
+    const r = await run(['skill', 'install', 'claude-code', '--json'], { env: m.env })
+    expect(r.code).toBe(0)
+    // without the shared copy the old one is all the tool has
+    expect(existsSync(m.legacyPath)).toBe(true)
   })
 })

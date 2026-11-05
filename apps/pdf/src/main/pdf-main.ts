@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, stat, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
@@ -30,8 +30,25 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
-import { PDF_CHANNELS } from '../shared/ipc'
-import { printJobOptions } from '@genoffice/electron-utils/print-job'
+import { PDF_CHANNELS, PDF_READ_CHUNK_BYTES } from '../shared/ipc'
+import { printJobOptions, printOutcome } from '@genoffice/electron-utils/print-job'
+import {
+  printFileViaCups,
+  printPdfViaCups,
+  printToPdfOptionsFor,
+} from '@genoffice/electron-utils/print-cups'
+
+/** 1-based file page positions for the lp `-P` page-list: integers within a
+ * real document's reach, undefined = the whole document. Anything else is
+ * dropped wholesale — a half-valid list would silently print the wrong
+ * subset. */
+function validPrintPages(pages: unknown): number[] | undefined {
+  if (pages === undefined) return undefined
+  if (!Array.isArray(pages) || pages.length === 0 || pages.length > 100_000) return undefined
+  const clean = pages.filter((n) => typeof n === 'number' && Number.isInteger(n) && n >= 1)
+  return clean.length === pages.length ? clean : undefined
+}
+import { CertificateEncryptionError, WrongPasswordError, decryptDocument } from './pdf-crypt'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
   ExportImagesRequest,
@@ -91,6 +108,9 @@ import {
   splitPagesBytes,
   splitPdfBytes,
 } from './save-pdf'
+import { readPdfText } from './read-text'
+import { shrinkDocument } from './pdf-shrink'
+import { PDFDocument } from 'pdf-lib'
 import {
   addSignature,
   isSignatureData,
@@ -1209,17 +1229,44 @@ function registerPdfIpc(): void {
     return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
   })
 
-  ipcMain.handle(PDF_CHANNELS.print, (e, job: unknown) => {
+  ipcMain.handle(PDF_CHANNELS.print, async (e, job: unknown) => {
     const opts = printJobOptions(job)
     // the renderer's print stylesheet already lays one rasterized page per sheet
+    if (process.platform === 'darwin' && opts.silent) {
+      // Chromium's silent print on macOS can drop the job outright — no queue
+      // entry, no callback error (genoffice#2347). Route through CUPS:
+      // printToPDF bakes the sheets at the document's own paper size (the
+      // renderer measured it), and lp spools a real, diagnosable job.
+      const printed = await e.sender.printToPDF(
+        printToPdfOptionsFor({
+          marginsIn: { top: 0, bottom: 0, left: 0, right: 0 },
+          ...(opts.pageSizeIn
+            ? { widthIn: opts.pageSizeIn.width, heightIn: opts.pageSizeIn.height }
+            : {}),
+        }),
+      )
+      return printPdfViaCups(printed, opts)
+    }
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       e.sender.print({ margins: { marginType: 'none' }, ...opts }, (success, failureReason) => {
-        resolve({
-          ok: success,
-          ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
-        })
+        resolve(printOutcome(success, failureReason, opts.silent))
       })
     })
+  })
+
+  ipcMain.handle(PDF_CHANNELS.printFile, async (e, request: unknown) => {
+    if (typeof request !== 'object' || request === null) {
+      throw new Error('pdf: malformed print-file request')
+    }
+    const req = request as Record<string, unknown>
+    if (typeof req.path !== 'string' || !allowedByWc.get(e.sender.id)?.has(req.path)) {
+      throw new Error('pdf: path not granted to this view')
+    }
+    const opts = printJobOptions(req)
+    // the pages travel beside the job: 1-based file positions the renderer
+    // validated against the opened document, spooled as lp's -P page-list
+    const pages = validPrintPages(req.pages)
+    return printFileViaCups(req.path, opts, pages)
   })
 
   ipcMain.handle(PDF_CHANNELS.readFile, async (e, path: unknown) => {
@@ -1228,6 +1275,59 @@ function registerPdfIpc(): void {
     }
     const buf = await readFile(path)
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  })
+
+  // Chunked reads for the same grant: one 42 MB ArrayBuffer over IPC has
+  // killed renderers before first paint on Windows (genoffice#2366), while
+  // small slices deserialize fine. The size rides along so the renderer's
+  // loop needs no separate stat.
+  ipcMain.handle(
+    PDF_CHANNELS.readFileChunk,
+    async (e, path: unknown, start: unknown, end: unknown) => {
+      // the preload hands the grant's path, start and end as positional args
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        throw new Error('pdf: path not granted to this view')
+      }
+      const from = typeof start === 'number' && Number.isInteger(start) && start >= 0 ? start : -1
+      const to = typeof end === 'number' && Number.isInteger(end) && end >= from ? end : -1
+      if (from < 0 || to < 0 || to - from > PDF_READ_CHUNK_BYTES) {
+        throw new Error('pdf: invalid chunk range')
+      }
+      const handle = await open(path, 'r')
+      try {
+        const length = to - from
+        const buf = Buffer.alloc(length)
+        const { bytesRead } = await handle.read(buf, 0, length, from)
+        const fileSize = (await handle.stat()).size
+        return { data: new Uint8Array(buf.subarray(0, bytesRead)), fileSize }
+      } finally {
+        await handle.close()
+      }
+    },
+  )
+
+  // pdf.js has already accepted `password` for these bytes on the render side;
+  // a failure here therefore means the standard handler refused it
+  ipcMain.handle(PDF_CHANNELS.decryptPdf, async (_e, bytes: unknown, password: unknown) => {
+    if (!(bytes instanceof Uint8Array) || typeof password !== 'string') {
+      return { ok: false as const, reason: 'pdf: malformed decrypt request' }
+    }
+    try {
+      const opened = await decryptDocument(bytes, password)
+      return {
+        ok: true as const,
+        bytes: opened.bytes,
+        permissions: opened.permissions,
+        neededPassword: opened.neededPassword,
+        unlockedAs: opened.unlockedAs,
+      }
+    } catch (err) {
+      if (err instanceof WrongPasswordError) return { ok: false as const, reason: 'wrong-password' }
+      if (err instanceof CertificateEncryptionError) {
+        return { ok: false as const, reason: 'certificate-encryption' }
+      }
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle(
@@ -1353,6 +1453,53 @@ function registerPdfIpc(): void {
       setPdfSaveAsInFlight(e.sender, false)
     }
   })
+
+  // An attachment to embed: the open dialog is main-side, the bytes travel base64
+  // over the same IPC the stamp images already use
+  ipcMain.handle(PDF_CHANNELS.pickAttachmentFile, async (e) => {
+    if (!allowedByWc.has(e.sender.id)) {
+      return { ok: false as const, reason: 'pdf: sender is not a registered PDF view' }
+    }
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
+    const picked = await showOpenDialogWithMemory(dialog, win ?? undefined, {
+      properties: ['openFile'],
+    })
+    const file = picked.filePaths[0]
+    if (picked.canceled || !file) return { ok: false as const, cancelled: true }
+    try {
+      const bytes = await readFile(file)
+      return {
+        ok: true as const,
+        name: basename(file),
+        bytesBase64: bytes.toString('base64'),
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(
+    PDF_CHANNELS.exportAttachment,
+    async (e, path: unknown, name: unknown, bytesBase64: unknown) => {
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false as const, reason: 'pdf: path not granted to this view' }
+      }
+      if (typeof name !== 'string' || typeof bytesBase64 !== 'string') {
+        return { ok: false as const, reason: 'pdf: malformed export request' }
+      }
+      const parent = BrowserWindow.fromWebContents(e.sender)
+      const picked = parent
+        ? await dialog.showSaveDialog(parent, { defaultPath: join(dirname(path), name) })
+        : await dialog.showSaveDialog({ defaultPath: join(dirname(path), name) })
+      if (picked.canceled || !picked.filePath) return { ok: false as const, cancelled: true }
+      try {
+        await writeFile(picked.filePath, Buffer.from(bytesBase64, 'base64'))
+        return { ok: true as const, targetPath: picked.filePath }
+      } catch (err) {
+        return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 
   ipcMain.handle(PDF_CHANNELS.isUntitled, (e, path: unknown): boolean => {
     return (
@@ -1579,7 +1726,103 @@ function registerPdfIpc(): void {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },
-  )
+  ) // Compare: pick a second document and extract its per-page text main-side —
+  // the bytes and the path stay here, the renderer gets text only
+  ipcMain.handle(PDF_CHANNELS.compareReadPdf, async (e) => {
+    if (!allowedByWc.has(e.sender.id)) {
+      return { ok: false as const, reason: 'pdf: sender is not a registered PDF view' }
+    }
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
+    const picked = await showOpenDialogWithMemory(dialog, win ?? undefined, {
+      filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
+      properties: ['openFile'],
+    })
+    const file = picked.filePaths[0]
+    if (picked.canceled || !file) return { ok: false as const, canceled: true }
+    try {
+      const text = await readPdfText(new Uint8Array(await readFile(file)))
+      return {
+        ok: true as const,
+        name: basename(file),
+        pageCount: text.pageCount,
+        pages: text.pages.map((page) => page.text),
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Compare: the open document's own text through the same pdfium engine as the
+  // picked side — pdf.js and pdfium break lines differently, and a diff across
+  // engines reports added and removed lines on files that are identical.
+  ipcMain.handle(PDF_CHANNELS.compareReadOpen, async (e, path: unknown, password: unknown) => {
+    if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+      return { ok: false as const, reason: 'pdf: path not granted to this view' }
+    }
+    try {
+      const text = await readPdfText(new Uint8Array(await readFile(path)), {
+        password: typeof password === 'string' ? password : undefined,
+      })
+      return {
+        ok: true as const,
+        name: basename(path),
+        pageCount: text.pageCount,
+        pages: text.pages.map((page) => page.text),
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Reduce File Size: shrink a copy picked through the save dialog; the open
+  // document is untouched
+  ipcMain.handle(PDF_CHANNELS.reduceFileSize, async (e, path: unknown) => {
+    if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+      return { ok: false as const, reason: 'pdf: path not granted to this view' }
+    }
+    const parent = BrowserWindow.fromWebContents(e.sender)
+    const base = basename(path).replace(/\.pdf$/i, '')
+    // the file name belongs in defaultPath: `title` only labels the dialog and
+    // leaves the name field empty with no directory
+    const filters = [{ name: tm('filterPdf'), extensions: ['pdf'] }]
+    const picked = parent
+      ? await dialog.showSaveDialog(parent, {
+          defaultPath: base + '-small.pdf',
+          filters,
+        })
+      : await dialog.showSaveDialog({ defaultPath: base + '-small.pdf', filters })
+    if (picked.canceled || !picked.filePath) return { ok: false as const, canceled: true }
+    try {
+      const source = new Uint8Array(await readFile(path))
+      const doc = await PDFDocument.load(source, { updateMetadata: false })
+      const result = shrinkDocument(doc)
+      // Object streams stay on: turning them off expands any file whose
+      // producer used them — bigger output that the toast reported as a
+      // reduction. A run that does not come out smaller writes nothing.
+      const after = await doc.save({ useObjectStreams: true })
+      if (after.length >= source.length) {
+        return {
+          ok: true as const,
+          targetPath: picked.filePath,
+          bytesBefore: source.length,
+          bytesAfter: after.length,
+          streamsRecompressed: result.streamsRecompressed,
+          imagesDownsampled: result.imagesDownsampled,
+        }
+      }
+      await writePdfAtomically(picked.filePath, after)
+      return {
+        ok: true as const,
+        targetPath: picked.filePath,
+        bytesBefore: source.length,
+        bytesAfter: after.length,
+        streamsRecompressed: result.streamsRecompressed,
+        imagesDownsampled: result.imagesDownsampled,
+      }
+    } catch (err) {
+      return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   ipcMain.handle(
     PDF_CHANNELS.insertBlankPage,
@@ -1805,6 +2048,7 @@ function registerPdfIpc(): void {
         return { ok: false, error: 'pdf: no images' }
       if (!hasValidExportPageNumbers(pageNumbers, images.length))
         return { ok: false, error: 'pdf: invalid page numbers' }
+      const ext = request?.format === 'jpg' ? 'jpg' : 'png'
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
       const picked = await showOpenDialogWithMemory(dialog, win, {
@@ -1814,7 +2058,7 @@ function registerPdfIpc(): void {
       const dir = picked.filePaths[0]
       if (picked.canceled || !dir) return { ok: true, canceled: true }
       try {
-        const outputPaths = buildExportImagePaths(dir, baseName, pageNumbers)
+        const outputPaths = buildExportImagePaths(dir, baseName, pageNumbers, ext)
         for (const [i, b64] of images.entries()) {
           await writeFile(outputPaths[i]!, Buffer.from(b64, 'base64'))
         }

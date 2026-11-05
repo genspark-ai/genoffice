@@ -2,6 +2,7 @@ import { net, protocol } from 'electron'
 import { pathToFileURL } from 'node:url'
 import {
   DOCX_MEDIA_SCHEME_PRIVILEGE,
+  SLIDE_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME,
   RENDERER_SCHEME_PRIVILEGE,
   resolveRendererFile,
@@ -11,7 +12,11 @@ import {
  * so hosts that register other schemes spread RENDERER_SCHEME_PRIVILEGE into
  * their own list instead. */
 export function registerRendererScheme(): void {
-  protocol.registerSchemesAsPrivileged([RENDERER_SCHEME_PRIVILEGE, DOCX_MEDIA_SCHEME_PRIVILEGE])
+  protocol.registerSchemesAsPrivileged([
+    RENDERER_SCHEME_PRIVILEGE,
+    DOCX_MEDIA_SCHEME_PRIVILEGE,
+    SLIDE_MEDIA_SCHEME_PRIVILEGE,
+  ])
 }
 
 /** After app ready: serve each module's built renderer directory. */

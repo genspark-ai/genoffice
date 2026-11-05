@@ -1,5 +1,5 @@
 /**
- * Meiryo / Meiryo UI metric aliases (fonts.css): Word renders the real faces
+ * Meiryo / Meiryo UI metric aliases (fonts.generated.css): Word renders the real faces
  * (probe 2026-09-03, advances read from Word's meiryo.ttc). Kana and JP
  * punctuation ride the bundled GenOffice UI Kana JP faces (Noto Sans JP
  * outlines condensed to Meiryo UI's exact per-glyph advances at full height;
@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { advanceEm, readWoff2 } from './helpers/woff2-metrics'
 
 const FONTS = join(__dirname, '../src/renderer/fonts')
-const css = readFileSync(join(FONTS, 'fonts.css'), 'utf8')
+const css = readFileSync(join(FONTS, 'fonts.generated.css'), 'utf8')
 const KANA_RANGE = 'U+3000-3002, U+3008-3011, U+3014-3015, U+3041-3096, U+3099-30FF'
 
 function faces(family: string) {

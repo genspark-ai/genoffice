@@ -36,6 +36,8 @@ export function parseFontTable(xml: string): FontTableEntry[] {
     if (family) entry.family = family
     const charset = val('w:charset')
     if (charset) entry.charset = charset
+    const csb0 = attrsOf(findChild(node, 'w:sig') ?? {})['w:csb0']
+    if (csb0) entry.csb0 = csb0
     const pitch = val('w:pitch')
     if (pitch) entry.pitch = pitch
     const embedded = parseEmbedSlots(node)

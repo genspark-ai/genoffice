@@ -53,9 +53,26 @@ export function tocLevelOf(styleId: string, styles?: Map<string, StyleInfo>): nu
 
 const TAB_LEADERS = ['none', 'dot', 'hyphen', 'underscore', 'heavy', 'middleDot'] as const
 
-/** leader of the entry's page-number tab: the last right stop of the direct
- *  w:tabs (a stop without w:leader is a bare tab), else of the style's stops */
-function tocLeaderOf(pPr: string, style?: StyleInfo): TabStop['leader'] | undefined {
+/** style (or inherited) stops minus the ones the paragraph's own w:tabs clear */
+function styleStopsOf(pPr: string, style?: StyleInfo, inheritedStops: TabStop[] = []): TabStop[] {
+  const tabsXml = /<w:tabs>[\s\S]*?<\/w:tabs>/.exec(pPr)?.[0]
+  const cleared = new Set<number>()
+  if (tabsXml)
+    for (const m of tabsXml.matchAll(/<w:tab\s[^>]*\/>/g)) {
+      if (!/\sw:val=(?:"clear"|'clear')/.test(m[0])) continue
+      const pos = Number(/\sw:pos=(?:"([^"]+)"|'([^']+)')/.exec(m[0])?.slice(1, 3).find(Boolean))
+      if (Number.isFinite(pos)) cleared.add(pos)
+    }
+  return (style?.display?.tabStops ?? inheritedStops).filter((t) => !cleared.has(t.pos))
+}
+
+/** the page number's right tab stop: the last direct right stop (a stop without
+ *  w:leader is a bare tab), else the style's (or inherited) unless cleared */
+function tocRightTabOf(
+  pPr: string,
+  style?: StyleInfo,
+  inheritedStops: TabStop[] = [],
+): { leader: TabStop['leader']; pos?: number } | undefined {
   const tabsXml = /<w:tabs>[\s\S]*?<\/w:tabs>/.exec(pPr)?.[0]
   if (tabsXml) {
     const rights = Array.from(tabsXml.matchAll(/<w:tab\s[^>]*\/>/g), (m) => m[0]).filter((t) =>
@@ -64,11 +81,43 @@ function tocLeaderOf(pPr: string, style?: StyleInfo): TabStop['leader'] | undefi
     const last = rights[rights.length - 1]
     if (last) {
       const v = /\sw:leader=(?:"([^"]+)"|'([^']+)')/.exec(last)?.slice(1, 3).find(Boolean) ?? 'none'
-      return (TAB_LEADERS as readonly string[]).includes(v) ? (v as TabStop['leader']) : 'none'
+      const pos = Number(/\sw:pos=(?:"([^"]+)"|'([^']+)')/.exec(last)?.slice(1, 3).find(Boolean))
+      return {
+        leader: (TAB_LEADERS as readonly string[]).includes(v) ? (v as TabStop['leader']) : 'none',
+        ...(Number.isFinite(pos) && pos > 0 ? { pos } : {}),
+      }
     }
   }
-  const stop = style?.display?.tabStops?.filter((t) => t.val === 'right').pop()
-  return stop ? (stop.leader ?? 'none') : undefined
+  const stop = styleStopsOf(pPr, style, inheritedStops)
+    .filter((t) => t.val === 'right')
+    .pop()
+  if (stop)
+    return {
+      leader: stop.leader ?? 'none',
+      ...(stop.pos > 0 && !stop.rel ? { pos: stop.pos } : {}),
+    }
+  // a cleared right stop leaves the tab on Word's default stops: no leader
+  const cleared = (style?.display?.tabStops ?? inheritedStops).some((t) => t.val === 'right')
+  return cleared ? { leader: 'none' } : undefined
+}
+
+/** position (twips, from the column edge) of the first left tab stop the outline number's
+ *  tab jumps to: direct w:tabs, else the style's. Word starts the title there */
+function tocNumTabOf(
+  pPr: string,
+  style?: StyleInfo,
+  inheritedStops: TabStop[] = [],
+): number | undefined {
+  const tabsXml = /<w:tabs>[\s\S]*?<\/w:tabs>/.exec(pPr)?.[0]
+  if (tabsXml) {
+    for (const m of tabsXml.matchAll(/<w:tab\s[^>]*\/>/g)) {
+      if (!/\sw:val=(?:"left"|'left')/.test(m[0])) continue
+      const pos = Number(/\sw:pos=(?:"([^"]+)"|'([^']+)')/.exec(m[0])?.slice(1, 3).find(Boolean))
+      if (Number.isFinite(pos) && pos > 0) return pos
+    }
+  }
+  const stop = styleStopsOf(pPr, style, inheritedStops).find((t) => t.val === 'left' && t.pos > 0)
+  return stop?.pos
 }
 
 const CJK_INK_RE = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/
@@ -142,16 +191,28 @@ export function directLineOf(
   }
 }
 
+/** direct line rule, else the paragraph style's fixed one (an auto multiple cascades via CSS) */
+function tocLineOf(eff: EffectivePPr): ReturnType<typeof directLineOf> {
+  const direct = directLineOf(eff)
+  const line = eff.spacing.line
+  if (direct.lineRule || eff.source.line !== 'paraStyle' || !line || line.rule === 'auto')
+    return direct
+  return { lineRule: line.rule, lineRawTwips: line.raw }
+}
+
 /** compat flag the renderer's spacing helper reads instead of its module global */
 export function additiveSpacingOf(ctx: ResolveCtx): Pick<FieldDisplay, 'additiveSpacing'> {
   return ctx.compat.additiveParaSpacing ? { additiveSpacing: true } : {}
 }
 
-/** a TOC entry Word wrote without TOC styles: PAGEREF page number behind a right tab stop */
-function unstyledTocEntry(xml: string, pPr: string): boolean {
+/** a TOC entry Word wrote without TOC styles: PAGEREF page number behind a right tab stop.
+ *  The stop may come from a style that is not named "toc N" (custom or localized TOC
+ *  styles); then a run-level tab must also be there, the one the page number sits behind. */
+function unstyledTocEntry(xml: string, pPr: string, inheritedStops: TabStop[]): boolean {
+  if (!/<w:instrText[^>]*>\s*PAGEREF\s/.test(xml)) return false
+  if (/<w:tabs>[\s\S]*?<w:tab\s[^>]*w:val=(?:"right"|'right')/.test(pPr)) return true
   return (
-    /<w:instrText[^>]*>\s*PAGEREF\s/.test(xml) &&
-    /<w:tabs>[\s\S]*?<w:tab\s[^>]*w:val=(?:"right"|'right')/.test(pPr)
+    inheritedStops.some((t) => t.val === 'right') && /<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>/.test(xml)
   )
 }
 
@@ -202,8 +263,15 @@ export function fieldDisplayOf(
   const line = directLineOf(eff)
   const additive = additiveSpacingOf(ctx)
   const styledLevel = tocLevelOf(styleId, styles)
-  // unstyled entries indent through their own w:ind, styled ones through the level ladder
-  const tocLevel = styledLevel ?? (unstyledTocEntry(xml, pPr) ? 1 : null)
+  // unstyled entries indent through their own w:ind, styled ones through the level ladder;
+  // a TOC-styled paragraph without a tab run (title, spacer) is a plain line with no leader
+  const tabRun = /<w:tab\s*[/]>|<w:tab>\s*<[/]w:tab>|<w:delText(?:\s|>)/.test(xml)
+  const tocLevel =
+    styledLevel !== null && tabRun
+      ? styledLevel
+      : unstyledTocEntry(xml, pPr, eff.tabStops)
+        ? (styledLevel ?? 1)
+        : null
   if (styledLevel !== null) {
     delete geometry.indentLeftTwips
     delete geometry.indentRightTwips
@@ -229,13 +297,16 @@ export function fieldDisplayOf(
       else segs[segs.length - 1] += m[1]
     }
     const right = segs.length > 1 ? segs.pop()! : ''
-    // a short space-free first segment at its own tab stop is the outline
-    // number; it renders in the num cell so the title stays clean for
-    // heading matching (toc-refresh keys on `left`)
+    const numTab = tocNumTabOf(pPr, styles?.get(styleId), eff.tabStops)
+    // a short first segment (spaced too when a left stop exists for it) is the outline
+    // number; it renders in the num cell so the title stays clean for heading matching
     let num: string | undefined
     if (segs.length > 1) {
       const first = decodeEntities(segs[0]).trim()
-      if (/^\S{1,15}$/.test(first)) {
+      if (
+        /^\S{1,15}$/.test(first) ||
+        (numTab !== undefined && /^\S(?:[^\t]{0,18}\S)?$/.test(first))
+      ) {
         num = first
         segs.shift()
       }
@@ -247,7 +318,10 @@ export function fieldDisplayOf(
     const anchor = /<w:hyperlink [^>]*w:anchor="([^"]+)"/.exec(xml)?.[1]
     // direct pPr/run metrics: Word sizes TOC lines by them while the style
     // (html2docx exports) often carries nothing
-    const leader = tocLeaderOf(pPr, styles?.get(styleId))
+    const rightTab = tocRightTabOf(pPr, styles?.get(styleId), eff.tabStops)
+    const leader = rightTab?.leader
+    const firstLine = eff.indent.firstLine ?? 0
+    const firstLineStart = (eff.indent.left ?? 0) + firstLine
     // font size from visible result runs only: field-machinery runs
     // (fldChar/instrText) often carry the target heading's size and would
     // inflate the whole line
@@ -268,6 +342,9 @@ export function fieldDisplayOf(
       right: decodeEntities(right).trim(),
       level: tocLevel,
       ...(num ? { num } : {}),
+      // the number sits where the first line starts (left indent plus the first-line indent)
+      ...(num && numTab ? { numTabTwips: Math.max(0, numTab - firstLineStart) } : {}),
+      ...(firstLine ? { hangTwips: firstLine } : {}),
       ...(anchor ? { anchor } : {}),
       ...(deleted ? { deleted } : {}),
       ...(deleted && /<w:del\b[^>]*\/>/.test(pPr) ? { markDeleted: true } : {}),
@@ -277,7 +354,8 @@ export function fieldDisplayOf(
       ...(bold ? { bold } : {}),
       ...(runStyleId ? { runStyleId } : {}),
       ...(leader ? { leader } : {}),
-      ...line,
+      ...(rightTab?.pos ? { rightTabTwips: rightTab.pos } : {}),
+      ...tocLineOf(eff),
       ...geometry,
       ...additive,
     }
@@ -287,7 +365,7 @@ export function fieldDisplayOf(
   if (visible === '' && /<w:br\s[^>]*w:type="page"/.test(xml)) {
     return { kind: 'pageBreak' }
   }
-  if (visible === '' && loneFieldEnd(xml)) {
+  if (visible === '' && (loneFieldEnd(xml) || styledLevel !== null)) {
     // the paragraph mark's size sets the empty line (the end run's rPr does not)
     const sz = directSize(eff.mark)
     return {

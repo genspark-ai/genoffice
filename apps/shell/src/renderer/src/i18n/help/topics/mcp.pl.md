@@ -10,6 +10,12 @@ Robisz to w **Ustawienia ▸ Integracje**. Panel ma dwie połowy i możesz skorz
 
 **MCP.** Dostępne są dwie drogi: **Uruchamiany przez asystenta (zalecane)** — tam dodajesz pokazaną konfigurację do swojego klienta, a asystent sam uruchamia serwer — oraz **Lokalny serwer HTTP**, który aplikacja prowadzi za ciebie. Tak czy inaczej asystent ostatecznie rozmawia z GenOffice, a ty nie wpisujesz żadnej komendy.
 
+**Wypróbuj** Otwórz nowy czat w asystencie i poproś zwykłymi słowami, na przykład:
+
+- “Zamień ~/Downloads/report.md na dokument Word”
+- “Zrób prezentację z 6 slajdów o naszych wynikach za III kwartał”
+- “Przekonwertuj budget.xlsx do PDF i otwórz w GenOffice”
+
 ## Rejestrowanie z wiersza poleceń
 
 To samo z terminala — to jest ścieżka zaawansowana, po którą sięgasz, gdy agent jest tam, gdzie panel nie potrafi go znaleźć:

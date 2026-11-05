@@ -1,0 +1,61 @@
+{
+  "id": "grid-strut-two-face",
+  "title": "Two-face CJK lines (Calibri + Microsoft YaHei) pitch 8.5 x 1.7143 x 1.25 = 18.24 at line 300; the declared-face predicate fires only for a CJK run naming two faces",
+  "section": "word-truths.md#L725",
+  "probe_date": "2026-10-28",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-28): body-only twin of render-grid-strut-two-face (docDefaults Calibri 11 + eastAsia Microsoft YaHei, line 300, compat 14); 8.5pt two-face line 82.80 -> 10.5pt 103.44 -> single-face 8.5pt 123.60 -> Calibri 8.5pt 139.20; the render twin's consecutive same-size lines pitch 18.24 (8.5pt) and 22.56/22.32 (10.5pt)",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 18.24,
+      "tol": 0.05,
+      "note": "8.5pt: the YaHei factor is size-independent"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 22.56,
+      "tol": 0.1,
+      "note": "10.5pt: Word alternates 22.56/22.32 on the 0.24 grid"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 18.24,
+      "tol": 0.05,
+      "note": "single declared face, same pitch"
+    },
+    {
+      "kind": "runProps",
+      "block": 0,
+      "run": 0,
+      "expect": { "fontAscii": "Calibri", "font": "Microsoft YaHei", "sizeHalfPoints": 17 }
+    },
+    {
+      "kind": "strutClass",
+      "block": 0,
+      "expect": "doc-grid-strut",
+      "note": "CJK run with ascii Calibri + eastAsia YaHei leads every box with the strut face"
+    },
+    {
+      "kind": "strutClass",
+      "block": 1,
+      "expect": "doc-grid-strut"
+    },
+    {
+      "kind": "strutClass",
+      "block": 2,
+      "expect": null,
+      "note": "one declared face on every slot: no union to tame"
+    },
+    {
+      "kind": "strutClass",
+      "block": 3,
+      "expect": null,
+      "note": "Latin-only text never takes the strut"
+    }
+  ],
+  "docx": "probe.docx"
+}

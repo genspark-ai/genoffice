@@ -1,0 +1,13 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-hf-header-dist-push/probe.docx",
+  "paragraphs": 2,
+  "hashes": ["499d2c589aa06953", "2cc1ed2736a37481"],
+  "cellParagraphs": 0,
+  "cellHashes": [],
+  "boxParagraphs": 0,
+  "boxHashes": [],
+  "hfParagraphs": 1,
+  "hfHashes": ["94f541dd5ba37034"],
+  "noteParagraphs": 0,
+  "noteHashes": []
+}

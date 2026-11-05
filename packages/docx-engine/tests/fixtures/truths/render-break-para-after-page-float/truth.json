@@ -1,0 +1,44 @@
+{
+  "id": "render-break-para-after-page-float",
+  "title": "A paragraph holding only a page break after a page-anchored tblpPr table turns the page above the float band: the heading opens page 2, the float stays on the cover",
+  "section": "word-truths.md#L873",
+  "probe_date": "2026-11-02",
+  "class": "render",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-11-02), pdftotext bbox: A4, Calibri 11; page 1 titles 250.2 / 284.5, float rows 383.1 .. 538.4; page 2 Revision history 70.9, eight rows 119.1 .. 286.4; page 3 Contents 70.9",
+  "docx": "probe.docx",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 3
+    },
+    {
+      "kind": "blockPage",
+      "block": 6,
+      "expect": 1,
+      "note": "the page-anchored float stays on the cover"
+    },
+    {
+      "kind": "blockPage",
+      "block": 8,
+      "expect": 1,
+      "note": "the break-only paragraph closes the cover"
+    },
+    {
+      "kind": "blockPage",
+      "block": 9,
+      "expect": 2,
+      "note": "the heading opens page 2 (gen left it on the cover above the float)"
+    },
+    {
+      "kind": "blockPage",
+      "block": 11,
+      "expect": 2,
+      "note": "the revision table follows its heading whole"
+    },
+    {
+      "kind": "blockPage",
+      "block": 13,
+      "expect": 3
+    }
+  ]
+}

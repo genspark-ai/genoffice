@@ -20,7 +20,9 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
   webContents: { getAllWebContents: () => [], fromId: () => null },
   Menu: { buildFromTemplate: () => ({}), setApplicationMenu: () => {} },
-  session: { defaultSession: { protocol: {}, setDisplayMediaRequestHandler: () => {} } },
+  session: {
+    defaultSession: { protocol: { handle: () => {} }, setDisplayMediaRequestHandler: () => {} },
+  },
   nativeImage: {},
   shell: {},
   desktopCapturer: { getSources: async () => [] },

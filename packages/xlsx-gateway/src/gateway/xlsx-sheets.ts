@@ -613,7 +613,7 @@ export function definedNamesReferenceSheet(
   return false
 }
 
-function readAttribute(elementXml: string, name: string): string | undefined {
+export function readAttribute(elementXml: string, name: string): string | undefined {
   return new RegExp(`(?:^|\\s)${escapeRegExp(name)}="([^"]*)"`).exec(elementXml)?.[1]
 }
 
@@ -643,7 +643,7 @@ function decodeEntities(input: string): string {
   )
 }
 
-function decodeAttribute(input: string): string {
+export function decodeAttribute(input: string): string {
   return decodeEntities(input)
 }
 

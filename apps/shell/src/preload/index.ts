@@ -34,6 +34,7 @@ import { INTEGRATIONS_CHANNELS } from '../shared/integrations-api'
 import type {
   IntegrationsApi,
   IntegrationsStatus,
+  LegacySweepResult,
   SkillInstallState,
 } from '../shared/integrations-api'
 import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
@@ -348,6 +349,14 @@ const homeApi: HomeApi = {
     if (typeof on !== 'boolean') throw new Error('Invalid update check setting.')
     await ipcRenderer.invoke(HOME_CHANNELS.setAutoUpdateCheck, on)
   },
+  async getSilentInstallUpdate() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getSilentInstallUpdate)
+    return result === true
+  },
+  async setSilentInstallUpdate(on) {
+    if (typeof on !== 'boolean') throw new Error('Invalid silent install setting.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setSilentInstallUpdate, on)
+  },
   async accountStatus() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.accountStatus)
     return (result ?? { loggedIn: false }) as AccountStatus
@@ -517,6 +526,12 @@ const homeApi: HomeApi = {
     if (typeof enabled !== 'boolean') throw new Error('Invalid analytics consent.')
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setAnalyticsEnabled, enabled)
     return result === true
+  },
+  async getLegacyImportPrompt() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.getLegacyImportPrompt)) !== false
+  },
+  async setLegacyImportPrompt(prompt) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.setLegacyImportPrompt, prompt)) !== false
   },
   async getAuthorName() {
     return normalizeAuthorNameSetting(await ipcRenderer.invoke(HOME_CHANNELS.getAuthorName))
@@ -733,6 +748,11 @@ const integrationsApi: IntegrationsApi = {
       INTEGRATIONS_CHANNELS.uninstallSkill,
       agentId,
     )) as SkillInstallState
+  },
+  async sweepLegacySkillCopies() {
+    return (await ipcRenderer.invoke(
+      INTEGRATIONS_CHANNELS.sweepLegacySkillCopies,
+    )) as LegacySweepResult
   },
   async pickSkillDir(title) {
     const r: unknown = await ipcRenderer.invoke(INTEGRATIONS_CHANNELS.pickSkillDir, title)

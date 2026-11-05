@@ -804,7 +804,7 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     ])
     expect(partial.code).toBe(0)
     expect(partial.json().detail.results[0].output).toMatch(
-      /Accepted 1 tracked change\(s\) \(r1\)\. Still 3 pending.*and 3 in headers, footers and notes \(ids address the body/,
+      /Accepted 1 tracked change\(s\) \(r1\)\. Still 2 pending.*and 3 in headers, footers and notes \(ids address the body/,
     )
 
     writeFileSync(opsFile, JSON.stringify([{ op: 'accept_changes', all: true }]))

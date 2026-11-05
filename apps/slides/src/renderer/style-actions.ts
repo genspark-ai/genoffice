@@ -4,6 +4,7 @@
  * Functions read the latest App state through ActionCtx.
  */
 import type { ShapeRenderNode } from '@genoffice/pptx-render'
+import { mergeSlideUpdate } from '../shared/slide-update'
 import type {
   EditBackgroundOp,
   EditChartOp,
@@ -277,7 +278,7 @@ export async function onBackground(
     fitWidthPx: FIT_WIDTH,
   } as EditBackgroundOp)
   if (r) {
-    ctx.setSlides(r)
+    ctx.setSlides((current) => mergeSlideUpdate(current, r))
     ctx.setDirty(true)
     ctx.setStatus(op.slideIndex === -1 ? t('appStatusBgAppliedAll') : '')
   }

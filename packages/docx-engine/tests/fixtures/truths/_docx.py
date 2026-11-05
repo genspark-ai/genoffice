@@ -2,10 +2,13 @@
 
 Usage: python3 build.py <out.docx>  (from the fixture directory)
 """
+import base64
 import sys
 import zipfile
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
 XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 LETTER = '<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
 A4 = '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>'
@@ -111,9 +114,49 @@ def theme_xml(major='Calibri Light', minor='Calibri', major_ea='', minor_ea='', 
     )
 
 
-def write(out, body, styles, settings=None, font_table=None, sect=LETTER, numbering=None, theme=None, sect_pr=None):
+def hdr_xml(body, tag='hdr'):
+    return f'{XML}<w:{tag} {W}>{body}</w:{tag}>'
+
+
+def footnotes_xml(notes):
+    """notes: list of body XML (paragraphs) for ids 1..n; Word's separator notes are added"""
+    sep = (
+        '<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>'
+        '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>'
+    )
+    body = ''.join(f'<w:footnote w:id="{i}">{xml}</w:footnote>' for i, xml in enumerate(notes, 1))
+    return f'{XML}<w:footnotes {W} {R}>{sep}{body}</w:footnotes>'
+
+
+def footnote_ref(i, rpr=''):
+    return f'<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="{i}"/></w:r>'
+
+
+PNG_1X1 = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+
+
+def inline_pic(i, cx, cy, effect_b=0, name='pic'):
+    """wp:inline picture of cx x cy EMU over media image i (write(..., media=[...]))"""
+    WP = 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+    A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    PIC = 'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"'
+    return (
+        f'<w:r><w:drawing><wp:inline {WP} distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:effectExtent l="0" t="0" r="0" b="{effect_b}"/><wp:docPr id="{i + 1}" name="{name}{i}"/>'
+        f'<a:graphic {A}><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:pic {PIC}><pic:nvPicPr><pic:cNvPr id="0" name="{name}{i}"/><pic:cNvPicPr/></pic:nvPicPr>'
+        f'<pic:blipFill><a:blip r:embed="rIdImg{i}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+    )
+
+
+def write(out, body, styles, settings=None, font_table=None, sect=LETTER, numbering=None, theme=None, sect_pr=None, hf=None, footnotes=None, media=None):
+    """hf: {part name: xml (hdr_xml)}; a sectPr references it as r:id="rId<name without .xml>";
+    footnotes: footnotes_xml(...) (body runs reference ids through footnote_ref);
+    media: list of PNG bytes, referenced by inline_pic(i) as rIdImg<i>"""
     tail = sect_pr if sect_pr is not None else f'<w:sectPr>{sect}</w:sectPr>'
-    doc = f'{XML}<w:document {W}><w:body>{body}{tail}</w:body></w:document>'
+    doc = f'{XML}<w:document {W} {R}><w:body>{body}{tail}</w:body></w:document>'
     overrides = [
         ('/word/document.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'),
     ]
@@ -135,14 +178,28 @@ def write(out, body, styles, settings=None, font_table=None, sect=LETTER, number
         overrides.append(('/word/settings.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'))
         rels.append(('rId2', 'settings', 'settings.xml'))
         parts['word/settings.xml'] = settings
+    for name, xml in (hf or {}).items():
+        kind = 'header' if name.startswith('header') else 'footer'
+        overrides.append((f'/word/{name}', f'application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml'))
+        rels.append((f'rId{name[:-4]}', kind, name))
+        parts[f'word/{name}'] = xml
+    if footnotes is not None:
+        overrides.append(('/word/footnotes.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml'))
+        rels.append(('rId6', 'footnotes', 'footnotes.xml'))
+        parts['word/footnotes.xml'] = footnotes
     if font_table is not None:
         overrides.append(('/word/fontTable.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml'))
         rels.append(('rId3', 'fontTable', 'fontTable.xml'))
         parts['word/fontTable.xml'] = font_table
+    binary = {}
+    for i, png in enumerate(media or []):
+        rels.append((f'rIdImg{i}', 'image', f'media/image{i}.png'))
+        binary[f'word/media/image{i}.png'] = png
     ct = (
         f'{XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
         '<Default Extension="xml" ContentType="application/xml"/>'
+        + ('<Default Extension="png" ContentType="image/png"/>' if binary else '')
         + ''.join(f'<Override PartName="{p}" ContentType="{c}"/>' for p, c in overrides)
         + '</Types>'
     )
@@ -165,7 +222,52 @@ def write(out, body, styles, settings=None, font_table=None, sect=LETTER, number
         z.writestr('word/_rels/document.xml.rels', doc_rels)
         for name, xml in parts.items():
             z.writestr(name, xml)
+        for name, data in binary.items():
+            z.writestr(name, data)
 
 
 def out_path():
     return sys.argv[1] if len(sys.argv) > 1 else 'probe.docx'
+
+
+def tbl(rows, width=6000, border_sz=4, cell_mar='', extra=''):
+    """one-column fixed table; rows: list of cell content XML (paragraphs)"""
+    bord = ''.join(
+        f'<w:{s} w:val="single" w:sz="{border_sz}" w:space="0" w:color="000000"/>'
+        for s in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV')
+    )
+    trs = ''.join(
+        f'<w:tr><w:tc><w:tcPr><w:tcW w:w="{width}" w:type="dxa"/></w:tcPr>{c}</w:tc></w:tr>' for c in rows
+    )
+    return (
+        f'<w:tbl><w:tblPr>{extra}<w:tblW w:w="{width}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+        f'<w:tblBorders>{bord}</w:tblBorders>{cell_mar}</w:tblPr><w:tblGrid><w:gridCol w:w="{width}"/></w:tblGrid>{trs}</w:tbl>'
+    )
+
+
+def textbox(content, cx=2743200, cy=914400, ins=(91440, 45720, 91440, 45720), id=1, border=True):
+    """inline wps text box (Word 2010+ reads the mc:Choice); a thin border so a PDF reader sees the box"""
+    ns = (
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+    )
+    ln = (
+        '<a:ln w="6350"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>'
+        if border
+        else '<a:ln><a:noFill/></a:ln>'
+    )
+    l, t, r, b = ins
+    return (
+        f'<w:p><w:r><mc:AlternateContent {ns}><mc:Choice Requires="wps"><w:drawing>'
+        f'<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:docPr id="{id}" name="Text Box {id}"/>'
+        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+        '<wps:wsp><wps:cNvSpPr txBox="1"/>'
+        f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>{ln}</wps:spPr>'
+        f'<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>'
+        f'<wps:bodyPr wrap="square" lIns="{l}" tIns="{t}" rIns="{r}" bIns="{b}" anchor="t"><a:noAutofit/></wps:bodyPr>'
+        '</wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice></mc:AlternateContent></w:r></w:p>'
+    )

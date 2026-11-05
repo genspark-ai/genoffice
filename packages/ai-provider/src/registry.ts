@@ -15,7 +15,8 @@ export { normalizeBaseUrl } from './url-compose'
 export { modelEchoesReasoning, modelHasFixedSampling, modelLacksVision } from './model-heuristics'
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
-export type AiProtocol = 'anthropic' | 'gemini' | 'openai-compatible' | 'codex-app-server'
+export type AiProtocol =
+  'anthropic' | 'gemini' | 'openai-compatible' | 'openai-responses' | 'codex-app-server'
 
 export interface ProviderCapabilities {
   /** How the provider authenticates: app login, user key, or the Codex CLI's existing login. */
@@ -54,6 +55,8 @@ export interface ProviderAdapter {
   resolveEndpoint(config: AiProviderConfig): ResolvedEndpoint
 }
 
+const OPENAI_BASE_URL = 'https://api.openai.com/v1'
+
 function metaOf(id: AiProviderId): AiProviderMeta {
   return AI_PROVIDERS.find((m) => m.id === id)!
 }
@@ -88,8 +91,9 @@ function opencodeEndpoint(
     // a stored base URL replaces the gateway root; the documented `/v1` API base is tolerated
     const base = stripTrailingV1(normalizeBaseUrl(config.baseUrl, root))
     const model = config.model ?? ''
-    const omit =
-      model !== '' && (modelHasFixedSampling(model) || model.toLowerCase().startsWith('kimi-'))
+    // Kimi fixes sampling whether the gateway spells the id bare (kimi-k3) or
+    // lab-prefixed (moonshotai/Kimi-K3), as Command Code does
+    const omit = model !== '' && (modelHasFixedSampling(model) || /(^|\/)kimi-/i.test(model))
     const sampling = omit ? { omitTemperature: true as const } : {}
     if (routes.anthropic.test(model)) return { protocol: 'anthropic', baseUrl: base, ...sampling }
     if (routes.gemini?.test(model)) {
@@ -100,6 +104,18 @@ function opencodeEndpoint(
 }
 
 /** a stored baseUrl overrides the default endpoint (regional mirrors, e.g. api.moonshot.cn vs .ai) */
+/**
+ * GPT-5.4+ and GPT-6 call tools only through the Responses API: Chat
+ * Completions answers "Function tools with reasoning_effort are not supported
+ * ... use /v1/responses or set reasoning_effort to 'none'" (live-verified
+ * 2026-10-27), and Astra / 6.1 Sol refuse `none` outright. Older ids and the
+ * o-series stay on Chat Completions, which is also what every other vendor
+ * speaks.
+ */
+export function modelUsesResponsesApi(model: string): boolean {
+  return /^gpt-(5\.[4-9]|6(\.\d+)?)(-|$)/i.test(model)
+}
+
 function fixedEndpoint(
   protocol: AiProtocol,
   baseUrl: string,
@@ -171,11 +187,17 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   openai: {
     meta: metaOf('openai'),
     capabilities: { auth: 'api-key', vision: true },
-    // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
-    // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.openai.com/v1', {
-      useMaxCompletionTokens: true,
-    }),
+    resolveEndpoint(config) {
+      const baseUrl = config.baseUrl
+        ? normalizeBaseUrl(config.baseUrl, OPENAI_BASE_URL)
+        : OPENAI_BASE_URL
+      if (modelUsesResponsesApi(config.model)) return { protocol: 'openai-responses', baseUrl }
+      // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
+      // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
+      return fixedEndpoint('openai-compatible', OPENAI_BASE_URL, { useMaxCompletionTokens: true })(
+        config,
+      )
+    },
   },
   kimi: {
     meta: metaOf('kimi'),
@@ -286,6 +308,24 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every lab; the namespaced model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.runcrate.ai/v1'),
   },
+  cloudgpu: {
+    meta: metaOf('cloudgpu'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the bare model id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://cloudgpu.app/v1'),
+  },
+  siliconflow: {
+    meta: metaOf('siliconflow'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the namespaced id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.siliconflow.cn/v1'),
+  },
+  ppio: {
+    meta: metaOf('ppio'),
+    capabilities: { auth: 'api-key', vision: true },
+    // the official SDK base_url is https://api.ppio.com/openai; chat rides /v1
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ppio.com/openai/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },
@@ -303,6 +343,15 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // OpenCode ships routes only 3.8 Flash there — follow the running client)
     resolveEndpoint: opencodeEndpoint(OPENCODE_GATEWAY_ROOTS.go, {
       anthropic: /^(minimax-|qwen3\.8-flash$)/,
+    }),
+  },
+  commandcode: {
+    meta: metaOf('commandcode'),
+    capabilities: { auth: 'api-key', vision: true },
+    // Claude ids answer only on /v1/messages (docs: they 400 on
+    // chat-completions); everything else is chat-completions at /provider/v1
+    resolveEndpoint: opencodeEndpoint('https://api.commandcode.ai/provider', {
+      anthropic: /^claude-/,
     }),
   },
   custom: {

@@ -93,6 +93,44 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # Inline text-layout decisions (script tests, face predicates, CJK ranges,
+      # compat reads) stay in apps/docs/src/renderer/text-layout/, not in the emitters.
+      - name: Check inline text-layout rules
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:inline-rules
+
+      # Line-metric numbers (fonts.css size-adjust/overrides, knownLineFactor)
+      # must cite the Word measurement they came from.
+      - name: Check font-metric provenance
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:font-metrics-provenance
+
+      # fonts.generated.css / line-factors.generated.ts must match the measurement
+      # manifest; metric values are never hand-written outside it.
+      - name: Check generated font metrics
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:generated-fonts
+
+      # docs/word-truths-index.json and the coverage doc must match the fixtures;
+      # a recently dated truths section needs a fixture or a prose-only marker.
+      - name: Check Word truths coverage
+        run: npm run check:word-truths
+
       # skills/*/SKILL.md ship to users' agent directories; a body change
       # without a metadata.version bump would never be offered as an update.
       - name: Check skill versions
@@ -151,6 +189,19 @@ jobs:
       # (tools/ooxml-validate); the runner image is not guaranteed to have it.
       - name: Install xmllint
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
+
+      # `sheet apply`'s dependent-cache audit lives in the Rust xlsx-sidecar, and
+      # the CLI suite skips its sidecar-backed tests (`it.skipIf(!sidecar)`) when
+      # the binary is missing. Only the sheets package's test script builds it,
+      # and the root `test` script runs @genoffice/cli before @genoffice/sheets —
+      # so build the sidecar up front or CI's pass proves nothing about the
+      # audit. The cargo cache above holds the target dir, so this is cheap.
+      - name: Build xlsx-sidecar (the CLI audit tests run against it)
+        run: |
+          npm run native:build -w @genoffice/sheets
+          # the sidecar-gated CLI tests read the generated compatibility fixture
+          # (gitignored, normally produced by the sheets gate below)
+          npm run fixtures -w @genoffice/sheets
 
       - name: Test
         run: npm test

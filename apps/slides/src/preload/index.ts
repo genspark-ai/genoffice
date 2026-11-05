@@ -1,10 +1,10 @@
 import type { AiPanelPrefs } from '@genoffice/ui'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import type {
+  DeckChange,
   AddChartOp,
   AddElementOp,
   AiRunFailure,
@@ -94,6 +94,8 @@ import type {
   SavePictureOp,
   ExportPdfOp,
   PrintSlidesOp,
+  PrinterInfo,
+  PrinterOption,
   MenuCommand,
   OpenResult,
   SlidesApi,
@@ -350,6 +352,45 @@ const api: SlidesApi = {
   savePicture: (op: SavePictureOp) => ipcRenderer.invoke('slides:save-picture', op),
   exportPdf: (op: ExportPdfOp) => ipcRenderer.invoke('slides:export-pdf', op),
   printSlides: (op: PrintSlidesOp) => ipcRenderer.invoke('slides:print', op),
+  listPrinters: async () => {
+    const result: unknown = await ipcRenderer.invoke('slides:printers')
+    if (!Array.isArray(result)) throw new Error('Invalid printers response.')
+    return result.map((entry): PrinterInfo => {
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        typeof (entry as Record<string, unknown>).name !== 'string' ||
+        typeof (entry as Record<string, unknown>).displayName !== 'string'
+      ) {
+        throw new Error('Invalid printers entry.')
+      }
+      const { name, displayName } = entry as Record<string, string>
+      return { name, displayName }
+    })
+  },
+  printerOptions: async (queue: string) => {
+    const result: unknown = await ipcRenderer.invoke('slides:printer-options', queue)
+    if (!Array.isArray(result)) throw new Error('Invalid printer-options response.')
+    return result.map((entry): PrinterOption => {
+      const shape = entry as Record<string, unknown>
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        typeof shape.name !== 'string' ||
+        typeof shape.translation !== 'string' ||
+        !Array.isArray(shape.values) ||
+        !shape.values.every((v) => typeof v === 'string')
+      ) {
+        throw new Error('Invalid printer-option entry.')
+      }
+      return {
+        name: shape.name,
+        translation: shape.translation,
+        values: shape.values,
+        ...(typeof shape.defaultValue === 'string' ? { defaultValue: shape.defaultValue } : {}),
+      }
+    })
+  },
   save: () => ipcRenderer.invoke('slides:save'),
   saveAs: (defaultName: string) => ipcRenderer.invoke('slides:save-as', defaultName),
   onCloseSaveRequest: (handler: () => void) => {
@@ -363,13 +404,8 @@ const api: SlidesApi = {
     ipcRenderer.on('slides:history-changed', listener)
     return () => ipcRenderer.removeListener('slides:history-changed', listener)
   },
-  onDeckChanged: (
-    handler: (state: { slides: RenderSlide[]; size: { cx: number; cy: number } }) => void,
-  ) => {
-    const listener = (
-      _e: IpcRendererEvent,
-      state: { slides: RenderSlide[]; size: { cx: number; cy: number } },
-    ) => handler(state)
+  onDeckChanged: (handler: (state: DeckChange) => void) => {
+    const listener = (_e: IpcRendererEvent, state: DeckChange) => handler(state)
     ipcRenderer.on('slides:deck-changed', listener)
     return () => ipcRenderer.removeListener('slides:deck-changed', listener)
   },

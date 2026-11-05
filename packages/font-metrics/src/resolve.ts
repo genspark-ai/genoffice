@@ -27,6 +27,13 @@ export interface FaceHints {
   panose?: string
   family?: string
   charset?: string
+  csb0?: string
+}
+
+/** fontTable w:sig csb0 bit 6: the face covers the Arabic code page (1256) */
+export function arabicCodePage(hints: FaceHints | undefined): boolean {
+  const bits = parseInt(hints?.csb0 ?? '', 16)
+  return Number.isFinite(bits) && (bits & 0x40) !== 0
 }
 
 /** system = the generated macOS snapshot standing in for the installed index; asset = macOS on-demand font Word lays out with */
@@ -117,11 +124,23 @@ export function panoseSerif(panose: string | undefined): 'serif' | 'sans' | unde
 function substituteFor(key: string, hints: FaceHints | undefined): [string, boolean] {
   if (hints?.charset === '81')
     return [hints.family?.toLowerCase() === 'roman' ? 'Batang' : 'Malgun Gothic', true]
+  const alt = hints?.altName && faceKey(hints.altName) !== key ? hints.altName : undefined
+  // a Shift-JIS charset entry without altName lays out in Yu Gothic (probe 2026-11-02)
+  if (hints?.charset === '80' && !alt) return ['Yu Gothic', true]
   if (HAN_KR_RE.test(key))
     return [panoseSerif(hints?.panose) === 'sans' ? 'Malgun Gothic' : 'Batang', true]
+  // a missing Arabic name follows its altName before the Times New Roman rule
+  // (corpus 2026-10-27: altName Arial laid out in Arial)
+  if (alt && ARABIC_RE.test(key) && !ARABIC_RE.test(faceKey(alt))) return [alt, false]
+  // a Hiragino / HG name with an altName follows it (corpus 2026-11-03: altName Cambria came back Cambria, not Yu Gothic)
+  if (alt && HG_RE.test(key)) return [alt, false]
   for (const [re, target] of SUBSTITUTIONS) if (re.test(key)) return [target, true]
-  const alt = hints?.altName
-  if (alt && faceKey(alt) !== key) return [alt, false]
+  if (alt) return [alt, false]
+  // a missing name whose fontTable sig covers the Arabic code page lays out in
+  // Arial, Latin and Arabic alike (corpus 2026-10-27: two Latin-charset Arabic
+  // sans families came back ArialMT in two documents); Arabic charset (B2)
+  // entries keep the Times New Roman rule
+  if (arabicCodePage(hints) && hints?.charset !== 'B2') return ['Arial', true]
   if (HAN_RE.test(key)) return ['SimSun', true]
   // hangul goes to Batang whatever the PANOSE says (probe 2026-10-22: sans,
   // serif and absent PANOSE all Batang); only charset 81 reaches Malgun
@@ -164,9 +183,12 @@ function batangAltNamed(key: string, hints: FaceHints | undefined): boolean {
  * a Latin name takes the installed copy first (Times New Roman 1.15).
  */
 function direct(key: string, display: string, ctx: ResolveContext): StoredFace | null {
-  const embedded = ctx.embedded(key)
-  if (embedded) return { ...embedded, family: display, source: 'embedded' }
   const word = ctx.wordFace(key)
+  const embedded = ctx.embedded(key)
+  // Word's shipped copy beats the document's embed (corpus 2026-11-01: a docx
+  // embedding Century Gothic 2.37g, hhea 1.4282, printed Word's own 2.35 at 1.2261)
+  if (embedded && word?.source !== 'dfonts')
+    return { ...embedded, family: display, source: 'embedded' }
   if (word && (WORD_FIRST.has(key) || word.eastAsian)) return word
   const installed = localizedName(key) ? null : ctx.installed(key)
   if (installed) return installed.family === key ? { ...installed, family: display } : installed

@@ -1,0 +1,43 @@
+{
+  "id": "hf-cs-only-strut",
+  "title": "Arabic-only header paragraphs in a w:cs face pace that face alone: cs Arial 12 br-lines pitch 13.80, cs Sakkal Majalla 14 pitch 19.52, Calibri 12 control 14.64, a mixed Calibri + cs Arial line is the Calibri line",
+  "section": "word-truths.md#L802",
+  "probe_date": "2026-10-29",
+  "class": "pure",
+  "source": "probe build.py -> Word for Mac direct PDF (2026-10-29), pymupdf: Letter 1440 margins, header 720, docDefaults Calibri 11; cs Arial 12 + w:rtl + w:bidi baselines 47.28 / 60.96 / 74.88 (body top 77.33 = 36 + 3 x 13.8), cs Sakkal Majalla 14 baselines 48.24 / 67.68 / 87.36 (body 94.61 = 36 + 3 x 19.52), Calibri 12 baselines 47.52 / 62.16 / 76.80 (body 79.97 = 36 + 3 x 14.64), mixed `Latin <Arabic> tail` lines the same 14.64 (body 79.97). Same factors as the 2026-10-13 body and 2026-10-28 cell probes; gen's strip strut stayed on the inherited Calibri face under Arial spans",
+  "cases": [
+    {
+      "kind": "hfLineBox",
+      "part": 0,
+      "expect": {
+        "stylesStartWith": ["font-family:'Arial'", "--doc-grid-strut-tail:'Arial'"],
+        "styles": ["--doc-line-factor:1.15", "direction:rtl"]
+      },
+      "note": "cs-only paragraph: the strut takes the cs chain (paraComplexScriptFamily)"
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 1,
+      "expect": { "stylesStartWith": ["font-family:'Sakkal Majalla'", "--doc-line-factor:1.39"] }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 2,
+      "expect": {
+        "stylesStartWith": ["font-family:'Calibri'"],
+        "styles": ["--doc-line-factor:1.22"]
+      }
+    },
+    {
+      "kind": "hfLineBox",
+      "part": 3,
+      "expect": {
+        "stylesStartWith": ["font-family:'Calibri'"],
+        "styles": ["--doc-line-factor:1.22"],
+        "classes": ["doc-cs-mixed"]
+      },
+      "note": "Latin letters on the line: the Calibri line; the Arabic span gives up its own box"
+    }
+  ],
+  "docx": "probe.docx"
+}

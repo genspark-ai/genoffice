@@ -1,13 +1,15 @@
 // DOM line-box sampling for page-crossing blocks (cached per element), the
 // line-split re-slice, table row cut positions and line anchors.
 import { rangeSlot } from './dom-range'
-import { applyBlockMeta, lineLeadPx } from './pagination-measure'
+import { applyBlockMeta, lineLeadPx, unshiftRunRect } from './pagination-measure'
 import { CapacityWindows, SortedYs } from './pagination-index'
 import { blockInlineExtraPx } from './pagination-sections'
 import {
   columnLineSplits,
   computeSectionedSlicesF2,
   insertParityBlanks,
+  pageNoAfterOf,
+  ROW_SEAM_TOL_PX,
   sectionFirstPages,
   type SliceResume,
 } from './pagination-slices'
@@ -56,6 +58,8 @@ const PATCH_KEYS = [
   'rowFills',
   'rowSplits',
   'floatVShifts',
+  'floatPullUps',
+  'floatCarries',
   'floatFlows',
   'floatSplits',
   'oversizeClips',
@@ -97,7 +101,11 @@ export function carryStreamedSamples(
     if ((b.spaceAfterPx ?? 0) !== (p.spaceAfterPx ?? 0)) continue
     if ((b.widthPx ?? -1) !== (p.widthPx ?? -1)) continue
     if (p.lineBoxes) b.lineBoxes = p.lineBoxes
-    if (p.tableRows) b.tableRows = p.tableRows
+    if (p.tableRows) {
+      b.tableRows = p.tableRows
+      // the sampler skips a carried block, so its all-rows keepNext rides along
+      if (p.tableRows.every((r) => r.keepNext)) b.keepNext = true
+    }
     if (p.lineLeadPx !== undefined) b.lineLeadPx = p.lineLeadPx
     if (p.colWraps) b.colWraps = p.colWraps
     if (p.oversizeLineH !== undefined) b.oversizeLineH = p.oversizeLineH
@@ -118,9 +126,10 @@ export function sliceWithLineSplit(
   applyBlockMeta(blocks, metaOf, zoomFactor)
   const outs: SliceOutputs = out ?? {}
   outs.colWrapRequests ??= []
+  outs.lineRequests ??= new Set()
   const prefix = resume ? resume.prevSlices.slice(0, resume.page) : []
   const run = resume ? blocks.slice(resume.block) : blocks
-  const seed = resume ? resumeSeed(resume.prevSlices, resume.page) : undefined
+  const seed = resume ? resumeSeed(resume.prevSlices, resume.page, geoms) : undefined
   let slices = prefix.concat(computeSectionedSlicesF2(run, geoms, totalHeight, outs, seed))
   // re-slicing can surface new candidate blocks (a block pushed to a page top only
   // after an earlier block gained line data) — iterate to a fixed point, bounded.
@@ -129,16 +138,20 @@ export function sliceWithLineSplit(
   // column bottoms with a bound of 3), so the bound follows the page count.
   const maxPasses = Math.max(3, Math.min(24, slices.length))
   outs.iterations = 1
+  outs.iterationsCapped = true
   outs.fillMs = 0
   outs.sliceRunMs = 0
   sigMemo = new Map()
   try {
     for (let i = 0; i < maxPasses; i++) {
       const t0 = performance.now()
-      const changed = fillLineBoxes(run, geoms, zoomFactor, slices, metaOf)
+      const changed = fillLineBoxes(run, geoms, zoomFactor, slices, metaOf, outs.lineRequests)
       const wrapped = fillColWraps(run, colWrapRequestsOf(run, slices, geoms, outs), zoomFactor)
       outs.fillMs += performance.now() - t0
-      if (!changed && !wrapped) break
+      if (!changed && !wrapped) {
+        outs.iterationsCapped = false
+        break
+      }
       const t1 = performance.now()
       slices = prefix.concat(computeSectionedSlicesF2(run, geoms, totalHeight, outs, seed))
       outs.sliceRunMs += performance.now() - t1
@@ -165,14 +178,20 @@ export function isResumePage(prev: PageSlice[], page: number): boolean {
   return !p.repeatHeader && !p.liftTop
 }
 
-function resumeSeed(prev: PageSlice[], page: number): SliceResume {
+function resumeSeed(prev: PageSlice[], page: number, geoms: SectionGeom[]): SliceResume {
   const p = prev[page]
   const continued = !!p.continuedSection
+  const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
+  let pageNo = 0
+  for (let i = 0; i <= page; i++) {
+    pageNo = pageNoAfterOf(geomOf, pageNo, i > 0 ? prev[i - 1].section : -1, prev[i].section)
+  }
   return {
     y: p.start,
     section: p.section,
     firstOfSection: !continued && (page === 0 || prev[page - 1].section !== p.section),
     continued,
+    pageNo,
   }
 }
 
@@ -465,6 +484,7 @@ export function fillLineBoxes(
   zoomFactor: number,
   slices?: PageSlice[],
   metaOf?: BlockMetaOf,
+  requested?: Set<BlockBox>,
 ): boolean {
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
   // cut bounds = page bounds + column bounds of multi-column pages (blocks crossing within a column also need line-level splits)
@@ -524,6 +544,7 @@ export function fillLineBoxes(
       block.height <= capH &&
       !crossing &&
       !atPageTop &&
+      !requested?.has(block) &&
       // a mid-paragraph page break splits the block at a line boundary
       !block.innerBreaks?.length &&
       // an in-cell page break needs row data to act on even without a crossing
@@ -562,10 +583,24 @@ export function fillLineBoxes(
         ? hit.rows.map((r) => ({ ...r }))
         : domTableRows(block.el, textH, zoomFactor)
       if (!hit?.rows) lineSampleCache.set(block.el, { sig, rows: rows.map((r) => ({ ...r })) })
-      overlayLiveRowFlags(block.el, rows)
+      if (block.rowPlan) {
+        // model-side keep policy (pagination-plan.ts): the tr attributes and
+        // the table XML are not consulted; vMergeContinue stays unapplied until
+        // a shadow counterpart exists
+        rows.forEach((r, i) => {
+          const rp = block.rowPlan![i]
+          if (!rp) return
+          r.isHeader = rp.isHeader
+          r.cantSplit = rp.cantSplit
+          if (rp.keepNext) r.keepNext = true
+          if (rp.minHPt !== undefined) r.minHPx = (rp.minHPt * 96) / 72
+        })
+      } else overlayLiveRowFlags(block.el, rows)
       if (rows.length > 0) {
         const flags =
-          block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.tableRowFlags : undefined
+          block.rowPlan || block.docxIndex === undefined
+            ? undefined
+            : metaOf?.(block.docxIndex)?.tableRowFlags
         if (flags)
           rows.forEach((r, i) => {
             // Editable native tables publish an explicit live value on each tr;
@@ -576,6 +611,9 @@ export function fillLineBoxes(
             if (flags[i]?.keepNext) r.keepNext = true
             if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
+        // every row keeps with the next and the last row's keepNext binds the
+        // table to the following paragraph: the table moves as one unit (Word)
+        if (rows.every((r) => r.keepNext)) block.keepNext = true
         const bands =
           block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.footnoteBands : undefined
         if (bands) applyRowNotes(block.el, rows, bands)
@@ -701,14 +739,19 @@ export function rowSplitCss(
     el.removeAttribute('data-pv-split')
   const pageOf = (y: number) => {
     let pg = 0
-    while (pg + 1 < slices.length && slices[pg + 1].start <= y + 0.5) pg++
+    while (pg + 1 < slices.length && slices[pg + 1].start <= y + ROW_SEAM_TOL_PX) pg++
     return pg
   }
   const px = (v: number) => `${v.toFixed(1)}px`
   const out: string[] = []
   splits.forEach((split, n) => {
-    const block = blocks.find((b) => b.tableRows && Math.abs(b.top - split.blockTop) < 0.5)
-    const tr = block?.el ? outerTableRows(block.el)[split.row] : undefined
+    // the preview's snapshot blocks were never sliced (no tableRows): the row is found by top
+    let tr: HTMLElement | undefined
+    for (const b of blocks) {
+      if (!b.el || Math.abs(b.top - split.blockTop) >= 0.5) continue
+      tr = outerTableRows(b.el)[split.row]
+      if (tr) break
+    }
     if (!tr) return
     tr.dataset.pvSplit = String(n)
     for (const r of split.rules) {
@@ -929,7 +972,7 @@ function rowCutYs(
       range.selectNodeContents(n)
       for (const r of range.getClientRects()) {
         if (r.height <= 0 || r.width <= 0) continue
-        const band = toBand(r)
+        const band = toBand(unshiftRunRect(r, n, zoomFactor))
         bands.push(band)
         addEntry(band, n, para)
         if (para) {
@@ -1187,26 +1230,42 @@ function inFlowWithin(node: Element, el: HTMLElement): boolean {
   return true
 }
 
+/** the block plus the paragraphs joined onto it (measureBlocks folded them into its box) */
+function joinedParagraphs(el: HTMLElement): HTMLElement[] {
+  const out = [el]
+  if (!el.classList.contains('doc-para-join-head')) return out
+  for (let n = el.nextElementSibling; n; n = n.nextElementSibling) {
+    if (getComputedStyle(n).display === 'none') continue
+    if (!n.classList.contains('doc-para-join-tail')) break
+    out.push(n as HTMLElement)
+  }
+  return out
+}
+
 function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
-  const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
-    g.getBoundingClientRect(),
+  const roots = joinedParagraphs(el)
+  const gaps = roots.flatMap((root) =>
+    Array.from(root.querySelectorAll('.page-gap-inline')).map((g) => g.getBoundingClientRect()),
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
   const range = lineRange()
   const rects: Array<{ r: DOMRect; node: Text | Element }> = []
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (n.parentElement?.closest('.page-gap, .page-float-host')) continue
-    range.selectNodeContents(n)
-    for (const r of range.getClientRects()) {
-      if (r.height > 0 && r.width > 0) rects.push({ r, node: n as Text })
+  for (const root of roots) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.parentElement?.closest('.page-gap, .page-float-host')) continue
+      range.selectNodeContents(n)
+      for (const r of range.getClientRects()) {
+        if (r.height > 0 && r.width > 0)
+          rects.push({ r: unshiftRunRect(r, n, zoomFactor), node: n as Text })
+      }
     }
   }
   // in-flow inline pictures form lines too (a picture-only paragraph has no text
   // rect at all, which used to leave over-page image stacks without break points)
-  for (const im of Array.from(el.querySelectorAll('img'))) {
+  for (const im of roots.flatMap((root) => Array.from(root.querySelectorAll('img')))) {
     if (im.closest('.page-gap, .page-float-host')) continue
-    if (!inFlowWithin(im, el)) continue
+    if (!inFlowWithin(im, (im.closest(PARA_SELECTOR) as HTMLElement | null) ?? el)) continue
     const r = im.getBoundingClientRect()
     if (r.height > 0 && r.width > 0) rects.push({ r, node: im })
   }
@@ -1287,14 +1346,15 @@ export function anchorElement(a: LineAnchor): Element | null {
  * in-table cut markers before the table's first row where they inflate the canvas
  * table by an anonymous-row line-height and skew all pagination measurement below.
  */
-function lineStartCharOffset(node: Text, lineTop: number): number {
+function lineStartCharOffset(node: Text, lineTop: number, zoomFactor: number): number {
   const len = node.length
   if (len === 0) return 0
   const range = charRange()
   const topAt = (i: number): number => {
     range.setStart(node, i)
     range.setEnd(node, i + 1)
-    for (const r of range.getClientRects()) if (r.height > 0) return r.top
+    for (const r of range.getClientRects())
+      if (r.height > 0) return unshiftRunRect(r, node, zoomFactor).top
     // collapsed characters (e.g. wrap-point whitespace) have no rect: treat as belonging to an earlier line
     return -Infinity
   }
@@ -1314,10 +1374,10 @@ function lineStartCharOffset(node: Text, lineTop: number): number {
   return ans
 }
 
-const toAnchor = (ln: { node: Text | Element; top: number }): LineAnchor =>
+const toAnchor = (ln: { node: Text | Element; top: number }, zoomFactor: number): LineAnchor =>
   ln.node instanceof Element
     ? { node: ln.node, charOffset: 0 }
-    : { node: ln.node, charOffset: lineStartCharOffset(ln.node, ln.top) }
+    : { node: ln.node, charOffset: lineStartCharOffset(ln.node, ln.top, zoomFactor) }
 
 /**
  * DOM anchor of the line start matching an in-block virtual Y (offsetInBlock)
@@ -1331,7 +1391,7 @@ export function lineStartAnchor(
   rectsOf: DomLineRectsFn = domLineRects,
 ): LineAnchor | null {
   for (const ln of rectsOf(el, zoomFactor)) {
-    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return toAnchor(ln)
+    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return toAnchor(ln, zoomFactor)
   }
   return null
 }
@@ -1344,20 +1404,21 @@ export function nextLineAnchor(
   rectsOf: DomLineRectsFn = domLineRects,
 ): LineAnchor | null {
   for (const ln of rectsOf(el, zoomFactor)) {
-    if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln)
+    if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln, zoomFactor)
   }
   return null
 }
 
 /** Screen top of a cut anchor's line (the char rect at the anchor, else its parent box) */
-function anchorLineTop(a: LineAnchor): number | null {
+function anchorLineTop(a: LineAnchor, zoomFactor: number): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = anchorRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
     range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
     // jsdom has no Range.getClientRects: fall through to the parent box
-    for (const r of range.getClientRects?.() ?? []) if (r.height > 0) return r.top
+    for (const r of range.getClientRects?.() ?? [])
+      if (r.height > 0) return unshiftRunRect(r, a.node, zoomFactor).top
   }
   return a.node.parentElement?.getBoundingClientRect().top ?? null
 }
@@ -1425,7 +1486,11 @@ function insideVerticalMerge(row: Element): boolean {
  *  spacer-gif sliver cells); otherwise the zero-height cut marker stays (same-y
  *  bands across cells are not modeled) — returns null. A row inside a vertical
  *  merge never hosts a band (see insideVerticalMerge). */
-export function singleCutCell(row: Element | null, anchor?: LineAnchor | null): Element | null {
+export function singleCutCell(
+  row: Element | null,
+  anchor?: LineAnchor | null,
+  zoomFactor = 1,
+): Element | null {
   const cells = row
     ? Array.from(row.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
     : []
@@ -1439,7 +1504,7 @@ export function singleCutCell(row: Element | null, anchor?: LineAnchor | null): 
   const anchorCell = anchorElement(anchor)?.closest('td, th')
   const host = anchorCell && cells.find((c) => c === anchorCell || c.contains(anchorCell))
   if (!host) return null
-  const cutTop = anchorLineTop(anchor)
+  const cutTop = anchorLineTop(anchor, zoomFactor)
   if (cutTop === null) return null
   for (const c of cells) {
     if (c !== host && cellContentBottom(c) > cutTop + 1) return null

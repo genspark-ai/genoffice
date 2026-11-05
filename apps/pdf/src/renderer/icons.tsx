@@ -133,11 +133,26 @@ export const IconBates = () => (
     <path d="M9 5 L7 19 M13 5 L11 19 M6.5 9 L17.5 9 M5.8 14 L16.8 14" />
   </Icon>
 )
+/** Measurement: a ruler with tick marks */
+export const IconMeasure = () => (
+  <Icon>
+    <rect x="3.5" y="9" width="17" height="7" rx="1" />
+    <path d="M7.5 9 V12 M12 9 V13.5 M16.5 9 V12" />
+  </Icon>
+)
 /** Signature panel: a shield with a check mark */
 export const IconSignatures = () => (
   <Icon>
     <path d="M12 4 L18.5 6.4 V11.4 C18.5 15 15.9 18 12 19.6 C8.1 18 5.5 15 5.5 11.4 V6.4 Z" />
     <path d="M9.2 11.8 L11.2 13.8 L15 9.9" />
+  </Icon>
+)
+/** Document protection: a padlock */
+export const IconProtect = () => (
+  <Icon>
+    <rect x="5.5" y="10.5" width="13" height="8.5" rx="1.5" />
+    <path d="M8.5 10.5 V7.75 A3.5 3.5 0 0 1 15.5 7.75 V10.5" />
+    <path d="M12 13.75 V16.25" />
   </Icon>
 )
 export const IconPreviousField = () => (

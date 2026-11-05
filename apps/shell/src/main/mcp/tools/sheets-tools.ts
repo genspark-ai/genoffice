@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { createFileViaCli } from '../headless-cli'
+import { existsSync } from 'node:fs'
+import { basename, extname, isAbsolute } from 'node:path'
+import { createFileViaCli, sheetLinksViaCli } from '../headless-cli'
 import { resolveOutputPath } from './document-tools'
 import { generateExtension } from './formats'
 import type { FamilyDriver, SessionHost, TargetResolver } from './session-tools'
@@ -128,10 +130,75 @@ function createHeadlessXlsxTool(deps: SheetsToolDeps): McpToolDefinition {
   }
 }
 
+/**
+ * Headless external-link maintenance through the bundled CLI (`sheet links`):
+ * list is a read and stays available with background generation off; refresh
+ * and break write the workbook, so they demand the same opt-in as create_xlsx.
+ */
+function createSheetLinksTool(deps: SheetsToolDeps): McpToolDefinition {
+  return {
+    name: 'sheet_links',
+    description:
+      "Inspect and maintain an Excel workbook's external links (formulas referencing another " +
+      '.xlsx file) without opening the app. Default action lists every link with its index, ' +
+      'resolved source path and reachability. `update: true` re-reads reachable sources and ' +
+      "writes the computed values as the formulas' cached values (formulas untouched). " +
+      '`break` severs the chosen 1-based links — their formulas keep their current cached ' +
+      'values as literals and the surviving links renumber.',
+    inputSchema: {
+      path: z.string().describe('absolute path to the .xlsx file'),
+      update: z
+        .boolean()
+        .optional()
+        .describe('refresh the formulas’ cached values from the reachable sources'),
+      break: z
+        .array(z.number().int().min(1))
+        .optional()
+        .describe(
+          '1-based link indices (from this tool’s list) to break; formulas become literals',
+        ),
+      out: z
+        .string()
+        .optional()
+        .describe('write the refreshed/broken copy here instead of in place'),
+      overwrite: z.boolean().optional().describe('allow replacing an existing file at `out`'),
+    },
+    handler: async (args) => {
+      const filePath = String(args.path ?? '')
+      if (!isAbsolute(filePath)) throw new Error('path must be absolute')
+      if (extname(filePath).toLowerCase() !== XLSX_EXT)
+        throw new Error('path must point to an .xlsx file')
+      if (!existsSync(filePath)) throw new Error(`file not found: ${filePath}`)
+      if (!deps.cli) throw new Error('external-link tools are not available in this build')
+      const breakIndices = Array.isArray(args.break) ? (args.break as number[]) : undefined
+      if (args.update === true && breakIndices !== undefined) {
+        throw new Error(
+          'update and break cannot combine: an update re-reads the sources, a break severs them',
+        )
+      }
+      // writing the workbook headlessly is opt-in, same rule as create_xlsx
+      if ((args.update === true || breakIndices !== undefined) && deps.background === false) {
+        throw new Error(
+          'refreshing or breaking links is disabled: headless file writes are off in MCP settings',
+        )
+      }
+      const json = await sheetLinksViaCli(deps.cli, {
+        path: filePath,
+        ...(args.update === true ? { update: true } : {}),
+        ...(breakIndices !== undefined ? { break: breakIndices } : {}),
+        ...(typeof args.out === 'string' && args.out ? { out: args.out } : {}),
+        ...(args.overwrite === true ? { overwrite: true } : {}),
+      })
+      return { path: filePath, name: basename(filePath), summary: json.summary, ...json.detail }
+    },
+  }
+}
+
 export function createSheetsTools(deps: SheetsToolDeps, host: SessionHost): McpToolDefinition[] {
   return [
     // headless generation is opt-in, same rule as create_docx/create_pptx
     ...(deps.background === false ? [] : [createHeadlessXlsxTool(deps)]),
+    createSheetLinksTool(deps),
     ...createGridContentTools(deps, host),
   ]
 }

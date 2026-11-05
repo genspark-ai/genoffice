@@ -99,6 +99,11 @@ export const en = {
     'Track changes on: AI content edits are marked as revisions (insertions underlined, deletions struck through); accept or reject in Review',
   aiTrackOffTitle:
     'Track changes off: AI edits apply immediately (you can still roll back via snapshots)',
+  aiRevisionBarTitle: 'Revisions',
+  aiRevisionCount: '{count} pending changes',
+  aiRevisionRejectAll: 'Reject all',
+  aiRevisionAcceptAll: 'Accept all',
+  aiRevisionPara: 'Paragraph {n}',
   aiTurnLimit:
     'This task paused before every step was finished. Completed edits are preserved; select Continue to finish the remaining work.',
   aiStopped: '(Stopped)',
@@ -197,7 +202,12 @@ export const en = {
   aiMindMapAskPrompt: 'Tell me about "{label}" in this document',
   aiMindMapJump: 'Jump to the cited block',
   aiMindMapExport: 'Export PNG',
+  aiMindMapExportSvg: 'Export SVG',
+  aiMindMapInsert: 'Insert into document',
   aiMindMapReset: 'Reset view',
   aiMindMapExpand: 'Expand branch',
   aiMindMapCollapse: 'Collapse branch',
+  aiMindMapToggleLayout: 'Switch layout',
+  aiMindMapLayoutTopDown: 'Switch to the top-down layout',
+  aiMindMapLayoutLeftRight: 'Switch to the left-right layout',
 } satisfies Record<keyof typeof zh, string>

@@ -1,6 +1,11 @@
 import JSZip from 'jszip'
 import { assertDeclaredSizesWithinLimits, assertZipInflatesWithinLimits } from '@genoffice/zip-gate'
-import { needsOoxmlNormalization, normalizeOoxmlXml } from './ooxml-normalize'
+import {
+  dedupeStyleRefs,
+  hasDuplicateStyleRefs,
+  needsOoxmlNormalization,
+  normalizeOoxmlXml,
+} from './ooxml-normalize'
 
 // Re-exported for the engine's public API (index.ts) and the CLI's pre-open
 // check: the implementations live in @genoffice/zip-gate so the pptx engine
@@ -81,6 +86,10 @@ export function assertZipWithinLimits(zip: JSZip): void {
   )
 }
 
+/** parts holding paragraphs whose duplicate style refs get collapsed (last wins) */
+const STORY_PART_RE =
+  /^word\/(?:document|header\d*|footer\d*|footnotes|endnotes|comments\w*|glossary\/document)\.xml$/i
+
 // The gate parts carry the strict / non-canonical-prefix markers whenever the
 // package needs normalizing (strict packages are strict in document.xml and
 // their rels; prefix oddities live in document.xml).
@@ -100,11 +109,15 @@ async function normalizeOoxmlParts(zip: JSZip): Promise<void> {
       break
     }
   }
-  if (!needed) return
   for (const file of Object.values(zip.files)) {
-    if (file.dir || !/\.(xml|rels)$/i.test(file.name)) continue
-    const xml = await file.async('string')
-    if (needsOoxmlNormalization(xml)) zip.file(file.name, normalizeOoxmlXml(xml))
+    if (file.dir) continue
+    const story = STORY_PART_RE.test(file.name)
+    if (!story && (!needed || !/\.(xml|rels)$/i.test(file.name))) continue
+    let xml = await file.async('string')
+    const original = xml
+    if (needed && needsOoxmlNormalization(xml)) xml = normalizeOoxmlXml(xml)
+    if (story && hasDuplicateStyleRefs(xml)) xml = dedupeStyleRefs(xml)
+    if (xml !== original) zip.file(file.name, xml)
   }
 }
 

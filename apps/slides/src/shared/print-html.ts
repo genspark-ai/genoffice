@@ -77,13 +77,31 @@ export function normalizePrintRatio(ratio: number): number {
   return Math.min(Math.max(ratio, MIN_PRINT_RATIO), MAX_PRINT_RATIO)
 }
 
+/**
+ * The print sheet's paper in inches — the same numbers the @page rule below
+ * bakes into the document, so a silent CUPS job can size printToPDF's pages
+ * to the layout instead of Chromium's Letter default. Full pages follow the
+ * slide ratio; the handout/notes sheets are A4 in the chosen orientation.
+ */
+export function printPageSizeIn(
+  layout: PrintLayout,
+  orientation: PrintOrientation | undefined,
+  ratio: number,
+): { width: number; height: number } {
+  const isFull = layout === 'full'
+  const landscape = !isFull && orientation === 'landscape'
+  const slideW = Math.round(normalizePrintRatio(ratio) * SLIDE_H * 1000) / 1000
+  return {
+    width: isFull ? slideW : landscape ? A4_H : A4_W,
+    height: isFull ? SLIDE_H : landscape ? A4_W : A4_H,
+  }
+}
+
 export function buildPrintDocumentHtml(o: PrintDocOptions): string {
   const layout = o.layout
   const isFull = layout === 'full'
   const landscape = !isFull && o.orientation === 'landscape'
-  const slideW = Math.round(normalizePrintRatio(o.ratio) * SLIDE_H * 1000) / 1000
-  const pageW = isFull ? slideW : landscape ? A4_H : A4_W
-  const pageH = isFull ? SLIDE_H : landscape ? A4_W : A4_H
+  const { width: pageW, height: pageH } = printPageSizeIn(layout, o.orientation, o.ratio)
   const perPage =
     layout === 'handout2' ? 2 : layout === 'handout3' ? 3 : layout === 'handout6' ? 6 : 1
   const esc = (x: string) =>

@@ -10,6 +10,12 @@ C’est dans **Paramètres ▸ Intégrations** qu’on fait cela. Le panneau a d
 
 **MCP.** Deux voies sont proposées : **Lancé par l’assistant (recommandé)**, où vous ajoutez la configuration affichée à votre client et où l’assistant lance le serveur lui-même, et le **Serveur HTTP local**, que l’application fait tourner pour vous. Dans les deux cas, l’assistant finit par parler à GenOffice et vous ne tapez jamais une commande.
 
+**Essayez** Ouvrez une nouvelle discussion dans votre assistant et demandez simplement, par exemple :
+
+- “Transforme ~/Downloads/report.md en document Word”
+- “Prépare une présentation de 6 diapositives sur nos résultats du T3”
+- “Convertis budget.xlsx en PDF et ouvre-le dans GenOffice”
+
 ## L’enregistrer depuis la ligne de commande
 
 La même chose depuis un terminal — c’est la voie avancée, celle qu’il faut prendre quand l’agent se trouve là où le panneau ne peut pas le trouver :

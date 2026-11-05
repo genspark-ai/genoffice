@@ -1798,6 +1798,20 @@ button.check-item:hover {
   white-space: nowrap;
 }
 
+/* Formula view (sheetView/@showFormulas) is a per-sheet state that a save
+ * persists, so a sheet can open showing formulas instead of values. The flag
+ * keeps saying so for as long as the sheet is in that mode: the one-off toast
+ * that announced the switch is gone long before anyone notices. */
+.status-flag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--sheets-chip-bg);
+  white-space: nowrap;
+}
+
 .status-right {
   display: flex;
   align-items: center;
@@ -6287,6 +6301,63 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+/* Spelling panel (F7 / Review ▸ Proofing) rides the find-replace panel chrome;
+   these only add its note line, selected row and the suggestion chips. */
+
+.find-replace-panel .spell-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .fr-results tbody tr.spell-selected {
+  background: var(--accent-soft);
+}
+
+.find-replace-panel .spell-detail {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.find-replace-panel .spell-detail-text {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.find-replace-panel .spell-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.find-replace-panel .spell-suggestion {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent-dark);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.find-replace-panel .spell-suggestion:hover {
+  background: var(--hover);
+}
+
+.find-replace-panel .spell-no-suggestion {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .spell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* The stock Univer find dialog is replaced by .find-replace-panel; it still
    mounts (its controller carries the find-session lifecycle) but must never
    show. Keyed on the component marker because the portal wrapper carries no
@@ -7359,12 +7430,14 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   color: var(--accent);
 }
 
-.note-pictures-pane .np-author {
+.note-pictures-pane .np-author,
+.note-hover-card .np-author {
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.note-pictures-pane .np-remove {
+.note-pictures-pane .np-remove,
+.note-hover-card .np-remove {
   margin-left: auto;
   border: 0;
   background: transparent;
@@ -7376,19 +7449,22 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   cursor: pointer;
 }
 
-.note-pictures-pane .np-remove:hover {
+.note-pictures-pane .np-remove:hover,
+.note-hover-card .np-remove:hover {
   background: var(--hover);
   color: var(--text);
 }
 
-.note-pictures-pane .np-image {
+.note-pictures-pane .np-image,
+.note-hover-card .np-image {
   display: block;
   width: 100%;
   height: auto;
   border-radius: 6px;
 }
 
-.note-pictures-pane .np-image-missing {
+.note-pictures-pane .np-image-missing,
+.note-hover-card .np-image-missing {
   margin: 0;
   padding: 10px;
   border: 1px dashed var(--border);
@@ -7398,10 +7474,36 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   text-align: center;
 }
 
-.note-pictures-pane .np-text {
+.note-pictures-pane .np-text,
+.note-hover-card .np-text {
   margin: 0;
   color: var(--text-muted);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The card under Univer's note popup for a note that carries a picture: it
+   hangs below the popup's own box so author, picture and text read as one
+   note. Reuses the pane's np-* pieces above. */
+.note-hover-card {
+  position: fixed;
+  z-index: 130;
+  width: 260px;
+  max-height: 50vh;
+  overflow: hidden;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.note-hover-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }

@@ -17,6 +17,8 @@ const NO_ITEMS: WikiSuggestState['items'] = []
  * The `[[` suggester's popup: vault notes, shallowest first, filtered live,
  * and — while the query names something no note has — a last row that creates
  * that note (Obsidian's "Create new note"), keyboard and click both fine.
+ * After a `#` the rows are the target's headings (`##`-glyphed) or its
+ * `^block` ids with a line of context.
  */
 export const WikiSuggestMenu = forwardRef<WikiSuggestMenuHandle, Props>(function WikiSuggestMenu(
   { state, onDismiss },
@@ -76,19 +78,27 @@ export const WikiSuggestMenu = forwardRef<WikiSuggestMenuHandle, Props>(function
         <div className="slash-empty">{t('slashNoResults')}</div>
       ) : (
         <>
-          {items.map((item, i) => (
-            <button
-              key={item.path}
-              type="button"
-              className={`slash-item wiki-suggest-item${i === index ? ' active' : ''}`}
-              title={item.relPath}
-              onMouseEnter={() => setIndex(i)}
-              onClick={() => state.command(item)}
-            >
-              <span className="wiki-suggest-name">{item.name}</span>
-              <span className="wiki-suggest-path">{item.relPath}</span>
-            </button>
-          ))}
+          {items.map((item, i) => {
+            const row =
+              item.kind === 'note'
+                ? { name: item.entry.name, path: item.entry.relPath, title: item.entry.relPath }
+                : item.kind === 'heading'
+                  ? { name: item.text, path: '#'.repeat(item.level), title: item.text }
+                  : { name: `^${item.id}`, path: item.text, title: item.text }
+            return (
+              <button
+                key={`${item.kind}:${i}`}
+                type="button"
+                className={`slash-item wiki-suggest-item${i === index ? ' active' : ''}`}
+                title={row.title}
+                onMouseEnter={() => setIndex(i)}
+                onClick={() => state.command(item)}
+              >
+                <span className="wiki-suggest-name">{row.name}</span>
+                <span className="wiki-suggest-path">{row.path}</span>
+              </button>
+            )
+          })}
           {canCreate && (
             <button
               type="button"

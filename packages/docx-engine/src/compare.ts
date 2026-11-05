@@ -6,9 +6,11 @@
  * The revision marks are the ones the rest of the suite already writes. A run
  * carries `ins` / `del` (see Run in types.ts) and the generator wraps
  * consecutive runs of the same revision in w:ins / w:del (see generate.ts);
- * a paragraph inserted or deleted as a whole is wrapped in a block-level
- * w:ins / w:del, the shape `docs apply --track` produces. A redline written
- * here therefore resolves through the same accept / reject path.
+ * a paragraph inserted or deleted as a whole additionally carries the record
+ * on its paragraph mark (w:pPr/w:rPr) — Word's own Compare shape, which
+ * accept / reject resolve to the revised / original document. A non-paragraph
+ * block (a table) keeps the block-level w:ins / w:del wrapper. A redline
+ * written here therefore resolves through the same accept / reject path.
  *
  * Out of scope: w:rPrChange / w:pPrChange records and moved text. A run whose
  * formatting changed is reported as a deletion of the old run plus an

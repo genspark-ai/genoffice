@@ -10,7 +10,7 @@ import { modelSaveAsName } from './file-naming'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
-import { renderSlidesToPngBase64 } from './export-render'
+import { renderSlidesToImageBase64 } from './export-render'
 import { t } from './i18n/locale'
 import { showToast } from './components/toast-bus'
 
@@ -180,8 +180,8 @@ export function exportBaseName(ctx: ActionCtx): string {
   return (baseName(ctx.path ?? '') || t('appUntitledPresentation')).replace(/\.pptx$/i, '')
 }
 
-/** Export as images: each page (skipping hidden ones) rendered offscreen to 2x PNG, written to disk by the main process */
-export async function exportImages(ctx: ActionCtx): Promise<void> {
+/** Export as images: each page (skipping hidden ones) rendered offscreen to 2x PNG or JPG, written to disk by the main process */
+export async function exportImages(ctx: ActionCtx, format: 'png' | 'jpg' = 'png'): Promise<void> {
   const visible = ctx.slides.filter((s) => !s.hidden)
   if (visible.length === 0) {
     ctx.setStatus(t('appExportNoSlides'))
@@ -191,11 +191,12 @@ export async function exportImages(ctx: ActionCtx): Promise<void> {
   if (!dir) return
   ctx.setStatus(t('appExportImagesProgress', { count: visible.length }))
   try {
-    const pngs = await renderSlidesToPngBase64(visible, ctx.images)
+    const pages = await renderSlidesToImageBase64(visible, ctx.images, { format })
     const r = await window.slidesApi.exportImages({
       dir,
       baseName: exportBaseName(ctx),
-      pngsBase64: pngs,
+      format,
+      pngsBase64: pages,
     })
     ctx.setStatus(
       r.ok

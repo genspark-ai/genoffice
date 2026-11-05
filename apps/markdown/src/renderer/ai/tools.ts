@@ -15,7 +15,7 @@ import {
   type MdOp,
 } from '../editor/ops'
 import { t } from '../i18n/locale'
-import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from './mind-map'
+import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from '@genoffice/agent-core/mind-map'
 import {
   DraftLanding,
   type AiDocWriter,

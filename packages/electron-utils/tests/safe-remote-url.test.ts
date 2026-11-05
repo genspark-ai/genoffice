@@ -296,6 +296,29 @@ describe('fetchWithSsrfGuard', () => {
     })
   })
 
+  it('forwards the caller signal to every hop', async () => {
+    const controller = new AbortController()
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response('ok', { status: 200 }))
+    await fetchWithSsrfGuard('https://8.8.8.8/x.png', {
+      fetchImpl,
+      signal: controller.signal,
+    })
+    expect((fetchImpl.mock.calls[0][1] as { signal?: AbortSignal }).signal).toBe(controller.signal)
+
+    const redirected = vi
+      .fn()
+      .mockResolvedValueOnce(res(302, 'https://1.1.1.1/final.png'))
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+    await fetchWithSsrfGuard('https://8.8.8.8/start.png', {
+      fetchImpl: redirected,
+      signal: controller.signal,
+    })
+    // a redirect hop reads the same deadline, so a slow chain still ends
+    for (const call of redirected.mock.calls) {
+      expect((call[1] as { signal?: AbortSignal }).signal).toBe(controller.signal)
+    }
+  })
+
   it('never requests a target that fails the initial check', async () => {
     const fetchImpl = vi.fn()
     await expect(

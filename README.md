@@ -39,8 +39,9 @@ files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched. ODF files
 (`.odt`, `.ods`, `.odp` and the `.ott`/`.ots`/`.otp` templates) open as
-editable OOXML copies; the import is open-only — saving writes OOXML, never
-ODF.
+editable OOXML copies, and so do legacy Word `.doc`/`.dot` files and Hancom
+documents (`.hwp`, `.hwpx`); the imports are open-only — saving writes OOXML,
+never the source format.
 
 - **Real formats, byte-preserving.** Only what you edit is rewritten. Everything
   else in the file survives byte-for-byte, so documents keep working in Word,
@@ -332,8 +333,8 @@ web and image search, image generation, and image/audio/video analysis.
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper,
 Cheaper Inference, Atlas Cloud and OpenCode Zen/Go, plus a custom slot for any OpenAI-compatible endpoint (base
 URL + key), including local model servers. Search and media have their own
-per-capability providers under **AI Media & Search**: Serper, Serply, Tavily, Parallel, Keenable,
-Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
+per-capability providers under **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
+Keenable, Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
 Qwen, MiniMax or any OpenAI-compatible images endpoint for image generation
 and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
 
@@ -398,7 +399,7 @@ check its own work.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -542,6 +543,11 @@ sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
 
+The deb and rpm also add blank templates for KDE Plasma's Dolphin: right-click
+in a folder → **Create New** lists _GenOffice Document_, _GenOffice Spreadsheet_
+and _GenOffice Presentation_. They live in `/usr/share/templates` and are
+removed with the package.
+
 The AppImage runs in place: install the FUSE 2 runtime
 (`sudo apt install libfuse2`; on Ubuntu 24.04 the package is `libfuse2t64`),
 make the file executable, then run it:
@@ -572,6 +578,24 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 
 The package-by-package tour (docx/pptx engines, `pdf2docx`, `html2docx`, the
 agent core and providers) lives in [CONTRIBUTING.md](CONTRIBUTING.md#engine-packages).
+
+### Legacy and ODF files open as converted copies
+
+Formats GenOffice cannot write back — legacy Word `.doc`/`.dot`, Hancom
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, and the OpenDocument family (`.odt`,
+`.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are imports, not native files.
+Opening one converts it on your machine into a `.docx`, `.xlsx` or `.pptx`
+copy and opens that copy; the original is never read again and never written.
+
+- Docs and Slides ask where to put the copy first (the sibling `.docx`/`.pptx`
+  next to the original by default), so every later Save lands there.
+- Sheets opens the converted workbook straight away and routes the first Save
+  through Save As to a fresh `.xlsx`. `.csv` is the exception: it keeps its
+  identity and Save writes values back to the `.csv`, as Excel does.
+- The conversion is one-way and can drop features the source format carries
+  but OOXML does not. `.doc`, `.hwp` and the ODF formats show a confirmation
+  dialog saying so; tick "Convert without asking next time" to skip it, and
+  "Ask before converting legacy files" in Settings → General turns it back on.
 
 ## Development
 
@@ -621,6 +645,8 @@ trial, no paid tier for the apps themselves.
 Yes. GenOffice opens and saves native `.docx`, `.xlsx` and `.pptx` files.
 Saving is byte-preserving: parts of the file you didn't touch are written
 back byte-for-byte, so documents keep working in Microsoft Office.
+Legacy `.doc`/`.dot` and `.xls` files open too, as converted `.docx`/`.xlsx`
+copies — see [Legacy and ODF files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -738,6 +764,11 @@ GenOffice would not be possible without these open-source projects:
   of the Rust xlsx sidecar.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — the MicroType
   Express decoder for embedded PowerPoint fonts, ported to TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — reads binary `.hwp`
+  documents into HWPX for the Hancom import; its WebAssembly build carries the
+  Rust crates and the Volexity hwp-extract port listed in the third-party
+  notices. "한글", "한컴", "HWP" and "HWPX" are registered trademarks of Hancom
+  Inc.; GenOffice is not affiliated with Hancom.
 - [React](https://react.dev/) (MIT) — the UI layer of every app.
 - [Mermaid](https://mermaid.js.org/) (MIT) and [KaTeX](https://katex.org/)
   (MIT) — diagrams and math in Markdown and Docs.

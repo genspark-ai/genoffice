@@ -1,0 +1,7 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/render-math-line-box/probe.docx",
+  "tables": 1,
+  "hashes": ["59f49a56a4bbf6a3"],
+  "staticTables": 1,
+  "staticHashes": ["b37822ede0f4d029"]
+}

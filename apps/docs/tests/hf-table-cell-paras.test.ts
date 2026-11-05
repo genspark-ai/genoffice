@@ -68,9 +68,15 @@ describe('header table cells keep per-paragraph lines', () => {
       hfCellParaStyle({ styleId: 'Caption8', sizeHalfPoints: 16 }, undefined, [{ text: 'x' }]),
     ).toMatchObject({ fontSize: '8pt' })
     expect(
-      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [{ text: 'x', sizeHalfPoints: 20 }])
-        .fontSize,
-    ).toContain('10pt')
+      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [{ text: 'x', sizeHalfPoints: 20 }]),
+    ).toMatchObject({ '--doc-strut': '10pt', fontSize: 'var(--doc-strut)' })
+    // runs without their own size take the style size back (.doc-strut-mixed reads --doc-base-fs)
+    expect(
+      hfCellParaStyle({ sizeHalfPoints: 16 }, undefined, [
+        { text: 'x', sizeHalfPoints: 20 },
+        { text: 'y' },
+      ]),
+    ).toMatchObject({ '--doc-base-fs': '8pt', '--doc-strut': 'min(10pt,var(--doc-base-fs,10pt))' })
   })
 
   it('estimateHfHeight sizes a table row by its tallest cell paragraph stack', () => {
@@ -119,7 +125,58 @@ describe('header table cells keep per-paragraph lines', () => {
     expect(
       hfCellParaStyle({ lineRule: 'auto', lineRawTwips: 240, lineSpacing: 1 }).lineHeight,
     ).toBe('calc(var(--doc-line-factor,1.2) * 1)')
-    expect(hfCellParaStyle({ align: 'right' }).lineHeight).toBeUndefined()
+    expect(hfCellParaStyle({ align: 'right' }).lineHeight).toBe(
+      'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    )
+  })
+})
+
+describe('vertically merged header table cells', () => {
+  const value: HeaderFooter = {
+    text: 'Tall cell b d',
+    paras: [
+      {
+        runs: [],
+        cells: [
+          { paras: [[{ text: 'Tall' }], [{ text: 'cell' }]], vSpan: 2, widthPct: 30 },
+          { paras: [[{ text: 'b' }]], widthPct: 70 },
+        ],
+      },
+      {
+        runs: [],
+        cells: [
+          { paras: [[]], vMergeContinue: true, widthPct: 30 },
+          { paras: [[{ text: 'd' }]], widthPct: 70 },
+        ],
+      },
+    ],
+  }
+
+  it('the spanning cell overlays its rows and the continuation holds nothing', () => {
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const rows = el.querySelectorAll('.page-hf-row')
+    const span = rows[0].children[0]
+    expect(span.classList.contains('page-hf-cell-vspan')).toBe(true)
+    const body = span.querySelector('.page-hf-cell-vspan-body')
+    expect(body?.querySelectorAll('.page-hf-cell-para')).toHaveLength(2)
+    expect(rows[1].children[0].childNodes).toHaveLength(0)
+    expect(rows[1].children[1].querySelectorAll('.page-hf-cell-para')).toHaveLength(1)
+  })
+})
+
+describe('picture lines with only whitespace text', () => {
+  const image = { dataUrl: 'data:image/png;base64,AA==', widthPx: 40, heightPx: 40, xml: '' }
+  const strip = (text: string) =>
+    makeGapHfEl({
+      kind: 'header',
+      value: { text, paras: [{ runs: [{ text }, { text: '', image }] }] },
+      pageNo: 1,
+      pageTotal: 1,
+    })
+
+  it('the pictures alone size the line; visible text keeps the baseline rule', () => {
+    expect(strip('  ').querySelector('.page-hf-pic-line')).not.toBeNull()
+    expect(strip('Logo').querySelector('.page-hf-pic-line')).toBeNull()
   })
 })
 
@@ -556,7 +613,11 @@ describe('cell paragraph line factor and row-anchored pictures', () => {
     const style = hfCellParaStyle(undefined, undefined, runs)
     expect(style['--doc-line-factor']).toBe('1.226')
     expect(style.lineHeight).toContain('var(--doc-line-factor')
-    expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }]).lineHeight).toBeUndefined()
+    expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }])).toEqual({
+      direction: 'ltr',
+      '--doc-line-factor': 'var(--doc-line-factor-latin,1.2)',
+      lineHeight: 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))',
+    })
   })
 
   it('hosts a row-anchored picture inside its anchor row at the paragraph offset', () => {

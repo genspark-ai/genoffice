@@ -40,7 +40,7 @@ export function RibbonColorPalette({
   onPick,
 }: {
   current: string | null
-  noneLabel: string
+  noneLabel?: string
   onPick: (hex: string | null) => void
 }) {
   const { t } = useI18n()

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { bandGapRows, placeLine, type ObstacleRect } from '../src/renderer/editor/wrap-obstacles'
+import {
+  bandGapRows,
+  floatStacks,
+  placeLine,
+  type FloatBox,
+  type ObstacleRect,
+} from '../src/renderer/editor/wrap-obstacles'
 import { computeSectionedSlicesF2, type BlockBox } from '../src/renderer/pagination'
 
 // column 0..624 px (468pt), 200pt picture = 266.7 px, 9pt clearance = 12 px
@@ -80,6 +86,7 @@ describe('anchor paragraph page turn (Word probe 2026-10-13)', () => {
     floatKeepWhole: true,
     floatBottom: top + bottom,
     floatMaxH: maxH,
+    modernFloatTurn: true,
   })
 
   it('turns the page when the tallest drawing cannot end at the body bottom', () => {
@@ -155,5 +162,40 @@ describe('bandGapRows (prod corpus 20261020 sample 026, stat tiles above a title
         6,
       ),
     ).toBeNull()
+  })
+})
+
+describe('floatStacks (Word probe 2026-11-02, D1-D3)', () => {
+  const right = (top: number, bottom: number): FloatBox => ({
+    side: 'right',
+    left: 390 - 12,
+    right: 666 + 12,
+    top,
+    bottom,
+  })
+  const left = (top: number, bottom: number): FloatBox => ({
+    side: 'left',
+    left: -12,
+    right: 276 + 12,
+    top,
+    bottom,
+  })
+
+  it('a same-side float overlapping the picture vertically displaces it', () => {
+    expect(floatStacks(right(120, 300), [right(0, 172)])).toBe(true)
+  })
+
+  it('a same-side float that ended above the picture leaves it alone', () => {
+    expect(floatStacks(right(172, 344), [right(0, 172)])).toBe(false)
+  })
+
+  it('an opposite float displaces only when the margin boxes meet horizontally', () => {
+    expect(floatStacks(right(120, 300), [left(0, 172)])).toBe(false)
+    const wide = { ...left(0, 172), right: 400 }
+    expect(floatStacks(right(120, 300), [wide])).toBe(true)
+  })
+
+  it('no earlier floats: never', () => {
+    expect(floatStacks(right(0, 172), [])).toBe(false)
   })
 })

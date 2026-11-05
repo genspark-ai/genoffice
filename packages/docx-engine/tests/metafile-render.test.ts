@@ -248,6 +248,241 @@ describe('WMF DIB blts (ole-icon.wmf)', () => {
   })
 })
 
+describe('WMF TA_UPDATECP text (MathType OLE previews)', () => {
+  // MathType writes every run as MOVETO + a zero-coord ExtTextOut while
+  // TA_UPDATECP is set: GDI draws at the current position instead of the
+  // record's (0, 0). genoffice#2316 — the equation preview rendered as its
+  // fraction line only, every glyph stacked at the origin.
+  const rec = (type: number, params: number[]) => {
+    const bytes = new Uint8Array(6 + params.length * 2)
+    const v = new DataView(bytes.buffer)
+    v.setUint32(0, 3 + params.length, true)
+    v.setUint16(4, type, true)
+    params.forEach((p, i) => v.setInt16(6 + i * 2, p, true))
+    return bytes
+  }
+  const createFontIndirect = (height: number, family: string) => {
+    const logfont = new Uint8Array(50)
+    const lv = new DataView(logfont.buffer)
+    lv.setInt16(0, height, true)
+    lv.setInt16(8, 400, true) // weight
+    for (let i = 0; i < family.length; i++) logfont[18 + i] = family.charCodeAt(i)
+    const bytes = new Uint8Array(6 + logfont.length)
+    const v = new DataView(bytes.buffer)
+    v.setUint32(0, (6 + logfont.length) / 2, true) // size in words
+    v.setUint16(4, 0x02fb, true)
+    bytes.set(logfont, 6)
+    return bytes
+  }
+  const buildWmf = (records: Uint8Array[]) => {
+    const body = records.reduce((n, r) => n + r.length, 0)
+    const wmf = new Uint8Array(18 + body)
+    const hv = new DataView(wmf.buffer)
+    hv.setUint16(0, 1, true) // mtType
+    hv.setUint16(2, 9, true) // mtHeaderSize (words)
+    hv.setUint16(4, 0x0300, true) // mtVersion
+    hv.setUint32(6, wmf.length / 2, true) // mtSize (words)
+    let at = 18
+    for (const r of records) {
+      wmf.set(r, at)
+      at += r.length
+    }
+    return wmf.buffer
+  }
+
+  it('TA_UPDATECP draws at the current position and advances it', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]), // SETWINDOWORG (y, x)
+      rec(0x020c, [100, 200]), // SETWINDOWEXT (cy, cx)
+      rec(0x012e, [1]), // SETTEXTALIGN TA_UPDATECP
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]), // SELECTOBJECT slot 0
+      rec(0x0214, [10, 20]), // MOVETO (y, x)
+      rec(0x0a32, [0, 0, 2, 0, 0x6261, 0]), // EXTTEXTOUT (0, 0) 'ab'
+      rec(0x0a32, [0, 0, 2, 0, 0x6463, 0]), // EXTTEXTOUT (0, 0) 'cd'
+      rec(0x0214, [40, 60]), // MOVETO (y, x)
+      rec(0x0a32, [0, 0, 2, 0, 0x6665, 0]), // EXTTEXTOUT (0, 0) 'ef'
+      rec(0, []), // EOF
+    ]
+    const result = await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['ab', 'cd', 'ef'])
+    expect(runs[0]!.args[1]).toBeCloseTo(20)
+    expect(runs[0]!.args[2]).toBeCloseTo(10)
+    // the fake measureText reports 10 px at unit scale: the CP advanced one extent
+    expect(runs[1]!.args[1]).toBeCloseTo(30)
+    expect(runs[1]!.args[2]).toBeCloseTo(10)
+    expect(runs[2]!.args[1]).toBeCloseTo(60)
+    expect(runs[2]!.args[2]).toBeCloseTo(40)
+  })
+
+  it('without TA_UPDATECP the record coords still place the run', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]),
+      rec(0x0214, [10, 20]), // MOVETO must be ignored by the text record
+      rec(0x0a32, [0, 0, 1, 0, 0x78, 0]), // EXTTEXTOUT (0, 0) 'x'
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs).toHaveLength(1)
+    expect(runs[0]!.args[1]).toBeCloseTo(0)
+    expect(runs[0]!.args[2]).toBeCloseTo(0)
+  })
+
+  it('the MathType repro replays every run at its own position', async () => {
+    reset()
+    const result = await convertWmfToDataUrl(loadFixture('mathtype-equation.wmf'), { dpiScale: 2 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    // ρ_L = L_total / A: six text runs plus the fraction line record
+    expect(runs.length).toBeGreaterThanOrEqual(6)
+    for (const run of runs) {
+      const [x, y] = run.args as [number, number]
+      const atOrigin = Math.abs(x) < 0.5 && Math.abs(y) < 0.5
+      expect(atOrigin).toBe(false)
+    }
+  })
+
+  it('places each glyph by the Dx advances so interleaved runs keep their gaps', async () => {
+    // "Ax = b": MathType writes "Axb" as one run whose Dx leaves room for the
+    // "=" drawn by a later Symbol-font run (genoffice#2489 — the preview read "Axb=")
+    reset()
+    const result = await convertWmfToDataUrl(loadFixture('mathtype-axb.wmf'), { dpiScale: 1 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    // the Symbol-font '=' is remapped to the U+F0xx PUA
+    expect(runs.map((c) => c.args[0])).toEqual(['.', 'A', 'x', 'b', '\uf03d'])
+    const xs = Object.fromEntries(runs.map((c) => [c.args[0] as string, c.args[1] as number]))
+    // window 1184 logical units -> canvas width; the Dx array (234, 552) spaces A/x/b
+    const unit = (canvases[0]!.width as number) / 1184
+    expect(xs['A']).toBeCloseTo(88 * unit, 0)
+    expect(xs['x']).toBeCloseTo((88 + 234) * unit, 0)
+    expect(xs['b']).toBeCloseTo((88 + 234 + 552) * unit, 0)
+    expect(xs['\uf03d']).toBeCloseTo(586 * unit, 0)
+    expect(xs['\uf03d']).toBeGreaterThan(xs['x']!)
+    expect(xs['\uf03d']).toBeLessThan(xs['b']!)
+  })
+
+  it('the wrapper decodes Symbol-face runs to Unicode instead of the PUA form', async () => {
+    reset()
+    const bytes = new Uint8Array(loadFixture('mathtype-axb.wmf'))
+    const result = await metafileToDataUrl(bytes, 'image/x-wmf')
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['.', 'A', 'x', 'b', '='])
+  })
+
+  // LOGFONT16 with raw facename bytes and a charset; MathType on a CJK
+  // Windows writes code-page bytes for both the face and the text with charset 0
+  const createFontBytes = (face: number[], charset: number) => {
+    const logfont = new Uint8Array(50)
+    const lv = new DataView(logfont.buffer)
+    lv.setInt16(0, 20, true)
+    lv.setInt16(8, 400, true)
+    logfont[13] = charset // Italic(10) Underline(11) StrikeOut(12) CharSet(13)
+    logfont.set(face, 18)
+    const bytes = new Uint8Array(6 + logfont.length)
+    const v = new DataView(bytes.buffer)
+    v.setUint32(0, (6 + logfont.length) / 2, true)
+    v.setUint16(4, 0x02fb, true)
+    bytes.set(logfont, 6)
+    return bytes
+  }
+  // EXTTEXTOUT (0, 0) of raw string bytes followed by a per-byte Dx array
+  const extTextOutBytes = (str: number[], dx: number[]) => {
+    const padded = str.length % 2 ? [...str, 0] : str
+    const words = [0, 0, str.length, 0]
+    for (let i = 0; i < padded.length; i += 2) words.push(padded[i]! | (padded[i + 1]! << 8))
+    return rec(0x0a32, [...words, ...dx])
+  }
+  const SIMSUN_GBK = [0xcb, 0xce, 0xcc, 0xe5] // SimSun's localized name in GBK
+  const RUO_XU_GBK = [0xc8, 0xf4, 0xd0, 0xe8] // two CJK ideographs (ruo, xu)
+
+  it('decodes GBK text through a code-page facename and folds the per-byte Dx', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      rec(0x012e, [1]),
+      createFontBytes(SIMSUN_GBK, 0),
+      rec(0x012d, [0]),
+      rec(0x0214, [10, 20]),
+      extTextOutBytes(RUO_XU_GBK, [30, 0, 40, 0]),
+      extTextOutBytes([0x41], [768]), // 'A'
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['\u82e5', '\u9700', 'A'])
+    expect(runs[0]!.args[1]).toBeCloseTo(20)
+    expect(runs[1]!.args[1]).toBeCloseTo(50)
+    expect(runs[2]!.args[1]).toBeCloseTo(90)
+    const fonts = calls.filter((c) => c.method === 'set:font').map((c) => String(c.args[0]))
+    expect(fonts.some((f) => f.includes('\u5b8b\u4f53'))).toBe(true)
+  })
+
+  it('an explicit CJK charset decodes the text even with an ASCII facename', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      createFontBytes(
+        [...'SimSun'].map((c) => c.charCodeAt(0)),
+        134,
+      ), // GB2312_CHARSET
+      rec(0x012d, [0]),
+      extTextOutBytes(RUO_XU_GBK, [30, 0, 40, 0]),
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['\u82e5', '\u9700'])
+  })
+
+  it('high bytes under an ASCII facename stay single-byte', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]),
+      extTextOutBytes([0xe9, 0x74, 0xe9], [10, 10, 10]), // e-acute t e-acute in cp1252
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['\u00e9', 't', '\u00e9'])
+  })
+
+  it('a Dx-placed TA_UPDATECP run advances the current point by the Dx sum', async () => {
+    reset()
+    const records = [
+      rec(0x020b, [0, 0]),
+      rec(0x020c, [100, 200]),
+      rec(0x012e, [1]),
+      createFontIndirect(20, 'Arial'),
+      rec(0x012d, [0]),
+      rec(0x0214, [10, 20]),
+      rec(0x0a32, [0, 0, 2, 0, 0x6261, 30, 50]), // 'ab' with Dx 30, 50
+      rec(0x0a32, [0, 0, 1, 0, 0x63]), // 'c' without Dx
+      rec(0, []),
+    ]
+    await convertWmfToDataUrl(buildWmf(records), { dpiScale: 1 })
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['a', 'b', 'c'])
+    expect(runs[0]!.args[1]).toBeCloseTo(20)
+    expect(runs[1]!.args[1]).toBeCloseTo(50)
+    expect(runs[2]!.args[1]).toBeCloseTo(100)
+  })
+})
+
 describe('EMR_ALPHABLEND (w-icon.emf)', () => {
   it('draws the OLE icon bitmap with its real alpha channel', async () => {
     reset()
@@ -290,7 +525,7 @@ describe('EMR_ALPHABLEND (w-icon.emf)', () => {
  * EOF, with GDI+-style non-zero OutPrecision/Quality/PitchAndFamily bytes in
  * the LOGFONTW (the facename-offset regression trigger).
  */
-function buildEmfWithText(faceName: string, text: string): ArrayBuffer {
+function buildEmfWithText(faceName: string, text: string, dx?: number[]): ArrayBuffer {
   const header = new Uint8Array(88)
   const hv = new DataView(header.buffer)
   hv.setUint32(0, 1, true) // EMR_HEADER
@@ -329,18 +564,7 @@ function buildEmfWithText(faceName: string, text: string): ArrayBuffer {
   sv.setUint32(4, 12, true)
   sv.setUint32(8, 1, true)
 
-  const textRec = new Uint8Array(76 + text.length * 2)
-  const tv = new DataView(textRec.buffer)
-  tv.setUint32(0, 84, true) // EMR_EXTTEXTOUTW
-  tv.setUint32(4, textRec.length, true)
-  tv.setUint32(24, 1, true) // GM_COMPATIBLE
-  tv.setInt32(36, 10, true) // reference x
-  tv.setInt32(40, 20, true) // reference y
-  tv.setUint32(44, text.length, true)
-  tv.setUint32(48, 76, true) // offString
-  for (let i = 0; i < text.length; i++) {
-    tv.setUint16(76 + i * 2, text.charCodeAt(i), true)
-  }
+  const textRec = emfTextOut(text, dx)
 
   const eof = new Uint8Array(20)
   const ev = new DataView(eof.buffer)
@@ -621,6 +845,21 @@ describe('EMR_EXTTEXTOUTW Dx advances', () => {
     expect(runs.map((c) => c.args[0])).toEqual(['ab', 'cd'])
     // the fake measureText reports 10 px: the second run starts one extent further right
     expect((runs[1]!.args[1] as number) - (runs[0]!.args[1] as number)).toBeCloseTo(10, 3)
+  })
+
+  it('a symbol remap to a non-BMP glyph still consumes one Dx per source glyph', async () => {
+    reset()
+    // Wingdings 0x4A/0x4B (smileys) decode to U+1F60A / U+1F641 through the wrapper's table
+    await convertEmfToDataUrl(buildEmfWithText('Wingdings', 'JKa', [30, 40, 50]), {
+      dpiScale: 2,
+      symbolTextMap: (family: string, s: string) =>
+        family === 'Wingdings' ? s.replace('J', '\u{1f60a}').replace('K', '\u{1f641}') : null,
+    })
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.map((c) => c.args[0])).toEqual(['\u{1f60a}', '\u{1f641}', 'a'])
+    const xs = glyphs.map((c) => c.args[1] as number)
+    expect(xs[1]! - xs[0]!).toBeCloseTo(60, 3)
+    expect(xs[2]! - xs[1]!).toBeCloseTo(80, 3)
   })
 
   it('keeps the whole-string draw when no Dx array is present', async () => {

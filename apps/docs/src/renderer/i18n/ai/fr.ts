@@ -102,6 +102,11 @@ export const fr = {
     "Suivi des modifications activé : les modifications de contenu de l'IA sont marquées comme révisions (insertions soulignées, suppressions barrées) ; acceptez ou refusez dans Révision",
   aiTrackOffTitle:
     "Suivi des modifications désactivé : les modifications de l'IA s'appliquent immédiatement (vous pouvez toujours restaurer via les instantanés de version)",
+  aiRevisionBarTitle: 'Révisions',
+  aiRevisionCount: '{count} modifications en attente',
+  aiRevisionRejectAll: 'Tout refuser',
+  aiRevisionAcceptAll: 'Tout accepter',
+  aiRevisionPara: 'Paragraphe {n}',
   aiTurnLimit:
     "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus reflète les étapes déjà effectuées et peut être incomplète.)",
   aiStopped: '(Arrêté)',
@@ -200,7 +205,12 @@ export const fr = {
   aiMindMapAskPrompt: 'Parle-moi de « {label} » dans ce document',
   aiMindMapJump: 'Aller au passage cité',
   aiMindMapExport: 'Exporter en PNG',
+  aiMindMapExportSvg: 'Exporter en SVG',
+  aiMindMapInsert: 'Insérer dans le document',
   aiMindMapReset: 'Réinitialiser la vue',
   aiMindMapExpand: 'Déplier la branche',
   aiMindMapCollapse: 'Replier la branche',
+  aiMindMapToggleLayout: 'Changer la disposition',
+  aiMindMapLayoutTopDown: 'Passer à la disposition de haut en bas',
+  aiMindMapLayoutLeftRight: 'Passer à la disposition de gauche à droite',
 } satisfies Record<keyof typeof zh, string>

@@ -12,13 +12,21 @@ import {
   FOCUSING_EDITOR_INPUT_FORMULA,
   FOCUSING_EDITOR_STANDALONE,
   IContextService,
+  IUndoRedoService,
   WrapStrategy,
   type ICellData,
   type IStyleData,
 } from '@univerjs/core'
 import {
+  SetInlineFormatBoldCommand,
+  SetInlineFormatFontFamilyCommand,
+  SetInlineFormatFontSizeCommand,
+  SetInlineFormatItalicCommand,
+  SetInlineFormatStrikethroughCommand,
   SetInlineFormatSubscriptCommand,
   SetInlineFormatSuperscriptCommand,
+  SetInlineFormatTextColorCommand,
+  SetInlineFormatUnderlineCommand,
 } from '@univerjs/docs-ui'
 import { IRenderManagerService, SHEET_VIEWPORT_KEY } from '@univerjs/engine-render'
 import { SheetSkeletonManagerService } from '@univerjs/preset-sheets-core'
@@ -255,6 +263,15 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
   if (!runtime) return
   if (command === 'undo' || command === 'redo') {
     void runtime.univerAPI[command]()
+    return
+  }
+  if (command === 'redo-or-repeat') {
+    // Excel's Ctrl+Y semantics: Redo when there is something to redo,
+    // otherwise repeat the last action on the current selection (F4's
+    // command). Keeps "Ctrl+Y after typing" doing what Excel users expect.
+    const undoRedo = runtime.univer.__getInjector().get(IUndoRedoService)
+    if (undoRedo.pitchTopRedoElement()) void runtime.univerAPI.redo()
+    else void runtime.univerAPI.executeCommand('sheet.command.repeat-last-action')
     return
   }
   if (command.startsWith('error:')) {
@@ -658,22 +675,19 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       stepSelectionDecimals(runtime, command === 'decimal-inc' ? 1 : -1)
       return
     case 'filter-toggle': {
-      // A declined command — nothing selected, a range the filter cannot take —
-      // says nothing on its own, and a filter that never appeared reads as a dead
-      // button. While the sheet is still loading, the gate in App.tsx already
-      // says why (a footer note, a "load it all" prompt, or the projection
-      // path's own progress), so this stays quiet rather than talking over it.
+      // While the sheet is still loading the App.tsx gate already explains the
+      // decline, so stay quiet rather than talk over it.
       const lazy = ctx.lazyWorkbookRef.current
       const stillLoading = lazy !== null && !lazy.flags.preloadComplete
       void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter').then((ok) => {
         if (ok !== false || stillLoading) return
-        // A canceling guard also answers `false`: when the sheet's protection
-        // has already spoken — blocked outright, or unknown while still being
-        // indexed — this notice would overwrite it with the wrong advice.
+        // A canceling protection guard also answers false and has already spoken.
         const state = ctx.lazyWorkbookRef.current
         const sheetId = worksheet?.getSheetId()
-        const protection = state && sheetId ? effectiveSheetProtection(state, sheetId) : null
-        if (!protection || (protection.protected && !protection.allow.autoFilter)) return
+        if (state && sheetId) {
+          const protection = effectiveSheetProtection(state, sheetId)
+          if (!protection || (protection.protected && !protection.allow.autoFilter)) return
+        }
         ctx.setMessage(t('appFilterToggleFailed'))
       })
       return
@@ -1370,7 +1384,9 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     return
   }
   if (command === 'format-as-table') {
-    handleFormatAsTable(ctx.dataToolsContext(), 'TableStyleMedium2')
+    const existing = selectedTableEcho(ctx.tableDesignContext())
+    if (existing) ctx.setMessage(t('appTableAlreadyInTable', { name: existing.name }))
+    else handleFormatAsTable(ctx.dataToolsContext(), 'TableStyleMedium2')
     return
   }
   if (command.startsWith('page-layout:')) {
@@ -1524,7 +1540,14 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     switch (name) {
       case 'bold':
         // An explicit :on/:off argument sets absolutely (Format Cells
-        // dialog); no argument keeps ribbon toggle behavior.
+        // dialog); no argument keeps ribbon toggle behavior. In the cell
+        // editor the toggle works on the selected characters only — the
+        // whole-cell write would overwrite that key on every rich-text run
+        // (the inline command derives the toggle from the selection itself).
+        if (!argument && cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatBoldCommand.id)
+          break
+        }
         range.setFontWeight(
           argument
             ? argument === 'on'
@@ -1536,6 +1559,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         )
         break
       case 'italic':
+        if (!argument && cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatItalicCommand.id)
+          break
+        }
         range.setFontStyle(
           argument
             ? argument === 'on'
@@ -1547,6 +1574,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         )
         break
       case 'underline': {
+        if (!argument && cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatUnderlineCommand.id)
+          break
+        }
         if (argument === 'double') {
           // Toggle: Excel's double-underline button removes an existing
           // double underline. setValue merges the style patch range-wide.
@@ -1591,6 +1622,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         break
       }
       case 'strike':
+        if (!argument && cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatStrikethroughCommand.id)
+          break
+        }
         range.setFontLine(
           argument
             ? argument === 'on'
@@ -1757,6 +1792,12 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         range.setNumberFormat(argument)
         break
       case 'font-family': {
+        if (cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatFontFamilyCommand.id, {
+            value: argument,
+          })
+          break
+        }
         const undoTopBefore = topUndoElement(runtime)
         range.setFontFamily(argument)
         if (argument.length > 0 && argument.length <= 128) {
@@ -1770,6 +1811,14 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
           name === 'font-size-step'
             ? stepFontSize(range.getFontSize() ?? 11, argument === '-1' ? -1 : 1)
             : Number(argument)
+        if (cellEditorHoldsText(runtime)) {
+          if (Number.isFinite(sizePt) && sizePt > 0 && sizePt <= 409) {
+            void runtime.univerAPI.executeCommand(SetInlineFormatFontSizeCommand.id, {
+              value: sizePt,
+            })
+          }
+          break
+        }
         const undoTopBefore = topUndoElement(runtime)
         range.setFontSize(sizePt)
         if (Number.isFinite(sizePt) && sizePt > 0 && sizePt <= 409) {
@@ -1803,6 +1852,16 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         break
       }
       case 'font-color':
+        // In the cell editor the swatch colors the selected characters only
+        // (or arms the typing color at a collapsed caret), as Excel does —
+        // the whole-cell write below would force this color onto every run
+        // of a rich-text cell, erasing the other runs' own colors.
+        if (cellEditorHoldsText(runtime)) {
+          void runtime.univerAPI.executeCommand(SetInlineFormatTextColorCommand.id, {
+            value: argument === 'auto' ? null : argument,
+          })
+          break
+        }
         // 'auto' clears the explicit color back to the default (Excel's
         // Automatic); null is the documented reset, same as setBackground
         range.setFontColor((argument === 'auto' ? null : argument) as unknown as string)

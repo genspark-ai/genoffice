@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DocProtected, anchorLineSpec } from '../src/renderer/editor/extensions'
+import {
+  DocParagraph,
+  DocProtected,
+  anchorLineSpec,
+  ruleOverlaySpec,
+} from '../src/renderer/editor/extensions'
 
 describe('anchorLineSpec', () => {
   it('lays the line out with the paragraph format but leaves the page break on the picture', () => {
@@ -109,5 +117,135 @@ describe('protected block page break', () => {
     ) as unknown as [string, Record<string, string>, ...unknown[]]
     expect(attrs.class).toContain('page-break-before')
     expect(attrs['data-page-break-label']).toBeTruthy()
+  })
+})
+
+describe('overlay picture anchor line', () => {
+  const render = (attrs: Record<string, unknown>) =>
+    DocProtected.config.renderHTML!.call(
+      DocProtected as never,
+      {
+        node: {
+          attrs: {
+            blockType: 'image',
+            docxIndex: 3,
+            label: 'Image',
+            imageDataUrl: 'data:image/png;base64,AA==',
+            imageWidthPx: 100,
+            imageHeightPx: 50,
+            imageWrap: 'behind',
+            anchorLine: { styleId: null, spaceBefore: 240, lineSpacing: 240, lineRule: 'auto' },
+            ...attrs,
+          },
+        },
+        HTMLAttributes: {},
+      } as never,
+    ) as unknown as [string, Record<string, string>, ...unknown[]]
+  const blocks = (out: unknown[]) =>
+    out.slice(2).filter((c) => Array.isArray(c) && c[0] === 'p') as [
+      string,
+      Record<string, string>,
+      ...unknown[],
+    ][]
+
+  it('keeps leading spaces and tabs on the paragraph-mark line (one line box)', () => {
+    const out = render({ imageLeadingText: '  \t' })
+    expect(out[1].class).toContain('doc-img-float-line')
+    const lines = blocks(out)
+    expect(lines).toHaveLength(1)
+    expect(lines[0][1].class).toContain('doc-anchor-line')
+    const leading = lines[0]
+      .slice(2)
+      .filter(
+        (c) =>
+          Array.isArray(c) &&
+          (c[1] as Record<string, string> | undefined)?.class === 'doc-image-leading-space',
+      )
+    expect(leading).toHaveLength(1)
+    const brs = lines[0].slice(2).filter((c) => Array.isArray(c) && c[0] === 'br')
+    expect(brs).toHaveLength(0)
+    const strayLeading = out
+      .slice(2)
+      .filter(
+        (c) =>
+          Array.isArray(c) &&
+          (c[1] as Record<string, string> | undefined)?.class === 'doc-image-leading-space',
+      )
+    expect(strayLeading).toHaveLength(0)
+  })
+
+  it('keeps the br on the anchor line when there are no leading spaces', () => {
+    const line = blocks(render({}))[0]
+    expect(line.slice(2).filter((c) => Array.isArray(c) && c[0] === 'br')).toHaveLength(1)
+    expect(line.slice(2).some((c) => Array.isArray(c) && c[0] === 'span')).toBe(false)
+  })
+
+  it('reserves the anchor line as a flow-root so its space-before stays inside the wrapper', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+      'utf8',
+    )
+    const rule = /\.doc-protected\.doc-img-float\.doc-img-float-line\s*\{([^}]*)\}/.exec(css)
+    expect(rule).not.toBeNull()
+    expect(rule![1]).toMatch(/height:\s*auto/)
+    expect(rule![1]).toMatch(/display:\s*flow-root/)
+    const out = render({})
+    expect(blocks(out)[0][1].style).toMatch(/margin-top:12(\.0)?pt/)
+  })
+})
+
+describe('anchored decorative rule', () => {
+  it('draws the line at its column and paragraph offsets over the empty anchor line', () => {
+    const out = DocProtected.config.renderHTML!.call(
+      DocProtected as never,
+      {
+        node: {
+          attrs: {
+            blockType: 'passthrough',
+            docxIndex: 4,
+            label: 'Drawing object',
+            decorative: true,
+            ruleWidthPx: 235,
+            imageOffsetXEmu: 467360,
+            imageOffsetYEmu: 3175,
+            anchorLine: { styleId: null },
+          },
+        },
+        HTMLAttributes: {},
+      } as never,
+    ) as unknown as [string, Record<string, string>, ...unknown[]]
+    expect(out[1].class).toContain('doc-protected-rule-anchored')
+    const line = out.slice(2).find((c) => Array.isArray(c) && c[0] === 'span') as
+      [string, Record<string, string>] | undefined
+    expect(line?.[1].class).toBe('doc-rule-line')
+    expect(line?.[1].style).toContain('left:36.8pt;')
+    expect(line?.[1].style).toContain('top:0.25pt;')
+    expect(line?.[1].style).toContain('width:235px;')
+  })
+})
+
+describe('ruleOverlaySpec', () => {
+  it('positions the line from the paragraph box, above a margin space-before', () => {
+    const [tag, attrs] = ruleOverlaySpec({
+      xPx: 49,
+      yPx: 38.13,
+      widthPx: 235,
+      spaceBeforePx: 8,
+      thicknessPx: 2,
+      colorHex: 'FF0000',
+    }) as [string, Record<string, string>]
+    expect(tag).toBe('span')
+    expect(attrs.class).toBe('doc-rule-overlay')
+    expect(attrs.style).toBe('left:49px;top:30.13px;width:235px;height:2px;background:#FF0000;')
+  })
+})
+
+describe('ruleOverlays attribute', () => {
+  it('stays on the original paragraph when Enter splits it', () => {
+    const attr = (DocParagraph.config.addAttributes!.call(DocParagraph as never) as never)[
+      'ruleOverlays'
+    ] as { keepOnSplit?: boolean; rendered?: boolean }
+    expect(attr.keepOnSplit).toBe(false)
+    expect(attr.rendered).toBe(false)
   })
 })

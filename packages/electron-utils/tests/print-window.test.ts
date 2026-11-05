@@ -1,8 +1,13 @@
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PRINT_READY_SCRIPT, printHtmlDocument, type PrintDialogWindow } from '../src/print-window'
+import {
+  loadPrintHtml,
+  PRINT_READY_SCRIPT,
+  printHtmlDocument,
+  type PrintDialogWindow,
+} from '../src/print-window'
 
 /** Records the call order, so the assertions can pin sequencing and not just
  * end state: the readiness probe has to happen BEFORE print(), and show() has
@@ -175,5 +180,22 @@ describe('HTML print window', () => {
     }
     // Teardown must not turn a print failure into an unhandled rejection.
     await expect(run(win, 'win32')).rejects.toThrow('window already gone')
+  })
+})
+
+describe('loadPrintHtml', () => {
+  it('loads the document, runs the readiness probe and returns the temp dir to clean', async () => {
+    const win = new TestPrintWindow()
+    const { tempDir } = await loadPrintHtml(
+      win,
+      '<html><body>doc</body></html>',
+      'x.html',
+      'genoffice-test-print-',
+    )
+    expect(win.calls).toEqual(['loadFile', 'executeJavaScript'])
+    expect(win.loadedHtml).toContain('doc')
+    expect(dirname(win.loadedPath!)).toBe(tempDir)
+    expect(existsSync(tempDir)).toBe(true)
+    await rm(tempDir, { recursive: true, force: true })
   })
 })

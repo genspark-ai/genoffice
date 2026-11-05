@@ -61,8 +61,8 @@ import { parseDocxOffThread } from './parse-off-thread'
 import { PHASED_APPEND } from './editor/streaming-tail-guard'
 import { docTextLength, docWeight, openTierFor } from './large-document'
 import { documentToMarkdown } from './export-markdown'
-import { blocksHaveRevisions } from './editor/revision-view'
 import { docStyleCss } from './doc-style-css'
+import { documentTextContext } from './text-layout/document-context'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
@@ -92,11 +92,11 @@ import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import {
-  hangulSpaceWideningFor,
   loadBundledStandIns,
   setAdditiveParagraphSpacing,
   setDocFontTable,
-  setHangulSpaceWidening,
+  setBalancedSpaceWidening,
+  setLatinViaEastAsiaSlot,
 } from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { prefetchFaces } from './font-resolve'
@@ -205,6 +205,9 @@ export interface FileActionContext {
   setComments: (value: CommentInfo[]) => void
   setCommentsDirty: (dirty: boolean) => void
   setShowComments: (show: boolean) => void
+  /** Contextual mode: the panel hosts threads the margin cannot (unanchored comments) */
+  setCommentPanelOpen: (open: boolean) => void
+  setCommentPopup: (id: string | null) => void
   setCommentComposing: (composing: boolean) => void
   watermark: string | null
   watermarkDirty: boolean
@@ -243,7 +246,10 @@ export interface FileActionContext {
   setThemeFontsDirty: (dirty: boolean) => void
   setThemeColors: (value: ThemeColors | null) => void
   setThemeColorsDirty: (dirty: boolean) => void
+  trackChanges: boolean
   setTrackChanges: (on: boolean) => void
+  trackRevisionsDirty: boolean
+  setTrackRevisionsDirty: (dirty: boolean) => void
   protection: DocProtection | null
   protectionDirty: boolean
   setProtection: (value: DocProtection | null) => void
@@ -258,8 +264,6 @@ export interface FileActionContext {
   setRemovePersonalInfoDirty: (dirty: boolean) => void
   /** document (re)loaded: App resets the modify-password session state and prompts when one is set */
   onWriteProtectionLoaded: (wp: WriteProtection | null) => void
-  /** document opened: Word shows a document with tracked changes in Simple Markup */
-  onRevisionsLoaded: (hasRevisions: boolean) => void
   setCompareResult: (value: { otherName: string; entries: CompareEntry[] } | null) => void
   /** password-protected docx: open the password prompt (decrypt-retry loop lives in App) */
   promptDocxPassword: (info: { path: string; name: string }) => void
@@ -370,7 +374,9 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
   editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
-  setHangulSpaceWidening(hangulSpaceWideningFor(parsed))
+  const textCtx = documentTextContext(parsed)
+  setBalancedSpaceWidening(textCtx.balancedSpaces)
+  setLatinViaEastAsiaSlot(textCtx.latinViaEaSlot, textCtx.bodyEaSlot)
   setStaticAsciiResolver(() => editor.storage.listNumbering)
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
@@ -515,7 +521,6 @@ export async function loadFile(
       hash: result.hash,
       encrypted: result.encrypted,
     })
-    ctx.onRevisionsLoaded(blocksHaveRevisions(parsed.blocks))
     // this tab's document was replaced: a password parked for the previous
     // unsaved draft is stale and must not encrypt this document's saves.
     // Done here, not in the main process's loadDocx — Review > Compare also
@@ -557,7 +562,9 @@ export async function loadFile(
     ctx.setEvenOddHfDirty(false)
     ctx.setMirrorMargins(parsed.mirrorMargins ?? false)
     ctx.setMirrorMarginsDirty(false)
-    ctx.setShowComments(hasUnanchoredComments(parsed.comments, parsed.blocks))
+    ctx.setShowComments(true)
+    ctx.setCommentPanelOpen(hasUnanchoredComments(parsed.comments, parsed.blocks))
+    ctx.setCommentPopup(null)
     ctx.setReadMode(tier === 'readOnly')
     ctx.setLargeDocSpellOff(tier !== 'normal')
     ctx.setComments(parsed.comments)
@@ -581,7 +588,8 @@ export async function loadFile(
     ctx.setThemeColors(parsed.themeColors ?? null)
     ctx.setThemeColorsDirty(false)
     ctx.setCommentComposing(false)
-    ctx.setTrackChanges(false)
+    ctx.setTrackChanges(parsed.trackRevisions ?? false)
+    ctx.setTrackRevisionsDirty(false)
     ctx.setProtection(parsed.protection)
     ctx.setProtectionDirty(false)
     ctx.setWriteProtection(parsed.writeProtection)
@@ -682,7 +690,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.setHfVariants(hfVariantsFromParsed(parsed))
     ctx.setHfVariantsDirty([])
     resetCrossDocEditState(ctx)
-    ctx.setShowComments(false)
+    ctx.setShowComments(true)
+    ctx.setCommentPanelOpen(false)
+    ctx.setCommentPopup(null)
     ctx.setComments([])
     ctx.setCommentsDirty(false)
     ctx.setWatermark(null)
@@ -704,6 +714,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.setThemeColorsDirty(false)
     ctx.setCommentComposing(false)
     ctx.setTrackChanges(false)
+    ctx.setTrackRevisionsDirty(false)
     ctx.setProtection(null)
     ctx.setProtectionDirty(false)
     ctx.setWriteProtection(null)
@@ -896,6 +907,7 @@ export async function buildDocBytes(
   const bytes = await saveDocx(doc.parsed, saveBlocks, {
     pageCount: ctx.pageCount,
     newPictures: Object.keys(plan.newPictures).length > 0 ? plan.newPictures : undefined,
+    trailingSectPrChange: plan.trailingSectPrChange,
     section: ctx.sectionDirty && ctx.section ? ctx.section : undefined,
     sectionStartType: ctx.trailingStartType ?? undefined,
     pgNumType: ctx.pgNumEdit ?? undefined,
@@ -910,6 +922,7 @@ export async function buildDocBytes(
     titlePg: ctx.titlePgDirty ? ctx.titlePg : undefined,
     evenAndOddHeaders: ctx.evenOddHfDirty ? ctx.evenOddHf : undefined,
     mirrorMargins: ctx.mirrorMarginsDirty ? ctx.mirrorMargins : undefined,
+    trackRevisions: ctx.trackRevisionsDirty ? ctx.trackChanges : undefined,
     partXml: Object.keys(partXml).length > 0 ? partXml : undefined,
     partBinary: Object.keys(partBinary).length > 0 ? partBinary : undefined,
     comments: ctx.commentsDirty ? ctx.comments : undefined,
@@ -1337,6 +1350,7 @@ async function saveOnce(
     ctx.setEvenOddHfDirty(false)
     ctx.setMirrorMargins(reparsed.mirrorMargins ?? false)
     ctx.setMirrorMarginsDirty(false)
+    ctx.setTrackRevisionsDirty(false)
     ctx.setComments(reparsed.comments)
     ctx.setCommentsDirty(false)
     ctx.setWatermark(reparsed.watermarkText ?? null)

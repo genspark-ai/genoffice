@@ -328,10 +328,14 @@ function buildNodeInner(
         return buildGroup(pseudo, box, vp, metrics, media)
       }
       // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the
-      // pic's own xfrm) over an opaque white canvas (metafile previews are often transparent)
+      // pic's own xfrm) over an opaque white canvas (metafile previews are often transparent);
+      // the pic's own spPr fill, when authored, is that canvas (PowerPoint paints it behind the preview)
       if (pt.previewPicture) {
         const pic = buildPicture({ ...pt.previewPicture, id: pt.id }, box, vp, media)
-        if (pic?.type === 'picture') pic.bgColor = '#FFFFFF'
+        if (pic?.type === 'picture') {
+          pic.ole = true
+          if (!pic.fill) pic.bgColor = '#FFFFFF'
+        }
         return pic
       }
       if (pt.noChip) return null
@@ -594,7 +598,9 @@ function buildPicture(
   // GDI metafiles play back on an opaque white DC: PowerPoint shows a white panel for
   // an EMF/WMF that never paints its background (PlanS academy banner, measured)
   const isMetafile =
-    typeof dataUrl === 'string' && /^data:image\/(x-)?(emf|wmf|emz|wmz)[;,]/.test(dataUrl)
+    typeof dataUrl === 'string' &&
+    (/^data:image\/(x-)?(emf|wmf|emz|wmz)[;,]/.test(dataUrl) ||
+      /^genoffice-slide-media:.*[?&]mime=image%2F(?:x-)?(emf|wmf)(?:&|$)/i.test(dataUrl))
   const node: PictureRenderNode = {
     id: `r_${el.id}`,
     type: 'picture',
@@ -614,7 +620,10 @@ function buildPicture(
     // clrChange applies to the metafile playback result including that white DC:
     // a clrChange keyed to white recolors the backing (an alpha-0 target drops it —
     // tdf113163's black master bg shows through); other keys leave the DC white
-    ...(metafileDcColor(isMetafile, el.clrChange) ?? {}),
+    // an authored spPr fill is that DC background and is drawn behind the image instead
+    ...(el.fill && el.fill.type !== 'none'
+      ? {}
+      : (metafileDcColor(isMetafile, el.clrChange) ?? {})),
     ...(el.duotone ? { duotone: el.duotone } : {}),
     ...(el.lum ? { lum: el.lum } : {}),
     ...(el.clrChange ? { clrChange: el.clrChange } : {}),

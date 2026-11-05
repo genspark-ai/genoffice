@@ -6,7 +6,7 @@
  */
 import { Editor } from '@tiptap/core'
 import { parseDocx } from '@genoffice/docx-engine'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { DocInlineImage, editorExtensions } from '../src/renderer/editor/extensions'
@@ -36,6 +36,14 @@ const PARA_V =
   '<wp:positionV relativeFrom="paragraph"><wp:posOffset>232695</wp:posOffset></wp:positionV>'
 const PAGE_V = '<wp:positionV relativeFrom="page"><wp:posOffset>23495</wp:posOffset></wp:positionV>'
 
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function render(bodyXml: string) {
   const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
   const editor = new Editor({
@@ -43,6 +51,7 @@ async function render(bodyXml: string) {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   return editor.view.dom as HTMLElement
 }
 
@@ -54,6 +63,7 @@ async function runImageStyle(bodyXml: string): Promise<string> {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   let style = ''
   editor.state.doc.descendants((node) => {
     if (node.type.name !== 'docInlineImage') return true
@@ -84,13 +94,17 @@ describe('page-relative anchor x', () => {
     const style = await runImageStyle(
       `<w:p>${anchor(PAGE_H, PARA_V, '<wp:wrapSquare wrapText="right"/>')}<w:r><w:t>T</w:t></w:r></w:p>`,
     )
-    expect(style).toContain('margin-left:calc(46.7px - var(--doc-margin-left,0px))')
+    expect(style).toContain(
+      'margin-left:calc(clamp(-1 * var(--doc-margin-left,0px), 46.7px - var(--doc-margin-left,0px), 100% + var(--doc-margin-right,0px) - 703.4px))',
+    )
   })
 
   it('a page-relative Y above the body top lifts a side-wrapped run picture there', async () => {
     const style = await runImageStyle(
       `<w:p>${anchor(COLUMN_H, PAGE_V, '<wp:wrapSquare wrapText="bothSides"/>')}<w:r><w:t>T</w:t></w:r></w:p>`,
     )
-    expect(style).toContain('margin-top:min(0px, calc(2.5px - var(--doc-margin-top,0px)))')
+    expect(style).toContain(
+      'margin-top:calc(min(0px, calc(2.5px - var(--doc-margin-top,0px))) + var(--cell-page-y,0px))',
+    )
   })
 })

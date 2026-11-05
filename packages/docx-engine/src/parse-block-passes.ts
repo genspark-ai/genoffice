@@ -1,7 +1,9 @@
 // Whole-document passes run after the block list is built: protected leading
 // breaks, balanced DBCS spacing, image z-order normalization.
 import type { Block, Run, SectionSettings, TableModel, TextboxDisplay } from './types'
+import { charClass, isDoubleByteChar } from './char-class'
 import { EMU_PER_PX } from './parse-xml-text'
+import { stripTextboxes } from './parse-props'
 
 /**
  * Word writes wp:anchor relativeHeight as 251658240 + rank, which decodes to
@@ -22,12 +24,23 @@ import { EMU_PER_PX } from './parse-xml-text'
  */
 const PPR_HEAD_RE = /^<w:p(?:\s[^>]*)?>\s*<w:pPr>((?:(?!<\/w:pPr>)[\s\S])*)<\/w:pPr>/
 const PAGE_BREAK_BEFORE_RE = /<w:pageBreakBefore(?:\s+w:val="(?:1|true|on)")?\s*\/>/
+const PAGE_BR_RE = /<w:br\s[^>]*w:type=(["'])page\1/
 
 function hostParagraphBreaksBefore(xml: string): boolean {
   // w:pPrChange holds the tracked-change *previous* pPr, not the live setting
   const live = xml.replace(/<w:pPrChange[\s>][\s\S]*?<\/w:pPrChange>/g, '')
   const pPr = PPR_HEAD_RE.exec(live)?.[1]
   return pPr !== undefined && PAGE_BREAK_BEFORE_RE.test(pPr)
+}
+
+function leadsWithPageBreak(xml: string): boolean {
+  const body = stripTextboxes(xml)
+  const br = body.search(PAGE_BR_RE)
+  if (br === -1) return false
+  const textBefore = [...body.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+    .map((m) => m[1])
+    .join('')
+  return textBefore.trim() === ''
 }
 
 export function applyProtectedLeadingBreaks(blocks: Block[]): void {
@@ -40,15 +53,26 @@ export function applyProtectedLeadingBreaks(blocks: Block[]): void {
       b.format = { ...b.format, pageBreakBefore: true }
       continue
     }
-    if (b.type !== 'image') continue
+    // a field paragraph (a heading that closes the TOC's fldChar) renders its
+    // result text only: a page break ahead of every visible run turns the page
+    if (b.type === 'passthrough') {
+      if (b.fieldDisplay?.kind === 'text' && !b.fieldDisplay.emptyLine && leadsWithPageBreak(xml))
+        b.format = { ...b.format, pageBreakBefore: true }
+      continue
+    }
     const drawing = xml.search(/<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/)
     const head = xml.slice(0, drawing === -1 ? xml.length : drawing)
-    const br = head.search(/<w:br\s[^>]*w:type=(["'])page\1/)
-    if (br === -1) continue
-    const textBefore = [...head.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
-      .map((m) => m[1])
-      .join('')
-    if (textBefore.trim() === '') b.format = { ...b.format, pageBreakBefore: true }
+    const br = head.search(PAGE_BR_RE)
+    if (br !== -1) {
+      const textBefore = [...head.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+        .map((m) => m[1])
+        .join('')
+      if (textBefore.trim() === '') b.format = { ...b.format, pageBreakBefore: true }
+      continue
+    }
+    // a page-break run after the drawing turns the page below the picture
+    if (drawing !== -1 && !b.fieldDisplay && PAGE_BR_RE.test(stripTextboxes(xml.slice(drawing))))
+      b.fieldDisplay = { kind: 'pageBreak' }
   }
 }
 
@@ -66,20 +90,15 @@ const SINGLE_SPACING_HANGUL_KANA_FONTS = new Set([
   'ｍｓｐゴシック',
 ])
 
-function keepsHangulKanaSingle(font: string | undefined): boolean {
+export function keepsHangulKanaSingle(font: string | undefined): boolean {
   return (
     !!font && SINGLE_SPACING_HANGUL_KANA_FONTS.has(font.toLowerCase().replace(/[\s\u3000]+/g, ''))
   )
 }
 
 function isHangulOrKana(cp: number): boolean {
-  return (
-    (cp >= 0x1100 && cp <= 0x11ff) ||
-    (cp >= 0x3040 && cp <= 0x30ff) ||
-    (cp >= 0x3130 && cp <= 0x318f) ||
-    (cp >= 0x31f0 && cp <= 0x31ff) ||
-    (cp >= 0xac00 && cp <= 0xd7af)
-  )
+  const c = charClass(cp)
+  return c === 'hangul' || c === 'kana'
 }
 
 function doubledGlyphFraction(text: string, hangulKanaSingle: boolean): number {
@@ -87,14 +106,7 @@ function doubledGlyphFraction(text: string, hangulKanaSingle: boolean): number {
   let n = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
-    const hangulKana = isHangulOrKana(cp)
-    const isWide =
-      hangulKana ||
-      (cp >= 0x2e80 && cp <= 0x9fff) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xff00 && cp <= 0xff60) ||
-      cp >= 0x20000
-    if (isWide && !(hangulKana && hangulKanaSingle)) wide++
+    if (isDoubleByteChar(cp) && !(hangulKanaSingle && isHangulOrKana(cp))) wide++
     n++
   }
   return n > 0 ? wide / n : 0
@@ -117,9 +129,11 @@ export function applyBalancedDbcsSpacing(
     if (!runs) continue
     for (const r of runs) {
       if (!r.charSpacingTwips || !r.text) continue
+      // the gate is the face Word draws the hangul with: a paragraph style's
+      // East Asian slot counts as much as a direct w:rFonts
       const frac = doubledGlyphFraction(
         r.text,
-        keepsHangulKanaSingle(r.eastAsiaFont ?? defaultFont),
+        keepsHangulKanaSingle(r.eastAsiaFont ?? r.effective?.fonts.eastAsia ?? defaultFont),
       )
       if (frac > 0) r.charSpacingTwips = Math.round(r.charSpacingTwips * (1 + frac) * 10) / 10
     }

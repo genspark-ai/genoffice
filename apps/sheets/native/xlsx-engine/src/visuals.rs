@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -832,8 +833,9 @@ pub fn read_visual_objects(
     // worksheet dozens of times during the walk below.
     let chart_paths: Vec<String> = archive
         .file_names()
+        .filter_map(Result::ok)
         .filter(|name| is_chart_part(name))
-        .map(ToOwned::to_owned)
+        .map(Cow::into_owned)
         .collect();
     if !chart_paths.is_empty() {
         let references: Vec<String> = chart_paths

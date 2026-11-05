@@ -83,3 +83,21 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   plot with SetClipRect and widen the clip back with SetClipRegion; the region
   never resolved, so titles, legends and axis labels outside the plot area
   vanished
+- META_TEXTOUT / META_EXTTEXTOUT honour TA_UPDATECP like EMR_EXTTEXTOUTW already
+  did: with the flag set the record coords are ignored in favor of the current
+  position, and the position advances by the measured text extent. MathType OLE
+  previews place every run with MOVETO + a zero-coord text record, so all runs
+  stacked at the origin (a MathType equation rendered as its fraction line only,
+  genoffice#2316)
+- META_EXTTEXTOUT honors its Dx array (per-glyph logical advances) and
+  advances the TA_UPDATECP current point by the Dx sum, so MathType previews
+  that interleave runs keep their spacing instead of packing glyphs by the
+  substitute font's widths
+- `symbolTextMap` option: host-supplied Unicode decode for Symbol/Wingdings
+  text (the wrapper passes `decodeSymbolText`), so a MathType "=" or "+" in
+  the Symbol face renders on macOS/Linux instead of the U+F0xx PUA tofu
+- WMF strings decode in the font's code page: LOGFONT charset 128/129/134/136
+  -> Shift_JIS/EUC-KR/GBK/Big5, and with charset 0 the code page is inferred
+  from a non-ASCII facename (CJK MathType previews write GBK bytes for both
+  the face and the text under charset 0); the per-byte Dx array is folded to
+  one advance per decoded glyph

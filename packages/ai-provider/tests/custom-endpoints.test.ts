@@ -121,6 +121,88 @@ describe('select / upsert / remove', () => {
   })
 })
 
+describe('thinking picks ride the endpoint', () => {
+  const withThinking: AiCustomEndpoint = {
+    ...gateway,
+    thinking: { 'gpt-x': 'high', 'gpt-y': 'nonsense', '': 'low' },
+  }
+
+  it('normalizes the pick and mirrors it into the custom slot', () => {
+    const next = resolveCustomEndpoints({
+      ...defaultAiSettings(),
+      customEndpoints: [withThinking],
+      customEndpoint: 'b',
+    })
+    // unknown level and empty model id are dropped, the valid pick survives
+    expect(next.customEndpoints![0]!.thinking).toEqual({ 'gpt-x': 'high' })
+    expect(next.providers.custom.thinking).toEqual({ 'gpt-x': 'high' })
+  })
+
+  it('switching the active endpoint swaps the pick with the slot', () => {
+    const base = resolveCustomEndpoints({
+      ...defaultAiSettings(),
+      customEndpoints: [ollama, withThinking],
+      customEndpoint: 'a',
+    })
+    expect(base.providers.custom.thinking).toBeUndefined()
+    const other = selectCustomEndpoint(base, 'b')
+    expect(other.providers.custom.thinking).toEqual({ 'gpt-x': 'high' })
+  })
+
+  it('seeds the pick from a pre-list custom slot and mirrors it back', () => {
+    const settings = defaultAiSettings()
+    settings.providers.custom = {
+      apiKey: 'k',
+      model: 'm',
+      baseUrl: 'http://h/v1',
+      thinking: { m: 'low' },
+    }
+    const next = resolveCustomEndpoints(settings)
+    expect(next.customEndpoints![0]!.thinking).toEqual({ m: 'low' })
+    expect(next.providers.custom).toEqual({
+      apiKey: 'k',
+      model: 'm',
+      baseUrl: 'http://h/v1',
+      thinking: { m: 'low' },
+    })
+  })
+
+  it('a saved pick survives the settings guard and reaches the request slot', () => {
+    const sanitized = sanitizeAiSettings({
+      provider: 'custom',
+      providers: {},
+      customEndpoint: 'ep-1',
+      customEndpoints: [
+        {
+          id: 'ep-1',
+          name: 'gateway',
+          baseUrl: 'https://gw.example.com/v1',
+          apiKey: 'k',
+          model: 'gpt-x',
+          thinking: { 'gpt-x': 'high', 'gpt-x-bad': 'nonsense' },
+        },
+      ],
+    })!
+    const resolved = resolveCustomEndpoints(sanitized)
+    expect(resolved.customEndpoints![0]!.thinking).toEqual({ 'gpt-x': 'high' })
+    expect(resolved.providers.custom.thinking).toEqual({ 'gpt-x': 'high' })
+  })
+
+  it('upsert keeps the pick on the edited endpoint', () => {
+    const base = resolveCustomEndpoints({
+      ...defaultAiSettings(),
+      customEndpoints: [ollama],
+      customEndpoint: 'a',
+    })
+    const edited = upsertCustomEndpoint(base, {
+      ...ollama,
+      thinking: { llama3: 'medium' },
+    })
+    expect(edited.customEndpoints![0]!.thinking).toEqual({ llama3: 'medium' })
+    expect(edited.providers.custom.thinking).toEqual({ llama3: 'medium' })
+  })
+})
+
 describe('sanitizeAiSettings', () => {
   it('keeps the endpoint list, drops bad base URLs and oversized ids', () => {
     const out = sanitizeAiSettings({

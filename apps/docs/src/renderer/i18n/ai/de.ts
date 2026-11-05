@@ -102,6 +102,11 @@ export const de = {
     'Änderungsnachverfolgung ein: KI-Inhaltsänderungen werden als Überarbeitungen markiert (Einfügungen unterstrichen, Löschungen durchgestrichen); unter „Überprüfen“ annehmen oder ablehnen',
   aiTrackOffTitle:
     'Änderungsnachverfolgung aus: KI-Änderungen werden sofort übernommen (Zurücksetzen über Versionsschnappschüsse weiterhin möglich)',
+  aiRevisionBarTitle: 'Änderungen',
+  aiRevisionCount: '{count} ausstehende Änderungen',
+  aiRevisionRejectAll: 'Alle ablehnen',
+  aiRevisionAcceptAll: 'Alle annehmen',
+  aiRevisionPara: 'Absatz {n}',
   aiTurnLimit:
     '(Limit für Toolaufrufe in dieser Anfrage erreicht; die obige Antwort basiert auf den bisher abgeschlossenen Schritten und ist möglicherweise unvollständig.)',
   aiStopped: '(Gestoppt)',
@@ -202,7 +207,12 @@ export const de = {
   aiMindMapAskPrompt: 'Erzähl mir über „{label}“ in diesem Dokument',
   aiMindMapJump: 'Zur zitierten Stelle springen',
   aiMindMapExport: 'PNG exportieren',
+  aiMindMapExportSvg: 'SVG exportieren',
+  aiMindMapInsert: 'In Dokument einfügen',
   aiMindMapReset: 'Ansicht zurücksetzen',
   aiMindMapExpand: 'Zweig ausklappen',
   aiMindMapCollapse: 'Zweig einklappen',
+  aiMindMapToggleLayout: 'Layout wechseln',
+  aiMindMapLayoutTopDown: 'Auf das Layout von oben nach unten umstellen',
+  aiMindMapLayoutLeftRight: 'Auf das Layout von links nach rechts umstellen',
 } satisfies Record<keyof typeof zh, string>

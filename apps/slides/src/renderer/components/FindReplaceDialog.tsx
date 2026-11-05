@@ -2,10 +2,11 @@
  * Find/replace floating panel (⌘F) — modeled on PowerPoint "Home → Find/Replace".
  * Find works on render-tree text (element-granularity hits, page jump + select); replace goes
  * through the main-process model layer (in-run matching, byte-faithful patches), and on success
- * the whole RenderSlide set refreshes.
+ * changed slides refresh.
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n/locale'
+import type { SlideUpdate } from '../../shared/ipc'
 import type {
   GroupRenderNode,
   RenderNode,
@@ -86,7 +87,7 @@ export function FindReplaceDialog({
 }: {
   slides: RenderSlide[]
   onNavigate: (slideIndex: number, sourceId: string) => void
-  onReplaced: (slides: RenderSlide[]) => void
+  onReplaced: (update: SlideUpdate) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
@@ -128,11 +129,11 @@ export function FindReplaceDialog({
       matchCase,
       ...(all ? {} : { firstOnly: true, slideIndex: cur!.slideIndex, elementId: cur!.sourceId }),
     })
-    if (!r || !r.count || !r.slides) {
+    if (!r || !r.count || !r.update) {
       setStatus(t('paneFrNotFound'))
       return
     }
-    onReplaced(r.slides)
+    onReplaced(r.update)
     setStatus(t('paneFrReplaced', { n: String(r.count) }))
     if (!all) setCursor(cursor - 1) // The current item is consumed; the next findNext lands on the following one
   }

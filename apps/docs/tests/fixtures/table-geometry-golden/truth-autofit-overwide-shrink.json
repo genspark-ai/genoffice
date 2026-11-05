@@ -1,0 +1,19 @@
+{
+  "source": "packages/docx-engine/tests/fixtures/truths/autofit-overwide-shrink/probe.docx",
+  "tables": 5,
+  "hashes": [
+    "697847a34531690a",
+    "c79471acec05dab4",
+    "942cf7005c779bd0",
+    "e3e5d568a14025dc",
+    "697847a34531690a"
+  ],
+  "staticTables": 5,
+  "staticHashes": [
+    "968a33b3d0637807",
+    "2916bbd9da207e37",
+    "f49ef32658eb3651",
+    "ef7515b2293447ab",
+    "968a33b3d0637807"
+  ]
+}

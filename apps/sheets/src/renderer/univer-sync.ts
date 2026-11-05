@@ -187,6 +187,8 @@ import {
   type WrapMeasureCoverage,
 } from './univer-state'
 import type { SheetOutlineState } from './outline-model'
+import { externalLinkOverlayCell } from './external-link-values'
+import type { ExternalLinkCell } from '../shared/desktop-api'
 import { isManualCalculation } from './calc-options'
 import {
   registerCellFontAliases,
@@ -1350,6 +1352,7 @@ export async function loadVisibleRange(
   const generation = bumpViewportGeneration(state, sheetId)
   await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
+  await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
   await extendWindowPastHiddenRows(
     runtime,
     lazyWorkbookRef,
@@ -1471,6 +1474,7 @@ async function extendWindowPastHiddenRows(
     await loadRange(runtime, lazyWorkbookRef, worksheet, window, setMessage)
     if (!current()) return
     await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, window)
+    await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, window)
   }
 }
 
@@ -1951,6 +1955,7 @@ export async function recoverSidecarSession(state: LazyWorkbookState): Promise<b
     state.loadedRanges.clear()
     state.loadingKeys.clear()
     state.frozenStripKeys.clear()
+    state.frozenRowStripKeys.clear()
     return true
   })()
   try {
@@ -2930,6 +2935,97 @@ async function loadFrozenColumnStrip(
     trackPreIndexMeasuredRows(`file-${state.file.sha256}:${sheetId}`, stripQualifying)
   } catch {
     state.frozenStripKeys.delete(sheetId)
+  }
+}
+
+/// Vertical twin of loadFrozenColumnStrip: once the viewport scrolls below
+/// the frozen rows, their resident cells survive (the window patcher never
+/// evicts them) but two gaps stay blank without a separate fetch — columns the
+/// viewport brings in that no earlier window installed for those rows, and a
+/// freeze set in-session after the top of the sheet was already evicted
+/// (gendesk #680).
+async function loadFrozenRowStrip(
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+  worksheet: UniverWorksheet,
+  sheet: WorkbookFile['sheets'][number],
+  viewportRange: IRange,
+): Promise<void> {
+  const state = lazyWorkbookRef.current
+  const frozenRows = sheet.freeze?.frozenRows ?? 0
+  if (!state || frozenRows === 0 || frozenRows > 8) return
+  if (viewportRange.startRow < frozenRows) return
+  const sheetId = worksheet.getSheetId()
+  const stripRange: IRange = {
+    startRow: 0,
+    endRow: frozenRows - 1,
+    startColumn: viewportRange.startColumn,
+    endColumn: viewportRange.endColumn,
+  }
+  const stripKey = `${sheetId}:${stripRange.startColumn}:${stripRange.endColumn}`
+  if (state.frozenRowStripKeys.get(sheetId) === stripKey) return
+  state.frozenRowStripKeys.set(sheetId, stripKey)
+  try {
+    const mapped = await readSheetRangeMapped(state, sheetId, stripRange, sheet)
+    if (lazyWorkbookRef.current !== state || !mapped) {
+      state.frozenRowStripKeys.delete(sheetId)
+      return
+    }
+    const availableEndRow =
+      mapped.indexedThroughScreen === null
+        ? null
+        : Math.min(mapped.indexedThroughScreen, stripRange.endRow)
+    if (availableEndRow === null || availableEndRow < stripRange.startRow) {
+      // Not indexed that far yet: without the rollback this strip would be
+      // marked done and the frozen rows would stay blank forever.
+      state.frozenRowStripKeys.delete(sheetId)
+      return
+    }
+    if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
+    const stripPatchRange = { ...stripRange, endRow: availableEndRow }
+    recordRowStyleKeys(state, sheetId, mapped.screen.rows)
+    recordHiddenFileRows(state, sheetId, mapped.screen.rows, stripPatchRange)
+    patchWorksheetRange(
+      worksheet,
+      undefined,
+      stripPatchRange,
+      state.formulaMode
+        ? degradeCostlyFormulas(state, sheet.name, mapped.screen.cells)
+        : mapped.screen.cells,
+      state.file.styles,
+      mapped.screen.hyperlinks,
+      sheet.tables,
+      sheet.pivotTables,
+      sheet.freeze,
+      state.formulaMode,
+      state.editJournal,
+      state.closure.pinned.get(sheetId),
+      state.recalc.overlay.get(sheetId),
+      undefined,
+      sheetRowColStyleKeys(state, sheetId),
+      inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheet.columnWidths),
+      hiddenRowsInfo(state, sheetId),
+      false,
+    )
+    const stripQualifying = wrapAutoFitRows(
+      mapped.screen.cells,
+      state.file.styles,
+      mapped.screen.rows,
+      sheet.columnWidths,
+      sheet.defaultRowHeightFixed,
+      resolveDefaultRowHeightPt(state.file, sheet),
+      stripPatchRange,
+      mapped.screen.merges,
+    )
+    measureWrapRowsFromCells(worksheet, stripQualifying, {
+      cells: mapped.screen.cells,
+      styles: state.file.styles,
+      merges: mapped.screen.merges,
+      inheritedWrap: inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheet.columnWidths),
+      defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+    })
+    trackPreIndexMeasuredRows(`file-${state.file.sha256}:${sheetId}`, stripQualifying)
+  } catch {
+    state.frozenRowStripKeys.delete(sheetId)
   }
 }
 
@@ -4131,16 +4227,20 @@ function patchWorksheetRange(
   rowColStyleKeys?: ReadonlySet<string>,
   inheritedWrap?: (row: number, column: number) => boolean,
   hiddenRows?: HiddenRowsInfo,
+  isViewportWindow = true,
 ): void {
   noteFormulaStreamChunk()
   // Windowed CF formula registrations follow the loaded row window; report
   // it before the patch so rules installed right after see it. Best-effort:
   // without a sheet id (unit-test worksheet doubles) windowing simply stays
-  // off and CF registrations keep their full folded ranges.
+  // off and CF registrations keep their full folded ranges. A frozen header
+  // band is not the window: reporting it would re-register windowed rules
+  // against the header rows instead of the visible ones.
   const streamSheetId = (worksheet as { getSheet?: () => { getSheetId?: () => string } })
     .getSheet?.()
     ?.getSheetId?.()
-  if (streamSheetId) notifyCfStreamWindow(streamSheetId, range.startRow, range.endRow)
+  if (streamSheetId && isViewportWindow)
+    notifyCfStreamWindow(streamSheetId, range.startRow, range.endRow)
   journalSuppression.active = true
   // Installing file content must keep every row at its stored height — Excel
   // does not re-measure on open — while leaving rows in auto mode for edits.
@@ -8208,4 +8308,59 @@ export function lazyCellEditable(
     column >= loaded.startColumn &&
     column <= loaded.endColumn
   )
+}
+
+/**
+ * Applies an external-links update (genoffice#2109): installs the freshly
+ * computed values into the recalc overlay so the grid shows them and the
+ * next save writes them as the formulas' cached `<v>` — the stored `[n]`
+ * formula text is untouched. Each cell's `kind` keeps its type: a boolean
+ * stays a boolean and an error stays an error, instead of both becoming the
+ * text of their display spelling. A cell whose report entry has no kind (the
+ * file never cached a value for it) keeps whatever the file has.
+ */
+export function applyExternalLinkValues(
+  state: LazyWorkbookState,
+  runtime: UniverRuntime,
+  report: { cells: readonly ExternalLinkCell[] },
+): { applied: number; sheets: number } {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return { applied: 0, sheets: 0 }
+  const idByName = new Map(
+    workbook.getSheets().map((sheet) => [sheet.getSheetName().toLowerCase(), sheet.getSheetId()]),
+  )
+  const bySheet = new Map<string, Map<string, PinnedClosureCell>>()
+  let applied = 0
+  for (const cell of report.cells) {
+    const overlayValue = externalLinkOverlayCell(cell)
+    if (overlayValue === null) continue
+    const sheetId = idByName.get(cell.sheet.toLowerCase())
+    if (sheetId === undefined) continue
+    const overlay = bySheet.get(sheetId) ?? new Map<string, PinnedClosureCell>()
+    overlay.set(`${cell.row}:${cell.column}`, overlayValue)
+    bySheet.set(sheetId, overlay)
+    applied += 1
+  }
+  // The values go to a map of their own: they are a fresh sidecar
+  // computation, so an incomplete engine run must not release them (the
+  // incompleteRuns flag only qualifies engine-derived values), and a save
+  // counts them as pending work of its own. A report is complete for the
+  // workbook, so it replaces the previous external values.
+  state.recalc.externalOverlay.clear()
+  for (const [sheetId, overlay] of bySheet) {
+    state.recalc.externalOverlay.set(sheetId, overlay)
+    const loaded = state.loadedRanges.get(sheetId)
+    const worksheet = workbook.getSheets().find((sheet) => sheet.getSheetId() === sheetId)
+    if (worksheet && loaded && overlay.size > 0) {
+      journalSuppression.active = true
+      loadAutoHeightSuppression.active = true
+      try {
+        applyPinnedOverlay(worksheet, overlay, undefined, loaded)
+      } finally {
+        journalSuppression.active = false
+        loadAutoHeightSuppression.active = false
+      }
+    }
+  }
+  return { applied, sheets: bySheet.size }
 }

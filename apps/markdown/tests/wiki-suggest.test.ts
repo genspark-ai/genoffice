@@ -89,7 +89,11 @@ describe('completion', () => {
     await new Promise((r) => setTimeout(r, 0))
     const state = states.at(-1)
     expect(state).not.toBeNull()
-    expect(state!.items.map((n) => n.name)).toEqual(['Alpha', 'Beta', 'Alpine'])
+    expect(state!.items.map((n) => (n.kind === 'note' ? n.entry.name : ''))).toEqual([
+      'Alpha',
+      'Beta',
+      'Alpine',
+    ])
   })
 
   it('a query the user closed by hand is no longer a query', () => {
@@ -121,7 +125,7 @@ describe('completion', () => {
     const { editor, states } = mount()
     editor.commands.insertContent('See [[')
     await new Promise((r) => setTimeout(r, 0))
-    states.at(-1)!.command(NOTES[0]!)
+    states.at(-1)!.command({ kind: 'note', entry: NOTES[0]! })
     expect(editor.state.doc.textContent).toBe('See [[Alpha]]')
     let marked = false
     editor.state.doc.descendants((n) => {
@@ -137,7 +141,7 @@ describe('completion', () => {
     const { editor, states } = mount()
     editor.commands.insertContent('[[Alp|My Title')
     await new Promise((r) => setTimeout(r, 0))
-    states.at(-1)!.command(NOTES[2]!)
+    states.at(-1)!.command({ kind: 'note', entry: NOTES[2]! })
     expect(editor.state.doc.textContent).toBe('[[Alpine|My Title]]')
   })
 
@@ -147,7 +151,7 @@ describe('completion', () => {
     const { editor, states } = mount()
     editor.commands.insertContent('Look ![[')
     await new Promise((r) => setTimeout(r, 0))
-    states.at(-1)!.command(NOTES[1]!)
+    states.at(-1)!.command({ kind: 'note', entry: NOTES[1]! })
     // the typed bang belongs to the embed, and completionFor adds its own — the
     // one in the text must go, or every completed embed saves as `!![[Beta]]`
     expect(editor.getMarkdown()).toBe('Look ![[Beta]]')

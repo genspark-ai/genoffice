@@ -5,6 +5,7 @@ import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/table
 import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { shapeWrapOf } from '../editor/floating-z-order'
+import { selectedBoxIndex } from '../editor/selected-box'
 import { tableCellsSelection } from '../editor/table-ops'
 import { effectiveBidi, selectionHasBidi } from '../editor/direction'
 import {
@@ -36,6 +37,8 @@ export interface RibbonFormatState {
   imageSelected: boolean
   /** the selected picture is an inline run picture (table / header cell): Size only */
   inlinePicture: boolean
+  /** the selected picture is a photo box of a multi-drawing paragraph: Arrange only */
+  pictureBox: boolean
   imageDataUrl: string | null
   imageWrap: string | null
   imageAlign: string | null
@@ -49,6 +52,8 @@ export interface RibbonFormatState {
   textboxSelected: boolean
   shapeFill: string | null
   shapeBorderColor: string | null
+  /** outline width of the selected shape in CSS px (a:ln w; null = Word's own default) */
+  shapeBorderWidthPx: number | null
   shapePrst: string | null
   /**
    * What the selected shape's own text agrees on, for the Shape Format Text
@@ -113,6 +118,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   canSplitTable: false,
   imageSelected: false,
   inlinePicture: false,
+  pictureBox: false,
   imageDataUrl: null,
   imageWrap: null,
   imageAlign: null,
@@ -125,6 +131,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   textboxSelected: false,
   shapeFill: null,
   shapeBorderColor: null,
+  shapeBorderWidthPx: null,
   shapePrst: null,
   shapeHasText: false,
   shapeTextBold: false,
@@ -274,7 +281,13 @@ export function computeFormatState(
 
   const protAttrs = editor.getAttributes('docProtected')
   const inlinePic = inlinePictureOf(ed)
-  const imageSelected = !!inlinePic || (protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl)
+  const boxes = Array.isArray(protAttrs.textboxes)
+    ? (protAttrs.textboxes as TextboxDisplay[])
+    : null
+  const box = boxes && boxes.length > 0 ? boxes[selectedBoxIndex(editor.state)] : undefined
+  const pictureBox = !!box?.picture
+  const imageSelected =
+    !!inlinePic || pictureBox || (protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl)
 
   const textAttrs = ed.getAttributes('docTextStyle')
   const fonts = selectedFonts(ed, styles, docDefaults)
@@ -309,37 +322,32 @@ export function computeFormatState(
     canSplitTable,
     imageSelected,
     inlinePicture: !!inlinePic,
+    pictureBox,
     imageDataUrl: inlinePic
       ? str(inlinePic.dataUrl)
-      : imageSelected
-        ? str(protAttrs.imageDataUrl)
-        : null,
-    imageWrap:
-      Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0
-        ? shapeWrapOf(protAttrs.textboxes[0] as TextboxDisplay)
-        : str(protAttrs.imageWrap),
+      : pictureBox
+        ? str(box?.fillImageDataUrl)
+        : imageSelected
+          ? str(protAttrs.imageDataUrl)
+          : null,
+    imageWrap: inlinePic ? str(inlinePic.wrap) : box ? shapeWrapOf(box) : str(protAttrs.imageWrap),
     imageAlign: str(protAttrs.imageAlign),
-    imageWidthPx: num(inlinePic ? inlinePic.widthPx : protAttrs.imageWidthPx),
-    imageHeightPx: num(inlinePic ? inlinePic.heightPx : protAttrs.imageHeightPx),
+    imageWidthPx: num(
+      inlinePic ? inlinePic.widthPx : pictureBox ? box?.widthPx : protAttrs.imageWidthPx,
+    ),
+    imageHeightPx: num(
+      inlinePic ? inlinePic.heightPx : pictureBox ? box?.heightPx : protAttrs.imageHeightPx,
+    ),
     imageFlipH: !!protAttrs.imageFlipH,
     imageFlipV: !!protAttrs.imageFlipV,
     imageHasDocxIndex: protAttrs.docxIndex != null,
     imageKey: imageSelected ? ed.state.selection.from : null,
-    textboxSelected: Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0,
-    shapeFill: Array.isArray(protAttrs.textboxes)
-      ? str((protAttrs.textboxes[0] as { fill?: string } | undefined)?.fill)
-      : null,
-    shapeBorderColor: Array.isArray(protAttrs.textboxes)
-      ? str((protAttrs.textboxes[0] as { borderColor?: string } | undefined)?.borderColor)
-      : null,
-    shapePrst: Array.isArray(protAttrs.textboxes)
-      ? str((protAttrs.textboxes[0] as { prst?: string } | undefined)?.prst)
-      : null,
-    ...shapeTextStateOf(
-      Array.isArray(protAttrs.textboxes)
-        ? (protAttrs.textboxes[0] as TextboxDisplay | undefined)
-        : undefined,
-    ),
+    textboxSelected: !!box && !pictureBox,
+    shapeFill: str(box?.fill),
+    shapeBorderColor: str(box?.borderColor),
+    shapeBorderWidthPx: num(box?.borderWidthPx),
+    shapePrst: str(box?.prst),
+    ...shapeTextStateOf(box),
     cellKey,
     cellHeightTwips,
     cellWidthPx,
@@ -382,10 +390,10 @@ export function computeFormatState(
   }
 }
 
-/** attrs of the inline run picture under a node selection (rules and floating pictures excluded) */
+/** attrs of the run picture (in line or floating) under a node selection (rules excluded) */
 function inlinePictureOf(ed: Editor): Record<string, unknown> | null {
   const sel = ed.state.selection
   if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
   const attrs = sel.node.attrs
-  return attrs.rule || attrs.wrap || !attrs.dataUrl ? null : attrs
+  return attrs.rule || !attrs.dataUrl ? null : attrs
 }

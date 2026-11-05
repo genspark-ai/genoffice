@@ -2,9 +2,10 @@ import { test, expect } from '@playwright/test'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 /**
- * Home > Styles follows Word's Quick Style gallery: a new document lists Word's
- * 16 built-in quick styles in uiPriority order, Heading 3 appears once used,
- * cards apply paragraph / character styles by id, and the Styles Pane button
+ * Home > Styles follows Word for Mac: the Styles button drops down the Quick
+ * Style gallery (a new document lists Word's 16 built-in quick styles in
+ * uiPriority order, Heading 3 appears once used, cards apply paragraph /
+ * character styles by id and close the menu), and the Styles Pane button
  * opens a searchable pane that applies too.
  */
 
@@ -54,18 +55,32 @@ test.describe('docs quick style gallery', () => {
         editorPage.evaluate(() =>
           (window as unknown as AidocsWindow).__aidocs!.editor!.getAttributes('docParagraph'),
         )
-      const gallery = editorPage.locator('.style-gallery')
-      await expect(gallery.locator('.style-card-label')).toHaveText(WORD_GALLERY)
+      const gallery = editorPage.locator('.style-gallery-menu')
+      const openGallery = async () => {
+        if ((await gallery.count()) === 0) await editorPage.locator('.rb-styles-gallery').click()
+        return gallery
+      }
+      await expect((await openGallery()).locator('.style-card-label')).toHaveText(WORD_GALLERY)
+      await editorPage.locator('.rb-styles-gallery').click()
+      await expect(gallery).toHaveCount(0)
 
       await editorPage.locator('.doc-page').click()
       await editorPage.keyboard.type('Gallery text', { delay: 10 })
-      await gallery.locator('.style-card[data-style-id="Title"]').click()
+      await (await openGallery()).locator('.style-card[data-style-id="Title"]').click()
+      // applying a card closes the menu
+      await expect(gallery).toHaveCount(0)
       expect((await paraAttrs()).styleId).toBe('Title')
-      await expect(gallery.locator('.style-card[data-style-id="Title"]')).toHaveClass(/active/)
+      await expect((await openGallery()).locator('.style-card[data-style-id="Title"]')).toHaveClass(
+        /active/,
+      )
+      await editorPage.locator('.rb-styles-gallery').click()
 
       // Heading 3 is semiHidden until used: the Opt+Cmd+3 shortcut brings it in after Heading 2
       await editorPage.keyboard.press('Alt+ControlOrMeta+Digit3')
-      await expect(gallery.locator('.style-card-label').nth(4)).toHaveText('Heading 3')
+      await expect((await openGallery()).locator('.style-card-label').nth(4)).toHaveText(
+        'Heading 3',
+      )
+      await editorPage.locator('.rb-styles-gallery').click()
       expect(
         await editorPage.evaluate(() =>
           (window as unknown as AidocsWindow).__aidocs!.editor!.isActive('docHeading', {
@@ -75,7 +90,7 @@ test.describe('docs quick style gallery', () => {
       ).toBe(true)
 
       await editorPage.keyboard.press('ControlOrMeta+a')
-      await gallery.locator('.style-card[data-style-id="Strong"]').click()
+      await (await openGallery()).locator('.style-card[data-style-id="Strong"]').click()
       expect(
         (
           await editorPage.evaluate(() =>
@@ -87,7 +102,14 @@ test.describe('docs quick style gallery', () => {
       await editorPage.locator('.rb-styles-pane').click()
       const pane = editorPage.locator('.styles-pane')
       await expect(pane).toBeVisible()
+      // Word for Mac: the current style on top, Clear Formatting heads the list
+      await expect(pane.locator('.styles-pane-current')).toContainText('Strong')
+      await expect(pane.locator('.styles-pane-clear')).toBeVisible()
       await expect(pane.locator('.style-pane-card')).toHaveCount(17)
+      // Select All: every run carrying the current (character) style
+      await editorPage.keyboard.press('ArrowRight')
+      await pane.locator('.styles-pane-actions button', { hasText: 'Select All' }).click()
+      await expect(editorPage.locator('.status-bar')).toContainText(/1 instance/)
       await pane.locator('.styles-pane-search').fill('quo')
       await expect(pane.locator('.style-pane-card')).toHaveCount(2)
       await pane.locator('.style-pane-card[data-style-id="Quote"]').click()

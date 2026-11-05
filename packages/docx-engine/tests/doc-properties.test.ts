@@ -1,6 +1,12 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { parseDocx, saveDocx, type SaveBlock } from '../src/index'
+import {
+  parseDocx,
+  parsePropertyChanges,
+  saveDocx,
+  type PropertyChanges,
+  type SaveBlock,
+} from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const CORE_XML =
@@ -98,11 +104,19 @@ describe('document properties', () => {
       Final: 'true',
       Filed: '2026-01-02T00:00:00Z',
     })
+    // additive type map: the vt element each custom value is stored as
+    expect(doc.properties.customTypes).toEqual({
+      MatterId: 'lpwstr',
+      Reviewer: 'lpwstr',
+      Pages: 'i4',
+      Final: 'bool',
+      Filed: 'filetime',
+    })
   })
 
   it('a document without docProps has no properties but still opens', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
-    expect(doc.properties).toEqual({ core: {}, app: {}, custom: {} })
+    expect(doc.properties).toEqual({ core: {}, app: {}, custom: {}, customTypes: {} })
   })
 
   it('sets a property and leaves every other one byte-identical', async () => {
@@ -213,5 +227,98 @@ describe('document properties', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
     const out = await saveDocx(doc, originalOrder(doc), { watermark: '\u8349\u7a3f' })
     expect((await JSZip.loadAsync(out)).file('docProps/core.xml')).toBeNull()
+  })
+})
+
+describe('typed custom properties', () => {
+  const saveWith = async (properties: PropertyChanges): Promise<string> => {
+    const doc = await parseDocx(await docxWithProps())
+    const out = await saveDocx(doc, originalOrder(doc), { properties })
+    return partOf(out, 'docProps/custom.xml')
+  }
+
+  it('keeps the vt type of an existing property for a compatible value', async () => {
+    const doc = await parseDocx(await docxWithProps())
+    const out = await saveDocx(doc, originalOrder(doc), {
+      properties: {
+        custom: { Pages: 7, Final: false, Filed: '2026-10-01T00:00:00Z' },
+      },
+    })
+    const custom = await partOf(out, 'docProps/custom.xml')
+    expect(custom).toContain('<vt:i4>7</vt:i4>')
+    expect(custom).toContain('<vt:bool>false</vt:bool>')
+    expect(custom).toContain('<vt:filetime>2026-10-01T00:00:00Z</vt:filetime>')
+    const reparsed = await parseDocx(out)
+    expect(reparsed.properties.customTypes).toMatchObject({
+      Pages: 'i4',
+      Final: 'bool',
+      Filed: 'filetime',
+    })
+    expect(reparsed.properties.custom).toMatchObject({
+      Pages: '7',
+      Final: 'false',
+      Filed: '2026-10-01T00:00:00Z',
+    })
+  })
+
+  it('accepts numeric text for an existing integer property', async () => {
+    const custom = await saveWith({ custom: { Pages: '7' } })
+    expect(custom).toContain('<vt:i4>7</vt:i4>')
+    expect(custom).not.toContain('<vt:lpwstr>7</vt:lpwstr>')
+  })
+
+  it('falls back to lpwstr when the value does not fit the stored type', async () => {
+    const doc = await parseDocx(await docxWithProps())
+    const out = await saveDocx(doc, originalOrder(doc), {
+      properties: { custom: { Pages: 'seven', Final: 'yes', Filed: 'later' } },
+    })
+    const custom = await partOf(out, 'docProps/custom.xml')
+    expect(custom).toContain('<vt:lpwstr>seven</vt:lpwstr>')
+    expect(custom).toContain('<vt:lpwstr>yes</vt:lpwstr>')
+    expect(custom).toContain('<vt:lpwstr>later</vt:lpwstr>')
+    expect((await parseDocx(out)).properties.customTypes).toMatchObject({
+      Pages: 'lpwstr',
+      Final: 'lpwstr',
+      Filed: 'lpwstr',
+    })
+  })
+
+  it('types a new custom property from its value', async () => {
+    const custom = await saveWith({
+      custom: { Count: 42, Approx: 1.5, Big: 5000000000, Approved: true, Label: 'x' },
+    })
+    expect(custom).toContain('<vt:i4>42</vt:i4>')
+    expect(custom).toContain('<vt:r8>1.5</vt:r8>')
+    expect(custom).toContain('<vt:i8>5000000000</vt:i8>')
+    expect(custom).toContain('<vt:bool>true</vt:bool>')
+    expect(custom).toContain('<vt:lpwstr>x</vt:lpwstr>')
+  })
+
+  it('leaves untouched typed properties byte-identical', async () => {
+    const before = await partOf(await docxWithProps(), 'docProps/custom.xml')
+    const after = await saveWith({ custom: { MatterId: 'M-2026-999' } })
+    for (const name of ['Pages', 'Final', 'Filed']) {
+      const block = (xml: string): string =>
+        new RegExp(`<property\\b[^>]*name="${name}"[^>]*>[\\s\\S]*?</property>`).exec(xml)?.[0] ??
+        ''
+      expect(block(after)).toBe(block(before))
+      expect(block(after)).not.toBe('')
+    }
+  })
+
+  it('removes a typed property with null', async () => {
+    const custom = await saveWith({ custom: { Pages: null } })
+    expect(custom).not.toContain('name="Pages"')
+    expect(custom).toContain('name="Final"')
+  })
+
+  it('parses typed values in the op and rejects non-scalar ones', () => {
+    expect(parsePropertyChanges({ custom: { Pages: 7, Approved: false } })).toEqual({
+      custom: { Pages: 7, Approved: false },
+    })
+    expect(() => parsePropertyChanges({ custom: { X: { nested: true } } })).toThrow(
+      'must be a string, number, boolean or null',
+    )
+    expect(() => parsePropertyChanges({ core: { title: 7 } })).toThrow('must be a string or null')
   })
 })

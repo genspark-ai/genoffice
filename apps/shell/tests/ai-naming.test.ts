@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { buildNamingInstruction, excerptForNaming, sanitizeFileStem } from '../src/main/ai-naming'
+import {
+  buildNamingInstruction,
+  excerptForNaming,
+  NAMING_MAX_TOKENS,
+  sanitizeFileStem,
+} from '../src/main/ai-naming'
 
 describe('sanitizeFileStem', () => {
   it('keeps a plain name unchanged', () => {
-    expect(sanitizeFileStem('季度营收总结')).toBe('季度营收总结')
+    expect(sanitizeFileStem('\u5b63\u5ea6\u8425\u6536\u603b\u7ed3')).toBe(
+      '\u5b63\u5ea6\u8425\u6536\u603b\u7ed3',
+    )
     expect(sanitizeFileStem('Q3 Revenue Review')).toBe('Q3 Revenue Review')
   })
 
   it('drops a path, keeping the last segment', () => {
-    expect(sanitizeFileStem('reports/2026/Q3 营收')).toBe('Q3 营收')
+    expect(sanitizeFileStem('reports/2026/Q3 \u8425\u6536')).toBe('Q3 \u8425\u6536')
     expect(sanitizeFileStem('C:\\Users\\me\\notes')).toBe('notes')
   })
 
@@ -94,9 +101,9 @@ describe('sanitizeFileStem', () => {
 
 describe('buildNamingInstruction', () => {
   it('asks for a bare name and names the language', () => {
-    const out = buildNamingInstruction('some text', '简体中文')
+    const out = buildNamingInstruction('some text', '\u7b80\u4f53\u4e2d\u6587')
     expect(out).toContain('file name')
-    expect(out).toContain('简体中文')
+    expect(out).toContain('\u7b80\u4f53\u4e2d\u6587')
     expect(out).toContain('some text')
     expect(out).toContain('no extension')
   })
@@ -115,5 +122,20 @@ describe('excerptForNaming', () => {
 
   it('collapses runs of blank lines so the budget goes to content', () => {
     expect(excerptForNaming('a\n\n\n\n\nb')).toBe('a\n\nb')
+  })
+})
+
+describe('NAMING_MAX_TOKENS', () => {
+  it('leaves room for a reasoning preamble before the name', () => {
+    // A reasoning model spends the output budget thinking before it answers:
+    // with 64 tokens, deepseek-flash hit finish_reason "length" with every
+    // token in reasoning_content and no content at all (measured 2026-10-31;
+    // the same prompt thought for ~130 tokens with a 200 budget, then named
+    // the document). A starved naming call answers empty, and the callers
+    // keep the document's own name — the button then did nothing. The floor
+    // sits far above the measured thinking length, with margin for chattier
+    // models; a non-thinking model is unaffected because the budget is a
+    // ceiling, not a target.
+    expect(NAMING_MAX_TOKENS).toBeGreaterThanOrEqual(1024)
   })
 })

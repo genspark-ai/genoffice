@@ -36,6 +36,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
+import { setUiLang } from '@genoffice/i18n'
 import {
   importSkillDir,
   importSkillMd,
@@ -449,6 +450,30 @@ describe('recommendedSkills / installRecommendedSkill', () => {
     // listing copies nothing and leaves the user's edited copy alone
     expect((await usableSkills(save)).map((s) => s.name)).toEqual(['old', 'same'])
     expect(readSkillBody(join(save, 'skills', 'old', 'SKILL.md'))).toBe('user edited\n')
+    cleanup()
+  })
+
+  it('overrides the frontmatter description with the UI language locale, falling back to English', async () => {
+    const { root, save, cleanup } = scaffold()
+    const rec = join(root, 'recommended')
+    mkdirSync(join(rec, 'fresh'), { recursive: true })
+    writeFileSync(join(rec, 'fresh', 'SKILL.md'), SKILL('fresh', 'English description'))
+    mkdirSync(join(rec, 'locales'), { recursive: true })
+    writeFileSync(
+      join(rec, 'locales', 'zh.json'),
+      JSON.stringify({ fresh: '\u4e2d\u6587\u7b80\u4ecb', other: 'skill absent from the catalog' }),
+    )
+    // the locales dir itself must not surface as a skill
+    setUiLang('zh')
+    let list = await recommendedSkills(rec, save)
+    expect(list.map((s) => s.name)).toEqual(['fresh'])
+    expect(list[0]?.description).toBe('\u4e2d\u6587\u7b80\u4ecb')
+
+    // a language with no locale file keeps the frontmatter's English
+    setUiLang('ja')
+    list = await recommendedSkills(rec, save)
+    expect(list[0]?.description).toBe('English description')
+    setUiLang('zh')
     cleanup()
   })
 

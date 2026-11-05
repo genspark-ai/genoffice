@@ -1,5 +1,5 @@
 import type { AiPanelPrefs } from '@genoffice/ui'
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 
 import type {
   AiChatResponse,
@@ -40,6 +40,7 @@ import type {
   WorkbookRecalcRequest,
   WorkbookRecalcResult,
   WorkbookRedactionsResult,
+  WorkbookQueriesResult,
   WorkbookRichRun,
   WorkbookSaveRequest,
   WorkbookSaveResult,
@@ -48,6 +49,17 @@ import type {
   ImageSearchResponse,
   GenerateImageResult,
   UserSkillEntry,
+  WorkbookConnection,
+  WorkbookConnectionsRequest,
+  WorkbookConnectionsResult,
+  WorkbookRefreshRequest,
+  WorkbookRefreshResult,
+  ExternalLinkCell,
+  ExternalLinkCellKind,
+  ExternalLinkListStatus,
+  ExternalLinksResult,
+  ExternalLinksUpdateResult,
+  ExternalLinkStatus,
 } from '../shared/desktop-api'
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -216,6 +228,19 @@ const desktopApi: DesktopApi = {
     )
     return parseFindCellsResult(result)
   },
+  async listWorkbookConnections(request) {
+    assertWorkbookSessionRequest(request)
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listWorkbookConnections, request)
+    return parseWorkbookConnectionsResult(result)
+  },
+  async refreshWorkbookConnection(request) {
+    assertWorkbookRefreshRequest(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.refreshWorkbookConnection,
+      request,
+    )
+    return parseWorkbookRefreshResult(result)
+  },
   async readWorkbookRowOutline(request) {
     const validatedRequest = parseFormulaCellsRequest(request)
     const result: unknown = await ipcRenderer.invoke(
@@ -228,6 +253,26 @@ const desktopApi: DesktopApi = {
     const validatedRequest = parseRecalcRequest(request)
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.recalcWorkbook, validatedRequest)
     return parseRecalcResult(result)
+  },
+  async listExternalLinks(request) {
+    const validatedRequest = parseExternalLinksRequest(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.listExternalLinks,
+      validatedRequest,
+    )
+    return parseExternalLinksResult(result)
+  },
+  async updateExternalLinks(request) {
+    const validatedRequest = parseExternalLinksRequest(request)
+    const result: unknown = await ipcRenderer.invoke(
+      IPC_CHANNELS.updateExternalLinks,
+      validatedRequest,
+    )
+    return parseExternalLinksUpdateResult(result)
+  },
+  revealLinkSource(request) {
+    const validatedRequest = parseExternalLinkRevealRequest(request)
+    ipcRenderer.send(IPC_CHANNELS.revealLinkSource, validatedRequest)
   },
   async readWorkbookMedia(request) {
     const validatedRequest = parseMediaRequest(request)
@@ -305,6 +350,24 @@ const desktopApi: DesktopApi = {
       sessionId: request.sessionId,
     })
     return parseWorkbookRedactionsResult(result)
+  },
+  async readWorkbookQueries(request) {
+    if (!isRecord(request) || !isUuid(request.sessionId)) {
+      throw new Error('Invalid queries request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readWorkbookQueries, {
+      sessionId: request.sessionId,
+    })
+    // structural check; the main process zod-validates the full shape
+    if (!Array.isArray(result) || result.length > 1_000) {
+      throw new Error('Invalid queries response.')
+    }
+    for (const query of result) {
+      if (!isRecord(query) || typeof query.name !== 'string' || typeof query.kind !== 'string') {
+        throw new Error('Invalid queries response.')
+      }
+    }
+    return result as WorkbookQueriesResult
   },
   async saveWorkbookEdits(request) {
     const validatedRequest = parseSaveRequest(request)
@@ -813,7 +876,40 @@ function parseAttachmentAddResult(input: unknown): AttachmentAddResult {
   return { accepted, rejected: input.rejected as string[] }
 }
 
+/**
+ * Model file naming: the transport half of `suggestFileName`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The one `ai:` channel is
+ * registered app-wide by the shell rather than by this app, the same arrangement
+ * the `project:*` bridge below already depends on.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: { content: string }) =>
+    ipcRenderer.invoke('ai:suggest-file-name', input),
+}
+
 contextBridge.exposeInMainWorld('desktopApi', desktopApi)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
+
+// The frame's own spell engine (Chromium Hunspell / the OS dictionary): the
+// same checker docs' squiggles run on, batch-driven over sheet cell texts so
+// nothing leaves the machine for the F7 spelling dialog. webFrame consults
+// it only while the webContents' spellcheck is on — the Review ▸ Proofing
+// preference gates the dialog, and comment-box squiggles share the switch.
+contextBridge.exposeInMainWorld('nativeSpell', {
+  isWordMisspelled: (word: unknown): boolean =>
+    typeof word === 'string' ? webFrame.isWordMisspelled(word) : false,
+  getWordSuggestions: (word: unknown): string[] =>
+    typeof word === 'string' ? webFrame.getWordSuggestions(word) : [],
+})
 
 const projectApi: ProjectApi = {
   resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),
@@ -1241,6 +1337,77 @@ function parseCellRecord(cell: unknown): WorkbookRangeResult['cells'][number] {
   }
 }
 
+function assertWorkbookSessionRequest(input: unknown): asserts input is WorkbookConnectionsRequest {
+  if (!isRecord(input) || !isUuid(input.sessionId)) {
+    throw new Error('Invalid workbook-connections request.')
+  }
+}
+
+function assertWorkbookRefreshRequest(input: unknown): asserts input is WorkbookRefreshRequest {
+  // The URL never crosses the IPC boundary: main resolves it from the
+  // workbook's connection part, so this is a connection id, not a fetch target.
+  if (
+    !isRecord(input) ||
+    !isUuid(input.sessionId) ||
+    typeof input.connectionId !== 'string' ||
+    input.connectionId.length === 0 ||
+    input.connectionId.length > 200
+  ) {
+    throw new Error('Invalid workbook-refresh request.')
+  }
+}
+
+function parseWorkbookConnection(input: unknown): WorkbookConnection {
+  const isRowCount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value >= 0
+  if (
+    !isRecord(input) ||
+    typeof input.id !== 'string' ||
+    typeof input.name !== 'string' ||
+    input.kind !== 'web' ||
+    typeof input.source !== 'string' ||
+    typeof input.sheetName !== 'string' ||
+    typeof input.range !== 'string' ||
+    !isRowCount(input.headerRows) ||
+    !isRowCount(input.totalsRows) ||
+    typeof input.hasTable !== 'boolean'
+  ) {
+    throw new Error('Invalid workbook-connections response.')
+  }
+  return {
+    id: input.id,
+    name: input.name,
+    kind: input.kind,
+    source: input.source,
+    sheetName: input.sheetName,
+    range: input.range,
+    headerRows: input.headerRows,
+    totalsRows: input.totalsRows,
+    hasTable: input.hasTable,
+  }
+}
+
+function parseWorkbookConnectionsResult(input: unknown): WorkbookConnectionsResult {
+  if (!isRecord(input) || !Array.isArray(input.connections)) {
+    throw new Error('Invalid workbook-connections response.')
+  }
+  return { connections: input.connections.map(parseWorkbookConnection) }
+}
+
+function parseWorkbookRefreshResult(input: unknown): WorkbookRefreshResult {
+  const isStringArray = (value: unknown): value is string[] =>
+    Array.isArray(value) && value.every((cell) => typeof cell === 'string')
+  if (
+    !isRecord(input) ||
+    !isStringArray(input.headers) ||
+    !Array.isArray(input.rows) ||
+    !input.rows.every(isStringArray)
+  ) {
+    throw new Error('Invalid workbook-refresh response.')
+  }
+  return { headers: input.headers, rows: input.rows }
+}
+
 function parseFormulaCellsRequest(input: unknown): WorkbookFormulaCellsRequest {
   if (
     !isRecord(input) ||
@@ -1534,6 +1701,108 @@ function parseRecalcResult(input: unknown): WorkbookRecalcResult {
     }
   })
   return { cells }
+}
+
+/// The links panel's request: a workbook session, never a filesystem path.
+function parseExternalLinksRequest(input: unknown): { sessionId: string } {
+  if (!isRecord(input) || !isUuid(input.sessionId)) {
+    throw new Error('Invalid external links request.')
+  }
+  return { sessionId: input.sessionId }
+}
+
+/// Locate a link source: the session and the link index the panel row names.
+function parseExternalLinkRevealRequest(input: unknown): { sessionId: string; index: number } {
+  if (!isRecord(input) || !isUuid(input.sessionId) || !isPositiveInteger(input.index)) {
+    throw new Error('Invalid external link reveal request.')
+  }
+  return { sessionId: input.sessionId, index: input.index }
+}
+
+const EXTERNAL_LINK_LIMIT = 10_000
+const EXTERNAL_LINK_CELL_LIMIT = 100_000
+const EXTERNAL_LINK_KINDS: readonly ExternalLinkCellKind[] = ['number', 'text', 'boolean', 'error']
+
+/// One link of the read-only listing: identity fields only — the listing
+/// carries no reachability, because probing the targets on open is what the
+/// read path must avoid (a dead network share can block for seconds).
+function parseExternalLinkListStatus(input: unknown): ExternalLinkListStatus {
+  if (
+    !isRecord(input) ||
+    !isPositiveInteger(input.index) ||
+    typeof input.rawTarget !== 'string' ||
+    (input.source !== null && typeof input.source !== 'string') ||
+    !Array.isArray(input.sheetNames) ||
+    !input.sheetNames.every((name): name is string => typeof name === 'string')
+  ) {
+    throw new Error('Invalid external links response.')
+  }
+  return {
+    index: input.index,
+    rawTarget: input.rawTarget,
+    source: input.source,
+    sheetNames: input.sheetNames,
+  }
+}
+
+/// One link of the update report: the listing's fields plus the reachability
+/// verdict the explicit update paid for.
+function parseExternalLinkStatus(input: unknown): ExternalLinkStatus {
+  if (!isRecord(input) || typeof input.reachable !== 'boolean') {
+    throw new Error('Invalid external links response.')
+  }
+  return { ...parseExternalLinkListStatus(input), reachable: input.reachable }
+}
+
+/// One external-formula cell of the update report. `kind` is absent when the
+/// cell has no usable value; the host then keeps the file's own cache.
+function parseExternalLinkCell(input: unknown): ExternalLinkCell {
+  if (
+    !isRecord(input) ||
+    !isBoundedString(input.sheet, 1_024) ||
+    !isNonnegativeInteger(input.row) ||
+    !isNonnegativeInteger(input.column) ||
+    typeof input.formatted !== 'string' ||
+    typeof input.formula !== 'string' ||
+    (input.number !== undefined &&
+      input.number !== null &&
+      (typeof input.number !== 'number' || !Number.isFinite(input.number))) ||
+    (input.kind != null && !EXTERNAL_LINK_KINDS.includes(input.kind as ExternalLinkCellKind))
+  ) {
+    throw new Error('Invalid external links update response.')
+  }
+  return {
+    sheet: input.sheet,
+    row: input.row,
+    column: input.column,
+    formatted: input.formatted,
+    ...(input.number === undefined ? {} : { number: input.number as number | null }),
+    ...(input.kind == null ? {} : { kind: input.kind as ExternalLinkCellKind }),
+    formula: input.formula,
+  }
+}
+
+function parseExternalLinksResult(input: unknown): ExternalLinksResult {
+  if (!isRecord(input) || !Array.isArray(input.links) || input.links.length > EXTERNAL_LINK_LIMIT) {
+    throw new Error('Invalid external links response.')
+  }
+  return { links: input.links.map(parseExternalLinkListStatus) }
+}
+
+function parseExternalLinksUpdateResult(input: unknown): ExternalLinksUpdateResult {
+  if (
+    !isRecord(input) ||
+    !Array.isArray(input.links) ||
+    input.links.length > EXTERNAL_LINK_LIMIT ||
+    !Array.isArray(input.cells) ||
+    input.cells.length > EXTERNAL_LINK_CELL_LIMIT
+  ) {
+    throw new Error('Invalid external links update response.')
+  }
+  return {
+    links: input.links.map(parseExternalLinkStatus),
+    cells: input.cells.map(parseExternalLinkCell),
+  }
 }
 
 function parseRangeResult(input: unknown): WorkbookRangeResult {

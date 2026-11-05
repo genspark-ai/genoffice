@@ -5,6 +5,43 @@ import { IMAGE_PARAGRAPH_XML, buildDocx } from './helpers/build-docx'
 
 const withPPr = (pPr: string) => IMAGE_PARAGRAPH_XML.replace('<w:p>', `<w:p>${pPr}`)
 
+const TOC_OPEN =
+  '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-1" \\h </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Chapter 1</w:t></w:r></w:p>'
+const tocClosingHeading = (runs: string) =>
+  `<w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:r><w:fldChar w:fldCharType="end"/></w:r>${runs}</w:p>`
+
+describe('page break ahead of the visible text of a field paragraph', () => {
+  it('turns the page before the heading that closes the TOC field', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          TOC_OPEN +
+          tocClosingHeading('<w:r><w:br w:type="page"/></w:r><w:r><w:t>PREAMBLE</w:t></w:r>'),
+      }),
+    )
+    const heading = doc.blocks[1]
+    expect(heading.type).toBe('passthrough')
+    expect(heading.fieldDisplay).toMatchObject({ kind: 'text', left: 'PREAMBLE' })
+    expect(heading.format?.pageBreakBefore).toBe(true)
+  })
+
+  it('leaves a break that follows visible text alone', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          TOC_OPEN +
+          tocClosingHeading(
+            '<w:r><w:t>Intro</w:t></w:r><w:r><w:br w:type="page"/></w:r><w:r><w:t>PREAMBLE</w:t></w:r>',
+          ),
+      }),
+    )
+    expect(doc.blocks[1].type).toBe('passthrough')
+    expect(doc.blocks[1].format?.pageBreakBefore).toBeUndefined()
+  })
+})
+
 describe('w:pageBreakBefore on drawing-only / textbox paragraphs', () => {
   it('survives onto the protected image block', async () => {
     const doc = await parseDocx(

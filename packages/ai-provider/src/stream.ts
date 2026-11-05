@@ -3,14 +3,22 @@ import { withOutputCapFallback } from './output-cap'
 import { streamAnthropic } from './protocols/anthropic'
 import { streamGemini } from './protocols/gemini'
 import { streamOpenAiCompatible } from './protocols/openai-compatible'
+import { streamOpenAiResponses } from './protocols/openai-responses'
 import { streamCodexAppServer } from './codex-app-server'
 import type { StreamCallbacks } from './protocols/shared'
 import { getProviderAdapter, type AiProtocol } from './registry'
+import {
+  anthropicThinkingFields,
+  geminiThinkingLevelFor,
+  openAiEffortFor,
+  toggleThinkingBodyFor,
+} from './thinking-effort'
 import type { AiProviderConfig, AiProviderId } from './types'
 
 export { streamAnthropic } from './protocols/anthropic'
 export { streamGemini } from './protocols/gemini'
 export { streamOpenAiCompatible } from './protocols/openai-compatible'
+export { streamOpenAiResponses } from './protocols/openai-responses'
 export { AiCreditsError, sseLines } from './protocols/shared'
 export type { StreamCallbacks } from './protocols/shared'
 
@@ -40,21 +48,32 @@ export async function streamForProvider(
         return streamAnthropic(config, system, messages, tools, tokens, cb, baseUrl, {
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
+          ...anthropicThinkingFields(config),
         })
       case 'gemini':
         return streamGemini(config, system, messages, tools, tokens, cb, baseUrl, {
           omitTemperature: endpoint.omitTemperature,
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
+          thinkingLevel: geminiThinkingLevelFor(config),
         })
       case 'openai-compatible':
         return streamOpenAiCompatible(baseUrl, config, system, messages, tools, tokens, cb, {
           omitTemperature: endpoint.omitTemperature,
           useMaxCompletionTokens: endpoint.useMaxCompletionTokens,
-          bodyExtras: endpoint.bodyExtras,
+          // a stored pick outranks the profile's own body extras
+          bodyExtras: { ...endpoint.bodyExtras, ...toggleThinkingBodyFor(config) },
           echoReasoning: endpoint.echoReasoning,
           headers: endpoint.headers,
           idleTimeoutMs: endpoint.idleTimeoutMs,
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
+        })
+      case 'openai-responses':
+        return streamOpenAiResponses(baseUrl, config, system, messages, tools, tokens, cb, {
+          bodyExtras: endpoint.bodyExtras,
+          headers: endpoint.headers,
+          idleTimeoutMs: endpoint.idleTimeoutMs,
+          reasoningEffort: openAiEffortFor(config, endpoint.protocol),
         })
     }
   })

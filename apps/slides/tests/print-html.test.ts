@@ -4,6 +4,7 @@ import {
   currentRangeIndices,
   normalizePrintRatio,
   parsePrintRange,
+  printPageSizeIn,
   printPageCount,
 } from '../src/shared/print-html'
 
@@ -156,5 +157,27 @@ describe('normalizePrintRatio', () => {
     expect(tiny).toContain('@page { size: 1.5in 7.5in; margin: 0; }')
     const huge = buildPrintDocumentHtml({ srcs: srcs(1), ratio: 100, layout: 'full' })
     expect(huge).toContain('@page { size: 37.5in 7.5in; margin: 0; }')
+  })
+})
+
+describe('printPageSizeIn', () => {
+  it('the full layout follows the slide ratio at 7.5in tall', () => {
+    expect(printPageSizeIn('full', 'portrait', 16 / 9)).toEqual({ width: 13.333, height: 7.5 })
+    expect(printPageSizeIn('full', 'landscape', 16 / 9)).toEqual({ width: 13.333, height: 7.5 })
+  })
+
+  it('handout and notes sheets are A4 in the chosen orientation', () => {
+    for (const layout of ['handout2', 'handout3', 'handout6', 'notes'] as const) {
+      expect(printPageSizeIn(layout, 'portrait', 16 / 9)).toEqual({ width: 8.27, height: 11.69 })
+      expect(printPageSizeIn(layout, 'landscape', 16 / 9)).toEqual({ width: 11.69, height: 8.27 })
+    }
+  })
+
+  it('a corrupt ratio clamps like the page rule does (same source of truth)', () => {
+    expect(printPageSizeIn('full', 'portrait', NaN)).toEqual({ width: 13.333, height: 7.5 })
+    expect(printPageSizeIn('full', 'portrait', 100)).toEqual({ width: 37.5, height: 7.5 })
+    // and the HTML builder agrees with the helper byte for byte
+    const html = buildPrintDocumentHtml({ srcs: srcs(1), ratio: 16 / 9, layout: 'full' })
+    expect(html).toContain('@page { size: 13.333in 7.5in; margin: 0; }')
   })
 })

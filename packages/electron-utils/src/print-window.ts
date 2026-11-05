@@ -43,21 +43,20 @@ export interface PrintDocumentOptions {
 }
 
 /**
- * Print a document through the system print dialog in a throwaway window.
- * The window outlives the dialog (destroying it as print() opens closes the
- * sheet) and is destroyed on every path.
+ * Load a print document into the window and wait for its readiness probe
+ * (fonts and images decoded). The caller owns the window and must rm the
+ * returned temp dir afterwards. Shared by the system-dialog print and the
+ * silent printToPDF routes, which need the same loaded document.
  */
-export async function printHtmlDocument({
-  html,
-  window: win,
+export async function loadPrintHtml(
+  win: PrintDialogWindow,
+  html: string,
   fileName = 'print.html',
   dirPrefix = 'genoffice-print-',
-  platform = process.platform,
-}: PrintDocumentOptions): Promise<PrintDialogOutcome> {
-  let tempDir: string | null = null
+): Promise<{ tempDir: string }> {
+  // a temp file, not a data: URL: long documents truncate the URL
+  const tempDir = await mkdtemp(join(tmpdir(), dirPrefix))
   try {
-    // a temp file, not a data: URL: long documents truncate the URL
-    tempDir = await mkdtemp(join(tmpdir(), dirPrefix))
     const htmlPath = join(tempDir, fileName)
     await writeFile(htmlPath, html, 'utf8')
     await win.loadFile(htmlPath)
@@ -71,6 +70,30 @@ export async function printHtmlDocument({
       console.error('[print] readiness probe failed:', err)
     })
     clearTimeout(timer)
+  } catch (err) {
+    // a failed load leaves nothing for the caller to clean: they only ever
+    // see a tempDir when the document is loaded and ready to print
+    await rm(tempDir, { recursive: true, force: true })
+    throw err
+  }
+  return { tempDir }
+}
+
+/**
+ * Print a document through the system print dialog in a throwaway window.
+ * The window outlives the dialog (destroying it as print() opens closes the
+ * sheet) and is destroyed on every path.
+ */
+export async function printHtmlDocument({
+  html,
+  window: win,
+  fileName = 'print.html',
+  dirPrefix = 'genoffice-print-',
+  platform = process.platform,
+}: PrintDocumentOptions): Promise<PrintDialogOutcome> {
+  let tempDir: string | null = null
+  try {
+    tempDir = (await loadPrintHtml(win, html, fileName, dirPrefix)).tempDir
     // Windows attaches the native dialog to the printed window, which must be visible
     if (platform === 'win32') {
       win.show()

@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   applyLiftTops,
@@ -25,9 +25,25 @@ const rectOf = (top: number, height: number) =>
 const cell = { type: 'docTableCell', content: [{ type: 'docParagraph' }] }
 const row = { type: 'docTableRow', content: [cell] }
 
-const editor = new Editor({ element: document.createElement('div'), extensions: editorExtensions })
+/** Editors created during the current test; destroyed in afterEach so ProseMirror's
+ * DOMObserver timers can't fire after the JSDOM environment is torn down. */
+const liveEditors: Editor[] = []
+
+function makeEditor(): Editor {
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+  })
+  liveEditors.push(editor)
+  return editor
+}
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
 
 function tableSpec(attrs: Record<string, unknown>): [string, Record<string, string>] {
+  const editor = makeEditor()
   const table = editor.schema.nodeFromJSON({ type: 'docTable', attrs, content: [row] })
   return editor.schema.nodes.docTable.spec.toDOM!(table) as [string, Record<string, string>]
 }
@@ -115,6 +131,7 @@ describe('suppressed float keeps its w:tblpX', () => {
 describe('w:noWrap under a fixed table layout', () => {
   const nowrapCell = { type: 'docTableCell', attrs: { noWrap: true }, content: [cell.content[0]] }
   const cellStyle = (tableAttrs: Record<string, unknown>): string => {
+    const editor = makeEditor()
     const table = editor.schema.nodeFromJSON({
       type: 'docTable',
       attrs: tableAttrs,
@@ -131,6 +148,10 @@ describe('w:noWrap under a fixed table layout', () => {
     expect(cellStyle({})).toContain('white-space:var(--doc-cell-nowrap,nowrap)')
     expect(tableSpec({ tblFixedLayout: true })[1].style).toContain('--doc-cell-nowrap:normal')
     expect(tableSpec({})[1].style ?? '').not.toContain('--doc-cell-nowrap')
+  })
+
+  it('a grid wider than the text column sets the same fallback', () => {
+    expect(tableSpec({ tblOverWide: true })[1].style).toContain('--doc-cell-nowrap:normal')
   })
 })
 
@@ -179,12 +200,17 @@ describe('applyLiftTops', () => {
   })
 
   it('opens the clip for a page-anchored float whose applied shift hangs above the page start', () => {
-    const el = document.createElement('table')
-    el.dataset.tblpDy = '-80'
     const blocks: BlockBox[] = [
       { top: 0, height: 20 },
       { top: 900, height: 20, emptyPara: true },
-      { top: 920, height: 300, el, floated: true, pageRelVyPx: 0, pageRelVAnchor: 'page' },
+      {
+        top: 920,
+        height: 300,
+        floated: true,
+        pageRelVyPx: 0,
+        pageRelVAnchor: 'page',
+        floatShiftPx: -80,
+      },
     ]
     const slices: PageSlice[] = [
       { start: 0, end: 900, section: 0 },

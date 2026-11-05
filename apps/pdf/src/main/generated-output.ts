@@ -10,7 +10,7 @@ export function uniqueGeneratedPdfPath(
   // Control characters are intentionally rejected from generated file names.
   // eslint-disable-next-line no-control-regex
   const invalidFileNameCharacters = /[/\\:*?"<>|\u0000-\u001f]/g
-  let fileName = basename(String(suggestedName || 'merged.pdf'))
+  let fileName = basename(String(suggestedName || 'merged.pdf').replace(/:/g, '_'))
     .replace(invalidFileNameCharacters, '_')
     .trim()
   if (!fileName || fileName === '.' || fileName === '..') fileName = 'merged.pdf'

@@ -165,7 +165,11 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     BlockLink.configure(options.blockLink ?? {}),
     // pasted `[[links]]` and `![[embeds]]` take their live shape at once
     WikiPasteLive,
-    WikiSuggest.configure({ controller: options.wikiSuggestController }),
+    WikiSuggest.configure({
+      controller: options.wikiSuggestController,
+      // keys the fragment cache: the same note asked from another document is another question
+      getDocumentPath: options.wikiLink?.getDocumentPath,
+    }),
     BlockDragHandle,
     BlockKeymap,
     AiHighlight,
