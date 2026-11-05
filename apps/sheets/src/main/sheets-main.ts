@@ -3390,6 +3390,7 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.armWorkbookPick, (event, input: unknown) => {
     const { wcId } = z.object({ wcId: z.number().int() }).strict().parse(input)
     const pickId = 'pick-' + randomUUID()
+    if (pendingWorkbookPick) broadcastPickCancelled(pendingWorkbookPick.pickId, event.sender.id)
     pendingWorkbookPick = { pickId, sourceWcId: event.sender.id, targetWcId: wcId }
     // only the tab holding the selected link's source workbook is armed
     const target = sheetsTabs.get(wcId)
