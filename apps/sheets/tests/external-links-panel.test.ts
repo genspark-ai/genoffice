@@ -63,6 +63,8 @@ function panel(links: readonly ExternalLinkRow[], overrides: Record<string, unkn
     links,
     busy: false,
     onUpdate: () => {},
+    onBreak: () => {},
+    onChangeSource: () => {},
     onReveal: () => {},
     onClose: () => {},
     ...overrides,
@@ -133,5 +135,44 @@ describe('external links panel', () => {
     click(locate)
     // the main process resolves the source from the session's own listing
     expect(onReveal).toHaveBeenCalledWith(2)
+  })
+
+  it('break asks for confirmation before reaching the handler', async () => {
+    const onBreak = vi.fn()
+    const host = await mount(panel(LISTED, { onBreak }))
+    const scissors = [...host.querySelectorAll('button')].find(
+      (button) => button.getAttribute('data-tip') === '断开链接',
+    )!
+    click(scissors)
+    // first click only arms the confirm step
+    expect(onBreak).not.toHaveBeenCalled()
+    const confirm = [...host.querySelectorAll('button')].find(
+      (button) => button.textContent === '确认断开',
+    )!
+    click(confirm)
+    expect(onBreak).toHaveBeenCalledTimes(1)
+    expect(onBreak).toHaveBeenCalledWith(1)
+  })
+
+  it('a click on change source reaches the handler', async () => {
+    const onChangeSource = vi.fn()
+    const host = await mount(panel(LISTED, { onChangeSource }))
+    const sources = [...host.querySelectorAll('button')].filter(
+      (button) => button.getAttribute('data-tip') === '更改源',
+    )
+    // only the file-backed link offers it (row 1 is a web source)
+    expect(sources).toHaveLength(1)
+    click(sources[0]!)
+    expect(onChangeSource).toHaveBeenCalledWith(2)
+  })
+
+  it('does not offer change source for a link with no local file', async () => {
+    const onChangeSource = vi.fn()
+    const host = await mount(panel(LISTED, { onChangeSource }))
+    const rows = [...host.querySelectorAll('tbody tr')]
+    const webRow = rows.find((row) => row.textContent?.includes('gone.xlsx'))!
+    expect(webRow.querySelector('[data-tip="更改源"]')).toBeNull()
+    const fileRow = rows.find((row) => row.textContent?.includes('source.xlsx'))!
+    expect(fileRow.querySelector('[data-tip="更改源"]')).not.toBeNull()
   })
 })

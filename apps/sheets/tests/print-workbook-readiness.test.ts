@@ -106,6 +106,7 @@ describe('print and PDF workbook readiness coordination', () => {
       getActiveRange: () => null,
       getSheets: () => [worksheet],
       getSheetBySheetId: () => worksheet,
+      getSnapshot: () => ({ sheets: {} }),
     }
     const runtime = {
       univerAPI: { getActiveWorkbook: () => workbook },
