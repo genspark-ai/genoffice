@@ -87,7 +87,7 @@ const records = [
 ]
 
 describe('the envelope output', () => {
-  it('writes one envelope per record, on the envelope paper', async () => {
+  it('writes one document holding every envelope, on the envelope paper', async () => {
     const editor = await template()
     const ctx = await context(editor)
     const files = await buildMailMergeFiles(ctx, {
@@ -97,37 +97,20 @@ describe('the envelope output', () => {
       namePattern: 'LastName',
       layout: envelopeLayout('size10'),
     })
-    expect(files).toHaveLength(2)
-    expect(files.map((file) => file.name)).toEqual(['Lovelace.docx', 'Franklin.docx'])
+    // one document now holds all the envelopes (one per page); not one file per record
+    expect(files).toHaveLength(1)
+    expect(files[0]!.name).toBe('letter-merged.docx')
     const envelope = envelopeLayout('size10')
-    for (const file of files) {
-      const page = await pageOf(file.bytes)
-      expect(page.width).toBe(envelope.pageWidth)
-      expect(page.height).toBe(envelope.pageHeight)
-    }
-    // an envelope is the template on the envelope paper: the record's values
-    // are in the body, and no field code is
-    expect(await textOf(files[0]!.bytes)).toContain('Ada')
-    expect(await textOf(files[0]!.bytes)).not.toContain('First')
-  })
-
-  it('matches the envelopes the previous implementation wrote', async () => {
-    const editor = await template()
-    const ctx = await context(editor)
-    const request = {
-      mode: 'envelopes' as const,
-      records,
-      fields: ['FirstName', 'LastName'],
-      namePattern: 'LastName',
-      layout: envelopeLayout('size10'),
-    }
-    const now = await buildMailMergeFiles(ctx, request)
-    const before = await buildLegacyMailMergeFiles(ctx, request)
-    expect(now.map((file) => file.name)).toEqual(before.map((file) => file.name))
-    for (const [index, file] of now.entries()) {
-      expect(await textOf(file.bytes)).toBe(await textOf(before[index]!.bytes))
-      expect(await pageOf(file.bytes)).toEqual(await pageOf(before[index]!.bytes))
-    }
+    const page = await pageOf(files[0]!.bytes)
+    expect(page.width).toBe(envelope.pageWidth)
+    expect(page.height).toBe(envelope.pageHeight)
+    // every envelope's merged values are in the one document, and no field code is
+    const text = await textOf(files[0]!.bytes)
+    expect(text).toContain('Ada')
+    expect(text).toContain('Lovelace')
+    expect(text).toContain('Ben')
+    expect(text).toContain('Franklin')
+    expect(text).not.toContain('First')
   })
 })
 

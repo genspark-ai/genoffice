@@ -88,8 +88,8 @@ export function MergeFinishDialog({
   const currentPageCount = currentPage.count
   const lastRecord = records.length - 1
 
-  /** per-record and envelope outputs write one file each, each opened on its own tab */
-  const multiFile = mode === 'perRecord' || mode === 'envelopes'
+  /** the per-record output writes one file per record; the other modes are single documents */
+  const multiFile = mode === 'perRecord'
 
   // --- record window clamping ---------------------------------
   const maxRecord = Math.max(records.length, 1)
@@ -208,8 +208,8 @@ export function MergeFinishDialog({
       const count = Math.max(0, range.end - range.start + 1)
       const pages = mergePageCount(count, slotsPerPage)
       // The app builds the merged documents (it owns the document context the
-      // merge needs) and opens them in the app — one file for the batch/label
-      // outputs, one file per record for the per-record and envelope outputs.
+      // merge needs) and opens them in the app — one file for the batch/label/
+      // envelope outputs, one file per record for the per-record output.
       const res = await onMerge({
         mode,
         records,

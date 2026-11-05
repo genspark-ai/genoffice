@@ -85,12 +85,13 @@ export interface MailMergeResponse {
  * The records are first trimmed to the requested range. Then there are two
  * families:
  *
- *  - **plain** (mode single / perRecord): letters, or envelopes, one per record.
+ *  - **plain** (mode single / perRecord): letters, one per record.
  *    The NEXT-driven variants follow at the bottom.
  *  - **labels / envelopes**: multi-up layouts on one page. Labels rides one
  *    continuous table — a cell per record, rows flowing onto as many pages as
  *    the records take — so the table's own pagination does the page breaks.
- *    Envelopes build one letter per record on the envelope paper, one file each.
+ *    Envelopes build one letter per record on the envelope paper, all in one
+ *    document — one envelope per page, the page break stitching them together.
  *
  * genoffice#2097, genoffice#2374.
  */
@@ -132,19 +133,14 @@ export async function buildMailMergeFiles(
       if (!bytes) return []
       return [{ name: mergedDocumentName(ctx), bytes }]
     }
-    // envelopes: one file per record on the envelope's paper
-    const files: MailMergeFile[] = []
-    for (const record of subset) {
-      const bytes = await buildDocBytes(layoutCtx, substituteMergeFields(template, record), {
-        exportAsMerged: true,
-      })
-      if (!bytes) continue
-      files.push({
-        name: `${mergeOutputFileName(request.namePattern, record, request.fields)}.docx`,
-        bytes,
-      })
-    }
-    return files
+    // envelopes: one envelope per record, all in one document — one envelope
+    // per page on the envelope's paper, the same single-file shape labels and
+    // the batch merge use
+    const bytes = await buildDocBytes(layoutCtx, mergeAllRecords(template, subset), {
+      exportAsMerged: true,
+    })
+    if (!bytes) return []
+    return [{ name: mergedDocumentName(ctx), bytes }]
   }
 
   // --- plain letters: split on whether the template carries a NEXT field -

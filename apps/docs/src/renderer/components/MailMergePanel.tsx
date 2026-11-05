@@ -217,7 +217,7 @@ export function MailMergePanel({
                 <div className="mailmerge-note">{t('ribbonMailingsEnvelopeNote')}</div>
               </>
             )}
-            {(mode === 'perRecord' || mode === 'envelopes') && (
+            {mode === 'perRecord' && (
               <label className="mailmerge-pattern">
                 {t('ribbonMailingsNamePattern')}
                 <input
