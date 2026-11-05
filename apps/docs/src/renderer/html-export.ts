@@ -186,7 +186,7 @@ export function resolveContent(content: string, el: Element): string {
         // CSS escapes allow 6 hex digits but Unicode stops at 0x10FFFF:
         // out-of-range values (and lone surrogates) would throw RangeError
         // and abort the whole export, so emit the replacement character.
-        codePointOrReplacement(parseInt(hex, 16)),
+        codePointOrReplacement(parseInt(hex.trim(), 16)),
       )
     } else if (m[3]) {
       out += el.getAttribute(m[3]) ?? ''

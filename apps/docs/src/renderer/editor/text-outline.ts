@@ -2,7 +2,7 @@ import type { TextOutline } from '@genoffice/docx-engine'
 
 /** CSS value for a w14:textOutline stroke (`-webkit-text-stroke`) */
 export function textOutlineCssValue(o: TextOutline): string {
-  const n = parseInt(o.color, 16)
+  const n = parseInt(o.color.trim(), 16)
   const color =
     o.alpha !== undefined && o.alpha < 1
       ? `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${o.alpha})`
