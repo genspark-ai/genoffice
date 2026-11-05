@@ -663,7 +663,8 @@ pub fn handle_request(
             crate::external_links::list_external_link_statuses(&path).and_then(to_json_value)
         }
         Command::ReadExternalLinkUsage { path } => {
-            crate::external_links::read_external_link_usage(&path).and_then(to_json_value)
+            crate::external_links::read_external_link_usage(&path)
+                .and_then(|links| to_json_value(serde_json::json!({ "links": links })))
         }
     };
     Some(match result {
@@ -781,6 +782,39 @@ mod tests {
 
         let second = expect_ok(recalc.run("r2".into(), &source, &[], &recalc_reads(), false));
         assert_eq!(second["cached"], serde_json::json!(true));
+    }
+
+    /// The usage scan answers in the listing's `{ links }` envelope the
+    /// preload parser expects.
+    #[test]
+    fn external_link_usage_response_wraps_the_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.xlsx");
+        crate::external_links::tests::write_dependent_fixture(&path, "gone.xlsx");
+        let mut sessions = WorkbookSessions::new();
+        let recalc = RecalcWorker::new();
+        let in_flight = InFlightRequest::new();
+        let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
+        let request = serde_json::json!({
+            "version": 1,
+            "requestId": "u",
+            "command": "read_external_link_usage",
+            "path": path,
+        });
+        let result = expect_ok(
+            handle_line(
+                &request.to_string(),
+                &mut sessions,
+                &recalc,
+                &CancelledRequests::new(),
+                &in_flight,
+                &output,
+            )
+            .unwrap(),
+        );
+        let links = result["links"].as_array().unwrap();
+        assert_eq!(links[0]["index"], serde_json::json!(1));
+        assert_eq!(links[0]["cells"][0]["sheet"], serde_json::json!("Sheet1"));
     }
 
     /// A cancel marks its target; the target is then skipped unexecuted, and
