@@ -3359,7 +3359,7 @@ export interface DesktopApi {
   listWorkbookTabs(): Promise<{ tabs: WorkbookTab[] }>
   /// Arms a cross-workbook pick from this tab; other sheets' grids become
   /// the pick target until a selection or a cancel.
-  armWorkbookPick(): Promise<{ pickId: string }>
+  armWorkbookPick(wcId: number): Promise<{ pickId: string }>
   sendWorkbookPickSelection(selection: WorkbookPickSelection): Promise<void>
   cancelWorkbookPick(pickId: string): Promise<void>
   onWorkbookPickArmed(listener: (payload: { pickId: string }) => void): () => void

@@ -292,8 +292,8 @@ const desktopApi: DesktopApi = {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.listWorkbookTabs)
     return parseWorkbookTabsResult(result)
   },
-  async armWorkbookPick() {
-    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.armWorkbookPick)
+  async armWorkbookPick(wcId) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.armWorkbookPick, { wcId })
     return parsePickIdPayload(result)
   },
   async sendWorkbookPickSelection(selection) {
