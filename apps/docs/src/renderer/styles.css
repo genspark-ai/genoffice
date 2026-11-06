@@ -11344,11 +11344,13 @@ body.docs-crop-active
 }
 
 /* Genspark DS modal footer buttons: secondary = bg-subtle, primary = black (#232425).
-   Bare buttons in the modal body (Mailings "选择文件", the chart add-row buttons)
-   share the secondary look instead of the browser default; :not(.btn-primary)
-   keeps the selected chart-kind button on its own primary style. */
+   Bare buttons inside the Mailings modal body (the "choose file" button, the
+   label/envelope add-row buttons) share the secondary look instead of the
+   browser default; :not(.btn-primary) keeps the selected chart-kind button on
+   its own primary style. Scoped to .modal-mailmerge so other dialogs (charts,
+   etc.) keep their native button styling. */
 .modal-actions button,
-.modal-row > button:not(.btn-primary) {
+.modal-mailmerge .modal-row > button:not(.btn-primary) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11366,25 +11368,25 @@ body.docs-crop-active
 }
 
 .modal-actions button:hover:not(:disabled),
-.modal-row > button:not(.btn-primary):hover:not(:disabled) {
+.modal-mailmerge .modal-row > button:not(.btn-primary):hover:not(:disabled) {
   background: var(--color-bg-subtle);
   color: var(--color-text-primary);
 }
 
 .modal-actions button:active:not(:disabled),
-.modal-row > button:not(.btn-primary):active:not(:disabled) {
+.modal-mailmerge .modal-row > button:not(.btn-primary):active:not(:disabled) {
   filter: brightness(0.88);
   transform: scale(0.98);
 }
 
 .modal-actions button:focus-visible,
-.modal-row > button:not(.btn-primary):focus-visible {
+.modal-mailmerge .modal-row > button:not(.btn-primary):focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--docs-focus-ring);
 }
 
 .modal-actions button:disabled,
-.modal-row > button:not(.btn-primary):disabled {
+.modal-mailmerge .modal-row > button:not(.btn-primary):disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -15809,7 +15811,7 @@ tr > .page-gap-cut {
   color: var(--accent);
 }
 
-/* 筛选 and 排序 open one dialog with two tabs, sitting over the list */
+/* Filter and sort open one dialog with two tabs, sitting over the list */
 .mailmerge-toolbar {
   display: flex;
   gap: 6px;
@@ -15882,7 +15884,7 @@ tr > .page-gap-cut {
   color: var(--color-btn-primary-text);
 }
 
-/* one grid for the header and every condition row: 且/或, 域, 比较关系, 比较对象 */
+/* one grid for the header and every condition row: AND/OR, field, operator, comparison value */
 .mailmerge-cond-head,
 .mailmerge-cond-row {
   display: grid;

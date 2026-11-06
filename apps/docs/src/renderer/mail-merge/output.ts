@@ -55,6 +55,8 @@ export interface MailMergeRequest {
   customGrid?: { paper: 'letter' | 'a4'; columns: number; rows: number }
   /** envelope size preset (only used when mode === 'envelopes') */
   envelopePreset?: EnvelopePresetId
+  /** where the merged documents go: on disk (Save As / folder) or opened in a new tab */
+  destination?: 'disk' | 'tab'
 }
 
 /** one merged document, ready to be written */

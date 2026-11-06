@@ -157,7 +157,7 @@ import {
   readMergeDataSource,
   readMergeDataSourceFile,
 } from './merge-data-source'
-import { mergeOutputPath } from './merge-output'
+import { mergeOutputFileName, mergeOutputPath } from './merge-output'
 import { ClickClaims } from '../shared/context-menu-claims'
 import {
   OPENABLE_DOC_EXTENSIONS,
@@ -5663,31 +5663,61 @@ export function registerDocsIpc(): void {
     },
   )
 
-  // Mailings tab: build the merged documents and open them in the app — the
-  // 0.12.29 behaviour. Each document lands in a temp file a new tab opens like
-  // any other document, so nothing is written to disk unless the user saves it
-  // themselves. The bytes carry the document's lazily served pictures, so they
-  // are materialized first — the merged file is a document of its own.
-  ipcMain.handle('docs:merge-output', async (_event, request: MergeOutputRequest) => {
+  // Mailings tab: build the merged documents and either save them to disk or
+  // open them in the app. The default is on disk — a single / label / envelope
+  // output goes through Save As, a per-record output goes into a folder the
+  // user picks — which is the behaviour the app had before this change. The
+  // "open in a new tab" choice instead drops each document in a temp file and
+  // opens it like any other document, so nothing is written to disk unless the
+  // user saves it themselves. The bytes carry the document's lazily served
+  // pictures, so they are materialized first — the merged file is a document.
+  ipcMain.handle('docs:merge-output', async (event, request: MergeOutputRequest) => {
     const files = Array.isArray(request?.files) ? request.files : []
     if (files.length === 0) return { ok: false, error: 'nothing to write' }
+    const openInApp = request.destination === 'tab'
+    const write = async (path: string, data: ArrayBuffer): Promise<void> => {
+      const { bytes } = await materializeLazyDocx(Buffer.from(data))
+      await writeFile(path, bytes)
+    }
     try {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'genoffice-merge-'))
-      const paths: string[] = []
-      for (const file of files) {
-        const { bytes } = await materializeLazyDocx(Buffer.from(file.data))
-        const tmpPath = mergeOutputPath(tmpDir, file.name)
-        await writeFile(tmpPath, bytes)
-        paths.push(tmpPath)
+      if (openInApp) {
+        const tmpDir = await mkdtemp(join(tmpdir(), 'genoffice-merge-'))
+        const paths: string[] = []
+        for (const file of files) {
+          const tmpPath = mergeOutputPath(tmpDir, file.name)
+          await write(tmpPath, file.data)
+          paths.push(tmpPath)
+        }
+        if (shellHooks) {
+          // the shell owns the tabs: open each document in a new tab of this window
+          for (const p of paths) shellHooks.openTab(p)
+        } else {
+          // no shell (standalone docs window): open each in a window of its own
+          for (const p of paths) createDocsWindow(p).show()
+        }
+        return { ok: true, count: files.length }
       }
-      if (shellHooks) {
-        // the shell owns the tabs: open each document in a new tab of this window
-        for (const p of paths) shellHooks.openTab(p)
-      } else {
-        // no shell (standalone docs window): open each in a window of its own
-        for (const p of paths) createDocsWindow(p).show()
+      // on disk: one Save As for the single / label / envelope output, a folder
+      // pick for the per-record output (one file per record)
+      if (request.mode === 'single' || request.mode === 'labels' || request.mode === 'envelopes') {
+        const file = files[0]
+        const result = await saveDialog(event, {
+          title: tm('dlgSaveAs'),
+          defaultPath: mergeOutputFileName(file.name),
+          filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        await write(result.filePath, file.data)
+        return { ok: true, path: result.filePath, count: 1 }
       }
-      return { ok: true, count: files.length }
+      const result = await openDialog(event, {
+        title: tm('dlgPickExportDir'),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+      const folder = result.filePaths[0]
+      for (const file of files) await write(mergeOutputPath(folder, file.name), file.data)
+      return { ok: true, folder, count: files.length }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

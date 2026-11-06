@@ -2630,8 +2630,18 @@ export function App() {
             file.bytes.byteOffset + file.bytes.byteLength,
           ) as ArrayBuffer,
         }))
-        const written = await window.desktop.writeMergeOutput({ mode: request.mode, files: payload })
-        if (written.ok) setStatus(t('appMergeOpened'))
+        const written = await window.desktop.writeMergeOutput({
+          mode: request.mode,
+          destination: request.destination,
+          files: payload,
+        })
+        if (written.ok) {
+          setStatus(
+            request.destination === 'tab'
+              ? t('appMergeOpened')
+              : t('appMergeWritten', { n: written.count ?? files.length }),
+          )
+        }
         return written
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

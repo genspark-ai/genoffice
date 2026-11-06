@@ -86,10 +86,12 @@ describe('the merge output', () => {
 
     it('opens the merged document in the app when finished', async () => {
       renderFinish()
+      // the single output may open in a new tab instead of saving to disk
+      act(() => radio(t('ribbonMailingsDestinationTab'))?.click())
       pickAllRange()
       await act(async () => button(t('ribbonMailingsFinish'))?.click())
       expect(onMerge).toHaveBeenCalledTimes(1)
-      expect(onMerge.mock.calls[0]![0]).toMatchObject({ mode: 'single' })
+      expect(onMerge.mock.calls[0]![0]).toMatchObject({ mode: 'single', destination: 'tab' })
     })
 
     it('disables finish until a range is picked', () => {
@@ -128,15 +130,19 @@ describe('the merge output', () => {
       expect(button(t('ribbonMailingsFinish'))).not.toBeNull()
     })
 
-    it('lets the per-record output finish in the app (not disk-only)', async () => {
+    it('forces the per-record output to disk (no per-record tab)', async () => {
       renderPanel()
       const perRecord = radio(t('ribbonMailingsOutputPerRecord'))
       act(() => perRecord?.click())
+      // the per-record output is many files, so opening in a new tab each is
+      // never offered — the tab choice is disabled and disk is forced
+      expect(radio(t('ribbonMailingsDestinationTab'))?.disabled).toBe(true)
+      expect(radio(t('ribbonMailingsDestinationDisk'))?.disabled).toBe(false)
       pickAllRange()
       expect(button(t('ribbonMailingsFinish'))?.disabled).toBe(false)
       await act(async () => button(t('ribbonMailingsFinish'))?.click())
       expect(onMerge).toHaveBeenCalledTimes(1)
-      expect(onMerge.mock.calls[0]![0]).toMatchObject({ mode: 'perRecord' })
+      expect(onMerge.mock.calls[0]![0]).toMatchObject({ mode: 'perRecord', destination: 'disk' })
     })
   })
 })

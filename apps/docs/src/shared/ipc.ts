@@ -82,6 +82,8 @@ export type MergeOutputMode = 'single' | 'perRecord' | 'labels' | 'envelopes'
 export interface MergeOutputRequest {
   mode: MergeOutputMode
   files: MergeOutputFile[]
+  /** where the merged documents go: on disk (Save As / folder) or opened in a new tab */
+  destination?: 'disk' | 'tab'
 }
 
 export interface MergeOutputResponse {

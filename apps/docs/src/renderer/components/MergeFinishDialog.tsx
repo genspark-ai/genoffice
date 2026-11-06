@@ -15,8 +15,8 @@ import { useI18n } from '../i18n/locale'
  * The panel that hosts it has already asked for the output shape — one batch
  * document, one file per record, a label sheet, or one envelope per record —
  * and holds the paper it prints on. This only asks which records are merged;
- * the result opens in the app (a new tab per document) and the user saves it
- * when they want it on disk. The range has no default, the user picks one.
+ * where the result goes: on disk (Save As / a folder) by default, or opened in
+ * a new tab of the app. The range has no default, the user picks one.
  *
  * genoffice#2097, genoffice#2374.
  */
@@ -73,6 +73,10 @@ export function MergeFinishDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
+  // where the merged documents go: on disk by default, or opened in a new tab;
+  // the per-record output is always on disk (one file per record would open a
+  // tab per record, which is never what the user wants)
+  const [destination, setDestination] = useState<'disk' | 'tab'>('disk')
 
   // --- the page group "current record" stands for -------------
   // A NEXT template merges as many records per page as it has record blocks —
@@ -90,6 +94,8 @@ export function MergeFinishDialog({
 
   /** the per-record output writes one file per record; the other modes are single documents */
   const multiFile = mode === 'perRecord'
+  /** the per-record output is forced on disk; the other modes honour the choice above */
+  const effectiveDestination = multiFile ? 'disk' : destination
 
   // --- record window clamping ---------------------------------
   const maxRecord = Math.max(records.length, 1)
@@ -217,15 +223,18 @@ export function MergeFinishDialog({
         namePattern: multiFile ? namePattern : '',
         range,
         layout,
+        destination: effectiveDestination,
       })
       if (!res.ok) {
         setError(res.error ?? t('ribbonMailingsMergeFailed'))
         return
       }
       setDone(
-        t('ribbonMailingsMergedPages', { files: multiFile ? count : 1, pages: pages || 1 }) +
-          ' ' +
-          t('ribbonMailingsOpenedInNewTab'),
+        effectiveDestination === 'tab'
+          ? t('ribbonMailingsMergedPages', { files: multiFile ? count : 1, pages: pages || 1 }) +
+              ' ' +
+              t('ribbonMailingsOpenedInNewTab')
+          : t('ribbonMailingsMergedPages', { files: multiFile ? count : 1, pages: pages || 1 }),
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -244,6 +253,29 @@ export function MergeFinishDialog({
       )}
       {error && <div className="modal-error">{error}</div>}
       {done && <div className="mailmerge-done">{done}</div>}
+      <div className="mailmerge-label">{t('ribbonMailingsDestination')}</div>
+      <div className="modal-row mailmerge-option-row">
+        <label className="mailmerge-radio">
+          <input
+            type="radio"
+            name="mailmerge-destination"
+            checked={destination === 'disk'}
+            onChange={() => setDestination('disk')}
+          />
+          {t('ribbonMailingsDestinationDisk')}
+        </label>
+        <label className="mailmerge-radio">
+          <input
+            type="radio"
+            name="mailmerge-destination"
+            checked={destination === 'tab'}
+            disabled={multiFile}
+            onChange={() => setDestination('tab')}
+          />
+          {t('ribbonMailingsDestinationTab')}
+        </label>
+      </div>
+      {multiFile && <div className="mailmerge-hint">{t('ribbonMailingsMultiFileToDisk')}</div>}
       <div className="modal-actions">
         <button
           className="btn-primary"

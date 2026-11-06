@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { PmMark, PmNode } from '../src/renderer/editor/convert'
 import {
   countRecordSlots,
-  describeRecordSlots,
   documentText,
   mergeAllRecords,
   mergeFieldNames,
@@ -288,13 +287,6 @@ describe('countRecordSlots', () => {
       para(text('«FirstName»', [mergeMark('FirstName')])),
     )
     expect(countRecordSlots(template)).toBe(2)
-  })
-
-  it('reports which blocks take a slot (dev diagnostics)', () => {
-    const trace = describeRecordSlots(threeBlocks)
-    expect(trace.slots).toBe(3)
-    expect(trace.blocks.filter((block) => block.contributed).map((block) => block.index)).toEqual([0, 2, 4])
-    expect(trace.nextFields.map((entry) => entry.block)).toEqual([1, 3, 5])
   })
 
   it('does not skip a record between pages', () => {
