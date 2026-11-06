@@ -570,13 +570,16 @@ agent core and providers) lives in [CONTRIBUTING.md](CONTRIBUTING.md#engine-pack
 ### Legacy and ODF files open as converted copies
 
 Formats GenOffice cannot write back — legacy Word `.doc`/`.dot`, Hancom
-`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, and the OpenDocument family (`.odt`,
-`.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are imports, not native files.
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, legacy PowerPoint `.ppt`, and the
+OpenDocument family (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are
+imports, not native files.
 Opening one converts it on your machine into a `.docx`, `.xlsx` or `.pptx`
 copy and opens that copy; the original is never read again and never written.
 
 - Docs and Slides ask where to put the copy first (the sibling `.docx`/`.pptx`
-  next to the original by default), so every later Save lands there.
+  next to the original by default), so every later Save lands there. A `.ppt`
+  converts with its text as editable boxes in the original slide order and
+  size; shape geometry, images and text formatting are not carried over yet.
 - Sheets opens the converted workbook straight away and routes the first Save
   through Save As to a fresh `.xlsx`. `.csv` is the exception: it keeps its
   identity and Save writes values back to the `.csv`, as Excel does.
@@ -633,8 +636,9 @@ trial, no paid tier for the apps themselves.
 Yes. GenOffice opens and saves native `.docx`, `.xlsx` and `.pptx` files.
 Saving is byte-preserving: parts of the file you didn't touch are written
 back byte-for-byte, so documents keep working in Microsoft Office.
-Legacy `.doc`/`.dot` and `.xls` files open too, as converted `.docx`/`.xlsx`
-copies — see [Legacy and ODF files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
+Legacy `.doc`/`.dot`, `.xls` and `.ppt` files open too, as converted
+`.docx`/`.xlsx`/`.pptx` copies — see [Legacy and ODF files open as converted
+copies](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
