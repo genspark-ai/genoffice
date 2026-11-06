@@ -940,7 +940,6 @@ export const ar = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'تم دمج {n} مستندًا',
   ribbonMailingsMergeFailed: 'فشل الدمج',
   ribbonMailingsClose: 'إغلاق',
   ribbonMailingsEnvelopeNote:

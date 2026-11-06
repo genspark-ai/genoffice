@@ -950,7 +950,6 @@ export const ru = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'Объединено документов: {n}',
   ribbonMailingsMergeFailed: 'Слияние не удалось',
   ribbonMailingsClose: 'Закрыть',
   ribbonMailingsEnvelopeNote:
@@ -977,7 +976,8 @@ export const ru = {
   ribbonMailingsFinishTip: 'Объединить всех получателей и открыть результат в новой вкладке',
   ribbonMailingsFinishAllTip: 'Объединить всех получателей ({n}) и открыть в новой вкладке',
   ribbonMailingsFinishPage: 'Текущая страница',
-  ribbonMailingsFinishPageTip: 'Объединить записи на текущей странице предварительного просмотра и открыть в новой вкладке',
+  ribbonMailingsFinishPageTip:
+    'Объединить записи на текущей странице предварительного просмотра и открыть в новой вкладке',
   ribbonMailingsFinishRange: 'От X до Y',
   ribbonMailingsFinishRangeTip: 'Объединить записи в указанном диапазоне и открыть в новой вкладке',
   ribbonMailingsInsertNext: 'Следующая запись',
@@ -994,7 +994,8 @@ export const ru = {
   ribbonMailingsRangeSummary: 'Всего {total} записей · {perPage} на страницу · {pages} страниц',
   ribbonMailingsRangeSlot: 'Запись {n} = страница {page}, слот {slot}',
   ribbonMailingsRangeWillExport: 'Экспорт {n} записей · {pages} страниц',
-  ribbonMailingsPerRecordPageHint: 'В шаблоне NEXT каждый документ содержит одну страницу из {n} записей',
+  ribbonMailingsPerRecordPageHint:
+    'В шаблоне NEXT каждый документ содержит одну страницу из {n} записей',
   ribbonMailingsMergedPages: 'Записано {files} документов · {pages} страниц',
   ribbonMailingsRangeFromTo: 'С',
   ribbonMailingsRangeTo: 'По',

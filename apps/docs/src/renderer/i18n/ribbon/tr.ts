@@ -954,7 +954,6 @@ export const tr = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} belge birleştirildi',
   ribbonMailingsMergeFailed: 'Birleştirme başarısız oldu',
   ribbonMailingsClose: 'Kapat',
   ribbonMailingsEnvelopeNote:
@@ -981,7 +980,8 @@ export const tr = {
   ribbonMailingsFinishTip: 'Tüm alıcıları birleştir ve sonucu yeni sekmede aç',
   ribbonMailingsFinishAllTip: 'Tüm alıcıları ({n}) birleştir ve yeni sekmede aç',
   ribbonMailingsFinishPage: 'Geçerli sayfa',
-  ribbonMailingsFinishPageTip: 'Geçerli önizleme sayfasındaki kayıtları birleştir ve yeni sekmede aç',
+  ribbonMailingsFinishPageTip:
+    'Geçerli önizleme sayfasındaki kayıtları birleştir ve yeni sekmede aç',
   ribbonMailingsFinishRange: "X'ten Y'ye",
   ribbonMailingsFinishRangeTip: 'Belirtilen aralıktaki kayıtları birleştir ve yeni sekmede aç',
   ribbonMailingsInsertNext: 'Sonraki kayıt',

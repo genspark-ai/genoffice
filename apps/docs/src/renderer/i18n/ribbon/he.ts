@@ -932,7 +932,6 @@ export const he = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'מוזגו {n} מסמכים',
   ribbonMailingsMergeFailed: 'המיזוג נכשל',
   ribbonMailingsClose: 'סגירה',
   ribbonMailingsEnvelopeNote:

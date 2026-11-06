@@ -935,7 +935,6 @@ export const th = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'รวมเอกสารแล้ว {n} ฉบับ',
   ribbonMailingsMergeFailed: 'การรวมล้มเหลว',
   ribbonMailingsClose: 'ปิด',
   ribbonMailingsEnvelopeNote:

@@ -948,7 +948,6 @@ export const hi = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} दस्तावेज़ मर्ज किए गए',
   ribbonMailingsMergeFailed: 'मर्ज विफल रहा',
   ribbonMailingsClose: 'बंद करें',
   ribbonMailingsEnvelopeNote:
@@ -992,7 +991,8 @@ export const hi = {
   ribbonMailingsRangeSummary: 'कुल {total} रिकॉर्ड · प्रति पृष्ठ {perPage} · कुल {pages} पृष्ठ',
   ribbonMailingsRangeSlot: 'रिकॉर्ड {n} = पृष्ठ {page}, स्लॉट {slot}',
   ribbonMailingsRangeWillExport: '{n} रिकॉर्ड निर्यात · {pages} पृष्ठ',
-  ribbonMailingsPerRecordPageHint: 'NEXT टेम्पलेट में प्रत्येक दस्तावेज़ में {n} रिकॉर्ड का एक पृष्ठ होता है',
+  ribbonMailingsPerRecordPageHint:
+    'NEXT टेम्पलेट में प्रत्येक दस्तावेज़ में {n} रिकॉर्ड का एक पृष्ठ होता है',
   ribbonMailingsMergedPages: '{files} दस्तावेज़ लिखे गए · {pages} पृष्ठ',
   ribbonMailingsRangeFromTo: 'से',
   ribbonMailingsRangeTo: 'तक',

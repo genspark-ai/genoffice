@@ -958,7 +958,6 @@ export const es = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documentos combinados',
   ribbonMailingsMergeFailed: 'La combinación ha fallado',
   ribbonMailingsClose: 'Cerrar',
   ribbonMailingsEnvelopeNote:
@@ -983,12 +982,15 @@ export const es = {
   ribbonMailingsSelectNone: 'No seleccionar nada',
   ribbonMailingsNoRecipients: 'La lista de destinatarios está vacía',
   ribbonMailingsExitPreview: 'Salir de la vista previa',
-  ribbonMailingsFinishTip: 'Combinar todos los destinatarios y abrir el resultado en una nueva pestaña',
+  ribbonMailingsFinishTip:
+    'Combinar todos los destinatarios y abrir el resultado en una nueva pestaña',
   ribbonMailingsFinishAllTip: 'Combinar todos los destinatarios ({n}) y abrir en una nueva pestaña',
   ribbonMailingsFinishPage: 'Página actual',
-  ribbonMailingsFinishPageTip: 'Combinar los registros de la página de vista previa actual y abrir en una nueva pestaña',
+  ribbonMailingsFinishPageTip:
+    'Combinar los registros de la página de vista previa actual y abrir en una nueva pestaña',
   ribbonMailingsFinishRange: 'De X a Y',
-  ribbonMailingsFinishRangeTip: 'Combinar registros en un rango especificado y abrir en una nueva pestaña',
+  ribbonMailingsFinishRangeTip:
+    'Combinar registros en un rango especificado y abrir en una nueva pestaña',
   ribbonMailingsInsertNext: 'Siguiente registro',
   ribbonMailingsInsertNextTip:
     'Insertar una regla NEXT: avanzar al siguiente registro al combinar (rellenar varios registros en una página)',
@@ -1003,7 +1005,8 @@ export const es = {
   ribbonMailingsRangeSummary: '{total} registros · {perPage} por página · {pages} páginas',
   ribbonMailingsRangeSlot: 'Registro {n} = página {page}, ranura {slot}',
   ribbonMailingsRangeWillExport: 'Exporta {n} registros · {pages} páginas',
-  ribbonMailingsPerRecordPageHint: 'Con una plantilla NEXT, cada documento contiene una página de {n} registros',
+  ribbonMailingsPerRecordPageHint:
+    'Con una plantilla NEXT, cada documento contiene una página de {n} registros',
   ribbonMailingsMergedPages: '{files} documentos escritos · {pages} páginas',
   ribbonMailingsRangeFromTo: 'Desde',
   ribbonMailingsRangeTo: 'Hasta',

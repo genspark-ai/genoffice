@@ -955,7 +955,6 @@ export const nl = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documenten samengevoegd',
   ribbonMailingsMergeFailed: 'Het samenvoegen is mislukt',
   ribbonMailingsClose: 'Sluiten',
   ribbonMailingsEnvelopeNote:
@@ -980,12 +979,15 @@ export const nl = {
   ribbonMailingsSelectNone: 'Niets selecteren',
   ribbonMailingsNoRecipients: 'De ontvangerlijst is leeg',
   ribbonMailingsExitPreview: 'Voorbeeld sluiten',
-  ribbonMailingsFinishTip: 'Alle ontvangers samenvoegen en het resultaat in een nieuw tabblad openen',
+  ribbonMailingsFinishTip:
+    'Alle ontvangers samenvoegen en het resultaat in een nieuw tabblad openen',
   ribbonMailingsFinishAllTip: 'Alle ontvangers ({n}) samenvoegen en in een nieuw tabblad openen',
   ribbonMailingsFinishPage: 'Huidige pagina',
-  ribbonMailingsFinishPageTip: 'Records op de huidige voorbeeldpagina samenvoegen en in een nieuw tabblad openen',
+  ribbonMailingsFinishPageTip:
+    'Records op de huidige voorbeeldpagina samenvoegen en in een nieuw tabblad openen',
   ribbonMailingsFinishRange: 'Van X tot Y',
-  ribbonMailingsFinishRangeTip: 'Records in een opgegeven bereik samenvoegen en in een nieuw tabblad openen',
+  ribbonMailingsFinishRangeTip:
+    'Records in een opgegeven bereik samenvoegen en in een nieuw tabblad openen',
   ribbonMailingsInsertNext: 'Volgende record',
   ribbonMailingsInsertNextTip:
     'NEXT-regel invoegen: bij het samenvoegen doorgaan naar het volgende record (meerdere records op één pagina vullen)',
@@ -997,11 +999,12 @@ export const nl = {
   ribbonMailingsRangeCurrent: 'Huidig record (nummer {n})',
   ribbonMailingsRangeCurrentPage: 'Huidige voorbeeldpagina (records {from}–{to})',
   ribbonMailingsRangeCurrentPageOne: 'Huidige voorbeeldpagina (record {n})',
-  ribbonMailingsRangeSummary: '{total} records · {perPage} per pagina · {pages} pagina\'s',
+  ribbonMailingsRangeSummary: "{total} records · {perPage} per pagina · {pages} pagina's",
   ribbonMailingsRangeSlot: 'Record {n} = pagina {page}, plaats {slot}',
-  ribbonMailingsRangeWillExport: 'Exporteert {n} records · {pages} pagina\'s',
-  ribbonMailingsPerRecordPageHint: 'Bij een NEXT-sjabloon bevat elk document één pagina met {n} records',
-  ribbonMailingsMergedPages: '{files} documenten geschreven · {pages} pagina\'s',
+  ribbonMailingsRangeWillExport: "Exporteert {n} records · {pages} pagina's",
+  ribbonMailingsPerRecordPageHint:
+    'Bij een NEXT-sjabloon bevat elk document één pagina met {n} records',
+  ribbonMailingsMergedPages: "{files} documenten geschreven · {pages} pagina's",
   ribbonMailingsRangeFromTo: 'Van',
   ribbonMailingsRangeTo: 'Tot',
   ribbonMailingsFilter: 'Filteren',

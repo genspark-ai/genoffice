@@ -943,7 +943,6 @@ export const en = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documents merged',
   ribbonMailingsMergeFailed: 'The merge failed',
   ribbonMailingsClose: 'Close',
   ribbonMailingsEnvelopeNote:
@@ -989,7 +988,8 @@ export const en = {
   ribbonMailingsRangeSummary: 'Total {total} records · {perPage} per page · {pages} pages',
   ribbonMailingsRangeSlot: 'Record {n} = page {page}, slot {slot}',
   ribbonMailingsRangeWillExport: 'Exports {n} records · {pages} pages',
-  ribbonMailingsPerRecordPageHint: 'With a NEXT template each document holds one page of {n} records',
+  ribbonMailingsPerRecordPageHint:
+    'With a NEXT template each document holds one page of {n} records',
   ribbonMailingsMergedPages: 'Wrote {files} documents · {pages} pages',
   ribbonMailingsRangeFromTo: 'From',
   ribbonMailingsRangeTo: 'To',

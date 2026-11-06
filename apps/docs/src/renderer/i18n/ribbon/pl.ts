@@ -951,7 +951,6 @@ export const pl = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'Scalono dokumentów: {n}',
   ribbonMailingsMergeFailed: 'Scalanie nie powiodło się',
   ribbonMailingsClose: 'Zamknij',
   ribbonMailingsEnvelopeNote:
@@ -995,7 +994,8 @@ export const pl = {
   ribbonMailingsRangeSummary: 'Łącznie {total} rekordów · {perPage} na stronę · {pages} stron',
   ribbonMailingsRangeSlot: 'Rekord {n} = strona {page}, miejsce {slot}',
   ribbonMailingsRangeWillExport: 'Eksportuje {n} rekordów · {pages} stron',
-  ribbonMailingsPerRecordPageHint: 'W szablonie NEXT każdy dokument zawiera jedną stronę z {n} rekordami',
+  ribbonMailingsPerRecordPageHint:
+    'W szablonie NEXT każdy dokument zawiera jedną stronę z {n} rekordami',
   ribbonMailingsMergedPages: 'Zapisano {files} dokumentów · {pages} stron',
   ribbonMailingsRangeFromTo: 'Od',
   ribbonMailingsRangeTo: 'Do',

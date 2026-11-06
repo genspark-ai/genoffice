@@ -959,7 +959,6 @@ export const it = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documenti uniti',
   ribbonMailingsMergeFailed: 'Unione non riuscita',
   ribbonMailingsClose: 'Chiudi',
   ribbonMailingsEnvelopeNote:
@@ -987,9 +986,11 @@ export const it = {
   ribbonMailingsFinishTip: 'Unisci tutti i destinatari e apri il risultato in una nuova scheda',
   ribbonMailingsFinishAllTip: 'Unisci tutti i destinatari ({n}) e apri in una nuova scheda',
   ribbonMailingsFinishPage: 'Pagina corrente',
-  ribbonMailingsFinishPageTip: 'Unisci i record sulla pagina di anteprima corrente e apri in una nuova scheda',
+  ribbonMailingsFinishPageTip:
+    'Unisci i record sulla pagina di anteprima corrente e apri in una nuova scheda',
   ribbonMailingsFinishRange: 'Da X a Y',
-  ribbonMailingsFinishRangeTip: 'Unisci i record in un intervallo specificato e apri in una nuova scheda',
+  ribbonMailingsFinishRangeTip:
+    'Unisci i record in un intervallo specificato e apri in una nuova scheda',
   ribbonMailingsInsertNext: 'Record successivo',
   ribbonMailingsInsertNextTip:
     "Inserisci una regola NEXT: passa al record successivo durante l'unione (compila più record in una pagina)",
@@ -1004,7 +1005,8 @@ export const it = {
   ribbonMailingsRangeSummary: '{total} record · {perPage} per pagina · {pages} pagine',
   ribbonMailingsRangeSlot: 'Record {n} = pagina {page}, slot {slot}',
   ribbonMailingsRangeWillExport: 'Esporta {n} record · {pages} pagine',
-  ribbonMailingsPerRecordPageHint: 'Con un modello NEXT ogni documento contiene una pagina di {n} record',
+  ribbonMailingsPerRecordPageHint:
+    'Con un modello NEXT ogni documento contiene una pagina di {n} record',
   ribbonMailingsMergedPages: '{files} documenti scritti · {pages} pagine',
   ribbonMailingsRangeFromTo: 'Da',
   ribbonMailingsRangeTo: 'A',

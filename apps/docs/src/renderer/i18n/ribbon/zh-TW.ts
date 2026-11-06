@@ -924,7 +924,6 @@ export const zhTW = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '已合併 {n} 個文件',
   ribbonMailingsMergeFailed: '合併失敗',
   ribbonMailingsClose: '關閉',
   ribbonMailingsEnvelopeNote:

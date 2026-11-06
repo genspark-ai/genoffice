@@ -960,7 +960,6 @@ export const ko = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '문서 {n}개를 병합했습니다',
   ribbonMailingsMergeFailed: '병합에 실패했습니다',
   ribbonMailingsClose: '닫기',
   ribbonMailingsEnvelopeNote:

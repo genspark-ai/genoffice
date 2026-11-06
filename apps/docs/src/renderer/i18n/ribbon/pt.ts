@@ -950,7 +950,6 @@ export const pt = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documentos mesclados',
   ribbonMailingsMergeFailed: 'A mesclagem falhou',
   ribbonMailingsClose: 'Fechar',
   ribbonMailingsEnvelopeNote:
@@ -977,9 +976,11 @@ export const pt = {
   ribbonMailingsFinishTip: 'Combinar todos os destinatários e abrir o resultado em uma nova aba',
   ribbonMailingsFinishAllTip: 'Combinar todos os destinatários ({n}) e abrir em uma nova aba',
   ribbonMailingsFinishPage: 'Página atual',
-  ribbonMailingsFinishPageTip: 'Combinar os registros na página de visualização atual e abrir em uma nova aba',
+  ribbonMailingsFinishPageTip:
+    'Combinar os registros na página de visualização atual e abrir em uma nova aba',
   ribbonMailingsFinishRange: 'De X a Y',
-  ribbonMailingsFinishRangeTip: 'Combinar registros em um intervalo especificado e abrir em uma nova aba',
+  ribbonMailingsFinishRangeTip:
+    'Combinar registros em um intervalo especificado e abrir em uma nova aba',
   ribbonMailingsInsertNext: 'Próximo registro',
   ribbonMailingsInsertNextTip:
     'Inserir uma regra NEXT: avançar para o próximo registro ao combinar (preencher vários registros em uma página)',
@@ -994,7 +995,8 @@ export const pt = {
   ribbonMailingsRangeSummary: '{total} registos · {perPage} por página · {pages} páginas',
   ribbonMailingsRangeSlot: 'Registo {n} = página {page}, posição {slot}',
   ribbonMailingsRangeWillExport: 'Exporta {n} registos · {pages} páginas',
-  ribbonMailingsPerRecordPageHint: 'Com um modelo NEXT, cada documento contém uma página de {n} registos',
+  ribbonMailingsPerRecordPageHint:
+    'Com um modelo NEXT, cada documento contém uma página de {n} registos',
   ribbonMailingsMergedPages: '{files} documentos escritos · {pages} páginas',
   ribbonMailingsRangeFromTo: 'De',
   ribbonMailingsRangeTo: 'Para',

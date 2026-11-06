@@ -942,7 +942,6 @@ export const vi = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'Đã trộn {n} tài liệu',
   ribbonMailingsMergeFailed: 'Trộn thư thất bại',
   ribbonMailingsClose: 'Đóng',
   ribbonMailingsEnvelopeNote:

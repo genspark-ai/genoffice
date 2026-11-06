@@ -956,7 +956,6 @@ export const de = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} Dokumente zusammengeführt',
   ribbonMailingsMergeFailed: 'Die Zusammenführung ist fehlgeschlagen',
   ribbonMailingsClose: 'Schließen',
   ribbonMailingsEnvelopeNote:
@@ -981,12 +980,15 @@ export const de = {
   ribbonMailingsSelectNone: 'Auswahl aufheben',
   ribbonMailingsNoRecipients: 'Die Empfängerliste ist leer',
   ribbonMailingsExitPreview: 'Vorschau beenden',
-  ribbonMailingsFinishTip: 'Alle Empfänger zusammenführen und das Ergebnis in einem neuen Tab öffnen',
+  ribbonMailingsFinishTip:
+    'Alle Empfänger zusammenführen und das Ergebnis in einem neuen Tab öffnen',
   ribbonMailingsFinishAllTip: 'Alle Empfänger ({n}) zusammenführen und in einem neuen Tab öffnen',
   ribbonMailingsFinishPage: 'Aktuelle Seite',
-  ribbonMailingsFinishPageTip: 'Zusammenführen der Datensätze auf der aktuellen Vorschauseite und Öffnen in einem neuen Tab',
+  ribbonMailingsFinishPageTip:
+    'Zusammenführen der Datensätze auf der aktuellen Vorschauseite und Öffnen in einem neuen Tab',
   ribbonMailingsFinishRange: 'Von X bis Y',
-  ribbonMailingsFinishRangeTip: 'Datensätze in einem bestimmten Bereich zusammenführen und in einem neuen Tab öffnen',
+  ribbonMailingsFinishRangeTip:
+    'Datensätze in einem bestimmten Bereich zusammenführen und in einem neuen Tab öffnen',
   ribbonMailingsInsertNext: 'Nächster Datensatz',
   ribbonMailingsInsertNextTip:
     'NEXT-Regel einfügen: Beim Zusammenführen zum nächsten Datensatz wechseln (mehrere Datensätze auf einer Seite ausfüllen)',
@@ -1001,7 +1003,8 @@ export const de = {
   ribbonMailingsRangeSummary: '{total} Datensätze · {perPage} pro Seite · {pages} Seiten',
   ribbonMailingsRangeSlot: 'Datensatz {n} = Seite {page}, Feld {slot}',
   ribbonMailingsRangeWillExport: 'Exportiert {n} Datensätze · {pages} Seiten',
-  ribbonMailingsPerRecordPageHint: 'Bei einer NEXT-Vorlage enthält jedes Dokument eine Seite mit {n} Datensätzen',
+  ribbonMailingsPerRecordPageHint:
+    'Bei einer NEXT-Vorlage enthält jedes Dokument eine Seite mit {n} Datensätzen',
   ribbonMailingsMergedPages: '{files} Dokumente geschrieben · {pages} Seiten',
   ribbonMailingsRangeFromTo: 'Von',
   ribbonMailingsRangeTo: 'Bis',

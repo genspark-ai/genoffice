@@ -972,7 +972,6 @@ export const zh = {
   ribbonMailingsDestinationTab: '在新标签页中打开',
   ribbonMailingsDestinationDisk: '保存到磁盘',
   ribbonMailingsMultiFileToDisk: '多文件输出将保存到文件夹',
-  ribbonMailingsMerged: '已合并 {n} 个文档',
   ribbonMailingsMergeFailed: '合并失败',
   ribbonMailingsClose: '关闭',
   ribbonMailingsEnvelopeNote:

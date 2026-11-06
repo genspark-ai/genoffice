@@ -948,7 +948,6 @@ export const id = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} dokumen digabungkan',
   ribbonMailingsMergeFailed: 'Penggabungan gagal',
   ribbonMailingsClose: 'Tutup',
   ribbonMailingsEnvelopeNote:
@@ -975,9 +974,11 @@ export const id = {
   ribbonMailingsFinishTip: 'Gabungkan semua penerima dan buka hasilnya di tab baru',
   ribbonMailingsFinishAllTip: 'Gabungkan semua penerima ({n}) dan buka di tab baru',
   ribbonMailingsFinishPage: 'Halaman saat ini',
-  ribbonMailingsFinishPageTip: 'Gabungkan catatan di halaman pratinjau saat ini dan buka di tab baru',
+  ribbonMailingsFinishPageTip:
+    'Gabungkan catatan di halaman pratinjau saat ini dan buka di tab baru',
   ribbonMailingsFinishRange: 'Dari X ke Y',
-  ribbonMailingsFinishRangeTip: 'Gabungkan catatan dalam rentang yang ditentukan dan buka di tab baru',
+  ribbonMailingsFinishRangeTip:
+    'Gabungkan catatan dalam rentang yang ditentukan dan buka di tab baru',
   ribbonMailingsInsertNext: 'Rekaman berikutnya',
   ribbonMailingsInsertNextTip:
     'Sisipkan aturan NEXT: maju ke rekaman berikutnya saat menggabungkan (isi banyak rekaman dalam satu halaman)',
@@ -992,7 +993,8 @@ export const id = {
   ribbonMailingsRangeSummary: '{total} catatan · {perPage} per halaman · {pages} halaman',
   ribbonMailingsRangeSlot: 'Catatan {n} = halaman {page}, slot {slot}',
   ribbonMailingsRangeWillExport: 'Ekspor {n} catatan · {pages} halaman',
-  ribbonMailingsPerRecordPageHint: 'Dengan templat NEXT, setiap dokumen memuat satu halaman berisi {n} catatan',
+  ribbonMailingsPerRecordPageHint:
+    'Dengan templat NEXT, setiap dokumen memuat satu halaman berisi {n} catatan',
   ribbonMailingsMergedPages: '{files} dokumen ditulis · {pages} halaman',
   ribbonMailingsRangeFromTo: 'Dari',
   ribbonMailingsRangeTo: 'Ke',

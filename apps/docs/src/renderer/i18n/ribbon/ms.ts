@@ -951,7 +951,6 @@ export const ms = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} dokumen digabungkan',
   ribbonMailingsMergeFailed: 'Gabungan gagal',
   ribbonMailingsClose: 'Tutup',
   ribbonMailingsEnvelopeNote:
@@ -978,7 +977,8 @@ export const ms = {
   ribbonMailingsFinishTip: 'Gabungkan semua penerima dan buka hasil dalam tab baharu',
   ribbonMailingsFinishAllTip: 'Gabungkan semua penerima ({n}) dan buka dalam tab baharu',
   ribbonMailingsFinishPage: 'Halaman semasa',
-  ribbonMailingsFinishPageTip: 'Gabungkan rekod pada halaman pratonton semasa dan buka dalam tab baharu',
+  ribbonMailingsFinishPageTip:
+    'Gabungkan rekod pada halaman pratonton semasa dan buka dalam tab baharu',
   ribbonMailingsFinishRange: 'Dari X ke Y',
   ribbonMailingsFinishRangeTip: 'Gabungkan rekod dalam julat tertentu dan buka dalam tab baharu',
   ribbonMailingsInsertNext: 'Rekod seterusnya',
@@ -995,7 +995,8 @@ export const ms = {
   ribbonMailingsRangeSummary: 'Jumlah {total} rekod · {perPage} setiap halaman · {pages} halaman',
   ribbonMailingsRangeSlot: 'Rekod {n} = halaman {page}, slot {slot}',
   ribbonMailingsRangeWillExport: 'Eksport {n} rekod · {pages} halaman',
-  ribbonMailingsPerRecordPageHint: 'Dengan templat NEXT, setiap dokumen mengandungi satu halaman dengan {n} rekod',
+  ribbonMailingsPerRecordPageHint:
+    'Dengan templat NEXT, setiap dokumen mengandungi satu halaman dengan {n} rekod',
   ribbonMailingsMergedPages: '{files} dokumen ditulis · {pages} halaman',
   ribbonMailingsRangeFromTo: 'Dari',
   ribbonMailingsRangeTo: 'Hingga',

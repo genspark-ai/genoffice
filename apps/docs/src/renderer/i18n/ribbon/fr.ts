@@ -959,7 +959,6 @@ export const fr = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} documents fusionnés',
   ribbonMailingsMergeFailed: 'La fusion a échoué',
   ribbonMailingsClose: 'Fermer',
   ribbonMailingsEnvelopeNote:
@@ -984,12 +983,16 @@ export const fr = {
   ribbonMailingsSelectNone: 'Tout désélectionner',
   ribbonMailingsNoRecipients: 'La liste des destinataires est vide',
   ribbonMailingsExitPreview: "Quitter l'aperçu",
-  ribbonMailingsFinishTip: 'Fusionner tous les destinataires et ouvrir le résultat dans un nouvel onglet',
-  ribbonMailingsFinishAllTip: 'Fusionner tous les destinataires ({n}) et ouvrir dans un nouvel onglet',
+  ribbonMailingsFinishTip:
+    'Fusionner tous les destinataires et ouvrir le résultat dans un nouvel onglet',
+  ribbonMailingsFinishAllTip:
+    'Fusionner tous les destinataires ({n}) et ouvrir dans un nouvel onglet',
   ribbonMailingsFinishPage: 'Page actuelle',
-  ribbonMailingsFinishPageTip: 'Fusionner les enregistrements sur la page de prévisualisation actuelle et ouvrir dans un nouvel onglet',
+  ribbonMailingsFinishPageTip:
+    'Fusionner les enregistrements sur la page de prévisualisation actuelle et ouvrir dans un nouvel onglet',
   ribbonMailingsFinishRange: 'De X à Y',
-  ribbonMailingsFinishRangeTip: 'Fusionner les enregistrements dans une plage spécifiée et ouvrir dans un nouvel onglet',
+  ribbonMailingsFinishRangeTip:
+    'Fusionner les enregistrements dans une plage spécifiée et ouvrir dans un nouvel onglet',
   ribbonMailingsInsertNext: 'Enregistrement suivant',
   ribbonMailingsInsertNextTip:
     "Insérer une règle NEXT : passer à l'enregistrement suivant lors de la fusion (remplir plusieurs enregistrements sur une page)",
@@ -1000,11 +1003,12 @@ export const fr = {
   ribbonMailingsRangeAll: 'Tout fusionner ({n} enregistrements)',
   ribbonMailingsRangeCurrent: 'Enregistrement actuel (numéro {n})',
   ribbonMailingsRangeCurrentPage: 'Page d’aperçu actuelle (enregistrements {from}–{to})',
-  ribbonMailingsRangeCurrentPageOne: 'Page d\'aperçu actuelle (enregistrement {n})',
+  ribbonMailingsRangeCurrentPageOne: "Page d'aperçu actuelle (enregistrement {n})",
   ribbonMailingsRangeSummary: '{total} enregistrements · {perPage} par page · {pages} pages',
   ribbonMailingsRangeSlot: 'Enregistrement {n} = page {page}, emplacement {slot}',
   ribbonMailingsRangeWillExport: 'Exporte {n} enregistrements · {pages} pages',
-  ribbonMailingsPerRecordPageHint: 'Avec un modèle NEXT, chaque document contient une page de {n} enregistrements',
+  ribbonMailingsPerRecordPageHint:
+    'Avec un modèle NEXT, chaque document contient une page de {n} enregistrements',
   ribbonMailingsMergedPages: '{files} documents écrits · {pages} pages',
   ribbonMailingsRangeFromTo: 'De',
   ribbonMailingsRangeTo: 'À',

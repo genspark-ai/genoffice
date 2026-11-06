@@ -962,7 +962,6 @@ export const ja = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: '{n} 個のドキュメントを差し込みました',
   ribbonMailingsMergeFailed: '差し込みに失敗しました',
   ribbonMailingsClose: '閉じる',
   ribbonMailingsEnvelopeNote:

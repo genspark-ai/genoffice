@@ -942,7 +942,6 @@ export const cs = {
   ribbonMailingsDestinationTab: 'Open in a new tab',
   ribbonMailingsDestinationDisk: 'Save to disk',
   ribbonMailingsMultiFileToDisk: 'Multi-file output is saved to a folder',
-  ribbonMailingsMerged: 'Sloučeno dokumentů: {n}',
   ribbonMailingsMergeFailed: 'Sloučení se nezdařilo',
   ribbonMailingsClose: 'Zavřít',
   ribbonMailingsEnvelopeNote:
@@ -986,7 +985,8 @@ export const cs = {
   ribbonMailingsRangeSummary: 'Celkem {total} záznamů · {perPage} na stránku · {pages} stran',
   ribbonMailingsRangeSlot: 'Záznam {n} = strana {page}, pozice {slot}',
   ribbonMailingsRangeWillExport: 'Exportuje {n} záznamů · {pages} stran',
-  ribbonMailingsPerRecordPageHint: 'U šablony NEXT obsahuje každý dokument jednu stránku s {n} záznamy',
+  ribbonMailingsPerRecordPageHint:
+    'U šablony NEXT obsahuje každý dokument jednu stránku s {n} záznamy',
   ribbonMailingsMergedPages: 'Zapsáno {files} dokumentů · {pages} stran',
   ribbonMailingsRangeFromTo: 'Od',
   ribbonMailingsRangeTo: 'Do',
