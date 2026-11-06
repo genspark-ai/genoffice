@@ -1079,7 +1079,6 @@ export function handleCreateTimeline(ctx: PivotActionContext, field: number): st
     range: null,
   }
   ctx.setTimelines((current) => [...current, timeline])
-  ctx.markSlicersChanged()
   ctx.setMessage(t('appTimelineCreated', { name: timeline.fieldName }))
   return null
 }
@@ -1108,7 +1107,6 @@ export function handleTimelineRange(
   ctx.setTimelines((current) =>
     current.map((entry) => (entry.id === timelineId ? { ...entry, range } : entry)),
   )
-  ctx.markSlicersChanged()
   ctx.setMessage(
     range === null
       ? t('appTimelineCleared', { name: timeline.fieldName })
@@ -1125,9 +1123,6 @@ export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string
     return
   }
   ctx.setTimelines((current) => current.filter((entry) => entry.id !== timelineId))
-  // Timelines are session-only: there is no file part to remove, and the
-  // slicer state is untouched by removing one.
-  ctx.markSlicersChanged()
   ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
 }
 

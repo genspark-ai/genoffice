@@ -411,6 +411,43 @@ describe('slicer write + read round trip', () => {
     expect(xml).toContain('</pivotCacheDefinition>')
   })
 
+  it("wires a first slicer at worksheet level past a linked CF rule's nested extLst", async () => {
+    const pkg = fixture()
+    pkg.write(
+      'xl/worksheets/sheet1.xml',
+      WORKSHEET.replace(
+        '</sheetData>',
+        '</sheetData><conditionalFormatting sqref="A1"><cfRule type="dataBar" priority="1"><dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="FF638EC6"/></dataBar><extLst><ext uri="{B025F937-C7B1-47D3-B67F-A62EFF666E3E}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:id>{1}</x14:id></ext></extLst></cfRule></conditionalFormatting>',
+      ),
+    )
+    await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+    const xml = await pkg.readText('xl/worksheets/sheet1.xml')
+    const slicerExt = xml.indexOf('<x14:slicerList>')
+    expect(slicerExt).toBeGreaterThan(xml.indexOf('</conditionalFormatting>'))
+    expect(xml.slice(slicerExt).match(/<\/extLst>/g)).toHaveLength(1)
+    expect(xml.indexOf('</worksheet>')).toBeGreaterThan(slicerExt)
+    expect(await parseSlicerState(readerOf(pkg))).toHaveLength(1)
+  })
+
+  it('adds the x14 ext to a pivot cache definition that already has an extLst', async () => {
+    const pkg = fixture()
+    pkg.write(
+      'xl/pivotCache/pivotCacheDefinition1.xml',
+      PIVOT_CACHE.replace(
+        '</pivotCacheDefinition>',
+        '<extLst><ext uri="{FOREIGN}" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><x15:pivotCacheDecoupled/></ext></extLst></pivotCacheDefinition>',
+      ),
+    )
+    await applySlicerState(pkg, { slicers: [SLICER_INPUT], removals: [] }, WORKBOOK, new Set())
+    const xml = await pkg.readText('xl/pivotCache/pivotCacheDefinition1.xml')
+    expect(xml.match(/<extLst>/g)).toHaveLength(1)
+    expect(xml).toContain('<x15:pivotCacheDecoupled/>')
+    expect(xml).toContain('<x14:pivotCacheDefinition pivotCacheId="1"/>')
+    expect(xml.indexOf('<x14:pivotCacheDefinition')).toBeGreaterThan(
+      xml.indexOf('<x15:pivotCacheDecoupled/>'),
+    )
+  })
+
   it('removes parts, rels, exts, frames, and content types without leaving orphans', async () => {
     const { pkg, slicer } = await writeInitial()
     pkg.write(

@@ -3649,6 +3649,7 @@ export function registerSheetsIpc(): void {
         /^xl\/(?:slicers|timelines|slicerCaches|timelineCaches|pivotTables)\/[^/]+\.xml$/.test(
           name,
         ) ||
+        /^xl\/pivotCache\/pivotCacheDefinition\d*\.xml$/.test(name) ||
         /^xl\/worksheets\/(?:_rels\/)?[^/]+\.xml(?:\.rels)?$/.test(name),
     )
     const texts = await readArchiveEntriesText(entry.client, session.snapshotPath, wanted)
