@@ -252,22 +252,9 @@ function deriveKey(
     const encryptMetadata = readEncryptMetadata(encrypt)
     const cfms = cfmsOf(encrypt)
     const compareLength = revision >= 3 ? 16 : u.length
-    // the password as the user's (Algorithm 2 + 4/5)
-    const userKey = legacyFileKey(padded, o, p, id0, keyLength, revision, encryptMetadata)
-    const userExpect = legacyExpectation(userKey, id0, revision)
-    if (equal(userExpect.subarray(0, compareLength), u.subarray(0, compareLength))) {
-      return {
-        derived: {
-          revision: revision as 2 | 3 | 4,
-          fileKey: userKey,
-          streamCfm: cfms.stream,
-          stringCfm: cfms.string,
-        },
-        unlockedAs: 'user',
-      }
-    }
-    // the password may still be the owner's (Algorithm 7/8): it decrypts /O
-    // back into the padded user password, which yields the file key
+    // the owner's password first (Algorithm 7/8): one that is also the user's
+    // (the usual protection with a single password) unlocks as the owner. It
+    // decrypts /O back into the padded user password, which yields the file key
     const ownerKey = legacyOwnerKey(padded, keyLength, revision)
     const recovered =
       revision >= 3
@@ -275,17 +262,31 @@ function deriveKey(
         : rc4(ownerKey, o.subarray(0, 32))
     const ownerFileKey = legacyFileKey(recovered, o, p, id0, keyLength, revision, encryptMetadata)
     const ownerExpect = legacyExpectation(ownerFileKey, id0, revision)
-    if (!equal(ownerExpect.subarray(0, compareLength), u.subarray(0, compareLength))) {
+    if (equal(ownerExpect.subarray(0, compareLength), u.subarray(0, compareLength))) {
+      return {
+        derived: {
+          revision: revision as 2 | 3 | 4,
+          fileKey: ownerFileKey,
+          streamCfm: cfms.stream,
+          stringCfm: cfms.string,
+        },
+        unlockedAs: 'owner',
+      }
+    }
+    // then as the user's (Algorithm 2 + 4/5)
+    const userKey = legacyFileKey(padded, o, p, id0, keyLength, revision, encryptMetadata)
+    const userExpect = legacyExpectation(userKey, id0, revision)
+    if (!equal(userExpect.subarray(0, compareLength), u.subarray(0, compareLength))) {
       throw new WrongPasswordError()
     }
     return {
       derived: {
         revision: revision as 2 | 3 | 4,
-        fileKey: ownerFileKey,
+        fileKey: userKey,
         streamCfm: cfms.stream,
         stringCfm: cfms.string,
       },
-      unlockedAs: 'owner',
+      unlockedAs: 'user',
     }
   }
 
@@ -296,6 +297,20 @@ function deriveKey(
   const oe = bytesOf(encrypt, 'OE')
   const pw = passwordBytes(password)
   const cfms = cfmsOf(encrypt)
+  // the owner's password first, as for the older revisions
+  const ownerValidation = r6Hash(revision6, pw, o.subarray(32, 40), u.subarray(0, 48))
+  if (equal(ownerValidation, o.subarray(0, 32))) {
+    const keyHash = r6Hash(revision6, pw, o.subarray(40, 48), u.subarray(0, 48))
+    return {
+      derived: {
+        revision: revision6,
+        fileKey: aes256DecryptNoPad(keyHash, oe),
+        stmIdentity: cfms.stream === 'Identity',
+        strIdentity: cfms.string === 'Identity',
+      },
+      unlockedAs: 'owner',
+    }
+  }
   const userValidation = r6Hash(revision6, pw, u.subarray(32, 40), new Uint8Array(0))
   if (equal(userValidation, u.subarray(0, 32))) {
     // the file key travels in /UE, encrypted under the key-salt hash
@@ -308,19 +323,6 @@ function deriveKey(
         strIdentity: cfms.string === 'Identity',
       },
       unlockedAs: 'user',
-    }
-  }
-  const ownerValidation = r6Hash(revision6, pw, o.subarray(32, 40), u.subarray(0, 48))
-  if (equal(ownerValidation, o.subarray(0, 32))) {
-    const keyHash = r6Hash(revision6, pw, o.subarray(40, 48), u.subarray(0, 48))
-    return {
-      derived: {
-        revision: revision6,
-        fileKey: aes256DecryptNoPad(keyHash, oe),
-        stmIdentity: cfms.stream === 'Identity',
-        strIdentity: cfms.string === 'Identity',
-      },
-      unlockedAs: 'owner',
     }
   }
   throw new WrongPasswordError()
