@@ -1603,9 +1603,17 @@ export function displayFontFamily(name: string): string {
   if (script === 'ja') return `'${name}', ${SERIF_HINT_RE.test(name) ? JA_SERIF : JA_SANS}`
   if (script === 'ko') return `'${name}', ${SERIF_HINT_RE.test(name) ? KO_SERIF : KO_SANS}`
   if (script === 'tc') return `'${name}', ${SERIF_HINT_RE.test(name) ? TC_SERIF : TC_SANS}`
-  // same tail as the gt-measure stack in shaped-metrics.ts
   return `'${name}', 'PingFang SC', 'Microsoft YaHei', 'Yu Gothic', 'Malgun Gothic', sans-serif`
 }
+
+declare global {
+  interface Window {
+    /** The drawing font stack, for main's ground-truth measureText (shaped-metrics.ts): glyphs a
+     *  face lacks must measure in the same fallback font they draw in, or word gaps drift. */
+    __genofficeDisplayFontFamily?: (name: string) => string
+  }
+}
+if (typeof window !== 'undefined') window.__genofficeDisplayFontFamily = displayFontFamily
 
 /**
  * Baseline anchoring for painted text, measured per family/style at a fixed size

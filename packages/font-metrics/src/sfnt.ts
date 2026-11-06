@@ -15,6 +15,30 @@ export const norm = (s: string) =>
     .toLowerCase()
     .replace(/[\s\-_]/g, '')
 
+/**
+ * Font asset catalogs under AssetsV2 (downloaded and OS-preinstalled), newest catalog
+ * version first. The version suffix moves with macOS releases (macOS 26 downloads into
+ * com_apple_MobileAsset_Font8 and leaves Font7 empty), so catalogs are discovered rather
+ * than hardcoded.
+ */
+export function appleFontAssetRoots(assetsV2 = '/System/Library/AssetsV2'): string[] {
+  const roots: Array<{ path: string; ver: number }> = []
+  for (const base of [assetsV2, join(assetsV2, 'PreinstalledAssetsV2/InstallWithOs')]) {
+    let names: string[]
+    try {
+      names = readdirSync(base)
+    } catch {
+      continue
+    }
+    for (const d of names) {
+      const m = /^com_apple_MobileAsset_Font(\d+)$/.exec(d)
+      if (m) roots.push({ path: join(base, d), ver: Number(m[1]) })
+    }
+  }
+  // Newer catalogs first; at equal version the downloaded catalog beats the preinstalled one
+  return roots.sort((a, b) => b.ver - a.ver).map((r) => r.path)
+}
+
 function fontDirs(): string[] {
   switch (process.platform) {
     case 'darwin':
@@ -25,8 +49,7 @@ function fontDirs(): string[] {
         join(homedir(), 'Library/Fonts'),
         // On-demand system font assets: PingFang and other CJK faces live here on
         // recent macOS ( <hash>.asset/AssetData/*.ttc ), not under /System/Library/Fonts
-        '/System/Library/AssetsV2/com_apple_MobileAsset_Font7',
-        '/System/Library/AssetsV2/com_apple_MobileAsset_Font6',
+        ...appleFontAssetRoots(),
       ]
     case 'win32':
       return ['C:\\Windows\\Fonts', join(homedir(), 'AppData/Local/Microsoft/Windows/Fonts')]
