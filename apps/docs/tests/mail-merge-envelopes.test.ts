@@ -9,15 +9,13 @@ import {
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { buildMailMergeFiles } from '../src/renderer/mail-merge/output'
-import { buildMailMergeFiles as buildLegacyMailMergeFiles } from './helpers/legacy-mail-merge-output'
 import { AVERY_5160, envelopeLayout } from '../src/renderer/mail-merge/layout'
 import type { FileActionContext } from '../src/renderer/file-actions'
 
 /**
- * The envelope and the label sheet, end to end, against the implementation this
- * migration replaced: the same template, the same records, the same request —
- * and the documents must come out the same.
- * genoffice#2097, genoffice#2374.
+ * The envelope and the label sheet, end to end: the same template, the same
+ * records, the same request — and the documents must come out on the right
+ * paper with the merged values and no field code. genoffice#2097, genoffice#2374.
  */
 
 const live: Editor[] = []
@@ -135,22 +133,40 @@ describe('the label sheet output', () => {
     expect(grid?.table?.rows[0]?.[0]?.paras.join('')).toContain('Ada')
   })
 
-  it('matches the label sheet the previous implementation wrote', async () => {
+  it('writes the merged names into the Avery 5160 grid, with no field code', async () => {
     const editor = await template()
     const ctx = await context(editor)
-    const request = {
-      mode: 'labels' as const,
+    const files = await buildMailMergeFiles(ctx, {
+      mode: 'labels',
       records,
       fields: ['FirstName', 'LastName'],
       namePattern: '',
       layout: AVERY_5160,
-    }
-    const now = await buildMailMergeFiles(ctx, request)
-    const before = await buildLegacyMailMergeFiles(ctx, request)
-    expect(now.map((file) => file.name)).toEqual(before.map((file) => file.name))
-    for (const [index, file] of now.entries()) {
-      expect(await textOf(file.bytes)).toBe(await textOf(before[index]!.bytes))
-      expect(await pageOf(file.bytes)).toEqual(await pageOf(before[index]!.bytes))
-    }
+    })
+    // one label sheet holds every record, on the Avery 5160 paper
+    expect(files).toHaveLength(1)
+    expect(files[0]!.name).toBe('letter-merged.docx')
+    const page = await pageOf(files[0]!.bytes)
+    expect(page.width).toBe(AVERY_5160.pageWidth)
+    expect(page.height).toBe(AVERY_5160.pageHeight)
+    // the records sit in the label grid's cells, not in the body paragraphs
+    const sheet = await parseDocx(files[0]!.bytes)
+    const grid = sheet.blocks.find((block) => block.type === 'table')
+    const rows = grid?.table?.rows
+    // Avery 5160: one row here holds the two records — 3 label columns plus 2 gutters
+    expect(rows).toHaveLength(1)
+    expect(rows![0]).toHaveLength(5)
+    // first label cell carries the first record's full merged name
+    expect(rows![0]![0]!.paras.join('')).toContain('Ada Lovelace')
+    // the label after the first gutter carries the second record
+    expect(rows![0]![2]!.paras.join('')).toContain('Ben Franklin')
+    // every merged value is on the sheet, and no field-code placeholder survives
+    const text = (rows ?? []).flatMap((row) => row.map((cell) => cell.paras.join(''))).join('\n')
+    expect(text).toContain('Ada')
+    expect(text).toContain('Lovelace')
+    expect(text).toContain('Ben')
+    expect(text).toContain('Franklin')
+    expect(text).not.toContain('First')
+    expect(text).not.toContain('Last')
   })
 })
