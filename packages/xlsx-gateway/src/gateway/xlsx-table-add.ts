@@ -282,11 +282,31 @@ function appendTablePart(worksheetXml: string, relId: string): string {
     return xml.replace(opener, reopened).replace('</tableParts>', `${part}</tableParts>`)
   }
   const element = `<tableParts count="1">${part}</tableParts>`
-  const extLstAt = xml.search(/<extLst\b/)
-  if (extLstAt >= 0) return xml.slice(0, extLstAt) + element + xml.slice(extLstAt)
-  const closeAt = xml.lastIndexOf('</worksheet>')
-  if (closeAt < 0) throw new TableAddError('The worksheet part is malformed.')
-  return xml.slice(0, closeAt) + element + xml.slice(closeAt)
+  const anchor = worksheetTailOffset(xml)
+  return xml.slice(0, anchor) + element + xml.slice(anchor)
+}
+
+/// Locate only the worksheet's own extension list or closing tag. A linked
+/// conditional-formatting rule may carry an earlier, nested extLst.
+function worksheetTailOffset(xml: string): number {
+  const tags =
+    /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE\b[\s\S]*?>|<\/?[A-Za-z_][\w:.-]*(?:[^>"']|"[^"]*"|'[^']*')*\/?>/g
+  const stack: string[] = []
+  for (const token of xml.matchAll(tags)) {
+    const tag = token[0]
+    if (tag.startsWith('<!--') || tag.startsWith('<![CDATA[') || tag.startsWith('<?')) continue
+    const name = /^<\/?([^\s/>]+)/.exec(tag)?.[1]
+    if (!name || tag.startsWith('<!')) break
+    if (tag.startsWith('</')) {
+      if (stack.pop() !== name) break
+      if (stack.length === 0) return token.index
+    } else {
+      if (stack.length === 0 && name !== 'worksheet') break
+      if (stack.length === 1 && name === 'extLst') return token.index
+      if (!tag.endsWith('/>')) stack.push(name)
+    }
+  }
+  throw new TableAddError('The worksheet part is malformed.')
 }
 
 export function areaToRef(area: TableArea): string {
