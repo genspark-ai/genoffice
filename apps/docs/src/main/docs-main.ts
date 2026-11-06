@@ -4292,6 +4292,10 @@ async function loadDocx(
   await rememberDiskState(wcId, filePath, hash)
   return {
     path: filePath,
+    // a merge temp file is not the user's document: the tab opens it pathless,
+    // so a save asks for a destination instead of writing back into the temp
+    // dir, which is removed once the tab closes
+    pathless: mergeTempDirOf(filePath) !== null,
     name: basename(filePath),
     dataUrl: handOffBytes(bytes),
     hash,
@@ -5669,7 +5673,10 @@ export function registerDocsIpc(): void {
   // file is picked here — the sheet is the user's second step, because a
   // workbook holds several and the merge reads the one they name.
   // The picked path is the only one the renderer may ask to re-read below.
-  let mergeSourcePath: string | null = null
+  // Keyed by the tab that picked it: two tabs picking sources at the same time
+  // must not overwrite each other, and one tab must not be able to read the
+  // path another tab picked.
+  const mergeSourcePaths = new Map<number, string>()
   ipcMain.handle('docs:merge-data-source', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgMergeDataSource'),
@@ -5683,29 +5690,30 @@ export function registerDocsIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     try {
-      mergeSourcePath = result.filePaths[0]
-      return { ok: true, file: await readMergeDataSourceFile(mergeSourcePath) }
+      const wcId = event.sender.id
+      if (!mergeSourcePaths.has(wcId)) {
+        event.sender.once('destroyed', () => mergeSourcePaths.delete(wcId))
+      }
+      mergeSourcePaths.set(wcId, result.filePaths[0])
+      return { ok: true, file: await readMergeDataSourceFile(result.filePaths[0]) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
   // Mailings tab: read the sheet the user confirmed as the recipient list. Only
-  // the path the pick dialog returned is accepted, so the renderer cannot ask
-  // the main process to open an arbitrary file as a merge source.
-  ipcMain.handle(
-    'docs:read-merge-data-source',
-    async (_event, path: string, sheetName?: string) => {
-      if (!path || path !== mergeSourcePath) {
-        return { ok: false, error: 'unexpected merge data source path' }
-      }
-      try {
-        return { ok: true, source: await readMergeDataSource(path, sheetName) }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  )
+  // the path this tab's pick dialog returned is accepted, so the renderer
+  // cannot ask the main process to open an arbitrary file as a merge source.
+  ipcMain.handle('docs:read-merge-data-source', async (event, path: string, sheetName?: string) => {
+    if (!path || path !== mergeSourcePaths.get(event.sender.id)) {
+      return { ok: false, error: 'unexpected merge data source path' }
+    }
+    try {
+      return { ok: true, source: await readMergeDataSource(path, sheetName) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   // Mailings tab: build the merged documents and either save them to disk or
   // open them in the app. The default is on disk — a single / label / envelope

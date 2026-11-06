@@ -18,10 +18,11 @@ import { useI18n } from '../i18n/locale'
  * merge itself.
  *
  * The panel that hosts it has already asked for the output shape — one batch
- * document, one file per record, a label sheet, or one envelope per record —
- * and holds the paper it prints on. This only asks which records are merged;
- * where the result goes: on disk (Save As / a folder) by default, or opened in
- * a new tab of the app. The range has no default, the user picks one.
+ * document, one file per record, a label sheet, or one document holding an
+ * envelope per page — and holds the paper it prints on. This only asks which
+ * records are merged; where the result goes: on disk (Save As / a folder) by
+ * default, or opened in a new tab of the app. The range has no default, the
+ * user picks one.
  *
  * genoffice#2097, genoffice#2374.
  */
@@ -41,7 +42,7 @@ export interface MergeFinishDialogProps {
   layout?: MergePageLayout
   /** the field the file names come from; the multi-file outputs need it */
   namePattern?: string
-  /** build the documents and open them in the app */
+  /** build the documents and write them where the user asked for */
   onMerge: (request: MailMergeRequest) => Promise<MailMergeResponse>
 }
 
@@ -223,8 +224,10 @@ export function MergeFinishDialog({
       const count = Math.max(0, range.end - range.start + 1)
       const pages = mergePageCount(count, slotsPerPage)
       // The app builds the merged documents (it owns the document context the
-      // merge needs) and opens them in the app — one file for the batch/label/
-      // envelope outputs, one file per record for the per-record output.
+      // merge needs) and writes them where the user asked for: on disk by
+      // default — one document for the single / label / envelope output, one
+      // file per record for the per-record output — or into a temp file that
+      // is opened in a new tab.
       const res = await onMerge({
         mode,
         records,
@@ -268,7 +271,7 @@ export function MergeFinishDialog({
           <input
             type="radio"
             name="mailmerge-destination"
-            checked={destination === 'disk'}
+            checked={effectiveDestination === 'disk'}
             onChange={() => setDestination('disk')}
           />
           {t('ribbonMailingsDestinationDisk')}
@@ -277,7 +280,7 @@ export function MergeFinishDialog({
           <input
             type="radio"
             name="mailmerge-destination"
-            checked={destination === 'tab'}
+            checked={effectiveDestination === 'tab'}
             disabled={multiFile}
             onChange={() => setDestination('tab')}
           />

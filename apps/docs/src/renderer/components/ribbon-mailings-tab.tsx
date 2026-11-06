@@ -13,6 +13,7 @@ import {
   substituteWithCursor,
 } from '../mail-merge/template'
 import { viewRecipients, type FilterCondition, type SortKey } from '../mail-merge/recipients'
+import { setPreviewReadOnly, setPreviewTemplate } from '../mail-merge/preview-extension'
 import { MailMergePanel } from './MailMergePanel'
 import { MergeDataSourceDialog } from './MergeDataSourceDialog'
 import { MergeRecipientList } from './MergeRecipientList'
@@ -40,6 +41,12 @@ import { BIG, type SetDropdown, toggleDropdown } from './ribbon-tabs'
 export interface MailingsTabProps {
   editor: Editor
   hasDoc: boolean
+  /**
+   * The path of the document in the editor. The preview belongs to the document
+   * it was started on: when another document takes its place, the preview leaves
+   * instead of writing the old template over the new one.
+   */
+  docPath?: string | null
   dropdown: string | null
   setDropdown: SetDropdown
   /** the data source the user picked, null when there is none yet */
@@ -64,6 +71,7 @@ export interface MailingsTabProps {
 export function MailingsTab({
   editor,
   hasDoc,
+  docPath,
   dropdown,
   setDropdown,
   source,
@@ -96,6 +104,8 @@ export function MailingsTab({
   // the document as it was so it can be put back on exit, and survives re-renders
   const savedRef = useRef<PmNode | null>(null)
   const previewingRef = useRef(false)
+  /** the document the preview was started on: another one taking its place ends it */
+  const previewDocPathRef = useRef<string | null | undefined>(undefined)
   // a new list starts at its first record, with nothing taken out and no filter or sort
   useEffect(() => {
     setRecordIndex(0)
@@ -183,8 +193,9 @@ export function MailingsTab({
       if (!record) return
       savedRef.current = editor.getJSON() as PmNode
       // tell everyone who reads editor.getJSON() to use the saved original instead
-      editor.storage.mailmergePreviewJson = savedRef.current
-      editor.setEditable(false)
+      setPreviewTemplate(editor, savedRef.current)
+      previewDocPathRef.current = docPath
+      setPreviewReadOnly(editor, true)
       editor
         .chain()
         .setMeta('addToHistory', false)
@@ -201,9 +212,10 @@ export function MailingsTab({
           .setContent(savedRef.current as never, { emitUpdate: false })
           .run()
       }
-      editor.storage.mailmergePreviewJson = null
+      setPreviewTemplate(editor, null)
       savedRef.current = null
-      editor.setEditable(true)
+      previewDocPathRef.current = undefined
+      setPreviewReadOnly(editor, false)
       previewingRef.current = false
       setPreviewing(false)
       onPreviewingChange?.(false)
@@ -230,14 +242,30 @@ export function MailingsTab({
       .setMeta('addToHistory', false)
       .setContent(savedRef.current as never, { emitUpdate: false })
       .run()
-    editor.storage.mailmergePreviewJson = null
+    setPreviewTemplate(editor, null)
     savedRef.current = null
-    editor.setEditable(true)
+    setPreviewReadOnly(editor, false)
     previewingRef.current = false
     setPreviewing(false)
     onPreviewingChange?.(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source?.path])
+
+  // another document took the editor's place: the preview belonged to the one
+  // that was there before, so it ends here — without writing the old template
+  // over the new document
+  useEffect(() => {
+    if (!previewingRef.current) return
+    if (docPath === previewDocPathRef.current) return
+    setPreviewTemplate(editor, null)
+    savedRef.current = null
+    previewDocPathRef.current = undefined
+    setPreviewReadOnly(editor, false)
+    previewingRef.current = false
+    setPreviewing(false)
+    onPreviewingChange?.(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docPath, editor])
 
   // the tab goes inert (unmount) with the document still swapped: put it back
   useEffect(
@@ -248,8 +276,8 @@ export function MailingsTab({
           .setMeta('addToHistory', false)
           .setContent(savedRef.current as never, { emitUpdate: false })
           .run()
-        editor.storage.mailmergePreviewJson = null
-        editor.setEditable(true)
+        setPreviewTemplate(editor, null)
+        setPreviewReadOnly(editor, false)
         previewingRef.current = false
         onPreviewingChange?.(false)
       }

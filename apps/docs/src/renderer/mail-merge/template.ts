@@ -7,6 +7,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { Editor } from '@tiptap/core'
 import type { PmNode } from '../editor/convert'
+import { previewTemplate } from './preview-extension'
 
 /**
  * The template half of the mail merge: the document with its merge fields
@@ -87,13 +88,13 @@ export function recordPage(
  * The template the user wrote, even while the mail-merge preview is on.
  *
  * Preview swaps the editor's document for merged values and keeps the original
- * (with its merge-field codes) on `editor.storage.mailmergePreviewJson`. Readers
- * that act on the real document must go through here so a preview does not make
- * them substitute already-merged text. Outside a preview the live doc is the
+ * (with its merge-field codes) in the preview extension's storage. Readers that
+ * act on the real document must go through here so a preview does not make them
+ * substitute already-merged text. Outside a preview the live doc is the
  * template. genoffice#2097.
  */
 export function originalTemplateDoc(editor: Editor): PmNode {
-  return editor.storage.mailmergePreviewJson ?? (editor.getJSON() as PmNode)
+  return previewTemplate(editor) ?? (editor.getJSON() as PmNode)
 }
 
 /**
@@ -104,7 +105,7 @@ export function originalTemplateDoc(editor: Editor): PmNode {
  * model must be fenced off. genoffice#2097.
  */
 export function mailMergePreviewActive(editor: Editor | null | undefined): boolean {
-  return !!editor?.storage.mailmergePreviewJson
+  return previewTemplate(editor) !== null
 }
 
 /**

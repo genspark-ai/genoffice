@@ -517,7 +517,9 @@ export async function loadFile(
     noteDocumentSwapped()
     ctx.setDoc({
       parsed,
-      filePath: result.path,
+      // a merge temp file opens pathless: the tab owns no path, so a save asks
+      // for a destination (the temp dir the merge wrote is not the user's)
+      filePath: result.pathless ? null : result.path,
       fileName: result.name,
       hash: result.hash,
       encrypted: result.encrypted,
@@ -842,8 +844,8 @@ export async function buildDocBytes(
   const { doc, editor } = ctx
   if (!doc || !editor) return null
   // Preview (mail-merge) swaps the editor content for merged values but keeps
-  // the original doc on editor.storage.mailmergePreviewJson — save/export must
-  // use the original so merge-field code survives the round-trip.
+  // the original doc in the preview extension's storage — save/export must use
+  // the original so merge-field code survives the round-trip.
   const pmJson = pmOverride ?? originalTemplateDoc(editor)
   const plan = pmDocToSavePlan(pmJson, doc.parsed.blocks)
   // chart data edits patch the chart's own zip part, not the body XML

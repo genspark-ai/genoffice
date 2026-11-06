@@ -430,6 +430,12 @@ interface RibbonProps {
    * for the model are fenced off while it is on.
    */
   onMailMergePreviewingChange?: (previewing: boolean) => void
+  /**
+   * The mail-merge preview holds the editor's document with the merged values:
+   * the editing commands stay off while it is on, the same way the AI panel
+   * and the print path are fenced. genoffice#2097.
+   */
+  mailMergePreviewing?: boolean
   /** current document path (View → New Window opens it in another window) */
   filePath: string | null
   viewMode: ViewMode
@@ -892,6 +898,7 @@ function RibbonInner({
   onReadMergeDataSource,
   onMergeMailings,
   onMailMergePreviewingChange,
+  mailMergePreviewing,
   footer,
   onFooter,
   hfEditing,
@@ -1040,7 +1047,7 @@ function RibbonInner({
   const ed = sub ?? editor
   // read-only (Restrict Editing / Read Mode): every edit command is fenced here,
   // button disabled states are only the visual layer on top
-  const canEdit = hasDoc && fs.editable
+  const canEdit = hasDoc && fs.editable && !mailMergePreviewing
   const docMode = docModeOf(readMode, trackChanges)
   const applyDocMode = (m: DocMode) => {
     if (m === 'viewing') {
@@ -4648,6 +4655,7 @@ function RibbonInner({
             onInsertField={onInsertField}
             onMerge={onMergeMailings}
             onPreviewingChange={onMailMergePreviewingChange}
+            docPath={filePath}
           />
         ) : tab === 'review' ? (
           <ReviewTab

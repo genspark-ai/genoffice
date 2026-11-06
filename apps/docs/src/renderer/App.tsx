@@ -2618,11 +2618,11 @@ export function App() {
   }, [])
 
   /**
-   * Build the merged documents and open them in the app — the 0.12.29 behaviour.
-   * The main process writes each document to a temp file and opens it in a new
-   * tab, so nothing lands on disk unless the user saves it themselves. One file
-   * for the batch/label outputs, one file per record for the per-record and
-   * envelope outputs, all opened where they belong.
+   * Build the merged documents and write them where the user asked for. The
+   * default is on disk: a Save As for the single / label / envelope output
+   * (one document each) and a folder the user picks for the per-record output
+   * (one file per record). "Open in app" instead drops each document in a
+   * temp file and opens it in a new tab.
    */
   const mergeMailings = useCallback(
     async (request: MailMergeRequest): Promise<MailMergeResponse> => {
@@ -8291,6 +8291,7 @@ export function App() {
         quickActions={quickActions}
         mergeSource={mergeSource}
         onMailMergePreviewingChange={setMailMergePreviewing}
+        mailMergePreviewing={mailMergePreviewing}
         editor={editor}
         formatState={formatState}
         hasDoc={!!doc}

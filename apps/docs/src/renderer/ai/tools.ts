@@ -8,7 +8,7 @@ import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from '@genoffice/age
 import { executeOps, opNames } from './ops'
 import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { redactTextBetween } from './redact-view'
-import { originalTemplateDoc } from '../mail-merge/template'
+import { originalTemplateDoc, mailMergePreviewActive } from '../mail-merge/template'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import {
   PAGE_SETUP_TOOL,
@@ -1229,7 +1229,7 @@ export function executeTool(
   // During a mail-merge preview the editor holds substituted preview text, not
   // the real template — mutations would desync it from the saved original.
   // Block every AI tool until the user exits the preview.
-  if (editor.storage.mailmergePreviewJson) {
+  if (mailMergePreviewActive(editor)) {
     return fail(
       'Mail merge preview active',
       'Exit the mail merge preview before editing the document with AI.',

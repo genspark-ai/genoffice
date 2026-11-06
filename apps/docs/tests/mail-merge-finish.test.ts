@@ -1,6 +1,6 @@
 // The mail merge output: the panel picks the output shape, and the finish
-// section asks which records to merge and opens the result in the app — the
-// 0.12.29 behaviour, no save dialog.
+// section asks which records to merge and where the result goes — on disk by
+// default (a Save As or a folder the user picks), or opened in a new tab.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'

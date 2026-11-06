@@ -9,6 +9,12 @@ export interface OpenFileResult {
   encrypted?: boolean
   /** content came from a newer crash-recovery copy and still needs an explicit save */
   recovered?: boolean
+  /**
+   * The file is a merge temp artifact: the document opens pathless, so a save
+   * asks for a destination instead of writing back into the temp dir the merge
+   * owns (that dir is removed once the tab holding it closes).
+   */
+  pathless?: boolean
 }
 
 /** Password-protected (ECMA-376 encrypted) docx: the renderer prompts for the
