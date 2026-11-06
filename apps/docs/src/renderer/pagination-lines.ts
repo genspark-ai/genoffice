@@ -1479,13 +1479,32 @@ function insideVerticalMerge(row: Element): boolean {
   return false
 }
 
+/**
+ * A middle/bottom-aligned cell is positioned against the *whole* row height,
+ * not against its own content. Growing the row with an in-cell gap band
+ * therefore re-places that cell's text in the middle of the new blank, and the
+ * row's borders frame a page-tall empty area (the "long chin" of genoffice
+ * #2114, but without a rowspan to trip the insideVerticalMerge guard). The
+ * measured cellContentBottom test below cannot catch this: it reads the
+ * previous pass's geometry, from before the band was inserted. Such rows take
+ * the zero-height cut marker and let the per-cell split rules carry the
+ * continuation instead.
+ */
+function hasHeightCoupledCell(cells: readonly Element[]): boolean {
+  return cells.some((c) => {
+    const va = (c as HTMLElement).style.verticalAlign
+    return va === 'middle' || va === 'bottom'
+  })
+}
+
 /** In-row cut decoration policy: a single-cell row can host a real inline gap band
  *  (one cell spans the whole cut) — returns that cell. A multi-cell row can too when
  *  every other cell's content ends above the cut (nothing at the band's y to
  *  misalign — HTML→docx layout tables put whole articles in one cell next to
  *  spacer-gif sliver cells); otherwise the zero-height cut marker stays (same-y
  *  bands across cells are not modeled) — returns null. A row inside a vertical
- *  merge never hosts a band (see insideVerticalMerge). */
+ *  merge never hosts a band (see insideVerticalMerge), and neither does a row
+ *  with a middle/bottom-aligned cell (see hasHeightCoupledCell). */
 export function singleCutCell(
   row: Element | null,
   anchor?: LineAnchor | null,
@@ -1500,6 +1519,7 @@ export function singleCutCell(
   // measure (genoffice#2114) — the zero-height cut marker carries the break
   if (insideVerticalMerge(row as HTMLTableRowElement)) return null
   if (cells.length === 1) return cells[0]
+  if (hasHeightCoupledCell(cells)) return null
   if (!anchor) return null
   const anchorCell = anchorElement(anchor)?.closest('td, th')
   const host = anchorCell && cells.find((c) => c === anchorCell || c.contains(anchorCell))

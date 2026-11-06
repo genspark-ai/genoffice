@@ -190,6 +190,40 @@ describe('in-row table cut decorations', () => {
     sp.appendChild(strut)
     expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
   })
+
+  // genoffice#2114's "long chin" without a rowspan: Word's most common table
+  // shape is a narrow, vertically centred label column next to a long text
+  // cell. The band would grow the row, and the centred label (positioned
+  // against the whole row height) lands in the new blank instead of staying
+  // with its text. cellContentBottom reads the geometry from before the band
+  // existed, so the authored alignment is the only reliable signal.
+  it.each(['middle', 'bottom'] as const)(
+    'a %s-aligned cell keeps the zero-height cut marker instead of a band',
+    (align) => {
+      const { tr, anchor } = cellAnchorRow(4)
+      ;(tr.children[1] as HTMLElement).style.verticalAlign = align
+      expect(singleCutCell(tr, anchor)).toBeNull()
+    },
+  )
+
+  it('a middle-aligned host cell also keeps the zero-height cut marker', () => {
+    const { tr, anchor } = cellAnchorRow(4)
+    ;(tr.children[0] as HTMLElement).style.verticalAlign = 'middle'
+    expect(singleCutCell(tr, anchor)).toBeNull()
+  })
+
+  it('top-aligned cells still host a real band when the sibling ends above the cut', () => {
+    const { tr, anchor } = cellAnchorRow(4)
+    ;(tr.children[0] as HTMLElement).style.verticalAlign = 'top'
+    ;(tr.children[1] as HTMLElement).style.verticalAlign = 'top'
+    expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  it('a single-cell row still hosts a band even when it is middle-aligned', () => {
+    const tr = rowOf(1)
+    ;(tr.firstElementChild as HTMLElement).style.verticalAlign = 'middle'
+    expect(singleCutCell(tr)).toBe(tr.firstElementChild)
+  })
 })
 
 describe('phantom-row rowspan bridging', () => {
