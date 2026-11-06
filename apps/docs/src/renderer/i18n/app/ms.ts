@@ -86,6 +86,8 @@ export const ms = {
   appPgNumHintBlank: 'Biarkan "Mula pada" kosong untuk meneruskan dari seksyen sebelumnya',
   appPgNumAppliesTo: '; digunakan pada seksyen {n}',
   appExportingPdf: 'Mengeksport PDF…',
+  appMailMergePreviewPrint: 'Keluar daripada pratonton mail merge untuk mencetak atau mengeksport',
+  appMailMergePreviewAi: 'Keluar daripada pratonton mail merge untuk menggunakan panel AI',
   appExportingHtml: 'Mengeksport HTML…',
   appExportingMarkdown: 'Mengeksport Markdown…',
   appExportPdf: 'Eksport PDF',
@@ -595,4 +597,5 @@ export const ms = {
   appCtxResolveComment: 'Selesaikan Komen',
   appRevisionsAcceptedN: '{n} perubahan diterima',
   appRevisionsRejectedN: '{n} perubahan ditolak',
+  appMergeOpened: 'Hasil gabungan dibuka dalam tab baharu',
 } satisfies Record<keyof typeof zh, string>

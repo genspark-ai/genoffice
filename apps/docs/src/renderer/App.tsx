@@ -103,6 +103,7 @@ import type {
   AiSettings,
   MenuCommand,
   MergeDataSource,
+  MergeDataSourceFile,
   OpenDocxResult,
 } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
@@ -111,6 +112,7 @@ import {
   type MailMergeRequest,
   type MailMergeResponse,
 } from './mail-merge/output'
+import { setPreviewLocked } from './mail-merge/preview-extension'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
@@ -790,6 +792,12 @@ export function App() {
   const [doc, setDoc] = useState<DocState | null>(null)
   /** a phased open is still streaming the document tail: editor stays read-only */
   const [docLoading, setDocLoading] = useState(false)
+  /**
+   * The mail-merge preview holds the editor's document with the merged values.
+   * While it is on, the paths that write the document out (print, PDF export)
+   * and the AI panel are fenced off. genoffice#2097.
+   */
+  const [mailMergePreviewing, setMailMergePreviewing] = useState(false)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
   const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null>(
     null,
@@ -2098,16 +2106,29 @@ export function App() {
   // Read Mode / Protect Document: the document becomes read-only; Esc leaves Read Mode.
   // A phased open stays editable (the append boundary is guarded by
   // StreamingTailGuardExtension; saves wait for the full content).
+  // The mail-merge preview owns the editable state while it is on: this effect
+  // must not hand editability back underneath it (the preview restores the
+  // previous state itself when it ends).
   useEffect(() => {
     if (!editor) return
-    editor.setEditable(!readMode && !isProtected)
+    editor.setEditable(!readMode && !isProtected && !mailMergePreviewing)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReadMode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, readMode, isProtected])
+  }, [editor, readMode, isProtected, mailMergePreviewing])
+
+  // Mail-merge preview: the App-level lock, not the ribbon's greyed-out buttons,
+  // is what keeps the merged document read-only. It drives a transaction filter
+  // under the editor: while it is on, doc-changing transactions are refused
+  // wherever they came from (typing, shortcuts, the context menu, AI edits,
+  // programmatic dispatch); the preview's own swaps carry a bypass meta.
+  useEffect(() => {
+    if (!editor) return
+    setPreviewLocked(editor, mailMergePreviewing)
+  }, [editor, mailMergePreviewing])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {
@@ -2571,41 +2592,75 @@ export function App() {
   /** the recipient list the user picked; null until they pick one */
   const [mergeSource, setMergeSource] = useState<MergeDataSource | null>(null)
 
-  /** open the file dialog and read the recipient list the user chose */
-  const pickMergeDataSource = useCallback(async () => {
-    const result = await window.desktop.pickMergeDataSource()
-    if (!result) return
-    if (!result.ok) {
-      setStatus(result.error)
-      return
+  /** pick the file the recipient list comes from; null when the user canceled */
+  const pickMergeDataSourceFile = useCallback(async (): Promise<MergeDataSourceFile | null> => {
+    try {
+      const result = await window.desktop.pickMergeDataSource()
+      if (!result) return null
+      if (!result.ok) {
+        setStatus(result.error)
+        return null
+      }
+      return result.file
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return null
     }
-    setMergeSource(result.source)
-    setStatus(
-      t('appMergeSourceLoaded', {
-        name: result.source.name,
-        n: result.source.records.length,
-      }),
-    )
   }, [])
 
-  /** build the merged documents and write them where the user says */
+  /** read the sheet the user confirmed as the recipient list */
+  const readMergeDataSource = useCallback(async (path: string, sheet: string): Promise<boolean> => {
+    try {
+      const result = await window.desktop.readMergeDataSource(path, sheet)
+      if (!result) return false
+      if (!result.ok) {
+        setStatus(result.error)
+        return false
+      }
+      setMergeSource(result.source)
+      setStatus(
+        t('appMergeSourceLoaded', {
+          name: result.source.name,
+          n: result.source.records.length,
+        }),
+      )
+      return true
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }, [])
+
+  /**
+   * Build the merged documents and write them where the user asked for. The
+   * default is on disk: a Save As for the single / label / envelope output
+   * (one document each) and a folder the user picks for the per-record output
+   * (one file per record). "Open in app" instead drops each document in a
+   * temp file and opens it in a new tab.
+   */
   const mergeMailings = useCallback(
     async (request: MailMergeRequest): Promise<MailMergeResponse> => {
       try {
         const files = await buildMailMergeFiles(fileCtxRef.current, request)
         if (files.length === 0) return { ok: false, error: t('appMergeNothingToWrite') }
+        const payload = files.map((file) => ({
+          name: file.name,
+          data: file.bytes.buffer.slice(
+            file.bytes.byteOffset,
+            file.bytes.byteOffset + file.bytes.byteLength,
+          ) as ArrayBuffer,
+        }))
         const written = await window.desktop.writeMergeOutput({
           mode: request.mode,
-          files: files.map((file) => ({
-            name: file.name,
-            data: file.bytes.buffer.slice(
-              file.bytes.byteOffset,
-              file.bytes.byteOffset + file.bytes.byteLength,
-            ) as ArrayBuffer,
-          })),
+          destination: request.destination,
+          files: payload,
         })
         if (written.ok) {
-          setStatus(t('appMergeWritten', { n: written.count ?? files.length }))
+          setStatus(
+            request.destination === 'tab'
+              ? t('appMergeOpened')
+              : t('appMergeWritten', { n: written.count ?? files.length }),
+          )
         }
         return written
       } catch (err) {
@@ -2909,7 +2964,9 @@ export function App() {
   const insertField = useCallback(
     (instr: string) => {
       if (!editor) return
-      const value = fieldValue(instr) || ' '
+      const keyword = instr.trim().split(/\s+/)[0]?.toUpperCase()
+      // NEXT shows as a label, not as the empty result Word would write
+      const value = keyword === 'NEXT' ? t('ribbonMailingsNextLabel') : fieldValue(instr) || ' '
       editor
         .chain()
         .focus()
@@ -7631,7 +7688,8 @@ export function App() {
     onHeader: (next: HeaderFooter) => commitHfAt(0, 'header', headerAreaView, next),
     onPageNumFormat: openPgNumModal,
     onInsertField: insertField,
-    onPickMergeDataSource: () => void pickMergeDataSource(),
+    onPickMergeDataSourceFile: () => pickMergeDataSourceFile(),
+    onReadMergeDataSource: (path: string, sheet: string) => readMergeDataSource(path, sheet),
     onMergeMailings: mergeMailings,
     onFooter: (next: HeaderFooter) => commitHfAt(lastSectionIdx, 'footer', footerAreaView, next),
     onHfAction: (action: HfAction) => onHfAction(action),
@@ -8246,6 +8304,8 @@ export function App() {
         actionsRef={ribbonActionsRef}
         quickActions={quickActions}
         mergeSource={mergeSource}
+        onMailMergePreviewingChange={setMailMergePreviewing}
+        mailMergePreviewing={mailMergePreviewing}
         editor={editor}
         formatState={formatState}
         hasDoc={!!doc}
@@ -8349,6 +8409,7 @@ export function App() {
               preset={aiPreset}
               open={showAi}
               hideRail={!aiSidebarEnabled}
+              mailMergePreviewing={mailMergePreviewing}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
               filePath={doc?.filePath ?? null}

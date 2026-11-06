@@ -9,6 +9,12 @@ export interface OpenFileResult {
   encrypted?: boolean
   /** content came from a newer crash-recovery copy and still needs an explicit save */
   recovered?: boolean
+  /**
+   * The file is a merge temp artifact: the document opens pathless, so a save
+   * asks for a destination instead of writing back into the temp dir the merge
+   * owns (that dir is removed once the tab holding it closes).
+   */
+  pathless?: boolean
 }
 
 /** Password-protected (ECMA-376 encrypted) docx: the renderer prompts for the
@@ -41,13 +47,29 @@ export interface MergeDataSource {
   path: string
   /** the file's name, for the UI */
   name: string
+  /** the sheet the records came from; empty for a csv */
+  sheet: string
   /** the column names, in file order */
   fields: string[]
   /** one entry per record */
   records: Record<string, string>[]
 }
 
-/** the answer to a data-source pick: null when the user canceled the dialog */
+/** the file a recipient list comes from, and the sheets it offers */
+export interface MergeDataSourceFile {
+  /** absolute path of the file */
+  path: string
+  /** the file's name, for the UI */
+  name: string
+  /** the sheet names, in file order; empty for a csv */
+  sheets: string[]
+}
+
+/** the answer to a data-source file pick: null when the user canceled */
+export type MergeDataSourceFileResponse =
+  { ok: true; file: MergeDataSourceFile } | { ok: false; error: string } | null
+
+/** the answer to a data-source read */
 export type MergeDataSourceResponse =
   { ok: true; source: MergeDataSource } | { ok: false; error: string } | null
 
@@ -66,6 +88,8 @@ export type MergeOutputMode = 'single' | 'perRecord' | 'labels' | 'envelopes'
 export interface MergeOutputRequest {
   mode: MergeOutputMode
   files: MergeOutputFile[]
+  /** where the merged documents go: on disk (Save As / folder) or opened in a new tab */
+  destination?: 'disk' | 'tab'
 }
 
 export interface MergeOutputResponse {
@@ -552,9 +576,11 @@ export interface DesktopApi {
   signalMcpReady(): void
   getRecentFiles(): Promise<string[]>
   pickImage(): Promise<PickImageResult | null>
-  /** Mailings tab: pick a local .xlsx or .csv and read it as a recipient list */
-  pickMergeDataSource(): Promise<MergeDataSourceResponse>
-  /** Mailings tab: write the merged documents (one file, or one per record) */
+  /** Mailings tab: pick the local .xlsx or .csv the recipient list comes from */
+  pickMergeDataSource(): Promise<MergeDataSourceFileResponse>
+  /** Mailings tab: read the chosen sheet of a data source file as a recipient list */
+  readMergeDataSource(path: string, sheetName?: string): Promise<MergeDataSourceResponse>
+  /** Mailings tab: write the merged documents (one file, or one per record) and open them in a new tab */
   writeMergeOutput(request: MergeOutputRequest): Promise<MergeOutputResponse>
   /** vertical metrics of an installed family (exact name match), null when missing */
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>

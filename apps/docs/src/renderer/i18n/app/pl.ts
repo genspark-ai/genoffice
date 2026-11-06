@@ -84,6 +84,9 @@ export const pl = {
   appPgNumHintBlank: 'Pozostaw „Rozpocznij od” puste, aby kontynuować od poprzedniej sekcji',
   appPgNumAppliesTo: '; dotyczy sekcji {n}',
   appExportingPdf: 'Eksportowanie PDF…',
+  appMailMergePreviewPrint:
+    'Wyjdź z podglądu korespondencji seryjnej, aby drukować lub eksportować',
+  appMailMergePreviewAi: 'Wyjdź z podglądu korespondencji seryjnej, aby użyć panelu AI',
   appExportingHtml: 'Eksportowanie HTML…',
   appExportingMarkdown: 'Eksportowanie Markdown…',
   appExportPdf: 'Eksportuj PDF',
@@ -597,4 +600,5 @@ export const pl = {
   appCtxResolveComment: 'Rozwiąż komentarz',
   appRevisionsAcceptedN: 'Zaakceptowano zmian: {n}',
   appRevisionsRejectedN: 'Odrzucono zmian: {n}',
+  appMergeOpened: 'Wynik scalania otwarty w nowej karcie',
 } satisfies Record<keyof typeof zh, string>

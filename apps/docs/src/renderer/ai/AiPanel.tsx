@@ -44,6 +44,7 @@ import {
 } from '@genoffice/ui'
 import type { PmNode } from '../editor/convert'
 import { TABLE_TRAILING_SKIP } from '../editor/extensions'
+import { originalTemplateDoc, mailMergePreviewActive } from '../mail-merge/template'
 import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import {
@@ -244,6 +245,12 @@ interface AiPanelProps {
   open?: boolean
   /** true suppresses even the collapsed rail (the "show the AI sidebar" setting is off) */
   hideRail?: boolean
+  /**
+   * The mail-merge preview holds the editor's document with the merged values:
+   * the panel reads the document for the model, so it stays out of the way
+   * until the preview is off. genoffice#2097.
+   */
+  mailMergePreviewing?: boolean
   /** expand from the collapsed rail */
   onExpand?: () => void
   /** collapse the panel to the sidebar rail */
@@ -339,6 +346,7 @@ export function AiPanel({
   preset,
   open = true,
   hideRail = false,
+  mailMergePreviewing = false,
   onExpand,
   onCollapse,
   filePath,
@@ -843,7 +851,7 @@ export function AiPanel({
         createFilesSkill(availableAttachments),
         createSkillsSkill(),
       ]),
-      captureSnapshot: () => editorRef.current.getJSON() as PmNode,
+      captureSnapshot: () => originalTemplateDoc(editorRef.current),
       events: {
         onText: (text) => patchLastAssistant({ text }),
         onToolStart: (call) => {
@@ -1001,7 +1009,7 @@ export function AiPanel({
   const selectionText = liveSelection.empty
     ? ''
     : redactTextBetween(
-        editor.getJSON() as RedactableNode,
+        originalTemplateDoc(editor) as RedactableNode,
         liveSelection.from,
         liveSelection.to,
         '\n',
@@ -1018,7 +1026,7 @@ export function AiPanel({
   const selectionScopeQuote = (): AiScopeQuoteData | undefined => {
     const { from, to, empty } = editor.state.selection
     if (empty) return undefined
-    const text = redactTextBetween(editor.getJSON() as RedactableNode, from, to, ' ')
+    const text = redactTextBetween(originalTemplateDoc(editor) as RedactableNode, from, to, ' ')
       .replace(/\s+/g, ' ')
       .trim()
     if (!text) return undefined
@@ -1104,6 +1112,13 @@ export function AiPanel({
   ) => {
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy || pendingSendRef.current) return
+    // The mail-merge preview holds the editor's document with the merged
+    // values. A run from here would read the preview, not the template the
+    // user wrote, so the panel stays out of the way until it is off.
+    if (mailMergePreviewActive(editorRef.current)) {
+      showToast(t('appMailMergePreviewAi'), 'error')
+      return
+    }
     setInput('')
     // The message consumes the composer attachments: they ride along (echoed on the
     // bubble, images multimodal, files via the files skill) and the composer clears.
@@ -1674,6 +1689,10 @@ export function AiPanel({
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+        {/* the mail-merge preview holds the document: the panel cannot run on it */}
+        {mailMergePreviewing && (
+          <div className="ai-attach-notice">{t('appMailMergePreviewAi')}</div>
+        )}
         {activePartial && (
           <div className="ai-queue ai-partial-card" role="group" aria-label={t('aiPartialTitle')}>
             <div className="ai-queue-head">

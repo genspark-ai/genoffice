@@ -86,6 +86,9 @@ export const nl = {
   appPgNumHintBlank: 'Laat "Beginnen bij" leeg om door te gaan vanaf de vorige sectie',
   appPgNumAppliesTo: '; geldt voor sectie {n}',
   appExportingPdf: 'PDF exporteren…',
+  appMailMergePreviewPrint:
+    'Verlaat het voorbeeld van de mailmerge om af te drukken of te exporteren',
+  appMailMergePreviewAi: 'Verlaat het voorbeeld van de mailmerge om het AI-paneel te gebruiken',
   appExportingHtml: 'HTML exporteren…',
   appExportingMarkdown: 'Markdown exporteren…',
   appExportPdf: 'PDF exporteren',
@@ -602,4 +605,5 @@ export const nl = {
   appCtxResolveComment: 'Opmerking oplossen',
   appRevisionsAcceptedN: '{n} wijzigingen geaccepteerd',
   appRevisionsRejectedN: '{n} wijzigingen geweigerd',
+  appMergeOpened: 'Samengevoegd resultaat geopend in een nieuw tabblad',
 } satisfies Record<keyof typeof zh, string>

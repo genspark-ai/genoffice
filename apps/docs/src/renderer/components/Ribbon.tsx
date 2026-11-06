@@ -126,7 +126,7 @@ import {
   toggleRepeatHeaderRows,
 } from '../editor/table-properties'
 import { useI18n, type StringKey, type TFunc } from '../i18n/locale'
-import type { MergeDataSource } from '../../shared/ipc'
+import type { MergeDataSource, MergeDataSourceFile } from '../../shared/ipc'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import { pxToTwips, twipsToPx } from '../units'
 import { LengthInput } from './LengthInput'
@@ -418,10 +418,24 @@ interface RibbonProps {
   onCompare: () => void
   /** Mailings: the data source the user picked, null when there is none yet */
   mergeSource: MergeDataSource | null
-  /** Mailings: open the file dialog and read the recipient list */
-  onPickMergeDataSource: () => void
+  /** Mailings: pick the file the recipient list comes from */
+  onPickMergeDataSourceFile: () => Promise<MergeDataSourceFile | null>
+  /** Mailings: read the confirmed sheet as the data source */
+  onReadMergeDataSource: (path: string, sheet: string) => Promise<boolean>
   /** Mailings: build the merged documents and write them */
   onMergeMailings: (request: MailMergeRequest) => Promise<MailMergeResponse>
+  /**
+   * Mailings: the preview holds the editor's document with the merged values,
+   * so the host has to know — the paths that write the document out or read it
+   * for the model are fenced off while it is on.
+   */
+  onMailMergePreviewingChange?: (previewing: boolean) => void
+  /**
+   * The mail-merge preview holds the editor's document with the merged values:
+   * the editing commands stay off while it is on, the same way the AI panel
+   * and the print path are fenced. genoffice#2097.
+   */
+  mailMergePreviewing?: boolean
   /** current document path (View → New Window opens it in another window) */
   filePath: string | null
   viewMode: ViewMode
@@ -880,8 +894,11 @@ function RibbonInner({
   onPageNumFormat,
   onInsertField,
   mergeSource,
-  onPickMergeDataSource,
+  onPickMergeDataSourceFile,
+  onReadMergeDataSource,
   onMergeMailings,
+  onMailMergePreviewingChange,
+  mailMergePreviewing,
   footer,
   onFooter,
   hfEditing,
@@ -1030,7 +1047,7 @@ function RibbonInner({
   const ed = sub ?? editor
   // read-only (Restrict Editing / Read Mode): every edit command is fenced here,
   // button disabled states are only the visual layer on top
-  const canEdit = hasDoc && fs.editable
+  const canEdit = hasDoc && fs.editable && !mailMergePreviewing
   const docMode = docModeOf(readMode, trackChanges)
   const applyDocMode = (m: DocMode) => {
     if (m === 'viewing') {
@@ -4633,9 +4650,12 @@ function RibbonInner({
             dropdown={dropdown}
             setDropdown={setDropdown}
             source={mergeSource}
-            onPickSource={onPickMergeDataSource}
+            onPickFile={onPickMergeDataSourceFile}
+            onReadSource={onReadMergeDataSource}
             onInsertField={onInsertField}
             onMerge={onMergeMailings}
+            onPreviewingChange={onMailMergePreviewingChange}
+            docPath={filePath}
           />
         ) : tab === 'review' ? (
           <ReviewTab

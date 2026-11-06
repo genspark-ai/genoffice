@@ -79,6 +79,8 @@ export const he = {
   appPgNumHintBlank: 'השאירו את "התחל ב" ריק כדי להמשיך מהמקטע הקודם',
   appPgNumAppliesTo: '; חל על מקטע {n}',
   appExportingPdf: 'מייצא PDF…',
+  appMailMergePreviewPrint: 'צאו מתצוגת המיזוג כדי להדפיס או לייצא',
+  appMailMergePreviewAi: 'צאו מתצוגת המיזוג כדי להשתמש בלוח הבינה המלאכותית',
   appExportingHtml: 'מייצא HTML…',
   appExportingMarkdown: 'מייצא Markdown…',
   appExportPdf: 'ייצוא PDF',
@@ -583,4 +585,5 @@ export const he = {
   appCtxResolveComment: 'פתור תגובה',
   appRevisionsAcceptedN: '{n} שינויים התקבלו',
   appRevisionsRejectedN: '{n} שינויים נדחו',
+  appMergeOpened: 'תוצאת המיזוג נפתחה בכרטיסייה חדשה',
 } satisfies Record<keyof typeof zh, string>

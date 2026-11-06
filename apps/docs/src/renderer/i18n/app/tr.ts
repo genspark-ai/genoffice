@@ -82,6 +82,9 @@ export const tr = {
   appPgNumHintBlank: 'Önceki bölümden devam etmek için "Başlangıç" alanını boş bırakın',
   appPgNumAppliesTo: '; {n}. bölüme uygulanır',
   appExportingPdf: 'PDF dışa aktarılıyor…',
+  appMailMergePreviewPrint:
+    'Yazdırmak veya dışa aktarmak için posta birleştirme önizlemesinden çıkın',
+  appMailMergePreviewAi: 'AI panelini kullanmak için posta birleştirme önizlemesinden çıkın',
   appExportingHtml: 'HTML dışa aktarılıyor…',
   appExportingMarkdown: 'Markdown dışa aktarılıyor…',
   appExportPdf: 'PDF Olarak Dışa Aktar',
@@ -590,4 +593,5 @@ export const tr = {
   appCtxResolveComment: 'Açıklamayı Çöz',
   appRevisionsAcceptedN: '{n} değişiklik kabul edildi',
   appRevisionsRejectedN: '{n} değişiklik reddedildi',
+  appMergeOpened: 'Birleştirme sonucu yeni sekmede açıldı',
 } satisfies Record<keyof typeof zh, string>

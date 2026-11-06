@@ -90,6 +90,8 @@ export const ko = {
   appPgNumAppliesTo: '; {n}구역에 적용',
   // Export PDF
   appExportingPdf: 'PDF 내보내는 중…',
+  appMailMergePreviewPrint: '인쇄하거나 내보내기 전에 메일 병합 미리보기를 종료하세요',
+  appMailMergePreviewAi: 'AI 패널을 사용하기 전에 메일 병합 미리보기를 종료하세요',
   appExportingHtml: 'HTML 내보내는 중…',
   appExportingMarkdown: 'Markdown 내보내는 중…',
   appExportPdf: 'PDF 내보내기',
@@ -617,4 +619,5 @@ export const ko = {
   appCtxResolveComment: '메모 해결',
   appRevisionsAcceptedN: '변경 {n}개 적용됨',
   appRevisionsRejectedN: '변경 {n}개 거부됨',
+  appMergeOpened: '병합 결과를 새 탭에서 열었습니다',
 } satisfies Record<keyof typeof zh, string>

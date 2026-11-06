@@ -86,6 +86,10 @@ export const es = {
   appPgNumHintBlank: 'Deje "Iniciar en" en blanco para continuar desde la sección anterior',
   appPgNumAppliesTo: '; se aplica a la sección {n}',
   appExportingPdf: 'Exportando PDF…',
+  appMailMergePreviewPrint:
+    'Salga de la vista previa de combinar correspondencia para imprimir o exportar',
+  appMailMergePreviewAi:
+    'Salga de la vista previa de combinar correspondencia para usar el panel de IA',
   appExportingHtml: 'Exportando HTML…',
   appExportingMarkdown: 'Exportando Markdown…',
   appExportPdf: 'Exportar PDF',
@@ -598,4 +602,5 @@ export const es = {
   appCtxResolveComment: 'Resolver comentario',
   appRevisionsAcceptedN: '{n} cambios aceptados',
   appRevisionsRejectedN: '{n} cambios rechazados',
+  appMergeOpened: 'Resultado de la combinación abierto en una pestaña nueva',
 } satisfies Record<keyof typeof zh, string>

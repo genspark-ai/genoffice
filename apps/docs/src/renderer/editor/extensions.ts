@@ -237,6 +237,7 @@ import { JustifyShrinkExtension } from './justify-shrink'
 import { CjkPunctShrinkExtension } from './cjk-punct-shrink'
 import { AutoDirectionExtension } from './direction'
 import { AutoCorrectExtension } from './autocorrect'
+import { MailMergePreviewExtension } from '../mail-merge/preview-extension'
 import { InactiveSelectionExtension } from './inactive-selection'
 import { FieldCodesExtension } from './field-codes'
 import { FormattingMarksExtension } from './formatting-marks'
@@ -7408,6 +7409,7 @@ export const editorExtensions = [
   WordSelectAllDelete,
   AutoLinkOnDelimiter,
   AutoCorrectExtension,
+  MailMergePreviewExtension,
   WordEditorShortcuts,
   CaretMarksMemory,
   ColumnLayoutExtension,

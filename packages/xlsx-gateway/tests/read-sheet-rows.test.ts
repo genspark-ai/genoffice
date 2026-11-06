@@ -58,6 +58,27 @@ async function datedWorkbook(): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
+/** a workbook whose number cell is stored in exponent form, plus a text cell */
+async function exponentWorkbook(): Promise<Buffer> {
+  const zip = new JSZip()
+  zip.file(
+    'xl/workbook.xml',
+    '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="Numbers" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets></workbook>',
+  )
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+  )
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+      '<row r="1"><c r="A1" t="inlineStr"><is><t>Qty</t></is></c><c r="B1" t="inlineStr"><is><t>Code</t></is></c></row>' +
+      '<row r="2"><c r="A2" t="n"><v>1.01E-2</v></c><c r="B2" t="str"><v>1.01E-2</v></c></row>' +
+      '</sheetData></worksheet>',
+  )
+  return zip.generateAsync({ type: 'nodebuffer' })
+}
+
 describe('readSheetRows', () => {
   it('reads a date-styled number as a date and leaves other numbers alone', async () => {
     const rows = await readSheetRows(await datedWorkbook())
@@ -88,6 +109,11 @@ describe('readSheetRows', () => {
   it('reads a sheet that is not the first one when it is named', async () => {
     const buffer = await csvToXlsxBuffer('Name\nAda\n', 'Recipients')
     expect(await readSheetRows(buffer, 'Recipients')).toEqual([['Name'], ['Ada']])
+  })
+
+  it('reads an exponent-form number plainly and leaves a text cell alone', async () => {
+    const rows = await readSheetRows(await exponentWorkbook())
+    expect(rows[1]).toEqual(['0.0101', '1.01E-2'])
   })
 
   it('reports a workbook without a readable worksheet', async () => {

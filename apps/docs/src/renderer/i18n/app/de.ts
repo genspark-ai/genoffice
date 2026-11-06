@@ -86,6 +86,10 @@ export const de = {
   appPgNumHintBlank: '„Beginnen bei“ leer lassen, um vom vorherigen Abschnitt fortzusetzen',
   appPgNumAppliesTo: '; gilt für Abschnitt {n}',
   appExportingPdf: 'PDF wird exportiert…',
+  appMailMergePreviewPrint:
+    'Beenden Sie die Serienbrief-Vorschau, um zu drucken oder zu exportieren',
+  appMailMergePreviewAi:
+    'Beenden Sie die Serienbrief-Vorschau, um das KI-Bereichsfeld zu verwenden',
   appExportingHtml: 'HTML wird exportiert…',
   appExportingMarkdown: 'Markdown wird exportiert…',
   appExportPdf: 'PDF exportieren',
@@ -605,4 +609,5 @@ export const de = {
   appCtxResolveComment: 'Kommentar auflösen',
   appRevisionsAcceptedN: '{n} Änderungen angenommen',
   appRevisionsRejectedN: '{n} Änderungen abgelehnt',
+  appMergeOpened: 'Zusammengeführtes Ergebnis in einem neuen Tab geöffnet',
 } satisfies Record<keyof typeof zh, string>

@@ -85,6 +85,8 @@ export const zh = {
   appPgNumAppliesTo: ';作用于第 {n} 节',
   // Export PDF
   appExportingPdf: '正在导出 PDF…',
+  appMailMergePreviewPrint: '请先退出邮件合并预览，再打印或导出',
+  appMailMergePreviewAi: '请先退出邮件合并预览，再使用 AI 面板',
   appExportingHtml: '正在导出 HTML…',
   appExportingMarkdown: '正在导出 Markdown…',
   appExportPdf: '导出 PDF',
@@ -559,6 +561,7 @@ export const zh = {
   appStyleNamePlaceholder: '样式名称',
   appMergeSourceLoaded: '已加载数据源 {name}（{n} 条记录）',
   appMergeWritten: '已写出 {n} 个文档',
+  appMergeOpened: '已在新标签页打开合并结果',
   appMergeNothingToWrite: '没有可写出的文档',
   appReviewPaneTitle: '修订',
   appReviewPaneCount: '{n} 处修订',

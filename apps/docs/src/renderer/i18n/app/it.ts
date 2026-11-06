@@ -85,6 +85,8 @@ export const it = {
   appPgNumHintBlank: 'Lascia vuoto "Comincia da" per continuare dalla sezione precedente',
   appPgNumAppliesTo: '; si applica alla sezione {n}',
   appExportingPdf: 'Esportazione PDF in corso…',
+  appMailMergePreviewPrint: 'Esci dall’anteprima della stampa unione per stampare o esportare',
+  appMailMergePreviewAi: 'Esci dall’anteprima della stampa unione per usare il riquadro IA',
   appExportingHtml: 'Esportazione HTML in corso…',
   appExportingMarkdown: 'Esportazione Markdown in corso…',
   appExportPdf: 'Esporta PDF',
@@ -597,4 +599,5 @@ export const it = {
   appCtxResolveComment: 'Risolvi commento',
   appRevisionsAcceptedN: '{n} modifiche accettate',
   appRevisionsRejectedN: '{n} modifiche rifiutate',
+  appMergeOpened: 'Risultato della stampa unita aperto in una nuova scheda',
 } satisfies Record<keyof typeof zh, string>

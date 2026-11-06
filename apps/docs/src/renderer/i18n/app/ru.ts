@@ -85,6 +85,10 @@ export const ru = {
     'Оставьте поле «Начать с» пустым, чтобы продолжить нумерацию предыдущего раздела',
   appPgNumAppliesTo: '; применяется к разделу {n}',
   appExportingPdf: 'Экспорт PDF…',
+  appMailMergePreviewPrint:
+    'Выйдите из режима предварительного просмотра слияния, чтобы печатать или экспортировать',
+  appMailMergePreviewAi:
+    'Выйдите из режима предварительного просмотра слияния, чтобы использовать панель ИИ',
   appExportingHtml: 'Экспорт HTML…',
   appExportingMarkdown: 'Экспорт Markdown…',
   appExportPdf: 'Экспорт в PDF',
@@ -597,4 +601,5 @@ export const ru = {
   appCtxResolveComment: 'Решить примечание',
   appRevisionsAcceptedN: 'Принято исправлений: {n}',
   appRevisionsRejectedN: 'Отклонено исправлений: {n}',
+  appMergeOpened: 'Результат слияния открыт в новой вкладке',
 } satisfies Record<keyof typeof zh, string>

@@ -83,6 +83,8 @@ export const hi = {
   appPgNumHintBlank: 'पिछले अनुभाग से जारी रखने के लिए "यहाँ से शुरू करें" खाली छोड़ें',
   appPgNumAppliesTo: '; अनुभाग {n} पर लागू',
   appExportingPdf: 'PDF निर्यात हो रहा है…',
+  appMailMergePreviewPrint: 'प्रिंट या निर्यात करने के लिए मेल मर्ज पूर्वावलोकन से बाहर निकलें',
+  appMailMergePreviewAi: 'AI पैनल का उपयोग करने के लिए मेल मर्ज पूर्वावलोकन से बाहर निकलें',
   appExportingHtml: 'HTML निर्यात हो रहा है…',
   appExportingMarkdown: 'Markdown निर्यात हो रहा है…',
   appExportPdf: 'PDF निर्यात करें',
@@ -591,4 +593,5 @@ export const hi = {
   appCtxResolveComment: 'टिप्पणी हल करें',
   appRevisionsAcceptedN: '{n} परिवर्तन स्वीकार किए गए',
   appRevisionsRejectedN: '{n} परिवर्तन अस्वीकार किए गए',
+  appMergeOpened: 'मर्ज किया गया परिणाम नए टैब में खोला गया',
 } satisfies Record<keyof typeof zh, string>

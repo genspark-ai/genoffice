@@ -89,6 +89,8 @@ export const ja = {
   appPgNumAppliesTo: '。セクション {n} に適用',
   // Export PDF
   appExportingPdf: 'PDF をエクスポートしています…',
+  appMailMergePreviewPrint: '印刷または書き出しの前に、メールマージのプレビューを終了してください',
+  appMailMergePreviewAi: 'AI パネルを使う前に、メールマージのプレビューを終了してください',
   appExportingHtml: 'HTML をエクスポートしています…',
   appExportingMarkdown: 'Markdown をエクスポートしています…',
   appExportPdf: 'PDF のエクスポート',
@@ -617,4 +619,5 @@ export const ja = {
   appCtxResolveComment: 'コメントを解決',
   appRevisionsAcceptedN: '{n} 件の変更を承諾しました',
   appRevisionsRejectedN: '{n} 件の変更を元に戻しました',
+  appMergeOpened: 'マージ結果を新しいタブで開きました',
 } satisfies Record<keyof typeof zh, string>

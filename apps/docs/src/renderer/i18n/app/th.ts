@@ -82,6 +82,8 @@ export const th = {
   appPgNumHintBlank: 'เว้นว่าง "เริ่มที่" เพื่อใส่หมายเลขต่อจากส่วนก่อนหน้า',
   appPgNumAppliesTo: ' มีผลกับส่วนที่ {n}',
   appExportingPdf: 'กำลังส่งออก PDF…',
+  appMailMergePreviewPrint: 'ออกจากตัวอย่างการรวมจดหมายเพื่อพิมพ์หรือส่งออก',
+  appMailMergePreviewAi: 'ออกจากตัวอย่างการรวมจดหมายเพื่อใช้แผง AI',
   appExportingHtml: 'กำลังส่งออก HTML…',
   appExportingMarkdown: 'กำลังส่งออก Markdown…',
   appExportPdf: 'ส่งออก PDF',
@@ -588,4 +590,5 @@ export const th = {
   appCtxResolveComment: 'แก้ไขข้อคิดเห็นแล้ว',
   appRevisionsAcceptedN: 'ยอมรับ {n} การเปลี่ยนแปลงแล้ว',
   appRevisionsRejectedN: 'ปฏิเสธ {n} การเปลี่ยนแปลงแล้ว',
+  appMergeOpened: 'เปิดผลการรวมในแท็บใหม่',
 } satisfies Record<keyof typeof zh, string>
