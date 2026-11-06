@@ -74,16 +74,17 @@ export function handleImportCsv(ctx: DataToolsContext): void {
   input.onchange = () => {
     const file = input.files?.[0]
     if (!file) return
-    if (file.size > 32 * 1024 * 1024) {
-      ctx.setMessage(t('appCsvTooLarge'))
-      return
-    }
-    void file
-      .arrayBuffer()
-      .then((buffer) => {
-        importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
-      })
-      .catch(() => ctx.setMessage(t('appCsvTooLarge')))
+    void (async () => {
+      // the same ceiling the open path uses (the user's setting): one limit
+      // for every way a delimited file comes in
+      const limitMb = await window.desktopApi.getCsvImportLimit().catch(() => 0)
+      if (limitMb > 0 && file.size > limitMb * 1024 * 1024) {
+        ctx.setMessage(t('appCsvTooLarge'))
+        return
+      }
+      const buffer = await file.arrayBuffer()
+      importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
+    })().catch(() => ctx.setMessage(t('appCsvTooLarge')))
   }
   input.click()
 }
