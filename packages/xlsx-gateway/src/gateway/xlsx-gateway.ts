@@ -19,7 +19,7 @@ import type {
   WorkbookVisualEdit,
 } from '../shared/edit-schemas'
 import { spillsDynamicArray, withFutureFunctionMarkers } from './future-functions'
-import { decodeXlsxEscapes, encodeXlsxEscapes } from './xlsx-escapes'
+import { decodeXlsxEscapes, decodeXmlText, encodeXlsxEscapes } from './xlsx-escapes'
 import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
 import {
   applyWorkbookLinkBreak,
@@ -152,6 +152,8 @@ import {
   applyStructuralOps,
   inferWorksheetAddresses,
   isShiftingOp,
+  materializeSharedFormulaGroups,
+  type SharedFormulaCell,
   shiftChartReferences,
   shiftCrossSheetFormulas,
   shiftDefinedNames,
@@ -160,7 +162,6 @@ import {
   shiftVmlObjectAnchors,
   StructuralShiftError,
   type TableColumnInsertion,
-  translateSharedFormula,
 } from './xlsx-structure'
 import { StylesheetEditor } from './xlsx-styles'
 
@@ -2911,87 +2912,16 @@ function materializeEditedSharedFormulaGroups(
     }
   }
   if (rewritten.size === 0) return worksheetXml
-
-  interface SharedFragment {
-    start: number
-    end: number
-    address: string
-    row: number
-    column: number
-    si: string
-    isMaster: boolean
-    body: string
-  }
-  const fragments: SharedFragment[] = []
-  // Open tag matched alone: a greedy [^>]* would swallow the `/` of a
-  // self-closing follower and backtrack into pairing it with a later </f>.
-  const sharedOpen = /<f\b[^>]*?\bt="shared"[^>]*?(\/?)>/g
-  let match: RegExpExecArray | null
-  while ((match = sharedOpen.exec(worksheetXml)) !== null) {
-    const openTag = match[0]
-    const si = /\bsi="([^"]+)"/.exec(openTag)?.[1]
-    if (si === undefined) continue
-    const openEnd = match.index + openTag.length
-    let end = openEnd
-    let body = ''
-    if (match[1] !== '/') {
-      const close = worksheetXml.indexOf('</f>', openEnd)
-      if (close === -1) continue
-      body = worksheetXml.slice(openEnd, close)
-      end = close + '</f>'.length
-    }
-    const cellOpen = worksheetXml.lastIndexOf('<c', match.index)
-    const address = /\br="([A-Z]{1,3}[0-9]+)"/.exec(worksheetXml.slice(cellOpen, match.index))?.[1]
-    if (address === undefined) continue
-    const parsed = /^([A-Z]{1,3})([0-9]+)$/.exec(address)
-    if (!parsed) continue
-    fragments.push({
-      start: match.index,
-      end,
-      address,
-      row: Number(parsed[2]) - 1,
-      column: parseA1Column(address),
-      si,
-      isMaster: /\bref="/.test(openTag),
-      body,
-    })
-  }
-
-  const killedMasters = new Map<string, SharedFragment>()
-  for (const fragment of fragments) {
-    if (fragment.isMaster && fragment.body !== '' && rewritten.has(fragment.address)) {
-      killedMasters.set(fragment.si, fragment)
-    }
-  }
-  if (killedMasters.size === 0) return worksheetXml
-
-  const parts: string[] = []
-  let cursor = 0
-  for (const fragment of fragments) {
-    const master = killedMasters.get(fragment.si)
-    if (
-      master === undefined ||
-      fragment.isMaster ||
-      fragment.body !== '' ||
-      rewritten.has(fragment.address)
-    ) {
-      continue
-    }
-    const translated = translateSharedFormula(
-      decodeXmlText(master.body),
-      fragment.row - master.row,
-      fragment.column - master.column,
-    )
-    parts.push(worksheetXml.slice(cursor, fragment.start))
-    // Untranslatable follower (a shifted reference would leave the sheet —
-    // impossible for a group Excel itself wrote, but never leave a bare
-    // shared tag): degrade to its cached static value instead.
-    if (translated !== null) parts.push(`<f>${escapeXmlText(translated)}</f>`)
-    cursor = fragment.end
-  }
-  if (parts.length === 0) return worksheetXml
-  parts.push(worksheetXml.slice(cursor))
-  return parts.join('')
+  const isRewritten = (cell: SharedFormulaCell) => rewritten.has(toA1Address(cell.row, cell.column))
+  // Untranslatable follower (a shifted reference would leave the sheet —
+  // impossible for a group Excel itself wrote, but never leave a bare
+  // shared tag): degrade to its cached static value instead.
+  return materializeSharedFormulaGroups(
+    worksheetXml,
+    ({ anchor }) => isRewritten(anchor),
+    isRewritten,
+    'cached-value',
+  )
 }
 
 function groupCellMutations(
@@ -3651,27 +3581,6 @@ function escapeCellText(input: string): string {
 function decodeCellText(input: string): string {
   const text = decodeXmlText(input).replace(/\r\n?/g, '\n')
   return decodeXlsxEscapes(text).replace(/\r\n?/g, '\n')
-}
-
-const XML_NAMED_ENTITIES: Record<string, string> = {
-  quot: '"',
-  apos: "'",
-  lt: '<',
-  gt: '>',
-  amp: '&',
-}
-
-/// Single-pass decode of the XML named entities plus numeric character
-/// references (&#dd; / &#xhh;), which some producers use for non-ASCII text.
-function decodeXmlText(input: string): string {
-  return input.replace(
-    /&(?:#x([0-9A-Fa-f]+)|#([0-9]+)|(quot|apos|lt|gt|amp));/g,
-    (match, hex: string | undefined, dec: string | undefined, named: string | undefined) => {
-      if (named !== undefined) return XML_NAMED_ENTITIES[named] ?? match
-      const code = hex !== undefined ? Number.parseInt(hex, 16) : Number(dec)
-      return code <= 0x10ffff ? String.fromCodePoint(code) : match
-    },
-  )
 }
 
 function escapeXmlAttribute(input: string): string {
