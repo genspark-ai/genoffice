@@ -46,6 +46,7 @@ import {
   resolveRelTarget,
   type MutablePackage,
 } from './xlsx-drawing-add'
+import { insertRootExt } from './xlsx-root-tail'
 import { parseRelationships, removePartOverride, removeRelationshipById } from './xlsx-sheets'
 
 export class SlicerAddError extends Error {}
@@ -528,16 +529,13 @@ async function ensurePivotCacheSlicerExt(
     patched =
       xml.slice(0, existing.index) + extElement + xml.slice(existing.index + existing[0].length)
   } else if (xml.includes('</pivotCacheDefinition>')) {
-    // extLst is the schema-last child; an existing one takes the ext, else
-    // the element gains one right before its close
-    const extLstClose = xml.lastIndexOf('</extLst>')
-    patched =
-      extLstClose !== -1 && extLstClose > xml.lastIndexOf('</pivotCacheDefinition>')
-        ? xml.slice(0, extLstClose) + extElement + xml.slice(extLstClose)
-        : xml.replace(
-            '</pivotCacheDefinition>',
-            `<extLst>${extElement}</extLst></pivotCacheDefinition>`,
-          )
+    // extLst is the schema-last child; the definition's own one takes the
+    // ext (cache fields carry nested lists), else the element gains one
+    const inserted = insertRootExt(xml, 'pivotCacheDefinition', extElement)
+    if (inserted === null) {
+      throw new SlicerAddError(`Pivot cache definition ${definitionPath} is malformed.`)
+    }
+    patched = inserted
   } else {
     // a self-closing definition opens up to carry the extLst
     const selfClosing = /<pivotCacheDefinition\b[^>]*?\/>/.exec(xml)
@@ -730,9 +728,9 @@ function extOpenTag(xml: string, wiring: ExtWiring): { start: number; end: numbe
 }
 
 /// Adds `<{prefix}:{item} r:id="…"/>` inside the wiring's ext (creating the
-/// ext, its container, and the host extLst as needed). For worksheets the
-/// `</sheetData>` anchor disambiguates the worksheet-level extLst from cell
-/// extLst elements that sit inside sheetData.
+/// ext, its container, and the host extLst as needed). Only the host's own
+/// extLst qualifies: cells and linked conditional-formatting rules carry
+/// nested ones.
 function addExtRef(
   xml: string,
   wiring: ExtWiring,
@@ -759,15 +757,13 @@ function addExtRef(
     `<ext uri="${wiring.uri}" xmlns:${wiring.prefix}="${wiring.namespace}"` +
     ` xmlns:r="${REL_NS}">` +
     `<${container}>${entry}</${container}></ext>`
-  const extLstClose = xml.lastIndexOf('</extLst>')
-  const worksheetLevel =
-    hostClose === '</worksheet>' ? extLstClose > xml.lastIndexOf('</sheetData>') : true
-  if (extLstClose !== -1 && worksheetLevel) {
-    return xml.slice(0, extLstClose) + element + xml.slice(extLstClose)
-  }
-  const hostCloseAt = xml.lastIndexOf(hostClose)
-  if (hostCloseAt === -1) throw new SlicerAddError('The host element is malformed.')
-  return xml.slice(0, hostCloseAt) + `<extLst>${element}</extLst>` + xml.slice(hostCloseAt)
+  const patched = insertRootExt(
+    xml,
+    hostClose === '</worksheet>' ? 'worksheet' : 'workbook',
+    element,
+  )
+  if (patched === null) throw new SlicerAddError('The host element is malformed.')
+  return patched
 }
 
 /// Removes the ext entry; prunes the container, the ext, and the extLst when

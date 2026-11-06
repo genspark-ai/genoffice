@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
@@ -139,5 +142,25 @@ describe('restoreSlicerPanels', () => {
     expect(restoreSlicerPanels(state(), [slicerEntry({ pivotCacheDefinitionPath: null })])).toEqual(
       [],
     )
+  })
+})
+
+describe('slicer persistence boundaries', () => {
+  it('the slicer-state IPC extracts the pivot cache definitions the parser reads', () => {
+    const source = readFileSync(join(__dirname, '../src/main/sheets-main.ts'), 'utf8')
+    const handler = source.slice(source.indexOf('IPC_CHANNELS.readSlicerState'))
+    expect(handler.slice(0, handler.indexOf('parseSlicerState'))).toContain(
+      'pivotCache\\/pivotCacheDefinition',
+    )
+  })
+
+  it('timeline actions never dirty the slicer parts (timelines are session-only)', () => {
+    const source = readFileSync(join(__dirname, '../src/renderer/pivot-actions.ts'), 'utf8')
+    const timelines = source.slice(
+      source.indexOf('export function handleCreateTimeline'),
+      source.indexOf('export function restoreSlicerPanels'),
+    )
+    expect(timelines.length).toBeGreaterThan(0)
+    expect(timelines).not.toContain('markSlicersChanged')
   })
 })

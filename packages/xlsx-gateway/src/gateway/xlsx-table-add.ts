@@ -11,6 +11,7 @@ import {
   type MutablePackage,
 } from './xlsx-drawing-add'
 import { ensureRelationshipNamespace } from './xlsx-namespace'
+import { rootTail } from './xlsx-root-tail'
 
 /// Persists tables (ListObjects) created in the editor as brand-new OOXML
 /// parts: xl/tables/tableN.xml, the worksheet's <tableParts> element, the
@@ -289,24 +290,9 @@ function appendTablePart(worksheetXml: string, relId: string): string {
 /// Locate only the worksheet's own extension list or closing tag. A linked
 /// conditional-formatting rule may carry an earlier, nested extLst.
 function worksheetTailOffset(xml: string): number {
-  const tags =
-    /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE\b[\s\S]*?>|<\/?[A-Za-z_][\w:.-]*(?:[^>"']|"[^"]*"|'[^']*')*\/?>/g
-  const stack: string[] = []
-  for (const token of xml.matchAll(tags)) {
-    const tag = token[0]
-    if (tag.startsWith('<!--') || tag.startsWith('<![CDATA[') || tag.startsWith('<?')) continue
-    const name = /^<\/?([^\s/>]+)/.exec(tag)?.[1]
-    if (!name || tag.startsWith('<!')) break
-    if (tag.startsWith('</')) {
-      if (stack.pop() !== name) break
-      if (stack.length === 0) return token.index
-    } else {
-      if (stack.length === 0 && name !== 'worksheet') break
-      if (stack.length === 1 && name === 'extLst') return token.index
-      if (!tag.endsWith('/>')) stack.push(name)
-    }
-  }
-  throw new TableAddError('The worksheet part is malformed.')
+  const tail = rootTail(xml, 'worksheet')
+  if (tail === null) throw new TableAddError('The worksheet part is malformed.')
+  return tail.extLst === null ? tail.rootClose : tail.extLst.open
 }
 
 export function areaToRef(area: TableArea): string {
