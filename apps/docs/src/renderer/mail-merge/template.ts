@@ -5,6 +5,7 @@ import {
   splitInstruction,
   type MergeRecord,
 } from '@genoffice/docx-engine'
+import type { Editor } from '@tiptap/core'
 import type { PmNode } from '../editor/convert'
 
 /**
@@ -80,6 +81,30 @@ export function recordPage(
   const start = Math.min(Math.floor(Math.max(index, 0) / slots) * slots, lastRecord)
   const end = Math.min(start + slots - 1, lastRecord)
   return { start, end, count: end - start + 1 }
+}
+
+/**
+ * The template the user wrote, even while the mail-merge preview is on.
+ *
+ * Preview swaps the editor's document for merged values and keeps the original
+ * (with its merge-field codes) on `editor.storage.mailmergePreviewJson`. Readers
+ * that act on the real document must go through here so a preview does not make
+ * them substitute already-merged text. Outside a preview the live doc is the
+ * template. genoffice#2097.
+ */
+export function originalTemplateDoc(editor: Editor): PmNode {
+  return editor.storage.mailmergePreviewJson ?? (editor.getJSON() as PmNode)
+}
+
+/**
+ * Whether the mail-merge preview currently holds the editor's document.
+ *
+ * While it does, the editor shows merged values instead of the template: every
+ * path that writes the document out (print, PDF export) or reads it for the
+ * model must be fenced off. genoffice#2097.
+ */
+export function mailMergePreviewActive(editor: Editor | null | undefined): boolean {
+  return !!editor?.storage.mailmergePreviewJson
 }
 
 /**
@@ -376,8 +401,6 @@ export function countRecordSlots(doc: PmNode): number {
   return Math.max(1, highest + 1)
 }
 
-
-
 /**
  * The template filled from a run of records, walked by a cursor.
  *
@@ -423,10 +446,13 @@ function walkContent(
       continue
     }
     if (keyword === 'NEXT') {
+      // One advance per NEXT field: two NEXTs with identical instruction text
+      // (and no field between them) share fieldInstr, so only the first moves
+      // the cursor. The NEXT itself carries no value, so nothing else is
+      // recorded for it: the next field resets fieldSeen on its own.
       if (instr !== fieldInstr) {
         if (cursor.value < endIndex) cursor.value++
         fieldInstr = instr
-        fieldSeen = true
       }
       // the NEXT field itself leaves nothing behind
       continue

@@ -6,6 +6,7 @@
  */
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
+import { originalTemplateDoc } from './mail-merge/template'
 import {
   nextNoteId,
   parseDocx,
@@ -474,7 +475,7 @@ export async function compareWithFile(ctx: ReviewContext): Promise<void> {
     const otherParsed = await parseDocx(await fetchDocBytes(other.dataUrl))
     const entries = compareParagraphs(
       ctx.editor
-        ? editorBlockTexts(ctx.editor.getJSON(), ctx.doc.parsed.blocks)
+        ? editorBlockTexts(originalTemplateDoc(ctx.editor), ctx.doc.parsed.blocks)
         : blockTexts(ctx.doc.parsed.blocks),
       blockTexts(otherParsed.blocks),
     )

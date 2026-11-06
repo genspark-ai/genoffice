@@ -1,22 +1,16 @@
 import { mergeOutputFileName, type MergeRecord } from '@genoffice/docx-engine'
 import type { MergeOutputMode } from '../../shared/ipc'
 import { buildDocBytes, type FileActionContext } from '../file-actions'
-import type { PmNode } from '../editor/convert'
 import {
   countRecordSlots,
   hasNextField,
   mergeAllRecords,
   mergeNextPages,
+  originalTemplateDoc,
   substituteMergeFields,
   substituteWithCursor,
 } from './template'
-import {
-  cellContentOf,
-  labelSheetDoc,
-  layoutSection,
-  type EnvelopePresetId,
-  type MergePageLayout,
-} from './layout'
+import { cellContentOf, labelSheetDoc, layoutSection, type MergePageLayout } from './layout'
 
 /**
  * The output half of the mail merge: the documents the merge writes.
@@ -49,12 +43,6 @@ export interface MailMergeRequest {
   range?: MergeRange
   /** the paper + label grid for labels, or envelope size for envelopes */
   layout?: MergePageLayout
-  /** which label stock the user picked (Avery id / 'custom') */
-  labelStock?: 'avery5160' | 'custom'
-  /** custom label grid parameters (only used when labelStock === 'custom') */
-  customGrid?: { paper: 'letter' | 'a4'; columns: number; rows: number }
-  /** envelope size preset (only used when mode === 'envelopes') */
-  envelopePreset?: EnvelopePresetId
   /** where the merged documents go: on disk (Save As / folder) or opened in a new tab */
   destination?: 'disk' | 'tab'
 }
@@ -105,9 +93,7 @@ export async function buildMailMergeFiles(
   if (!editor || request.records.length === 0) return []
   // Preview (mail-merge) swaps in merged values — use the original template so
   // merge fields are present for substitution.
-  const storage = editor.storage as unknown as Record<string, unknown>
-  const template =
-    (storage.mailmergePreviewJson as PmNode | undefined) ?? (editor.getJSON() as PmNode)
+  const template = originalTemplateDoc(editor)
   const start = request.range?.start ?? 0
   const end = request.range?.end ?? request.records.length - 1
   const subset = request.records.slice(
@@ -126,9 +112,7 @@ export async function buildMailMergeFiles(
       sectionDirty: true,
     }
     if (request.mode === 'labels') {
-      const cells = subset.map((record) =>
-        cellContentOf(substituteMergeFields(template, record)),
-      )
+      const cells = subset.map((record) => cellContentOf(substituteMergeFields(template, record)))
       const bytes = await buildDocBytes(layoutCtx, labelSheetDoc(cells, layout), {
         exportAsMerged: true,
       })
@@ -176,11 +160,9 @@ export async function buildMailMergeFiles(
     const files: MailMergeFile[] = []
     for (let from = 0; from < subset.length; from += slotsPerPage) {
       const endIdx = from + slotsPerPage - 1
-      const bytes = await buildDocBytes(
-        ctx,
-        substituteWithCursor(template, subset, from, endIdx),
-        { exportAsMerged: true },
-      )
+      const bytes = await buildDocBytes(ctx, substituteWithCursor(template, subset, from, endIdx), {
+        exportAsMerged: true,
+      })
       if (!bytes) continue
       // the file holds a whole page, not one record, so the record-derived
       // name jumps between files; a page prefix keeps the order readable and
@@ -195,11 +177,9 @@ export async function buildMailMergeFiles(
     }
     return files
   }
-  const bytes = await buildDocBytes(
-    ctx,
-    mergeNextPages(template, subset, slotsPerPage),
-    { exportAsMerged: true },
-  )
+  const bytes = await buildDocBytes(ctx, mergeNextPages(template, subset, slotsPerPage), {
+    exportAsMerged: true,
+  })
   if (!bytes) return []
   return [{ name: mergedDocumentName(ctx), bytes }]
 }

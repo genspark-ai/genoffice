@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
-import { mergeFieldInstruction, type MergeRecord } from '@genoffice/docx-engine'
+import { mergeFieldInstruction } from '@genoffice/docx-engine'
 import type { MergeDataSource, MergeDataSourceFile } from '../../shared/ipc'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import { useI18n } from '../i18n/locale'
 import type { PmNode } from '../editor/convert'
-import { hasNextField, substituteMergeFields, substituteWithCursor } from '../mail-merge/template'
+import {
+  countRecordSlots,
+  hasNextField,
+  recordPage,
+  substituteMergeFields,
+  substituteWithCursor,
+} from '../mail-merge/template'
 import { viewRecipients, type FilterCondition, type SortKey } from '../mail-merge/recipients'
 import { MailMergePanel } from './MailMergePanel'
 import { MergeDataSourceDialog } from './MergeDataSourceDialog'
@@ -46,6 +52,13 @@ export interface MailingsTabProps {
   onInsertField: (instr: string) => void
   /** build the documents and write them */
   onMerge: (request: MailMergeRequest) => Promise<MailMergeResponse>
+  /**
+   * The preview holds the editor's document, so the host has to know: the paths
+   * that write the document out or read it for the model are fenced off while
+   * it is on. Called on every enter and every leave, leaving the document in
+   * its hands.
+   */
+  onPreviewingChange?: (previewing: boolean) => void
 }
 
 export function MailingsTab({
@@ -58,6 +71,7 @@ export function MailingsTab({
   onReadSource,
   onInsertField,
   onMerge,
+  onPreviewingChange,
 }: MailingsTabProps) {
   const { t } = useI18n()
   const [listOpen, setListOpen] = useState(false)
@@ -142,13 +156,18 @@ export function MailingsTab({
 
   /**
    * The document as the preview shows it: the active record's values in place of
-   * the fields. A NEXT template drops its NEXT rules (preview is one record),
-   * the plain template keeps its fields as values.
+   * the fields. A NEXT template fills every slot on the page with the records
+   * following the page's first record (like Word's preview); the plain template
+   * keeps its fields as values.
    */
-  const previewDoc = (doc: PmNode, record: MergeRecord): PmNode =>
-    hasNextField(doc)
-      ? substituteWithCursor(doc, [record], 0, 0)
-      : substituteMergeFields(doc, record)
+  const previewDoc = (doc: PmNode, recordIndex: number): PmNode => {
+    if (hasNextField(doc)) {
+      const slots = countRecordSlots(doc)
+      const start = recordPage(activeRecords.length, recordIndex, slots).start
+      return substituteWithCursor(doc, activeRecords, start, start + slots - 1)
+    }
+    return substituteMergeFields(doc, activeRecords[recordIndex])
+  }
 
   /**
    * Swap the editor's document for the active record's merged values, so the
@@ -164,53 +183,59 @@ export function MailingsTab({
       if (!record) return
       savedRef.current = editor.getJSON() as PmNode
       // tell everyone who reads editor.getJSON() to use the saved original instead
-      ;(editor.storage as unknown as Record<string, unknown>).mailmergePreviewJson = savedRef.current
+      editor.storage.mailmergePreviewJson = savedRef.current
       editor.setEditable(false)
-      editor.chain().setMeta('addToHistory', false).setContent(
-        previewDoc(savedRef.current, record) as never,
-        { emitUpdate: false },
-      ).run()
+      editor
+        .chain()
+        .setMeta('addToHistory', false)
+        .setContent(previewDoc(savedRef.current, activeIndex) as never, { emitUpdate: false })
+        .run()
       previewingRef.current = true
       setPreviewing(true)
+      onPreviewingChange?.(true)
     } else {
       if (savedRef.current) {
-        editor.chain().setMeta('addToHistory', false).setContent(
-          savedRef.current as never,
-          { emitUpdate: false },
-        ).run()
+        editor
+          .chain()
+          .setMeta('addToHistory', false)
+          .setContent(savedRef.current as never, { emitUpdate: false })
+          .run()
       }
-      ;(editor.storage as unknown as Record<string, unknown>).mailmergePreviewJson = null
+      editor.storage.mailmergePreviewJson = null
       savedRef.current = null
       editor.setEditable(true)
       previewingRef.current = false
       setPreviewing(false)
+      onPreviewingChange?.(false)
     }
   }
 
   // walking to another record re-merges the preview to that record
   useEffect(() => {
     if (!previewingRef.current || !savedRef.current) return
-    const record = activeRecords[activeIndex]
-    if (record)
-      editor.chain().setMeta('addToHistory', false).setContent(
-        previewDoc(savedRef.current, record) as never,
-        { emitUpdate: false },
-      ).run()
+    if (activeRecords[activeIndex])
+      editor
+        .chain()
+        .setMeta('addToHistory', false)
+        .setContent(previewDoc(savedRef.current, activeIndex) as never, { emitUpdate: false })
+        .run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex])
 
   // a new data source means the saved document is stale: leave the preview
   useEffect(() => {
     if (!previewingRef.current || !savedRef.current) return
-    editor.chain().setMeta('addToHistory', false).setContent(
-      savedRef.current as never,
-      { emitUpdate: false },
-    ).run()
-    ;(editor.storage as unknown as Record<string, unknown>).mailmergePreviewJson = null
+    editor
+      .chain()
+      .setMeta('addToHistory', false)
+      .setContent(savedRef.current as never, { emitUpdate: false })
+      .run()
+    editor.storage.mailmergePreviewJson = null
     savedRef.current = null
     editor.setEditable(true)
     previewingRef.current = false
     setPreviewing(false)
+    onPreviewingChange?.(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source?.path])
 
@@ -218,12 +243,15 @@ export function MailingsTab({
   useEffect(
     () => () => {
       if (previewingRef.current && savedRef.current) {
-        editor.chain().setMeta('addToHistory', false).setContent(
-          savedRef.current as never,
-          { emitUpdate: false },
-        ).run()
-        ;(editor.storage as unknown as Record<string, unknown>).mailmergePreviewJson = null
+        editor
+          .chain()
+          .setMeta('addToHistory', false)
+          .setContent(savedRef.current as never, { emitUpdate: false })
+          .run()
+        editor.storage.mailmergePreviewJson = null
         editor.setEditable(true)
+        previewingRef.current = false
+        onPreviewingChange?.(false)
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,7 +264,7 @@ export function MailingsTab({
         <div className="ribbon-group-items">
           <button
             className="rb-big"
-            disabled={!hasDoc}
+            disabled={!hasDoc || previewing}
             data-tip={t('ribbonMailingsStartTip')}
             onClick={() => void openSourceDialog()}
           >
@@ -267,7 +295,7 @@ export function MailingsTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || !source || source.fields.length === 0}
+              disabled={!hasDoc || previewing || !source || source.fields.length === 0}
               data-tip={t('ribbonMailingsInsertFieldTip')}
               onClick={() => toggleDropdown(setDropdown, 'mergefield')}
             >

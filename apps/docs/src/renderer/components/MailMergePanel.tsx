@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { MergeRecord } from '@genoffice/docx-engine'
 import type { MergeDataSource, MergeOutputMode } from '../../shared/ipc'
-import type { PmNode } from '../editor/convert'
+import { originalTemplateDoc } from '../mail-merge/template'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import {
   AVERY_5160,
@@ -74,7 +74,7 @@ export function MailMergePanel({
   // a label cell only takes paragraphs: tell the user when the template has
   // blocks the sheet would drop, instead of letting the merge waste a sheet
   const droppedLabelBlocks = useMemo(
-    () => (mode === 'labels' ? unsupportedLabelBlocks(editor.getJSON() as PmNode) : 0),
+    () => (mode === 'labels' ? unsupportedLabelBlocks(originalTemplateDoc(editor)) : 0),
     [editor, mode],
   )
 

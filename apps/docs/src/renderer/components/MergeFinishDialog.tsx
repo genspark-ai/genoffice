@@ -5,7 +5,12 @@ import type { MergeDataSource, MergeOutputMode } from '../../shared/ipc'
 import type { MergeRecord } from '@genoffice/docx-engine'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import type { MergePageLayout } from '../mail-merge/layout'
-import { countRecordSlots, mergePageCount, recordPage } from '../mail-merge/template'
+import {
+  countRecordSlots,
+  mergePageCount,
+  originalTemplateDoc,
+  recordPage,
+} from '../mail-merge/template'
 import { useI18n } from '../i18n/locale'
 
 /**
@@ -48,8 +53,7 @@ type RangeChoice = '' | 'all' | 'current' | 'fromTo'
  * values, so the original sits on the editor's storage while it is on.
  */
 function templateDocOf(editor: Editor): PmNode {
-  const storage = editor.storage as unknown as Record<string, unknown>
-  return (storage.mailmergePreviewJson as PmNode | undefined) ?? (editor.getJSON() as PmNode)
+  return originalTemplateDoc(editor)
 }
 
 export function MergeFinishDialog({
@@ -82,7 +86,12 @@ export function MergeFinishDialog({
   // A NEXT template merges as many records per page as it has record blocks —
   // not NEXT count + 1: the NEXT at the end of the page hands off to the next
   // page and renders nothing. Without NEXT it is one record per page.
-  const slotsPerPage = useMemo(() => countRecordSlots(templateDocOf(editor)), [editor])
+  // recompute when the template changes (editing it after the panel mounts must
+  // refresh the slot count), not just when the editor instance changes
+  const slotsPerPage = useMemo(
+    () => countRecordSlots(templateDocOf(editor)),
+    [editor, editor.state.doc],
+  )
 
   // Preview renders one record at a time, so the page holding currentIndex is
   // derived from the index itself: slot 1 of that page is the previewed record.
