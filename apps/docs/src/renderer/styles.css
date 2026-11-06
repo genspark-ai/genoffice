@@ -16012,7 +16012,6 @@ tr > .page-gap-cut {
   background: var(--border);
 }
 
-
 /* Show Revisions in Balloons: the deleted run leaves the flow; a thin marker
    stands at its spot as the balloon leader's foot (Word's connector mark) */
 .rev-balloon .doc-del-marker {

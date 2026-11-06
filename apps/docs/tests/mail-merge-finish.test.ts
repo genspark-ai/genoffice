@@ -121,9 +121,9 @@ describe('the merge output', () => {
 
     it('fuses shape and range under one output section', () => {
       renderPanel()
-      const headings = [
-        ...container.querySelectorAll('.mailmerge-section .mailmerge-label'),
-      ].map((e) => e.textContent?.trim())
+      const headings = [...container.querySelectorAll('.mailmerge-section .mailmerge-label')].map(
+        (e) => e.textContent?.trim(),
+      )
       expect(headings).toContain(t('ribbonMailingsOutput'))
       expect(headings).toContain(t('ribbonMailingsRange'))
       // the finish button lives in the same section as the shape radios

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Editor } from '@tiptap/core'
-import { buildBlankDocx, mergeFieldInstruction, parseDocx, readSections } from '@genoffice/docx-engine'
+import {
+  buildBlankDocx,
+  mergeFieldInstruction,
+  parseDocx,
+  readSections,
+} from '@genoffice/docx-engine'
 import { blocksToPmDoc, type PmNode } from '../src/renderer/editor/convert'
 import { buildMailMergeFiles } from '../src/renderer/mail-merge/output'
 import { countRecordSlots, hasNextField } from '../src/renderer/mail-merge/template'

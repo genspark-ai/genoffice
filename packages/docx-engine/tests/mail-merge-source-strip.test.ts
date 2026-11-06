@@ -14,8 +14,7 @@ import { buildDocx } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
-const R_NS =
-  'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+const R_NS = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 const SETTINGS_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'
 const BODY = '<w:p><w:r><w:t>Dear Ada</w:t></w:r></w:p>'
 const ORIGINAL = [{ kind: 'original' as const, docxIndex: 0 }]
