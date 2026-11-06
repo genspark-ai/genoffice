@@ -9,6 +9,7 @@ import type { Editor } from '@tiptap/core'
 import { history } from '@tiptap/pm/history'
 import { suggestFileName } from '@genoffice/ui'
 import { modelTextOf, type RedactableNode } from './ai/redact-view'
+import { originalTemplateDoc, mailMergePreviewActive } from './mail-merge/template'
 import {
   applyPageNumType,
   applySectionSettings,
@@ -765,7 +766,7 @@ export function sanitizeFileBaseName(raw: string): string | null {
  * title) picks up a content-derived name instead of "Untitled.docx".
  */
 function deriveAutoFileName(editor: Editor): string | null {
-  const body = (editor.getJSON() as PmNode).content ?? []
+  const body = originalTemplateDoc(editor).content ?? []
   for (const node of body) {
     if (node.type !== 'docHeading') continue
     const base = sanitizeFileBaseName(pmNodeText(node))
@@ -778,7 +779,7 @@ function deriveAutoFileName(editor: Editor): string | null {
 function modelTextOfDocument(editor: Editor): string {
   // A name is read off the opening of a document; 8k characters is far past
   // anything a stem could name, and bounds the walk on the UI thread.
-  return modelTextOf(editor.getJSON() as RedactableNode, { maxChars: 8000 })
+  return modelTextOf(originalTemplateDoc(editor) as RedactableNode, { maxChars: 8000 })
 }
 
 /**
@@ -843,10 +844,7 @@ export async function buildDocBytes(
   // Preview (mail-merge) swaps the editor content for merged values but keeps
   // the original doc on editor.storage.mailmergePreviewJson — save/export must
   // use the original so merge-field code survives the round-trip.
-  const storage = editor.storage as unknown as Record<string, unknown>
-  const pmJson = (pmOverride ??
-    (storage.mailmergePreviewJson as PmNode | undefined) ??
-    (editor.getJSON() as PmNode))
+  const pmJson = pmOverride ?? originalTemplateDoc(editor)
   const plan = pmDocToSavePlan(pmJson, doc.parsed.blocks)
   // chart data edits patch the chart's own zip part, not the body XML
   const partXml: Record<string, string> = {}
@@ -1413,6 +1411,12 @@ async function saveOnce(
  */
 export function printDoc(ctx: FileActionContext): void {
   if (!ctx.doc) return
+  // the mail-merge preview holds the editor's document with the merged values:
+  // printing it would print the preview, not the template the user wrote
+  if (mailMergePreviewActive(ctx.editor)) {
+    showToast(t('appMailMergePreviewPrint'), 'error')
+    return
+  }
   // the print sheet prints the live preview pages: needs the whole document mounted
   if (isPhasedContentPending()) {
     void waitForFullContent().then(() => printDoc(ctx))
@@ -1516,6 +1520,12 @@ let printJobActive = false
 export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<boolean> {
   const { doc } = ctx
   if (!doc) return false
+  // the mail-merge preview holds the editor's document with the merged values:
+  // the export would write the preview, not the template the user wrote
+  if (mailMergePreviewActive(ctx.editor)) {
+    showToast(t('appMailMergePreviewPrint'), 'error')
+    return false
+  }
   await waitForFullContent()
   if (printJobActive || ctx.pendingMixedExportRef.current) {
     ctx.setStatus(t('appExportingPdf'))

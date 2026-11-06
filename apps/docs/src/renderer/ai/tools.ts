@@ -8,6 +8,7 @@ import { MIND_MAP_LIMITS, MIND_MAP_TOOL, parseMindMapTree } from '@genoffice/age
 import { executeOps, opNames } from './ops'
 import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { redactTextBetween } from './redact-view'
+import { originalTemplateDoc } from '../mail-merge/template'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import {
   PAGE_SETUP_TOOL,
@@ -1225,6 +1226,15 @@ export function executeTool(
   extras?: AiDocExtras,
   notes?: AiNotesAccess,
 ): ToolExecution | Promise<ToolExecution> {
+  // During a mail-merge preview the editor holds substituted preview text, not
+  // the real template — mutations would desync it from the saved original.
+  // Block every AI tool until the user exits the preview.
+  if (editor.storage.mailmergePreviewJson) {
+    return fail(
+      'Mail merge preview active',
+      'Exit the mail merge preview before editing the document with AI.',
+    )
+  }
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = staleSummaryOf(call)
   if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
@@ -1546,7 +1556,7 @@ function executeSyncTool(
       const blockIndex = $from.index(0)
       // the echo quotes what was replaced back to the model, so a selection
       // covering a withheld span would undo the withholding right here
-      const oldText = redactTextBetween(editor.getJSON(), range.from, range.to, ' ')
+      const oldText = redactTextBetween(originalTemplateDoc(editor), range.from, range.to, ' ')
       replaceInlineRange(editor, range.from, range.to, nodes, track)
       const newText = nodes.map((n) => n.textContent).join('')
       return {

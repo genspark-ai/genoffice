@@ -79,6 +79,8 @@ export const zhTW = {
   appPgNumHintBlank: '起始頁碼留空 = 接續前一節',
   appPgNumAppliesTo: ';作用於第 {n} 節',
   appExportingPdf: '正在匯出 PDF…',
+  appMailMergePreviewPrint: '請先退出郵件合併預覽，再列印或匯出',
+  appMailMergePreviewAi: '請先退出郵件合併預覽，再使用 AI 面板',
   appExportingHtml: '正在匯出 HTML…',
   appExportingMarkdown: '正在匯出 Markdown…',
   appExportPdf: '匯出 PDF',

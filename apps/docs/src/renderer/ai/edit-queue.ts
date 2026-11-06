@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection, type Selection } from '@tiptap/pm/state'
 import { queueAnchorRange } from '../editor/ai-queue-anchors'
+import { originalTemplateDoc } from '../mail-merge/template'
 import { redactTextBetween } from './redact-view'
 
 /**
@@ -63,7 +64,7 @@ export function resolveQueueItem(editor: Editor, item: DocsEditQueueItem): Resol
   const indexes = blockRangeOfPositions(editor, range.from, range.to)
   // the excerpt labels a queued edit, and the label is shown to the model;
   // an anchor that covered a withheld span would carry the words along
-  const text = redactTextBetween(editor.getJSON(), range.from, range.to, ' ')
+  const text = redactTextBetween(originalTemplateDoc(editor), range.from, range.to, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   // a textless anchor (image/chart node selection) is still a live target —

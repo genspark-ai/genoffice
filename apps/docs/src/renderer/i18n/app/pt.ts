@@ -84,6 +84,8 @@ export const pt = {
   appPgNumHintBlank: 'Deixe "Iniciar em" em branco para continuar da seção anterior',
   appPgNumAppliesTo: '; aplica-se à seção {n}',
   appExportingPdf: 'Exportando PDF…',
+  appMailMergePreviewPrint: 'Saia da visualização de mesclagem para imprimir ou exportar',
+  appMailMergePreviewAi: 'Saia da visualização de mesclagem para usar o painel de IA',
   appExportingHtml: 'Exportando HTML…',
   appExportingMarkdown: 'Exportando Markdown…',
   appExportPdf: 'Exportar PDF',

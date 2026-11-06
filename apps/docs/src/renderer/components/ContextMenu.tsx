@@ -14,6 +14,7 @@ import {
 } from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
 import { redactTextBetween, type RedactableNode } from '../ai/redact-view'
+import { originalTemplateDoc } from '../mail-merge/template'
 import type { TextboxDisplay } from '@genoffice/docx-engine'
 
 import { useI18n, type StringKey } from '../i18n/locale'
@@ -265,7 +266,7 @@ export function EditorContextMenu({
   const isRedactedSelection = hasRedactionIn(editor, from, to)
   // the presets quote the selection back to the model, so it reads the projection
   const selectedText = hasSelection
-    ? redactTextBetween(editor.getJSON() as RedactableNode, from, to, ' ').trim()
+    ? redactTextBetween(originalTemplateDoc(editor) as RedactableNode, from, to, ' ').trim()
     : ''
   // Synonyms targets a word / short phrase, not long selections
   const synonymText = selectedText.length > 0 && selectedText.length <= 20 ? selectedText : ''

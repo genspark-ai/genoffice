@@ -89,6 +89,8 @@ export const ja = {
   appPgNumAppliesTo: '。セクション {n} に適用',
   // Export PDF
   appExportingPdf: 'PDF をエクスポートしています…',
+  appMailMergePreviewPrint: '印刷または書き出しの前に、メールマージのプレビューを終了してください',
+  appMailMergePreviewAi: 'AI パネルを使う前に、メールマージのプレビューを終了してください',
   appExportingHtml: 'HTML をエクスポートしています…',
   appExportingMarkdown: 'Markdown をエクスポートしています…',
   appExportPdf: 'PDF のエクスポート',

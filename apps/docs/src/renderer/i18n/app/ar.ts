@@ -80,6 +80,8 @@ export const ar = {
   appPgNumHintBlank: 'اترك "بدء الترقيم بـ" فارغًا للمتابعة من المقطع السابق',
   appPgNumAppliesTo: '؛ يسري على المقطع {n}',
   appExportingPdf: 'جارٍ تصدير PDF…',
+  appMailMergePreviewPrint: 'اخرج من معاينة دمج البريد للطباعة أو التصدير',
+  appMailMergePreviewAi: 'اخرج من معاينة دمج البريد لاستخدام لوحة الذكاء الاصطناعي',
   appExportingHtml: 'جارٍ تصدير HTML…',
   appExportingMarkdown: 'جارٍ تصدير Markdown…',
   appExportPdf: 'تصدير PDF',

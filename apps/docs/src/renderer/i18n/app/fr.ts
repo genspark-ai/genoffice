@@ -86,6 +86,8 @@ export const fr = {
     'Laissez « À partir de » vide pour continuer à partir de la section précédente',
   appPgNumAppliesTo: " ; s'applique à la section {n}",
   appExportingPdf: 'Exportation du PDF…',
+  appMailMergePreviewPrint: 'Quit l’aperçu du publipostage pour imprimer ou exporter',
+  appMailMergePreviewAi: 'Quit l’aperçu du publipostage pour utiliser le panneau IA',
   appExportingHtml: 'Exportation du HTML…',
   appExportingMarkdown: 'Exportation du Markdown…',
   appExportPdf: 'Exporter en PDF',

@@ -82,6 +82,8 @@ export const vi = {
   appPgNumHintBlank: 'Để trống "Bắt đầu từ" để tiếp tục từ phần trước',
   appPgNumAppliesTo: '; áp dụng cho phần {n}',
   appExportingPdf: 'Đang xuất PDF…',
+  appMailMergePreviewPrint: 'Thoát khỏi bản xem trước trộn thư để in hoặc xuất',
+  appMailMergePreviewAi: 'Thoát khỏi bản xem trước trộn thư để dùng bảng AI',
   appExportingHtml: 'Đang xuất HTML…',
   appExportingMarkdown: 'Đang xuất Markdown…',
   appExportPdf: 'Xuất PDF',

@@ -82,6 +82,8 @@ export const en = {
   appPgNumHintBlank: 'Leave "Start at" blank to continue from the previous section',
   appPgNumAppliesTo: '; applies to section {n}',
   appExportingPdf: 'Exporting PDF…',
+  appMailMergePreviewPrint: 'Exit the mail merge preview to print or export',
+  appMailMergePreviewAi: 'Exit the mail merge preview to use the AI panel',
   appExportingHtml: 'Exporting HTML…',
   appExportingMarkdown: 'Exporting Markdown…',
   appExportPdf: 'Export PDF',

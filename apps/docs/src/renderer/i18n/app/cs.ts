@@ -83,6 +83,9 @@ export const cs = {
   appPgNumHintBlank: 'Pole „Začít od“ nechte prázdné, chcete-li pokračovat z předchozího oddílu',
   appPgNumAppliesTo: '; platí pro oddíl {n}',
   appExportingPdf: 'Exportování PDF…',
+  appMailMergePreviewPrint:
+    'Ukončete náhled hromadného dopisování, chcete-li tisknout nebo exportovat',
+  appMailMergePreviewAi: 'Ukončete náhled hromadného dopisování, chcete-li použít panel AI',
   appExportingHtml: 'Exportování HTML…',
   appExportingMarkdown: 'Exportování Markdown…',
   appExportPdf: 'Exportovat PDF',

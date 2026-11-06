@@ -10,6 +10,7 @@ import {
   type TableModel,
 } from '@genoffice/docx-engine'
 import { pmTableToModel, tableModelToPmNode, type PmMark, type PmNode } from '../editor/convert'
+import { originalTemplateDoc } from '../mail-merge/template'
 import { wordTableCell, wordTableModel } from '../editor/new-table'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
 import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
@@ -524,7 +525,7 @@ export function serializeRangeToHtml(
   // not travel in the HTML this produces. `redactNode` is total, so a
   // shape it does not recognise still comes through rather than
   // throwing and falling back to the unredacted text.
-  const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
+  const json = redactNode(originalTemplateDoc(editor) as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
   let listBuffer: { kind: string; items: string[] } | null = null
@@ -949,7 +950,7 @@ export function buildDocContext(
   // `textBetween` would read the words; the context quotes the selection back
   // to the model, so it has to be the projected read
   const selectedText = partial
-    ? redactTextBetween(editor.getJSON() as RedactableNode, partial.from, partial.to)
+    ? redactTextBetween(originalTemplateDoc(editor) as RedactableNode, partial.from, partial.to)
     : ''
   const selectionLines = partial
     ? [

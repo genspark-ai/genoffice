@@ -1,5 +1,6 @@
 import { placeholderInstruction } from './redact'
 import { redactLabelsOf } from './redact-view'
+import { originalTemplateDoc } from '../mail-merge/template'
 import type { Editor } from '@tiptap/core'
 import type { AgentSkill } from '@genoffice/agent-core'
 import {
@@ -74,7 +75,9 @@ export function createDocsSkill(
       // look for markers that are not there
       const editor = getEditor()
       const labels = editor
-        ? redactLabelsOf(editor.getJSON() as unknown as Parameters<typeof redactLabelsOf>[0])
+        ? redactLabelsOf(
+            originalTemplateDoc(editor) as unknown as Parameters<typeof redactLabelsOf>[0],
+          )
         : []
       const redact = labels.length > 0 ? `\n\n${placeholderInstruction(labels)}` : ''
       return AGENT_SYSTEM_PROMPT + mediaOffNote() + redact

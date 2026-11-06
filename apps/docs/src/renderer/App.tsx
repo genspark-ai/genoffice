@@ -791,10 +791,16 @@ export function App() {
   const [doc, setDoc] = useState<DocState | null>(null)
   /** a phased open is still streaming the document tail: editor stays read-only */
   const [docLoading, setDocLoading] = useState(false)
+  /**
+   * The mail-merge preview holds the editor's document with the merged values.
+   * While it is on, the paths that write the document out (print, PDF export)
+   * and the AI panel are fenced off. genoffice#2097.
+   */
+  const [mailMergePreviewing, setMailMergePreviewing] = useState(false)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
-  const bootPendingRef = useRef<
-    Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null
-  >(null)
+  const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null>(
+    null,
+  )
   const bootHandledRef = useRef(false)
   /** password prompt for an ECMA-376 encrypted docx; submit retries via openDocxDecrypt */
   const [docPwdPrompt, setDocPwdPrompt] = useState<{
@@ -8284,6 +8290,7 @@ export function App() {
         actionsRef={ribbonActionsRef}
         quickActions={quickActions}
         mergeSource={mergeSource}
+        onMailMergePreviewingChange={setMailMergePreviewing}
         editor={editor}
         formatState={formatState}
         hasDoc={!!doc}
@@ -8387,6 +8394,7 @@ export function App() {
               preset={aiPreset}
               open={showAi}
               hideRail={!aiSidebarEnabled}
+              mailMergePreviewing={mailMergePreviewing}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
               filePath={doc?.filePath ?? null}

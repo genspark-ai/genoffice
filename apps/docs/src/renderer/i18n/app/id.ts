@@ -85,6 +85,8 @@ export const id = {
   appPgNumHintBlank: 'Biarkan "Mulai dari" kosong untuk melanjutkan dari bagian sebelumnya',
   appPgNumAppliesTo: '; berlaku untuk bagian {n}',
   appExportingPdf: 'Mengekspor PDF…',
+  appMailMergePreviewPrint: 'Keluar dari pratinjau mail merge untuk mencetak atau mengekspor',
+  appMailMergePreviewAi: 'Keluar dari pratinjau mail merge untuk menggunakan panel AI',
   appExportingHtml: 'Mengekspor HTML…',
   appExportingMarkdown: 'Mengekspor Markdown…',
   appExportPdf: 'Ekspor PDF',

@@ -424,6 +424,12 @@ interface RibbonProps {
   onReadMergeDataSource: (path: string, sheet: string) => Promise<boolean>
   /** Mailings: build the merged documents and write them */
   onMergeMailings: (request: MailMergeRequest) => Promise<MailMergeResponse>
+  /**
+   * Mailings: the preview holds the editor's document with the merged values,
+   * so the host has to know — the paths that write the document out or read it
+   * for the model are fenced off while it is on.
+   */
+  onMailMergePreviewingChange?: (previewing: boolean) => void
   /** current document path (View → New Window opens it in another window) */
   filePath: string | null
   viewMode: ViewMode
@@ -885,6 +891,7 @@ function RibbonInner({
   onPickMergeDataSourceFile,
   onReadMergeDataSource,
   onMergeMailings,
+  onMailMergePreviewingChange,
   footer,
   onFooter,
   hfEditing,
@@ -4640,6 +4647,7 @@ function RibbonInner({
             onReadSource={onReadMergeDataSource}
             onInsertField={onInsertField}
             onMerge={onMergeMailings}
+            onPreviewingChange={onMailMergePreviewingChange}
           />
         ) : tab === 'review' ? (
           <ReviewTab
