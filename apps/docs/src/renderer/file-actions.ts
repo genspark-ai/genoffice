@@ -10,6 +10,7 @@ import { history } from '@tiptap/pm/history'
 import { suggestFileName } from '@genoffice/ui'
 import { modelTextOf, type RedactableNode } from './ai/redact-view'
 import { originalTemplateDoc, mailMergePreviewActive } from './mail-merge/template'
+import { MAIL_MERGE_PREVIEW_BYPASS } from './mail-merge/preview-extension'
 import {
   applyPageNumType,
   applySectionSettings,
@@ -406,6 +407,8 @@ export function appendStreamedNodes(editor: Editor, nodes: PmNode[]): void {
   // forced Track Changes must not record the streamed tail as insertions
   tr.setMeta(TRACK_IGNORE, true)
   tr.setMeta(TABLE_TRAILING_SKIP, true)
+  // a streamed tail is not an edit to the preview: it must pass the preview lock
+  tr.setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
   editor.view.dispatch(tr)
   carryDocSeen(editor, before)
 }
@@ -423,6 +426,7 @@ function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
         .setMeta(TRACK_IGNORE, true)
         .setMeta(TABLE_TRAILING_SKIP, true)
         .setMeta(PHASED_APPEND, true)
+        .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
         .setContent(doc as never)
         .run(),
     appendNodes: (nodes) => {
@@ -666,9 +670,11 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     applyDocLayoutSettings(ctx.editor, parsed)
     // a tail still streaming for the previous document must never land in this one
     cancelPhasedContent()
-    ctx.editor.commands.setContent(
-      blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never,
-    )
+    ctx.editor
+      .chain()
+      .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
+      .setContent(blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never)
+      .run()
     resetEditorHistory(ctx.editor)
     focusDocumentStart(ctx.editor)
     noteDocumentSwapped()
@@ -1307,6 +1313,7 @@ async function saveOnce(
       editor
         .chain()
         .setMeta(TRACK_IGNORE, true)
+        .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
         .setContent(rebasedPm as never)
         .run()
       resetEditorHistory(editor)

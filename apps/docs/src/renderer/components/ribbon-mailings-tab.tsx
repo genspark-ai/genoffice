@@ -13,7 +13,11 @@ import {
   substituteWithCursor,
 } from '../mail-merge/template'
 import { viewRecipients, type FilterCondition, type SortKey } from '../mail-merge/recipients'
-import { setPreviewReadOnly, setPreviewTemplate } from '../mail-merge/preview-extension'
+import {
+  MAIL_MERGE_PREVIEW_BYPASS,
+  setPreviewReadOnly,
+  setPreviewTemplate,
+} from '../mail-merge/preview-extension'
 import { MailMergePanel } from './MailMergePanel'
 import { MergeDataSourceDialog } from './MergeDataSourceDialog'
 import { MergeRecipientList } from './MergeRecipientList'
@@ -196,9 +200,12 @@ export function MailingsTab({
       setPreviewTemplate(editor, savedRef.current)
       previewDocPathRef.current = docPath
       setPreviewReadOnly(editor, true)
+      // the bypass meta lets this swap through the preview lock the App turns
+      // on right after; without it the merged document could not even appear
       editor
         .chain()
         .setMeta('addToHistory', false)
+        .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
         .setContent(previewDoc(savedRef.current, activeIndex) as never, { emitUpdate: false })
         .run()
       previewingRef.current = true
@@ -206,9 +213,11 @@ export function MailingsTab({
       onPreviewingChange?.(true)
     } else {
       if (savedRef.current) {
+        // restoring the template happens while the lock is still on: bypass it
         editor
           .chain()
           .setMeta('addToHistory', false)
+          .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
           .setContent(savedRef.current as never, { emitUpdate: false })
           .run()
       }
@@ -229,6 +238,7 @@ export function MailingsTab({
       editor
         .chain()
         .setMeta('addToHistory', false)
+        .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
         .setContent(previewDoc(savedRef.current, activeIndex) as never, { emitUpdate: false })
         .run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,6 +250,7 @@ export function MailingsTab({
     editor
       .chain()
       .setMeta('addToHistory', false)
+      .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
       .setContent(savedRef.current as never, { emitUpdate: false })
       .run()
     setPreviewTemplate(editor, null)
@@ -274,6 +285,7 @@ export function MailingsTab({
         editor
           .chain()
           .setMeta('addToHistory', false)
+          .setMeta(MAIL_MERGE_PREVIEW_BYPASS, true)
           .setContent(savedRef.current as never, { emitUpdate: false })
           .run()
         setPreviewTemplate(editor, null)

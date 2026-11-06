@@ -112,6 +112,7 @@ import {
   type MailMergeRequest,
   type MailMergeResponse,
 } from './mail-merge/output'
+import { setPreviewLocked } from './mail-merge/preview-extension'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
@@ -2105,16 +2106,29 @@ export function App() {
   // Read Mode / Protect Document: the document becomes read-only; Esc leaves Read Mode.
   // A phased open stays editable (the append boundary is guarded by
   // StreamingTailGuardExtension; saves wait for the full content).
+  // The mail-merge preview owns the editable state while it is on: this effect
+  // must not hand editability back underneath it (the preview restores the
+  // previous state itself when it ends).
   useEffect(() => {
     if (!editor) return
-    editor.setEditable(!readMode && !isProtected)
+    editor.setEditable(!readMode && !isProtected && !mailMergePreviewing)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReadMode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, readMode, isProtected])
+  }, [editor, readMode, isProtected, mailMergePreviewing])
+
+  // Mail-merge preview: the App-level lock, not the ribbon's greyed-out buttons,
+  // is what keeps the merged document read-only. It drives a transaction filter
+  // under the editor: while it is on, doc-changing transactions are refused
+  // wherever they came from (typing, shortcuts, the context menu, AI edits,
+  // programmatic dispatch); the preview's own swaps carry a bypass meta.
+  useEffect(() => {
+    if (!editor) return
+    setPreviewLocked(editor, mailMergePreviewing)
+  }, [editor, mailMergePreviewing])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {
