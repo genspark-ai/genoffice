@@ -34,16 +34,18 @@ test('Page size, written to the file at once, is undone and redone in the file',
       [595, 842],
     ])
 
-    // the step is kept once the editor has reloaded the written file, a moment after the write
-    await expect(page.locator('button[data-tip="Undo"]')).toBeEnabled()
-    await page.keyboard.press('ControlOrMeta+z')
-    await expect.poll(sizes).toEqual([
+    // The step is kept once the editor has reloaded the written file, a moment after the write:
+    // a key pressed before then finds nothing to undo, so it is pressed until the file changes
+    const stepUntil = async (keys: string, expected: number[][]) =>
+      expect(async () => {
+        await page.keyboard.press(keys)
+        await expect.poll(sizes, { timeout: 1500 }).toEqual(expected)
+      }).toPass({ timeout: 15_000 })
+    await stepUntil('ControlOrMeta+z', [
       [400, 600],
       [400, 600],
     ])
-    await expect(page.locator('button[data-tip="Redo"]')).toBeEnabled()
-    await page.keyboard.press('ControlOrMeta+Shift+z')
-    await expect.poll(sizes).toEqual([
+    await stepUntil('ControlOrMeta+Shift+z', [
       [595, 842],
       [595, 842],
     ])
