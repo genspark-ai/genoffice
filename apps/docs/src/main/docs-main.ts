@@ -23,7 +23,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   BrowserWindow,
@@ -3592,6 +3592,42 @@ let rendererReady = false
 let pendingOpenPath = findOpenableDocPath(process.argv)
 /** documents queued for windows/tabs spawned via New Tab, keyed by webContents id */
 const pendingWindowOpens = new Map<number, string>()
+
+/** Temp dirs created for "open in app" merges, mapped to the webContents ids
+ *  still holding a document from them. A dir is removed once the last such
+ *  tab/window closes, so merge output leaves nothing behind in the temp folder. */
+const mergeTempRefs = new Map<string, Set<number>>()
+
+function mergeTempDirOf(path: string): string | null {
+  for (const dir of mergeTempRefs.keys()) {
+    if (path.startsWith(dir + sep)) return dir
+  }
+  return null
+}
+
+function trackMergeTemp(webContentsId: number, dir: string): void {
+  mergeTempRefs.get(dir)?.add(webContentsId)
+}
+
+function releaseMergeTemp(webContentsId: number, dir: string): void {
+  const refs = mergeTempRefs.get(dir)
+  if (!refs) return
+  refs.delete(webContentsId)
+  if (refs.size === 0) {
+    mergeTempRefs.delete(dir)
+    void rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+/** remove any tracked merge temp dir no tab/window ever claimed (failed opens) */
+function sweepEmptyMergeTempDirs(): void {
+  for (const [dir, refs] of mergeTempRefs) {
+    if (refs.size === 0) {
+      mergeTempRefs.delete(dir)
+      void rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+}
 /** webContents ids that should open as a new blank doc instead of the start screen */
 const pendingNewBlankIds = new Set<number>()
 /** mark a docs webContents as "open blank on first consume" (called by the shell for home:new-doc) */
@@ -5632,6 +5668,8 @@ export function registerDocsIpc(): void {
   // Mailings tab: pick the local file the recipient list comes from. Only the
   // file is picked here — the sheet is the user's second step, because a
   // workbook holds several and the merge reads the one they name.
+  // The picked path is the only one the renderer may ask to re-read below.
+  let mergeSourcePath: string | null = null
   ipcMain.handle('docs:merge-data-source', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgMergeDataSource'),
@@ -5645,16 +5683,22 @@ export function registerDocsIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     try {
-      return { ok: true, file: await readMergeDataSourceFile(result.filePaths[0]) }
+      mergeSourcePath = result.filePaths[0]
+      return { ok: true, file: await readMergeDataSourceFile(mergeSourcePath) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
-  // Mailings tab: read the sheet the user confirmed as the recipient list.
+  // Mailings tab: read the sheet the user confirmed as the recipient list. Only
+  // the path the pick dialog returned is accepted, so the renderer cannot ask
+  // the main process to open an arbitrary file as a merge source.
   ipcMain.handle(
     'docs:read-merge-data-source',
     async (_event, path: string, sheetName?: string) => {
+      if (!path || path !== mergeSourcePath) {
+        return { ok: false, error: 'unexpected merge data source path' }
+      }
       try {
         return { ok: true, source: await readMergeDataSource(path, sheetName) }
       } catch (err) {
@@ -5669,8 +5713,10 @@ export function registerDocsIpc(): void {
   // user picks — which is the behaviour the app had before this change. The
   // "open in a new tab" choice instead drops each document in a temp file and
   // opens it like any other document, so nothing is written to disk unless the
-  // user saves it themselves. The bytes carry the document's lazily served
-  // pictures, so they are materialized first — the merged file is a document.
+  // user saves it themselves. The temp dir is removed once the last tab/window
+  // holding one of its files closes, so nothing lingers. The bytes carry the
+  // document's lazily served pictures, so they are materialized first — the
+  // merged file is a document.
   ipcMain.handle('docs:merge-output', async (event, request: MergeOutputRequest) => {
     const files = Array.isArray(request?.files) ? request.files : []
     if (files.length === 0) return { ok: false, error: 'nothing to write' }
@@ -5681,7 +5727,11 @@ export function registerDocsIpc(): void {
     }
     try {
       if (openInApp) {
-        const tmpDir = await mkdtemp(join(tmpdir(), 'genoffice-merge-'))
+        const tmpDir = await mkdtemp(join(app.getPath('temp'), 'genoffice-merge-'))
+        // registered before the tabs/windows open, so createDocsWindow and
+        // createDocsView can claim a webContents id against it and release the
+        // dir when the last one holding one of these files closes
+        mergeTempRefs.set(tmpDir, new Set<number>())
         const paths: string[] = []
         for (const file of files) {
           const tmpPath = mergeOutputPath(tmpDir, file.name)
@@ -5719,6 +5769,8 @@ export function registerDocsIpc(): void {
       for (const file of files) await write(mergeOutputPath(folder, file.name), file.data)
       return { ok: true, folder, count: files.length }
     } catch (err) {
+      // a failed "open in app" may leave a temp dir no tab ever claimed
+      if (openInApp) sweepEmptyMergeTempDirs()
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
@@ -6778,6 +6830,12 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
   // captured up front: webContents is already destroyed inside the 'closed' handler
   const webContentsId = win.webContents.id
   if (openPath) pendingWindowOpens.set(webContentsId, openPath)
+  // "open in app" merge output: forget the temp dir once this window is gone
+  const mergeDir = openPath ? mergeTempDirOf(openPath) : null
+  if (mergeDir) {
+    trackMergeTemp(webContentsId, mergeDir)
+    win.webContents.once('destroyed', () => releaseMergeTemp(webContentsId, mergeDir))
+  }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     const target = safeExternalUrl(url)
@@ -6995,6 +7053,8 @@ export function createDocsView(openPath?: string): WebContentsView {
   })
 
   if (openPath) pendingWindowOpens.set(view.webContents.id, openPath)
+  // "open in app" merge output: forget the temp dir once this tab is gone
+  const mergeDir = openPath ? mergeTempDirOf(openPath) : null
 
   view.webContents.setWindowOpenHandler(({ url }) => {
     const target = safeExternalUrl(url)
@@ -7007,6 +7067,7 @@ export function createDocsView(openPath?: string): WebContentsView {
   void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'docs', { mode: 'tab' }))
   // view.webContents becomes undefined after destroy, so grab the id beforehand
   const wcId = view.webContents.id
+  if (mergeDir) trackMergeTemp(wcId, mergeDir)
   view.webContents.once('destroyed', () => {
     pendingWindowOpens.delete(wcId)
     dropDocWriter(wcId)
@@ -7014,6 +7075,7 @@ export function createDocsView(openPath?: string): WebContentsView {
     closeCheckWaiters.delete(wcId)
     closeSaveWaiters.get(wcId)?.(false)
     closeSaveWaiters.delete(wcId)
+    if (mergeDir) releaseMergeTemp(wcId, mergeDir)
   })
   return view
 }
