@@ -64,8 +64,9 @@ function workbook(column: Record<number, { f?: string; si?: string }>) {
       __getInjector(): { add(dependencies: unknown[]): void; get<T>(token: unknown): T }
     }
   ).__getInjector()
+  // registered as UniverSheetsFormulaUIPlugin registers it; the plugin creates it only at
+  // lifecycle Steady, 3 s after the first render, so nothing here creates it before the install
   injector.add([FormulaReorderController])
-  injector.get(FormulaReorderController)
   const commands = injector.get<ICommandService>(ICommandService)
   // resolving the undo service registers the undo/redo commands, which act
   // on the focused unit
