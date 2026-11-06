@@ -12,6 +12,7 @@ import {
   SheetInterceptorService,
   type IReorderRangeCommandParams,
 } from '@univerjs/sheets'
+import { FormulaReorderController } from '@univerjs/sheets-formula-ui'
 
 import type { UniverRuntime } from './univer-state'
 
@@ -58,6 +59,9 @@ function cutGroupPatches(
 
 export function installSortFormulaRefs(runtime: UniverRuntime): { dispose(): void } {
   const injector = runtime.univer.__getInjector()
+  // Univer creates it only at lifecycle Steady, 3 s after the first render: a sort before
+  // then would move the formulas without shifting them.
+  injector.get(FormulaReorderController)
   const lexer = injector.get(LexerTreeBuilder)
   return injector.get(SheetInterceptorService).interceptCommand({
     getMutations: (command) => {
