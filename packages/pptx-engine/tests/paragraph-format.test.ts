@@ -392,6 +392,38 @@ describe('empty paragraph endParaRPr', () => {
   })
 })
 
+describe('East Asian language tag (line-breaking rules)', () => {
+  const eaLang = (txBodyInner: string) =>
+    parseOne(txBodyInner).el.text!.paragraphs[0]!.runs.map((r) => r.eaLang ?? null)
+
+  it('lang or altLang picks the language; untagged and en-US runs carry none', () => {
+    expect(
+      eaLang(
+        '<a:bodyPr/><a:p>' +
+          '<a:r><a:rPr lang="ko-KR"/><a:t>가</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US" altLang="ko-KR"/><a:t>나</a:t></a:r>' +
+          '<a:r><a:rPr/><a:t>다</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>라</a:t></a:r>' +
+          '<a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>あ</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-CN"/><a:t>中</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-TW"/><a:t>中</a:t></a:r>' +
+          '</a:p>',
+      ),
+    ).toEqual(['ko', 'ko', null, null, 'ja', 'sc', 'tc'])
+  })
+
+  it('an inherited lstStyle lang counts; an explicit run lang overrides it', () => {
+    expect(
+      eaLang(
+        '<a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr lang="ko-KR"/></a:lvl1pPr></a:lstStyle><a:p>' +
+          '<a:r><a:rPr/><a:t>가</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>나</a:t></a:r>' +
+          '</a:p>',
+      ),
+    ).toEqual(['ko', null])
+  })
+})
+
 describe('East Asian wrap flags', () => {
   it('eaLnBrk/latinLnBrk/hangingPunct parse from pPr and are written back by the generator', () => {
     const { el } = parseOne(

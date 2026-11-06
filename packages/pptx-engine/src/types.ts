@@ -233,6 +233,18 @@ export interface TextRun {
    */
   fontScriptHint?: 'ja' | 'ko' | 'sc' | 'tc'
   /**
+   * The run's East Asian language: its own altLang/lang, else the inherited level default;
+   * absent = untagged or a non-East-Asian language. PowerPoint picks East Asian line-breaking
+   * rules by this tag, not by the characters (PowerPoint for Mac probes):
+   * - kinsoku and hanging punctuation use the language's own character sets, and untagged /
+   *   en-US text has none ("。" may start a line);
+   * - space-delimited Hangul words stay whole only in Korean-tagged text ("공신력 있|는"
+   *   untagged, "공신력 |있는" with lang="ko-KR", altLang="ko-KR" or an inherited lang);
+   * - latinLnBrk="1" splits Latin words mid-word except in Korean-tagged text, where it
+   *   splits Hangul words instead.
+   */
+  eaLang?: 'ja' | 'ko' | 'sc' | 'tc'
+  /**
    * Original <a:latin>/<a:ea> typeface text (incl. +mj-lt/+mn-ea theme refs).
    * Present = the user has not changed the font: patches keep the original bytes
    * and regeneration writes the original values back, so CJK/Latin dual fonts and
