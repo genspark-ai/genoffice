@@ -1288,11 +1288,13 @@ export interface PrintSlidesOp {
   widthPx: number
   heightPx: number
   /** Layout: full slides / handouts (N per page) / notes pages (slide + notes text) */
-  layout?: 'full' | 'handout2' | 'handout3' | 'handout6' | 'notes'
+  layout?: 'full' | 'handout2' | 'handout3' | 'handout4' | 'handout6' | 'handout9' | 'notes'
   /** Per-page notes text for the notes layout (same order as pngsBase64) */
   notes?: string[]
   /** Paper orientation for handout/notes pages (full pages always follow the slide ratio) */
   orientation?: 'portrait' | 'landscape'
+  /** Thumbnail order across the handout grid (row-first vs column-first) */
+  order?: 'horizontal' | 'vertical'
   /** Border around full-page slides */
   frame?: boolean
   /** A printer the dialog picked: present = print silently with these job
