@@ -1533,9 +1533,9 @@ pub(crate) mod tests {
     }
 
     /// A partial rewrite pins, it does not poison: two links, the first
-    /// reachable through a POSIX-absolute `file:///Users/…`-shaped URI (the
-    /// leading slash must survive resolution), the second gone. A formula
-    /// mixing both stays whole on its cache and reports once; the gone
+    /// reachable through an absolute file URI (a drive on Windows, a leading
+    /// slash on Unix), the second gone. A formula mixing both stays whole on
+    /// its cache and reports once; the gone
     /// link's own cell and its dependents keep their caches instead of
     /// cascading `#ERROR!`; a text cache reports its text; and a `[1]…`
     /// spelling inside a string literal stays text.
@@ -1544,14 +1544,21 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_source_fixture(&dir.path().join("source.xlsx"));
         let path = dir.path().join("book.xlsx");
-        let target = format!("file://{}", dir.path().join("source.xlsx").display());
+        let source = dir.path().join("source.xlsx");
+        #[cfg(windows)]
+        let target = format!(
+            "file:///{}",
+            source.display().to_string().replace('\\', "/")
+        );
+        #[cfg(not(windows))]
+        let target = format!("file://{}", source.display());
         write_two_link_dependent_fixture(&path, &target, "gone.xlsx");
         let report = update_external_link_values(&path).unwrap();
 
         assert_eq!(report.links.len(), 2);
         assert!(
             report.links[0].reachable,
-            "a file:///Users/… target keeps its leading slash: {:?}",
+            "an absolute file URI resolves to the source: {:?}",
             report.links[0].source
         );
         assert!(!report.links[1].reachable);
