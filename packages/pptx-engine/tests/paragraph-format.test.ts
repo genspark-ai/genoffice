@@ -393,34 +393,53 @@ describe('empty paragraph endParaRPr', () => {
 })
 
 describe('East Asian language tag (line-breaking rules)', () => {
-  const eaLang = (txBodyInner: string) =>
-    parseOne(txBodyInner).el.text!.paragraphs[0]!.runs.map((r) => r.eaLang ?? null)
+  const runs = (txBodyInner: string) => parseOne(txBodyInner).el.text!.paragraphs[0]!.runs
+  const eaLang = (txBodyInner: string) => runs(txBodyInner).map((r) => r.eaLang ?? null)
 
-  it('lang or altLang picks the language; untagged and en-US runs carry none', () => {
+  it('lang or altLang picks the language; en-US is "none"; no tag at all leaves it unset', () => {
     expect(
       eaLang(
         '<a:bodyPr/><a:p>' +
-          '<a:r><a:rPr lang="ko-KR"/><a:t>가</a:t></a:r>' +
-          '<a:r><a:rPr lang="en-US" altLang="ko-KR"/><a:t>나</a:t></a:r>' +
-          '<a:r><a:rPr/><a:t>다</a:t></a:r>' +
-          '<a:r><a:rPr lang="en-US"/><a:t>라</a:t></a:r>' +
-          '<a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>あ</a:t></a:r>' +
-          '<a:r><a:rPr lang="zh-CN"/><a:t>中</a:t></a:r>' +
-          '<a:r><a:rPr lang="zh-TW"/><a:t>中</a:t></a:r>' +
+          '<a:r><a:rPr lang="ko-KR"/><a:t>\uac00</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US" altLang="ko-KR"/><a:t>\ub098</a:t></a:r>' +
+          '<a:r><a:rPr/><a:t>\ub2e4</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>\ub77c</a:t></a:r>' +
+          '<a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-CN"/><a:t>\u4e2d</a:t></a:r>' +
+          '<a:r><a:rPr lang="zh-TW"/><a:t>\u4e2d</a:t></a:r>' +
           '</a:p>',
       ),
-    ).toEqual(['ko', 'ko', null, null, 'ja', 'sc', 'tc'])
+    ).toEqual(['ko', 'ko', null, 'none', 'ja', 'sc', 'tc'])
   })
 
-  it('an inherited lstStyle lang counts; an explicit run lang overrides it', () => {
+  it('an inherited lstStyle lang counts, en-US included; an explicit run lang overrides it', () => {
+    const KO_LEVEL = '<a:lstStyle><a:lvl1pPr><a:defRPr lang="ko-KR"/></a:lvl1pPr></a:lstStyle>'
+    const EN_LEVEL = '<a:lstStyle><a:lvl1pPr><a:defRPr lang="en-US"/></a:lvl1pPr></a:lstStyle>'
     expect(
       eaLang(
-        '<a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr lang="ko-KR"/></a:lvl1pPr></a:lstStyle><a:p>' +
-          '<a:r><a:rPr/><a:t>가</a:t></a:r>' +
-          '<a:r><a:rPr lang="en-US"/><a:t>나</a:t></a:r>' +
+        `<a:bodyPr/>${KO_LEVEL}<a:p>` +
+          '<a:r><a:rPr/><a:t>\uac00</a:t></a:r>' +
+          '<a:r><a:rPr lang="en-US"/><a:t>\ub098</a:t></a:r>' +
           '</a:p>',
       ),
-    ).toEqual(['ko', null])
+    ).toEqual(['ko', 'none'])
+    // an inherited en-US is still a tag: the default editing language does not apply
+    expect(eaLang(`<a:bodyPr/>${EN_LEVEL}<a:p><a:r><a:rPr/><a:t>\u3042</a:t></a:r></a:p>`)).toEqual(
+      ['none'],
+    )
+  })
+
+  it('the run keeps its own lang/altLang, and a regenerated run writes them back', () => {
+    const [run] = runs(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US" sz="1800"/><a:t>\u3042</a:t></a:r></a:p>',
+    )
+    expect(run).toMatchObject({ lang: 'ja-JP', altLang: 'en-US', eaLang: 'ja' })
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr lang="ja-JP" altLang="en-US"/><a:t>\u3042</a:t></a:r></a:p>',
+    )
+    const out = generateParagraphXml(el.text!.paragraphs[0]!)
+    expect(out).toContain('lang="ja-JP"')
+    expect(out).toContain('altLang="en-US"')
   })
 })
 

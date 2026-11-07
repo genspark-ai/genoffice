@@ -28,7 +28,8 @@ import type { MediaResolver } from './fill'
 import { formatAutoNum } from './auto-num'
 import { cacheKeyFor } from './image-dpi'
 
-type EaLang = NonNullable<TextRun['eaLang']>
+/** A run's resolved East Asian line-breaking language ('none' = tagged non-East-Asian). */
+type EaLang = Exclude<NonNullable<TextRun['eaLang']>, 'none'>
 
 export { formatAutoNum }
 
@@ -371,6 +372,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
   const tokens: Token[] = []
   expandSmallCaps(p.runs).forEach(({ run, srcRun }) => {
     const style = runStyle(run, scale, fontScale)
+    const eaLang = run.eaLang === 'none' ? undefined : run.eaLang
     // Latin characters of a CJK-bucket run draw with the run's a:latin face (PowerPoint):
     // the script hint stays with the CJK glyphs, Latin substitutes as western
     // Also when both slots name the same missing CJK face: PowerPoint still sets the Latin
@@ -395,7 +397,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       underline,
       ls,
       srcRun,
-      ...(run.eaLang ? { eaLang: run.eaLang } : {}),
+      ...(eaLang ? { eaLang } : {}),
       ...(run.fontFamily ? { srcFont: run.fontFamily } : {}),
       ...(run.hyperlink ? { link: run.hyperlink } : {}),
       ...(run.strike ? { strike: true } : {}),
@@ -466,7 +468,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
           isSpace: false,
           // latinLnBrk="1" lets Latin words split mid-word, except in Korean-tagged runs
           // (there it splits Hangul words instead): "Internationalization characteris|tically"
-          ...(p.latinLnBrk && run.eaLang !== 'ko' ? { midBreak: true } : {}),
+          ...(p.latinLnBrk && eaLang !== 'ko' ? { midBreak: true } : {}),
         })
       }
       buf = ''
@@ -493,7 +495,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
         // width (fonts like Carlito have no U+00A0 glyph → the missing-glyph
         // fallback would badly over-measure it)
         buf += ' '
-      } else if (isWideChar(cp) && (!isHangul(cp) || p.latinLnBrk || run.eaLang !== 'ko')) {
+      } else if (isWideChar(cp) && (!isHangul(cp) || p.latinLnBrk || eaLang !== 'ko')) {
         // Korean-tagged Hangul is wide but wraps by word (probe: PowerPoint moves the whole
         // space-delimited Korean word down, never a syllable), so it stays in the word buffer —
         // unless the paragraph allows mid-word breaks (latinLnBrk="1": prod deck broke 불꽃|에).
@@ -663,7 +665,7 @@ function symbolBulletText(font: string | undefined, char: string): string | unde
 
 // ── East-Asian kinsoku (PowerPoint default rules, per language) ─────
 // PowerPoint picks the rule set by the run's East Asian language tag (TextRun.eaLang), not by
-// the characters: untagged / en-US text has no kinsoku and no hanging punctuation at all.
+// the characters: en-US text has no kinsoku and no hanging punctuation at all.
 // Sets probed per character on PowerPoint for Mac 16.66 (Yu Gothic / Malgun Gothic, 14pt):
 // - hang: may overhang the right margin at a line end (also never starts a line);
 // - noStart: never starts a line — the preceding character moves down with it;
@@ -1015,19 +1017,29 @@ function layoutParagraph(
   return lines
 }
 
-/** Splits a token at the last grapheme boundary that fits `room`; null when not even one fits. */
+/**
+ * Splits a token at the last grapheme boundary that fits `room`; null when not even one fits.
+ * Sums per-cluster widths (cached like hardBreak) so a long word stays linear.
+ */
 function splitToFit<T extends Token>(
   tok: T,
   room: number,
   metrics: FontMetricsProvider,
 ): [T, T] | null {
   const gs = graphemes(tok.text)
+  const clusterW = new Map<string, number>()
   let n = 0
-  while (
-    n < gs.length - 1 &&
-    tokenWidth({ ...tok, text: gs.slice(0, n + 1).join('') }, metrics) <= room
-  )
-    n++
+  let w = 0
+  for (; n < gs.length - 1; n++) {
+    const g = gs[n]!
+    let cw = clusterW.get(g)
+    if (cw === undefined) {
+      cw = tokenWidth({ ...tok, text: g }, metrics)
+      clusterW.set(g, cw)
+    }
+    if (w + cw > room) break
+    w += cw
+  }
   if (n === 0) return null
   return [
     { ...tok, text: gs.slice(0, n).join('') },
@@ -1173,6 +1185,23 @@ export interface TextLayoutInput {
   refitAutofit?: boolean
   /** Picture bullets (<a:buBlip>) resolve their image through this, like picture fills */
   media?: MediaResolver
+  /** Line-breaking language for runs with no language tag anywhere in their inheritance
+      chain. Unset = no East Asian rules, which is what PowerPoint for Mac did with such text
+      even under a Korean UI; a host that knows better (e.g. an explicit editing-language
+      setting) can pass one. */
+  defaultEaLang?: EaLang
+}
+
+/** Gives runs with no language tag anywhere the default editing language (same body when none apply). */
+function withDefaultEaLang(body: TextBody, ea: EaLang | undefined): TextBody {
+  if (!ea || !body.paragraphs.some((p) => p.runs.some((r) => r.eaLang === undefined))) return body
+  return {
+    ...body,
+    paragraphs: body.paragraphs.map((p) => ({
+      ...p,
+      runs: p.runs.map((r) => (r.eaLang === undefined ? { ...r, eaLang: ea } : r)),
+    })),
+  }
 }
 
 /**
@@ -1215,6 +1244,8 @@ function flowIntoColumns(
 
 /** Main entry: TextBody → RenderTextLayout (including autofit shrink stepping). */
 export function layoutText(input: TextLayoutInput): RenderTextLayout {
+  const tagged = withDefaultEaLang(input.body, input.defaultEaLang)
+  if (tagged !== input.body) return layoutText({ ...input, body: tagged })
   const { body, boxWidthPx, boxHeightPx, metrics, vp } = input
   const insets = {
     l: emuToPx(body.insets?.l ?? DEFAULT_INSETS_EMU.l, vp.scale),

@@ -4125,10 +4125,10 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const langScript = eaScriptOfLang
   const runLangScript = langScript(rPr['@_altLang']) ?? langScript(rPr['@_lang'])
   // Line-breaking rules follow the language tag alone (not the text's script): a run's own
-  // lang/altLang overrides the inherited level default (an explicit en-US has no EA rules)
+  // lang/altLang overrides the inherited level default (an explicit en-US has no EA rules);
+  // no tag anywhere leaves eaLang unset for the layout's default editing language
   const ownLang = rPr['@_altLang'] != null || rPr['@_lang'] != null
-  const eaLangScript = ownLang ? runLangScript : dflt?.eaScript
-  const eaLang = eaLangScript === 'han' ? undefined : eaLangScript
+  const eaLang = ownLang ? (runLangScript ?? 'none') : dflt?.eaLang
   // An ea theme ref on a theme with an empty <a:ea/>: the run's East Asian language (altLang
   // first), else the text's own kana/hangul, else the placeholder level's lang, else — for
   // bare ideographs — the theme's single Han script, picks the fontScheme per-script entry
@@ -4304,6 +4304,8 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(latinFamily ? { latinFamily } : {}),
     ...(fontScriptHint != null ? { fontScriptHint } : {}),
     ...(eaLang ? { eaLang } : {}),
+    ...(rPr['@_lang'] != null ? { lang: String(rPr['@_lang']) } : {}),
+    ...(rPr['@_altLang'] != null ? { altLang: String(rPr['@_altLang']) } : {}),
     color,
     ...(colorFollowsTheme ? { colorFollowsTheme } : {}),
     // Captured independent of resolution (a themeless parse still must not bake values in)

@@ -6,7 +6,7 @@ import {
   type OpentypeFontLike,
   type RunStyle,
 } from '../src/metrics'
-import { DEFAULT_INSETS_EMU, layoutText } from '../src/text-layout'
+import { DEFAULT_INSETS_EMU, layoutText, type TextLayoutInput } from '../src/text-layout'
 import { makeViewport } from '../src/coords'
 import { DEFAULT_BODY_INSETS, type Paragraph, type TextBody } from '@genoffice/pptx-engine'
 
@@ -362,7 +362,13 @@ describe('2.3 text layout', () => {
     // 4 chars fit per line (4 × 24px = 96px); without kinsoku 、would head line 2
     const layout = layoutText({
       body: body({
-        paragraphs: [{ runs: [{ text: 'ああああ、いい', fontSize: 24, eaLang: 'ja' }] }],
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u3042\u3001\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
       }),
       boxWidthPx: 96,
       boxHeightPx: 3000,
@@ -377,7 +383,13 @@ describe('2.3 text layout', () => {
   it('kinsoku: chained closing marks pull the whole tail down', () => {
     const layout = layoutText({
       body: body({
-        paragraphs: [{ runs: [{ text: 'あああ。」いい', fontSize: 24, eaLang: 'ja' }] }],
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u3002\u300d\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
       }),
       boxWidthPx: 96,
       boxHeightPx: 3000,
@@ -392,7 +404,13 @@ describe('2.3 text layout', () => {
   it('kinsoku: an opening bracket never ends a line', () => {
     const layout = layoutText({
       body: body({
-        paragraphs: [{ runs: [{ text: 'あああ「いいい', fontSize: 24, eaLang: 'ja' }] }],
+        paragraphs: [
+          {
+            runs: [
+              { text: '\u3042\u3042\u3042\u300c\u3044\u3044\u3044', fontSize: 24, eaLang: 'ja' },
+            ],
+          },
+        ],
       }),
       boxWidthPx: 96,
       boxHeightPx: 3000,
@@ -2073,14 +2091,17 @@ describe('Korean word wrap and hanging punctuation (PowerPoint probe)', () => {
 
   it('Hangul wraps by word: the whole space-delimited word moves down', () => {
     // room for one more syllable, but PowerPoint keeps the second word together
-    const box = w('가나다 라') + 1
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
     expect(lines('가나다 라마바', box)).toEqual(['가나다', '라마바'])
   })
 
   it('Hangul without a Korean language tag breaks per syllable (PowerPoint for Mac probe)', () => {
-    // untagged "공신력 있|는" vs lang="ko-KR" "공신력 |있는" in the same text box
-    const box = w('가나다 라') + 1
-    expect(lines('가나다 라마바', box, {}, {})).toEqual(['가나다 라', '마바'])
+    // an en-US run breaks inside the last Hangul word; a ko-KR run moves that word down whole
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    expect(lines('\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14', box, {}, {})).toEqual([
+      '\uac00\ub098\ub2e4 \ub77c',
+      '\ub9c8\ubc14',
+    ])
   })
 
   it('a Hangul word wider than the line still hard-breaks per syllable', () => {
@@ -2101,10 +2122,13 @@ describe('Korean word wrap and hanging punctuation (PowerPoint probe)', () => {
 
   it('a trailing closing mark hangs past the margin by its own advance', () => {
     // room for the ideographs and only half the bracket: the bracket overhangs
-    const box = w('가가가') + w('）') / 2
-    expect(lines('가가가）', box)).toEqual(['가가가）'])
+    const box = w('\uac00\uac00\uac00') + w('\uff09') / 2
+    expect(lines('\uac00\uac00\uac00\uff09', box)).toEqual(['\uac00\uac00\uac00\uff09'])
     // the allowance is the mark itself: anything after it starts the next line
-    expect(lines('가가가）나', box)).toEqual(['가가가）', '나'])
+    expect(lines('\uac00\uac00\uac00\uff09\ub098', box)).toEqual([
+      '\uac00\uac00\uac00\uff09',
+      '\ub098',
+    ])
   })
 
   it('a trailing Hangul syllable gets no allowance', () => {
@@ -2113,8 +2137,8 @@ describe('Korean word wrap and hanging punctuation (PowerPoint probe)', () => {
   })
 
   it('hangingPunct="0" switches the overhang off', () => {
-    const box = w('가가가') + w('）') / 2
-    expect(lines('가가가）', box, { hangingPunct: false }).length).toBe(2)
+    const box = w('\uac00\uac00\uac00') + w('\uff09') / 2
+    expect(lines('\uac00\uac00\uac00\uff09', box, { hangingPunct: false }).length).toBe(2)
   })
 
   it('latinLnBrk="1" lets Hangul break per syllable again', () => {
@@ -2151,6 +2175,7 @@ describe('line breaking follows the run language tag (PowerPoint for Mac probe)'
     boxWidthPx: number,
     run: Partial<Paragraph['runs'][number]>,
     para: Partial<Paragraph> = {},
+    defaultEaLang?: TextLayoutInput['defaultEaLang'],
   ) =>
     layoutText({
       body: body({ paragraphs: [{ runs: [{ text, fontSize: 24, ...run }], ...para }] }),
@@ -2158,31 +2183,38 @@ describe('line breaking follows the run language tag (PowerPoint for Mac probe)'
       boxHeightPx: 3000,
       metrics: m,
       vp,
+      ...(defaultEaLang ? { defaultEaLang } : {}),
     }).lines.map((l) =>
       l.runs
         .map((r) => r.text)
         .join('')
         .trim(),
     )
-  const box = w('ああああ') + 1
+  const A4 = '\u3042\u3042\u3042\u3042'
+  const A3 = '\u3042\u3042\u3042'
+  const box = w(A4) + 1
 
-  it('untagged CJK text has no kinsoku: a closing mark may start a line', () => {
-    expect(lines('ああああ。い', box, {})).toEqual(['ああああ', '。い'])
-    expect(lines('あああ「いい', box, {})).toEqual(['あああ「', 'いい'])
+  it('en-US CJK text has no kinsoku: a closing mark may start a line', () => {
+    expect(lines(`${A4}\u3002\u3044`, box, { eaLang: 'none' })).toEqual([A4, '\u3002\u3044'])
+    expect(lines(`${A3}\u300c\u3044\u3044`, box, { eaLang: 'none' })).toEqual([
+      `${A3}\u300c`,
+      '\u3044\u3044',
+    ])
   })
 
   it('ja-JP keeps the long-vowel mark off a line start; zh-CN does not', () => {
-    expect(lines('ああああーい', box, { eaLang: 'ja' })).toEqual(['あああ', 'あーい'])
-    expect(lines('ああああーい', box, { eaLang: 'sc' })).toEqual(['ああああ', 'ーい'])
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'ja' })).toEqual([A3, '\u3042\u30fc\u3044'])
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'sc' })).toEqual([A4, '\u30fc\u3044'])
   })
 
-  it('each language hangs its own closing marks: ）hangs in zh-CN, is pulled in ja-JP', () => {
-    expect(lines('ああああ）い', box, { eaLang: 'sc' })).toEqual(['ああああ）', 'い'])
-    expect(lines('ああああ）い', box, { eaLang: 'ja' })).toEqual(['あああ', 'あ）い'])
+  it('each language hangs its own closing marks: \uff09 hangs in zh-CN, is pulled in ja-JP', () => {
+    expect(lines(`${A4}\uff09\u3044`, box, { eaLang: 'sc' })).toEqual([`${A4}\uff09`, '\u3044'])
+    expect(lines(`${A4}\uff09\u3044`, box, { eaLang: 'ja' })).toEqual([A3, '\u3042\uff09\u3044'])
   })
 
   it('ko-KR rules need Hangul: a Hanja-only line keeps none', () => {
-    expect(lines('国国国国。国', box, { eaLang: 'ko' })).toEqual(['国国国国', '。国'])
+    const han4 = '\u56fd\u56fd\u56fd\u56fd'
+    expect(lines(`${han4}\u3002\u56fd`, box, { eaLang: 'ko' })).toEqual([han4, '\u3002\u56fd'])
   })
 
   it('latinLnBrk="1" splits a Latin word mid-word to fill the line', () => {
@@ -2198,6 +2230,57 @@ describe('line breaking follows the run language tag (PowerPoint for Mac probe)'
       'aaa',
       'bbbbbbb',
     ])
+  })
+})
+
+describe('text with no language tag anywhere follows the default editing language', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+  const lines = (
+    text: string,
+    boxWidthPx: number,
+    run: Partial<Paragraph['runs'][number]>,
+    defaultEaLang?: TextLayoutInput['defaultEaLang'],
+  ) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24, ...run }] }] }),
+      boxWidthPx,
+      boxHeightPx: 3000,
+      metrics: m,
+      vp,
+      ...(defaultEaLang ? { defaultEaLang } : {}),
+    }).lines.map((l) =>
+      l.runs
+        .map((r) => r.text)
+        .join('')
+        .trim(),
+    )
+  const A4 = '\u3042\u3042\u3042\u3042'
+  const box = w(A4) + 1
+  const text = `${A4}\u3002\u3044`
+
+  it('an untagged run takes the default language: ja-JP lets the full stop hang', () => {
+    expect(lines(text, box, {}, 'ja')).toEqual([`${A4}\u3002`, '\u3044'])
+  })
+
+  it('without a default, an untagged run has no East Asian rules (an en-US install)', () => {
+    expect(lines(text, box, {})).toEqual([A4, '\u3002\u3044'])
+  })
+
+  it('an explicit non-East-Asian tag is not overridden by the default', () => {
+    expect(lines(text, box, { eaLang: 'none' }, 'ja')).toEqual([A4, '\u3002\u3044'])
+  })
+
+  it("a run's own East Asian tag wins over the default", () => {
+    expect(lines(`${A4}\u30fc\u3044`, box, { eaLang: 'sc' }, 'ja')).toEqual([A4, '\u30fc\u3044'])
+  })
+
+  it('a ko-KR default keeps untagged Hangul words whole', () => {
+    const hangulBox = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    const korean = '\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14'
+    expect(lines(korean, hangulBox, {}, 'ko')).toEqual(['\uac00\ub098\ub2e4', '\ub77c\ub9c8\ubc14'])
+    expect(lines(korean, hangulBox, {})).toEqual(['\uac00\ub098\ub2e4 \ub77c', '\ub9c8\ubc14'])
   })
 })
 
