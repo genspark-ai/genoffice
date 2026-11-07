@@ -106,11 +106,11 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { decodeCsvBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import {
   csvToXlsxBufferForOpen,
-  decodeCsvBuffer,
   sheetCsvToXlsxBuffer,
-} from '@genoffice/xlsx-gateway/gateway/csv-import'
+} from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
 import {
   ensureGenofficeLogin,
   noteGskCallFailure,

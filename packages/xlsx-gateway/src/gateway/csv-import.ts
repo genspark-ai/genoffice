@@ -1,15 +1,11 @@
-/// CSV → minimal xlsx conversion for the open-file path. Values only: cells
-/// that look like plain numbers become numeric, everything else stays text
-/// (leading zeros survive). The converted file is a fresh workbook.
-
-import { Readable } from 'node:stream'
-
-import JSZip from 'jszip'
+/// CSV parsing for the import path. Values only: cells that look like plain
+/// numbers become numeric, everything else stays text (leading zeros survive).
+///
+/// The sheets renderer imports this module (Data › From Text/CSV), so it stays
+/// free of node APIs: the half that writes the xlsx archive lives in
+/// csv-import-xlsx, which only the desktop path loads.
 
 import { encodeXlsxEscapes } from './xlsx-escapes'
-import { DEFAULT_THEME_XML } from './xlsx-default-theme'
-import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
-import { validateSheetName } from './xlsx-sheets'
 
 const DELIMITERS = [',', ';', '\t'] as const
 
@@ -257,7 +253,8 @@ export function isNumericCell(value: string): boolean {
   return Number.isFinite(Number(value))
 }
 
-function escapeXml(value: string): string {
+/** the XML escapes a cell text needs; shared with the archive writer */
+export function escapeXml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -350,30 +347,6 @@ export function buildWorksheetXml(rows: readonly (readonly string[])[]): string 
   return [...worksheetXmlChunks(rows, shapeOfRows(rows))].join('')
 }
 
-export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Promise<Buffer> {
-  const delimiter = resolveImportDelimiter(csvText)
-  const shape = csvGridShape(csvText, delimiter)
-  if (shape.rows === 0) throw new Error('The CSV file has no data rows.')
-  return xlsxBufferFromGrid(csvRows(csvText, delimiter), shape, sheetName)
-}
-
-/**
- * Open-path conversion. `delimiter` pins the split for callers that already
- * know the format (a .tsv); leaving it unset lets the sniffer and its
- * prose-shatter guard decide, which is right for a bare .csv but unreliable
- * for a tab-delimited file whose fields hold enough commas to out-count tabs.
- */
-export async function csvToXlsxBufferForOpen(
-  csvText: string,
-  sheetName = 'Sheet1',
-  delimiter?: string,
-): Promise<{ buffer: Buffer; empty: boolean }> {
-  const resolved = delimiter ?? resolveImportDelimiter(csvText)
-  const shape = csvGridShape(csvText, resolved)
-  const buffer = await xlsxBufferFromGrid(csvRows(csvText, resolved), shape, sheetName)
-  return { buffer, empty: shape.rows === 0 }
-}
-
 /**
  * Delimiter for the open-file path. The sniffer counts raw occurrences, so a
  * single-column prose file whose notes hold more semicolons/tabs than commas
@@ -407,98 +380,4 @@ function bodyRowsAgreeOnWidth(rows: readonly (readonly string[])[]): boolean {
     if (row.length > 1) widths.set(row.length, (widths.get(row.length) ?? 0) + 1)
   const dominant = Math.max(0, ...widths.values())
   return dominant >= 2 && dominant >= rows.length * TABLE_WIDTH_AGREEMENT
-}
-
-/**
- * xlsx from the app's OWN comma-serialized sheet grid (AI create_document):
- * unlike the import path above, the delimiter is fixed to comma — cell text
- * may legitimately hold more semicolons/tabs than commas (csvField quotes
- * neither), and sniffing would then split the wrong columns — and an
- * all-empty grid becomes a valid blank workbook instead of an import error.
- */
-export async function sheetCsvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Promise<Buffer> {
-  const shape = csvGridShape(csvText, ',')
-  return xlsxBufferFromGrid(csvRows(csvText, ','), shape, sheetName)
-}
-
-/** minimal empty workbook: the backing file for a "new blank spreadsheet" tab */
-export async function blankXlsxBuffer(sheetName = 'Sheet1'): Promise<Buffer> {
-  return xlsxBufferFromRows([], sheetName)
-}
-
-async function xlsxBufferFromRows(
-  rows: readonly (readonly string[])[],
-  sheetName: string,
-): Promise<Buffer> {
-  return xlsxBufferFromGrid(rows, shapeOfRows(rows), sheetName)
-}
-
-/**
- * The workbook for a grid, with the worksheet streamed into the archive: the
- * XML never exists as one string, and the archive takes it as it comes.
- */
-async function xlsxBufferFromGrid(
-  rows: Iterable<readonly string[]>,
-  shape: CsvGridShape,
-  sheetName: string,
-): Promise<Buffer> {
-  validateSheetName(sheetName)
-  const zip = new JSZip()
-  zip.file(
-    '[Content_Types].xml',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-      '<Default Extension="xml" ContentType="application/xml"/>' +
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
-      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
-      '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' +
-      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
-      '</Types>',
-  )
-  zip.file(
-    '_rels/.rels',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
-      '</Relationships>',
-  )
-  zip.file(
-    'xl/workbook.xml',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      `<sheets><sheet name="${escapeXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-  )
-  zip.file(
-    'xl/_rels/workbook.xml.rels',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' +
-      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-      '</Relationships>',
-  )
-  zip.file('xl/theme/theme1.xml', DEFAULT_THEME_XML)
-  zip.file('xl/styles.xml', MINIMAL_STYLESHEET_XML)
-  zip.file('xl/worksheets/sheet1.xml', worksheetXmlStream(rows, shape))
-  return zip.generateAsync({
-    type: 'nodebuffer',
-    compression: 'DEFLATE',
-    // the worksheet is a stream: without this the archive would collect it in
-    // memory before compressing it, which is the cost the import cannot afford
-    streamFiles: true,
-  })
-}
-
-/**
- * The worksheet as a byte stream. The chunks go in as UTF-8, the encoding the
- * worksheet declares: the archive turns a string into UTF-16 bytes, which
- * would leave the XML unreadable.
- */
-function worksheetXmlStream(rows: Iterable<readonly string[]>, shape: CsvGridShape): Readable {
-  return Readable.from(
-    (function* (): Generator<Buffer> {
-      for (const chunk of worksheetXmlChunks(rows, shape)) yield Buffer.from(chunk, 'utf8')
-    })(),
-  )
 }

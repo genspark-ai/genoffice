@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildWorksheetXml, csvToXlsxBuffer, parseCsv } from '../src/gateway/csv-import'
+import { buildWorksheetXml, parseCsv } from '../src/gateway/csv-import'
+import { csvToXlsxBuffer } from '../src/gateway/csv-import-xlsx'
 import {
   applyCellEditsToXlsx,
   assertOnlyTouchedEntriesChanged,
