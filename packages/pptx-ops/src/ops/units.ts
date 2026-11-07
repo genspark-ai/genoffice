@@ -27,11 +27,16 @@ function isLengthKey(key: string, parent?: string): boolean {
   return INSET_KEYS.has(key) && (parent === 'insets' || parent === 'insetsEmu')
 }
 
-/** "2.54cm" → 2286000; undefined when the string is not a length. */
+/**
+ * "2.54cm" → 2286000; undefined when the string is not a length or its EMU
+ * value is not finite. Callers treat undefined as "not a length": the string
+ * is left as typed so the op's schema rejects it instead of writing Infinity.
+ */
 export function parseLength(value: string): number | undefined {
   const m = LENGTH.exec(value)
   if (!m) return undefined
-  return Math.round(Number(m[1]) * EMU_PER[m[2]!.toLowerCase()]!)
+  const result = Math.round(Number(m[1]) * EMU_PER[m[2]!.toLowerCase()]!)
+  return Number.isFinite(result) ? result : undefined
 }
 
 export function normalizeLengthUnits(value: unknown, key?: string, parent?: string): unknown {
