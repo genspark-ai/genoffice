@@ -5,7 +5,7 @@
  * Extracted from App.tsx; the App component passes a SaveContext built fresh
  * per call so refs and state never go stale.
  */
-import type { WorkbookFile, WorkbookFilterState } from '../shared/desktop-api'
+import type { WorkbookFile, WorkbookFilterState, WorkbookSaveRequest } from '../shared/desktop-api'
 import {
   carryLateJournalCells,
   isSheetRemoved,
@@ -35,6 +35,8 @@ import {
 } from './csv-export'
 import type { CellScalar, CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+/// The slicerState member of a save request (zod: non-strict object shape).
+type WorkbookSlicerSaveState = NonNullable<WorkbookSaveRequest['slicerState']>
 import type { ExternalLinkOps } from '../shared/desktop-api'
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { isErrorResult, verifiedFormulaValues } from './formula-values'
@@ -78,6 +80,13 @@ export interface SaveContext {
    * claiming nothing is hidden.
    */
   redactionStates?: () => readonly SheetRedactionState[] | null
+  /**
+   * Slicer panels to persist as OOXML parts on this save, null when the
+   * session changed nothing slicer-related (any file parts stay
+   * byte-identical). Like redactionStates it can be the only change pending.
+   * Timelines are session-only and never ride a save.
+   */
+  slicerState?: (() => WorkbookSlicerSaveState | null) | undefined
   /** External-link breaks and source retargets pending this save (the links
       panel). Consumed with the save that carries them; the caller clears the
       pending state once the save settles. */
@@ -561,6 +570,9 @@ export async function handleSave(
       sheetName: state.sheetName,
       marks: state.marks.map((mark) => ({ ...mark })),
     })) ?? null
+  // Slicer panels only ride the save when the session changed something
+  // slicer-related (create/edit/delete); null keeps every file part raw.
+  const slicerState = ctx.slicerState?.() ?? null
   // External-link breaks/retargets are one-shot: the panel sets them, this
   // save carries them, and the caller clears them once it settles.
   const externalLinkOps = ctx.externalLinkOps?.() ?? null
@@ -580,11 +592,15 @@ export async function handleSave(
     structuralOps.length > 0 ? tableEdits.filter((edit) => edit.area !== undefined) : []
   const phaseOneTableEdits = tableEdits.filter((edit) => !heldTableEdits.includes(edit))
   const heldNames = hasShifts ? definedNamesState : null
+  // Slicer parts address their host sheet by name; the same rename hazard as
+  // pivots, so they ride phase two of a split save.
+  const heldSlicerState = hasShifts ? slicerState : null
   const splitSave =
     heldPivots.length > 0 ||
     heldTables.length > 0 ||
     heldTableEdits.length > 0 ||
-    heldNames !== null
+    heldNames !== null ||
+    heldSlicerState !== null
   if (splitSave) {
     const addedSheetIds = state.editJournal.sheets.added
     const strandedHeld = [
@@ -625,9 +641,10 @@ export async function handleSave(
     tableEdits.length +
     pivotAdditions.length +
     sparklineAdditions.length +
-    // A save with nothing else pending but newly withheld cells is still a
-    // save: skipping it would leave the file claiming nothing is hidden.
+    // A save with nothing else pending but newly withheld cells or a slicer
+    // change is still a save: skipping it would drop the change.
     (redactionStates?.length ?? 0) +
+    (slicerState === null ? 0 : 1) +
     // A link break/retarget is a file change on its own: the journal can be
     // clean (every referencing cell carries an error cache, so the literal
     // journal skips it) or only defined names may reference the link. Without
@@ -763,6 +780,7 @@ export async function handleSave(
     workbookProtectionState,
     protectedRangeStates,
     redactionStates,
+    slicerState,
     externalLinkOps,
   }
   if (mode === 'recovery') {
@@ -821,6 +839,8 @@ export async function handleSave(
       workbookProtectionState,
       protectedRangeStates,
       redactionStates,
+      // Held slicers ride phase two (heldSlicerState carries them there).
+      slicerState: hasShifts ? null : slicerState,
       externalLinkOps,
     })
     if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
@@ -896,6 +916,7 @@ export async function handleSave(
         pivotRefreshUpdates: [],
         sheetProtections: [],
         sparklineAdditions: [],
+        slicerState: heldSlicerState,
         // The first phase already refreshed the cached values
         formulaValues: [],
         definedNamesState: heldNames,

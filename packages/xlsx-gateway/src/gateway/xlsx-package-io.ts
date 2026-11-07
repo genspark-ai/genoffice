@@ -26,6 +26,7 @@ import type {
   SheetProtectionState,
   SheetTabColorState,
   SheetPivotAddition,
+  SheetSlicerState,
   SheetSparklineAddition,
   SheetStructuralOps,
   SheetTableAddition,
@@ -109,6 +110,9 @@ export interface StreamingSaveRequest {
   readonly pivotRefreshUpdates?: readonly PivotRefreshUpdate[] | undefined
   readonly visualEdits?: readonly WorkbookVisualEdit[] | undefined
   readonly sparklineAdditions?: readonly SheetSparklineAddition[] | undefined
+  /// Session slicer/timeline panels written as x14/x15 slicer parts; null =
+  /// no slicer changes ride this save.
+  readonly slicerState?: SheetSlicerState | null | undefined
   /// Recalculated formula-cell values written into <v>
   readonly formulaValues?: readonly SheetFormulaValues[] | undefined
   /// External-link breaks and source retargets, resolved on the final contents
@@ -220,6 +224,7 @@ export async function saveWorkbookViaSidecar(
       request.cellImageAdditions ?? [],
       request.externalLinkOps ?? null,
       request.redactionStates ?? null,
+      request.slicerState ?? null,
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)

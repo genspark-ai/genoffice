@@ -332,15 +332,20 @@ export async function refineComplexWidths(wc: {
       const registered = new Set()
       document.fonts.forEach((x) => registered.add(x.family))
       const ctx = document.createElement('canvas').getContext('2d')
+      // The renderer's own drawing stack (konva-adapter displayFontFamily): glyphs the face
+      // lacks fall back per family (Korean-named faces to Malgun/Apple SD Gothic Neo, …), and
+      // measuring them in any other fallback font would shift every following glyph
+      const stackOf = typeof window.__genofficeDisplayFontFamily === 'function'
+        ? window.__genofficeDisplayFontFamily
+        : (f) => '"' + f + '", \\'PingFang SC\\', \\'Microsoft YaHei\\', \\'Yu Gothic\\', \\'Malgun Gothic\\', sans-serif'
       const out = {}
       for (const it of items) {
         if (privateFams.has(it.family) && !registered.has(it.family)) {
           out[it.key] = null // family not available yet — stays pending
           continue
         }
-        // Same font stack as the Konva renderer (generic fallback of konva-adapter displayFontFamily)
         ctx.font = (it.italic ? 'italic ' : '') + (it.bold ? 'bold ' : '') +
-          '100px "' + it.family + '", \\'PingFang SC\\', \\'Microsoft YaHei\\', \\'Yu Gothic\\', \\'Malgun Gothic\\', sans-serif'
+          '100px ' + stackOf(it.family)
         out[it.key] = ctx.measureText(it.text).width
       }
       return out

@@ -144,7 +144,7 @@ export const pt = {
   paneGradientStyle: 'Estilo de gradiente',
   paneGradientLinear: 'Linear',
   paneGradientDir: 'Direção',
-  paneGradientPresets: 'Gradientes predefinidos',
+  paneGradientPresets: 'Gradientes padrão',
   paneGradientStops: 'Pontos de gradiente',
   paneGradientPos: 'Posição',
   paneGradientColor: 'Cor',
