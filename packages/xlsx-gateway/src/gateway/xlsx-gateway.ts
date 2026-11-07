@@ -77,6 +77,7 @@ import {
   addWorksheetOverride,
   addWorksheetRelationship,
   applySheetPlanToWorkbookXml,
+  assertAddedSheetsKeepRenamedNames,
   assertNoSheetScopedDefinedNames,
   buildWorksheetPartXml,
   chartReferencesSheet,
@@ -1173,6 +1174,33 @@ export async function planCellEditsToXlsx(
         'changes — save one of them first.',
     )
   }
+  if (sheetPlan !== undefined) {
+    const sheetStates: readonly (readonly { readonly sheetName: string }[])[] = [
+      edits,
+      structuralOps,
+      filterStates,
+      hyperlinkEdits,
+      cfStates,
+      dvStates,
+      sheetProtections,
+      visualAdditions,
+      pageSetupStates,
+      noteStates,
+      tableAdditions,
+      pivotAdditions,
+      sparklineAdditions,
+      formulaValues,
+      protectedRangeStates,
+      bulkConstantFills,
+      tabColorStates,
+      tableEdits,
+      cellImageAdditions,
+    ]
+    assertAddedSheetsKeepRenamedNames(
+      sheetPlan,
+      new Set(sheetStates.flatMap((states) => states.map((state) => state.sheetName))),
+    )
+  }
   const pkg = new PackageEditor(source)
   const touchedEntries = new Set<string>()
 
@@ -1831,11 +1859,15 @@ export async function planCellEditsToXlsx(
 
   // Print areas / title rows are sheet-scoped _xlnm names; they apply to the
   // final workbook.xml (post sheet-plan, post defined-names rewrite — which
-  // keeps _xlnm entries verbatim).
+  // keeps _xlnm entries verbatim). States name an existing sheet by its
+  // original file name, so one renamed in this save is looked up by its new
+  // name (an added sheet never takes a renamed sheet's old name — see
+  // assertAddedSheetsKeepRenamedNames).
+  const renamedTo = new Map(sheetPlan?.renames.map((rename) => [rename.sheetName, rename.newName]))
   const printAreas = pageSetupStates
     .filter((state) => state.printArea !== undefined || state.printTitles !== undefined)
     .map((state) => ({
-      sheetName: state.sheetName,
+      sheetName: renamedTo.get(state.sheetName) ?? state.sheetName,
       printArea: state.printArea,
       printTitles: state.printTitles,
     }))
