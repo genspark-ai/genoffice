@@ -488,6 +488,8 @@ import {
 import { StylesPane } from './components/StylesPane'
 import { Ruler } from './components/Ruler'
 import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
+import { docFontsCoveredBy } from './font-check'
+import { onFontAliasesChanged } from './system-fonts'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
@@ -5789,6 +5791,19 @@ export function App() {
     document.fonts.ready.then(() => onFontsChanged(fontsLoading)).catch(() => {})
     const onLoadingDone = () => onFontsChanged(true)
     document.fonts.addEventListener('loadingdone', onLoadingDone)
+    // a CJK font's localized name resolves through the installed face's other
+    // spelling: the alias map lands over IPC, after the first layout, so the
+    // document is re-styled and re-paginated like a settled metric face. An
+    // update that touches no declared font must not reflow anything.
+    const offFontAliases = onFontAliasesChanged((names) => {
+      const parsed = fileCtxRef.current.doc?.parsed
+      if (!parsed) return
+      if (!docFontsCoveredBy(parsed, names).length) return
+      bumpLineSampleFontEpoch()
+      const live = liveStylesRef.current
+      setDocCss(docStyleCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+      onUpdate()
+    })
     scroller.addEventListener('scroll', locate, { passive: true })
     const onDocUpdate = ({ transaction }: { transaction: Transaction }) => {
       resetWidthPassHistory(colWidthPass)
@@ -5835,6 +5850,7 @@ export function App() {
       if (timer) window.clearTimeout(timer)
       if (hfTimer) window.clearTimeout(hfTimer)
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
+      offFontAliases()
       scroller.removeEventListener('scroll', locate)
       editor?.off('update', onDocUpdate)
       editor?.off('transaction', onShrinkTr)

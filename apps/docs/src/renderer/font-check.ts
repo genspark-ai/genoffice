@@ -37,6 +37,16 @@ export function collectDocFonts(parsed: ParsedDoc): string[] {
   return [...names]
 }
 
+/**
+ * The document's declared fonts that an alias update covers: the alias map
+ * only matters for a font the open document declares, so an update that
+ * touches no declared font must not reflow it (genoffice#2449).
+ */
+export function docFontsCoveredBy(parsed: ParsedDoc, names: readonly string[]): string[] {
+  const declared = new Set(collectDocFonts(parsed))
+  return names.filter((name) => declared.has(name))
+}
+
 // document.fonts.check is useless here: Chromium answers true for any family
 // (system-fallback rendering counts). Detect availability by measuring — an
 // unresolvable family inherits the exact metrics of the generic fallback.
