@@ -107,6 +107,7 @@ const desktopApi: DesktopApi = {
     return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
+  getCsvImportLimit: () => ipcRenderer.invoke('app:get-csv-import-limit'),
   onAutoSaveDefaultChanged(handler) {
     const listener = (_event: Electron.IpcRendererEvent, value: AutoSaveDefault) => handler(value)
     ipcRenderer.on('app:auto-save-default-changed', listener)
