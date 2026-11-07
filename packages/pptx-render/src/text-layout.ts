@@ -28,6 +28,9 @@ import type { MediaResolver } from './fill'
 import { formatAutoNum } from './auto-num'
 import { cacheKeyFor } from './image-dpi'
 
+/** A run's resolved East Asian line-breaking language ('none' = tagged non-East-Asian). */
+type EaLang = Exclude<NonNullable<TextRun['eaLang']>, 'none'>
+
 export { formatAutoNum }
 
 const DEFAULT_FONT = 'Arial'
@@ -78,6 +81,10 @@ interface Token {
   gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number; scaled?: boolean }
   /** Run glow (px radius) */
   glow?: { color: string; blurPx: number }
+  /** The run's East Asian language: selects the kinsoku/hanging rules (none when absent) */
+  eaLang?: EaLang
+  /** Latin word that may split mid-word at a line end (<a:pPr latinLnBrk="1">, non-Korean run) */
+  midBreak?: boolean
   /** Run reflection (faded mirror below the baseline) */
   reflection?: boolean
   /** Run hyperlink (TextRun.hyperlink encoding) */
@@ -365,6 +372,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
   const tokens: Token[] = []
   expandSmallCaps(p.runs).forEach(({ run, srcRun }) => {
     const style = runStyle(run, scale, fontScale)
+    const eaLang = run.eaLang === 'none' ? undefined : run.eaLang
     // Latin characters of a CJK-bucket run draw with the run's a:latin face (PowerPoint):
     // the script hint stays with the CJK glyphs, Latin substitutes as western
     // Also when both slots name the same missing CJK face: PowerPoint still sets the Latin
@@ -389,6 +397,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       underline,
       ls,
       srcRun,
+      ...(eaLang ? { eaLang } : {}),
       ...(run.fontFamily ? { srcFont: run.fontFamily } : {}),
       ...(run.hyperlink ? { link: run.hyperlink } : {}),
       ...(run.strike ? { strike: true } : {}),
@@ -452,7 +461,15 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
           tokens.push({ ...wordBase, text: s.segment, breakable: true, isSpace: false })
         }
       } else {
-        tokens.push({ ...wordBase, text: buf, breakable: false, isSpace: false })
+        tokens.push({
+          ...wordBase,
+          text: buf,
+          breakable: false,
+          isSpace: false,
+          // latinLnBrk="1" lets Latin words split mid-word, except in Korean-tagged runs
+          // (there it splits Hangul words instead): "Internationalization characteris|tically"
+          ...(p.latinLnBrk && eaLang !== 'ko' ? { midBreak: true } : {}),
+        })
       }
       buf = ''
     }
@@ -478,10 +495,12 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
         // width (fonts like Carlito have no U+00A0 glyph → the missing-glyph
         // fallback would badly over-measure it)
         buf += ' '
-      } else if (isWideChar(cp) && (!isHangul(cp) || p.latinLnBrk)) {
-        // Hangul is wide but wraps by word (probe: PowerPoint moves the whole space-delimited
-        // Korean word down, never a syllable), so it stays in the word buffer — unless the
-        // paragraph allows mid-word breaks (latinLnBrk="1": prod deck broke 불꽃|에)
+      } else if (isWideChar(cp) && (!isHangul(cp) || p.latinLnBrk || eaLang !== 'ko')) {
+        // Korean-tagged Hangul is wide but wraps by word (probe: PowerPoint moves the whole
+        // space-delimited Korean word down, never a syllable), so it stays in the word buffer —
+        // unless the paragraph allows mid-word breaks (latinLnBrk="1": prod deck broke 불꽃|에).
+        // Untagged or non-Korean-tagged Hangul breaks per syllable like other CJK (PowerPoint
+        // for Mac probe: untagged "공신력 있|는", lang="ko-KR" "공신력 |있는")
         flushWord()
         tokens.push({ ...base, text: ch, breakable: true, isSpace: false })
       } else if (BREAK_AFTER_DASH.has(cp) && buf) {
@@ -644,15 +663,56 @@ function symbolBulletText(font: string | undefined, char: string): string | unde
   return cp >= 0x20 && cp <= 0xff ? String.fromCodePoint(0xf000 + cp) : char
 }
 
-// ── East-Asian kinsoku (PowerPoint default rules) ───────────────────
-// Closing marks / small kana must not begin a line; opening brackets must not end one.
+// ── East-Asian kinsoku (PowerPoint default rules, per language) ─────
+// PowerPoint picks the rule set by the run's East Asian language tag (TextRun.eaLang), not by
+// the characters: en-US text has no kinsoku and no hanging punctuation at all.
+// Sets probed per character on PowerPoint for Mac 16.66 (Yu Gothic / Malgun Gothic, 14pt):
+// - hang: may overhang the right margin at a line end (also never starts a line);
+// - noStart: never starts a line — the preceding character moves down with it;
+// - noEnd: never ends a line — it moves down to the next one.
 // Only single-grapheme tokens participate (CJK tokenization emits one token per wide char).
-const KINSOKU_NO_START = new Set(
-  '、。々,.!?:;)]}%，．！？：；）］｝％〉》」』】〕〟｡｣､･ｰﾞﾟ・ーぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ゛゜ゝゞヽヾ',
-)
-const KINSOKU_NO_END = new Set('([{$（［｛＄〈《「『【〔〝｢£¥￡￥')
-const kinsokuNoStart = (t: Token) => KINSOKU_NO_START.has(t.text)
-const kinsokuNoEnd = (t: Token) => KINSOKU_NO_END.has(t.text)
+interface KinsokuRules {
+  hang: ReadonlySet<string>
+  noStart: ReadonlySet<string>
+  noEnd: ReadonlySet<string>
+}
+function kinsokuRules(hang: string, pull: string, noEnd: string): KinsokuRules {
+  return { hang: new Set(hang), noStart: new Set(hang + pull), noEnd: new Set(noEnd) }
+}
+const KINSOKU: Record<EaLang, KinsokuRules> = {
+  ja: kinsokuRules(
+    '、。,.，．',
+    '々!?:;)]}%！？：；）］｝％〉》」』】〕｡｣､･ｰﾞﾟ・ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ゛゜ゝゞヽヾ°’”‰′″℃￠',
+    '([{$（［｛＄〈《「『【〔｢￡￥‘“',
+  ),
+  sc: kinsokuRules(
+    '、。,.!?:;)]}，！？：；）］｝〉》」』】〕〗’”',
+    '々．〃＂＇｀｜～·ˇ‖…',
+    '([{（［｛〈《「『【〔‘“〖',
+  ),
+  tc: kinsokuRules(
+    '、。,.!?:;)]}，！？：；）〉》」』】〕’”',
+    '．′〞｜·…‥–﹐﹒﹔﹕﹖﹗︰︱︳︴︶︸︺︼︾﹀﹂﹄﹚﹜﹞﹏',
+    '([{（〈《「『【〔〝‘“︵︷︹︻︽︿﹁﹃﹙﹛﹝',
+  ),
+  // Korean rules hold between Hangul (probe: Malgun ko-KR); Hanja-only lines kept no rules
+  ko: kinsokuRules(
+    '、。,.!?:;)]}，．！？：；）］｝〉》」』】〕’”',
+    '%％°℃￠',
+    '([{$（［｛＄〈《「『【〔￡￥‘“',
+  ),
+}
+/**
+ * The rule set a paragraph applies to a token. Rules need East Asian text in the paragraph
+ * (Latin-only paragraphs never hang, whatever their tag), and the Korean set needs Hangul
+ * (probe: ko-KR lines of Hanja kept no rules at all, ko-KR Hangul lines did).
+ */
+function kinsokuRulesFor(p: Paragraph): (t: Token) => KinsokuRules | undefined {
+  const eastAsian = p.runs.some((r) => hasWideChar(r.text))
+  const hangul = p.runs.some((r) => [...r.text].some((c) => isHangul(c.codePointAt(0) ?? 0)))
+  return (t) =>
+    eastAsian && t.eaLang && (t.eaLang !== 'ko' || hangul) ? KINSOKU[t.eaLang] : undefined
+}
 
 /** Hangul syllables / jamo / compatibility jamo (incl. the ㆍ middle dot): word-wrapped like Latin. */
 function isHangul(cp: number): boolean {
@@ -665,13 +725,16 @@ function isHangul(cp: number): boolean {
   )
 }
 
-/** Closing marks PowerPoint lets overhang the right margin at a line end in East Asian
- *  paragraphs (probe on ko-KR Malgun text: `)` hangs by its 3.6pt advance, `）` by 10pt,
+/** Width a token's trailing closing mark may overhang the right margin, from the token's
+ *  language set (probe on ko-KR Malgun text: `)` hangs by its 3.6pt advance, `）` by 10pt,
  *  a trailing Hangul syllable not at all; rIns does not change the allowance). */
-const HANGING_PUNCT = new Set('、。，．,.)]}）］｝〉》」』】〕〗〙〛!?！？:;：；')
-function hangingTailWidth(tok: Token, metrics: FontMetricsProvider): number {
+function hangingTailWidth(
+  tok: Token,
+  rules: KinsokuRules | undefined,
+  metrics: FontMetricsProvider,
+): number {
   const last = [...tok.text].pop()
-  if (!last || !HANGING_PUNCT.has(last)) return 0
+  if (!last || !rules?.hang.has(last)) return 0
   return tokenWidth({ ...tok, text: last, wOverride: undefined }, metrics)
 }
 
@@ -877,10 +940,11 @@ function layoutParagraph(
     lines.push(line)
   }
 
-  // East Asian paragraphs hang trailing punctuation unless <a:pPr hangingPunct="0">
-  const hangingOn = p.hangingPunct !== false && p.runs.some((r) => hasWideChar(r.text))
+  // East-Asian-tagged runs hang trailing punctuation unless <a:pPr hangingPunct="0">
+  const hangingOn = p.hangingPunct !== false
+  const rulesOf = kinsokuRulesFor(p)
   let endedWithBreak = false
-  for (const tok of tokens) {
+  for (let tok of tokens) {
     // <a:br/> forced break: breaks regardless of wrap; record the sentinel run index for editor round-trips
     if (tok.isBreak) {
       pushLine(cur)
@@ -900,12 +964,24 @@ function layoutParagraph(
         0,
       )
     }
-    const w = tokenWidth(tok, metrics)
+    let w = tokenWidth(tok, metrics)
     // The first line loses firstLineShrinkPx to the overflowing bullet glyph; evaluated
     // lazily because the soft wrap right below can end line 0 for this same token
     const lineAvail = () => (lines.length === 0 ? availWidth - firstLineShrinkPx : availWidth)
+    // latinLnBrk="1": an overflowing Latin word fills the rest of the line and continues on
+    // the next one (PowerPoint: "Internationalization characteris|tically")
+    while (wrap && tok.midBreak && cur.length && curW + w > lineAvail()) {
+      const split = splitToFit(tok, lineAvail() - curW, metrics)
+      if (!split) break
+      cur.push(split[0])
+      pushLine(cur)
+      cur = []
+      curW = 0
+      tok = split[1]
+      w = tokenWidth(tok, metrics)
+    }
     // A closing mark ending the line may hang past the margin by its own advance
-    const hangW = hangingOn && !tok.isSpace ? hangingTailWidth(tok, metrics) : 0
+    const hangW = hangingOn && !tok.isSpace ? hangingTailWidth(tok, rulesOf(tok), metrics) : 0
     if (wrap && cur.length && curW + w - hangW > lineAvail() && !tok.isSpace) {
       // Kinsoku: pull the predecessor down when the new line would start with a closing
       // mark, push an opening bracket down when it would end the old line.
@@ -914,7 +990,7 @@ function layoutParagraph(
         const head = carry[0] ?? tok
         const last = cur[cur.length - 1]!
         if (last.isSpace || p.eaLnBrk === false) break
-        if (!kinsokuNoStart(head) && !kinsokuNoEnd(last)) break
+        if (!rulesOf(head)?.noStart.has(head.text) && !rulesOf(last)?.noEnd.has(last.text)) break
         carry.unshift(cur.pop()!)
       }
       pushLine(cur)
@@ -939,6 +1015,36 @@ function layoutParagraph(
   else if (endedWithBreak) pushLine([])
   if (!lines.length) pushLine([])
   return lines
+}
+
+/**
+ * Splits a token at the last grapheme boundary that fits `room`; null when not even one fits.
+ * Sums per-cluster widths (cached like hardBreak) so a long word stays linear.
+ */
+function splitToFit<T extends Token>(
+  tok: T,
+  room: number,
+  metrics: FontMetricsProvider,
+): [T, T] | null {
+  const gs = graphemes(tok.text)
+  const clusterW = new Map<string, number>()
+  let n = 0
+  let w = 0
+  for (; n < gs.length - 1; n++) {
+    const g = gs[n]!
+    let cw = clusterW.get(g)
+    if (cw === undefined) {
+      cw = tokenWidth({ ...tok, text: g }, metrics)
+      clusterW.set(g, cw)
+    }
+    if (w + cw > room) break
+    w += cw
+  }
+  if (n === 0) return null
+  return [
+    { ...tok, text: gs.slice(0, n).join('') },
+    { ...tok, text: gs.slice(n).join('') },
+  ]
 }
 
 function hardBreak(tok: Token, availWidth: number, metrics: FontMetricsProvider): Token[] {
@@ -1079,6 +1185,23 @@ export interface TextLayoutInput {
   refitAutofit?: boolean
   /** Picture bullets (<a:buBlip>) resolve their image through this, like picture fills */
   media?: MediaResolver
+  /** Line-breaking language for runs with no language tag anywhere in their inheritance
+      chain. Unset = no East Asian rules, which is what PowerPoint for Mac did with such text
+      even under a Korean UI; a host that knows better (e.g. an explicit editing-language
+      setting) can pass one. */
+  defaultEaLang?: EaLang
+}
+
+/** Gives runs with no language tag anywhere the default editing language (same body when none apply). */
+function withDefaultEaLang(body: TextBody, ea: EaLang | undefined): TextBody {
+  if (!ea || !body.paragraphs.some((p) => p.runs.some((r) => r.eaLang === undefined))) return body
+  return {
+    ...body,
+    paragraphs: body.paragraphs.map((p) => ({
+      ...p,
+      runs: p.runs.map((r) => (r.eaLang === undefined ? { ...r, eaLang: ea } : r)),
+    })),
+  }
 }
 
 /**
@@ -1121,6 +1244,8 @@ function flowIntoColumns(
 
 /** Main entry: TextBody → RenderTextLayout (including autofit shrink stepping). */
 export function layoutText(input: TextLayoutInput): RenderTextLayout {
+  const tagged = withDefaultEaLang(input.body, input.defaultEaLang)
+  if (tagged !== input.body) return layoutText({ ...input, body: tagged })
   const { body, boxWidthPx, boxHeightPx, metrics, vp } = input
   const insets = {
     l: emuToPx(body.insets?.l ?? DEFAULT_INSETS_EMU.l, vp.scale),

@@ -731,6 +731,9 @@ function buildRPrAttrs(run: TextRun): string {
   // flips the run to whatever the placeholder/master says (fld bodies always
   // rebuild, so slide-number placeholders were losing these).
   let s = ''
+  // The language tag picks the run's line-breaking rules: a rebuild must keep it
+  if (run.lang != null) s += ` lang="${escapeXmlAttr(run.lang)}"`
+  if (run.altLang != null) s += ` altLang="${escapeXmlAttr(run.altLang)}"`
   if (run.fontSize != null && !run.fontSizeImplicit) s += ` sz="${szAttr(run.fontSize)}"`
   if (run.bold != null && !run.boldImplicit) s += ` b="${run.bold ? '1' : '0'}"`
   if (run.italic != null && !run.italicImplicit) s += ` i="${run.italic ? '1' : '0'}"`
