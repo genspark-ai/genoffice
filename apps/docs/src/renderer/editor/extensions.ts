@@ -4016,9 +4016,20 @@ export const DocProtected = Node.create({
             return false
           }
           const contentTarget = target?.closest?.(EDITABLE_PROTECTED_SELECTOR)
-          return (
+          if (
             !!contentTarget &&
             (event.type === 'mousedown' || dom.classList.contains('doc-content-editing'))
+          ) {
+            return true
+          }
+          // A press on the object's read-only text belongs to the browser: let
+          // the drag paint a character selection instead of ProseMirror turning
+          // the atom into a NodeSelection. A click with no drag is resolved on
+          // mouseup (wireProtectedInteractionMode).
+          return (
+            event.type === 'mousedown' &&
+            !!target?.closest?.(TEXT_SELECTABLE_SELECTOR) &&
+            !dom.classList.contains('doc-content-editing')
           )
         },
         destroy: () => cleanups.forEach((c) => c?.()),
@@ -5148,7 +5159,19 @@ const EDITABLE_PROTECTED_SELECTOR =
   'td, .doc-textbox, .doc-toc-title, .doc-toc-page, .doc-field-text, .doc-formula-token, ' +
   '.doc-formula-math, .doc-chart-title, .doc-chart-cell'
 
-/** Object mode (single click/drag) and text mode (double click). */
+/** Text a reader may select inside a protected object for copying, even when
+ *  the object is not in text-edit mode. Extends the editable islands with the
+ *  read-only captions and previews of embedded objects (OLE/Excel frames). */
+export const TEXT_SELECTABLE_SELECTOR =
+  EDITABLE_PROTECTED_SELECTOR + ', .doc-protected-label, .doc-protected-preview'
+
+/** Did the browser build a real, non-collapsed text selection during the drag? */
+export function hasTextSelection(): boolean {
+  const sel = typeof window === 'undefined' ? null : window.getSelection()
+  return !!sel && !sel.isCollapsed && sel.toString().trim().length > 0
+}
+
+/** Object mode (single click) and text mode (drag selection / double click). */
 function wireProtectedInteractionMode(
   dom: HTMLElement,
   getPos: () => number | undefined,
@@ -5156,42 +5179,79 @@ function wireProtectedInteractionMode(
   contentEditor: ProtectedContentEditor | null,
 ): (() => void) | null {
   const handle = dom.querySelector('.doc-move-handle') as HTMLElement | null
-  if (!handle && !contentEditor) return null
+  // Read-only objects (an OLE/Excel preview and its caption) have no editing
+  // island and no move handle, but their text still has to be selectable.
+  if (!handle && !contentEditor && !dom.querySelector(TEXT_SELECTABLE_SELECTOR)) return null
 
+  /** Objects with an editing island are dragged by their move handle only;
+   *  pure read-only objects keep ProseMirror's whole-object drag. */
+  const draggableFor = (editing: boolean) => (contentEditor ? !!handle && !editing : true)
   const selectObject = () => {
     const pos = getPos()
     if (typeof pos !== 'number') return
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
   }
+  const restoreDraggable = () => {
+    dom.draggable = draggableFor(dom.classList.contains('doc-content-editing'))
+  }
   const setEditing = (editing: boolean) => {
     if (!contentEditor) editing = false
     if (editing === dom.classList.contains('doc-content-editing')) {
       contentEditor?.setEditable(editing)
-      dom.draggable = !!handle && !editing
+      dom.draggable = draggableFor(editing)
       return
     }
     if (!editing) contentEditor?.commit()
     contentEditor?.setEditable(editing)
     dom.classList.toggle('doc-content-editing', editing)
-    dom.draggable = !!handle && !editing
+    dom.draggable = draggableFor(editing)
   }
+  /** A press that started on the object's text. The browser owns that gesture
+   *  until mouseup: selecting the object immediately on mousedown used to
+   *  swallow every drag into a whole-object NodeSelection, so copying a few
+   *  characters out of an embedded frame was impossible. */
+  let textPress = false
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement | null
     if (!target) return
     if (target.closest('.doc-move-handle')) {
+      textPress = false
       setEditing(false)
       selectObject()
       return
     }
     const content = target.closest(EDITABLE_PROTECTED_SELECTOR)
     if (content && dom.contains(content)) {
-      if (!dom.classList.contains('doc-content-editing')) selectObject()
-      dom.draggable = !!handle && !dom.classList.contains('doc-content-editing')
+      if (dom.classList.contains('doc-content-editing')) {
+        dom.draggable = false
+        return
+      }
+      textPress = true
+      dom.draggable = false
       return
     }
+    if (target.closest(TEXT_SELECTABLE_SELECTOR) && dom.contains(target)) {
+      textPress = true
+      dom.draggable = false
+      return
+    }
+    textPress = false
     if (dom.classList.contains('doc-content-editing')) setEditing(false)
     selectObject()
+    restoreDraggable()
+  }
+  const onMouseUp = () => {
+    if (!textPress) return
+    textPress = false
+    restoreDraggable()
+    // A drag that selected text keeps the reader's partial selection; a plain
+    // click (no characters selected) still selects the whole object.
+    if (hasTextSelection()) return
+    selectObject()
+  }
+  const onDragStart = (event: DragEvent) => {
+    if (textPress) event.preventDefault()
   }
   const onDoubleClick = (event: MouseEvent) => {
     if (!contentEditor) return
@@ -5219,11 +5279,15 @@ function wireProtectedInteractionMode(
 
   setEditing(false)
   dom.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('mouseup', onMouseUp, true)
+  dom.addEventListener('dragstart', onDragStart, true)
   dom.addEventListener('dblclick', onDoubleClick, true)
   document.addEventListener('mousedown', onDocumentMouseDown, true)
   dom.addEventListener('keydown', onKeyDown, true)
   return () => {
     dom.removeEventListener('mousedown', onMouseDown, true)
+    document.removeEventListener('mouseup', onMouseUp, true)
+    dom.removeEventListener('dragstart', onDragStart, true)
     dom.removeEventListener('dblclick', onDoubleClick, true)
     document.removeEventListener('mousedown', onDocumentMouseDown, true)
     dom.removeEventListener('keydown', onKeyDown, true)
