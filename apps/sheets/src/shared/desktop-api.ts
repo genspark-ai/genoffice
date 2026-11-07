@@ -3410,6 +3410,13 @@ export interface DesktopApi {
    */
   onChromePressed(handler: () => void): () => void
   selectWorkbook(): Promise<WorkbookFile | { passwordRequired: true; path: string } | null>
+  /** How far a delimited import is: 'read' parses the text, 'write' builds the
+   *  workbook. The fraction is 0..1 within the phase. */
+  onImportProgress?: (
+    listener: (progress: { readonly phase: 'read' | 'write'; readonly fraction: number }) => void,
+  ) => (() => void) | undefined
+  /** Stop the delimited import that is running for this tab */
+  cancelImport?: () => Promise<void>
   openEncryptedWorkbook(path: string, password: string): Promise<WorkbookFile | null>
   updateWorkbookPassword(
     sessionId: string,

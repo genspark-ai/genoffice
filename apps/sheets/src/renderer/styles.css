@@ -1723,6 +1723,37 @@ button.check-item:hover {
   font-size: 14px;
 }
 
+.workbook-opening-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+}
+
+.workbook-opening-bar {
+  width: 240px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.workbook-opening-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.workbook-opening-percent {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.workbook-opening-cancel {
+  margin-top: 4px;
+}
+
 .csv-empty-notice {
   position: absolute;
   z-index: 20;

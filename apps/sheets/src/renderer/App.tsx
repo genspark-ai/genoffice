@@ -211,6 +211,7 @@ import { isSelectionDrag, type Point, type SelectionAskAnchor } from './ai/selec
 import { createAiDocument } from './ai/create-document'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
+import { ImportProgressCard } from './ImportProgressCard'
 import {
   a1RangeToTarget,
   planTableRefresh,
@@ -861,6 +862,12 @@ export function App({
     () => createSheetTabActions({ univerRef, lazyWorkbookRef, notify: setMessage }),
     [],
   )
+  /// how far a delimited import (a .csv/.tsv opened as a workbook) is; null
+  /// when no import is running
+  const [importProgress, setImportProgress] = useState<{
+    readonly phase: 'read' | 'write'
+    readonly fraction: number
+  } | null>(null)
   const [openingWorkbook, setOpeningWorkbook] = useState(
     () =>
       queuedWorkbookAtBoot ||
@@ -5368,6 +5375,15 @@ export function App({
   // A workbook loaded into an already-mounted view (the prewarmed spare) can
   // leave document focus on a node Univer no longer reads keys from; hand it
   // back to the cell editor unless chrome (AI composer, dialogs) holds it.
+  // The main process reports how far a delimited import is; the overlay shows
+  // it and offers the cancel that stops it.
+  useEffect(() => {
+    const stop = window.desktopApi?.onImportProgress?.((progress) => {
+      setImportProgress(progress)
+    })
+    return () => stop?.()
+  }, [])
+
   // Runs from finishOpening, in the same tick that clears openingWorkbook: the
   // <main inert> that guarded the load is still in the DOM until React commits,
   // and an inert subtree refuses focus. The shell also hands webContents focus
@@ -6122,7 +6138,14 @@ export function App({
       />
       {openingWorkbook && (
         <div className="workbook-opening-screen" role="status" aria-live="polite">
-          {t('appOpeningWorkbook')}
+          <ImportProgressCard
+            progress={importProgress}
+            label={t('appOpeningWorkbook')}
+            cancelLabel={t('appDialogCancel')}
+            onCancel={() => {
+              void window.desktopApi?.cancelImport?.()
+            }}
+          />
         </div>
       )}
       {encryptedPasswordPrompt && (
