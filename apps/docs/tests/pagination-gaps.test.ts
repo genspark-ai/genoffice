@@ -172,7 +172,13 @@ describe('in-row table cut decorations', () => {
   }
 
   it('multi-cell row hosts a real band when sibling content ends above the cut', () => {
-    const { tr, anchor } = cellAnchorRow(4) // 1px-spacer-gif sliver cell
+    const { tr, anchor } = cellAnchorRow(4) // 1px-spacer-gif sliver cell, no text
+    expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  it('multi-cell row still hosts a band when the sliver sibling is middle-aligned (no text to misplace)', () => {
+    const { tr, anchor } = cellAnchorRow(4)
+    ;(tr.children[1] as HTMLElement).style.verticalAlign = 'middle'
     expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
   })
 
@@ -189,6 +195,52 @@ describe('in-row table cut decorations', () => {
     strut.getBoundingClientRect = () => ({ top: 0, bottom: 900, height: 900, width: 1 }) as DOMRect
     sp.appendChild(strut)
     expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  it('a middle-aligned sliver sibling with a spacer strut still hosts a band', () => {
+    const { tr, anchor } = cellAnchorRow(900)
+    ;(tr.children[1] as HTMLElement).style.verticalAlign = 'middle'
+    const sp = tr.children[1].firstElementChild as HTMLElement
+    const strut = document.createElement('img')
+    strut.getBoundingClientRect = () => ({ top: 0, bottom: 900, height: 900, width: 1 }) as DOMRect
+    sp.appendChild(strut)
+    expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  // genoffice#2114's "long chin" without a rowspan: Word's most common table
+  // shape is a narrow, vertically centred LABEL column (with text) next to a
+  // long text cell. The band grows the host, and the centred label (positioned
+  // against the whole row height) lands in the new blank. A sliver sibiling has
+  // no text, so it is not affected — only a text-bearing middle/bottom sibling
+  // triggers the guard.
+  it.each(['middle', 'bottom'] as const)(
+    'a %s-aligned TEXT sibling keeps the zero-height cut marker instead of a band',
+    (align) => {
+      const { tr, anchor } = cellAnchorRow(4)
+      const sibling = tr.children[1] as HTMLElement
+      sibling.style.verticalAlign = align
+      sibling.appendChild(document.createTextNode('Label'))
+      expect(singleCutCell(tr, anchor)).toBeNull()
+    },
+  )
+
+  it('a middle-aligned host cell still hosts a band (only a height-coupled sibling is the problem)', () => {
+    const { tr, anchor } = cellAnchorRow(4)
+    ;(tr.children[0] as HTMLElement).style.verticalAlign = 'middle'
+    expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  it('top-aligned cells still host a real band when the sibling ends above the cut', () => {
+    const { tr, anchor } = cellAnchorRow(4)
+    ;(tr.children[0] as HTMLElement).style.verticalAlign = 'top'
+    ;(tr.children[1] as HTMLElement).style.verticalAlign = 'top'
+    expect(singleCutCell(tr, anchor)).toBe(tr.children[0])
+  })
+
+  it('a single-cell row still hosts a band even when it is middle-aligned', () => {
+    const tr = rowOf(1)
+    ;(tr.firstElementChild as HTMLElement).style.verticalAlign = 'middle'
+    expect(singleCutCell(tr)).toBe(tr.firstElementChild)
   })
 })
 

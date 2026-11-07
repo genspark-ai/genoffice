@@ -1479,13 +1479,38 @@ function insideVerticalMerge(row: Element): boolean {
   return false
 }
 
+/**
+ * A middle/bottom-aligned *sibling* (non-host) cell is positioned against the
+ * whole row height, not against its own content. A band inside the host cell
+ * grows the row and re-places that sibling's text in the middle of the new
+ * blank, so the row's borders frame a page-tall empty area (the "long chin" of
+ * genoffice#2114, without a rowspan to trip the insideVerticalMerge guard).
+ * The previous pass's geometry (cellContentBottom) cannot catch this.
+ *
+ * Only a sibling that carries visible text shows the artefact: every unstyled
+ * <td> defaults to `vertical-align: middle` and html2docx writes that as
+ * `vAlign: 'center'`, so spacer-gif sliver cells (no text) and in-app tables
+ * must not lose their bands merely for being middle-aligned. The host cell is
+ * excluded too — a band inside the host is what we measure, so its own
+ * alignment is not the problem.
+ */
+function hasHeightCoupledCell(cells: readonly Element[], host: Element | null): boolean {
+  return cells.some((c) => {
+    if (c === host) return false
+    const va = (c as HTMLElement).style.verticalAlign
+    if (va !== 'middle' && va !== 'bottom') return false
+    return (c.textContent ?? '').trim() !== ''
+  })
+}
+
 /** In-row cut decoration policy: a single-cell row can host a real inline gap band
  *  (one cell spans the whole cut) — returns that cell. A multi-cell row can too when
  *  every other cell's content ends above the cut (nothing at the band's y to
  *  misalign — HTML→docx layout tables put whole articles in one cell next to
  *  spacer-gif sliver cells); otherwise the zero-height cut marker stays (same-y
  *  bands across cells are not modeled) — returns null. A row inside a vertical
- *  merge never hosts a band (see insideVerticalMerge). */
+ *  merge never hosts a band (see insideVerticalMerge), and neither does a row
+ *  with a middle/bottom-aligned cell (see hasHeightCoupledCell). */
 export function singleCutCell(
   row: Element | null,
   anchor?: LineAnchor | null,
@@ -1504,6 +1529,11 @@ export function singleCutCell(
   const anchorCell = anchorElement(anchor)?.closest('td, th')
   const host = anchorCell && cells.find((c) => c === anchorCell || c.contains(anchorCell))
   if (!host) return null
+  // A middle/bottom-aligned, text-bearing sibling is positioned against the
+  // whole row height; a band in the host would push its text into the blank.
+  // A cell whose own alignment (the host) or with no text (sliver cells) is
+  // unaffected, so it still hosts a band. See hasHeightCoupledCell / genoffice#2114.
+  if (hasHeightCoupledCell(cells, host)) return null
   const cutTop = anchorLineTop(anchor, zoomFactor)
   if (cutTop === null) return null
   for (const c of cells) {
