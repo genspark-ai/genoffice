@@ -3781,7 +3781,7 @@ export const strings = {
     redactCancel: 'Cancelar',
     redactInsert: 'Ocultar',
     redactShowLabel: 'Mostrar a seleção à IA novamente',
-    redactEnable: 'Clique com o botão direito numa seleção para ocultá-la do modelo.',
+    redactEnable: 'Clique com o botão direito em uma seleção para ocultá-la do modelo.',
     appExportingImages: 'Exportando imagens…',
     appExportImagesProgress: 'Exportando {count} imagens…',
     appExportImagesDone: '{count} imagens exportadas para {dir}',
@@ -3820,7 +3820,7 @@ export const strings = {
     aiChipImageCaption: 'Adicionar uma legenda',
     aiQueueTitle: 'Alterações na fila',
     aiQueueHint:
-      'Clique numa linha para localizar o trecho; o envio aplica todas as alterações numa única solicitação',
+      'Clique em uma linha para localizar o trecho; o envio aplica todas as alterações em uma única solicitação',
     aiQueueOrphan: 'O texto alvo foi excluído',
     aiQueueRowEdit: 'Editar',
     aiQueueDiscard: 'Limpar',

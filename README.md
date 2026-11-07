@@ -20,7 +20,7 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
   <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
-<p align="center"><b>English</b> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.pt-BR.md">Português (Brasil)</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.ms.md">Bahasa Melayu</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.he.md">עברית</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.tr.md">Türkçe</a></p><!-- lang-switcher · public-hygiene: allow -->
+<p align="center"><b>English</b> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.ms.md">Bahasa Melayu</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.he.md">עברית</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.tr.md">Türkçe</a></p><!-- lang-switcher · public-hygiene: allow -->
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
@@ -570,13 +570,16 @@ agent core and providers) lives in [CONTRIBUTING.md](CONTRIBUTING.md#engine-pack
 ### Legacy and ODF files open as converted copies
 
 Formats GenOffice cannot write back — legacy Word `.doc`/`.dot`, Hancom
-`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, and the OpenDocument family (`.odt`,
-`.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are imports, not native files.
+`.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, legacy PowerPoint `.ppt`, and the
+OpenDocument family (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — are
+imports, not native files.
 Opening one converts it on your machine into a `.docx`, `.xlsx` or `.pptx`
 copy and opens that copy; the original is never read again and never written.
 
 - Docs and Slides ask where to put the copy first (the sibling `.docx`/`.pptx`
-  next to the original by default), so every later Save lands there.
+  next to the original by default), so every later Save lands there. A `.ppt`
+  converts with its text as editable boxes in the original slide order and
+  size; shape geometry, images and text formatting are not carried over yet.
 - Sheets opens the converted workbook straight away and routes the first Save
   through Save As to a fresh `.xlsx`. `.csv` is the exception: it keeps its
   identity and Save writes values back to the `.csv`, as Excel does.
@@ -633,8 +636,9 @@ trial, no paid tier for the apps themselves.
 Yes. GenOffice opens and saves native `.docx`, `.xlsx` and `.pptx` files.
 Saving is byte-preserving: parts of the file you didn't touch are written
 back byte-for-byte, so documents keep working in Microsoft Office.
-Legacy `.doc`/`.dot` and `.xls` files open too, as converted `.docx`/`.xlsx`
-copies — see [Legacy and ODF files open as converted copies](#legacy-and-odf-files-open-as-converted-copies).
+Legacy `.doc`/`.dot`, `.xls` and `.ppt` files open too, as converted
+`.docx`/`.xlsx`/`.pptx` copies — see [Legacy and ODF files open as converted
+copies](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 

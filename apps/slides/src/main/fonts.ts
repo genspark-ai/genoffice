@@ -137,24 +137,49 @@ function officeFontDirs(): string[] {
   )
 }
 
-const APPLE_FONT_ASSET_ROOT = '/System/Library/AssetsV2/com_apple_MobileAsset_Font7'
+const APPLE_ASSETS_V2 = '/System/Library/AssetsV2'
 const APPLE_FONT_SUBSETS =
   '/System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Fonts/Subsets'
+
+/**
+ * Font asset catalogs under AssetsV2 (downloaded and OS-preinstalled), newest catalog
+ * version first. The version suffix moves with macOS releases (macOS 26 downloads into
+ * com_apple_MobileAsset_Font8 and leaves Font7 empty), so a hardcoded catalog silently
+ * drops every downloadable face back to its stub subset.
+ */
+export function appleFontAssetRoots(assetsV2: string = APPLE_ASSETS_V2): string[] {
+  const roots: Array<{ path: string; ver: number }> = []
+  for (const base of [assetsV2, join(assetsV2, 'PreinstalledAssetsV2/InstallWithOs')]) {
+    try {
+      for (const d of readdirSync(base)) {
+        const m = /^com_apple_MobileAsset_Font(\d+)$/.exec(d)
+        if (m) roots.push({ path: join(base, d), ver: Number(m[1]) })
+      }
+    } catch {
+      /* base absent */
+    }
+  }
+  // Newer catalogs first; at equal version the user-downloaded root beats the preinstalled one
+  return roots.sort((a, b) => b.ver - a.ver).map((r) => r.path)
+}
 
 /**
  * macOS on-demand font assets (CoreText downloadable fonts, e.g. NanumGothic): PowerPoint
  * renders with them but Chromium cannot resolve them by name — same private treatment as
  * Office DFonts. Materialized full downloads (AssetsV2) take precedence over the built-in
- * stub subsets; both are read-only system paths and simply absent on other platforms.
+ * stub subsets: a stub carries only the glyphs that spell its own name (NanumGothic's maps
+ * ~45 code points), so text measured against it falls to heuristic widths and draws in
+ * fallback fonts. Both are read-only system paths and simply absent on other platforms.
  */
 function appleFontAssetDirs(): string[] {
   if (process.platform !== 'darwin') return []
   const dirs: string[] = []
-  try {
-    for (const d of readdirSync(APPLE_FONT_ASSET_ROOT))
-      dirs.push(join(APPLE_FONT_ASSET_ROOT, d, 'AssetData'))
-  } catch {
-    /* asset root absent */
+  for (const root of appleFontAssetRoots()) {
+    try {
+      for (const d of readdirSync(root)) dirs.push(join(root, d, 'AssetData'))
+    } catch {
+      /* asset root unreadable */
+    }
   }
   dirs.push(APPLE_FONT_SUBSETS)
   return dirs
@@ -680,7 +705,7 @@ class FontRegistry {
       flat.push(dir)
     }
     // One prefix each covers every scanned asset dir for the isPrivate check
-    this.privateDirs.push(APPLE_FONT_ASSET_ROOT, APPLE_FONT_SUBSETS, EMBEDDED_FONT_DIR)
+    this.privateDirs.push(`${APPLE_ASSETS_V2}/`, APPLE_FONT_SUBSETS, EMBEDDED_FONT_DIR)
     flat.push(...appleFontAssetDirs())
     const tasks: ScanTask[] = flat.map((dir) => ({ kind: 'flat', dir }))
     const cloudBase = cloudFontBase()
