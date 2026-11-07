@@ -142,6 +142,15 @@ describe('familyAliases', () => {
     // carries the weight ("Hiragino Sans GB W3"). The two weight faces below
     // share the typographic family and differ in the legacy one.
     const weightFace = (weight: string, family: string, localized: string): NameRecordSpec[] => [
+      // the Macintosh record Apple writes next to the Windows ones: family-wide
+      // (no weight), platform 1 — it must not pull the Windows weight names in
+      {
+        platform: 1,
+        encoding: 0,
+        language: 0,
+        nameId: LEGACY_FAMILY,
+        text: family,
+      },
       {
         platform: 3,
         encoding: 1,
@@ -199,6 +208,10 @@ describe('familyAliases', () => {
     expect(familyAliases('Hiragino Sans GB', index)).toEqual([
       '\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587',
     ])
+    // the round-4 leak: with the platform-1 record in the fixture, a name-id
+    // match alone would return the sibling faces' "Hiragino Sans GB W3"/"W6"
+    const canonicalAliases = familyAliases('Hiragino Sans GB', index)
+    expect(canonicalAliases.some((alias) => /W\d$/.test(alias))).toBe(false)
     // the weight-qualified legacy name is its own slot
     expect(familyAliases('\u51ac\u9752\u9ed1\u4f53\u7b80\u4f53\u4e2d\u6587 W3', index)).toEqual([
       'Hiragino Sans GB W3',

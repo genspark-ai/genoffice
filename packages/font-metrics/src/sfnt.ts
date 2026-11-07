@@ -330,14 +330,19 @@ export function familyAliases(name: string, index: FontIndex = getFontIndex()): 
   const seen = new Set<string>([key])
   for (const face of faces) {
     const records = face.familyRecords ?? []
-    // the name ids this face writes the matched name under
-    const matchedIds = new Set<number>()
+    // the (platform, name id) slots this face writes the matched name under.
+    // The platform is part of the key: an Apple face writes the family-wide
+    // spelling under a Macintosh record (platform 1, name id 1) next to its
+    // Windows weight-attached records (platform 3, name id 1, "… W0"…) —
+    // matching on the name id alone would let the family-wide slot pull every
+    // weight face's Windows name back in (genoffice#2469 round 4).
+    const matchedSlots = new Set<string>()
     for (const record of records) {
-      if (norm(record.name) === key) matchedIds.add(record.nameId)
+      if (norm(record.name) === key) matchedSlots.add(`${record.platform}:${record.nameId}`)
     }
-    if (matchedIds.size === 0) continue
+    if (matchedSlots.size === 0) continue
     for (const record of records) {
-      if (!matchedIds.has(record.nameId)) continue
+      if (!matchedSlots.has(`${record.platform}:${record.nameId}`)) continue
       const recordKey = norm(record.name)
       if (seen.has(recordKey)) continue
       seen.add(recordKey)
