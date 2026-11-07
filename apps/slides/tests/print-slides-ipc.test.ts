@@ -194,4 +194,17 @@ describe('slides:print job options', () => {
     expect(win.webContents.printToPDF).not.toHaveBeenCalled()
     expect(mocks.printPdfViaCups).not.toHaveBeenCalled()
   })
+
+  it('hands the handout layout and thumbnail order to the page assembly', async () => {
+    const result = (await call('slides:print', {
+      ...OP,
+      layout: 'handout6',
+      orientation: 'portrait',
+      order: 'vertical',
+    })) as { ok: boolean }
+    expect(result).toEqual({ ok: true })
+    const [html] = mocks.printSlidesHtml.mock.calls[0]! as unknown as [string]
+    expect(html).toContain('grid-auto-flow: column;')
+    expect(html).toContain('@page { size: 8.27in 11.69in; margin: 0; }')
+  })
 })

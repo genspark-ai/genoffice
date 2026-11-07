@@ -14,6 +14,7 @@ import {
   parsePrintRange,
   printPageCount,
   type PrintLayout,
+  type PrintOrder,
   type PrintOrientation,
 } from '../../shared/print-html'
 import { renderSlidesToPngBase64 } from '../export-render'
@@ -49,6 +50,7 @@ export function PrintDialog({
   const [rangeMode, setRangeMode] = useState<RangeMode>('all')
   const [customRange, setCustomRange] = useState('')
   const [orientation, setOrientation] = useState<PrintOrientation>('portrait')
+  const [order, setOrder] = useState<PrintOrder>('horizontal')
   const [frame, setFrame] = useState(false)
   const [includeHidden, setIncludeHidden] = useState(false)
   const [printing, setPrinting] = useState(false)
@@ -156,10 +158,11 @@ export function PrintDialog({
       layout,
       notes: selected.map((i) => notes[i] ?? ''),
       orientation,
+      order,
       frame,
       preview: true,
     })
-  }, [pngs, selected, slides, layout, notes, orientation, frame])
+  }, [pngs, selected, slides, layout, notes, orientation, order, frame])
 
   /** Scale the preview document so one page fits the pane width (iframe body zoom) */
   const applyZoom = useCallback(() => {
@@ -207,6 +210,7 @@ export function PrintDialog({
         layout,
         ...(layout === 'notes' ? { notes: selected.map((i) => notes[i] ?? '') } : {}),
         ...(layout !== 'full' ? { orientation } : {}),
+        ...(layout !== 'full' && layout !== 'notes' ? { order } : {}),
         ...(frame && layout === 'full' ? { frame: true } : {}),
         ...(job ? { job } : {}),
       })
@@ -222,9 +226,13 @@ export function PrintDialog({
     ['full', t('appPrintLayoutFull')],
     ['handout2', t('appPrintLayoutHandout2')],
     ['handout3', t('appPrintLayoutHandout3')],
+    ['handout4', t('appPrintLayoutHandout4')],
     ['handout6', t('appPrintLayoutHandout6')],
+    ['handout9', t('appPrintLayoutHandout9')],
     ['notes', t('appPrintLayoutNotes')],
   ]
+  // A single column (or no grid at all) leaves the order option nothing to swap
+  const orderMatters = layout !== 'full' && layout !== 'notes' && layout !== 'handout3'
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -306,6 +314,29 @@ export function PrintDialog({
                   {label}
                 </label>
               ))}
+            </fieldset>
+            <fieldset>
+              <legend>{t('appPrintOrderGroup')}</legend>
+              <label className="print-radio">
+                <input
+                  type="radio"
+                  name="print-order"
+                  disabled={!orderMatters}
+                  checked={order === 'horizontal'}
+                  onChange={() => setOrder('horizontal')}
+                />
+                {t('appPrintOrderHorizontal')}
+              </label>
+              <label className="print-radio">
+                <input
+                  type="radio"
+                  name="print-order"
+                  disabled={!orderMatters}
+                  checked={order === 'vertical'}
+                  onChange={() => setOrder('vertical')}
+                />
+                {t('appPrintOrderVertical')}
+              </label>
             </fieldset>
             <fieldset>
               <legend>{t('appPrintOrientation')}</legend>
