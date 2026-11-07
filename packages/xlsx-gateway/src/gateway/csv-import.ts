@@ -1,13 +1,11 @@
-/// CSV → minimal xlsx conversion for the open-file path. Values only: cells
-/// that look like plain numbers become numeric, everything else stays text
-/// (leading zeros survive). The converted file is a fresh workbook.
-
-import JSZip from 'jszip'
+/// CSV parsing for the import path. Values only: cells that look like plain
+/// numbers become numeric, everything else stays text (leading zeros survive).
+///
+/// The sheets renderer imports this module (Data › From Text/CSV), so it stays
+/// free of node APIs: the half that writes the xlsx archive lives in
+/// csv-import-xlsx, which only the desktop path loads.
 
 import { encodeXlsxEscapes } from './xlsx-escapes'
-import { DEFAULT_THEME_XML } from './xlsx-default-theme'
-import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
-import { validateSheetName } from './xlsx-sheets'
 
 const DELIMITERS = [',', ';', '\t'] as const
 
@@ -161,24 +159,30 @@ export function sniffDelimiter(input: string): string {
   return best
 }
 
-export function parseCsv(input: string, delimiter = sniffDelimiter(input)): string[][] {
+/**
+ * The grid's rows, one at a time.
+ *
+ * The import never holds the whole grid: a 40 MB CSV is millions of cells, and
+ * a `string[][]` of them costs more than the file itself — the worksheet XML
+ * they become costs several times more again. Callers that only need the
+ * extent count the rows and drop them; the conversion streams them.
+ */
+export function* csvRows(input: string, delimiter: string): Generator<string[]> {
   const stripped = splitSepDeclaration(input).text
   const text = stripped.startsWith('﻿') ? stripped.slice(1) : stripped
-  const rows: string[][] = []
   const fail = (msg: string): never => {
     throw new Error(`CSV import rejected: ${msg}`)
   }
   let row: string[] = []
   let field = ''
+  // A trailing newline produces one empty row — drop it. Empty rows are held
+  // back until a row with content proves they were trailing.
+  let held: string[][] = []
+  let rows = 0
   const pushField = (): void => {
     row.push(field)
     if (row.length > MAX_CSV_COLS) fail(`too many columns (cap ${MAX_CSV_COLS})`)
     field = ''
-  }
-  const pushRow = (): void => {
-    rows.push(row)
-    if (rows.length > MAX_CSV_ROWS) fail(`too many rows (cap ${MAX_CSV_ROWS})`)
-    row = []
   }
   let quoted = false
   for (let index = 0; index < text.length; index += 1) {
@@ -206,18 +210,36 @@ export function parseCsv(input: string, delimiter = sniffDelimiter(input)): stri
     } else if (character === '\n' || character === '\r') {
       if (character === '\r' && text[index + 1] === '\n') index += 1
       pushField()
-      pushRow()
+      rows += 1
+      if (rows > MAX_CSV_ROWS) fail(`too many rows (cap ${MAX_CSV_ROWS})`)
+      const finished = row
+      row = []
+      if (finished.every((cell) => cell === '')) {
+        held.push(finished)
+        continue
+      }
+      for (const pending of held) yield pending
+      held = []
+      yield finished
     } else {
       field += character
     }
   }
   if (field !== '' || row.length > 0) {
     pushField()
-    pushRow()
+    rows += 1
+    if (rows > MAX_CSV_ROWS) fail(`too many rows (cap ${MAX_CSV_ROWS})`)
+    const finished = row
+    // trailing empty rows are dropped: the held ones and this one
+    if (!finished.every((cell) => cell === '')) {
+      for (const pending of held) yield pending
+      yield finished
+    }
   }
-  // A trailing newline produces one empty row — drop it.
-  while (rows.length > 0 && rows[rows.length - 1]?.every((cell) => cell === '')) rows.pop()
-  return rows
+}
+
+export function parseCsv(input: string, delimiter = sniffDelimiter(input)): string[][] {
+  return [...csvRows(input, delimiter)]
 }
 
 /// Plain decimal numbers only (".5", "1." and "-.5" count, as in Excel); leading
@@ -231,7 +253,8 @@ export function isNumericCell(value: string): boolean {
   return Number.isFinite(Number(value))
 }
 
-function escapeXml(value: string): string {
+/** the XML escapes a cell text needs; shared with the archive writer */
+export function escapeXml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -250,14 +273,63 @@ function columnLabel(column: number): string {
   return label
 }
 
-export function buildWorksheetXml(rows: readonly (readonly string[])[]): string {
-  const lines: string[] = []
-  let maxColumns = 1
-  rows.forEach((row, rowIndex) => {
+/** How far the grid reaches: how many rows, and how many columns carry a value. */
+export interface CsvGridShape {
+  readonly rows: number
+  readonly columns: number
+}
+
+/** The widest column that holds a value, counted like the worksheet's
+ *  dimension: an empty trailing cell does not make the sheet wider. */
+function noteColumn(columns: number, row: readonly string[]): number {
+  for (let index = row.length - 1; index >= 0; index -= 1) {
+    if (row[index] !== '') return Math.max(columns, index + 1)
+  }
+  return columns
+}
+
+/** The shape of a grid that is already in memory. */
+function shapeOfRows(rows: readonly (readonly string[])[]): CsvGridShape {
+  let columns = 1
+  for (const row of rows) columns = noteColumn(columns, row)
+  return { rows: rows.length, columns }
+}
+
+/**
+ * The grid's extent, read from the text in one pass: the rows are counted and
+ * dropped. The worksheet's dimension has to name the extent before the first
+ * row is written, so the conversion reads the shape first and streams the rows
+ * after it.
+ */
+export function csvGridShape(input: string, delimiter: string): CsvGridShape {
+  let rows = 0
+  let columns = 1
+  for (const row of csvRows(input, delimiter)) {
+    rows += 1
+    columns = noteColumn(columns, row)
+  }
+  return { rows, columns }
+}
+
+/**
+ * The worksheet XML, chunk by chunk. A 40 MB CSV becomes a worksheet several
+ * times its size, and building that as one string is what made the import
+ * need a gigabyte of memory; the chunks go into the archive as they come.
+ */
+export function* worksheetXmlChunks(
+  rows: Iterable<readonly string[]>,
+  shape: CsvGridShape,
+): Generator<string> {
+  yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+  yield '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+  const lastColumn = columnLabel(Math.max(shape.columns, 1) - 1)
+  yield `<dimension ref="A1:${lastColumn}${Math.max(shape.rows, 1)}"/>`
+  yield '<sheetData>'
+  let rowIndex = 0
+  for (const row of rows) {
     const cells: string[] = []
     row.forEach((value, columnIndex) => {
       if (value === '') return
-      maxColumns = Math.max(maxColumns, columnIndex + 1)
       const reference = `${columnLabel(columnIndex)}${rowIndex + 1}`
       cells.push(
         isNumericCell(value)
@@ -265,35 +337,14 @@ export function buildWorksheetXml(rows: readonly (readonly string[])[]): string 
           : `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(encodeXlsxEscapes(value))}</t></is></c>`,
       )
     })
-    if (cells.length > 0) lines.push(`<row r="${rowIndex + 1}">${cells.join('')}</row>`)
-  })
-  const dimension = `A1:${columnLabel(maxColumns - 1)}${Math.max(rows.length, 1)}`
-  return (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    `<dimension ref="${dimension}"/><sheetData>${lines.join('')}</sheetData></worksheet>`
-  )
+    if (cells.length > 0) yield `<row r="${rowIndex + 1}">${cells.join('')}</row>`
+    rowIndex += 1
+  }
+  yield '</sheetData></worksheet>'
 }
 
-export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Promise<Buffer> {
-  const rows = parseCsv(csvText, resolveImportDelimiter(csvText))
-  if (rows.length === 0) throw new Error('The CSV file has no data rows.')
-  return xlsxBufferFromRows(rows, sheetName)
-}
-
-/**
- * Open-path conversion. `delimiter` pins the split for callers that already
- * know the format (a .tsv); leaving it unset lets the sniffer and its
- * prose-shatter guard decide, which is right for a bare .csv but unreliable
- * for a tab-delimited file whose fields hold enough commas to out-count tabs.
- */
-export async function csvToXlsxBufferForOpen(
-  csvText: string,
-  sheetName = 'Sheet1',
-  delimiter?: string,
-): Promise<{ buffer: Buffer; empty: boolean }> {
-  const rows = parseCsv(csvText, delimiter ?? resolveImportDelimiter(csvText))
-  return { buffer: await xlsxBufferFromRows(rows, sheetName), empty: rows.length === 0 }
+export function buildWorksheetXml(rows: readonly (readonly string[])[]): string {
+  return [...worksheetXmlChunks(rows, shapeOfRows(rows))].join('')
 }
 
 /**
@@ -329,66 +380,4 @@ function bodyRowsAgreeOnWidth(rows: readonly (readonly string[])[]): boolean {
     if (row.length > 1) widths.set(row.length, (widths.get(row.length) ?? 0) + 1)
   const dominant = Math.max(0, ...widths.values())
   return dominant >= 2 && dominant >= rows.length * TABLE_WIDTH_AGREEMENT
-}
-
-/**
- * xlsx from the app's OWN comma-serialized sheet grid (AI create_document):
- * unlike the import path above, the delimiter is fixed to comma — cell text
- * may legitimately hold more semicolons/tabs than commas (csvField quotes
- * neither), and sniffing would then split the wrong columns — and an
- * all-empty grid becomes a valid blank workbook instead of an import error.
- */
-export async function sheetCsvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Promise<Buffer> {
-  return xlsxBufferFromRows(parseCsv(csvText, ','), sheetName)
-}
-
-/** minimal empty workbook: the backing file for a "new blank spreadsheet" tab */
-export async function blankXlsxBuffer(sheetName = 'Sheet1'): Promise<Buffer> {
-  return xlsxBufferFromRows([], sheetName)
-}
-
-async function xlsxBufferFromRows(
-  rows: readonly (readonly string[])[],
-  sheetName: string,
-): Promise<Buffer> {
-  validateSheetName(sheetName)
-  const zip = new JSZip()
-  zip.file(
-    '[Content_Types].xml',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-      '<Default Extension="xml" ContentType="application/xml"/>' +
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
-      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
-      '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' +
-      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
-      '</Types>',
-  )
-  zip.file(
-    '_rels/.rels',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
-      '</Relationships>',
-  )
-  zip.file(
-    'xl/workbook.xml',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      `<sheets><sheet name="${escapeXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-  )
-  zip.file(
-    'xl/_rels/workbook.xml.rels',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' +
-      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-      '</Relationships>',
-  )
-  zip.file('xl/theme/theme1.xml', DEFAULT_THEME_XML)
-  zip.file('xl/styles.xml', MINIMAL_STYLESHEET_XML)
-  zip.file('xl/worksheets/sheet1.xml', buildWorksheetXml(rows))
-  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
-import { csvToXlsxBuffer } from '../src/gateway/csv-import'
+import { csvToXlsxBuffer } from '../src/gateway/csv-import-xlsx'
 import { readSheetRows } from '../src/gateway/xlsx-gateway'
 
 /**
