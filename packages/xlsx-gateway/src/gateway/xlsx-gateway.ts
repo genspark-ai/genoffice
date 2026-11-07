@@ -71,6 +71,7 @@ import {
   FilterEditError,
 } from './xlsx-filter'
 import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
+import { resolvedStyleEntries } from './xlsx-style-entries'
 import { escapeRegExp } from './xlsx-sheets'
 import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
 import {
@@ -635,19 +636,22 @@ export function isDateFormatCode(code: string): boolean {
 
 /** the cellXfs indexes whose number format is a date or a time */
 export function dateStyleIndexes(stylesXml: string): Set<number> {
+  // Entries as the sidecar reads them: a wrapped (mc:AlternateContent) numFmt
+  // or xf is one entry, read through its Fallback — a Choice branch may give
+  // the same numFmtId another format code.
   const custom = new Set<number>()
-  for (const m of stylesXml.matchAll(/<numFmt\b([^>]*)\/?>/g)) {
-    const id = Number(readXmlAttribute(m[1] ?? '', 'numFmtId'))
-    const code = decodeXmlText(readXmlAttribute(m[1] ?? '', 'formatCode') ?? '')
+  const numFmts = /<numFmts\b[^>]*>([\s\S]*?)<\/numFmts>/.exec(stylesXml)?.[1] ?? ''
+  for (const numFmt of resolvedStyleEntries(numFmts, 'numFmt')) {
+    const attributes = /^<numFmt\b([^>]*?)\/?>/.exec(numFmt)?.[1] ?? ''
+    const id = Number(readXmlAttribute(attributes, 'numFmtId'))
+    const code = decodeXmlText(readXmlAttribute(attributes, 'formatCode') ?? '')
     if (Number.isFinite(id) && isDateFormatCode(code)) custom.add(id)
   }
   const out = new Set<number>()
   const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(stylesXml)?.[1] ?? ''
-  let index = 0
-  for (const m of cellXfs.matchAll(/<xf\b([^>]*)\/?>/g)) {
-    const id = Number(readXmlAttribute(m[1] ?? '', 'numFmtId'))
+  for (const [index, xf] of resolvedStyleEntries(cellXfs, 'xf').entries()) {
+    const id = Number(readXmlAttribute(/^<xf\b([^>]*?)\/?>/.exec(xf)?.[1] ?? '', 'numFmtId'))
     if (BUILTIN_DATE_FORMATS.has(id) || custom.has(id)) out.add(index)
-    index += 1
   }
   return out
 }

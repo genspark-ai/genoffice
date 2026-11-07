@@ -1,10 +1,14 @@
 import type { WorkbookStyleEdit } from '../shared/edit-schemas'
 import { isGradientFill, type FillSpec, type StyleColor } from '../domain/style-color'
 import { shortDateNumFmtId } from '../shared/short-date'
+import { resolveStyleEntry, styleEntrySlots } from './xlsx-style-entries'
 
 /// Copy-on-write editor for xl/styles.xml. Existing entries are never
 /// modified — every changed cell gets a new cellXfs entry (deduped) derived
 /// from its current one, so untouched cells keep their exact formatting.
+/// The lists hold each section's entries as written: an mc:AlternateContent
+/// block is one entry, kept verbatim and read through its Fallback
+/// (xlsx-style-entries.ts).
 export class StylesheetEditor {
   private readonly source: string
   private numFmts: string[]
@@ -28,7 +32,7 @@ export class StylesheetEditor {
 
   constructor(stylesXml: string) {
     this.source = stylesXml
-    this.numFmts = extractElements(sectionInner(stylesXml, 'numFmts') ?? '', 'numFmt')
+    this.numFmts = styleEntrySlots(sectionInner(stylesXml, 'numFmts') ?? '', 'numFmt')
     const fontsInner = sectionInner(stylesXml, 'fonts')
     const fillsInner = sectionInner(stylesXml, 'fills')
     const bordersInner = sectionInner(stylesXml, 'borders')
@@ -38,15 +42,27 @@ export class StylesheetEditor {
         'The workbook stylesheet is missing fonts, fills, or cellXfs — style edits cannot be saved.',
       )
     }
-    this.fonts = extractElements(fontsInner, 'font')
-    this.fills = extractElements(fillsInner, 'fill')
+    this.fonts = styleEntrySlots(fontsInner, 'font')
+    this.fills = styleEntrySlots(fillsInner, 'fill')
     this.hadBordersSection = bordersInner !== null
-    this.borders = bordersInner === null ? ['<border/>'] : extractElements(bordersInner, 'border')
+    this.borders = bordersInner === null ? ['<border/>'] : styleEntrySlots(bordersInner, 'border')
     if (this.borders.length === 0) this.borders.push('<border/>')
-    this.cellXfs = extractElements(cellXfsInner, 'xf')
+    this.cellXfs = styleEntrySlots(cellXfsInner, 'xf')
     const dxfsInner = sectionInner(stylesXml, 'dxfs')
     this.hadDxfsSection = dxfsInner !== null
-    this.dxfs = dxfsInner === null ? [] : extractElements(dxfsInner, 'dxf')
+    this.dxfs = dxfsInner === null ? [] : styleEntrySlots(dxfsInner, 'dxf')
+    // A wrapped entry that does not stand for exactly one entry would give
+    // its later ids another meaning than the sidecar reads; refuse up front.
+    for (const [slots, tag] of [
+      [this.numFmts, 'numFmt'],
+      [this.fonts, 'font'],
+      [this.fills, 'fill'],
+      [this.borders, 'border'],
+      [this.cellXfs, 'xf'],
+      [this.dxfs, 'dxf'],
+    ] as const) {
+      for (const slot of slots) resolveStyleEntry(slot, tag)
+    }
     if (this.fonts.length === 0 || this.cellXfs.length === 0) {
       throw new Error(
         'The workbook stylesheet has no base font or cell format — style edits cannot be saved.',
@@ -60,9 +76,15 @@ export class StylesheetEditor {
       cellXfs: this.cellXfs.length,
       dxfs: this.dxfs.length,
     }
+    // Every branch of a wrapped numFmt counts: a new id must not collide with
+    // the one a Choice-aware reader picks either.
     this.nextNumFmtId =
       this.numFmts.reduce(
-        (maximum, entry) => Math.max(maximum, Number(readAttribute(entry, 'numFmtId') ?? 0)),
+        (maximum, entry) =>
+          Math.max(
+            maximum,
+            ...[...entry.matchAll(/\bnumFmtId="([0-9]+)"/g)].map((match) => Number(match[1])),
+          ),
         163,
       ) + 1
   }
@@ -90,7 +112,7 @@ export class StylesheetEditor {
     const cached = this.cache.get(cacheKey)
     if (cached !== undefined) return cached
 
-    const baseXf = this.cellXfs[baseXfIndex] ?? this.cellXfs[0] ?? '<xf/>'
+    const baseXf = resolveStyleEntry(this.cellXfs[baseXfIndex] ?? this.cellXfs[0] ?? '<xf/>', 'xf')
     let fontId = Number(readAttribute(baseXf, 'fontId') ?? 0)
     let fillId = Number(readAttribute(baseXf, 'fillId') ?? 0)
     let numFmtId = Number(readAttribute(baseXf, 'numFmtId') ?? 0)
@@ -98,7 +120,9 @@ export class StylesheetEditor {
     const xfId = readAttribute(baseXf, 'xfId')
 
     if (hasFontDelta(delta)) {
-      fontId = this.internFont(buildFont(this.fonts[fontId] ?? '<font/>', delta))
+      fontId = this.internFont(
+        buildFont(resolveStyleEntry(this.fonts[fontId] ?? '<font/>', 'font'), delta),
+      )
     }
     // Fill index 0 is the stylesheet's mandatory "none" pattern.
     if (delta.fill !== undefined) {
@@ -112,7 +136,7 @@ export class StylesheetEditor {
     if (hasBorderDelta(delta)) {
       borderId = internElement(
         this.borders,
-        buildBorder(this.borders[borderId] ?? '<border/>', delta),
+        buildBorder(resolveStyleEntry(this.borders[borderId] ?? '<border/>', 'border'), delta),
       )
     }
     const alignment = buildAlignment(baseXf, delta)
@@ -165,13 +189,10 @@ export class StylesheetEditor {
       }
     }
     if (this.numFmts.length > 0) {
-      const section = `<numFmts count="${this.numFmts.length}">${this.numFmts.join('')}</numFmts>`
       if (sectionInner(result, 'numFmts') !== null) {
-        result = result.replace(
-          /<numFmts\b[^>]*>[\s\S]*?<\/numFmts>|<numFmts\b[^>]*\/>/,
-          () => section,
-        )
+        result = replaceSection(result, 'numFmts', this.numFmts)
       } else {
+        const section = `<numFmts count="${this.numFmts.length}">${this.numFmts.join('')}</numFmts>`
         // Schema order: numFmts comes immediately before fonts.
         result = result.replace(/<fonts\b/, () => `${section}<fonts`)
       }
@@ -190,7 +211,8 @@ export class StylesheetEditor {
   private internNumberFormat(pattern: string): number {
     const builtin = BUILTIN_NUMBER_FORMATS.get(pattern) ?? shortDateNumFmtId(pattern)
     if (builtin !== undefined) return builtin
-    for (const entry of this.numFmts) {
+    for (const slot of this.numFmts) {
+      const entry = resolveStyleEntry(slot, 'numFmt')
       if (readAttribute(entry, 'formatCode') === escapeXmlAttribute(pattern)) {
         return Number(readAttribute(entry, 'numFmtId') ?? 0)
       }
@@ -472,18 +494,20 @@ function sectionInner(xml: string, tag: string): string | null {
   return match?.[1] ?? null
 }
 
+/// Rewrites a section's entries. The start tag keeps every attribute but the
+/// count: namespace bindings the kept entries rely on (xmlns:mc, xmlns:hs)
+/// and extensions such as x14ac:knownFonts live there.
 function replaceSection(xml: string, tag: string, elements: readonly string[]): string {
-  const section = `<${tag} count="${elements.length}">${elements.join('')}</${tag}>`
   return xml.replace(
-    new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>|<${tag}\\b[^>]*/>`),
-    () => section,
+    new RegExp(`<${tag}\\b([^>]*?)(?:/>|>[\\s\\S]*?</${tag}>)`),
+    (_match, attributes: string) => {
+      const count = `count="${elements.length}"`
+      const counted = /(?<![\w:.-])count="[^"]*"/.test(attributes)
+        ? attributes.replace(/(?<![\w:.-])count="[^"]*"/, count)
+        : ` ${count}${attributes}`
+      return `<${tag}${counted.trimEnd()}>${elements.join('')}</${tag}>`
+    },
   )
-}
-
-function extractElements(inner: string, tag: string): string[] {
-  return [
-    ...inner.matchAll(new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g')),
-  ].map((match) => match[0])
 }
 
 function readAttribute(element: string, name: string): string | undefined {
