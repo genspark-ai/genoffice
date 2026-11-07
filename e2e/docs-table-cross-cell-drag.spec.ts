@@ -50,20 +50,45 @@ interface DragProbe {
   endCell: number
 }
 
+/** the first word occurrence's horizontal extent, at its text-line height */
+async function wordEdges(
+  page: import('@playwright/test').Page,
+  word: string,
+): Promise<{ startX: number; endX: number; y: number }> {
+  return page.evaluate((w) => {
+    const walker = document.createTreeWalker(
+      document.querySelector('.doc-page')!,
+      NodeFilter.SHOW_TEXT,
+    )
+    let tn: Node | null
+    while ((tn = walker.nextNode())) {
+      const i = (tn.textContent ?? '').indexOf(w)
+      if (i < 0) continue
+      const r = document.createRange()
+      r.setStart(tn, i)
+      r.setEnd(tn, i + w.length)
+      const b = r.getBoundingClientRect()
+      return { startX: b.left, endX: b.right, y: b.top + b.height / 2 }
+    }
+    throw new Error(`word not found: ${w}`)
+  }, word)
+}
+
 async function dragAcrossDiagonal(page: import('@playwright/test').Page): Promise<void> {
   const table = page.locator('.doc-page table.doc-table').first()
   await table.waitFor()
   await page.waitForTimeout(800)
-  const first = await table.locator('td').first().boundingBox()
-  const last = await table.locator('td').last().boundingBox()
-  if (!first || !last) throw new Error('missing cells')
-  // from the middle of the first cell's text to the middle of the last
-  // cell's: the corners sit in the column-resize handle's edge strip, which
-  // keeps its own drag
-  const sx = first.x + first.width / 2
-  const sy = first.y + first.height / 2
-  const ex = last.x + last.width / 2
-  const ey = last.y + last.height / 2
+  // from just inside the first cell's word to just inside the last cell's
+  // word: the cell box center can sit below the text line, where posAtCoords
+  // lands at the end of the paragraph and the drag starts after "Alpha"
+  // (observed in CI), and the word center would drop the first half of the
+  // word. Word edges select the whole words, as the assertions expect.
+  const first = await wordEdges(page, WORDS[0])
+  const last = await wordEdges(page, WORDS[WORDS.length - 1])
+  const sx = first.startX
+  const sy = first.y
+  const ex = last.endX
+  const ey = last.y
   await page.mouse.move(sx, sy)
   await page.mouse.down()
   for (let step = 1; step <= 12; step++) {
