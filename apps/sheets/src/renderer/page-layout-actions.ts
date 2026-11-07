@@ -27,7 +27,7 @@ import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './the
 import { settleFormulas } from './formula-settle'
 import { startFullLoad } from './full-load'
 import { fitsFullLoad, workbookCellCounts } from './load-budget'
-import { loadVisibleRange } from './univer-sync'
+import { ensureSheetFileState, loadVisibleRange } from './univer-sync'
 import {
   layoutSheetPrint,
   PrintError,
@@ -386,6 +386,7 @@ async function sheetPrintDocument(
   withVisuals: boolean,
 ): Promise<SheetPrintDocument> {
   const sheetId = worksheet.getSheetId()
+  if (state) await ensureSheetFileState(state, sheetId, ctx.lazyWorkbookRef)
   const journal = { ...(state?.editJournal.pageSetup.get(sheetId) ?? {}), ...overrides }
   const fileSetup = state?.sheetFilePageSetups.get(sheetId) ?? null
   const fileSheet = state?.file.sheets.find((sheet) => sheet.id === sheetId)
