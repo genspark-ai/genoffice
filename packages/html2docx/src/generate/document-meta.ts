@@ -12,7 +12,7 @@ function forEachRunText(ir, fn) {
       if (node.cells) for (const cell of node.cells) walk(cell.children || [])
       if (node.rows) {
         for (const row of node.rows) {
-          for (const cell of row.cells) walk(cell.children || (cell.runs ? [cell] : []))
+          for (const cell of row.cells ?? []) walk(cell.children || (cell.runs ? [cell] : []))
         }
       }
       if (node.items) {

@@ -351,7 +351,10 @@ export async function convertHtmlToDocx(
   }
   ;(function collectShots(nodes: any[]) {
     for (const n of nodes) {
-      if (n.type === 'image' || n.type === 'floatimg' || (n.type === 'pagebg' && n.shotId)) {
+      if (
+        (n.type === 'image' || n.type === 'floatimg' || (n.type === 'pagebg' && n.shotId)) &&
+        n.shotId
+      ) {
         shotIds.push(n.shotId)
         shotNodes.set(n.shotId, n)
       }
