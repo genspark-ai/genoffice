@@ -3006,6 +3006,80 @@ export function cellPadCss(
 
 export { rtlStartMarginCss } from './table-geometry'
 
+/**
+ * Keep a character selection inside a single table cell.
+ *
+ * ProseMirror's tableEditing upgrades a drag that crosses a cell boundary into
+ * a CellSelection. A tall row that carries an in-row page-gap widget can hit
+ * such a boundary after only a few lines, so dragging a short passage suddenly
+ * selects the whole cell: the browser shows a small highlight while the status
+ * bar and the AI panel report hundreds of selected characters.
+ *
+ * Only a live mouse gesture that started and stayed in one cell is protected.
+ * Real multi-cell drags, single clicks on a cell edge and commands that select
+ * a row/column keep their CellSelection.
+ */
+export function shouldBlockCellSelection(
+  activeCell: Element | null,
+  startCell: Element | null,
+  endCell: Element | null,
+  hasDomSelection: boolean,
+): boolean {
+  if (!activeCell || !hasDomSelection) return false
+  if (startCell !== activeCell) return false
+  // Crossing into another cell is a genuine table selection; a page-gap widget
+  // or a bare text node on the way (endCell === null) is not.
+  if (endCell && endCell !== activeCell) return false
+  return true
+}
+
+export function tableTextDragPlugin(): Plugin {
+  let activeCell: Element | null = null
+  // `Node` in this module is Tiptap's extension class, so use the DOM
+  // constructors rather than the shadowed global type.
+  const cellOf = (node: EventTarget | null): Element | null => {
+    const el = node instanceof HTMLElement ? node : node instanceof Text ? node.parentElement : null
+    return el?.closest?.('td, th') ?? null
+  }
+  return new Plugin({
+    view() {
+      const clear = () => {
+        activeCell = null
+      }
+      document.addEventListener('mouseup', clear, true)
+      document.addEventListener('dragstart', clear, true)
+      return {
+        destroy() {
+          document.removeEventListener('mouseup', clear, true)
+          document.removeEventListener('dragstart', clear, true)
+        },
+      }
+    },
+    props: {
+      handleDOMEvents: {
+        mousedown: (_view, event) => {
+          const target = event.target as HTMLElement | null
+          activeCell = event.button === 0 ? cellOf(target) : null
+          return false
+        },
+      },
+    },
+    filterTransaction: (tr) => {
+      if (tr.docChanged || !(tr.selection instanceof CellSelection)) return true
+      const sel = typeof window === 'undefined' ? null : window.getSelection()
+      const has = !!sel && sel.rangeCount > 0 && !sel.isCollapsed
+      const range = has ? sel!.getRangeAt(0) : null
+      const block = shouldBlockCellSelection(
+        activeCell,
+        range ? cellOf(range.startContainer) : null,
+        range ? cellOf(range.endContainer) : null,
+        has,
+      )
+      return !block
+    },
+  })
+}
+
 export const DocTable = Node.create({
   name: 'docTable',
   group: 'block',
@@ -3604,6 +3678,7 @@ export const NativeTableSupport = Extension.create({
       tableRowDrag(),
       columnResizing({ View: null, cellMinWidth: 40, lastColumnResizable: true }),
       tableEditing({ allowTableNodeSelection: true }),
+      tableTextDragPlugin(),
       // Word never ends a body with a table: without a paragraph below it the
       // caret can never leave the table (public issue #266)
       new Plugin({
