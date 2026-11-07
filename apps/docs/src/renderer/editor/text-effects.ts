@@ -25,7 +25,7 @@ export function textEffectDecls(effect: TextEffect): string[] {
 }
 
 function cssColor(hex: string, alpha: number | undefined): string {
-  const n = parseInt(hex, 16)
+  const n = parseInt(hex.trim(), 16)
   return alpha !== undefined && alpha < 1
     ? `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
     : `#${hex}`

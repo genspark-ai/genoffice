@@ -210,7 +210,7 @@ export function parseZoteroRtf(input: string): ZoteroRtfDocument {
       if (/^[0-9a-f]{2}$/i.test(hex)) {
         i += 2
         if (!state.skip) {
-          const value = parseInt(hex, 16)
+          const value = parseInt(hex.trim(), 16)
           appendDecoded(CP1252[value] ?? String.fromCharCode(value))
         }
       }
