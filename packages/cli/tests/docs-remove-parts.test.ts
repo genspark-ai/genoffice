@@ -199,25 +199,100 @@ describe('genoffice docs apply remove_parts', () => {
     expect(names.some((name) => name.startsWith('customXml/'))).toBe(false)
   })
 
-  it('reports unknown explicit paths and is idempotent on scrubbed output', async () => {
+  it('fails the op on unknown paths and on parts the package depends on', async () => {
     const dir = tempDir()
     const file = await fixtureDocx(join(dir, 'motion.docx'))
     const out = join(dir, 'scrubbed.docx')
-    const ops = writeOps(dir, [
-      { op: 'remove_parts', kinds: ['customXml'], paths: ['customXml/missing.xml'] },
+    // a path that misses the package is an op error, not a silent ignore:
+    // a scrub must not half-apply while reporting success (genoffice#2554)
+    const unknown = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [
+        { op: 'remove_parts', kinds: ['customXml'], paths: ['customXml/missing.xml'] },
+      ]),
+      '--out',
+      out,
+      '--json',
     ])
-    const first = await run(['docs', 'apply', file, '--ops', ops, '--out', out, '--json'])
-    expect(first.code).toBe(0)
-    expect(first.json().detail.results[0].output).toContain(
-      'ignored unknown paths: customXml/missing.xml',
-    )
-    const out2 = join(dir, 'again.docx')
-    const second = await run(['docs', 'apply', out, '--ops', ops, '--out', out2, '--json'])
-    expect(second.code).toBe(0)
-    // nothing left to remove: the save returns the input bytes unchanged
-    expect(readFileSync(out2)).toEqual(readFileSync(out))
-    const dry = await run(['docs', 'apply', out, '--ops', ops, '--dry-run', '--json'])
-    expect((dry.json().detail.plan as string[]).join('\n')).toContain('nothing (already absent)')
+    expect(unknown.code).toBe(1)
+    expect(unknown.json().message).toContain('no such package part(s): customXml/missing.xml')
+    // a structural part (the package's content types) is refused outright
+    const structural = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [{ op: 'remove_parts', paths: ['[Content_Types].xml'] }]),
+      '--out',
+      out,
+      '--json',
+    ])
+    expect(structural.code).toBe(1)
+    expect(structural.json().message).toContain('refuses parts the package depends on')
+    // globs and folder paths are not part paths and fail the same way
+    const folder = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [{ op: 'remove_parts', paths: ['word/'] }]),
+      '--out',
+      out,
+      '--json',
+    ])
+    expect(folder.code).toBe(1)
+    expect(folder.json().message).toContain('no such package part(s): word/')
+    // nothing was removed by any of the failing runs
+    expect(existsSync(out)).toBe(false)
+    // an unknown field on the op is an error too
+    const unknownField = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [{ op: 'remove_parts', kinds: ['customXml'], dataBindings: [] }]),
+      '--out',
+      out,
+      '--json',
+    ])
+    expect(unknownField.code).toBe(1)
+    expect(unknownField.json().message).toContain('unknown field(s) "dataBindings"')
+  })
+
+  it('removing a customXml item by path takes its itemProps along and honors the binding', async () => {
+    const dir = tempDir()
+    const file = await fixtureDocx(join(dir, 'motion.docx'), { dataBinding: true })
+    // the fixture's control is bound: refusing is the default outcome
+    const refused = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [{ op: 'remove_parts', paths: ['customXml/item1.xml'] }]),
+      '--out',
+      join(dir, 'refused.docx'),
+      '--json',
+    ])
+    expect(refused.code).toBe(1)
+    expect(refused.json().message).toContain('would orphan content controls')
+    // strip mode unbinds the control and removes both the store and its props
+    const out = join(dir, 'stripped.docx')
+    const stripped = await run([
+      'docs',
+      'apply',
+      file,
+      '--ops',
+      writeOps(dir, [{ op: 'remove_parts', paths: ['customXml/item1.xml'], dataBinding: 'strip' }]),
+      '--out',
+      out,
+      '--json',
+    ])
+    expect(stripped.code).toBe(0)
+    const names = partNames(await zipOf(out))
+    expect(names.some((name) => name.startsWith('customXml/'))).toBe(false)
   })
 
   it('rejects a malformed remove_parts op', async () => {

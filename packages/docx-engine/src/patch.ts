@@ -31,7 +31,12 @@ import {
   stripInkRuns,
 } from './ink'
 import { resolveRelationshipTargetPath } from './parse-package'
-import { applyRemoveParts, planRemoveParts, type RemovePartsOptions } from './remove-parts'
+import {
+  applyRemoveParts,
+  planRemoveParts,
+  removePartsRefusalMessageFor,
+  type RemovePartsOptions,
+} from './remove-parts'
 import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
 import { cleanupDocxOwnedResources, referencedRelationshipIds } from './resource-cleanup'
 import { loadDocxZip } from './zip-load'
@@ -803,6 +808,10 @@ export async function saveDocx(
     // package is already scrubbed and the original bytes are the right answer
     if (options.removeParts === undefined) return originalBytes
     const plan = await planRemoveParts(originalBytes, options.removeParts)
+    // an op-level check already refuses these; this is the engine invariant:
+    // a save never applies a remove_parts set that names a structural part
+    if (plan.refusedPaths.length > 0)
+      throw new Error(removePartsRefusalMessageFor(plan.refusedPaths))
     if (plan.removedPaths.length === 0) return originalBytes
   }
 
