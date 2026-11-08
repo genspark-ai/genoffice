@@ -266,16 +266,20 @@ function cleanX14CfContent(content: string, deleted: readonly PreservedBlock[]):
     out = out.replace(/<x14:cfRule\b[^>]*?id="([^"]*)"[^>]*?>[\s\S]*?<\/x14:cfRule>/g, (m, id) =>
       ids.has(String(id).trim()) ? '' : m,
     )
-    out = out.replace(/<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g, (m) =>
-      m.includes('<x14:cfRule') ? m : '',
+    out = out.replace(
+      /<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g,
+      (m) => (m.includes('<x14:cfRule') ? m : ''),
     )
     out = out.replace(/<x14:conditionalFormatting\b[^>]*?\/>/g, '')
   }
   if (sqrefOnly.size > 0) {
-    out = out.replace(/<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g, (m) => {
-      const sq = /<xm:sqref>([^<]*)<\/xm:sqref>/.exec(m)?.[1] ?? ''
-      return sqrefOnly.has(normalizeSqref(sq)) ? '' : m
-    })
+    out = out.replace(
+      /<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g,
+      (m) => {
+        const sq = /<xm:sqref>([^<]*)<\/xm:sqref>/.exec(m)?.[1] ?? ''
+        return sqrefOnly.has(normalizeSqref(sq)) ? '' : m
+      },
+    )
   }
   if (ids.size > 0 || sqrefOnly.size > 0) {
     out = out.replace(
