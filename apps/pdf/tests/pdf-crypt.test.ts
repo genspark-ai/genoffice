@@ -37,7 +37,8 @@ describe('decryptDocument', () => {
         's3cret',
       )
       expect(neededPassword).toBe(true)
-      expect(unlockedAs).toBe('user')
+      // the fixtures' one password is both the user's and the owner's
+      expect(unlockedAs).toBe('owner')
       const plain = await PDFDocument.load(bytes, { updateMetadata: false })
       expect(plain.getPageCount()).toBe(1)
       // pdf.js opens it with no password and the words survived the decryption
@@ -150,6 +151,25 @@ describe('encryptDocument', () => {
     expect(reopened.permissions.annotating).toBe(true)
     expect(reopened.permissions.copying).toBe(false)
     expect(await textOf(reopened.bytes)).toContain(PROBE_TEXT)
+  })
+
+  it('one password protects as both: it unlocks as the owner, who may change the protection', async () => {
+    const doc = await PDFDocument.load(fixture('plain-sample.pdf'), { updateMetadata: false })
+    encryptDocument(doc, { userPassword: 'only', permissions: ALL_PERMISSIONS })
+    const sealed = await doc.save({ useObjectStreams: false })
+    expect((await decryptDocument(sealed, 'only')).unlockedAs).toBe('owner')
+  })
+
+  it("two passwords: the user's unlocks as the user, the owner's as the owner", async () => {
+    const doc = await PDFDocument.load(fixture('plain-sample.pdf'), { updateMetadata: false })
+    encryptDocument(doc, {
+      userPassword: 'reader',
+      ownerPassword: 'owner',
+      permissions: ALL_PERMISSIONS,
+    })
+    const sealed = await doc.save({ useObjectStreams: false })
+    expect((await decryptDocument(sealed, 'reader')).unlockedAs).toBe('user')
+    expect((await decryptDocument(sealed, 'owner')).unlockedAs).toBe('owner')
   })
 
   it('accepts the empty user password (protection an owner can lift)', async () => {
