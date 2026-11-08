@@ -369,13 +369,13 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     return match ? para.kind : null
   }
 
-  // Second pass: collect run-level text revisions (ins/del marks). A format
+  // Second pass: collect run-level inline revisions (ins/del marks). A format
   // change on inserted text is its own revision (Word lists both), so the
   // rPrChange ranges merge among themselves and join the list at the end.
   const formatRevs: RevisionRange[] = []
   doc.descendants((node, pos) => {
-    if (!node.isText) return
-    const rpr = node.marks.find((m) => m.type.name === 'rprChange')
+    if (!node.isInline) return
+    const rpr = node.isText ? node.marks.find((m) => m.type.name === 'rprChange') : undefined
     if (rpr) {
       const author = String(rpr.attrs.author ?? '')
       const prev = formatRevs[formatRevs.length - 1]
