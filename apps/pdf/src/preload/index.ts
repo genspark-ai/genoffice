@@ -40,6 +40,7 @@ const api: PdfApi = {
   mergePdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePdf, request),
   mergePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePages, request),
   replacePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.replacePages, request),
+  restoreFile: (request) => ipcRenderer.invoke(PDF_CHANNELS.restoreFile, request),
   setPageSize: (request) => ipcRenderer.invoke(PDF_CHANNELS.setPageSize, request),
   splitPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.splitPages, request),
   cropPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.cropPages, request),

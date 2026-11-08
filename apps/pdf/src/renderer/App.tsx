@@ -406,6 +406,18 @@ const RIBBON_TABS = [
 ] as const
 type RibbonTab = (typeof RIBBON_TABS)[number]['id'] | 'fillForm' | 'formDesign'
 
+/** The file's bytes before and after a change written to it at once */
+interface WrittenStep {
+  before: ArrayBuffer
+  after: ArrayBuffer
+}
+interface WrittenSteps {
+  undo: WrittenStep[]
+  redo: WrittenStep[]
+}
+/** Each step holds the whole file twice: a long history of them would hold that much memory */
+const MAX_WRITTEN_STEPS = 10
+
 export default function App() {
   const { lang, t } = useI18n()
   const collapse = useRibbonCollapse('genoffice-pdf-ribbon-collapsed', {
@@ -1087,6 +1099,16 @@ export default function App() {
   const [printing, setPrinting] = useState(false)
   const [undoStack, setUndoStack] = useState<EditSnapshot[]>([])
   const [redoStack, setRedoStack] = useState<EditSnapshot[]>([])
+  /** The file around each change written to it at once (Replace pages, Page size, Crop, Insert
+      PDF): Undo with no pending edit left writes it back as it was, Redo as the change left it */
+  const writtenRef = useRef<WrittenSteps>({ undo: [], redo: [] })
+  /** Their counts, for the Undo and Redo buttons */
+  const [written, setWrittenCounts] = useState({ undo: 0, redo: 0 })
+  const setWritten = (steps: WrittenSteps) => {
+    writtenRef.current = steps
+    setWrittenCounts({ undo: steps.undo.length, redo: steps.redo.length })
+  }
+  const writtenStepBusyRef = useRef(false)
   const [pwInput, setPwInput] = useState('')
   const [pwWrong, setPwWrong] = useState(false)
   const [extractDlg, setExtractDlg] = useState(false)
@@ -1671,6 +1693,7 @@ export default function App() {
       setDeleteToast(false)
       setUndoStack([])
       setRedoStack([])
+      setWritten({ undo: [], redo: [] })
       outlineDocRef.current = loaded
       // A save-reload keeps the current tree (page indices already remapped
       // above) visible while headings rescan
@@ -2278,6 +2301,7 @@ export default function App() {
     const snap = snapshot()
     setUndoStack((prev) => [...prev.slice(-49), snap])
     setRedoStack([])
+    if (writtenRef.current.redo.length > 0) setWritten({ ...writtenRef.current, redo: [] })
   }
 
   const newId = () => `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -2462,7 +2486,7 @@ export default function App() {
 
   const undo = () => {
     const top = undoStack[undoStack.length - 1]
-    if (!top) return
+    if (!top) return void stepWritten('undo')
     // Taken before applySnapshot rewrites the refs; the updater may run after it
     const cur = snapshot()
     setRedoStack((r) => [...r, cur])
@@ -2473,7 +2497,7 @@ export default function App() {
 
   const redo = () => {
     const top = redoStack[redoStack.length - 1]
-    if (!top) return
+    if (!top) return void stepWritten('redo')
     const cur = snapshot()
     setUndoStack((u) => [...u, cur])
     setRedoStack((r) => r.slice(0, -1))
@@ -6477,12 +6501,56 @@ export default function App() {
     else if ('canceled' in result) return { ok: true, canceled: true, flushed }
     return result as Exclude<R, { canceled: true }>
   }
+  /** Reloads the file a change just wrote, and keeps the file from *before* it as an Undo step */
+  const reloadWritten = async (before: ArrayBuffer): Promise<number> => {
+    const kept = writtenRef.current.undo
+    const pageCount = await loadDoc(filePath, doc)
+    const after = await window.pdfApi.readFile(filePath)
+    setWritten({ undo: [...kept.slice(-(MAX_WRITTEN_STEPS - 1)), { before, after }], redo: [] })
+    return pageCount
+  }
+
+  /** Undo or Redo of a change written at once, once no pending edit is left; false when there is none */
+  const stepWritten = (direction: 'undo' | 'redo'): boolean => {
+    const { undo: undoable, redo: redoable } = writtenRef.current
+    const steps = direction === 'undo' ? undoable : redoable
+    const step = steps[steps.length - 1]
+    if (!step || dirty || writtenStepBusyRef.current) return false
+    writtenStepBusyRef.current = true
+    void (async () => {
+      try {
+        const bytes = direction === 'undo' ? step.before : step.after
+        const result = await window.pdfApi.restoreFile({ path: filePath, bytes })
+        if (!result.ok) {
+          opFailed(result.error)
+          return
+        }
+        await loadDoc(filePath, doc)
+        setWritten(
+          direction === 'undo'
+            ? { undo: undoable.slice(0, -1), redo: [...redoable, step] }
+            : { undo: [...undoable, step], redo: redoable.slice(0, -1) },
+        )
+      } finally {
+        writtenStepBusyRef.current = false
+      }
+    })()
+    return true
+  }
+
   const rewriteInPlace = async (
     run: () => Promise<{ ok: true } | { ok: true; canceled: true } | { ok: false; error: string }>,
   ): Promise<FileOpResult> => {
-    const result = await runFileOp(run)
+    const held: { before?: ArrayBuffer } = {}
+    const result = await runFileOp(async () => {
+      held.before = await window.pdfApi.readFile(filePath)
+      return run()
+    })
     if (!result.ok || 'canceled' in result) return result
-    return { ok: true, pageCount: await loadDoc(filePath, doc) }
+    return {
+      ok: true,
+      pageCount: held.before ? await reloadWritten(held.before) : await loadDoc(filePath, doc),
+    }
   }
   const baseName = () => fileName.replace(/\.pdf$/i, '')
 
@@ -6565,12 +6633,13 @@ export default function App() {
     // the flush bakes the visible order into the file, so the anchor becomes its visible position
     const afterPageIndex = visListOf(orderRef.current).indexOf(afterOrigIdx)
     return flushThen(async () => {
+      const before = await window.pdfApi.readFile(filePath)
       const result = await window.pdfApi.insertPdf({ path: filePath, afterPageIndex })
       if (!result.ok) {
         opFailed(result.error)
         return
       }
-      if (!('canceled' in result)) await loadDoc(filePath, doc)
+      if (!('canceled' in result)) await reloadWritten(before)
     })
   }
 
@@ -8131,7 +8200,7 @@ export default function App() {
             className="qa-btn"
             data-tip={`${t('undo')} (${platformShortcuts('⌘Z')})`}
             aria-label={`${t('undo')} (${platformShortcuts('⌘Z')})`}
-            disabled={undoStack.length === 0}
+            disabled={undoStack.length === 0 && written.undo === 0}
             onClick={undo}
           >
             <IconUndo />
@@ -8140,7 +8209,7 @@ export default function App() {
             className="qa-btn"
             data-tip={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
             aria-label={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
-            disabled={redoStack.length === 0}
+            disabled={redoStack.length === 0 && written.redo === 0}
             onClick={redo}
           >
             <IconRedo />
