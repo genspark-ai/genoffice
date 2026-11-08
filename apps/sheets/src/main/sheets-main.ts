@@ -3072,6 +3072,19 @@ export function registerSheetsIpc(): void {
     // A delimited import can take a while on a big file, so the renderer
     // watches its progress and can cancel it.
     const importController = pendingImports.start(event.sender.id)
+    // only a delimited import reports progress; a plain .xlsx never does,
+    // and there is no bar to take down for it
+    let reported = false
+    const reportProgress = (progress: CsvImportProgress | null): void => {
+      if (event.sender.isDestroyed()) return
+      if (progress === null) {
+        if (!reported) return
+        reported = false
+      } else {
+        reported = true
+      }
+      event.sender.send(IPC_CHANNELS.importProgress, progress)
+    }
     let prepared: Awaited<ReturnType<typeof prepareWorkbookForOpen>>
     try {
       prepared = await prepareWorkbookForOpen(
@@ -3081,16 +3094,21 @@ export function registerSheetsIpc(): void {
         dialogParent(event),
         {
           import: {
-            onProgress: (progress) => {
-              if (event.sender.isDestroyed()) return
-              event.sender.send(IPC_CHANNELS.importProgress, progress)
-            },
+            onProgress: reportProgress,
             signal: importController.signal,
           },
         },
       )
+    } catch (error) {
+      // The user stopped the import: nothing opens, and it is not a failure
+      // to report. The renderer already knows it asked for this.
+      if (pendingImports.wasCancelled(importController)) return null
+      throw error
     } finally {
       pendingImports.finish(event.sender.id, importController)
+      // the import is over (done, failed or cancelled): the bar belongs to it
+      // and must not stand into the next open
+      reportProgress(null)
     }
     // a declined import (an .ods the user chose not to convert) opens nothing
     if (!prepared) return null

@@ -49,6 +49,19 @@ export class ImportRegistry {
   }
 
   /**
+   * Whether the import under this controller was cancelled by the user
+   * rather than having failed on its own.
+   *
+   * The two need different answers: a cancelled import opens nothing (the
+   * user asked for it to stop), while a failed one opens nothing too but
+   * has to say why. The controller knows, because the cancel is what
+   * aborted it.
+   */
+  wasCancelled(controller: AbortController): boolean {
+    return controller.signal.aborted
+  }
+
+  /**
    * Forget an import that has finished. The owner check keeps a slow import
    * from clearing the entry of the next one that started meanwhile.
    */

@@ -529,6 +529,7 @@ export const ko = {
   appBridgeUnavailable:
     '데스크톱 파일 브리지를 사용할 수 없습니다. Electron 앱을 다시 시작하십시오.',
   appOpenCanceled: '통합 문서 선택을 취소했습니다.',
+  appImportCanceled: '가져오기를 취소했습니다.',
   appOpeningWorkbook: '통합 문서를 여는 중…',
   appOpened: '{name}을(를) 열었습니다 — 셀 편집은 ⌘S로 파일에 저장합니다.',
   appOpenFailed: '통합 문서를 열 수 없습니다.',

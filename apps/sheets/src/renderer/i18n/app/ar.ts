@@ -500,6 +500,7 @@ export const ar = {
   appColumnLabel: 'العمود {col}',
   appBridgeUnavailable: 'جسر ملفات سطح المكتب غير متوفر. أعد تشغيل تطبيق Electron.',
   appOpenCanceled: 'أُلغي اختيار المصنف.',
+  appImportCanceled: 'أُلغي الاستيراد.',
   appOpeningWorkbook: 'جارٍ فتح المصنف…',
   appOpened: 'فُتح {name} — تُحفظ تعديلات الخلايا في الملف بـ ⌘S.',
   appOpenFailed: 'يتعذر فتح المصنف.',

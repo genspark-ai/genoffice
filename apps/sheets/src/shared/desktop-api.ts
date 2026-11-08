@@ -3411,9 +3411,12 @@ export interface DesktopApi {
   onChromePressed(handler: () => void): () => void
   selectWorkbook(): Promise<WorkbookFile | { passwordRequired: true; path: string } | null>
   /** How far a delimited import is: 'read' parses the text, 'write' builds the
-   *  workbook. The fraction is 0..1 within the phase. */
+   *  workbook. The fraction is 0..1 within the phase. `null` means the import
+   *  is over — the bar belongs to one import and must not outlive it. */
   onImportProgress?: (
-    listener: (progress: { readonly phase: 'read' | 'write'; readonly fraction: number }) => void,
+    listener: (
+      progress: { readonly phase: 'read' | 'write'; readonly fraction: number } | null,
+    ) => void,
   ) => (() => void) | undefined
   /** Stop the delimited import that is running for this tab */
   cancelImport?: () => Promise<void>

@@ -109,6 +109,12 @@ const desktopApi: DesktopApi = {
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
   onImportProgress(listener) {
     const wrapped = (_event: unknown, progress: unknown): void => {
+      // null means the import is over: the bar must go with it, or the next
+      // workbook opens showing the last file's percentage.
+      if (progress === null) {
+        listener(null)
+        return
+      }
       const value = progress as { phase?: unknown; fraction?: unknown } | null
       if (!value || (value.phase !== 'read' && value.phase !== 'write')) return
       if (typeof value.fraction !== 'number' || !Number.isFinite(value.fraction)) return

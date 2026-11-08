@@ -212,6 +212,7 @@ import { createAiDocument } from './ai/create-document'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
 import { ImportProgressCard } from './ImportProgressCard'
+import { useImportProgress } from './import-progress'
 import {
   a1RangeToTarget,
   planTableRefresh,
@@ -864,10 +865,7 @@ export function App({
   )
   /// how far a delimited import (a .csv/.tsv opened as a workbook) is; null
   /// when no import is running
-  const [importProgress, setImportProgress] = useState<{
-    readonly phase: 'read' | 'write'
-    readonly fraction: number
-  } | null>(null)
+  const importProgress = useImportProgress()
   const [openingWorkbook, setOpeningWorkbook] = useState(
     () =>
       queuedWorkbookAtBoot ||
@@ -1373,6 +1371,9 @@ export function App({
   /** The shell can repeat its queued-open nudge while the renderer starts.
    * Only one picker/open request may own the workbook session at a time. */
   const workbookOpeningRef = useRef(false)
+  /** The user stopped the delimited import rather than the file selection:
+   *  the open ends with nothing opened, but it is not a failed open. */
+  const importCancelledRef = useRef(false)
   /** Current session's projectId/chatId (resolved when the workbook opens) */
   const chatRefIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
 
@@ -5376,14 +5377,7 @@ export function App({
   // leave document focus on a node Univer no longer reads keys from; hand it
   // back to the cell editor unless chrome (AI composer, dialogs) holds it.
   // The main process reports how far a delimited import is; the overlay shows
-  // it and offers the cancel that stops it.
-  useEffect(() => {
-    const stop = window.desktopApi?.onImportProgress?.((progress) => {
-      setImportProgress(progress)
-    })
-    return () => stop?.()
-  }, [])
-
+  // it and offers the cancel that stops it (see useImportProgress).
   // Runs from finishOpening, in the same tick that clears openingWorkbook: the
   // <main inert> that guarded the load is still in the DOM until React commits,
   // and an inert subtree refuses focus. The shell also hands webContents focus
@@ -5415,6 +5409,8 @@ export function App({
     if (workbookOpeningRef.current) return
     workbookOpeningRef.current = true
     setOpeningWorkbook(true)
+    // each open starts fresh: a cancel belongs to the open it happened in
+    importCancelledRef.current = false
     const finishOpening = (): void => {
       workbookOpeningRef.current = false
       setOpeningWorkbook(false)
@@ -5426,7 +5422,9 @@ export function App({
       }
       let selected = await window.desktopApi.selectWorkbook()
       if (!selected) {
-        setMessage(t('appOpenCanceled'))
+        // The import was cancelled, not the file selection: the user picked a
+        // file and then stopped the conversion.
+        setMessage(importCancelledRef.current ? t('appImportCanceled') : t('appOpenCanceled'))
         finishOpening()
         return
       }
@@ -5448,7 +5446,7 @@ export function App({
         }
         selected = decryptedWorkbook
         if (!selected) {
-          setMessage(t('appOpenCanceled'))
+          setMessage(importCancelledRef.current ? t('appImportCanceled') : t('appOpenCanceled'))
           finishOpening()
           return
         }
@@ -6143,6 +6141,9 @@ export function App({
             label={t('appOpeningWorkbook')}
             cancelLabel={t('appDialogCancel')}
             onCancel={() => {
+              // the open ends with nothing opened, but it is the user's own
+              // doing: it is not a failed open and not a cancelled selection
+              importCancelledRef.current = true
               void window.desktopApi?.cancelImport?.()
             }}
           />

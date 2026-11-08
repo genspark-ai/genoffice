@@ -70,4 +70,22 @@ describe('the import registry', () => {
     expect(registry.cancel(7)).toBe(true)
     expect(second.signal.aborted).toBe(true)
   })
+
+  it('tells a cancelled import from one that failed on its own', () => {
+    const registry = new ImportRegistry()
+    const controller = registry.start(7)
+    expect(registry.wasCancelled(controller)).toBe(false)
+    registry.cancel(7)
+    expect(registry.wasCancelled(controller)).toBe(true)
+  })
+
+  it('does not call a failed import cancelled', () => {
+    // An import that failed on its own (a file too large, a broken archive)
+    // has to report the reason; only the user's own cancel opens nothing and
+    // says nothing.
+    const registry = new ImportRegistry()
+    const controller = registry.start(7)
+    registry.finish(7, controller)
+    expect(registry.wasCancelled(controller)).toBe(false)
+  })
 })
