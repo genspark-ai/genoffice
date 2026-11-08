@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  csvGridShape,
+  csvRows,
   decodeCsvBuffer,
   isNumericCell,
   MAX_CSV_COLS,
@@ -220,5 +222,32 @@ describe('isNumericCell', () => {
     expect(isNumericCell('12a')).toBe(false)
     expect(isNumericCell('1,000')).toBe(false)
     expect(isNumericCell(' 123')).toBe(false)
+  })
+})
+
+describe('csvRows', () => {
+  it('yields the same rows as the whole-grid parse', () => {
+    const csv = 'name,note\n"Doe, John","says ""hi"""\nAlice,"line one\nline two"\n'
+    expect([...csvRows(csv, ',')]).toEqual(parseCsv(csv, ','))
+  })
+
+  it('drops the empty rows a trailing newline leaves behind', () => {
+    expect([...csvRows('a,b\n\n', ',')]).toEqual([['a', 'b']])
+    expect([...csvRows('a,b\n\n\nc\n', ',')]).toEqual([['a', 'b'], [''], [''], ['c']])
+    expect([...csvRows('a,b\n\nc', ',')]).toEqual([['a', 'b'], [''], ['c']])
+  })
+
+  it('enforces the row and column caps while it streams', () => {
+    expect(() => [...csvRows('a\n'.repeat(MAX_CSV_ROWS + 1), ',')]).toThrow(/too many rows/)
+    expect(() => [...csvRows('a,'.repeat(MAX_CSV_COLS) + 'b', ',')]).toThrow(/too many columns/)
+  })
+})
+
+describe('csvGridShape', () => {
+  it('reports the rows and the columns that carry a value', () => {
+    expect(csvGridShape('a,b,c\n1,2,3\n', ',')).toEqual({ rows: 2, columns: 3 })
+    // a trailing empty cell does not make the sheet wider
+    expect(csvGridShape('a,b,\n1,2,\n', ',')).toEqual({ rows: 2, columns: 2 })
+    expect(csvGridShape('', ',')).toEqual({ rows: 0, columns: 1 })
   })
 })

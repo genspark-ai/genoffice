@@ -8,7 +8,7 @@ import {
   toA1Address,
   type CellEdit,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
-import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
 import { createEditJournal, recordSetRangeValues, toSaveEdits } from '../src/renderer/edit-journal'
 import { buildEditFixture } from './fixture-builder'
 

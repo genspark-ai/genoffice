@@ -1,9 +1,9 @@
 import {
-  csvToXlsxBuffer,
   decodeCsvBuffer,
   parseCsv,
   sniffDelimiter,
 } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { csvToXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import-xlsx'
 
 export interface CsvInfo {
   rows: number
