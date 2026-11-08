@@ -80,7 +80,7 @@ const sheetNameSchema = z
   .min(1)
   .max(31)
   .refine((name) => !/[:\\/?*[\]]/.test(name))
-const hexColorSchema = z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/)
+const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
 // "#RRGGBB", a theme slot ("accent1", "accent1+40%", "dk2-25%") or {theme, tint}
 const styleColorSchema = z
   .union([

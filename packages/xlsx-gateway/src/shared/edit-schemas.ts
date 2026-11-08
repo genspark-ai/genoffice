@@ -46,7 +46,7 @@ export const drawingAnchorSchema = z
 /// rewritten, instead of letting Apply succeed and every save fail.
 export const MAX_PATCH_ENTRY_BYTES = 500 * 1024 * 1024
 
-export const hexColorSchema = z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/)
+export const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
 
 /// styles.xml color: literal rgb, or a theme slot Excel re-resolves on theme change.
 export const themeColorSchema = z
