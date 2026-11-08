@@ -12,6 +12,17 @@ import {
 } from '../src/renderer/page-layout-actions'
 import type { LazyWorkbookState, UniverRuntime } from '../src/renderer/univer-state'
 
+vi.mock('../src/renderer/univer-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/renderer/univer-sync')>()
+  return {
+    ...actual,
+    // The print path now awaits the file-state gate before laying out the
+    // sheet; this test exercises the formula-settle gate, not per-sheet
+    // indexing, so the gate is already satisfied.
+    ensureSheetFileState: async () => true,
+  }
+})
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /// A fully loaded one-row workbook (A1 = 2, B1 = 3, C1 = A1*B1) whose formula

@@ -18,6 +18,10 @@ vi.mock('../src/renderer/univer-sync', async (importOriginal) => {
   return {
     ...actual,
     preloadEntireWorkbook: vi.fn(),
+    // The print path now awaits the file-state gate before laying out the
+    // sheet; these tests exercise the readiness coordination, not the
+    // per-sheet indexing, so the gate is already satisfied.
+    ensureSheetFileState: vi.fn().mockResolvedValue(true),
   }
 })
 
