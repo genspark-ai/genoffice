@@ -27,7 +27,7 @@ import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './the
 import { settleFormulas } from './formula-settle'
 import { startFullLoad } from './full-load'
 import { fitsFullLoad, workbookCellCounts } from './load-budget'
-import { loadVisibleRange } from './univer-sync'
+import { ensureSheetFileState, loadVisibleRange } from './univer-sync'
 import {
   layoutSheetPrint,
   PrintError,
@@ -386,6 +386,11 @@ async function sheetPrintDocument(
   withVisuals: boolean,
 ): Promise<SheetPrintDocument> {
   const sheetId = worksheet.getSheetId()
+  // A sheet the viewport never visited has no captured file state, so its
+  // page setup (and manual breaks) would print with the defaults instead of
+  // the file's. Index it on demand; when that does not finish in time, the
+  // defaults print as before.
+  if (state) await ensureSheetFileState(state, sheetId, ctx.lazyWorkbookRef)
   const journal = { ...(state?.editJournal.pageSetup.get(sheetId) ?? {}), ...overrides }
   const fileSetup = state?.sheetFilePageSetups.get(sheetId) ?? null
   const fileSheet = state?.file.sheets.find((sheet) => sheet.id === sheetId)

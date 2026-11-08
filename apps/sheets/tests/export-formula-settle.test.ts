@@ -84,6 +84,8 @@ function harness(pendingFormula = true) {
     editJournal: createEditJournal(),
     sheetFilePageSetups: new Map(),
     sheetPageBreaks: new Map(),
+    sheetProtections: new Map(),
+    sheetProtectedRanges: new Map(),
     showFormulaSheets: new Set<string>(),
   } as unknown as LazyWorkbookState
   const refs = {
