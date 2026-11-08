@@ -89,8 +89,6 @@ describe('thinkingShapeFor', () => {
 
   it('families whose surface is still documentation-only carry no knob', () => {
     for (const id of [
-      'deepseek-v4-pro',
-      'deepseek-flash',
       'kimi-k3.1-pro',
       'glm-5.2',
       'glm-5.3',
@@ -101,6 +99,27 @@ describe('thinkingShapeFor', () => {
     ]) {
       expect(thinkingShapeFor(id).levels, id).toEqual([])
     }
+  })
+
+  it('deepseek takes the OpenAI effort ladder on both id spellings, every rung probed', () => {
+    expect(thinkingShapeFor('deepseek-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(thinkingShapeFor('deepseek-v4-pro')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    // the GenOffice-facing alias spells it with the hyphen (DEEPSEEK_V41_FLASH)
+    expect(thinkingShapeFor('deep-seek-v4.1-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    // DeepSeek's chat-completions route accepts the upper rungs as-is (probed
+    // 200, 2026-11-08), so no Responses-only gating applies
+    expect(thinkingShapeFor('deepseek-flash', 'openai-compatible')).toEqual(
+      thinkingShapeFor('deepseek-flash'),
+    )
   })
 
   it('ling/spark/mimo are switches; qwen and grok keep their documented fields', () => {

@@ -10,7 +10,7 @@
  *
  * Only surfaces documented by the vendor's own API are listed. The vendors
  * whose effort field is still documentation-only (GLM, Doubao, MiniMax,
- * DeepSeek, Kimi, Hunyuan, Mistral) stay knobless until a live probe confirms
+ * Kimi, Hunyuan, Mistral) stay knobless until a live probe confirms
  * them: a wrong row costs a 400 on every request for that provider.
  *
  * Resolution order mirrors the temperature rule: a user's stored pick wins,
@@ -123,7 +123,17 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
     const levels = major > 4 || (major === 4 && minor >= 6) ? GROK_XHIGH_LEVELS : GROK_LEVELS
     return { kind: 'openai-effort', levels }
   }
-  // Doc-only families (GLM, Doubao, MiniMax, DeepSeek, Kimi, Hunyuan, Mistral)
+  // DeepSeek takes the OpenAI effort field on its unified thinking models
+  // (api-docs.deepseek.com/guides/thinking_mode). Every canonical rung
+  // answered 200 live-probed (2026-11-08, deepseek-flash): `none` included,
+  // returning zero reasoning like the separate thinking.type disabled toggle,
+  // so the ladder maps straight onto reasoning_effort with no toggle riding
+  // along. The GenOffice-facing alias spells it "deep-seek" (DEEPSEEK_V41_FLASH);
+  // legacy and wire ids spell it "deepseek".
+  if (/(^|\/)deep-?seek/.test(id)) {
+    return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
+  }
+  // Doc-only families (GLM, Doubao, MiniMax, Kimi, Hunyuan, Mistral)
   // deliberately carry no knob until a live probe confirms their surface.
   return { kind: 'openai-effort', levels: [] }
 }
