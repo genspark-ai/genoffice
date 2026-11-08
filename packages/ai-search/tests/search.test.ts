@@ -20,6 +20,7 @@ afterEach(() => {
   delete process.env.EXA_API_KEY
   delete process.env.FIRECRAWL_API_KEY
   delete process.env.KEENABLE_API_KEY
+  delete process.env.SPECSTREAM_API_KEY
 })
 
 function mockFetch(
@@ -392,6 +393,84 @@ describe('webSearch (SearchOptions)', () => {
   })
 })
 
+describe('webSearch (SpecStream)', () => {
+  it('reads the ranked sources with a Bearer key and applies the limit locally', async () => {
+    const calls: { url: string; headers: any }[] = []
+    mockFetch((url, init) => {
+      calls.push({ url, headers: init?.headers })
+      return {
+        ok: true,
+        json: {
+          data: {
+            kind: 'fact',
+            answer: { value: 'Paris', page: 'https://a.example/' },
+            rows: [],
+            sources: [
+              { url: 'https://a.example/', title: 'A', snippet: 'x'.repeat(900), cited: true },
+              { url: 'javascript:alert(1)', title: 'Dropped', snippet: 'no' },
+              { url: 'https://b.example/', snippet: 'second' },
+              { url: 'https://c.example/', title: 'C', snippet: 'third' },
+            ],
+          },
+          error: null,
+        },
+      }
+    })
+    const r = await webSearch('capital of France', 2, {
+      useGsk: false,
+      specstreamKey: 'ss-key',
+      prefer: 'specstream',
+    })
+    expect(calls).toHaveLength(1)
+    const u = new URL(calls[0].url)
+    expect(u.origin + u.pathname).toBe('https://api.specstream.ai/v1/web-search')
+    expect(u.searchParams.get('q')).toBe('capital of France')
+    expect(calls[0].headers.Authorization).toBe('Bearer ss-key')
+    expect(r.method).toBe('specstream')
+    expect(r.answer).toBe('Paris')
+    expect(r.results).toEqual([
+      { title: 'A', url: 'https://a.example/', snippet: 'x'.repeat(500) },
+      { title: 'https://b.example/', url: 'https://b.example/', snippet: 'second' },
+    ])
+  })
+
+  it('omits a null answer and reads the key from SPECSTREAM_API_KEY', async () => {
+    process.env.SPECSTREAM_API_KEY = 'env-key'
+    let auth = ''
+    mockFetch((_url, init) => {
+      auth = (init?.headers as any).Authorization
+      return {
+        ok: true,
+        json: {
+          data: {
+            answer: null,
+            sources: [{ url: 'https://a.example/', title: 'A', snippet: 's' }],
+          },
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, prefer: 'specstream' })
+    expect(auth).toBe('Bearer env-key')
+    expect(r.method).toBe('specstream')
+    expect('answer' in r).toBe(false)
+  })
+
+  it('makes no request without a key and falls through when the call fails', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      return { ok: false }
+    })
+    const r = await webSearch('q', 2, { useGsk: false, specstreamKey: '', prefer: 'specstream' })
+    expect(urls.some((u) => u.includes('specstream.ai'))).toBe(false)
+    expect(r.method).not.toBe('specstream')
+    urls.length = 0
+    const r2 = await webSearch('q', 2, { useGsk: false, specstreamKey: 'k', prefer: 'specstream' })
+    expect(urls.some((u) => u.includes('api.specstream.ai'))).toBe(true)
+    expect(r2.method).not.toBe('specstream')
+  })
+})
+
 describe('webSearch (Exa)', () => {
   it('parses results with the capped text as the snippet', async () => {
     process.env.EXA_API_KEY = 'exa-key'
@@ -567,6 +646,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     }
@@ -584,6 +664,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     }
@@ -605,6 +686,7 @@ describe('search-tools', () => {
           exa: { apiKey: 'e' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     }
@@ -622,6 +704,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: 'fc-1' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     }
@@ -644,6 +727,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     }

@@ -1,11 +1,12 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
  * then Serply, SearchApi, Tavily, Parallel (whose free Search MCP answers keyless), Exa,
- * Firecrawl and Keenable (keyless only when selected), before the DuckDuckGo last resort. Runs
+ * Firecrawl, Keenable (keyless only when selected) and SpecStream, before the DuckDuckGo last resort. Runs
  * in the main process (Node fetch / child process) to avoid renderer CORS; the Serper key reuses
  * SERPER_API_KEY, the Serply key reuses SERPLY_API_KEY, the SearchApi key reuses
  * SEARCHAPI_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses PARALLEL_API_KEY, Exa
- * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY and Keenable uses KEENABLE_API_KEY.
+ * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY, Keenable uses KEENABLE_API_KEY and
+ * SpecStream uses SPECSTREAM_API_KEY.
  * For Genspark auth see ./gsk.ts (GenOffice sign-in or explicit GSK_API_KEY).
  */
 
@@ -33,6 +34,7 @@ const PARALLEL_KEY = () => process.env.PARALLEL_API_KEY ?? ''
 const EXA_KEY = () => process.env.EXA_API_KEY ?? ''
 const FIRECRAWL_KEY = () => process.env.FIRECRAWL_API_KEY ?? ''
 const KEENABLE_KEY = () => process.env.KEENABLE_API_KEY ?? ''
+const SPECSTREAM_KEY = () => process.env.SPECSTREAM_API_KEY ?? ''
 
 /**
  * Backend selection for one search. Keys default to the SERPER_API_KEY /
@@ -50,9 +52,18 @@ export interface SearchOptions {
   exaKey?: string
   firecrawlKey?: string
   keenableKey?: string
+  specstreamKey?: string
   /** which backend to try first (default serper) */
   prefer?:
-    'serper' | 'serply' | 'searchapi' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
+    | 'serper'
+    | 'serply'
+    | 'searchapi'
+    | 'tavily'
+    | 'parallel'
+    | 'exa'
+    | 'firecrawl'
+    | 'keenable'
+    | 'specstream'
 }
 
 const SEARCH_BACKENDS = new Set([
@@ -64,6 +75,7 @@ const SEARCH_BACKENDS = new Set([
   'exa',
   'firecrawl',
   'keenable',
+  'specstream',
 ] as const)
 
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
@@ -78,6 +90,7 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
     keenableKey: o.keenableKey ?? KEENABLE_KEY(),
+    specstreamKey: o.specstreamKey ?? SPECSTREAM_KEY(),
     // `prefer` arrives from an ipc payload cast with `as`; an unknown id would make the
     // dispatch call a missing function.
     prefer:
@@ -213,6 +226,53 @@ async function searchapiWebSearch(
           if (results.length >= maxResults) break
         }
         return results.length ? { results, method: 'searchapi' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * SpecStream's Search API (GET /v1/web-search, Bearer key). The reply is wrapped in `data` and lists the search results
+ * read in rank order under `sources`; `answer.value` is set only when the vote clears the
+ * service's confidence bar. One call returns one set of sources, so the limit is applied here.
+ */
+const SPECSTREAM_SNIPPET_CHARS = 500
+
+async function specstreamWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  key = key.trim()
+  if (!key) return null
+  try {
+    const params = new URLSearchParams({ q: query })
+    return await fetchWithTimeout(
+      `https://api.specstream.ai/v1/web-search?${params}`,
+      { headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' } },
+      async (resp) => {
+        if (!resp.ok) return null
+        const envelope = asRecord(await resp.json())
+        const data = asRecord(envelope.data)
+        const raw: unknown[] = Array.isArray(data.sources) ? data.sources : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          if (typeof o.url !== 'string' || !/^https?:\/\//i.test(o.url)) continue
+          results.push({
+            title: typeof o.title === 'string' && o.title ? o.title : o.url,
+            url: o.url,
+            snippet: String(o.snippet ?? '').slice(0, SPECSTREAM_SNIPPET_CHARS),
+          })
+        }
+        if (!results.length) return null
+        const answerValue = asRecord(data.answer).value
+        return typeof answerValue === 'string' && answerValue
+          ? { results, answer: answerValue, method: 'specstream' }
+          : { results, method: 'specstream' }
       },
     )
   } catch {
@@ -517,6 +577,7 @@ export async function webSearch(
     exa: () => exaWebSearch(o.exaKey, q, max),
     firecrawl: () => firecrawlWebSearch(o.firecrawlKey, q, max),
     keenable: () => keenableWebSearch(o.keenableKey, q, max, o.prefer === 'keenable'),
+    specstream: () => specstreamWebSearch(o.specstreamKey, q, max),
   }
   const order = [
     o.prefer,
@@ -530,6 +591,7 @@ export async function webSearch(
         'exa',
         'firecrawl',
         'keenable',
+        'specstream',
       ] as const
     ).filter((id) => id !== o.prefer),
   ]

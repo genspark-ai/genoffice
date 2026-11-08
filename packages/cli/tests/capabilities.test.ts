@@ -86,6 +86,18 @@ describe('genoffice capabilities', () => {
     expect(d.image_search).toEqual({ available: true, via: 'serply' })
   })
 
+  it('counts a SpecStream key as search only', async () => {
+    const settings = settingsFile(tempDir(), {
+      search: { provider: 'specstream', providers: { specstream: { apiKey: 'k' } } },
+    })
+    const r = await run(['capabilities', '--json'], {
+      env: { ...process.env, GENOFFICE_AI_SETTINGS: settings },
+    })
+    const d = r.json().detail
+    expect(d.search).toEqual({ available: true, via: 'specstream' })
+    expect(d.image_search.available).toBe(false)
+  })
+
   it('counts a SearchApi key as search + image search', async () => {
     const settings = settingsFile(tempDir(), {
       search: { provider: 'searchapi', providers: { searchapi: { apiKey: 'k' } } },

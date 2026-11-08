@@ -22,6 +22,7 @@ export const AI_SEARCH_PROVIDERS: AiSearchProviderMeta[] = [
   { id: 'firecrawl', label: 'Firecrawl', keyPlaceholder: 'fc-...', imageSearch: false },
   // keenable: keyless like Parallel; a key only raises the rate limits
   { id: 'keenable', label: 'Keenable', keyPlaceholder: 'Keenable API key', imageSearch: false },
+  { id: 'specstream', label: 'SpecStream', keyPlaceholder: 'SpecStream API key', imageSearch: false },
 ]
 
 export function defaultAiSearchSettings(): AiSearchSettings {
@@ -36,6 +37,7 @@ export function defaultAiSearchSettings(): AiSearchSettings {
       exa: { apiKey: '' },
       firecrawl: { apiKey: '' },
       keenable: { apiKey: '' },
+      specstream: { apiKey: '' },
     },
   }
 }
@@ -55,6 +57,7 @@ export function resolveAiSearchSettings(
     'exa',
     'firecrawl',
     'keenable',
+    'specstream',
   ] as const) {
     const key = stored.providers?.[id]?.apiKey
     if (typeof key === 'string') providers[id] = { apiKey: key.trim() }

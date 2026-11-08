@@ -20,6 +20,7 @@ describe('search settings', () => {
         exa: { apiKey: '' },
         firecrawl: { apiKey: '' },
         keenable: { apiKey: '' },
+        specstream: { apiKey: '' },
       },
     })
     expect(defaultAiSettings().search?.provider).toBe('genspark')
@@ -55,6 +56,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            specstream: { apiKey: '' },
           },
         },
       }),
@@ -72,6 +74,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            specstream: { apiKey: '' },
           },
         },
       }),
@@ -89,6 +92,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            specstream: { apiKey: '' },
           },
         },
       }),
@@ -130,6 +134,26 @@ describe('SearchApi search settings', () => {
         search: {
           ...settings,
           providers: { ...settings.providers, searchapi: { apiKey: '  ' } },
+        },
+      }),
+    ).toBe('genspark')
+  })
+})
+
+describe('SpecStream search settings', () => {
+  it('restores and trims a saved SpecStream key and activates it only with a key', () => {
+    const settings = resolveAiSearchSettings({
+      provider: 'specstream',
+      providers: { specstream: { apiKey: ' ss-key ' } } as never,
+    })
+    expect(settings.provider).toBe('specstream')
+    expect(settings.providers.specstream.apiKey).toBe('ss-key')
+    expect(activeSearchProvider({ search: settings })).toBe('specstream')
+    expect(
+      activeSearchProvider({
+        search: {
+          ...settings,
+          providers: { ...settings.providers, specstream: { apiKey: '  ' } },
         },
       }),
     ).toBe('genspark')
@@ -201,6 +225,7 @@ describe('exa and firecrawl providers', () => {
           exa: { apiKey: id === 'exa' ? apiKey : '' },
           firecrawl: { apiKey: id === 'firecrawl' ? apiKey : '' },
           keenable: { apiKey: '' },
+          specstream: { apiKey: '' },
         },
       },
     })
