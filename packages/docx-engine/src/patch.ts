@@ -801,9 +801,16 @@ export async function saveDocx(
   if (isUnchanged && !scrubPersonalInfo) {
     // remove_parts may be the only requested change: when nothing matches, the
     // package is already scrubbed and the original bytes are the right answer
-    if (options.removeParts === undefined) return originalBytes
-    const plan = await planRemoveParts(originalBytes, options.removeParts)
-    if (plan.removedPaths.length === 0) return originalBytes
+    if (options.removeParts === undefined) {
+      // the final save drops orphan move-range markers (cleanStoryMoveRanges);
+      // a document that only carries them must not take the no-op shortcut, or
+      // an accept / reject would report success yet save the junk back
+      // (genoffice#2554: the markers ride in the body, so the body is the check)
+      if (cleanMoveRangeMarkers(documentXml).removed === 0) return originalBytes
+    } else {
+      const plan = await planRemoveParts(originalBytes, options.removeParts)
+      if (plan.removedPaths.length === 0) return originalBytes
+    }
   }
 
   const zip = await loadDocxZip(originalBytes)

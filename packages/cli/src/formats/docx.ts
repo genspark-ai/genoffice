@@ -6,6 +6,7 @@ import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
   buildBlankDocx,
+  cleanMoveRangeMarkers,
   compareDocuments,
   countTrackedChangesXml,
   findChartWorkbookPath,
@@ -314,6 +315,16 @@ export async function countRevisionsElsewhere(doc: OpenDocument): Promise<number
   return n
 }
 
+/** orphan move-range markers (unpaired starts / ends) in the body and the story parts; the save drops them */
+async function countOrphanMoveRangeMarkers(doc: OpenDocument): Promise<number> {
+  let n = 0
+  const zip = await JSZip.loadAsync(doc.parsed.internal.originalBytes)
+  const body = zip.file('word/document.xml')
+  if (body) n += cleanMoveRangeMarkers(await body.async('string')).removed
+  for (const xml of (await revisionParts(doc)).values()) n += cleanMoveRangeMarkers(xml).removed
+  return n
+}
+
 /**
  * wrap_content_control / unwrap_content_control: the control is written on
  * save, so the op only records the change; the document body is untouched.
@@ -419,7 +430,18 @@ async function applyRevisionOp(
       doc.side.revisionPartsDirty.add(path)
     }
   }
-  if ('error' in body && elsewhere === 0) return { error: body.error }
+  if ('error' in body && elsewhere === 0) {
+    // A file whose only tracked-change markup is orphan move-range markers
+    // reports no pending changes, but the save already drops those markers
+    // (genoffice#2349): accepting / rejecting such a file should succeed and
+    // let the save clean them instead of rejecting it (genoffice#2554 case 3).
+    const orphans = await countOrphanMoveRangeMarkers(doc)
+    if (orphans > 0)
+      return {
+        output: `No tracked changes remain. ${orphans} orphan move-range marker(s) will be dropped when the document is saved.`,
+      }
+    return { error: body.error }
+  }
   const verb = mode === 'accept' ? 'Accepted' : 'Rejected'
   const done = 'error' in body ? [] : body.entries
   const parts: string[] = []

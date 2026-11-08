@@ -133,3 +133,122 @@ describe('genoffice docs apply accept/reject move-range leftovers', () => {
     expect(xml).toContain('<w:moveFromRangeEnd w:id="1"/>')
   })
 })
+
+/**
+ * genoffice#2555: a w:ins / w:del whose only run holds an atom (a footnote
+ * reference, a line break) used to be invisible to the revision list, so
+ * accept_changes left the wrapper in the file — and a document whose only
+ * revision was such a wrapper was rejected outright as having no pending
+ * changes. genoffice#2554 (case 3): the same rejection hit files whose only
+ * markup is orphan move-range markers, which the save already strips
+ * (genoffice#2349) — accept / reject now succeed and let the save clean them.
+ */
+describe('accept/reject wrappers around atomic runs and orphan-only files', () => {
+  const FN_XML =
+    XML_DECL +
+    '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>' +
+    '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>' +
+    '<w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> Note.</w:t></w:r></w:p></w:footnote></w:footnotes>'
+  const REV = 'w:author="A" w:date="2026-01-01T00:00:00Z"'
+
+  async function buildFnFixture(path: string, body: string): Promise<string> {
+    const zip = new JSZip()
+    zip.file(
+      '[Content_Types].xml',
+      XML_DECL +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>' +
+        '</Types>',
+    )
+    zip.file(
+      '_rels/.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file('word/document.xml', documentXml(body))
+    zip.file('word/footnotes.xml', FN_XML)
+    zip.file(
+      'word/_rels/document.xml.rels',
+      XML_DECL +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rIdFn" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>' +
+        '</Relationships>',
+    )
+    zip.forEach((_path, entry) => {
+      entry.date = new Date(Date.UTC(2026, 0, 1))
+    })
+    writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }))
+    return path
+  }
+
+  const FNREF_INS = `<w:p><w:r><w:t>Text.</w:t></w:r><w:ins w:id="1" ${REV}><w:r><w:footnoteReference w:id="1"/></w:r></w:ins><w:ins w:id="9" ${REV}><w:r><w:t> other change</w:t></w:r></w:ins></w:p>`
+  const FNREF_INS_ONLY = `<w:p><w:r><w:t>Text.</w:t></w:r><w:ins w:id="1" ${REV}><w:r><w:footnoteReference w:id="1"/></w:r></w:ins></w:p>`
+  const FNREF_DEL = `<w:p><w:r><w:t>Text.</w:t></w:r><w:del w:id="1" ${REV}><w:r><w:footnoteReference w:id="1"/></w:r></w:del><w:ins w:id="9" ${REV}><w:r><w:t> other change</w:t></w:r></w:ins></w:p>`
+
+  it('accept all clears a wrapper that only holds a footnote reference', async () => {
+    const dir = tempDir()
+    const file = await buildFnFixture(join(dir, 'fnref-ins.docx'), FNREF_INS)
+    const out = join(dir, 'accepted.docx')
+    const ops = writeOps(dir, [{ op: 'accept_changes', all: true }])
+    const result = await run(['docs', 'apply', file, '--ops', ops, '--out', out, '--json'])
+    expect(result.code).toBe(0)
+    const xml = await documentXmlOf(out)
+    expect(xml).not.toMatch(/<w:(?:ins|del) [^>]*w:id="/)
+    // the accepted insertion keeps its marker, now unwrapped
+    expect(xml).toContain('<w:footnoteReference w:id="1"/>')
+    expect(xml).toContain('other change')
+  })
+
+  it('a file whose only revision is such a wrapper is accepted, not rejected', async () => {
+    const dir = tempDir()
+    const file = await buildFnFixture(join(dir, 'fnref-only.docx'), FNREF_INS_ONLY)
+    const out = join(dir, 'accepted.docx')
+    const ops = writeOps(dir, [{ op: 'accept_changes', all: true }])
+    const result = await run(['docs', 'apply', file, '--ops', ops, '--out', out, '--json'])
+    expect(result.code).toBe(0)
+    const output = result.json().detail.results[0].output as string
+    expect(output).toContain('No tracked changes remain.')
+    const xml = await documentXmlOf(out)
+    expect(xml).not.toMatch(/<w:(?:ins|del) [^>]*w:id="/)
+    expect(xml).toContain('<w:footnoteReference w:id="1"/>')
+  })
+
+  it('accepting a deleted footnote reference removes it; the wrapper is gone', async () => {
+    const dir = tempDir()
+    const file = await buildFnFixture(join(dir, 'fnref-del.docx'), FNREF_DEL)
+    const out = join(dir, 'accepted.docx')
+    const ops = writeOps(dir, [{ op: 'accept_changes', all: true }])
+    const result = await run(['docs', 'apply', file, '--ops', ops, '--out', out, '--json'])
+    expect(result.code).toBe(0)
+    const xml = await documentXmlOf(out)
+    expect(xml).not.toMatch(/<w:(?:ins|del) [^>]*w:id="/)
+    expect(xml).not.toContain('<w:footnoteReference')
+  })
+
+  it('accept / reject succeeds on a file whose only markup is orphan move-range markers', async () => {
+    const orphanBody = '<w:p><w:moveFromRangeEnd w:id="1"/><w:r><w:t>P1</w:t></w:r></w:p>'
+    for (const op of [
+      { op: 'accept_changes', all: true },
+      { op: 'reject_changes', all: true },
+    ]) {
+      const dir = tempDir()
+      const file = await buildFixture(join(dir, 'orphan.docx'), orphanBody)
+      const out = join(dir, 'cleaned.docx')
+      const ops = writeOps(dir, [op])
+      const result = await run(['docs', 'apply', file, '--ops', ops, '--out', out, '--json'])
+      expect(result.code).toBe(0)
+      const output = result.json().detail.results[0].output as string
+      expect(output).toContain('No tracked changes remain.')
+      expect(output).toContain('orphan move-range marker')
+      const xml = await documentXmlOf(out)
+      expect(xml).not.toMatch(MOVE_MARKUP)
+      expect(xml).toContain('P1')
+    }
+  })
+})
