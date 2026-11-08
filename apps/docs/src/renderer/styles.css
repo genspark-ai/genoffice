@@ -11907,6 +11907,7 @@ body.docs-crop-active
 }
 
 .print-options fieldset {
+  min-width: 0;
   margin: 0;
   padding: 8px 10px 6px;
   border: 1px solid var(--border);
@@ -11978,6 +11979,7 @@ body.docs-crop-active
 
 .print-options .print-field {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 0 0 8px;
@@ -11990,7 +11992,8 @@ body.docs-crop-active
 }
 
 .print-options .print-field .print-select {
-  flex: 1.6;
+  flex: 1.6 1 auto;
+  min-width: 0;
   width: auto;
   margin: 0;
 }
