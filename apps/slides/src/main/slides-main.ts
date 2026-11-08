@@ -4814,6 +4814,7 @@ export function registerSlidesIpc(): void {
         layout: op.layout ?? 'full',
         ...(op.notes ? { notes: op.notes } : {}),
         ...(op.orientation ? { orientation: op.orientation } : {}),
+        ...(op.order ? { order: op.order } : {}),
         ...(op.frame ? { frame: true } : {}),
       })
       const owner = hostWindowFor(e.sender) ?? dialogParent()
