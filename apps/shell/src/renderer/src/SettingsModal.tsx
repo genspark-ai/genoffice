@@ -51,6 +51,7 @@ import type {
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import { FoundSkills } from './FoundSkills'
+import { PdfZoomPreference } from './PdfZoomPreference'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -2270,6 +2271,7 @@ export function SettingsModal({
                     </button>
                   }
                 />
+                <PdfZoomPreference />
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">

@@ -1,4 +1,5 @@
 import type { AiPanelPrefs } from '@genoffice/ui'
+import type { PdfDefaultZoom } from './default-zoom'
 import type { Lang } from '@genoffice/i18n'
 import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
 import type { PrintDuplex, PrintJobOptions, PrinterInfo } from '@genoffice/electron-utils/print-job'
@@ -56,6 +57,7 @@ export const PDF_CHANNELS = {
   addSignature: 'pdf:add-signature',
   removeSignature: 'pdf:remove-signature',
   getUsername: 'pdf:get-username',
+  getDefaultZoom: 'pdf:get-default-zoom',
   dirtyChanged: 'pdf:dirty-changed',
   closeSaveRequest: 'pdf:close-save-request',
   closeSaveResult: 'pdf:close-save-result',
@@ -1202,6 +1204,7 @@ export interface PdfApi {
   removeSavedSignature(id: string): Promise<SavedSignature[]>
   /** Settings → General user name (the OS account name when unset), used as the default author of new note comments */
   getUsername(): Promise<string>
+  getDefaultZoom(): Promise<PdfDefaultZoom>
   onUsernameChanged(handler: (name: string) => void): () => void
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void

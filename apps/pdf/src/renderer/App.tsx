@@ -120,6 +120,7 @@ import {
   captureZoomAnchor,
   loadViewState,
   saveViewState,
+  openingViewState,
   zoomAnchorY,
 } from './view-state'
 import type { PdfViewState, ZoomAnchor } from './view-state'
@@ -1732,16 +1733,13 @@ export default function App() {
         // A newly opened file starts outside the autosave gate
         savedOnceRef.current = false
         await loadDoc(path, null)
-        // Silently restore the last reading position (WPS-style). A saved custom
-        // zoom (fitMode null) must be applied before 'ready', or the initial
-        // fit-width recompute would take over; fit modes are recomputed anyway.
-        const savedView = loadViewState(path)
-        if (savedView) {
-          pendingViewRestoreRef.current = savedView
-          fitModeRef.current = savedView.fitMode
-          if (savedView.fitMode === null)
-            setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedView.scale)))
-        }
+        // Choose zoom before 'ready' triggers the fit calculation. The reading
+        // position is restored afterwards, independently of the zoom preference.
+        const preference = await window.pdfApi.getDefaultZoom().catch(() => undefined)
+        const view = openingViewState(preference, loadViewState(path))
+        pendingViewRestoreRef.current = view
+        fitModeRef.current = view.fitMode
+        setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale)))
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {

@@ -250,6 +250,8 @@ import {
   setPdfRedactionSavedHook,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
+import { readPdfDefaultZoom } from '../../../pdf/src/main/default-zoom'
+import { PDF_DEFAULT_ZOOM_KEY, isPdfDefaultZoom } from '../../../pdf/src/shared/default-zoom'
 import { PDF_CHANNELS } from '../../../pdf/src/shared/ipc'
 import { convertPdfFileToDocxLocalWithPrompt, PdfLoadError } from './pdf2docx-local'
 import { convertPdfFileToPptxLocalWithPrompt } from './pdf2pptx-local'
@@ -5321,6 +5323,12 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.getRestoreLastSession, () =>
     restoreLastSessionEnabled(readAppSettings(APP_SETTINGS_PATH())),
   )
+  ipcMain.handle(HOME_CHANNELS.getPdfDefaultZoom, () => readPdfDefaultZoom(APP_SETTINGS_PATH()))
+  ipcMain.handle(HOME_CHANNELS.setPdfDefaultZoom, (_event, value: unknown) => {
+    if (!isPdfDefaultZoom(value)) return readPdfDefaultZoom(APP_SETTINGS_PATH())
+    writeAppSettings(APP_SETTINGS_PATH(), { [PDF_DEFAULT_ZOOM_KEY]: value })
+    return value
+  })
   ipcMain.handle(HOME_CHANNELS.setRestoreLastSession, (_event, on: unknown) => {
     if (typeof on !== 'boolean') return
     // turning it off forgets the stored paths instead of keeping them around

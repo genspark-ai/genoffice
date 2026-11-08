@@ -5,6 +5,8 @@
  * is injectable for tests.
  */
 
+import { normalizePdfDefaultZoom } from '../shared/default-zoom'
+
 export type PdfFitMode = 'width' | 'page' | null
 
 export type PdfViewState = {
@@ -19,6 +21,13 @@ export type PdfViewState = {
 }
 
 type StoredEntry = PdfViewState & { at: number }
+
+/** Explicit fit choices override only zoom, keeping the saved reading position. */
+export function openingViewState(preference: unknown, saved: PdfViewState | null): PdfViewState {
+  const mode = normalizePdfDefaultZoom(preference)
+  const view: PdfViewState = saved ?? { page: 1, frac: 0, scale: 1, fitMode: 'width' }
+  return mode === 'last-used' ? { ...view } : { ...view, fitMode: mode }
+}
 
 export const VIEW_STATE_KEY = 'genoffice-pdf-view-state'
 export const MAX_VIEW_ENTRIES = 100

@@ -31,6 +31,7 @@ import {
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS, PDF_READ_CHUNK_BYTES } from '../shared/ipc'
+import { readPdfDefaultZoom } from './default-zoom'
 import { printJobOptions, printOutcome } from '@genoffice/electron-utils/print-job'
 import {
   printFileViaCups,
@@ -1220,6 +1221,9 @@ function registerPdfIpc(): void {
   ipcMain.handle(PDF_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
 
   ipcMain.handle(PDF_CHANNELS.getUsername, (): string => configuredAuthorName(app))
+  ipcMain.handle(PDF_CHANNELS.getDefaultZoom, () =>
+    readPdfDefaultZoom(join(app.getPath('userData'), 'app-settings.json')),
+  )
 
   ipcMain.handle(PDF_CHANNELS.printers, async (e) => {
     const printers = await e.sender.getPrintersAsync()

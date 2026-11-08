@@ -23,6 +23,7 @@ import type {
   KbSearchHit,
 } from '@genoffice/agent-core'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
+import type { PdfDefaultZoom } from '../../../pdf/src/shared/default-zoom'
 
 export interface AttachmentAddResult {
   accepted: AttachmentInfo[]
@@ -423,6 +424,8 @@ export interface HomeApi {
   setTabSleepEnabled(on: boolean): Promise<void>
   /** whether the documents open at the last close reopen at launch (default off) */
   getRestoreLastSession(): Promise<boolean>
+  getPdfDefaultZoom(): Promise<PdfDefaultZoom>
+  setPdfDefaultZoom(value: PdfDefaultZoom): Promise<PdfDefaultZoom>
   setRestoreLastSession(on: boolean): Promise<void>
   /** current local MCP server state (running/enabled/port/url) */
   getMcpStatus(): Promise<McpStatus>
@@ -707,6 +710,8 @@ export const HOME_CHANNELS = {
   getTabSleepEnabled: 'home:get-tab-sleep-enabled',
   setTabSleepEnabled: 'home:set-tab-sleep-enabled',
   getRestoreLastSession: 'home:get-restore-last-session',
+  getPdfDefaultZoom: 'home:get-pdf-default-zoom',
+  setPdfDefaultZoom: 'home:set-pdf-default-zoom',
   setRestoreLastSession: 'home:set-restore-last-session',
   getMcpStatus: 'home:get-mcp-status',
   setMcpSettings: 'home:set-mcp-settings',

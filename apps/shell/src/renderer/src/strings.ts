@@ -1,6 +1,12 @@
 /** home-screen dictionary; zh defines the key set, en must match (type-checked) */
 export const strings = {
   zh: {
+    setPdfZoom: 'PDF 默认缩放',
+    setPdfZoomDesc: '下次打开 PDF 时生效。上次缩放按文件记忆，阅读位置仍会恢复。',
+    setPdfZoomWidth: '适应宽度',
+    setPdfZoomPage: '适应页面',
+    setPdfZoomLast: '上次缩放',
+    setPdfZoomFailed: '无法读取或保存此设置，请重试。',
     addFolderRoot: '添加文件夹…',
     removeFolderRoot: '从列表移除',
     rootUnavailable: '不可用',
@@ -525,6 +531,13 @@ export const strings = {
     setAiEndpointModelsBad: '模型声明格式无效：必须是 JSON 数组，例如 [{ "id": "m" }]。',
   },
   en: {
+    setPdfZoom: 'Default PDF zoom',
+    setPdfZoomDesc:
+      'Applies on next open. Last used zoom is remembered per file. Your reading position is kept.',
+    setPdfZoomWidth: 'Fit width',
+    setPdfZoomPage: 'Fit page',
+    setPdfZoomLast: 'Last used zoom',
+    setPdfZoomFailed: 'Could not load or save this setting. Please try again.',
     addFolderRoot: 'Add folder…',
     removeFolderRoot: 'Remove from list',
     rootUnavailable: 'Not available',
@@ -1062,6 +1075,13 @@ export const strings = {
       'Invalid model declarations: must be a JSON array, e.g. [{ "id": "m" }].',
   },
   vi: {
+    setPdfZoom: 'Thu phóng PDF mặc định',
+    setPdfZoomDesc:
+      'Áp dụng khi mở lần tiếp theo. Mức thu phóng được nhớ theo từng tệp. Vị trí đọc được giữ lại.',
+    setPdfZoomWidth: 'Vừa chiều rộng',
+    setPdfZoomPage: 'Vừa trang',
+    setPdfZoomLast: 'Mức thu phóng lần trước',
+    setPdfZoomFailed: 'Không thể đọc hoặc lưu cài đặt này. Vui lòng thử lại.',
     addFolderRoot: 'Thêm thư mục…',
     removeFolderRoot: 'Xóa khỏi danh sách',
     rootUnavailable: 'Không khả dụng',
@@ -1603,6 +1623,13 @@ export const strings = {
       'Khai báo mô hình không hợp lệ: phải là mảng JSON, ví dụ [{ "id": "m" }].',
   },
   tr: {
+    setPdfZoom: 'Varsayılan PDF yakınlaştırması',
+    setPdfZoomDesc:
+      'Bir sonraki açılışta uygulanır. Son yakınlaştırma her dosya için hatırlanır. Okuma konumunuz korunur.',
+    setPdfZoomWidth: 'Genişliğe sığdır',
+    setPdfZoomPage: 'Sayfaya sığdır',
+    setPdfZoomLast: 'Son yakınlaştırma',
+    setPdfZoomFailed: 'Bu ayar okunamadı veya kaydedilemedi. Lütfen tekrar deneyin.',
     addFolderRoot: 'Klasör ekle…',
     removeFolderRoot: 'Listeden kaldır',
     rootUnavailable: 'Kullanılamıyor',
@@ -2147,6 +2174,13 @@ export const strings = {
       'Geçersiz model bildirimleri: bir JSON dizisi olmalıdır, örn. [{ "id": "m" }].',
   },
   ja: {
+    setPdfZoom: 'PDF の既定のズーム',
+    setPdfZoomDesc:
+      '次回開くときに適用されます。前回のズームはファイルごとに記憶され、読んでいた位置は保持されます。',
+    setPdfZoomWidth: '幅に合わせる',
+    setPdfZoomPage: 'ページに合わせる',
+    setPdfZoomLast: '前回のズーム',
+    setPdfZoomFailed: 'この設定を読み込むか保存できませんでした。もう一度お試しください。',
     addFolderRoot: 'フォルダーを追加…',
     removeFolderRoot: 'リストから削除',
     rootUnavailable: '利用不可',
@@ -2700,6 +2734,13 @@ export const strings = {
       'モデル宣言が不正です。JSON 配列（例: [{ "id": "m" }]）にしてください。',
   },
   ko: {
+    setPdfZoom: 'PDF 기본 확대/축소',
+    setPdfZoomDesc:
+      '다음에 열 때 적용됩니다. 마지막 확대/축소는 파일별로 기억하며 읽던 위치는 유지됩니다.',
+    setPdfZoomWidth: '너비에 맞추기',
+    setPdfZoomPage: '페이지에 맞추기',
+    setPdfZoomLast: '마지막 확대/축소',
+    setPdfZoomFailed: '이 설정을 읽거나 저장할 수 없습니다. 다시 시도하세요.',
     addFolderRoot: '폴더 추가…',
     removeFolderRoot: '목록에서 제거',
     rootUnavailable: '사용할 수 없음',
@@ -3243,6 +3284,13 @@ export const strings = {
       '모델 선언이 잘못되었습니다. JSON 배열이어야 합니다(예: [{ "id": "m" }]).',
   },
   fr: {
+    setPdfZoom: 'Zoom PDF par défaut',
+    setPdfZoomDesc:
+      'Appliqué à la prochaine ouverture. Le dernier zoom est mémorisé par fichier. Votre position de lecture est conservée.',
+    setPdfZoomWidth: 'Ajuster à la largeur',
+    setPdfZoomPage: 'Ajuster à la page',
+    setPdfZoomLast: 'Dernier zoom utilisé',
+    setPdfZoomFailed: 'Impossible de lire ou d’enregistrer ce réglage. Réessayez.',
     addFolderRoot: 'Ajouter un dossier…',
     removeFolderRoot: 'Retirer de la liste',
     rootUnavailable: 'Indisponible',
@@ -3807,6 +3855,14 @@ export const strings = {
       'Déclarations de modèle invalides : doit être un tableau JSON, ex. [{ "id": "m" }].',
   },
   de: {
+    setPdfZoom: 'Standardzoom für PDF',
+    setPdfZoomDesc:
+      'Gilt beim nächsten Öffnen. Der letzte Zoom wird pro Datei gespeichert. Die Leseposition bleibt erhalten.',
+    setPdfZoomWidth: 'An Breite anpassen',
+    setPdfZoomPage: 'An Seite anpassen',
+    setPdfZoomLast: 'Zuletzt verwendeter Zoom',
+    setPdfZoomFailed:
+      'Diese Einstellung konnte nicht gelesen oder gespeichert werden. Bitte erneut versuchen.',
     addFolderRoot: 'Ordner hinzufügen…',
     removeFolderRoot: 'Aus der Liste entfernen',
     rootUnavailable: 'Nicht verfügbar',
@@ -4368,6 +4424,13 @@ export const strings = {
       'Ungültige Modell-Deklarationen: muss ein JSON-Array sein, z. B. [{ "id": "m" }].',
   },
   es: {
+    setPdfZoom: 'Zoom predeterminado del PDF',
+    setPdfZoomDesc:
+      'Se aplica al volver a abrir. El último zoom se recuerda por archivo. Se conserva la posición de lectura.',
+    setPdfZoomWidth: 'Ajustar al ancho',
+    setPdfZoomPage: 'Ajustar a la página',
+    setPdfZoomLast: 'Último zoom utilizado',
+    setPdfZoomFailed: 'No se pudo leer o guardar este ajuste. Vuelve a intentarlo.',
     addFolderRoot: 'Añadir carpeta…',
     removeFolderRoot: 'Quitar de la lista',
     rootUnavailable: 'No disponible',
@@ -4928,6 +4991,12 @@ export const strings = {
       'Declaraciones de modelo no válidas: debe ser un array JSON, p. ej. [{ "id": "m" }].',
   },
   th: {
+    setPdfZoom: 'การซูม PDF เริ่มต้น',
+    setPdfZoomDesc: 'ใช้เมื่อเปิดครั้งถัดไป จดจำการซูมล่าสุดแยกตามไฟล์ และคงตำแหน่งที่อ่านไว้',
+    setPdfZoomWidth: 'พอดีความกว้าง',
+    setPdfZoomPage: 'พอดีหน้า',
+    setPdfZoomLast: 'การซูมล่าสุด',
+    setPdfZoomFailed: 'ไม่สามารถอ่านหรือบันทึกการตั้งค่านี้ได้ โปรดลองอีกครั้ง',
     addFolderRoot: 'เพิ่มโฟลเดอร์…',
     removeFolderRoot: 'นำออกจากรายการ',
     rootUnavailable: 'ไม่พร้อมใช้งาน',
@@ -5466,6 +5535,13 @@ export const strings = {
     setAiEndpointModelsBad: 'การประกาศโมเดลไม่ถูกต้อง: ต้องเป็นอาร์เรย์ JSON เช่น [{ "id": "m" }]',
   },
   id: {
+    setPdfZoom: 'Zoom PDF bawaan',
+    setPdfZoomDesc:
+      'Berlaku saat dibuka kembali. Zoom terakhir diingat per berkas. Posisi baca tetap disimpan.',
+    setPdfZoomWidth: 'Sesuaikan lebar',
+    setPdfZoomPage: 'Sesuaikan halaman',
+    setPdfZoomLast: 'Zoom terakhir',
+    setPdfZoomFailed: 'Pengaturan ini tidak dapat dibaca atau disimpan. Coba lagi.',
     addFolderRoot: 'Tambah folder…',
     removeFolderRoot: 'Hapus dari daftar',
     rootUnavailable: 'Tidak tersedia',
@@ -6017,6 +6093,13 @@ export const strings = {
       'Deklarasi model tidak valid: harus berupa array JSON, mis. [{ "id": "m" }].',
   },
   ru: {
+    setPdfZoom: 'Масштаб PDF по умолчанию',
+    setPdfZoomDesc:
+      'Применяется при следующем открытии. Последний масштаб запоминается для каждого файла. Позиция чтения сохраняется.',
+    setPdfZoomWidth: 'По ширине',
+    setPdfZoomPage: 'По размеру страницы',
+    setPdfZoomLast: 'Последний масштаб',
+    setPdfZoomFailed: 'Не удалось прочитать или сохранить настройку. Повторите попытку.',
     addFolderRoot: 'Добавить папку…',
     removeFolderRoot: 'Убрать из списка',
     rootUnavailable: 'Недоступно',
@@ -6569,6 +6652,12 @@ export const strings = {
       'Неверные объявления моделей: нужен массив JSON, напр. [{ "id": "m" }].',
   },
   ar: {
+    setPdfZoom: 'تكبير PDF الافتراضي',
+    setPdfZoomDesc: 'يُطبّق عند الفتح التالي. يُحفظ آخر تكبير لكل ملف، مع الاحتفاظ بموضع القراءة.',
+    setPdfZoomWidth: 'ملاءمة العرض',
+    setPdfZoomPage: 'ملاءمة الصفحة',
+    setPdfZoomLast: 'آخر تكبير مستخدم',
+    setPdfZoomFailed: 'تعذّر قراءة هذا الإعداد أو حفظه. حاول مرة أخرى.',
     addFolderRoot: 'إضافة مجلد…',
     removeFolderRoot: 'إزالة من القائمة',
     rootUnavailable: 'غير متاح',
@@ -7111,6 +7200,13 @@ export const strings = {
       'إعلانات نماذج غير صالحة: يجب أن تكون مصفوفة JSON، مثل [{ "id": "m" }].',
   },
   pt: {
+    setPdfZoom: 'Zoom padrão do PDF',
+    setPdfZoomDesc:
+      'Aplicado na próxima abertura. O último zoom é lembrado por arquivo. Sua posição de leitura é mantida.',
+    setPdfZoomWidth: 'Ajustar à largura',
+    setPdfZoomPage: 'Ajustar à página',
+    setPdfZoomLast: 'Último zoom usado',
+    setPdfZoomFailed: 'Não foi possível ler ou salvar esta configuração. Tente novamente.',
     addFolderRoot: 'Adicionar pasta…',
     removeFolderRoot: 'Remover da lista',
     rootUnavailable: 'Indisponível',
@@ -7659,6 +7755,13 @@ export const strings = {
       'Declarações de modelo inválidas: deve ser um array JSON, ex. [{ "id": "m" }].',
   },
   it: {
+    setPdfZoom: 'Zoom PDF predefinito',
+    setPdfZoomDesc:
+      'Si applica alla prossima apertura. L’ultimo zoom viene ricordato per ogni file. La posizione di lettura viene mantenuta.',
+    setPdfZoomWidth: 'Adatta alla larghezza',
+    setPdfZoomPage: 'Adatta alla pagina',
+    setPdfZoomLast: 'Ultimo zoom utilizzato',
+    setPdfZoomFailed: 'Impossibile leggere o salvare questa impostazione. Riprova.',
     addFolderRoot: 'Aggiungi cartella…',
     removeFolderRoot: "Rimuovi dall'elenco",
     rootUnavailable: 'Non disponibile',
@@ -8207,6 +8310,13 @@ export const strings = {
       'Dichiarazioni di modello non valide: deve essere un array JSON, es. [{ "id": "m" }].',
   },
   pl: {
+    setPdfZoom: 'Domyślne powiększenie PDF',
+    setPdfZoomDesc:
+      'Obowiązuje przy następnym otwarciu. Ostatnie powiększenie jest zapamiętywane dla każdego pliku. Pozycja czytania zostaje zachowana.',
+    setPdfZoomWidth: 'Dopasuj do szerokości',
+    setPdfZoomPage: 'Dopasuj do strony',
+    setPdfZoomLast: 'Ostatnie powiększenie',
+    setPdfZoomFailed: 'Nie można odczytać lub zapisać tego ustawienia. Spróbuj ponownie.',
     addFolderRoot: 'Dodaj folder…',
     removeFolderRoot: 'Usuń z listy',
     rootUnavailable: 'Niedostępny',
@@ -8750,6 +8860,13 @@ export const strings = {
       'Nieprawidłowe deklaracje modeli: musi być tablicą JSON, np. [{ "id": "m" }].',
   },
   cs: {
+    setPdfZoom: 'Výchozí přiblížení PDF',
+    setPdfZoomDesc:
+      'Platí při příštím otevření. Poslední přiblížení se pamatuje pro každý soubor. Pozice čtení se zachová.',
+    setPdfZoomWidth: 'Přizpůsobit šířce',
+    setPdfZoomPage: 'Přizpůsobit stránce',
+    setPdfZoomLast: 'Poslední přiblížení',
+    setPdfZoomFailed: 'Toto nastavení nelze přečíst nebo uložit. Zkuste to znovu.',
     addFolderRoot: 'Přidat složku…',
     removeFolderRoot: 'Odebrat ze seznamu',
     rootUnavailable: 'Nedostupné',
@@ -9290,6 +9407,13 @@ export const strings = {
     setAiEndpointModelsBad: 'Neplatné deklarace modelů: musí být pole JSON, např. [{ "id": "m" }].',
   },
   nl: {
+    setPdfZoom: 'Standaardzoom voor PDF',
+    setPdfZoomDesc:
+      'Geldt bij de volgende opening. De laatste zoom wordt per bestand onthouden. Uw leespositie blijft behouden.',
+    setPdfZoomWidth: 'Aan breedte aanpassen',
+    setPdfZoomPage: 'Aan pagina aanpassen',
+    setPdfZoomLast: 'Laatst gebruikte zoom',
+    setPdfZoomFailed: 'Deze instelling kon niet worden gelezen of opgeslagen. Probeer het opnieuw.',
     addFolderRoot: 'Map toevoegen…',
     removeFolderRoot: 'Uit lijst verwijderen',
     rootUnavailable: 'Niet beschikbaar',
@@ -9833,6 +9957,13 @@ export const strings = {
       'Ongeldige modelverklaringen: moet een JSON-array zijn, bijv. [{ "id": "m" }].',
   },
   ms: {
+    setPdfZoom: 'Zum PDF lalai',
+    setPdfZoomDesc:
+      'Digunakan apabila dibuka semula. Zum terakhir diingati bagi setiap fail. Kedudukan bacaan dikekalkan.',
+    setPdfZoomWidth: 'Muat lebar',
+    setPdfZoomPage: 'Muat halaman',
+    setPdfZoomLast: 'Zum terakhir',
+    setPdfZoomFailed: 'Tetapan ini tidak dapat dibaca atau disimpan. Sila cuba lagi.',
     addFolderRoot: 'Tambah folder…',
     removeFolderRoot: 'Buang daripada senarai',
     rootUnavailable: 'Tidak tersedia',
@@ -10378,6 +10509,12 @@ export const strings = {
       'Pengisytiharan model tidak sah: mesti tatasusunan JSON, cth. [{ "id": "m" }].',
   },
   he: {
+    setPdfZoom: 'זום ברירת מחדל ל-PDF',
+    setPdfZoomDesc: 'יחול בפתיחה הבאה. הזום האחרון נשמר לכל קובץ. מיקום הקריאה נשמר.',
+    setPdfZoomWidth: 'התאם לרוחב',
+    setPdfZoomPage: 'התאם לעמוד',
+    setPdfZoomLast: 'הזום האחרון',
+    setPdfZoomFailed: 'לא ניתן לקרוא או לשמור הגדרה זו. יש לנסות שוב.',
     addFolderRoot: 'הוספת תיקייה…',
     removeFolderRoot: 'הסרה מהרשימה',
     rootUnavailable: 'לא זמין',
@@ -10906,6 +11043,13 @@ export const strings = {
     setAiEndpointModelsBad: 'הצהרות מודל לא חוקיות: חייב להיות מערך JSON, למשל [{ "id": "m" }].',
   },
   hi: {
+    setPdfZoom: 'PDF का डिफ़ॉल्ट ज़ूम',
+    setPdfZoomDesc:
+      'अगली बार खोलने पर लागू होगा। पिछला ज़ूम हर फ़ाइल के लिए याद रखा जाता है। पढ़ने की स्थिति बनी रहती है।',
+    setPdfZoomWidth: 'चौड़ाई में फ़िट करें',
+    setPdfZoomPage: 'पेज में फ़िट करें',
+    setPdfZoomLast: 'पिछला ज़ूम',
+    setPdfZoomFailed: 'यह सेटिंग पढ़ी या सहेजी नहीं जा सकी। कृपया फिर कोशिश करें।',
     addFolderRoot: 'फ़ोल्डर जोड़ें…',
     removeFolderRoot: 'सूची से हटाएँ',
     rootUnavailable: 'उपलब्ध नहीं',
@@ -11446,6 +11590,12 @@ export const strings = {
     setAiEndpointModelsBad: 'अमान्य मॉडल घोषणाएँ: JSON सरणी होनी चाहिए, उदाहरण [{ "id": "m" }]।',
   },
   'zh-TW': {
+    setPdfZoom: 'PDF 預設縮放',
+    setPdfZoomDesc: '下次開啟 PDF 時生效。上次縮放按檔案記憶，閱讀位置仍會還原。',
+    setPdfZoomWidth: '符合寬度',
+    setPdfZoomPage: '符合頁面',
+    setPdfZoomLast: '上次縮放',
+    setPdfZoomFailed: '無法讀取或儲存此設定，請重試。',
     addFolderRoot: '加入資料夾…',
     removeFolderRoot: '從清單移除',
     rootUnavailable: '無法使用',

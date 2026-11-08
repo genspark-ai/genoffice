@@ -10,6 +10,7 @@ import type { AiSettings, CodexModelCatalog } from '@genoffice/ai-provider/brows
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import type { UpdateUiState } from '../shared/update-api'
 import { normalizeAiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
+import { normalizePdfDefaultZoom } from '../../../pdf/src/shared/default-zoom'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -444,6 +445,12 @@ const homeApi: HomeApi = {
   async getRestoreLastSession() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getRestoreLastSession)
     return result === true
+  },
+  async getPdfDefaultZoom() {
+    return normalizePdfDefaultZoom(await ipcRenderer.invoke(HOME_CHANNELS.getPdfDefaultZoom))
+  },
+  async setPdfDefaultZoom(value) {
+    return normalizePdfDefaultZoom(await ipcRenderer.invoke(HOME_CHANNELS.setPdfDefaultZoom, value))
   },
   async setRestoreLastSession(on) {
     if (typeof on !== 'boolean') throw new Error('Invalid restore session setting.')
