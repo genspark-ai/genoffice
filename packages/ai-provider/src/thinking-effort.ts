@@ -9,7 +9,7 @@
  * sent, i.e. today's behaviour.
  *
  * Only surfaces documented by the vendor's own API are listed. The vendors
- * whose effort field is still documentation-only (GLM, Doubao, MiniMax,
+ * whose effort field is still documentation-only (GLM, Doubao,
  * Kimi, Hunyuan, Mistral) stay knobless until a live probe confirms
  * them: a wrong row costs a 400 on every request for that provider.
  *
@@ -133,8 +133,17 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   if (/(^|\/)deep-?seek/.test(id)) {
     return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
   }
-  // Doc-only families (GLM, Doubao, MiniMax, Kimi, Hunyuan, Mistral)
-  // deliberately carry no knob until a live probe confirms their surface.
+  // MiniMax takes the OpenAI effort field on its M3/M3.1 lineup
+  // (platform.minimax.io text-generation guide): low..max, and no `none` —
+  // effort none and thinking.type disabled both 400 because the models
+  // "require adaptive thinking", so the vendor default (omitted field) is
+  // the only off. The vendor's own coding client offers exactly these rungs
+  // (default/low/medium/high/xhigh/max) on M3 and M3.1-Flash alike.
+  if (/(^|\/)minimax-/.test(id)) {
+    return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
+  }
+  // Doc-only families (GLM, Doubao, Kimi, Hunyuan, Mistral) deliberately
+  // carry no knob until a live probe confirms their surface.
   return { kind: 'openai-effort', levels: [] }
 }
 

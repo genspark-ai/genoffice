@@ -93,12 +93,22 @@ describe('thinkingShapeFor', () => {
       'glm-5.2',
       'glm-5.3',
       'doubao-seed-2-1-pro-260628',
-      'MiniMax-M3.1-Flash',
       'hy4-preview',
       'mistral-medium-latest',
     ]) {
       expect(thinkingShapeFor(id).levels, id).toEqual([])
     }
+  })
+
+  it('minimax takes the effort rungs its own client offers, without an off', () => {
+    expect(thinkingShapeFor('MiniMax-M3')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(thinkingShapeFor('minimax-m3.1-flash')).toEqual({
+      kind: 'openai-effort',
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
   })
 
   it('deepseek takes the OpenAI effort ladder on both id spellings, every rung probed', () => {
