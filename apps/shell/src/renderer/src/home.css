@@ -2106,3 +2106,10 @@ body.vib {
 :root[data-transparency='off'] body.vib {
   background: var(--chrome-bg);
 }
+
+/* ---- sidebar footer: utilities pinned to the bottom, apart from the file views ---- */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--shell-border);
+}

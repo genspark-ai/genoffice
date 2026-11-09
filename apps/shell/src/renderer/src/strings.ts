@@ -21,6 +21,7 @@ export const strings = {
     cloudLoadMore: '加载更多',
     cloudOpenInBrowser: '在浏览器中打开',
     navTrash: '回收站',
+    navHome: '主页',
     navTrashTip: '删除的文件在系统废纸篓中，可从那里还原',
     secQuickStart: '快速开始',
     secRecent: '最近使用',
@@ -231,6 +232,7 @@ export const strings = {
     cloudLoadMore: 'Load more',
     cloudOpenInBrowser: 'Open in browser',
     navTrash: 'Trash',
+    navHome: 'Home',
     navTrashTip: 'Deleted files go to the system Trash and can be restored there',
     secQuickStart: 'Quick start',
     secRecent: 'Recent',
@@ -439,6 +441,7 @@ export const strings = {
     cloudLoadMore: 'もっと見る',
     cloudOpenInBrowser: 'ブラウザで開く',
     navTrash: 'ゴミ箱',
+    navHome: 'ホーム',
     navTrashTip: '削除したファイルはシステムのゴミ箱に移動され、そこから復元できます',
     // Section headings
     secQuickStart: 'クイックスタート',
@@ -660,6 +663,7 @@ export const strings = {
     cloudLoadMore: '더 보기',
     cloudOpenInBrowser: '브라우저에서 열기',
     navTrash: '휴지통',
+    navHome: '홈',
     navTrashTip: '삭제된 파일은 시스템 휴지통으로 이동되며 그곳에서 복원할 수 있습니다',
     // Section headings
     secQuickStart: '빠른 시작',
@@ -878,6 +882,7 @@ export const strings = {
     cloudLoadMore: 'Charger plus',
     cloudOpenInBrowser: 'Ouvrir dans le navigateur',
     navTrash: 'Corbeille',
+    navHome: 'Accueil',
     navTrashTip:
       'Les fichiers supprimés sont placés dans la corbeille du système et peuvent y être restaurés',
     // Section headings
@@ -1100,6 +1105,7 @@ export const strings = {
     cloudLoadMore: 'Mehr laden',
     cloudOpenInBrowser: 'Im Browser öffnen',
     navTrash: 'Papierkorb',
+    navHome: 'Start',
     navTrashTip:
       'Gelöschte Dateien werden in den System-Papierkorb verschoben und können dort wiederhergestellt werden',
     // Section headings
@@ -1324,6 +1330,7 @@ export const strings = {
     cloudLoadMore: 'Cargar más',
     cloudOpenInBrowser: 'Abrir en el navegador',
     navTrash: 'Papelera',
+    navHome: 'Inicio',
     navTrashTip:
       'Los archivos eliminados van a la papelera del sistema y pueden restaurarse desde allí',
     // Section headings
@@ -1546,6 +1553,7 @@ export const strings = {
     cloudLoadMore: 'โหลดเพิ่มเติม',
     cloudOpenInBrowser: 'เปิดในเบราว์เซอร์',
     navTrash: 'ถังขยะ',
+    navHome: 'หน้าแรก',
     navTrashTip: 'ไฟล์ที่ถูกลบจะถูกย้ายไปยังถังขยะของระบบ และสามารถกู้คืนได้จากที่นั่น',
     // Section headings
     secQuickStart: 'เริ่มต้นอย่างรวดเร็ว',
@@ -1762,6 +1770,7 @@ export const strings = {
     cloudLoadMore: 'Muat lebih banyak',
     cloudOpenInBrowser: 'Buka di browser',
     navTrash: 'Sampah',
+    navHome: 'Beranda',
     navTrashTip:
       'File yang dihapus akan dipindahkan ke tempat sampah sistem dan dapat dipulihkan dari sana',
     // Section headings
@@ -1981,6 +1990,7 @@ export const strings = {
     cloudLoadMore: 'Загрузить ещё',
     cloudOpenInBrowser: 'Открыть в браузере',
     navTrash: 'Корзина',
+    navHome: 'Главная',
     navTrashTip: 'Удалённые файлы перемещаются в системную корзину, откуда их можно восстановить',
     // Section headings
     secQuickStart: 'Быстрый старт',
@@ -2200,6 +2210,7 @@ export const strings = {
     cloudLoadMore: 'تحميل المزيد',
     cloudOpenInBrowser: 'فتح في المتصفح',
     navTrash: 'سلة المهملات',
+    navHome: 'الرئيسية',
     navTrashTip: 'تُنقل الملفات المحذوفة إلى سلة مهملات النظام ويمكن استعادتها من هناك',
     // Section headings
     secQuickStart: 'بدء سريع',
@@ -2416,6 +2427,7 @@ export const strings = {
     cloudLoadMore: 'Carregar mais',
     cloudOpenInBrowser: 'Abrir no navegador',
     navTrash: 'Lixeira',
+    navHome: 'Início',
     navTrashTip:
       'Os arquivos excluídos vão para a lixeira do sistema e podem ser restaurados de lá',
     secQuickStart: 'Início rápido',
@@ -2626,6 +2638,7 @@ export const strings = {
     cloudLoadMore: 'Carica altri',
     cloudOpenInBrowser: 'Apri nel browser',
     navTrash: 'Cestino',
+    navHome: 'Home',
     navTrashTip:
       'I file eliminati vengono spostati nel cestino di sistema e possono essere ripristinati da lì',
     secQuickStart: 'Avvio rapido',
@@ -2836,6 +2849,7 @@ export const strings = {
     cloudLoadMore: 'Wczytaj więcej',
     cloudOpenInBrowser: 'Otwórz w przeglądarce',
     navTrash: 'Kosz',
+    navHome: 'Start',
     navTrashTip: 'Usunięte pliki trafiają do systemowego kosza i można je stamtąd przywrócić',
     secQuickStart: 'Szybki start',
     secRecent: 'Ostatnie',
@@ -3046,6 +3060,7 @@ export const strings = {
     cloudLoadMore: 'Meer laden',
     cloudOpenInBrowser: 'Openen in browser',
     navTrash: 'Prullenbak',
+    navHome: 'Home',
     navTrashTip:
       'Verwijderde bestanden gaan naar de systeemprullenbak en kunnen daar worden hersteld',
     secQuickStart: 'Snel starten',
@@ -3255,6 +3270,7 @@ export const strings = {
     cloudLoadMore: 'Muat lagi',
     cloudOpenInBrowser: 'Buka dalam pelayar',
     navTrash: 'Tong sampah',
+    navHome: 'Laman Utama',
     navTrashTip:
       'Fail yang dipadamkan akan dipindahkan ke tong sampah sistem dan boleh dipulihkan dari sana',
     secQuickStart: 'Mula pantas',
@@ -3464,6 +3480,7 @@ export const strings = {
     cloudLoadMore: 'טענו עוד',
     cloudOpenInBrowser: 'פתיחה בדפדפן',
     navTrash: 'אשפה',
+    navHome: 'בית',
     navTrashTip: 'קבצים שנמחקו עוברים לאשפה של המערכת וניתן לשחזר אותם משם',
     secQuickStart: 'התחלה מהירה',
     secRecent: 'אחרונים',
@@ -3669,6 +3686,7 @@ export const strings = {
     cloudLoadMore: 'और लोड करें',
     cloudOpenInBrowser: 'ब्राउज़र में खोलें',
     navTrash: 'ट्रैश',
+    navHome: 'होम',
     navTrashTip: 'हटाई गई फ़ाइलें सिस्टम ट्रैश में जाती हैं और वहाँ से पुनर्स्थापित की जा सकती हैं',
     secQuickStart: 'त्वरित प्रारंभ',
     secRecent: 'हाल के',
@@ -3878,6 +3896,7 @@ export const strings = {
     cloudLoadMore: '載入更多',
     cloudOpenInBrowser: '在瀏覽器中開啟',
     navTrash: '垃圾桶',
+    navHome: '首頁',
     navTrashTip: '刪除的檔案會移至系統垃圾桶，可從那裡還原',
     secQuickStart: '快速開始',
     secRecent: '最近使用',

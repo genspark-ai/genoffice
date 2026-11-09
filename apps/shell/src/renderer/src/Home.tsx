@@ -2413,38 +2413,21 @@ export function Home() {
       <div className="rail">
         <nav className="rail-nav" aria-label={t('navRecent')}>
           <button
-            className={`rail-btn${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
-            title={t('navRecent')}
-            aria-label={t('navRecent')}
+            className={`rail-btn${!cloudMode || selectedProjectId ? ' active' : ''}`}
+            title={t('navHome')}
+            aria-label={t('navHome')}
+            aria-current={!cloudMode || selectedProjectId ? 'page' : undefined}
             onClick={() => {
-              changeView('recent')
-              setSelectedProjectId(null)
+              // back to the local files space; keeps the current Recent/Starred view
               setCloudMode(false)
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.2" />
-              <path
-                d="M8 4.8V8l2.2 1.6"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <button
-            className={`rail-btn${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
-            title={t('navStarred')}
-            aria-label={t('navStarred')}
-            onClick={() => {
-              changeView('starred')
               setSelectedProjectId(null)
-              setCloudMode(false)
+              setSelected(new Set())
+              setRowMenu(null)
             }}
           >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
-                d="M8 1.9l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.6l-3.8 2 .72-4.23-3.07-3 4.25-.62z"
+                d="M2.5 7.2L8 2.5l5.5 4.7V13a.8.8 0 0 1-.8.8H10V10H6v3.8H3.3a.8.8 0 0 1-.8-.8z"
                 stroke="currentColor"
                 strokeWidth="1.2"
                 strokeLinejoin="round"
@@ -2456,6 +2439,7 @@ export function Home() {
               className={`rail-btn${cloudMode && !selectedProjectId ? ' active' : ''}`}
               title={t('navCloud')}
               aria-label={t('navCloud')}
+              aria-current={cloudMode && !selectedProjectId ? 'page' : undefined}
               onClick={() => {
                 setCloudMode(true)
                 setSelectedProjectId(null)
@@ -2600,59 +2584,6 @@ export function Home() {
               <span className="nav-label">{t('navStarred')}</span>
               <span className="nav-count">{navCounts.starred}</span>
             </button>
-            {loggedIn && (
-              <button
-                className={`nav-item${cloudMode && !selectedProjectId ? ' active' : ''}`}
-                onClick={() => {
-                  setCloudMode(true)
-                  setSelectedProjectId(null)
-                  setSelected(new Set())
-                  setRowMenu(null)
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span className="nav-label">{t('navCloud')}</span>
-                <svg
-                  className="nav-external"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            )}
-            <button
-              className="nav-item"
-              title={t('navTrashTip')}
-              onClick={() => void window.aiOffice.openTrash?.()}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8h5.8l.6-8"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span className="nav-label">{t('navTrash')}</span>
-            </button>
           </nav>
 
           {/* project sidebar */}
@@ -2674,6 +2605,41 @@ export function Home() {
               />
             </>
           )}
+          {/* utilities: Trash opens the OS trash, so it sits apart from the file views */}
+          <div className="sidebar-footer">
+            <button
+              className="nav-item"
+              title={t('navTrashTip')}
+              onClick={() => void window.aiOffice.openTrash?.()}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8h5.8l.6-8"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="nav-label">{t('navTrash')}</span>
+              <svg
+                className="nav-external"
+                width="13"
+                height="13"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </aside>
 
         {selectedProjectId ? (
