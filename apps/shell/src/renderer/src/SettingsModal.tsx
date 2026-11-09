@@ -46,6 +46,7 @@ import type {
   AiCatalogEntry,
   AuthorNameSetting,
   DocTheme,
+  PdfDefaultZoom,
   UiTheme,
 } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
@@ -98,6 +99,14 @@ const DOC_THEME_OPTIONS = [
   { value: 'light', labelKey: 'themeLight' },
   { value: 'dark', labelKey: 'themeDark' },
 ] as const satisfies readonly { value: DocTheme; labelKey: StringKey }[]
+
+// Default PDF zoom (genoffice#2454): what a PDF opens at; 'width' is the
+// long-standing behavior, 'last' restores the zoom last used.
+const PDF_DEFAULT_ZOOM_OPTIONS = [
+  { value: 'width', labelKey: 'pdfZoomFitWidth' },
+  { value: 'page', labelKey: 'pdfZoomFitPage' },
+  { value: 'last', labelKey: 'pdfZoomLastUsed' },
+] as const satisfies readonly { value: PdfDefaultZoom; labelKey: StringKey }[]
 
 const AI_FONT_SIZE_OPTIONS = [
   { value: 'default', labelKey: 'aiFontSizeDefault' },
@@ -1808,6 +1817,7 @@ export function SettingsModal({
   }, [target])
   const [theme, setTheme] = useState<UiTheme>('system')
   const [docTheme, setDocTheme] = useState<DocTheme>('follow')
+  const [pdfDefaultZoom, setPdfDefaultZoom] = useState<PdfDefaultZoom>('width')
   const [saveDir, setSaveDir] = useState('')
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
@@ -1834,6 +1844,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getDocumentTheme?.().then((th) => {
       if (alive) setDocTheme(th)
+    })
+    void window.aiOffice.getPdfDefaultZoom?.().then((z) => {
+      if (alive) setPdfDefaultZoom(z)
     })
     void window.aiOffice.getDefaultSaveDir?.().then((dir) => {
       if (alive && dir) setSaveDir(dir)
@@ -1915,6 +1928,11 @@ export function SettingsModal({
   const applyDocumentTheme = (next: DocTheme) => {
     setDocTheme(next)
     void window.aiOffice.setDocumentTheme(next)
+  }
+
+  const applyPdfDefaultZoom = (next: PdfDefaultZoom) => {
+    setPdfDefaultZoom(next)
+    void window.aiOffice.setPdfDefaultZoom?.(next).then(setPdfDefaultZoom)
   }
 
   const commitAuthorName = () => {
@@ -2105,6 +2123,21 @@ export function SettingsModal({
                       label: t(opt.labelKey),
                     }))}
                     onPick={(v) => applyDocumentTheme(v as DocTheme)}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <label className="set-field-label">{t('setPdfDefaultZoom')}</label>
+                  </div>
+                  <Dropdown
+                    className="set-dd"
+                    value={pdfDefaultZoom}
+                    ariaLabel={t('setPdfDefaultZoom')}
+                    options={PDF_DEFAULT_ZOOM_OPTIONS.map((opt) => ({
+                      value: opt.value,
+                      label: t(opt.labelKey),
+                    }))}
+                    onPick={(v) => applyPdfDefaultZoom(v as PdfDefaultZoom)}
                   />
                 </div>
                 <div className="set-field">

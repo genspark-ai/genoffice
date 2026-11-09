@@ -82,6 +82,13 @@ export type UiTheme = 'light' | 'dark' | 'system'
  */
 export type DocTheme = 'follow' | 'light' | 'dark'
 
+/**
+ * Zoom applied when opening a PDF (genoffice#2454). 'width' is the current
+ * behavior and the default when unset; 'page' fits the whole page; 'last'
+ * restores the last used zoom (per-file if known, else the global last zoom).
+ */
+export type PdfDefaultZoom = 'width' | 'page' | 'last'
+
 /** shell-wide AutoSave default for every editor; updatedAt is 0 until first set */
 /** mirrors AUTHOR_NAME_MAX in @genoffice/electron-utils (the renderer cannot import it) */
 export const AUTHOR_NAME_MAX = 120
@@ -414,6 +421,10 @@ export interface HomeApi {
   getDocumentTheme(): Promise<DocTheme>
   /** switch + persist the document page theme; broadcasts 'app:document-theme-changed' to all web contents */
   setDocumentTheme(theme: DocTheme): Promise<void>
+  /** default PDF zoom when opening a file (genoffice#2454, persisted in userData/app-settings.json) */
+  getPdfDefaultZoom(): Promise<PdfDefaultZoom>
+  /** switch + persist the default PDF zoom; broadcasts 'app:pdf-default-zoom-changed' to all web contents; resolves to the persisted value */
+  setPdfDefaultZoom(zoom: PdfDefaultZoom): Promise<PdfDefaultZoom>
   /** AutoSave default applied by every editor window (persisted in userData/app-settings.json) */
   getAutoSaveDefault(): Promise<AutoSaveDefault>
   /** persist the AutoSave default; broadcasts 'app:auto-save-default-changed' to all web contents */
@@ -702,6 +713,8 @@ export const HOME_CHANNELS = {
   setTheme: 'home:set-theme',
   getDocumentTheme: 'home:get-document-theme',
   setDocumentTheme: 'home:set-document-theme',
+  getPdfDefaultZoom: 'home:get-pdf-default-zoom',
+  setPdfDefaultZoom: 'home:set-pdf-default-zoom',
   getAutoSaveDefault: 'home:get-auto-save-default',
   setAutoSaveDefault: 'home:set-auto-save-default',
   getTabSleepEnabled: 'home:get-tab-sleep-enabled',

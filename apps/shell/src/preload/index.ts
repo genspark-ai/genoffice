@@ -425,6 +425,16 @@ const homeApi: HomeApi = {
       throw new Error('Invalid document theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setDocumentTheme, theme)
   },
+  async getPdfDefaultZoom() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getPdfDefaultZoom)
+    return result === 'page' || result === 'last' ? result : 'width'
+  },
+  async setPdfDefaultZoom(zoom) {
+    if (zoom !== 'width' && zoom !== 'page' && zoom !== 'last')
+      throw new Error('Invalid PDF default zoom.')
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setPdfDefaultZoom, zoom)
+    return result === 'page' || result === 'last' ? result : 'width'
+  },
   async getAutoSaveDefault() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAutoSaveDefault)
     const r = result as { on?: unknown; updatedAt?: unknown } | null

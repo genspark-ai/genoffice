@@ -4,7 +4,7 @@ import type { Lang } from '@genoffice/i18n'
 import type { AiStreamChunk } from '@genoffice/ai-provider'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
-import type { PdfApi, UiTheme } from '../shared/ipc'
+import type { PdfApi, PdfDefaultZoom, UiTheme } from '../shared/ipc'
 
 const api: PdfApi = {
   consumePending: () => ipcRenderer.invoke(PDF_CHANNELS.consumePending),
@@ -121,6 +121,14 @@ const api: PdfApi = {
     const listener = (_event: Electron.IpcRendererEvent, prefs: AiPanelPrefs) => handler(prefs)
     ipcRenderer.on(PDF_CHANNELS.aiPanelPrefsChanged, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.aiPanelPrefsChanged, listener)
+  },
+  getPdfDefaultZoom: () => ipcRenderer.invoke(PDF_CHANNELS.getPdfDefaultZoom),
+  onPdfDefaultZoomChanged: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, zoom: unknown) => {
+      if (zoom === 'page' || zoom === 'last' || zoom === 'width') handler(zoom as PdfDefaultZoom)
+    }
+    ipcRenderer.on(PDF_CHANNELS.pdfDefaultZoomChanged, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.pdfDefaultZoomChanged, listener)
   },
   onChromePressed: (handler) => {
     const listener = () => handler()

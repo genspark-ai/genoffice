@@ -298,6 +298,7 @@ import type {
   RecentPage,
   RenameResult,
   DocTheme,
+  PdfDefaultZoom,
   StarPromptShow,
   UiTheme,
   FileSearchPage,
@@ -650,6 +651,15 @@ function currentDocTheme(): DocTheme {
   const saved = readAppSettings(APP_SETTINGS_PATH()).documentTheme
   cachedDocTheme = saved === 'light' || saved === 'dark' ? saved : 'follow'
   return cachedDocTheme
+}
+
+let cachedPdfDefaultZoom: PdfDefaultZoom | null = null
+
+function currentPdfDefaultZoom(): PdfDefaultZoom {
+  if (cachedPdfDefaultZoom) return cachedPdfDefaultZoom
+  const saved = readAppSettings(APP_SETTINGS_PATH()).pdfDefaultZoom
+  cachedPdfDefaultZoom = saved === 'page' || saved === 'last' ? saved : 'width'
+  return cachedPdfDefaultZoom
 }
 
 let cachedAutoSaveDefault: AutoSaveDefault | null = null
@@ -5265,6 +5275,23 @@ function registerHomeIpc(): void {
     // the native theme is untouched — only the editors' canvas/paper follows this
     for (const wc of webContents.getAllWebContents()) wc.send('app:document-theme-changed', theme)
   })
+
+  ipcMain.handle(HOME_CHANNELS.getPdfDefaultZoom, (): PdfDefaultZoom => currentPdfDefaultZoom())
+  // the PDF viewer asks via the app-wide channel (symmetric with app:get-document-theme)
+  ipcMain.handle('app:get-pdf-default-zoom', (): PdfDefaultZoom => currentPdfDefaultZoom())
+
+  const setPdfDefaultZoom = (zoom: unknown): PdfDefaultZoom => {
+    if (zoom !== 'width' && zoom !== 'page' && zoom !== 'last') return currentPdfDefaultZoom()
+    if (zoom === currentPdfDefaultZoom()) return currentPdfDefaultZoom()
+    cachedPdfDefaultZoom = zoom
+    writeAppSetting(APP_SETTINGS_PATH(), 'pdfDefaultZoom', zoom)
+    for (const wc of webContents.getAllWebContents()) wc.send('app:pdf-default-zoom-changed', zoom)
+    return zoom
+  }
+  ipcMain.handle(HOME_CHANNELS.setPdfDefaultZoom, (_event, zoom: unknown) =>
+    setPdfDefaultZoom(zoom),
+  )
+  ipcMain.handle('app:set-pdf-default-zoom', (_event, zoom: unknown) => setPdfDefaultZoom(zoom))
 
   // comment / tracked-change author (Word: Options → General → User name);
   // the editor mains resolve the same key via configuredAuthorName

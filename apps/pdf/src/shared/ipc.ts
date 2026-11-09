@@ -75,6 +75,8 @@ export const PDF_CHANNELS = {
   getAiPanelPrefs: 'app:get-ai-panel-prefs',
   aiPanelPrefsChanged: 'app:ai-panel-prefs-changed',
   authorNameChanged: 'app:author-name-changed',
+  getPdfDefaultZoom: 'app:get-pdf-default-zoom',
+  pdfDefaultZoomChanged: 'app:pdf-default-zoom-changed',
 } as const
 
 export const VISUAL_SIGNATURE_CONTENT_PREFIX = 'GenOffice visual signature field: '
@@ -260,6 +262,9 @@ export interface CreateDocumentResult {
 }
 
 export type UiTheme = 'light' | 'dark' | 'system'
+
+/** Default PDF zoom when opening a file (Settings → General, genoffice#2454) */
+export type PdfDefaultZoom = 'width' | 'page' | 'last'
 
 export type MarkupType = 'highlight' | 'underline' | 'strikeout' | 'squiggly'
 
@@ -1241,6 +1246,9 @@ export interface PdfApi {
   getAiPanelPrefs(): Promise<AiPanelPrefs>
   setAiPanelPrefs(patch: Partial<AiPanelPrefs>): Promise<AiPanelPrefs>
   onAiPanelPrefsChanged(handler: (prefs: AiPanelPrefs) => void): () => void
+  /** Default PDF zoom when opening a file (Settings → General, genoffice#2454) */
+  getPdfDefaultZoom(): Promise<PdfDefaultZoom>
+  onPdfDefaultZoomChanged(handler: (zoom: PdfDefaultZoom) => void): () => void
   /** press on the shell chrome (tab strip is a sibling WebContentsView whose
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void

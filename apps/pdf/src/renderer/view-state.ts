@@ -157,3 +157,70 @@ export function zoomAnchorY(
     top += rowHeights[i]! * scale + gap
   return top + anchor.content * scale + anchor.fixed
 }
+
+/* ── Default PDF zoom on open (genoffice#2454) ──
+ * The setting itself lives in the shell's app-settings.json (Settings →
+ * General) and arrives over IPC as one of these values. 'width' is the
+ * long-standing behavior and the fallback when unset or malformed.
+ * 'page' fits the whole page. 'last' restores the last used zoom: the
+ * per-file saved view first (most specific), then the global last zoom,
+ * then 'width'. The reading position (page/frac) is never decided here —
+ * App still restores it from the per-file saved view for every setting. */
+export type PdfDefaultZoom = 'width' | 'page' | 'last'
+
+export function sanitizePdfDefaultZoom(value: unknown): PdfDefaultZoom {
+  return value === 'page' || value === 'last' ? value : 'width'
+}
+
+/** The zoom `last` falls back to when a file has no saved view of its own. */
+export type LastZoom = { scale: number; fitMode: PdfFitMode }
+
+export const LAST_ZOOM_KEY = 'genoffice-pdf-last-zoom'
+
+function sanitizeLastZoom(entry: unknown): LastZoom | null {
+  if (!entry || typeof entry !== 'object') return null
+  const e = entry as Record<string, unknown>
+  if (typeof e.scale !== 'number' || !Number.isFinite(e.scale) || e.scale <= 0) return null
+  if (e.fitMode !== 'width' && e.fitMode !== 'page' && e.fitMode !== null) return null
+  return { scale: e.scale, fitMode: e.fitMode }
+}
+
+export function loadLastZoom(storage: StorageLike = localStorage): LastZoom | null {
+  try {
+    return sanitizeLastZoom(JSON.parse(storage.getItem(LAST_ZOOM_KEY) ?? 'null'))
+  } catch {
+    return null
+  }
+}
+
+export function saveLastZoom(zoom: LastZoom, storage: StorageLike = localStorage): void {
+  try {
+    storage.setItem(LAST_ZOOM_KEY, JSON.stringify(zoom))
+  } catch {
+    // best-effort, like saveViewState
+  }
+}
+
+/** What opening a file should zoom to under a default-zoom setting.
+ *  `scale` is only meaningful when `fitMode` is null (a fixed zoom);
+ *  fit modes are recomputed from the viewport by App. */
+export function resolveOpenZoom(args: {
+  setting: PdfDefaultZoom
+  savedView: PdfViewState | null
+  lastZoom: LastZoom | null
+}): { fitMode: PdfFitMode; scale: number | null } {
+  const { setting, savedView, lastZoom } = args
+  if (setting === 'width') return { fitMode: 'width', scale: null }
+  if (setting === 'page') return { fitMode: 'page', scale: null }
+  // 'last': per-file first, then global, then width
+  if (savedView) {
+    return {
+      fitMode: savedView.fitMode,
+      scale: savedView.fitMode === null ? savedView.scale : null,
+    }
+  }
+  if (lastZoom) {
+    return { fitMode: lastZoom.fitMode, scale: lastZoom.fitMode === null ? lastZoom.scale : null }
+  }
+  return { fitMode: 'width', scale: null }
+}

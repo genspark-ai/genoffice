@@ -118,11 +118,15 @@ import { rowOfVisIdx, spreadRows, stepPage } from './spread'
 import {
   captureViewState,
   captureZoomAnchor,
+  loadLastZoom,
   loadViewState,
+  resolveOpenZoom,
+  sanitizePdfDefaultZoom,
+  saveLastZoom,
   saveViewState,
   zoomAnchorY,
 } from './view-state'
-import type { PdfViewState, ZoomAnchor } from './view-state'
+import type { PdfDefaultZoom, PdfViewState, ZoomAnchor } from './view-state'
 import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import { CommentsPanel, type CommentEntry } from './CommentsPanel'
@@ -570,6 +574,19 @@ export default function App() {
   useEffect(() => {
     window.pdfApi.getUsername().then(setNoteAuthor, () => {})
     return window.pdfApi.onUsernameChanged(setNoteAuthor)
+  }, [])
+  // Default PDF zoom for files opened after mount (Settings → General); only
+  // the next openPath reads it, an already-open file keeps its zoom.
+  useEffect(() => {
+    void window.pdfApi
+      .getPdfDefaultZoom?.()
+      .then((z) => {
+        defaultZoomRef.current = sanitizePdfDefaultZoom(z)
+      })
+      .catch(() => {})
+    return window.pdfApi.onPdfDefaultZoomChanged?.((z) => {
+      defaultZoomRef.current = sanitizePdfDefaultZoom(z)
+    })
   }, [])
   const [highlightColor, setHighlightColor] = useState<[number, number, number]>(
     MARKUP_COLORS.highlight,
@@ -1151,6 +1168,8 @@ export default function App() {
   const coalesceKeyRef = useRef<string | null>(null)
   const passwordRef = useRef<string | undefined>(undefined)
   const fitModeRef = useRef<FitMode>('width')
+  /** Default zoom for the next file opened (Settings → General, genoffice#2454) */
+  const defaultZoomRef = useRef<PdfDefaultZoom>('width')
   /** Reading position saved when this file was last viewed; applied once after open */
   const pendingViewRestoreRef = useRef<PdfViewState | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -1732,16 +1751,22 @@ export default function App() {
         // A newly opened file starts outside the autosave gate
         savedOnceRef.current = false
         await loadDoc(path, null)
-        // Silently restore the last reading position (WPS-style). A saved custom
-        // zoom (fitMode null) must be applied before 'ready', or the initial
-        // fit-width recompute would take over; fit modes are recomputed anyway.
+        // Silently restore the last reading position (WPS-style). The zoom
+        // follows the Default PDF zoom setting (genoffice#2454): 'width' and
+        // 'page' always refit on open, 'last' restores the saved zoom.
+        // Either way the saved page/frac still applies. The resolved zoom
+        // must land before 'ready', or the initial fit recompute would
+        // take over; fit modes are recomputed anyway.
         const savedView = loadViewState(path)
-        if (savedView) {
-          pendingViewRestoreRef.current = savedView
-          fitModeRef.current = savedView.fitMode
-          if (savedView.fitMode === null)
-            setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedView.scale)))
-        }
+        if (savedView) pendingViewRestoreRef.current = savedView
+        const opened = resolveOpenZoom({
+          setting: defaultZoomRef.current,
+          savedView,
+          lastZoom: loadLastZoom(),
+        })
+        fitModeRef.current = opened.fitMode
+        if (opened.fitMode === null && opened.scale !== null)
+          setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, opened.scale)))
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {
@@ -1981,6 +2006,8 @@ export default function App() {
           fitMode: fitModeRef.current,
         }),
       )
+      // 'last used' for a file with no saved view of its own (genoffice#2454)
+      saveLastZoom({ scale, fitMode: fitModeRef.current })
     }
     const schedule = () => {
       window.clearTimeout(timer)
