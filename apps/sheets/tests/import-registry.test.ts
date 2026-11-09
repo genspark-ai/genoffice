@@ -65,10 +65,12 @@ describe('the import registry', () => {
     const first = registry.start(7)
     const second = registry.start(7)
     // the first import finishes late, after the second one started
-    registry.finish(7, first)
+    expect(registry.finish(7, first)).toBe(false)
     expect(registry.controllerFor(7)).toBe(second)
     expect(registry.cancel(7)).toBe(true)
     expect(second.signal.aborted).toBe(true)
+    expect(registry.finish(7, second)).toBe(true)
+    expect(registry.controllerFor(7)).toBeUndefined()
   })
 
   it('tells a cancelled import from one that failed on its own', () => {

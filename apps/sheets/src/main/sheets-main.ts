@@ -3105,10 +3105,10 @@ export function registerSheetsIpc(): void {
       if (pendingImports.wasCancelled(importController)) return null
       throw error
     } finally {
-      pendingImports.finish(event.sender.id, importController)
       // the import is over (done, failed or cancelled): the bar belongs to it
-      // and must not stand into the next open
-      reportProgress(null)
+      // and must not stand into the next open. A superseded import leaves
+      // the bar alone: it now shows the import that replaced it.
+      if (pendingImports.finish(event.sender.id, importController)) reportProgress(null)
     }
     // a declined import (an .ods the user chose not to convert) opens nothing
     if (!prepared) return null
