@@ -94,7 +94,7 @@ vi.mock('../../slides/src/main/slides-main', () => ({
 
 import { TabManager } from '../src/main/tab-manager'
 
-const TAB_STRIP_HEIGHT = 40
+const TAB_STRIP_HEIGHT = 44
 const WINDOW_WIDTH = 800
 const WINDOW_HEIGHT = 600
 

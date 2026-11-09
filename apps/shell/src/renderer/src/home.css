@@ -4,6 +4,7 @@
   /* Genspark DS v4.1: guide/onboarding accent is the brand blue */
   --accent: #0f7fff;
   --accent-hover: #0e72e5;
+  --accent-text: #ffffff;
   --modal-width-sm: 480px;
   --avatar-bg: #e8ebef;
   --badge-bg: #eaf0fd;
@@ -11,7 +12,7 @@
   --timeline-user-bg: #eef1f5;
   --timeline-user-text: #5a6170;
   /* lift for the active segment in gray-track tab pills */
-  --shadow-pill: 0 1px 2px rgb(0 0 0 / 8%);
+  --shadow-pill: none;
 
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
@@ -23,12 +24,13 @@
 [data-theme='dark'] {
   --accent: #3f99ff;
   --accent-hover: #5ba5ff;
-  --avatar-bg: #333;
-  --badge-bg: #2a3a4a;
-  --checkbox-bg: #333;
+  --accent-text: #ffffff;
+  --avatar-bg: rgb(255 255 255 / 12%);
+  --badge-bg: rgb(255 255 255 / 8%);
+  --checkbox-bg: rgb(255 255 255 / 6%);
   --timeline-user-bg: #2a2a3a;
   --timeline-user-text: #b0b0c0;
-  --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-pill: none;
   --logo-invert: 1;
 }
 
@@ -37,12 +39,13 @@
   :root:not([data-theme='light']):not([data-theme='dark']) {
     --accent: #3f99ff;
     --accent-hover: #5ba5ff;
-    --avatar-bg: #333;
-    --badge-bg: #2a3a4a;
-    --checkbox-bg: #333;
+    --accent-text: #ffffff;
+    --avatar-bg: rgb(255 255 255 / 12%);
+    --badge-bg: rgb(255 255 255 / 8%);
+    --checkbox-bg: rgb(255 255 255 / 6%);
     --timeline-user-bg: #2a2a3a;
     --timeline-user-text: #b0b0c0;
-    --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-pill: none;
     --logo-invert: 1;
   }
 }
@@ -71,36 +74,103 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, var(--ui-cjk), 'Segoe UI', 'Microsoft YaHei', sans-serif;
-  background: var(--surface);
+  /* --ui-font is set by Settings > Appearance; unset keeps the system stack */
+  font-family: var(
+    --ui-font,
+    -apple-system,
+    var(--ui-cjk),
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif
+  );
+  background: var(--wall-bg);
+  background-attachment: fixed;
   color: var(--text);
 }
 
 /* macOS vibrancy (body.vib set at bootstrap): the window background stays
  * transparent so editor views can punch through to the vibrancy material;
- * the Home surface paints itself instead of relying on the body. */
+ * the sidebar panel and the left rail sit directly on that material. */
 body.vib {
   background: transparent;
 }
 
-body.vib .home {
-  background: var(--surface);
-}
-
-/* ---- two-pane frame (below the 40px tab bar) ---- */
+/* ---- two-pane frame (below the 44px tab bar) ---- */
 
 .home {
+  /* inset shell measured from the reference: 52px rail on the left, 1px hairline,
+   * 10px corners, 2px right / 4px bottom gap, top border at y=43 */
+  position: relative;
   display: flex;
-  height: calc(100vh - 40px);
+  height: calc(100vh - 43px - 4px);
+  margin: 0 2px 4px 52px;
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rail {
+  position: fixed;
+  top: 44px;
+  bottom: 4px;
+  left: 0;
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0 12px;
+  z-index: 10;
+}
+
+.rail .account-entry {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.rail .account-btn {
+  justify-content: center;
+  height: 40px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.rail .account-btn:hover {
+  background: none;
+}
+
+.rail .account-text,
+.rail .account-chevron {
+  display: none;
+}
+
+.rail .account-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.rail .login-hint {
+  left: calc(100% + 8px);
+  bottom: 0;
+  width: 220px;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 232px;
-  padding: 18px 12px 16px;
-  border-right: 1px solid var(--border);
+  width: 288px;
+  padding: 18px 8px 16px;
+  border-right: 1px solid var(--shell-border);
+  /* translucent black over the OS material (body.vib) or the in-app --wall */
+  background: var(--panel-bg);
   overflow-y: auto;
 }
 
@@ -130,7 +200,8 @@ body.vib .home {
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 8px 10px;
+  min-height: 30px;
+  padding: 5px 10px;
   border: none;
   border-radius: 8px;
   background: none;
@@ -146,8 +217,8 @@ body.vib .home {
 }
 
 .nav-item.active {
-  background: var(--bg-hover);
-  font-weight: 600;
+  background: var(--active-bg);
+  font-weight: 500;
 }
 
 .nav-item svg {
@@ -175,8 +246,10 @@ body.vib .home {
 .account-entry {
   position: relative;
   margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--glass-bg);
 }
 
 .account-btn {
@@ -212,8 +285,8 @@ body.vib .home {
 }
 
 .account-avatar.logged-in {
-  background: linear-gradient(135deg, #3d7ff5, #1b58cf);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .account-avatar.waiting {
@@ -276,7 +349,7 @@ body.vib .home {
   padding: 8px;
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
   z-index: 30;
 }
 
@@ -363,22 +436,24 @@ body.vib .home {
   gap: 14px;
   padding: 18px 18px 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  border-radius: 16px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition:
     border-color 0.12s,
-    box-shadow 0.12s;
+    background 0.12s;
 }
 
 .quick-card:hover {
   border-color: var(--border-hover);
-  box-shadow: 0 3px 12px rgb(0 0 0 / 8%);
+  background: var(--hover);
 }
 
-.quick-card svg {
+.quick-card svg,
+.quick-card img {
   flex-shrink: 0;
 }
 
@@ -502,7 +577,8 @@ body.vib .home {
   align-items: center;
   height: 40px;
   padding: 0 3px;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: var(--checkbox-bg);
   flex-shrink: 0;
 }
@@ -511,7 +587,7 @@ body.vib .home {
 .cloud-seg button {
   padding: 7px 15px;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   background: none;
   font: inherit;
   /* same size as the toolbar's heading text ("Recent · N files") so the two
@@ -529,10 +605,10 @@ body.vib .home {
 
 .filter-pill.active,
 .cloud-seg button.active {
-  background: var(--surface);
+  background: var(--segment-active-bg);
   color: var(--text);
-  font-weight: 600;
-  box-shadow: var(--shadow-pill);
+  font-weight: 500;
+  box-shadow: none;
 }
 
 .empty {
@@ -605,8 +681,9 @@ body.vib .home {
 /* no overflow clipping: row menus must be able to escape the card */
 .recent-table {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  border-radius: 16px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
 }
 
 .recent-columns,
@@ -810,7 +887,6 @@ body.vib .home {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 10px 28px rgb(0 0 0 / 14%);
   animation: menu-in 0.1s ease;
 }
 
@@ -874,8 +950,8 @@ body.vib .home {
 }
 
 .btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgb(35 36 37 / 20%);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn-secondary {
@@ -902,12 +978,12 @@ body.vib .home {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-bg-overlay);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
 }
 
 /* ConfirmDialog per the design system: 8px container, 6px buttons */
@@ -916,8 +992,11 @@ body.vib .home {
   max-width: 500px;
   padding: 24px;
   background: var(--surface);
-  border-radius: var(--radius-8);
-  box-shadow: var(--shadow-modal-strong);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: none;
+  position: relative;
+  z-index: 1001;
   animation: menu-in 0.12s ease;
 }
 
@@ -1163,7 +1242,6 @@ body.vib .home {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
   animation: menu-in 0.1s ease;
 }
 
@@ -1216,7 +1294,6 @@ body.vib .home {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
   animation: menu-in 0.1s ease;
 }
 
@@ -1261,7 +1338,6 @@ body.vib .home {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
   animation: menu-in 0.1s ease;
 }
 
@@ -1496,7 +1572,6 @@ body.vib .home {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
   padding: 4px;
   z-index: 5;
 }
@@ -1544,10 +1619,10 @@ body.vib .home {
   align-items: center;
   gap: 9px;
   height: 40px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
   color: var(--text-muted);
 }
 
@@ -1759,4 +1834,275 @@ body.vib .home {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---- left rail navigation (icon buttons) ---- */
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rail-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rail-btn.active {
+  border-color: var(--border-strong);
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.rail-btn:focus-visible,
+.new-btn:focus-visible,
+.acct-menu button:focus-visible,
+.new-menu button:focus-visible,
+.search-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- popover menus: flat panel, hairline border, no shadow ---- */
+.acct-menu,
+.new-menu {
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.acct-menu {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  min-width: 220px;
+}
+
+.acct-menu-head {
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.acct-menu button,
+.new-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.acct-menu button:hover:not(:disabled),
+.new-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.acct-menu button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+/* ---- sidebar "New" button ---- */
+.new-wrap {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.new-btn:hover {
+  background: var(--color-btn-primary-hover);
+}
+
+.new-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+}
+
+.new-menu-sub {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.new-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.new-menu-folder {
+  width: 18px;
+  height: 14px;
+  border: 1.3px solid var(--text-secondary);
+  border-radius: 3px;
+}
+
+/* ---- file search + sortable headers ---- */
+.cloud-search.file-search {
+  flex: 0 1 300px;
+  max-width: 300px;
+  margin-left: 0;
+  height: 36px;
+}
+
+.search-clear {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  color: var(--text);
+}
+
+.col-sort.active {
+  color: var(--text);
+}
+
+/* ---- loading skeleton ---- */
+.recent-table.skeleton {
+  padding: 4px 0;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 54px;
+  padding: 0 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.skeleton-row:first-child {
+  border-top: none;
+}
+
+.skeleton-block {
+  border-radius: 6px;
+  background: var(--bg-hover);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.skeleton-name {
+  flex: 1;
+  max-width: 260px;
+  height: 12px;
+}
+
+.skeleton-meta {
+  flex: none;
+  width: 120px;
+  height: 12px;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+  }
+}
+
+/* ---- drag and drop ---- */
+.proj-item.drop-target {
+  background: var(--active-bg);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg-overlay);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 40px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface-subtle);
+}
+
+.drop-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.drop-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Settings > Appearance > Transparency effects off: solid surfaces, no window material */
+:root[data-transparency='off'] body,
+:root[data-transparency='off'] body.vib {
+  background: var(--chrome-bg);
 }

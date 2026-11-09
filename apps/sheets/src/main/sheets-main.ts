@@ -1677,7 +1677,7 @@ export function registerSheetsIpc(): void {
     if (!path) {
       const selection = await openFileDialog(event, {
         properties: ['openFile'],
-        filters: [{ name: tm('filterSpreadsheets'), extensions: ['xlsx', 'xls', 'csv'] }],
+        filters: [{ name: tm('filterSpreadsheets'), extensions: ['xlsx', 'xls', 'csv', 'tsv'] }],
       })
       if (selection.canceled || !selection.filePaths[0]) return null
       path = selection.filePaths[0]
@@ -2670,7 +2670,7 @@ async function prepareWorkbookForOpen(
   parent?: BrowserWindow | undefined,
 ): Promise<{ openPath: string; suggestSaveAs?: string; csvImport?: boolean }> {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
-  if (extension !== 'csv' && extension !== 'xls') {
+  if (extension !== 'csv' && extension !== 'tsv' && extension !== 'xls') {
     // Unsaved work from a lost session: offer the recovery copy. Restoring
     // opens it with suggestSaveAs pointing back at the original, so the first save asks
     // for confirmation instead of silently overwriting the file the user opened.
@@ -2696,7 +2696,7 @@ async function prepareWorkbookForOpen(
   const directory = join(app.getPath('temp'), 'genoffice-imports', randomUUID())
   await mkdir(directory, { recursive: true })
   const openPath = join(directory, `${stem}.xlsx`)
-  if (extension === 'csv') {
+  if (extension === 'csv' || extension === 'tsv') {
     await writeFile(
       openPath,
       await csvToXlsxBuffer(decodeCsvBuffer(await readFile(path), legacyCsvCharset())),
@@ -2707,7 +2707,7 @@ async function prepareWorkbookForOpen(
   return {
     openPath,
     suggestSaveAs: path.replace(/\.[^.]+$/, '.xlsx'),
-    ...(extension === 'csv' ? { csvImport: true } : {}),
+    ...(extension === 'csv' || extension === 'tsv' ? { csvImport: true } : {}),
   }
 }
 

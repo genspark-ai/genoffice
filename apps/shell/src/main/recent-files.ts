@@ -32,14 +32,15 @@ export function statExistingPaths(
 
 export function normalizeRecentQuery(
   raw: unknown,
-): Required<Omit<RecentQuery, 'ext'>> & { ext?: string } {
+): Required<Omit<RecentQuery, 'ext' | 'query'>> & { ext?: string; query?: string } {
   const query = (raw ?? {}) as RecentQuery
   const offset = Number.isFinite(query.offset) ? Math.max(0, Math.floor(query.offset!)) : 0
   const limit = Number.isFinite(query.limit)
     ? Math.min(RECENT_PAGE_MAX, Math.max(0, Math.floor(query.limit!)))
     : RECENT_PAGE_DEFAULT
   const ext = typeof query.ext === 'string' && query.ext ? query.ext.toLowerCase() : undefined
-  return { offset, limit, ext }
+  const text = typeof query.query === 'string' ? query.query.trim().toLowerCase() : ''
+  return { offset, limit, ext, query: text || undefined }
 }
 
 /** Page over existing paths only, preserving the source's newest-first order. */
@@ -48,9 +49,10 @@ export function pageRecentPaths(
   raw: unknown,
   starredPaths: ReadonlySet<string>,
 ): RecentPage {
-  const { offset, limit, ext } = normalizeRecentQuery(raw)
+  const { offset, limit, ext, query } = normalizeRecentQuery(raw)
   const all = statExistingPaths(paths, starredPaths)
-  const filtered = ext ? all.filter((entry) => entry.ext === ext) : all
+  const byExt = ext ? all.filter((entry) => entry.ext === ext) : all
+  const filtered = query ? byExt.filter((entry) => entry.path.toLowerCase().includes(query)) : byExt
   return {
     entries: limit === 0 ? [] : filtered.slice(offset, offset + limit),
     total: filtered.length,

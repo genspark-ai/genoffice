@@ -11,18 +11,54 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 44px;
   display: flex;
   align-items: stretch;
   background: var(--tabstrip-bg);
+  /* Windows caption buttons (titleBarOverlay) sit over the right end of the bar */
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   -webkit-app-region: drag;
   z-index: 10;
 }
 
 /* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
+/* only macOS has traffic lights to clear; Windows starts at the left edge */
 .tab-bar-drag-spacer {
+  width: 8px;
+  flex-shrink: 0;
+}
+
+.plat-mac .tab-bar-drag-spacer {
   width: 78px;
   flex-shrink: 0;
+}
+
+/* Windows in-bar application menu (File / Edit / Window / Help) */
+.tab-menus {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding-right: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.tab-menu-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tabstrip-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tab-menu-btn:hover,
+.tab-menu-btn:focus-visible {
+  background: var(--hover);
+  color: var(--tabstrip-text-active);
 }
 
 /* scrollable middle section; empty space stays part of the window drag region.
@@ -51,7 +87,7 @@
    * bottom padding centers content in the upper 28px band, on the same
    * line as the hover capsule — measured from Chrome, whose favicons sit
    * 3px above the tab's geometric center */
-  margin-top: 6px;
+  margin-top: 8px;
   /* 12px left = 3px plate inset + 9px icon-to-plate, per Chrome @2x */
   padding: 0 8px 6px 12px;
   /* Chrome tabs shrink under pressure but never grow past 240px */
@@ -178,7 +214,7 @@
 
 /* mid drag-to-reorder: the dragged tab's plate carries a lift shadow */
 .tab-item.drag-source .tab-plate {
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  outline: 1px solid var(--border-strong);
 }
 
 /* ---- drag-to-reorder (Chrome-style: the grabbed tab follows the pointer, neighbours slide aside) ---- */
@@ -272,15 +308,16 @@
 }
 
 .app-frame-content {
-  padding-top: 40px;
+  /* shell top border is drawn at y=43, under the 44px bar */
+  padding-top: 43px;
 }
 
 /* ── Dark mode tab bar overrides ─────────────────────────── */
 
 [data-theme='dark'] .tab-bar {
-  --tabstrip-bg: #2a2a2a;
-  --tabstrip-text: #b0b0b0;
-  --tabstrip-text-active: #e4e4e4;
+  --tabstrip-bg: transparent;
+  --tabstrip-text: #a3a3a3;
+  --tabstrip-text-active: #f4f4f4;
   --tab-separator: rgba(255, 255, 255, 0.15);
 }
 
@@ -304,9 +341,9 @@
 /* System dark: same overrides when following OS preference */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-bar {
-    --tabstrip-bg: #2a2a2a;
-    --tabstrip-text: #b0b0b0;
-    --tabstrip-text-active: #e4e4e4;
+    --tabstrip-bg: transparent;
+    --tabstrip-text: #a3a3a3;
+    --tabstrip-text-active: #f4f4f4;
     --tab-separator: rgba(255, 255, 255, 0.15);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-item.active .tab-plate {
@@ -332,4 +369,8 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+:root[data-transparency='off'] .tab-bar {
+  --tabstrip-bg: var(--chrome-bg);
 }

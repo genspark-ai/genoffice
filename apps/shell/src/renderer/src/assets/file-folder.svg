@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<title>Folder</title>
+<rect x="1" y="1" width="30" height="30" rx="8" fill="#0d1626"/>
+<rect x="1.5" y="1.5" width="29" height="29" rx="7.5" fill="none" stroke="#8cc4ff" stroke-opacity="0.45"/>
+<path d="M6 10.5a2.5 2.5 0 0 1 2.5-2.5h4.2c.7 0 1.3.3 1.8.8l1.4 1.4h8.6a2.5 2.5 0 0 1 2.5 2.5v1H6z" fill="#1d55e6"/>
+<rect x="6" y="14" width="20" height="11.5" rx="2.5" fill="#3b8bff"/>
+<rect x="6" y="14" width="20" height="3" rx="1.5" fill="#ffffff" fill-opacity="0.28"/>
+</svg>

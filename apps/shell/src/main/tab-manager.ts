@@ -41,7 +41,7 @@ interface TabRecord {
 }
 
 /** must match the tab strip's rendered height (apps/shell/src/renderer/src/TabBar.tsx) */
-const TAB_STRIP_HEIGHT = 40
+const TAB_STRIP_HEIGHT = 44
 const HOME_ID = 'home'
 
 /**
@@ -113,6 +113,11 @@ export class TabManager {
     if (this.shellWindow.isDestroyed()) return
     const active = this.tabs.find((t) => t.id === this.activeId)
     if (active?.view) active.view.setBounds(this.contentBounds())
+  }
+
+  /** file behind a document tab; undefined for Home and unsaved tabs */
+  filePathOf(id: string): string | undefined {
+    return this.tabs.find((t) => t.id === id)?.filePath
   }
 
   list(): TabSummary[] {

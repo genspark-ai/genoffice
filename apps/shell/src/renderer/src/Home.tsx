@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
@@ -6,6 +7,15 @@ import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
 import iconPdf from './assets/file-pdf.svg'
 import iconMd from './assets/file-md.svg'
+import iconHtml from './assets/file-html.svg'
+import iconFolder from './assets/file-folder.svg'
+import iconJson from './assets/file-json.svg'
+import iconXml from './assets/file-xml.svg'
+import iconYaml from './assets/file-yaml.svg'
+import iconSql from './assets/file-sql.svg'
+import iconCsv from './assets/file-csv.svg'
+import iconTsv from './assets/file-tsv.svg'
+import iconTxt from './assets/file-txt.svg'
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -19,6 +29,22 @@ import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
+import { useToast } from './toast'
+import { createDeferredDelete } from './deferred-delete'
+import { loadAppearance } from './appearance'
+import {
+  isEditableTarget,
+  isOpenablePath,
+  nextRowIndex,
+  rangeSelect,
+  sortEntries,
+} from './list-helpers'
+import type { FileSort } from './list-helpers'
+
+/** how long a delete can be undone before the files really go to the Trash */
+const UNDO_MS = 6000
+/** drag payload for moving files onto a project in the sidebar */
+const DRAG_MIME = 'application/x-genoffice-paths'
 
 declare global {
   interface Window {
@@ -42,17 +68,39 @@ const GREET_ASK_KEYS = [
 
 const FILE_ICONS: Record<string, string> = {
   docx: iconDocx,
+  doc: iconDocx,
   xlsx: iconXlsx,
+  xls: iconXlsx,
   pptx: iconPptx,
+  ppt: iconPptx,
   pdf: iconPdf,
   md: iconMd,
   markdown: iconMd,
+  html: iconHtml,
+  htm: iconHtml,
+  json: iconJson,
+  xml: iconXml,
+  yaml: iconYaml,
+  yml: iconYaml,
+  sql: iconSql,
+  csv: iconCsv,
+  tsv: iconTsv,
+  txt: iconTxt,
 }
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
   if (icon) {
-    return <img src={icon} width={size} height={size} alt="" aria-hidden="true" />
+    return (
+      <img
+        src={icon}
+        width={size}
+        height={size}
+        alt=""
+        aria-hidden="true"
+        style={{ objectFit: 'contain' }}
+      />
+    )
   }
   const label = ext ? ext[0].toUpperCase() : '?'
   return (
@@ -150,10 +198,19 @@ interface ProjectPanelProps {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onRefresh: () => void
+  /** files dragged from the table onto a project row */
+  onDropPaths?: (projectId: string, paths: string[]) => void
 }
 
-function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPanelProps) {
+function ProjectPanel({
+  projects,
+  selectedId,
+  onSelect,
+  onRefresh,
+  onDropPaths,
+}: ProjectPanelProps) {
   const { t } = useI18n()
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   // open menu id + fixed-position anchor (viewport coords), so the popup can
@@ -274,7 +331,32 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
           const isActive = selectedId === proj.id
           const isRenaming = renaming?.id === proj.id
           return (
-            <li key={proj.id} className={`proj-item${isActive ? ' active' : ''}`}>
+            <li
+              key={proj.id}
+              className={`proj-item${isActive ? ' active' : ''}${dropTarget === proj.id ? ' drop-target' : ''}`}
+              onDragOver={(e) => {
+                if (!onDropPaths || !Array.from(e.dataTransfer.types).includes(DRAG_MIME)) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                setDropTarget(proj.id)
+              }}
+              onDragLeave={() => setDropTarget((cur) => (cur === proj.id ? null : cur))}
+              onDrop={(e) => {
+                setDropTarget(null)
+                if (!onDropPaths) return
+                const raw = e.dataTransfer.getData(DRAG_MIME)
+                if (!raw) return
+                e.preventDefault()
+                try {
+                  const paths = (JSON.parse(raw) as unknown[]).filter(
+                    (x): x is string => typeof x === 'string',
+                  )
+                  if (paths.length > 0) onDropPaths(proj.id, paths)
+                } catch {
+                  /* not our payload */
+                }
+              }}
+            >
               <div
                 className="proj-item-main"
                 role="button"
@@ -385,7 +467,7 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
         (() => {
           // locale string is "title?\nbody" — split it across the dialog
           const [confirmTitle, ...confirmBody] = t('deleteProjectConfirm').split('\n')
-          return (
+          const modalNode = (
             <div className="modal-overlay" onClick={() => setConfirmDeleteId(null)}>
               <div
                 className="modal"
@@ -411,6 +493,9 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
               </div>
             </div>
           )
+          return typeof document !== 'undefined'
+            ? createPortal(modalNode, document.body)
+            : modalNode
         })()}
     </div>
   )
@@ -555,6 +640,24 @@ function AccountEntry({
     })
   }
 
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
   const handleClick = () => {
     // refresh the login state / credit balance; drop the response
     // when a logout happened while it was in flight
@@ -566,7 +669,7 @@ function AccountEntry({
   }
 
   return (
-    <div className="account-entry">
+    <div className="account-entry" ref={menuRef}>
       {settingsOpen && (
         <SettingsModal
           status={status}
@@ -594,11 +697,49 @@ function AccountEntry({
           </button>
         </div>
       )}
+      {menuOpen && (
+        <div className="acct-menu" role="menu">
+          <div className="acct-menu-head">
+            {loggedIn ? t('acctSignedInAs', { email: email || t('loggedIn') }) : t('acctSignedOut')}
+          </div>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false)
+              handleClick()
+            }}
+          >
+            {t('settings')}
+          </button>
+          {loggedIn ? (
+            <button
+              role="menuitem"
+              disabled={loggingOut}
+              onClick={() => {
+                setMenuOpen(false)
+                doLogout()
+              }}
+            >
+              {t('logout')}
+            </button>
+          ) : (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false)
+                startLogin()
+              }}
+            >
+              {t('login')}
+            </button>
+          )}
+        </div>
+      )}
       <button
         className="account-btn"
-        onClick={handleClick}
-        aria-haspopup="dialog"
-        aria-expanded={settingsOpen}
+        onClick={() => setMenuOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         data-tip={
           loggedIn
             ? email || t('loggedInGenspark')
@@ -994,7 +1135,21 @@ export function Home() {
   const i18n = useI18n()
   const { t, lang } = i18n
   // ── Paged list state (rows loaded for the current view + filter) ──
-  const [entries, setEntries] = useState<RecentEntry[]>([])
+  const [rawEntries, setEntries] = useState<RecentEntry[]>([])
+  // paths hidden while their delete waits out the Undo window
+  const [pendingDelete, setPendingDelete] = useState<ReadonlySet<string>>(new Set())
+  const entries =
+    pendingDelete.size > 0 ? rawEntries.filter((e) => !pendingDelete.has(e.path)) : rawEntries
+  /** false until the first page arrives, so the table shows skeleton rows instead of a false empty state */
+  const [loaded, setLoaded] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const toast = useToast()
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const newMenuRef = useRef<HTMLDivElement>(null)
+  const [dropActive, setDropActive] = useState(false)
+  const selectAnchor = useRef<string | null>(null)
   /** total count under the current view + filter (not just the loaded rows) */
   const [listTotal, setListTotal] = useState(0)
   /** sidebar Recent / Starred counts under the active type filter */
@@ -1005,7 +1160,7 @@ export function Home() {
   const [cloudMode, setCloudMode] = useState(false)
   const [filter, setFilter] = useState('all')
   // modified-column sort (WPS-style header popover), shared by the global and project tables
-  const [fileSort, setFileSort] = useState<'recent' | 'oldest'>('recent')
+  const [fileSort, setFileSort] = useState<FileSort>('recent')
   const [fileSortMenuOpen, setFileSortMenuOpen] = useState(false)
   const fileSortRef = useRef<HTMLDivElement>(null)
   const [rowMenu, setRowMenu] = useState<string | null>(null)
@@ -1039,24 +1194,28 @@ export function Home() {
   // stale responses are dropped via a request sequence number (when views/filters switch quickly)
   const requestSeq = useRef(0)
   const entriesLen = useRef(0)
-  entriesLen.current = entries.length
+  entriesLen.current = rawEntries.length
 
   /** reload the list; keepCount keeps the loaded row count (refresh), otherwise back to page one */
   const reload = (keepCount: boolean) => {
     const seq = ++requestSeq.current
     const ext = filter === 'all' ? undefined : filter
+    const query = search || undefined
     const limit = keepCount ? Math.max(entriesLen.current, PAGE_SIZE) : PAGE_SIZE
     const primary = view === 'recent' ? window.aiOffice.recents : window.aiOffice.starred
     const secondary = view === 'recent' ? window.aiOffice.starred : window.aiOffice.recents
-    void primary({ offset: 0, limit, ext }).then((page) => {
+    void primary({ offset: 0, limit, ext, query }).then((page) => {
       if (seq !== requestSeq.current) return
       setEntries(page.entries)
       setListTotal(page.total)
-      setNavCounts((prev) =>
-        view === 'recent'
-          ? { ...prev, recent: visiblePageCount(page) }
-          : { ...prev, starred: visiblePageCount(page) },
-      )
+      setLoaded(true)
+      // sidebar counts describe the whole view, not the search result
+      if (!query)
+        setNavCounts((prev) =>
+          view === 'recent'
+            ? { ...prev, recent: visiblePageCount(page) }
+            : { ...prev, starred: visiblePageCount(page) },
+        )
     })
     // The other view fetches only its count under the same active filter.
     void secondary({ offset: 0, limit: 0, ext }).then((page) => {
@@ -1084,7 +1243,24 @@ export function Home() {
 
   useEffect(() => {
     reloadRef.current(false)
-  }, [view, filter])
+  }, [view, filter, search])
+
+  // debounce typing in the search box before hitting the main process
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(searchInput.trim()), 180)
+    return () => window.clearTimeout(id)
+  }, [searchInput])
+
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+  const deferredRef = useRef<ReturnType<typeof createDeferredDelete> | null>(null)
+  if (deferredRef.current === null) {
+    deferredRef.current = createDeferredDelete({
+      delayMs: UNDO_MS,
+      commit: (paths) => window.aiOffice.deleteFiles(paths).then(() => refreshRef.current()),
+      onChange: setPendingDelete,
+    })
+  }
 
   useEffect(() => {
     const onFocus = () => {
@@ -1095,7 +1271,7 @@ export function Home() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const hasMore = entries.length < listTotal
+  const hasMore = rawEntries.length < listTotal
 
   useEffect(() => {
     if (!fileSortMenuOpen) return
@@ -1112,7 +1288,12 @@ export function Home() {
     const seq = requestSeq.current
     const ext = filter === 'all' ? undefined : filter
     const api = view === 'recent' ? window.aiOffice.recents : window.aiOffice.starred
-    void api({ offset: entriesLen.current, limit: PAGE_SIZE, ext }).then((page) => {
+    void api({
+      offset: entriesLen.current,
+      limit: PAGE_SIZE,
+      ext,
+      query: search || undefined,
+    }).then((page) => {
       setLoadingMore(false)
       if (seq !== requestSeq.current) return
       setEntries((prev) => [...prev, ...page.entries])
@@ -1125,8 +1306,8 @@ export function Home() {
   // oldest-first over a partially loaded list would miss the tail pages —
   // keep pulling until the list is complete (backend caps recents at 100)
   useEffect(() => {
-    if (fileSort === 'oldest' && hasMore) loadMoreRef.current()
-  }, [fileSort, hasMore, entries.length])
+    if (fileSort !== 'recent' && hasMore) loadMoreRef.current()
+  }, [fileSort, hasMore, rawEntries.length])
 
   // Load the next page once the bottom sentinel enters the viewport (240px early);
   // depending on entries.length rebuilds the observer after each page — observe fires an immediate
@@ -1167,7 +1348,11 @@ export function Home() {
 
   // ── Project files state ────────────────────────────────
 
-  const [projectFileEntries, setProjectFileEntries] = useState<RecentEntry[]>([])
+  const [rawProjectEntries, setProjectFileEntries] = useState<RecentEntry[]>([])
+  const projectFileEntries =
+    pendingDelete.size > 0
+      ? rawProjectEntries.filter((e) => !pendingDelete.has(e.path))
+      : rawProjectEntries
   const [moveFileMenu, setMoveFileMenu] = useState<string | null>(null)
   // submenu opens rightward by default; flips left when the window edge is too close
   const [moveMenuFlip, setMoveMenuFlip] = useState(false)
@@ -1305,6 +1490,60 @@ export function Home() {
     </div>
   )
 
+  // sortable Name / Size headers: first click = default direction, second click flips it
+  const renderSortHeader = (kind: 'name' | 'size') => {
+    const keys: FileSort[] = kind === 'name' ? ['nameAsc', 'nameDesc'] : ['sizeDesc', 'sizeAsc']
+    const idx = keys.indexOf(fileSort)
+    const active = idx >= 0
+    const next = keys[active ? (idx + 1) % 2 : 0]!
+    const nextLabel = (
+      {
+        nameAsc: 'sortNameAsc',
+        nameDesc: 'sortNameDesc',
+        sizeDesc: 'sortSizeDesc',
+        sizeAsc: 'sortSizeAsc',
+      } as const
+    )[next as 'nameAsc' | 'nameDesc' | 'sizeDesc' | 'sizeAsc']
+    return (
+      <button
+        className={`cloud-col-sort-btn col-sort${active ? ' active' : ''}`}
+        title={t(nextLabel)}
+        aria-sort={
+          active
+            ? fileSort === 'nameAsc' || fileSort === 'sizeAsc'
+              ? 'ascending'
+              : 'descending'
+            : 'none'
+        }
+        onClick={() => setFileSort(next)}
+      >
+        {t(kind === 'name' ? 'colName' : 'colSize')}
+        {active && (
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+            style={
+              fileSort === 'nameAsc' || fileSort === 'sizeAsc'
+                ? { transform: 'rotate(180deg)' }
+                : undefined
+            }
+          >
+            <path
+              d="M8 3v10M4.5 9.5L8 13l3.5-3.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </button>
+    )
+  }
+
   // ── Plain view (no project selected): filtering runs in the main process; entries is the visible list ──
   const selectedPaths = entries.filter((e) => selected.has(e.path)).map((e) => e.path)
   const allSelected = entries.length > 0 && selectedPaths.length === entries.length
@@ -1328,13 +1567,16 @@ export function Home() {
     setRowMenu(null)
   }
 
-  const toggleSelect = (path: string, on: boolean) => {
+  const toggleSelect = (path: string, on: boolean, shift = false, ordered: string[] = []) => {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (on) next.add(path)
+      if (shift && on && selectAnchor.current) {
+        for (const p of rangeSelect(ordered, selectAnchor.current, path)) next.add(p)
+      } else if (on) next.add(path)
       else next.delete(path)
       return next
     })
+    selectAnchor.current = path
   }
 
   const toggleSelectAll = () => {
@@ -1355,9 +1597,27 @@ export function Home() {
     void window.aiOffice.removeRecent(paths).then(refresh)
   }
 
+  const deleteWithUndo = (paths: string[]) => {
+    setSelected(new Set())
+    const id = deferredRef.current!.schedule(paths)
+    toast.show({
+      message:
+        paths.length === 1
+          ? t('toastDeleted', { name: fileName(paths[0]!) })
+          : t('toastDeletedMany', { n: paths.length }),
+      actionLabel: t('toastUndo'),
+      durationMs: UNDO_MS,
+      onAction: () => {
+        deferredRef.current?.undo(id)
+      },
+    })
+  }
+
   const deleteFiles = (paths: string[]) => {
     setRowMenu(null)
-    setConfirmDelete(paths)
+    // "confirm before deleting" keeps the old modal; otherwise delete now and offer Undo
+    if (loadAppearance(window.localStorage).confirmDelete) setConfirmDelete(paths)
+    else deleteWithUndo(paths)
   }
 
   const confirmDeleteNow = () => {
@@ -1383,7 +1643,7 @@ export function Home() {
     if (!value || value === baseName(entry)) return
     const newName = entry.ext ? `${value}.${entry.ext}` : value
     void window.aiOffice.renameFile(entry.path, newName).then((result) => {
-      if (!result.ok) window.alert(result.error ?? t('renameFailed'))
+      if (!result.ok) toast.show({ message: result.error ?? t('renameFailed') })
       refresh()
     })
   }
@@ -1430,6 +1690,142 @@ export function Home() {
     )
   }
 
+  // ── keyboard: list shortcuts (read live state through a ref so one listener serves every render) ──
+  const keyRef = useRef({
+    list: [] as RecentEntry[],
+    selectedPaths: [] as string[],
+    listActive: false,
+  })
+  keyRef.current = {
+    list: selectedProjectId ? projectFileEntries : entries,
+    selectedPaths: selectedProjectId ? projSelectedPaths : selectedPaths,
+    listActive: !cloudMode,
+  }
+  const keyActionsRef = useRef({ deleteFiles, startRename })
+  keyActionsRef.current = { deleteFiles, startRename }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // never fire list shortcuts underneath a dialog
+      if (document.querySelector('.set-overlay, .modal-overlay, .onb-overlay')) return
+      const ctx = keyRef.current
+      const mod = e.ctrlKey || e.metaKey
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      if (mod && key === 'f' && ctx.listActive) {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+        return
+      }
+      if (isEditableTarget(e.target)) {
+        if (key === 'Escape' && e.target === searchRef.current) {
+          setSearchInput('')
+          searchRef.current?.blur()
+        }
+        return
+      }
+      if (!ctx.listActive) return
+      const focusedRow = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
+        '.recent-row',
+      )
+      const focusedPath = focusedRow?.dataset.path
+      if (mod && key === 'a') {
+        e.preventDefault()
+        setSelected(new Set(ctx.list.map((x) => x.path)))
+      } else if (key === '/') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      } else if (key === 'Delete') {
+        const targets =
+          ctx.selectedPaths.length > 0 ? ctx.selectedPaths : focusedPath ? [focusedPath] : []
+        if (targets.length > 0) {
+          e.preventDefault()
+          keyActionsRef.current.deleteFiles(targets)
+        }
+      } else if (key === 'F2') {
+        const path = ctx.selectedPaths.length === 1 ? ctx.selectedPaths[0] : focusedPath
+        const entry = ctx.list.find((x) => x.path === path)
+        if (entry) {
+          e.preventDefault()
+          keyActionsRef.current.startRename(entry)
+        }
+      } else if (key === 'Escape') {
+        if (ctx.selectedPaths.length > 0) setSelected(new Set())
+      } else if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>('.recent-item'))
+        if (rows.length === 0) return
+        const current = rows.findIndex((row) => row === document.activeElement)
+        e.preventDefault()
+        rows[nextRowIndex(key, current, rows.length)]?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // ── dropping files on the window opens them ──
+  const dropRef = useRef<(files: File[]) => void>(() => undefined)
+  dropRef.current = (files) => {
+    const paths = window.aiOffice.pathsForFiles(files)
+    const openable = paths.filter(isOpenablePath)
+    for (const path of openable) void window.aiOffice.openPath(path)
+    const skipped = paths.length - openable.length
+    if (skipped > 0) toast.show({ message: t('toastDropSkipped', { n: skipped }) })
+  }
+  useEffect(() => {
+    let depth = 0
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    const onEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      depth++
+      setDropActive(true)
+    }
+    const onOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    }
+    const onLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDropActive(false)
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth = 0
+      setDropActive(false)
+      dropRef.current(Array.from(e.dataTransfer?.files ?? []))
+    }
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
+
+  // close the "New" popover on outside click / Escape
+  useEffect(() => {
+    if (!newMenuOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!newMenuRef.current?.contains(e.target as Node)) setNewMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNewMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [newMenuOpen])
+
   const NEW_ITEMS = [
     { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
     { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
@@ -1453,16 +1849,14 @@ export function Home() {
           </button>
         ))}
         <button className="quick-card" onClick={() => void window.aiOffice.browse()}>
-          <span className="quick-folder">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.44 0 .85.19 1.13.52L8.4 4.4H13A1.5 1.5 0 0 1 14.5 5.9v5.6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
+          <img
+            src={iconFolder}
+            width={30}
+            height={30}
+            alt=""
+            aria-hidden="true"
+            style={{ objectFit: 'contain', flexShrink: 0 }}
+          />
           <span className="quick-text">
             <span className="quick-title-row">
               <span className="quick-title">{t('openLocal')}</span>
@@ -1482,7 +1876,22 @@ export function Home() {
       (p) => p.id !== (context === 'project' ? selectedProjectId : undefined),
     )
     return (
-      <li className="recent-row" key={entry.path}>
+      <li
+        className="recent-row"
+        key={entry.path}
+        data-path={entry.path}
+        draggable={!isRenaming}
+        onDragStart={(event) => {
+          const paths = selected.has(entry.path) ? [...selected] : [entry.path]
+          event.dataTransfer.setData(DRAG_MIME, JSON.stringify(paths))
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        onContextMenu={(event) => {
+          if (isRenaming) return
+          event.preventDefault()
+          setRowMenu(entry.path)
+        }}
+      >
         <div
           className="recent-item"
           role="button"
@@ -1501,7 +1910,16 @@ export function Home() {
               type="checkbox"
               className="row-check"
               checked={selected.has(entry.path)}
-              onChange={(event) => toggleSelect(entry.path, event.target.checked)}
+              onChange={(event) =>
+                toggleSelect(
+                  entry.path,
+                  event.target.checked,
+                  (event.nativeEvent as MouseEvent).shiftKey === true,
+                  sortEntries(context === 'project' ? projectFileEntries : entries, fileSort).map(
+                    (e) => e.path,
+                  ),
+                )
+              }
               aria-label={t('selectFile', { name: entry.name })}
             />
           </span>
@@ -1532,6 +1950,7 @@ export function Home() {
           <button
             className={`star-btn${entry.starred ? ' starred' : ''}`}
             aria-label={entry.starred ? t('unstar') : t('star')}
+            title={entry.starred ? t('unstar') : t('star')}
             onClick={(event) => {
               event.stopPropagation()
               toggleStar(entry.path)
@@ -1551,6 +1970,7 @@ export function Home() {
             <button
               className="more-btn"
               aria-label={t('moreActions')}
+              title={t('moreActions')}
               aria-expanded={rowMenu === entry.path}
               onClick={() => setRowMenu(rowMenu === entry.path ? null : entry.path)}
             >
@@ -1790,18 +2210,17 @@ export function Home() {
                     aria-label={t('selectAll')}
                   />
                 </span>
-                <span className="col-name">{t('colName')}</span>
+                <span className="col-name">{renderSortHeader('name')}</span>
                 <span>{t('colLocation')}</span>
                 {renderModifiedHeader()}
-                <span className="col-size">{t('colSize')}</span>
+                <span className="col-size">{renderSortHeader('size')}</span>
                 <span />
                 <span />
               </div>
               <ul className="recent-list">
-                {(fileSort === 'oldest'
-                  ? [...projectFileEntries].reverse()
-                  : projectFileEntries
-                ).map((entry) => renderFileRow(entry, 'project'))}
+                {sortEntries(projectFileEntries, fileSort).map((entry) =>
+                  renderFileRow(entry, 'project'),
+                )}
               </ul>
             </div>
           )}
@@ -1873,6 +2292,39 @@ export function Home() {
                 ))}
               </div>
             )}
+            <label className="cloud-search file-search">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.3" />
+                <path
+                  d="M10.5 10.5L14 14"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchInput}
+                placeholder={t('searchPlaceholder')}
+                aria-label={t('searchFiles')}
+                onChange={(event) => setSearchInput(event.target.value)}
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  className="search-clear"
+                  aria-label={t('clearSearch')}
+                  title={t('clearSearch')}
+                  onClick={() => {
+                    setSearchInput('')
+                    searchRef.current?.focus()
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </label>
             <div className="recents-heading">
               <span className="section-label">
                 {view === 'recent' ? t('secRecent') : t('secStarred')}
@@ -1881,7 +2333,17 @@ export function Home() {
             </div>
           </div>
 
-          {entries.length === 0 ? (
+          {!loaded ? (
+            <div className="recent-table skeleton" aria-busy="true" aria-label={t('loadingFiles')}>
+              {[0, 1, 2, 3, 4].map((n) => (
+                <div className="skeleton-row" key={n}>
+                  <span className="skeleton-block skeleton-icon" />
+                  <span className="skeleton-block skeleton-name" />
+                  <span className="skeleton-block skeleton-meta" />
+                </div>
+              ))}
+            </div>
+          ) : entries.length === 0 ? (
             <p className="empty proj-empty">
               <svg
                 className="proj-empty-icon"
@@ -1903,11 +2365,13 @@ export function Home() {
                 />
               </svg>
               <span className="empty-hint">
-                {view === 'starred'
-                  ? t('emptyStarred')
-                  : navCounts.recent === 0
-                    ? t('emptyRecent')
-                    : t('emptyFiltered')}
+                {search
+                  ? t('noSearchResults', { q: search })
+                  : view === 'starred'
+                    ? t('emptyStarred')
+                    : navCounts.recent === 0
+                      ? t('emptyRecent')
+                      : t('emptyFiltered')}
               </span>
             </p>
           ) : (
@@ -1921,17 +2385,15 @@ export function Home() {
                     aria-label={t('selectAll')}
                   />
                 </span>
-                <span className="col-name">{t('colName')}</span>
+                <span className="col-name">{renderSortHeader('name')}</span>
                 <span>{t('colLocation')}</span>
                 {renderModifiedHeader()}
-                <span className="col-size">{t('colSize')}</span>
+                <span className="col-size">{renderSortHeader('size')}</span>
                 <span />
                 <span />
               </div>
               <ul className="recent-list">
-                {(fileSort === 'oldest' ? [...entries].reverse() : entries).map((entry) =>
-                  renderFileRow(entry, 'global'),
-                )}
+                {sortEntries(entries, fileSort).map((entry) => renderFileRow(entry, 'global'))}
               </ul>
               {hasMore && (
                 <div ref={sentinelRef} className="load-more" aria-hidden="true">
@@ -1946,55 +2408,54 @@ export function Home() {
   }
 
   return (
-    <div className="home">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
-        </div>
-
-        <nav className="sidebar-nav">
+    <>
+      {/* 52px rail on the window material, left of the inset shell: account avatar at the bottom */}
+      <div className="rail">
+        <nav className="rail-nav" aria-label={t('navRecent')}>
           <button
-            className={`nav-item${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            className={`rail-btn${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            title={t('navRecent')}
+            aria-label={t('navRecent')}
             onClick={() => {
               changeView('recent')
               setSelectedProjectId(null)
               setCloudMode(false)
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.2" />
               <path
                 d="M8 4.8V8l2.2 1.6"
                 stroke="currentColor"
-                strokeWidth="1.3"
+                strokeWidth="1.2"
                 strokeLinecap="round"
               />
             </svg>
-            <span className="nav-label">{t('navRecent')}</span>
-            <span className="nav-count">{navCounts.recent}</span>
           </button>
           <button
-            className={`nav-item${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            className={`rail-btn${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+            title={t('navStarred')}
+            aria-label={t('navStarred')}
             onClick={() => {
               changeView('starred')
               setSelectedProjectId(null)
               setCloudMode(false)
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
                 d="M8 1.9l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.6l-3.8 2 .72-4.23-3.07-3 4.25-.62z"
                 stroke="currentColor"
-                strokeWidth="1.3"
+                strokeWidth="1.2"
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="nav-label">{t('navStarred')}</span>
-            <span className="nav-count">{navCounts.starred}</span>
           </button>
           {loggedIn && (
             <button
-              className={`nav-item${cloudMode && !selectedProjectId ? ' active' : ''}`}
+              className={`rail-btn${cloudMode && !selectedProjectId ? ' active' : ''}`}
+              title={t('navCloud')}
+              aria-label={t('navCloud')}
               onClick={() => {
                 setCloudMode(true)
                 setSelectedProjectId(null)
@@ -2002,105 +2463,271 @@ export function Home() {
                 setRowMenu(null)
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
                   d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+          <button
+            className="rail-btn"
+            title={`${t('searchFiles')} (Ctrl+F)`}
+            aria-label={t('searchFiles')}
+            onClick={() => {
+              setCloudMode(false)
+              setSelectedProjectId(null)
+              window.setTimeout(() => searchRef.current?.focus(), 0)
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.2" />
+              <path
+                d="M10.5 10.5L14 14"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </nav>
+        <AccountEntry onStatusChange={handleAccountStatus} />
+      </div>
+      {dropActive &&
+        createPortal(
+          <div className="drop-overlay" aria-hidden="true">
+            <div className="drop-card">
+              <span className="drop-title">{t('dropTitle')}</span>
+              <span className="drop-hint">{t('dropHint')}</span>
+            </div>
+          </div>,
+          document.body,
+        )}
+      <div className="home">
+        <aside className="sidebar">
+          <div className="sidebar-logo">
+            <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
+          </div>
+
+          <div className="new-wrap" ref={newMenuRef}>
+            <button
+              className="new-btn"
+              aria-haspopup="menu"
+              aria-expanded={newMenuOpen}
+              onClick={() => setNewMenuOpen((o) => !o)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M8 3v10M3 8h10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {t('newButton')}
+            </button>
+            {newMenuOpen && (
+              <div className="new-menu" role="menu">
+                {NEW_ITEMS.map((item) => (
+                  <button
+                    key={item.ext}
+                    role="menuitem"
+                    onClick={() => {
+                      setNewMenuOpen(false)
+                      void item.action()
+                    }}
+                  >
+                    <FileBadge ext={item.ext} size={18} />
+                    <span>{item.title}</span>
+                    <span className="new-menu-sub">{item.sub}</span>
+                  </button>
+                ))}
+                <div className="new-menu-sep" />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setNewMenuOpen(false)
+                    void window.aiOffice.browse()
+                  }}
+                >
+                  <span className="new-menu-folder" aria-hidden="true" />
+                  <span>{t('openLocal')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <nav className="sidebar-nav">
+            <button
+              className={`nav-item${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+              onClick={() => {
+                changeView('recent')
+                setSelectedProjectId(null)
+                setCloudMode(false)
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
+                <path
+                  d="M8 4.8V8l2.2 1.6"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="nav-label">{t('navRecent')}</span>
+              <span className="nav-count">{navCounts.recent}</span>
+            </button>
+            <button
+              className={`nav-item${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
+              onClick={() => {
+                changeView('starred')
+                setSelectedProjectId(null)
+                setCloudMode(false)
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M8 1.9l1.9 3.85 4.25.62-3.07 3 .72 4.23L8 11.6l-3.8 2 .72-4.23-3.07-3 4.25-.62z"
                   stroke="currentColor"
                   strokeWidth="1.3"
                   strokeLinejoin="round"
                 />
               </svg>
-              <span className="nav-label">{t('navCloud')}</span>
-              <svg
-                className="nav-external"
-                width="13"
-                height="13"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
+              <span className="nav-label">{t('navStarred')}</span>
+              <span className="nav-count">{navCounts.starred}</span>
+            </button>
+            {loggedIn && (
+              <button
+                className={`nav-item${cloudMode && !selectedProjectId ? ' active' : ''}`}
+                onClick={() => {
+                  setCloudMode(true)
+                  setSelectedProjectId(null)
+                  setSelected(new Set())
+                  setRowMenu(null)
+                }}
               >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M8 1.8l1.55 4.65L14.2 8l-4.65 1.55L8 14.2 6.45 9.55 1.8 8l4.65-1.55z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="nav-label">{t('navCloud')}</span>
+                <svg
+                  className="nav-external"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+            <button
+              className="nav-item"
+              title={t('navTrashTip')}
+              onClick={() => void window.aiOffice.openTrash?.()}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
-                  d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13.5h7A1.5 1.5 0 0 0 12.5 12V9.5M9.5 2.5h4v4M13 3l-5.5 5.5"
+                  d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8h5.8l.6-8"
                   stroke="currentColor"
                   strokeWidth="1.3"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
+              <span className="nav-label">{t('navTrash')}</span>
             </button>
+          </nav>
+
+          {/* project sidebar */}
+          {projectMode && (
+            <>
+              <div className="sidebar-divider" />
+              <ProjectPanel
+                projects={projects}
+                selectedId={selectedProjectId}
+                onSelect={(id) => {
+                  setSelectedProjectId(id)
+                  // reset list-selection state on any project switch (paths are
+                  // shared between the plain view and project views)
+                  setSelected(new Set())
+                  setRowMenu(null)
+                }}
+                onRefresh={refresh}
+                onDropPaths={(projectId, paths) => void moveFilesTo(paths, projectId)}
+              />
+            </>
           )}
-        </nav>
+        </aside>
 
-        {/* project sidebar */}
-        {projectMode && (
-          <>
-            <div className="sidebar-divider" />
-            <ProjectPanel
-              projects={projects}
-              selectedId={selectedProjectId}
-              onSelect={(id) => {
-                setSelectedProjectId(id)
-                // reset list-selection state on any project switch (paths are
-                // shared between the plain view and project views)
-                setSelected(new Set())
-                setRowMenu(null)
-              }}
-              onRefresh={refresh}
-            />
-          </>
+        {selectedProjectId ? (
+          renderProjectContent()
+        ) : cloudMode ? (
+          <CloudProjectsView />
+        ) : (
+          renderGlobalContent()
         )}
+      </div>
 
-        <AccountEntry onStatusChange={handleAccountStatus} />
-      </aside>
-
-      {selectedProjectId ? (
-        renderProjectContent()
-      ) : cloudMode ? (
-        <CloudProjectsView />
-      ) : (
-        renderGlobalContent()
-      )}
-
-      {confirmDelete && (
-        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('deleteModalTitle')}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3>{t('deleteModalTitle')}</h3>
-            <p>
-              {confirmDelete.length === 1
-                ? t('deleteConfirmOne', { name: fileName(confirmDelete[0]) })
-                : t('deleteConfirmMany', { n: confirmDelete.length })}
-            </p>
-            {confirmDelete.length > 1 && (
-              <ul className="modal-file-list">
-                {confirmDelete.slice(0, 6).map((p) => (
-                  <li key={p}>{fileName(p)}</li>
-                ))}
-                {confirmDelete.length > 6 && (
-                  <li>{t('deleteMoreCount', { n: confirmDelete.length })}</li>
-                )}
-              </ul>
-            )}
-            <div className="modal-buttons">
-              <button
-                className="btn btn-secondary"
-                autoFocus
-                onClick={() => setConfirmDelete(null)}
-              >
-                {t('cancel')}
-              </button>
-              <button className="btn btn-danger" onClick={confirmDeleteNow}>
-                {t('delete')}
-              </button>
+      {confirmDelete &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+            <div
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('deleteModalTitle')}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3>{t('deleteModalTitle')}</h3>
+              <p>
+                {confirmDelete.length === 1
+                  ? t('deleteConfirmOne', { name: fileName(confirmDelete[0]) })
+                  : t('deleteConfirmMany', { n: confirmDelete.length })}
+              </p>
+              {confirmDelete.length > 1 && (
+                <ul className="modal-file-list">
+                  {confirmDelete.slice(0, 6).map((p) => (
+                    <li key={p}>{fileName(p)}</li>
+                  ))}
+                  {confirmDelete.length > 6 && (
+                    <li>{t('deleteMoreCount', { n: confirmDelete.length })}</li>
+                  )}
+                </ul>
+              )}
+              <div className="modal-buttons">
+                <button
+                  className="btn btn-secondary"
+                  autoFocus
+                  onClick={() => setConfirmDelete(null)}
+                >
+                  {t('cancel')}
+                </button>
+                <button className="btn btn-danger" onClick={confirmDeleteNow}>
+                  {t('delete')}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }

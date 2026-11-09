@@ -47,6 +47,8 @@ export interface RecentQuery {
   limit?: number
   /** restrict to one extension ('docx' | 'xlsx' | 'pptx'); omit for all */
   ext?: string
+  /** case-insensitive substring match on file name or folder; omit for no text filter */
+  query?: string
 }
 
 export interface RecentPage {
@@ -116,6 +118,10 @@ export interface HomeApi {
   setOnboardingSeen(): Promise<void>
   /** current UI theme preference (persisted in userData/app-settings.json) */
   getTheme(): Promise<UiTheme>
+  /** whether the shell window sits on a Windows OS material (Mica), so the page should paint transparent regions */
+  windowMaterialActive(): Promise<boolean>
+  /** absolute filesystem paths of files dropped on the window (empty for non-file drags) */
+  pathsForFiles(files: File[]): string[]
   /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
   setTheme(theme: UiTheme): Promise<void>
   /** effective default save folder for new/untitled files (configured in userData/app-settings.json, falls back to <Documents>/GenOffice) */
@@ -253,6 +259,7 @@ export const HOME_CHANNELS = {
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
   getTheme: 'home:get-theme',
+  windowMaterialActive: 'home:window-material-active',
   setTheme: 'home:set-theme',
   getDefaultSaveDir: 'home:get-default-save-dir',
   pickDefaultSaveDir: 'home:pick-default-save-dir',

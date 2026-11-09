@@ -152,6 +152,9 @@ import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
 import { TabManager } from './tab-manager'
+import { winMaterialSupported, winTitleBarOverlay } from './window-material'
+import { tabMenuLabels } from './tab-menu-labels'
+import { CHROME_CHANNELS } from '../shared/chrome-api'
 import { applyUpdateChannel, initAutoUpdater } from './updater'
 import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
 
@@ -1401,7 +1404,22 @@ function applyPendingProject(filePath: string): void {
   }
 }
 
+/** top-level application menu entries drawn in the tab strip on Windows */
+function chromeMenuItems(): Electron.MenuItem[] {
+  if (process.platform !== 'win32') return []
+  return (Menu.getApplicationMenu()?.items ?? []).filter((i) => i.visible && i.submenu)
+}
+
+function chromeMenuLabels(): string[] {
+  return chromeMenuItems().map((i) => i.label.replace(/&/g, ''))
+}
+
 function applyMenuFor(kind: TabKind): void {
+  applyMenuForKind(kind)
+  shellWindow?.webContents.send(CHROME_CHANNELS.menuChanged, chromeMenuLabels())
+}
+
+function applyMenuForKind(kind: TabKind): void {
   switch (kind) {
     case 'docs':
       buildDocsMenu()
@@ -1435,6 +1453,20 @@ function createShellWindow(): void {
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, vibrancy: 'sidebar' as const }
       : {}),
+    // Windows 11: Mica tints the window with the desktop wallpaper; the shell
+    // page goes transparent over it (body.vib) so the sidebar and tab strip show it
+    ...(winMaterialSupported()
+      ? { backgroundMaterial: 'mica' as const, backgroundColor: '#00000000' }
+      : {}),
+    // Windows: no OS title bar / menu row — our tab strip is the title bar and
+    // Electron draws only the native caption buttons over it (keeps snap layouts)
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: winTitleBarOverlay(nativeTheme.shouldUseDarkColors),
+          autoHideMenuBar: true,
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -1443,6 +1475,18 @@ function createShellWindow(): void {
     },
   })
   shellWindow = win
+  if (process.platform === 'win32') {
+    win.setMenuBarVisibility(false)
+    const syncOverlay = (): void => {
+      try {
+        win.setTitleBarOverlay(winTitleBarOverlay(nativeTheme.shouldUseDarkColors))
+      } catch {
+        /* window already closed */
+      }
+    }
+    nativeTheme.on('updated', syncOverlay)
+    win.on('closed', () => nativeTheme.removeListener('updated', syncOverlay))
+  }
   // dragging the window by the tab strip's blank (draggable) area produces no
   // DOM event anywhere — will-move is the only signal to dismiss popovers
   win.on('will-move', broadcastChromePressed)
@@ -1574,10 +1618,10 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 const DOCX_RE = /\.docx$/i
-const XLSX_RE = /\.(xlsx|xls|csv)$/i
+const XLSX_RE = /\.(xlsx|xls|csv|tsv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
-const MD_RE = /\.(md|markdown)$/i
+const MD_RE = /\.(md|markdown|txt|json|yaml|yml|xml|sql)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
 const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
@@ -1593,11 +1637,18 @@ const OPEN_DIALOG_EXTENSIONS = [
   'xlsx',
   'xls',
   'csv',
+  'tsv',
   'pptx',
   'ppt',
   'pdf',
   'md',
   'markdown',
+  'txt',
+  'json',
+  'xml',
+  'yaml',
+  'yml',
+  'sql',
 ]
 
 function supportedFileIn(argv: string[]): string | null {
@@ -1999,6 +2050,14 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
+  ipcMain.handle(HOME_CHANNELS.windowMaterialActive, (): boolean => winMaterialSupported())
+  ipcMain.handle(CHROME_CHANNELS.menuLabels, (): string[] => chromeMenuLabels())
+  ipcMain.handle(CHROME_CHANNELS.menuPopup, (_event, index: unknown, x: unknown, y: unknown) => {
+    if (typeof index !== 'number' || typeof x !== 'number' || typeof y !== 'number') return
+    const item = chromeMenuItems()[index]
+    if (!item?.submenu || !shellWindow) return
+    item.submenu.popup({ window: shellWindow, x: Math.round(x), y: Math.round(y) })
+  })
   // editor tabs ask via the app-wide channel (symmetric with app:get-language)
   ipcMain.handle('app:get-theme', (): UiTheme => currentTheme())
 
@@ -2127,6 +2186,50 @@ function registerTabsIpc(): void {
         click: () => tabManager?.activateTab(tab.id),
       })),
     )
+    menu.popup({
+      window: shellWindow,
+      ...(typeof x === 'number' && typeof y === 'number'
+        ? { x: Math.round(x), y: Math.round(y) }
+        : {}),
+    })
+  })
+  // right-click menu for one tab — native for the same reason as the tab list above
+  ipcMain.handle(TABS_CHANNELS.showTabMenu, (_event, id: unknown, x: unknown, y: unknown) => {
+    if (!tabManager || !shellWindow || typeof id !== 'string') return
+    const manager = tabManager
+    const tabs = manager.list()
+    const index = tabs.findIndex((tab) => tab.id === id)
+    if (index < 0) return
+    const labels = tabMenuLabels(currentLang())
+    const filePath = manager.filePathOf(id)
+    const closeAll = (targets: typeof tabs): void => {
+      void (async () => {
+        // sequential: a dirty tab may prompt to save and the user can cancel
+        for (const tab of targets) await manager.closeTab(tab.id)
+      })()
+    }
+    const closable = tabs[index]!.closable
+    const menu = Menu.buildFromTemplate([
+      { label: labels.close, enabled: closable, click: () => void manager.closeTab(id) },
+      {
+        label: labels.closeOthers,
+        enabled: tabs.some((tab, i) => i !== index && tab.closable),
+        click: () => closeAll(tabs.filter((tab, i) => i !== index && tab.closable)),
+      },
+      {
+        label: labels.closeRight,
+        enabled: tabs.slice(index + 1).some((tab) => tab.closable),
+        click: () => closeAll(tabs.slice(index + 1).filter((tab) => tab.closable)),
+      },
+      { type: 'separator' },
+      {
+        label: labels.reveal,
+        enabled: Boolean(filePath),
+        click: () => {
+          if (filePath) shell.showItemInFolder(filePath)
+        },
+      },
+    ])
     menu.popup({
       window: shellWindow,
       ...(typeof x === 'number' && typeof y === 'number'

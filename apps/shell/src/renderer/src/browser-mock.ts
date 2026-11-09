@@ -1,0 +1,339 @@
+import type {
+  HomeApi,
+  ProjectHomeApi,
+  RecentEntry,
+  UiLanguage,
+  UiTheme,
+} from '../../shared/home-api'
+import type { TabKind, TabsApi, TabSummary } from '../../shared/tabs-api'
+
+if (typeof window !== 'undefined') {
+  let mockRecents: RecentEntry[] = [
+    {
+      path: '/workspace/Executive_Summary_2026.docx',
+      name: 'Executive_Summary_2026.docx',
+      ext: 'docx',
+      mtimeMs: Date.now() - 1000 * 60 * 15,
+      sizeBytes: 145200,
+      starred: true,
+    },
+    {
+      path: '/workspace/Financial_Model_Q4.xlsx',
+      name: 'Financial_Model_Q4.xlsx',
+      ext: 'xlsx',
+      mtimeMs: Date.now() - 1000 * 60 * 60 * 2,
+      sizeBytes: 842000,
+      starred: false,
+    },
+    {
+      path: '/workspace/Product_Keynote_v3.pptx',
+      name: 'Product_Keynote_v3.pptx',
+      ext: 'pptx',
+      mtimeMs: Date.now() - 1000 * 60 * 60 * 24,
+      sizeBytes: 4210000,
+      starred: true,
+    },
+    {
+      path: '/workspace/Design_System_Spec.md',
+      name: 'Design_System_Spec.md',
+      ext: 'md',
+      mtimeMs: Date.now() - 1000 * 60 * 60 * 48,
+      sizeBytes: 32400,
+      starred: false,
+    },
+    {
+      path: '/workspace/Q4_Security_Audit.pdf',
+      name: 'Q4_Security_Audit.pdf',
+      ext: 'pdf',
+      mtimeMs: Date.now() - 1000 * 60 * 60 * 72,
+      sizeBytes: 1205000,
+      starred: false,
+    },
+  ]
+
+  let currentLang: UiLanguage = 'en'
+  let currentTheme: UiTheme = 'system'
+  try {
+    currentTheme = (localStorage.getItem('genoffice-theme') as UiTheme) || 'system'
+  } catch {
+    currentTheme = 'system'
+  }
+  const themeListeners: Array<(t: UiTheme) => void> = []
+
+  let mockTabs: (TabSummary & { filePath?: string })[] = [
+    { id: 'home', kind: 'home', title: 'Home', closable: false, active: true },
+  ]
+  const tabListeners: Array<(t: TabSummary[]) => void> = []
+
+  function openTab(kind: TabKind, title: string, filePath?: string) {
+    const existing = mockTabs.find(
+      (t) => (filePath && t.filePath === filePath) || t.title === title,
+    )
+    if (existing) {
+      mockTabs = mockTabs.map((t) => ({ ...t, active: t.id === existing.id }))
+    } else {
+      const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      mockTabs = mockTabs
+        .map((t) => ({ ...t, active: false }))
+        .concat({
+          id,
+          kind,
+          title,
+          closable: true,
+          active: true,
+          filePath,
+        })
+    }
+    for (const fn of tabListeners) fn(mockTabs)
+  }
+
+  const mockHomeApi: HomeApi = {
+    async recents(query) {
+      const ext = query?.ext
+      const text = query?.query?.trim().toLowerCase()
+      const byExt = ext ? mockRecents.filter((r) => r.ext === ext) : mockRecents
+      const filtered = text ? byExt.filter((r) => r.path.toLowerCase().includes(text)) : byExt
+      return {
+        entries: filtered,
+        total: filtered.length,
+        totalAll: mockRecents.length,
+      }
+    },
+    async starred(query) {
+      const ext = query?.ext
+      const stars = mockRecents.filter((r) => r.starred)
+      const text = query?.query?.trim().toLowerCase()
+      const byExt = ext ? stars.filter((r) => r.ext === ext) : stars
+      const filtered = text ? byExt.filter((r) => r.path.toLowerCase().includes(text)) : byExt
+      return {
+        entries: filtered,
+        total: filtered.length,
+        totalAll: stars.length,
+      }
+    },
+    async statPaths(paths) {
+      return mockRecents.filter((r) => paths.includes(r.path))
+    },
+    async toggleStar(path) {
+      mockRecents = mockRecents.map((r) => (r.path === path ? { ...r, starred: !r.starred } : r))
+    },
+    async openPath(path) {
+      const entry = mockRecents.find((r) => r.path === path)
+      const kind: TabKind =
+        entry?.ext === 'xlsx'
+          ? 'sheets'
+          : entry?.ext === 'pptx'
+            ? 'slides'
+            : entry?.ext === 'pdf'
+              ? 'pdf'
+              : entry?.ext === 'md'
+                ? 'markdown'
+                : 'docs'
+      openTab(kind, entry?.name ?? path, path)
+    },
+    async browse() {
+      openTab('docs', 'Imported Document')
+    },
+    async newDoc() {
+      openTab('docs', 'Untitled Document.docx')
+    },
+    async newSheet() {
+      openTab('sheets', 'Untitled Spreadsheet.xlsx')
+    },
+    async newSlide() {
+      openTab('slides', 'Untitled Presentation.pptx')
+    },
+    async newMarkdown() {
+      openTab('markdown', 'Untitled Note.md')
+    },
+    async removeRecent(paths) {
+      mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
+    },
+    async revealPath() {},
+    async renameFile(path, newName) {
+      mockRecents = mockRecents.map((r) => (r.path === path ? { ...r, name: newName } : r))
+      return { ok: true }
+    },
+    async duplicateFile(path) {
+      const found = mockRecents.find((r) => r.path === path)
+      if (found) {
+        mockRecents.unshift({
+          ...found,
+          path: `${found.path}-copy`,
+          name: `Copy of ${found.name}`,
+          mtimeMs: Date.now(),
+        })
+      }
+    },
+    async deleteFiles(paths) {
+      mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
+    },
+    async openTrash() {},
+    async getLanguage() {
+      return currentLang
+    },
+    async setLanguage(lang) {
+      currentLang = lang
+    },
+    async getUpdateChannel() {
+      return 'stable'
+    },
+    async setUpdateChannel() {},
+    async accountStatus() {
+      return { loggedIn: false }
+    },
+    async accountLogin() {
+      return false
+    },
+    onAccountLogin() {
+      return () => {}
+    },
+    async openLoginUrl() {},
+    async accountLogout() {},
+    async getAppVersion() {
+      return '0.6.0-web'
+    },
+    async onboardingSeen() {
+      return true
+    },
+    async setOnboardingSeen() {},
+    pathsForFiles(files: File[]) {
+      return files.map((f) => f.name)
+    },
+    async windowMaterialActive() {
+      return false
+    },
+    async getTheme() {
+      return currentTheme
+    },
+    async setTheme(theme) {
+      currentTheme = theme
+      try {
+        localStorage.setItem('genoffice-theme', theme)
+      } catch {}
+      for (const fn of themeListeners) fn(theme)
+    },
+    async getDefaultSaveDir() {
+      return '/workspace'
+    },
+    async pickDefaultSaveDir() {
+      return '/workspace'
+    },
+    onThemeChanged(handler) {
+      themeListeners.push(handler)
+      return () => {
+        const i = themeListeners.indexOf(handler)
+        if (i >= 0) themeListeners.splice(i, 1)
+      }
+    },
+    async openGenTeam() {},
+    async openCreditUsage() {},
+    async cloudProjectsCached() {
+      return { available: true, projects: [], syncedAt: Date.now() }
+    },
+    async cloudProjectsSync() {
+      return { available: true, projects: [], syncedAt: Date.now() }
+    },
+    async openCloudProject() {},
+  }
+
+  const mockProjectApi: ProjectHomeApi = {
+    async listProjects() {
+      const nowIso = new Date().toISOString()
+      return [
+        {
+          id: 'proj-default',
+          name: 'Default project',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          lastActiveAt: nowIso,
+          fileCount: 3,
+          isDefault: true,
+        },
+        {
+          id: 'proj-q4',
+          name: 'Q4 Product Roadmap',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          lastActiveAt: nowIso,
+          fileCount: 2,
+          isDefault: false,
+        },
+      ]
+    },
+    async listFiles() {
+      return mockRecents.slice(0, 2).map((r) => r.path)
+    },
+    async createProject(name) {
+      const nowIso = new Date().toISOString()
+      return {
+        id: `proj-${Date.now()}`,
+        name,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        lastActiveAt: nowIso,
+        fileCount: 0,
+        isDefault: false,
+      }
+    },
+    async renameProject() {},
+    async deleteProject() {},
+    async moveFile() {},
+    async getTimeline() {
+      return []
+    },
+  }
+
+  const mockTabsApi: TabsApi = {
+    async list() {
+      return mockTabs
+    },
+    async activate(id) {
+      mockTabs = mockTabs.map((t) => ({ ...t, active: t.id === id }))
+      for (const fn of tabListeners) fn(mockTabs)
+    },
+    async close(id) {
+      const idx = mockTabs.findIndex((t) => t.id === id)
+      if (idx >= 0) {
+        const wasActive = mockTabs[idx].active
+        mockTabs = mockTabs.filter((t) => t.id !== id)
+        if (wasActive && mockTabs.length > 0) {
+          const nextIdx = Math.max(0, idx - 1)
+          mockTabs[nextIdx].active = true
+        }
+        for (const fn of tabListeners) fn(mockTabs)
+      }
+    },
+    async showMenu() {},
+    async showTabMenu() {},
+    async showNewMenu() {
+      await mockHomeApi.newDoc()
+    },
+    async reorder(id, toIndex) {
+      const fromIndex = mockTabs.findIndex((t) => t.id === id)
+      if (fromIndex >= 0) {
+        const [moved] = mockTabs.splice(fromIndex, 1)
+        mockTabs.splice(toIndex, 0, moved)
+        for (const fn of tabListeners) fn(mockTabs)
+      }
+    },
+    onChanged(handler) {
+      tabListeners.push(handler)
+      return () => {
+        const i = tabListeners.indexOf(handler)
+        if (i >= 0) tabListeners.splice(i, 1)
+      }
+    },
+    notifyChromePressed() {},
+  }
+
+  if (!window.aiOffice || typeof window.aiOffice.getLanguage !== 'function') {
+    window.aiOffice = mockHomeApi
+  }
+  if (!window.aiOfficeProject || typeof window.aiOfficeProject.listProjects !== 'function') {
+    window.aiOfficeProject = mockProjectApi
+  }
+  if (!window.aiOfficeTabs || typeof window.aiOfficeTabs.list !== 'function') {
+    window.aiOfficeTabs = mockTabsApi
+  }
+}

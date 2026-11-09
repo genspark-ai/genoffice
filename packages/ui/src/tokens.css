@@ -34,7 +34,17 @@
   --danger-bg: #fdf3f3;
   --danger-border: #f0c8c9;
   --color-bg-overlay: rgb(0 0 0 / 50%);
-  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+  --shadow-modal-strong: none;
+
+  /* glass: light keeps solid surfaces; dark swaps in translucent fills that
+   * blur whatever sits behind them (OS vibrancy/acrylic, or the --wall layer) */
+  --glass-bg: var(--surface);
+  --glass-blur: none;
+  --wall: #21201f;
+  --wall-bg: var(--surface);
+  --shell-border: var(--border);
+  --panel-bg: var(--surface);
+  --segment-active-bg: var(--surface);
 
   /* AI panel (canonical names from the former per-app copies) */
   --gs-font-sans:
@@ -70,95 +80,115 @@
 }
 
 [data-theme='dark'] {
-  --surface: #1e1e1e;
-  --surface-subtle: #2a2a2a;
-  --chrome-bg: #252525;
-  --canvas: #2b2b2b;
-  --border: #3a3a3a;
-  --border-subtle: #3a3a3a;
-  --border-strong: #555;
-  --border-hover: #555;
-  --text: #e4e4e4;
-  --text-primary: #e4e4e4;
-  --text-secondary: #a0a0a0;
-  --text-tertiary: #a0a0a0;
+  --surface: #0b0b0b;
+  --surface-subtle: #151515;
+  --chrome-bg: #0f0f0f;
+  --canvas: #141414;
+  --border: rgb(255 255 255 / 8%);
+  --border-subtle: rgb(255 255 255 / 6%);
+  --border-strong: rgb(255 255 255 / 16%);
+  --border-hover: rgb(255 255 255 / 16%);
+  --text: #f4f4f4;
+  --text-primary: #f4f4f4;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #8a8a8a;
   --text-muted: #8a8a8a;
-  --text-dim: #a0a0a0;
-  --hover: #333;
-  --pressed: #3c3c3c;
-  --active-bg: #454545;
-  --bg-hover: #333;
-  --bg-hover-subtle: #333;
-  --bg-hover-strong: #444;
-  --bg-hover-accent: #444;
-  --bg-content: #1a1a1a;
+  --text-dim: #a3a3a3;
+  --hover: rgb(255 255 255 / 6%);
+  --pressed: rgb(255 255 255 / 10%);
+  --active-bg: rgb(255 255 255 / 8%);
+  --bg-hover: rgb(255 255 255 / 6%);
+  --bg-hover-subtle: rgb(255 255 255 / 5%);
+  --bg-hover-strong: rgb(255 255 255 / 10%);
+  --bg-hover-accent: rgb(255 255 255 / 10%);
+  --bg-content: #0b0b0b;
   --icon-muted: #666;
   --danger: #d13438;
   --danger-bg: #3a2020;
   --danger-border: #5a3030;
   --color-bg-overlay: rgb(0 0 0 / 60%);
-  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+  --shadow-modal-strong: none;
 
-  --color-btn-primary: #e4e4e4;
-  --color-btn-primary-hover: #d0d0d0;
-  --color-btn-primary-text: #1e1e1e;
+  --color-btn-primary: #f4f4f4;
+  --color-btn-primary-hover: #e0e0e0;
+  --color-btn-primary-text: #0b0b0b;
   --color-brand-secondary: #4a9eff;
-  --color-text-primary: #e4e4e4;
-  --color-text-secondary: #a0a0a0;
+  --color-text-primary: #f4f4f4;
+  --color-text-secondary: #a3a3a3;
   --color-text-tertiary: #8a8a8a;
-  --color-bg-page: #1e1e1e;
-  --color-bg-subtle: #2a2a2a;
-  --color-border-default: #3a3a3a;
-  --color-border-strong: #555;
+  --color-bg-page: #0b0b0b;
+  --color-bg-subtle: #151515;
+  --color-border-default: rgb(255 255 255 / 8%);
+  --color-border-strong: rgb(255 255 255 / 16%);
   --color-border-brand: #4a9eff;
 
   color-scheme: dark;
+  --glass-bg: rgb(255 255 255 / 3%);
+  --glass-blur: blur(40px) saturate(160%);
+  --wall-bg: var(--wall);
+  --shell-border: rgb(255 255 255 / 12%);
+  --panel-bg: rgb(0 0 0 / 42%);
+  --segment-active-bg: rgb(255 255 255 / 8%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not([data-theme='dark']) {
-    --surface: #1e1e1e;
-    --surface-subtle: #2a2a2a;
-    --chrome-bg: #252525;
-    --canvas: #2b2b2b;
-    --border: #3a3a3a;
-    --border-subtle: #3a3a3a;
-    --border-strong: #555;
-    --border-hover: #555;
-    --text: #e4e4e4;
-    --text-primary: #e4e4e4;
-    --text-secondary: #a0a0a0;
-    --text-tertiary: #a0a0a0;
+    --surface: #0b0b0b;
+    --surface-subtle: #151515;
+    --chrome-bg: #0f0f0f;
+    --canvas: #141414;
+    --border: rgb(255 255 255 / 8%);
+    --border-subtle: rgb(255 255 255 / 6%);
+    --border-strong: rgb(255 255 255 / 16%);
+    --border-hover: rgb(255 255 255 / 16%);
+    --text: #f4f4f4;
+    --text-primary: #f4f4f4;
+    --text-secondary: #a3a3a3;
+    --text-tertiary: #8a8a8a;
     --text-muted: #8a8a8a;
-    --text-dim: #a0a0a0;
-    --hover: #333;
-    --pressed: #3c3c3c;
-    --active-bg: #454545;
-    --bg-hover: #333;
-    --bg-hover-subtle: #333;
-    --bg-hover-strong: #444;
-    --bg-hover-accent: #444;
-    --bg-content: #1a1a1a;
+    --text-dim: #a3a3a3;
+    --hover: rgb(255 255 255 / 6%);
+    --pressed: rgb(255 255 255 / 10%);
+    --active-bg: rgb(255 255 255 / 8%);
+    --bg-hover: rgb(255 255 255 / 6%);
+    --bg-hover-subtle: rgb(255 255 255 / 5%);
+    --bg-hover-strong: rgb(255 255 255 / 10%);
+    --bg-hover-accent: rgb(255 255 255 / 10%);
+    --bg-content: #0b0b0b;
     --icon-muted: #666;
     --danger: #d13438;
     --danger-bg: #3a2020;
     --danger-border: #5a3030;
     --color-bg-overlay: rgb(0 0 0 / 60%);
-    --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+    --shadow-modal-strong: none;
 
-    --color-btn-primary: #e4e4e4;
-    --color-btn-primary-hover: #d0d0d0;
-    --color-btn-primary-text: #1e1e1e;
+    --color-btn-primary: #f4f4f4;
+    --color-btn-primary-hover: #e0e0e0;
+    --color-btn-primary-text: #0b0b0b;
     --color-brand-secondary: #4a9eff;
-    --color-text-primary: #e4e4e4;
-    --color-text-secondary: #a0a0a0;
+    --color-text-primary: #f4f4f4;
+    --color-text-secondary: #a3a3a3;
     --color-text-tertiary: #8a8a8a;
-    --color-bg-page: #1e1e1e;
-    --color-bg-subtle: #2a2a2a;
-    --color-border-default: #3a3a3a;
-    --color-border-strong: #555;
+    --color-bg-page: #0b0b0b;
+    --color-bg-subtle: #151515;
+    --color-border-default: rgb(255 255 255 / 8%);
+    --color-border-strong: rgb(255 255 255 / 16%);
     --color-border-brand: #4a9eff;
 
     color-scheme: dark;
+    --glass-bg: rgb(255 255 255 / 3%);
+    --glass-blur: blur(40px) saturate(160%);
+    --wall-bg: var(--wall);
+    --shell-border: rgb(255 255 255 / 12%);
+    --panel-bg: rgb(0 0 0 / 42%);
+    --segment-active-bg: rgb(255 255 255 / 8%);
   }
+}
+
+/* Settings > Appearance > Transparency effects off: glass tokens fall back to solid surfaces */
+:root[data-transparency='off'] {
+  --glass-bg: var(--surface-subtle);
+  --glass-blur: none;
+  --panel-bg: var(--surface-subtle);
+  --wall-bg: var(--chrome-bg);
 }

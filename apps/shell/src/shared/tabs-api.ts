@@ -25,6 +25,8 @@ export interface TabsApi {
    * as showMenu.
    */
   showNewMenu(x: number, y: number): Promise<void>
+  /** native right-click menu for one tab (close, close others, reveal in folder) */
+  showTabMenu(id: string, x: number, y: number): Promise<void>
   /** move a tab to a new index in the strip; Home stays pinned at index 0 */
   reorder(id: string, toIndex: number): Promise<void>
   /** subscribe to tab list changes (open/close/activate/title updates); returns unsubscribe */
@@ -43,6 +45,7 @@ export const TABS_CHANNELS = {
   close: 'tabs:close',
   showMenu: 'tabs:show-menu',
   showNewMenu: 'tabs:show-new-menu',
+  showTabMenu: 'tabs:show-tab-menu',
   reorder: 'tabs:reorder',
   changed: 'tabs:changed',
   chromePressed: 'tabs:chrome-pressed',
