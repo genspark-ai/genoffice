@@ -96,19 +96,22 @@ describe('worksheet table parts beside nested extensions', () => {
     const root = new DOMParser().parseFromString(xml, 'application/xml').documentElement
     expect([...root.children].map((e) => e.localName).slice(-2)).toEqual(['tableParts', 'extLst'])
   })
-  it('still refuses removal of a linked x14 rule', async () => {
-    await expect(
-      planCellEditsToXlsx(
-        await createBufferEntrySource(await fixture()),
-        [],
-        [],
-        [],
-        undefined,
-        [],
-        [],
-        [{ sheetName: 'Data', rules: [] }],
-      ),
-    ).rejects.toThrow('data-bar extension format (x14)')
+  it('removes a linked x14 rule when the snapshot drops it (issue #2510)', async () => {
+    const plan = await planCellEditsToXlsx(
+      await createBufferEntrySource(await fixture()),
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [{ sheetName: 'Data', rules: [] }],
+    )
+    const xml = plan.replaced.get('xl/worksheets/sheet1.xml')!
+    expect(xml).not.toContain('<conditionalFormatting')
+    expect(xml).not.toContain(ID)
+    expect(xml).not.toContain('78C0D931')
+    expect(xml).toContain('<sheetData>')
   })
   it('still refuses deleting a sheet referenced by a defined name', async () => {
     await expect(
