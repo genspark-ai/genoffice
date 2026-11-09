@@ -80,12 +80,18 @@ afterEach(() => {
 // already cached)
 await import('../src/renderer/line-metrics')
 
+// the localized FangSong spelling, escaped: a raw Han object key trips the
+// public-hygiene check, and quoting does not survive prettier (quoteProps
+// as-needed strips quotes from a valid identifier) — a computed key with an
+// escaped literal carries the same bytes in ASCII source (genoffice review r5)
+const FANGSONG = '\u4eff\u5b8b_GB2312'
+
 describe('font aliases', () => {
   it('the alias map comes from the main process', async () => {
     // the browser resolves the English spelling but not the localized one
     stubCanvas(['FangSong_GB2312'])
     const { systemFonts, lineMetrics } = await freshModules()
-    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
+    stubFontAliases(async () => ({ [FANGSONG]: ['FangSong_GB2312'] }))
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('FangSong_GB2312')
   })
@@ -94,7 +100,7 @@ describe('font aliases', () => {
     stubCanvas(['FangSong_GB2312'])
     const { systemFonts, lineMetrics } = await freshModules()
     // the canonical spelling comes first, but only the second one resolves
-    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312', 'No Such Face'] }))
+    stubFontAliases(async () => ({ [FANGSONG]: ['FangSong_GB2312', 'No Such Face'] }))
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('FangSong_GB2312')
   })
@@ -102,7 +108,7 @@ describe('font aliases', () => {
   it('a declared name stays when no candidate resolves', async () => {
     stubCanvas([])
     const { systemFonts, lineMetrics } = await freshModules()
-    stubFontAliases(async () => ({ 仿宋_GB2312: ['No Such Face'] }))
+    stubFontAliases(async () => ({ [FANGSONG]: ['No Such Face'] }))
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(head(lineMetrics.cssFontFamily('\u4eff\u5b8b_GB2312'))).toBe('\u4eff\u5b8b_GB2312')
   })
@@ -122,7 +128,7 @@ describe('font aliases', () => {
     const { systemFonts } = await freshModules()
     const seen: string[][] = []
     const off = systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
-    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
+    stubFontAliases(async () => ({ [FANGSONG]: ['FangSong_GB2312'] }))
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(seen).toEqual([['\u4eff\u5b8b_GB2312']])
     // the same answer announces again: a document laid out before the map was
@@ -140,7 +146,7 @@ describe('font aliases', () => {
     const { systemFonts, fontCheck } = await freshModules()
     const seen: string[][] = []
     systemFonts.onFontAliasesChanged((names) => seen.push([...names]))
-    stubFontAliases(async () => ({ 仿宋_GB2312: ['FangSong_GB2312'] }))
+    stubFontAliases(async () => ({ [FANGSONG]: ['FangSong_GB2312'] }))
     await systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     expect(seen).toEqual([['\u4eff\u5b8b_GB2312']])
     const parsed = {
@@ -161,7 +167,7 @@ describe('font aliases', () => {
     })
     stubFontAliases(async () => {
       await gate
-      return { 仿宋_GB2312: ['FangSong_GB2312'] }
+      return { [FANGSONG]: ['FangSong_GB2312'] }
     })
     const request = systemFonts.resolveFontAliases(['\u4eff\u5b8b_GB2312'])
     let settled = false
