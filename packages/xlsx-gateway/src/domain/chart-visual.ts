@@ -585,6 +585,10 @@ export interface ParsedChartData {
   readonly categories: string[]
   /// Offset within the selection along the series axis (for range refs).
   readonly series: { name: string; values: number[]; column: number }[]
+  /// The label column's own offset within the selection, when named columns
+  /// placed it somewhere other than the conventional first column. Unset for
+  /// detected layouts, which always label the first column.
+  readonly categoryColumnOffset?: number
 }
 
 const MAX_CHART_ROWS = 500
@@ -676,6 +680,73 @@ export function chartDataFromValues(
   return series.length > 0 ? { byRow, hasHeaderRow, hasCategoryColumn, categories, series } : null
 }
 
+/// Named-columns chart data (#2528): the caller knows the table's shape and
+/// names the columns of the dataRange to chart — first the labels, then one
+/// series each. Nothing is detected: the first row is the header, every named
+/// column after the first is one series (so a table no taller than it is wide
+/// still charts per column), and a named column with no numbers is refused
+/// rather than silently skipped (with none left the detected layout would
+/// chart the labels as the values, the exact guess naming columns avoids).
+export function chartDataFromColumns(
+  source: readonly (readonly ChartGridValue[])[],
+  columns: readonly string[],
+  bounds: { startColumn: number; endColumn: number },
+): ParsedChartData {
+  if (columns.length < 2) {
+    throw new Error('add_chart columns needs a label column and at least one series column.')
+  }
+  const offsets = columns.map((letter) => {
+    const address = parseAddress(`${letter.toUpperCase()}1`)
+    const offset = address.column - bounds.startColumn
+    if (offset < 0 || bounds.startColumn + offset > bounds.endColumn) {
+      throw new Error(`add_chart column ${letter.toUpperCase()} lies outside the dataRange.`)
+    }
+    return offset
+  })
+  const label = offsets[0]!
+  if (new Set(offsets).size !== offsets.length) {
+    throw new Error('add_chart columns must name distinct columns of the dataRange.')
+  }
+  const firstRow = source[0]
+  if (!firstRow || firstRow.length === 0) {
+    throw new Error('The chart dataRange needs at least one numeric column.')
+  }
+  const isNumeric = (v: ChartGridValue): boolean =>
+    typeof v === 'number' ||
+    (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
+  const toNumber = (v: ChartGridValue): number =>
+    typeof v === 'number' ? v : isNumeric(v) ? Number(String(v).trim()) : 0
+  const body = source.slice(1, MAX_CHART_ROWS + 1)
+  if (body.length === 0) {
+    throw new Error('The chart dataRange needs at least one numeric column.')
+  }
+  const series: ParsedChartData['series'] = []
+  for (let at = 1; at < offsets.length; at++) {
+    const offset = offsets[at]!
+    if (!body.some((row) => isNumeric(row[offset]))) {
+      throw new Error(`add_chart column ${columns[at]!.toUpperCase()} has no numbers to chart.`)
+    }
+    const header = firstRow[offset]
+    series.push({
+      name:
+        header === null || header === undefined || header === ''
+          ? `Series ${series.length + 1}`
+          : String(header),
+      values: body.map((row) => toNumber(row[offset])),
+      column: offset,
+    })
+    if (series.length >= MAX_CHART_SERIES) break
+  }
+  return {
+    byRow: false,
+    hasHeaderRow: true,
+    hasCategoryColumn: true,
+    categoryColumnOffset: label,
+    categories: body.map((row) => String(row[label] ?? '')),
+    series,
+  }
+}
+
 /// `'Sheet Name'!$B$2:$B$13` (chart `c:f` style) → sheet name + plain range.
 /// A range is a cell, a cell range, a whole-column range (`$A:$A`) or a
 /// whole-row range (`$1:$1`), the shapes Excel writes into `c:f`. Case
@@ -754,6 +825,10 @@ export interface BuildChartVisualInput {
   readonly dataRange: string
   readonly title?: string | undefined
   readonly anchorCell?: string | undefined
+  /// Columns of the dataRange to chart, first the labels then one series each
+  /// (#2528). With them nothing is detected: the first row is the header and
+  /// each named column is one series. Unset keeps the detected layout.
+  readonly columns?: readonly string[] | undefined
   readonly values: readonly (readonly ChartGridValue[])[]
 }
 
@@ -779,7 +854,9 @@ export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
   if (rangeCellCount(bounds) > 2000) {
     throw new Error('add_chart dataRange covers more than 2000 cells.')
   }
-  const parsed = chartDataFromValues(input.values)
+  const parsed = input.columns
+    ? chartDataFromColumns(input.values, input.columns, bounds)
+    : chartDataFromValues(input.values)
   if (!parsed) throw new Error('The chart dataRange needs at least one numeric column.')
   const anchorBase = input.anchorCell === undefined ? null : parseAddress(input.anchorCell)
   const anchor: SheetVisualAnchor =
@@ -860,7 +937,7 @@ export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
                 ? {
                     categoriesRef: a1RangeRef(
                       input.sheetName,
-                      bounds.startColumn,
+                      (parsed.categoryColumnOffset ?? 0) + bounds.startColumn,
                       dataStartRow,
                       bounds.endRow,
                     ),

@@ -21,6 +21,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { refreshCsvDigest } from './csv-digest'
+import { ImportRegistry } from './import-registry'
 import { createServer } from 'node:http'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
@@ -107,6 +108,7 @@ import {
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { decodeCsvBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import type { CsvImportProgress } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import {
   csvToXlsxBufferForOpen,
   sheetCsvToXlsxBuffer,
@@ -1978,6 +1980,13 @@ const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
 /** Max .csv/.tsv bytes converted on open: stops a 500MB text file OOMing main before sidecar limits. */
 const MAX_DELIMITED_IMPORT_BYTES = 32 * 1024 * 1024
 
+/**
+ * The delimited import (a .csv/.tsv opened as a workbook) that is running for
+ * a tab, so the renderer can cancel it: a 250 MB file takes a while, and the
+ * user should not have to wait it out.
+ */
+const pendingImports = new ImportRegistry()
+
 const sheetsTabs = new Map<number, SheetsTabSession>()
 let activeSheetsWebContents: WebContents | null = null
 let pastedTempCleanupStarted = false
@@ -3060,12 +3069,47 @@ export function registerSheetsIpc(): void {
         await decryptOoxml(bytes, password)
       }
     }
-    const prepared = await prepareWorkbookForOpen(
-      entry.client,
-      path,
-      event.sender,
-      dialogParent(event),
-    )
+    // A delimited import can take a while on a big file, so the renderer
+    // watches its progress and can cancel it.
+    const importController = pendingImports.start(event.sender.id)
+    // only a delimited import reports progress; a plain .xlsx never does,
+    // and there is no bar to take down for it
+    let reported = false
+    const reportProgress = (progress: CsvImportProgress | null): void => {
+      if (event.sender.isDestroyed()) return
+      if (progress === null) {
+        if (!reported) return
+        reported = false
+      } else {
+        reported = true
+      }
+      event.sender.send(IPC_CHANNELS.importProgress, progress)
+    }
+    let prepared: Awaited<ReturnType<typeof prepareWorkbookForOpen>>
+    try {
+      prepared = await prepareWorkbookForOpen(
+        entry.client,
+        path,
+        event.sender,
+        dialogParent(event),
+        {
+          import: {
+            onProgress: reportProgress,
+            signal: importController.signal,
+          },
+        },
+      )
+    } catch (error) {
+      // The user stopped the import: nothing opens, and it is not a failure
+      // to report. The renderer already knows it asked for this.
+      if (pendingImports.wasCancelled(importController)) return null
+      throw error
+    } finally {
+      pendingImports.finish(event.sender.id, importController)
+      // the import is over (done, failed or cancelled): the bar belongs to it
+      // and must not stand into the next open
+      reportProgress(null)
+    }
     // a declined import (an .ods the user chose not to convert) opens nothing
     if (!prepared) return null
     // The recovery prompt (or the file dialog / import conversion) can outlive
@@ -3119,6 +3163,12 @@ export function registerSheetsIpc(): void {
     if (!prepared.unsavedNew) workbookOpenedHook?.(event.sender, path)
     return result
   }
+
+  // The renderer cancels a delimited import that is taking too long; the
+  // conversion throws and nothing opens.
+  ipcMain.handle(IPC_CHANNELS.cancelImport, (event) => {
+    pendingImports.cancel(event.sender.id)
+  })
 
   ipcMain.handle(IPC_CHANNELS.selectWorkbook, async (event) => {
     try {
@@ -5287,7 +5337,14 @@ async function prepareWorkbookForOpen(
   path: string,
   contents?: WebContents | undefined,
   parent?: BrowserWindow | undefined,
-  options?: { skipRecoveryPrompt?: boolean },
+  options?: {
+    skipRecoveryPrompt?: boolean
+    /** progress and cancellation for a delimited import */
+    import?: {
+      readonly onProgress?: (progress: CsvImportProgress) => void
+      readonly signal?: AbortSignal
+    }
+  },
 ): Promise<{
   openPath: string
   suggestSaveAs?: string
@@ -5378,6 +5435,7 @@ async function prepareWorkbookForOpen(
         // every row shatters on the comma. A .csv keeps the sniff — the prose
         // guard in resolveImportDelimiter is what that path needs.
         extension === 'tsv' ? '\t' : undefined,
+        options?.import,
       )
       emptyCsv = converted.empty
       await writeFile(openPath, converted.buffer)

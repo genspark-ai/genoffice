@@ -136,6 +136,20 @@ it('unwraps the control with a tag', async () => {
   expect(blocks.filter((b) => b.contentControl)).toEqual([])
 })
 
+it('naming an inline control explains that inline controls are not unwrapped', async () => {
+  const dir = tempDir()
+  const input = join(dir, 'nested.docx')
+  const ops = join(dir, 'ops.json')
+  writeFileSync(input, await buildDocx({ bodyXml: NESTED_BODY }))
+  writeFileSync(ops, JSON.stringify([{ op: 'unwrap_content_control', tag: 'run' }]))
+  const result = await run(['docs', 'apply', input, '--ops', ops, '--json'])
+  expect(result.code).not.toBe(0)
+  // the control exists and `docs read` lists it — the error must say why unwrap
+  // does not apply instead of claiming no control carries the tag
+  expect(result.stdout + result.stderr).toMatch(/is inline \(run-level\)/)
+  expect(result.stdout + result.stderr).toMatch(/reported but not unwrapped/)
+})
+
 it('rejects a wrap without a usable block range', async () => {
   const dir = tempDir()
   const input = join(dir, 'in.docx')

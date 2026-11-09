@@ -95,6 +95,7 @@ export {
   applyRemoveParts,
   planRemoveParts,
   removePartsRefusalMessage,
+  removePartsRefusalMessageFor,
   type RemovePartsKind,
   type RemovePartsOptions,
   type RemovePartsPlan,

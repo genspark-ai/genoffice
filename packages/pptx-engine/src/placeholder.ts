@@ -57,6 +57,9 @@ export interface LevelTextStyle {
   csFont?: string
   /** East Asian script of the level's defRPr lang/altLang (steers empty-ea theme refs on runs without a lang of their own) */
   eaScript?: EaScript
+  /** Line-breaking language of a level whose defRPr carries lang/altLang: its East Asian
+   *  script, or 'none' for a non-East-Asian tag (so an inherited en-US still counts as a tag) */
+  eaLang?: Exclude<EaScript, 'han'> | 'none'
   align?: TextAlign
   /** Bullet default (master bodyStyle levels commonly use buChar '•') */
   bullet?: {
@@ -408,6 +411,7 @@ export function parseDefRPrStyle(
   }
   const eaScript = eaScriptOfLang(defRPr['@_altLang']) ?? eaScriptOfLang(defRPr['@_lang'])
   if (eaScript) out.eaScript = eaScript
+  if (defRPr['@_altLang'] != null || defRPr['@_lang'] != null) out.eaLang = eaScript ?? 'none'
   const latinAttr = typefaceAttr(defRPr['a:latin'])
   const latin = resolveFontRef(latinAttr, theme, eaScript)
   if (latin) out.latinFont = latin
@@ -679,6 +683,7 @@ export function mergeTextStyleChain(
       src.csFont = from
     }
     if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
+    if (out.eaLang == null && lvl.eaLang != null) out.eaLang = lvl.eaLang
     if (out.align == null && lvl.align != null) {
       out.align = lvl.align
       src.align = from

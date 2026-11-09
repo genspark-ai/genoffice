@@ -516,6 +516,7 @@ export const vi = {
   appBridgeUnavailable:
     'Cầu nối tệp trên máy tính để bàn không khả dụng. Khởi động lại ứng dụng Electron.',
   appOpenCanceled: 'Đã hủy chọn sổ làm việc.',
+  appImportCanceled: 'Đã hủy nhập.',
   appOpeningWorkbook: 'Đang mở sổ làm việc…',
   appOpened: 'Đã mở {name} — các chỉnh sửa ô được lưu lại bằng ⌘S.',
   appOpenFailed: 'Không thể mở sổ làm việc.',

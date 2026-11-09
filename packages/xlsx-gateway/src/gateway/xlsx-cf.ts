@@ -96,9 +96,10 @@ export function applyCfRules(
   if (options.append) return appendCfRules(worksheetXml, rules, dxfs)
   // Blocks whose cfRule carries an extLst are the base half of an x14
   // extension (linked via x14:id) — kept verbatim and guarded below. The
-  // x14 part in the worksheet extLst is never rewritten.
+  // x14 part in the worksheet extLst is left alone except when a whole
+  // block is deleted (see removeX14CfTwins).
   const preserved: PreservedBlock[] = []
-  const xml = worksheetXml.replace(
+  let xml = worksheetXml.replace(
     /<conditionalFormatting\b[^>]*>[\s\S]*?<\/conditionalFormatting>|<conditionalFormatting\b[^>]*\/>/g,
     (block) => {
       if (!/<extLst\b/.test(block)) return ''
@@ -149,12 +150,25 @@ export function applyCfRules(
     }
     sections.push(serializeRule(rule, nextPriority(), dxfs))
   }
-  const removed = preserved.find((block) => !block.matched)
-  if (removed) throw new CfEditError(linkedMessage(removed.text))
+  // A preserved block the snapshot no longer carries was deleted in the UI
+  // (or the sheet's CF was cleared): drop both halves — the base block here
+  // and its twin in the worksheet extLst — instead of failing the whole
+  // save, which blocked unrelated table/filter/theme edits on files that
+  // carry an x14 bar (issue #2510). Edits to a surviving block still fail
+  // closed above so the extension's refinements are never silently lost.
+  const deleted = preserved.filter((block) => !block.matched)
+  if (deleted.length > 0) {
+    for (const block of deleted) {
+      const at = xml.indexOf(block.text)
+      if (at !== -1) xml = xml.slice(0, at) + xml.slice(at + block.text.length)
+    }
+    xml = removeX14CfTwins(xml, deleted)
+  }
 
   if (sections.length === 0) return xml
   const body = sections.join('')
-  const last = preserved[preserved.length - 1]
+  const remaining = preserved.filter((block) => block.matched)
+  const last = remaining[remaining.length - 1]
   if (last) {
     const end = xml.lastIndexOf(last.text) + last.text.length
     return xml.slice(0, end) + body + xml.slice(end)
@@ -198,6 +212,101 @@ function linkedMessage(block: string): string {
   return block.includes('type="dataBar"')
     ? 'This range has a data-bar extension format (x14) that cannot be modified yet'
     : 'This range has extended conditional formatting (x14) that cannot be modified yet'
+}
+
+/// The worksheet extLst extension carrying x14 conditional formatting.
+/// The base halves live in <conditionalFormatting> blocks; the twins live
+/// here linked by x14:id (mirroring how x14 data validation parks in its
+/// own extension in xlsx-dv.ts).
+const X14_CF_EXT_URI = '{78C0D931-6437-407d-A8EE-F0AAD7539E65}'
+const X14_CF_EXT_OPEN_RE = new RegExp(
+  `<ext\\b[^>]*\\buri="${X14_CF_EXT_URI.replace(/[{}]/g, '\\$&')}"[^>]*>`,
+  'i',
+)
+
+/// Drops the x14 twins of deleted base blocks: the <x14:cfRule> entries in
+/// the {78C0D931…} extension whose id matches a deleted block's <x14:id>,
+/// or — when a deleted block carries no id — the whole
+/// <x14:conditionalFormatting> entries whose <xm:sqref> matches it.
+/// Entries, the wrapper, the extension and the extLst around it are
+/// removed when a step empties them, so a deleted rule leaves no husk
+/// Excel flags for repair.
+function removeX14CfTwins(xml: string, deleted: readonly PreservedBlock[]): string {
+  if (deleted.length === 0) return xml
+  const extOpen = X14_CF_EXT_OPEN_RE.exec(xml)
+  if (!extOpen) return xml
+  if (extOpen[0].endsWith('/>')) return xml
+  const close = xml.indexOf('</ext>', extOpen.index)
+  if (close === -1) return xml
+  const start = extOpen.index + extOpen[0].length
+  const cleaned = cleanX14CfContent(xml.slice(start, close), deleted)
+  if (cleaned === xml.slice(start, close)) return xml
+  const next = xml.slice(0, start) + cleaned + xml.slice(close)
+  if (cleaned.includes('<')) return next
+  // `close` is an index into the original xml; in `next` the closing tag
+  // sits past the cleaned content instead.
+  return dropEmptyCfExt(next, extOpen.index, start + cleaned.length)
+}
+
+function cleanX14CfContent(content: string, deleted: readonly PreservedBlock[]): string {
+  const ids = new Set<string>()
+  const sqrefOnly = new Set<string>()
+  for (const block of deleted) {
+    const blockIds = [...block.text.matchAll(/<x14:id>(.*?)<\/x14:id>/g)].map((m) =>
+      (m[1] ?? '').trim(),
+    )
+    if (blockIds.length === 0) sqrefOnly.add(normalizeSqref(block.sqref))
+    else for (const id of blockIds) ids.add(id)
+  }
+  let out = content
+  if (ids.size > 0) {
+    out = out.replace(/<x14:cfRule\b[^>]*?id="([^"]*)"[^>]*?\/>/g, (m, id) =>
+      ids.has(String(id).trim()) ? '' : m,
+    )
+    out = out.replace(/<x14:cfRule\b[^>]*?id="([^"]*)"[^>]*?>[\s\S]*?<\/x14:cfRule>/g, (m, id) =>
+      ids.has(String(id).trim()) ? '' : m,
+    )
+    out = out.replace(
+      /<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g,
+      (m) => (m.includes('<x14:cfRule') ? m : ''),
+    )
+    out = out.replace(/<x14:conditionalFormatting\b[^>]*?\/>/g, '')
+  }
+  if (sqrefOnly.size > 0) {
+    out = out.replace(
+      /<x14:conditionalFormatting\b[^>]*>[\s\S]*?<\/x14:conditionalFormatting>/g,
+      (m) => {
+        const sq = /<xm:sqref>([^<]*)<\/xm:sqref>/.exec(m)?.[1] ?? ''
+        return sqrefOnly.has(normalizeSqref(sq)) ? '' : m
+      },
+    )
+  }
+  if (ids.size > 0 || sqrefOnly.size > 0) {
+    out = out.replace(
+      /<x14:conditionalFormattings\b[^>]*>[\s\S]*?<\/x14:conditionalFormattings>/g,
+      (m) => (/<x14:conditionalFormatting[\s/>]/.test(m) ? m : ''),
+    )
+    out = out.replace(/<x14:conditionalFormattings\b[^>]*?\/>/g, '')
+  }
+  return out
+}
+
+/// Removes the (now empty) {78C0D931…} <ext> and the <extLst> around it
+/// when that was its only extension — an empty extLst is what Excel flags
+/// for repair. `close` is the index of the ext's </ext> in `xml`.
+function dropEmptyCfExt(xml: string, extStart: number, close: number): string {
+  const end = close + '</ext>'.length
+  const stripped = xml.slice(0, extStart) + xml.slice(end)
+  const lstOpenAt = xml.lastIndexOf('<extLst', extStart)
+  if (lstOpenAt === -1) return stripped
+  const lstOpen = /<extLst\b[^>]*>/.exec(xml.slice(lstOpenAt, extStart))?.[0]
+  if (lstOpen === undefined) return stripped
+  const lstInnerStart = lstOpenAt + lstOpen.length
+  const lstClose = xml.indexOf('</extLst>', lstInnerStart)
+  if (lstClose === -1 || lstClose < extStart) return stripped
+  const inner = xml.slice(lstInnerStart, extStart) + xml.slice(end, lstClose)
+  if (inner.includes('<')) return stripped
+  return xml.slice(0, lstOpenAt) + xml.slice(lstClose + '</extLst>'.length)
 }
 
 function serializeRule(wireRule: CfWireRule, priority: number, dxfs: DxfSink): string {

@@ -563,7 +563,12 @@ describe('docs guard rails', () => {
     const docx = join(dir, 'a.docx')
     expect((await run(['create', '--type', 'docx', '--from', md, '--out', docx])).code).toBe(0)
     const zip = await JSZip.loadAsync(readFileSync(docx))
-    expect(Object.keys(zip.files).filter((n) => n.startsWith('word/media/'))).toHaveLength(2)
+    // the embedded image as a file entry (the save writes no folder entries,
+    // so the old media/ dir entry that made this count 2 is gone)
+    expect(
+      Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !zip.files[n]!.dir),
+    ).toHaveLength(1)
+    expect(zip.files['word/media/aidocs1.png']).toBeTruthy()
   })
 })
 

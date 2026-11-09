@@ -277,8 +277,9 @@ export function w3cdtfStamp(date: Date): string {
 
 /**
  * Word-like core part of a freshly created document: no creator or other
- * people data, just the creation/modification stamp and revision 1, so later
- * property sets (and the save path's modified/revision update) have a home.
+ * people data, just the creation/modification stamp and revision 0 — the
+ * template has not been saved anywhere yet, and the first save bumps the
+ * revision to 1 the way Word's first Ctrl+S does (genoffice#2554).
  */
 export function newDocumentCorePropertiesXml(created: Date = new Date()): string {
   const stamp = w3cdtfStamp(created)
@@ -289,25 +290,35 @@ export function newDocumentCorePropertiesXml(created: Date = new Date()): string
     ' xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
     `<dcterms:created xsi:type="dcterms:W3CDTF">${stamp}</dcterms:created>` +
     `<dcterms:modified xsi:type="dcterms:W3CDTF">${stamp}</dcterms:modified>` +
-    '<cp:revision>1</cp:revision>' +
+    '<cp:revision>0</cp:revision>' +
     '</cp:coreProperties>'
   )
 }
 
-/** Word-like extended part of a freshly created document (no company/manager) */
+/** Word-like extended part of a freshly created document (no company/manager).
+ *  `omitGeneratorFields` drops Application and AppVersion — the fields that name
+ *  the generating tool — while the harmless Word-default Template stays
+ *  (genoffice#2554: consumers that must not look machine-generated then skip a
+ *  set_properties pass). */
 export function newDocumentAppPropertiesXml(
-  opts: { application?: string; appVersion?: string; template?: string } = {},
+  opts: {
+    application?: string
+    appVersion?: string
+    template?: string
+    omitGeneratorFields?: boolean
+  } = {},
 ): string {
-  const application = opts.application ?? NEW_DOCUMENT_APPLICATION
-  const appVersion = opts.appVersion ?? NEW_DOCUMENT_APP_VERSION
   const template = opts.template ?? NEW_DOCUMENT_TEMPLATE
+  const fields = opts.omitGeneratorFields
+    ? ''
+    : `<Application>${escapeXmlText(opts.application ?? NEW_DOCUMENT_APPLICATION)}</Application>` +
+      `<AppVersion>${escapeXmlText(opts.appVersion ?? NEW_DOCUMENT_APP_VERSION)}</AppVersion>`
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"' +
     ' xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
     `<Template>${escapeXmlText(template)}</Template>` +
-    `<Application>${escapeXmlText(application)}</Application>` +
-    `<AppVersion>${escapeXmlText(appVersion)}</AppVersion>` +
+    fields +
     '</Properties>'
   )
 }

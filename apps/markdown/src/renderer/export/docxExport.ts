@@ -367,8 +367,9 @@ export async function exportDocxBytes(
   doc: JSONContent,
   loadImage: ImageLoader,
   renderDiagram?: DiagramRenderer,
+  blankOptions?: { omitGeneratorFields?: boolean },
 ): Promise<Uint8Array> {
   const mapping = await mapDocToSaveBlocks(doc, loadImage, renderDiagram)
-  const parsed = await parseDocx(await buildBlankDocx())
+  const parsed = await parseDocx(await buildBlankDocx(blankOptions))
   return saveDocx(parsed, mapping.blocks, mapping.options)
 }

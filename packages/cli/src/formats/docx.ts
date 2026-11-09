@@ -21,6 +21,7 @@ import {
   readDocxPartBase64,
   readSections,
   removePartsRefusalMessage,
+  removePartsRefusalMessageFor,
   saveDocx,
   type CommentInfo,
   type CompareGranularity,
@@ -234,8 +235,10 @@ export async function openDocument(bytes: Uint8Array): Promise<OpenDocument> {
   return { parsed, editor, numIds, mods, side: sideStateOf(parsed) }
 }
 
-export async function blankDocument(): Promise<OpenDocument> {
-  return openDocument(await buildBlankDocx())
+export async function blankDocument(options?: {
+  omitGeneratorFields?: boolean
+}): Promise<OpenDocument> {
+  return openDocument(await buildBlankDocx(options))
 }
 
 export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
@@ -342,7 +345,19 @@ function setContentControl(
     const anyShell = doc.parsed.blocks.some((b) =>
       (b.sdtShells ?? (b.sdtShell ? [b.sdtShell] : [])).some((shell) => shell.tag === tag),
     )
-    if (!anyShell) return { error: `no content control is tagged ${tag}` }
+    if (!anyShell) {
+      // an inline (run-level) control is real and `docs read` lists it under
+      // inlineContentControls, so "no content control" would mislead; unwrap
+      // is a block-level op (genoffice#2554)
+      const inline = doc.parsed.blocks.some((b) =>
+        (b.inlineContentControls ?? []).some((c) => c.tag === tag),
+      )
+      if (inline)
+        return {
+          error: `the content control tagged ${tag} is inline (run-level); inline controls are reported but not unwrapped — unwrap_content_control works on block-level controls`,
+        }
+      return { error: `no content control is tagged ${tag}` }
+    }
     side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
     return { output: `unwrap the content control tagged ${tag}` }
   }
@@ -1009,11 +1024,20 @@ function describePropertyChanges(changes: PropertyChanges): string {
 
 const REMOVE_PARTS_KINDS = ['customXml', 'webExtensions'] as const
 
+const REMOVE_PARTS_FIELDS = new Set(['op', 'paths', 'kinds', 'dataBinding'])
+
 /** Validate a remove_parts op; kinds are de-duplicated and at least one selector is required. */
 function parseRemovePartsOp(op: Record<string, unknown>): {
   options?: RemovePartsOptions
   error?: string
 } {
+  // a silently ignored field would make the scrub quieter than the caller
+  // believes: an unknown field is an op error, not a warning (genoffice#2554)
+  const unknownFields = Object.keys(op).filter((key) => !REMOVE_PARTS_FIELDS.has(key))
+  if (unknownFields.length > 0)
+    return {
+      error: `remove_parts: unknown field(s) ${unknownFields.map((f) => JSON.stringify(f)).join(', ')} (op, paths, kinds, dataBinding)`,
+    }
   const kinds: NonNullable<RemovePartsOptions['kinds']> = []
   if (op.kinds !== undefined) {
     if (!Array.isArray(op.kinds))
@@ -1086,17 +1110,16 @@ function describeRemovePartsPlan(plan: RemovePartsPlan, options: RemovePartsOpti
     plan.dataBindings.length > 0
       ? `; dataBinding: ${action} would unbind ${plan.dataBindings.length} control(s) (${plan.dataBindings.map(describeControlBinding).join(', ')})`
       : `; dataBinding: ${action} (no bound controls)`
-  const unknown = plan.unknownPaths.length
-    ? `; ignored unknown paths: ${plan.unknownPaths.join(', ')}`
-    : ''
-  return `remove ${plan.removedPaths.length} package part(s)${families}: ${paths}${binding}${unknown}`
+  return `remove ${plan.removedPaths.length} package part(s)${families}: ${paths}${binding}`
 }
 
 /**
  * remove_parts: the parts are dropped in the final package pass on save, so the
  * op only records the change; the package is planned against the source bytes
  * here so the dry run lists the parts and a dataBinding refusal fails the batch
- * (nothing is written either way).
+ * (nothing is written either way). Paths that miss the package or name parts
+ * the package depends on are op errors — a scrub must not half-apply silently
+ * (genoffice#2554).
  */
 async function setRemoveParts(
   doc: OpenDocument,
@@ -1106,6 +1129,12 @@ async function setRemoveParts(
   if (!parsed.options) return { error: parsed.error! }
   const merged = mergeRemoveParts(doc.side.removeParts, parsed.options)
   const plan = await planRemoveParts(doc.parsed.internal.originalBytes, merged)
+  if (plan.refusedPaths.length > 0)
+    return { error: removePartsRefusalMessageFor(plan.refusedPaths) }
+  if (plan.unknownPaths.length > 0)
+    return {
+      error: `remove_parts: no such package part(s): ${plan.unknownPaths.join(', ')} (paths are package-relative file paths; globs and folders are not supported)`,
+    }
   const strip = merged.dataBinding === 'strip'
   if (plan.dataBindings.length > 0 && !strip)
     return { error: removePartsRefusalMessage(plan.dataBindings) }

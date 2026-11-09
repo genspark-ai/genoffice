@@ -65,6 +65,10 @@ export const IPC_CHANNELS = {
   /// Re-open an already-known path through the normal open path (the same
   /// pipeline selectWorkbook runs), for recovering from a sidecar crash.
   reopenWorkbook: 'workbook:reopen',
+  /// How far a delimited import (a .csv/.tsv opened as a workbook) is
+  importProgress: 'workbook:import-progress',
+  /// Stop the delimited import that is running for this tab
+  cancelImport: 'workbook:cancel-import',
   readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
   listExternalLinks: 'workbook:list-external-links',

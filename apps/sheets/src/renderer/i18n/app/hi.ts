@@ -523,6 +523,7 @@ export const hi = {
   appColumnLabel: 'स्तंभ {col}',
   appBridgeUnavailable: 'डेस्कटॉप फ़ाइल ब्रिज उपलब्ध नहीं है। Electron ऐप पुनः प्रारंभ करें।',
   appOpenCanceled: 'कार्यपुस्तिका चयन रद्द किया गया।',
+  appImportCanceled: 'आयात रद्द किया गया।',
   appOpeningWorkbook: 'कार्यपुस्तिका खोली जा रही है…',
   appOpened: '{name} खोला गया — सेल संपादन ⌘S से फ़ाइल में वापस सहेजे जाते हैं।',
   appOpenFailed: 'कार्यपुस्तिका खोली नहीं जा सकी।',

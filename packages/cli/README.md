@@ -34,7 +34,7 @@ genoffice sheet check book.xlsx --json                # formula errors, missing-
 genoffice sheet links book.xlsx                       # external [n] links: stored path, resolved path, reachable, source sheets
 genoffice sheet links book.xlsx --update              # re-read reachable sources and write the computed values as the formulas' cached <v> (formulas untouched; unreachable links keep their cache)
 genoffice sheet links book.xlsx --break 1,2           # break links: formulas become their cached values, the links' parts are removed and surviving links renumber
-genoffice create --type docx --from report.md --out report.docx      # or --from fragment.html (restricted HTML); the new file carries Word-like docProps/core.xml + app.xml
+genoffice create --type docx --from report.md --out report.docx      # or --from fragment.html (restricted HTML); the new file carries Word-like docProps/core.xml + app.xml; --no-generator-fields drops the Application / AppVersion stamps
 genoffice convert notes.md --to docx|html
 genoffice convert report.docx --to html               # the Word editor's standalone-HTML export
 genoffice convert page.html --to docx                 # html2docx, same as the HTML app's Export as Word

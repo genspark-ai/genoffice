@@ -498,6 +498,7 @@ export const th = {
   appColumnLabel: 'คอลัมน์ {col}',
   appBridgeUnavailable: 'สะพานไฟล์เดสก์ท็อปใช้งานไม่ได้ รีสตาร์ตแอป Electron',
   appOpenCanceled: 'ยกเลิกการเลือกเวิร์กบุ๊กแล้ว',
+  appImportCanceled: 'ยกเลิกการนำเข้าแล้ว',
   appOpeningWorkbook: 'กำลังเปิดสมุดงาน…',
   appOpened: 'เปิด {name} แล้ว — การแก้ไขเซลล์บันทึกกลับด้วย ⌘S',
   appOpenFailed: 'เปิดเวิร์กบุ๊กไม่ได้',

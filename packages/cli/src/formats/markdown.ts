@@ -58,9 +58,15 @@ export interface MarkdownImageSource {
 export async function markdownToDocx(
   markdown: string,
   images?: MarkdownImageSource,
+  blankOptions?: { omitGeneratorFields?: boolean },
 ): Promise<Uint8Array> {
   return withMarkdownEditor(markdown, (editor, mods) =>
-    mods.docxExport.exportDocxBytes(editor.getJSON(), async (src) => loadLocalImage(src, images)),
+    mods.docxExport.exportDocxBytes(
+      editor.getJSON(),
+      async (src) => loadLocalImage(src, images),
+      undefined,
+      blankOptions,
+    ),
   )
 }
 

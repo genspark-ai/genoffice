@@ -369,17 +369,12 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     return match ? para.kind : null
   }
 
-  // Second pass: collect run-level text revisions (ins/del marks). A format
+  // Second pass: collect run-level inline revisions (ins/del marks). A format
   // change on inserted text is its own revision (Word lists both), so the
   // rPrChange ranges merge among themselves and join the list at the end.
   const formatRevs: RevisionRange[] = []
   doc.descendants((node, pos) => {
-    // Atomic inline nodes (footnote / endnote references, line breaks, inline
-    // images, …) carry the same ins / del marks as a text run and are their
-    // own run in the file; Word accepts them like any other run
-    // (genoffice#2555). Formatting records stay text-only: the atomic save
-    // path restores no formatting of its own.
-    if (!node.isText && !isAtomicRunRevision(node)) return
+    if (!node.isInline) return
     const rpr = node.isText ? node.marks.find((m) => m.type.name === 'rprChange') : undefined
     if (rpr) {
       const author = String(rpr.attrs.author ?? '')
@@ -442,16 +437,6 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     if (!m.hasRuns) out.push({ from: m.from, to: m.to, kind: m.kind, author: '' })
   out.push(...formatRevs, ...tableRevs)
   return out.sort((a, b) => a.from - b.from)
-}
-
-/** an atomic inline node (a footnote reference, a break, …) that carries a
- *  run-level tracked-change mark, collected as a revision like a text run */
-function isAtomicRunRevision(node: PmNode): boolean {
-  return (
-    node.isInline &&
-    node.isAtom &&
-    node.marks.some((m) => m.type.name === 'ins' || m.type.name === 'del')
-  )
 }
 
 /** a table / row / cell property-change record still awaiting review */
