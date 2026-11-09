@@ -464,6 +464,17 @@ export const IconSearch = () => (
     <path d="M15.28 15.28 L19.5 19.5" />
   </Icon>
 )
+/** Scan corners with a sweep line and residual text lines: the OCR trigger. */
+export const IconScan = () => (
+  <Icon>
+    <path d="M4 8V6a2 2 0 0 1 2-2h2" />
+    <path d="M16 4h2a2 2 0 0 1 2 2v2" />
+    <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
+    <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
+    <path d="M5.5 8.5h13" strokeWidth={2.2} />
+    <path d="M8 13h8 M8 16h6" />
+  </Icon>
+)
 export const IconPrint = () => (
   <Icon>
     <path d="M7.71 8.79 L7.71 4.5 L16.29 4.5 L16.29 8.79" />

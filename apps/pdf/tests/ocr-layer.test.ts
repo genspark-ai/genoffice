@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { AUTO_OCR_PAGE_CAP, buildOcrPageData, runAutoOcr } from '../src/renderer/ocr-layer'
+import {
+  AUTO_OCR_PAGE_CAP,
+  buildOcrPageData,
+  runAutoOcr,
+  scannedPages,
+} from '../src/renderer/ocr-layer'
 import type { OcrPageData } from '../src/renderer/ocr-layer'
 import type { PdfOcrLine } from '../src/shared/ipc'
 import { createSearchIndexCache, searchInIndex } from '../src/renderer/search'
@@ -212,6 +217,8 @@ async function runPass(
     fromPage?: number
     /** The queue a continued pass walks (see `result.pending`) */
     pending?: readonly number[]
+    /** Pages already recognized this session: a manual re-entry skips them */
+    alreadyRecognized?: ReadonlySet<number>
     limit?: number
     cache?: SearchIndexCache
     signal?: AbortSignal
@@ -232,6 +239,7 @@ async function runPass(
     fromPage: () => opts.fromPage ?? 0,
     signal: opts.signal ?? controller.signal,
     ...(opts.pending === undefined ? {} : { pending: opts.pending }),
+    ...(opts.alreadyRecognized === undefined ? {} : { alreadyRecognized: opts.alreadyRecognized }),
     ...(opts.limit === undefined ? {} : { limit: opts.limit }),
     geom: () => GEOM,
     render: opts.render ?? (async () => 'png'),
@@ -409,5 +417,55 @@ describe('runAutoOcr', () => {
     expect(result.stop).toBe('cancelled')
     expect(result.done).toBe(0)
     expect(engineCalls).toBe(0)
+  })
+
+  it('a manual re-entry skips pages this session already recognized (issue #2512)', async () => {
+    // The open-time prompt and the ribbon button start the same pass; pressing
+    // the button after a finished pass must not pay for the pages the first
+    // pass already searched, and each page's words must come out of it.
+    const { doc } = scannedDoc(4)
+    const cache = createSearchIndexCache()
+
+    const first = await runPass(doc, { cache })
+    expect(first.result.stop).toBe('complete')
+    expect(first.result.done).toBe(4)
+    expect(first.recognized).toEqual([0, 1, 2, 3])
+    for (const data of first.pages.values()) {
+      expect(data.entry.text).toContain('recognized')
+    }
+
+    const second = await runPass(doc, {
+      cache,
+      alreadyRecognized: new Set(first.recognized),
+    })
+    expect(second.result.stop).toBe('complete')
+    expect(second.result.done).toBe(0)
+    expect(second.result.total).toBe(4)
+    expect(second.recognized).toEqual([])
+    expect(second.engineCalls).toBe(0)
+  })
+
+  it('a partial re-entry recognizes only the pages not yet searched', async () => {
+    const { doc } = scannedDoc(4)
+    const { result, recognized, engineCalls } = await runPass(doc, {
+      alreadyRecognized: new Set([0, 2]),
+    })
+    expect(result.stop).toBe('complete')
+    expect(result.total).toBe(4)
+    expect(result.done).toBe(2)
+    expect(recognized).toEqual([1, 3])
+    expect(engineCalls).toBe(2)
+  })
+})
+
+describe('scannedPages', () => {
+  const entry = (text: string) => ({ text, lower: text.toLowerCase(), items: [] })
+
+  it('lists exactly the pages with no extractable text, sharing the pass threshold', () => {
+    // 8 non-whitespace chars is the threshold both the pass and the prompt use
+    expect(
+      scannedPages([entry(''), entry('12345678'), entry('1234567'), entry('some real text here')]),
+    ).toEqual([0, 2])
+    expect(scannedPages([])).toEqual([])
   })
 })

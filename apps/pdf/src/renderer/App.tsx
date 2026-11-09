@@ -18,6 +18,7 @@ import {
   OcrTextLayer,
   renderPageForOcr,
   runAutoOcr,
+  scannedPages,
   type AutoOcrResult,
   type AutoOcrStop,
   type OcrPageData,
@@ -364,6 +365,7 @@ import {
   IconDrawColor,
   RbCaret,
   IconSearch,
+  IconScan,
   IconPrint,
   IconUndo,
   IconRedo,
@@ -1163,6 +1165,14 @@ export default function App() {
   docFontsRef.current = docFonts
   /** OCR results for scanned pages, keyed by original page index (reset per doc) */
   const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
+  /** The pass reads this ref so a re-entry (the manual trigger, a continuation)
+      can skip the pages this session already searched without rebinding. */
+  const ocrPagesRef = useRef(ocrPages)
+  ocrPagesRef.current = ocrPages
+  /** Open-time OCR prompt (issue #2512): the scanned-page count when the doc
+      carries pages with no text layer, until the user runs OCR or defers it.
+      The manual trigger stays available after a defer. */
+  const [ocrPrompt, setOcrPrompt] = useState<{ total: number } | null>(null)
   /** One text extraction per loaded document, shared by search, paragraph boxes,
       the AI tools and the auto-OCR pass */
   const [searchIndexCache] = useState(createSearchIndexCache)
@@ -1174,7 +1184,7 @@ export default function App() {
   const [ocrRun, setOcrRun] = useState<{
     done: number
     total: number
-    stop: Extract<AutoOcrStop, 'cap' | 'cancelled'> | null
+    stop: Extract<AutoOcrStop, 'cap' | 'cancelled' | 'noEngine'> | null
     /** The pages the pass left, which its Continue button hands to the next pass */
     pending?: number[] | null
   } | null>(null)
@@ -2552,6 +2562,7 @@ export default function App() {
             cache: searchIndexCache,
             fromPage: () => currentOrigIdxRef.current,
             ...(pending === null ? {} : { pending }),
+            alreadyRecognized: new Set(ocrPagesRef.current.keys()),
             signal: controller.signal,
             geom: (origIdx) => pageGeomRef.current(origIdx),
             render: renderPageForOcr,
@@ -2565,9 +2576,11 @@ export default function App() {
         }
         if (ocrAbortRef.current !== controller) return // a newer pass took over
         // A finished pass and a platform without an OCR engine are not worth a
-        // toast; a cap or a user cancel is, and it says how far the pass got
+        // toast; a cap, a user cancel, or an explicit trigger on an engine-less
+        // platform is, and it says how far the pass got.
         setOcrRun(
-          result && (result.stop === 'cap' || result.stop === 'cancelled')
+          result &&
+            (result.stop === 'cap' || result.stop === 'cancelled' || result.stop === 'noEngine')
             ? {
                 done: doneBefore + result.done,
                 total: result.total,
@@ -2588,14 +2601,25 @@ export default function App() {
   useEffect(() => {
     setOcrPages(new Map())
     setOcrRun(null)
+    setOcrPrompt(null)
     if (!doc || sizes.length !== doc.numPages) return
-    startOcrPass(null)
+    // Prompt before recognizing (issue #2512): the pass is user-triggered
+    // from the open-time prompt or the ribbon button, never silent. The
+    // manual trigger stays available after a defer. The index is already
+    // built by search/paragraph boxes; this only counts its scanned pages.
+    let cancelled = false
+    void searchIndexCache.get(doc).then((index) => {
+      if (cancelled) return
+      const total = scannedPages(index).length
+      if (total > 0) setOcrPrompt({ total })
+    })
     return () => {
       // tears down the pass this effect started, so its teardown still cancels
+      cancelled = true
       ocrAbortRef.current?.abort()
       ocrAbortRef.current = null
     }
-  }, [doc, sizes.length, searchIndexCache, startOcrPass])
+  }, [doc, sizes.length, searchIndexCache])
 
   /** Paragraph boxes are keyed to the loaded doc; drop them on save-reload */
   useEffect(() => {
@@ -7935,6 +7959,25 @@ export default function App() {
     </button>
   )
 
+  /** Manual OCR trigger (issue #2512): the prompt and this button start the
+      same pass; pages already searched this session are skipped. */
+  const ocrBtn = (
+    <button
+      className={`rb-big${ocrRun?.stop === null ? ' active' : ''}`}
+      disabled={!doc || ocrRun?.stop === null}
+      data-tip={t('recognizeText')}
+      onClick={() => {
+        setOcrPrompt(null)
+        startOcrPass(null)
+      }}
+    >
+      <span className="rb-big-icon">
+        <IconScan />
+      </span>
+      <span>{t('recognizeText')}</span>
+    </button>
+  )
+
   const editTextBtn = (
     <button
       className={`rb-big${editTextMode ? ' active' : ''}`}
@@ -8390,6 +8433,7 @@ export default function App() {
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
                   {searchBtn}
+                  {ocrBtn}
                   <button
                     className="rb-big"
                     data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
@@ -11145,18 +11189,37 @@ export default function App() {
                 </button>
               </div>
             )}
+            {ocrPrompt && !ocrRun && (
+              <div className="pdf-toast pdf-toast-notice" role="status">
+                <span>{t('ocrPrompt', { count: ocrPrompt.total })}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOcrPrompt(null)
+                    startOcrPass(null)
+                  }}
+                >
+                  {t('ocrRun')}
+                </button>
+                <button type="button" onClick={() => setOcrPrompt(null)}>
+                  {t('ocrLater')}
+                </button>
+              </div>
+            )}
             {ocrRun && (
               <div className="pdf-toast pdf-toast-notice" role="status">
                 <span>
                   {ocrRun.stop === null
                     ? t('ocrRunning', { done: ocrRun.done, total: ocrRun.total })
-                    : ocrRun.stop === 'cap'
-                      ? t('ocrPageCap', {
-                          done: ocrRun.done,
-                          total: ocrRun.total,
-                          limit: AUTO_OCR_PAGE_CAP,
-                        })
-                      : t('ocrStopped', { done: ocrRun.done, total: ocrRun.total })}
+                    : ocrRun.stop === 'noEngine'
+                      ? t('ocrUnavailable')
+                      : ocrRun.stop === 'cap'
+                        ? t('ocrPageCap', {
+                            done: ocrRun.done,
+                            total: ocrRun.total,
+                            limit: AUTO_OCR_PAGE_CAP,
+                          })
+                        : t('ocrStopped', { done: ocrRun.done, total: ocrRun.total })}
                 </span>
                 {ocrRun.stop === null ? (
                   <button type="button" onClick={() => ocrAbortRef.current?.abort()}>

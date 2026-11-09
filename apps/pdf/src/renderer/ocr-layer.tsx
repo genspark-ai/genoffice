@@ -13,8 +13,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { PdfOcrLine } from '../shared/ipc'
 import { geomDispSize, pdfRectToCss, viewToPdf } from './annotations'
 import type { PageGeom } from './annotations'
-import type { PageEntry } from './search'
-import type { SearchIndexCache } from './search'
+import type { PageEntry, SearchIndex, SearchIndexCache } from './search'
 import { measurePt } from './text-wrap'
 import { foldCase } from '@genoffice/ui'
 import { isNoSpaceScript, scriptOf } from '../../../../packages/pdf2docx/src/script'
@@ -166,6 +165,13 @@ export const isScannedText = (text: string): boolean => text.replace(/\s/g, '').
 
 export const isScannedEntry = (entry: PageEntry): boolean => isScannedText(entry.text)
 
+/** The document's scanned pages (no extractable text layer), in page order.
+    The open-time prompt count, the manual trigger and the auto pass share one
+    definition of "scanned" through here. */
+export function scannedPages(index: SearchIndex): number[] {
+  return index.map((entry, i) => (isScannedEntry(entry) ? i : -1)).filter((i) => i >= 0)
+}
+
 /** Render the page bitmap for recognition (display orientation, ~2k px long edge) */
 export async function renderPageForOcr(
   doc: PDFDocumentProxy,
@@ -228,6 +234,11 @@ export async function runAutoOcr(opts: {
       the pages that pass never reached: the order is already settled, so it is
       followed rather than rebuilt, and a page is not paid for a second time. */
   pending?: readonly number[]
+  /** Pages this session already recognized (the manual trigger's re-entry):
+      excluded from the initial queue, so a second press does not pay for the
+      pages the first pass already searched. Never applied to an explicit
+      `pending` continuation — that queue is already settled. */
+  alreadyRecognized?: ReadonlySet<number>
   signal: AbortSignal
   limit?: number
   geom: (origIdx: number) => PageGeom
@@ -238,7 +249,11 @@ export async function runAutoOcr(opts: {
 }): Promise<AutoOcrResult> {
   const limit = opts.limit ?? AUTO_OCR_PAGE_CAP
   const index = await opts.cache.get(opts.doc)
-  const scanned = index.map((entry, i) => (isScannedEntry(entry) ? i : -1)).filter((i) => i >= 0)
+  // The exclusion only narrows the fresh-pass queue; `total` still reports
+  // every scanned page so progress keeps its document-wide meaning.
+  const allScanned = scannedPages(index)
+  const total = allScanned.length
+  const scanned = allScanned.filter((i) => !opts.alreadyRecognized?.has(i))
   // A continuation walks the queue it was handed as it stands. A first pass
   // builds one from the whole document, rotating so the pages after the reading
   // position come first; pages that rotation had already walked before the cap
@@ -249,7 +264,6 @@ export async function runAutoOcr(opts: {
     const from = scanned.findIndex((i) => i >= opts.fromPage())
     if (from > 0) queue = [...scanned.slice(from), ...scanned.slice(0, from)]
   }
-  const total = scanned.length
   // The cap counts attempted pages, not successes: a page that fails to render or
   // throws in the engine still cost work, and must not let the pass run forever
   const finish = (

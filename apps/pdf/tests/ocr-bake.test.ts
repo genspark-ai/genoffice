@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { buildOcrBakeInserts, groupLines } from '../src/renderer/ocr-bake'
 import { pdfToView } from '../src/renderer/annotations'
+import { buildOcrPageData } from '../src/renderer/ocr-layer'
 import type { OcrWord } from '../src/renderer/ocr-layer'
+import type { PdfOcrLine } from '../src/shared/ipc'
 
 const geom = { pw: 595, ph: 842, rot: 0, x0: 0, y0: 0 }
 const word = (text: string, x: number, y: number, w: number, h: number): OcrWord => ({
@@ -77,5 +79,37 @@ describe('buildOcrBakeInserts', () => {
     expect(vx).toBeCloseTo(100)
     expect(vy).toBeCloseTo(92 - 12 * 0.22)
     expect(inserts[0]!.rotate).toBe(90)
+  })
+
+  it('bakes manual-trigger OCR output as invisible text, so Save retains it (issue #2512)', () => {
+    // The prompt/ribbon trigger runs the same engine and hands the lines to
+    // buildOcrPageData; what Save writes is the bake of those words. Every
+    // insert must be render-mode-3 invisible and carry the recognized text.
+    const geom = { pw: 600, ph: 800, rot: 0, x0: 0, y0: 0 }
+    const lines: PdfOcrLine[] = [
+      {
+        text: 'invoice total due',
+        confidence: 1,
+        box: [0.1, 0.8, 0.6, 0.85],
+        chars: [
+          { text: 'invoice', box: [0.1, 0.8, 0.25, 0.85] },
+          { text: ' ', box: [0, 1, 0, 1] },
+          { text: 'total', box: [0.3, 0.8, 0.45, 0.85] },
+          { text: ' ', box: [0, 1, 0, 1] },
+          { text: 'due', box: [0.5, 0.8, 0.6, 0.85] },
+        ],
+      },
+    ]
+    const page = buildOcrPageData(lines, geom)
+    expect(page).not.toBeNull()
+    expect(page!.entry.text.trim()).toBe('invoice total due')
+
+    const inserts = buildOcrBakeInserts(3, page!.words, geom)
+    expect(inserts.length).toBeGreaterThan(0)
+    expect(inserts.map((i) => i.text).join(' ')).toContain('invoice')
+    for (const insert of inserts) {
+      expect(insert.invisible).toBe(true)
+      expect(insert.pageIndex).toBe(3)
+    }
   })
 })
