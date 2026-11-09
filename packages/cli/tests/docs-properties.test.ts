@@ -333,6 +333,8 @@ describe('genoffice docs (document properties)', () => {
       /<dcterms:modified xsi:type="dcterms:W3CDTF">\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z<\/dcterms:modified>/,
     )
     expect(core).not.toContain('<dc:creator')
+    // the first save of a new document is revision 1, like Word's first Ctrl+S
+    expect(core).toContain('<cp:revision>1</cp:revision>')
     const app = await zip.file('docProps/app.xml')!.async('string')
     expect(app).toContain('<Application>GenOffice</Application>')
     expect(app).toContain('<Template>Normal.dotm</Template>')
@@ -346,6 +348,32 @@ describe('genoffice docs (document properties)', () => {
     expect(read.json().detail.properties.app.application).toBe('GenOffice')
     expect(read.json().detail.properties.custom).toEqual({})
     expect(read.json().detail.properties.customTypes).toEqual({})
+  })
+
+  it('create --no-generator-fields drops Application / AppVersion from docProps/app.xml', async () => {
+    const dir = tempDir()
+    const md = join(dir, 'brief.md')
+    writeFileSync(md, '# Title\n\nBody text.')
+    const out = join(dir, 'created.docx')
+    const created = await run([
+      'create',
+      '--type',
+      'docx',
+      '--from',
+      md,
+      '--out',
+      out,
+      '--no-generator-fields',
+      '--json',
+    ])
+    expect(created.code, created.stderr).toBe(0)
+    const zip = await JSZip.loadAsync(readFileSync(out))
+    const app = await zip.file('docProps/app.xml')!.async('string')
+    expect(app).toContain('<Template>Normal.dotm</Template>')
+    expect(app).not.toContain('<Application>')
+    expect(app).not.toContain('<AppVersion>')
+    const read = await run(['docs', 'read', out, '--properties', '--json'])
+    expect(read.json().detail.properties.app).toEqual({ template: 'Normal.dotm' })
   })
 
   it('create --type docx from an HTML fragment writes docProps too', async () => {
