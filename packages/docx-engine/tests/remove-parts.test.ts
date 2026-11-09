@@ -263,30 +263,43 @@ describe('remove_parts package scrub', () => {
       paths: ['word/document.xml', '/word/_rels/document.xml.rels', 'word/footnotes.xml'],
     })
     expect(plan.removedPaths).toEqual([])
-    expect(plan.unknownPaths).toEqual([
-      'word/document.xml',
-      '/word/_rels/document.xml.rels',
-      'word/footnotes.xml',
-    ])
+    // the story parts in the fixture are the main document only: footnotes.xml
+    // is not in the package, so it misses rather than refuses
+    expect(plan.refusedPaths).toEqual(['word/document.xml', '/word/_rels/document.xml.rels'])
+    expect(plan.unknownPaths).toEqual(['word/footnotes.xml'])
   })
 
-  it('reports unknown explicit paths and still applies the kinds', async () => {
+  it('reports unknown explicit paths and refuses structural ones, still applying the kinds', async () => {
     const bytes = await fixtureDocx()
     const plan = await planRemoveParts(bytes, {
       kinds: ['customXml'],
       paths: ['customXml/missing.xml', '[Content_Types].xml', 'docProps/core.xml'],
     })
-    expect(plan.unknownPaths).toEqual(['customXml/missing.xml', '[Content_Types].xml'])
+    expect(plan.unknownPaths).toEqual(['customXml/missing.xml'])
+    expect(plan.refusedPaths).toEqual(['[Content_Types].xml', 'docProps/core.xml'])
     expect(plan.removedPaths).toContain('customXml/item1.xml')
-    const saved = await saveFixture(bytes, {
-      kinds: ['customXml'],
-      paths: ['docProps/core.xml'],
-    })
-    const entries = await bytesOf(saved)
-    expect(entries.has('docProps/core.xml')).toBe(false)
-    const rootRels = await textOf(saved, '_rels/.rels')
-    expect(rootRels).not.toContain('core-properties')
-    expect(rootRels).toContain('word/document.xml')
+    // a save that names a structural part refuses outright: the package would
+    // be damaged (genoffice#2554 — core.xml used to be removed on request)
+    await expect(
+      saveFixture(bytes, {
+        kinds: ['customXml'],
+        paths: ['docProps/core.xml'],
+      }),
+    ).rejects.toThrow(/refuses parts the package depends on/)
+  })
+
+  it('removing a customXml item by path takes its itemProps along and runs the binding check', async () => {
+    const bytes = await fixtureDocx({ dataBinding: true })
+    // the bound control would be orphaned by item1.xml alone (genoffice#2554)
+    await expect(saveFixture(bytes, { paths: ['customXml/item1.xml'] })).rejects.toThrow(
+      /would orphan content controls/,
+    )
+    // with the binding question settled the plan carries both parts
+    const plan = await planRemoveParts(bytes, { paths: ['customXml/item1.xml'] })
+    expect(plan.removedPaths).toEqual(
+      expect.arrayContaining(['customXml/item1.xml', 'customXml/itemProps1.xml']),
+    )
+    expect(plan.dataBindings.length).toBeGreaterThan(0)
   })
 
   it('is idempotent: a second pass over scrubbed output returns the input bytes', async () => {
