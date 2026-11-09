@@ -74,6 +74,19 @@ describe('native menu icons', () => {
     }
   })
 
+  it('keeps every 1x icon distinct', () => {
+    // A miscopied asset (menu-home.png copied over menu-pdf.png) is usually
+    // caught by the artwork comparison below too, but that check allows a
+    // color/alpha tolerance — two icons with similar artwork would slip
+    // through. Byte equality has no tolerance and names the duplicated pair.
+    const seen = new Map<string, string>()
+    for (const name of icons) {
+      const bytes = readFileSync(join(assets, name)).toString('base64')
+      expect(seen.get(bytes), `${name} duplicates ${seen.get(bytes) ?? ''}`).toBeUndefined()
+      seen.set(bytes, name)
+    }
+  })
+
   it('the 1x representation carries the same artwork as the @2x sibling', () => {
     for (const name of icons) {
       const big = PNG.sync.read(readFileSync(join(assets, name.replace('.png', '@2x.png'))))
