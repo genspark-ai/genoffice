@@ -109,7 +109,7 @@ const NOTES: Record<string, string> = {
   add_table:
     'first row = unique, non-empty column names; not in a batch with row/column, merge or size ops on the same sheet',
   add_chart:
-    'header row and a leading category column are detected; the chart lands two columns right of the data unless anchorCell',
+    'header row and a leading category column are detected, or pass columns:["A","D"] to chart only those columns of dataRange (first the labels, then one series each); the chart lands two columns right of the data unless anchorCell',
   edit_chart:
     '`genoffice sheet read` lists chart paths under features.charts; repointing a series at other cells needs the app',
   add_image: 'path is a local file (absolute or relative) or an https URL',

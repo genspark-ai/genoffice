@@ -704,6 +704,7 @@ function applyLayoutOp(snapshot: WorkbookSnapshot, op: LayoutOperation): void {
         dataRange: op.dataRange,
         title: op.title,
         anchorCell: op.anchorCell,
+        columns: op.columns,
         values: gridFromRange(sheet, op.dataRange),
       })
       replaceSheet(snapshot, { ...sheet, visuals: [...(sheet.visuals ?? []), visual] })

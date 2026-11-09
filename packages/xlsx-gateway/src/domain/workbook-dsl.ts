@@ -332,7 +332,14 @@ const editChartSchema = z.object({
 
 // Creates a NEW chart from a data range (imported workbooks only). The range
 // may include a header row and a leading category column — both are detected
-// from the data, matching the ribbon's Insert Chart.
+// from the data, matching the ribbon's Insert Chart. When `columns` is given,
+// only those columns of dataRange are charted: the first entry names the
+// category (label) column and each following entry is one series. Columns are
+// absolute sheet letters inside dataRange, in chart order (non-adjacent and
+// reversed orders both work). A single entry charts that column as one series
+// with row-number categories. Every named value column must hold at least one
+// number. Without `columns`, orientation and header/label detection keep the
+// existing Excel-default behavior.
 const addChartSchema = z.object({
   op: z.literal('add_chart'),
   sheetId: z.string().min(1),
@@ -348,6 +355,13 @@ const addChartSchema = z.object({
     'combo',
   ]),
   dataRange: cellRangeSchema,
+  /** columns of dataRange to chart, first the labels then one series each (e.g. ["A","D"]) */
+  columns: z
+    .array(columnLabelSchema)
+    .min(1)
+    .max(24)
+    .refine((list) => new Set(list).size === list.length, 'columns must be unique')
+    .optional(),
   title: z.string().max(255).optional(),
   /** top-left cell of the chart frame; default: two columns right of the data */
   anchorCell: cellAddressSchema.optional(),
@@ -2155,7 +2169,7 @@ export function layoutOpLabel(op: LayoutOperation): string {
       return `Edit chart ${op.chartPath}: ${parts.join(', ')}`
     }
     case 'add_chart':
-      return `Insert ${op.chartType} chart from ${op.dataRange}${op.title ? ` "${op.title}"` : ''}`
+      return `Insert ${op.chartType} chart from ${op.dataRange}${op.columns ? ` (columns ${op.columns.join(', ')})` : ''}${op.title ? ` "${op.title}"` : ''}`
     case 'add_shape':
       return `Insert ${op.shapeType === 'textbox' ? 'text box' : `${op.shapeType} shape`} at ${op.anchorCell}`
     case 'edit_shape': {

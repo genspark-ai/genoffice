@@ -374,6 +374,115 @@ describe('chartDataFromValues orientation and header detection', () => {
   })
 })
 
+describe('chartDataFromValues named columns', () => {
+  const salesTable = [
+    ['Item', 'Units', 'Price', 'Revenue'],
+    ['Widget', 10, 5, 50],
+    ['Gadget', 3, 20, 60],
+    ['Cable', 7, 2, 14],
+  ]
+
+  it('charts non-adjacent columns: first the labels, then one series each', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues(salesTable, { columns: ['A', 'D'] })
+    expect(parsed?.byRow).toBe(false)
+    expect(parsed?.hasHeaderRow).toBe(true)
+    expect(parsed?.hasCategoryColumn).toBe(true)
+    expect(parsed?.categories).toEqual(['Widget', 'Gadget', 'Cable'])
+    expect(parsed?.series).toEqual([{ name: 'Revenue', values: [50, 60, 14], column: 3 }])
+    expect(parsed?.categoryColumnOffset).toBe(0)
+  })
+
+  it('keeps multiple series in caller order, including reversed order', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const normal = chartDataFromValues(salesTable, { columns: ['A', 'B', 'D'] })
+    expect(normal?.series.map((s) => s.name)).toEqual(['Units', 'Revenue'])
+    expect(normal?.series[0]?.values).toEqual([10, 3, 7])
+    const reversed = chartDataFromValues(salesTable, { columns: ['A', 'D', 'B'] })
+    expect(reversed?.series.map((s) => s.name)).toEqual(['Revenue', 'Units'])
+    expect(reversed?.categories).toEqual(['Widget', 'Gadget', 'Cable'])
+  })
+
+  it('treats the first row as the header and numeric labels as categories', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues(
+      [
+        ['Year', 2023, 2024],
+        [2021, 100, 120],
+        [2022, 110, 135],
+        [2023, 125, 150],
+      ],
+      { columns: ['A', 'B', 'C'] },
+    )
+    expect(parsed?.hasHeaderRow).toBe(true)
+    expect(parsed?.hasCategoryColumn).toBe(true)
+    expect(parsed?.categories).toEqual(['2021', '2022', '2023'])
+    expect(parsed?.series).toEqual([
+      { name: '2023', values: [100, 110, 125], column: 1 },
+      { name: '2024', values: [120, 135, 150], column: 2 },
+    ])
+  })
+
+  it('stays column-wise on small wide tables instead of one series per row', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    // Without `columns` this 2×4 grid would chart each row as a series.
+    const parsed = chartDataFromValues(
+      [
+        ['Item', 'Q1', 'Q2', 'Q3'],
+        ['Widget', 10, 12, 15],
+      ],
+      { columns: ['A', 'B', 'C', 'D'] },
+    )
+    expect(parsed?.byRow).toBe(false)
+    expect(parsed?.categories).toEqual(['Widget'])
+    expect(parsed?.series).toHaveLength(3)
+    expect(parsed?.series.map((s) => s.name)).toEqual(['Q1', 'Q2', 'Q3'])
+  })
+
+  it('charts a single named column as one series with row-number categories', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    const parsed = chartDataFromValues(salesTable, { columns: ['D'] })
+    expect(parsed?.hasCategoryColumn).toBe(false)
+    expect(parsed?.categories).toEqual(['1', '2', '3'])
+    expect(parsed?.series).toEqual([{ name: 'Revenue', values: [50, 60, 14], column: 3 }])
+  })
+
+  it('refuses a named value column with no numbers', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    // Column B (Units) holds text here; the parser must refuse rather than
+    // skip it and chart the labels as the values.
+    const parsed = chartDataFromValues(
+      [
+        ['Item', 'Units', 'Revenue'],
+        ['Widget', 'ten', 50],
+        ['Gadget', 'three', 60],
+      ],
+      { columns: ['A', 'B'] },
+    )
+    expect(parsed).toBeNull()
+  })
+
+  it('throws for a named column outside the dataRange', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    expect(() => chartDataFromValues(salesTable, { columns: ['A', 'F'] })).toThrow(/inside dataRange/)
+  })
+
+  it('maps absolute letters through a non-A dataRange origin', async () => {
+    const { chartDataFromValues } = await import('@genoffice/xlsx-gateway/domain/chart-visual')
+    // Grid sliced from columns C:F (dataStartColumn 2): C = labels, F = Revenue.
+    const parsed = chartDataFromValues(
+      [
+        ['Item', 'Units', 'Price', 'Revenue'],
+        ['Widget', 10, 5, 50],
+        ['Gadget', 3, 20, 60],
+      ],
+      { columns: ['C', 'F'], dataStartColumn: 2 },
+    )
+    expect(parsed?.categories).toEqual(['Widget', 'Gadget'])
+    expect(parsed?.series).toEqual([{ name: 'Revenue', values: [50, 60], column: 3 }])
+  })
+})
+
 describe('transposeChartSeries', () => {
   it('pivots categories into series and series names into categories', async () => {
     const { transposeChartSeries } = await import('@genoffice/xlsx-gateway/domain/chart-visual')

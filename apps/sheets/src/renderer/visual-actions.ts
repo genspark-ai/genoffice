@@ -620,6 +620,7 @@ export async function insertAiChartVisual(
     dataRange: op.dataRange,
     title: op.title,
     anchorCell: op.anchorCell,
+    columns: op.columns,
     values,
   })
   pushVisualAddUndo(ctx, runtime, state, visual)

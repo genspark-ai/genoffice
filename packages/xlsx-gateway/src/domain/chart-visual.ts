@@ -1,6 +1,12 @@
 import * as numfmt from 'numfmt'
 
-import { columnLabel, parseAddress, parseRange, rangeCellCount } from './cell-address'
+import {
+  columnIndex,
+  columnLabel,
+  parseAddress,
+  parseRange,
+  rangeCellCount,
+} from './cell-address'
 
 /// Chart visual built from a data range. Structurally a subset of the shared
 /// WorkbookVisualObject so both the demo snapshot and the lazy edit journal
@@ -585,24 +591,99 @@ export interface ParsedChartData {
   readonly categories: string[]
   /// Offset within the selection along the series axis (for range refs).
   readonly series: { name: string; values: number[]; column: number }[]
+  /// Grid offset of the named label column when charts were built from an
+  /// explicit `columns` list; the first data column otherwise.
+  readonly categoryColumnOffset?: number | undefined
 }
 
 const MAX_CHART_ROWS = 500
 const MAX_CHART_SERIES = 12
 
+/// Named-columns parse: only the given columns are charted (first the
+/// labels, then one series each), first row is the header. Series are always
+/// column-wise; numeric headers/labels stay headers/labels instead of being
+/// guessed at. A named value column with no numbers refuses the chart (null)
+/// so the parser cannot skip it and chart the labels as the values.
+/// `columns` are absolute sheet letters; `dataStartColumn` is the absolute
+/// 0-based column of source[0][0] (0 when the grid starts at A).
+function chartDataFromNamedColumns(
+  source: readonly (readonly ChartGridValue[])[],
+  columns: readonly string[],
+  dataStartColumn: number,
+): ParsedChartData | null {
+  const firstRow = source[0]
+  if (!firstRow || firstRow.length === 0) return null
+  const width = firstRow.length
+  const offsets = columns.map((label) => {
+    const offset = columnIndex(label) - dataStartColumn
+    if (!Number.isInteger(offset) || offset < 0 || offset >= width) {
+      throw new Error(
+        `add_chart columns must name columns inside dataRange (got "${label}").`,
+      )
+    }
+    return offset
+  })
+  if (new Set(offsets).size !== offsets.length) {
+    throw new Error('add_chart columns must be unique.')
+  }
+  const isBlank = (v: unknown): boolean => v === null || v === undefined || v === ''
+  const isNumeric = (v: unknown): boolean =>
+    typeof v === 'number' ||
+    (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
+  const toNumber = (v: unknown): number =>
+    typeof v === 'number' ? v : isNumeric(v) ? Number(String(v).trim()) : 0
+  const body = source.slice(1).slice(0, MAX_CHART_ROWS)
+  if (body.length === 0) return null
+  const hasCategoryColumn = offsets.length > 1
+  const labelOffset = hasCategoryColumn ? offsets[0]! : null
+  const categories = hasCategoryColumn
+    ? body.map((row) => String(row[labelOffset!] ?? ''))
+    : body.map((_, i) => String(i + 1))
+  const valueOffsets = hasCategoryColumn ? offsets.slice(1) : offsets.slice(0)
+  const series: ParsedChartData['series'] = []
+  for (const offset of valueOffsets) {
+    if (!body.some((row) => isNumeric(row[offset]))) return null
+    const header = firstRow[offset] ?? null
+    series.push({
+      name: isBlank(header) ? `Series ${series.length + 1}` : String(header),
+      values: body.map((row) => toNumber(row[offset])),
+      column: offset,
+    })
+    if (series.length >= MAX_CHART_SERIES) break
+  }
+  if (series.length === 0) return null
+  return {
+    byRow: false,
+    hasHeaderRow: true,
+    hasCategoryColumn,
+    categories,
+    series,
+    ...(hasCategoryColumn ? { categoryColumnOffset: labelOffset ?? 0 } : {}),
+  }
+}
+
 /// First row with non-numeric labels → header row; first column mostly
 /// non-numeric → category column; every other column becomes a series.
 /// Excel's default orientation puts the series along the shorter dimension:
 /// a selection at least as wide as it is tall charts each ROW as a series.
-/// Transposing up front lets the column-wise logic serve both.
+/// Transposing up front lets the column-wise logic serve both. When `columns`
+/// is given, only those columns are charted (first the labels, then one
+/// series each) and orientation/header detection are the caller's choice.
 export function chartDataFromValues(
   source: readonly (readonly ChartGridValue[])[],
   options?: {
     /// Scatter: the first data vector is the X axis even when numeric,
     /// so it must become the category vector instead of a Y series.
     numericCategoryColumn?: boolean
+    /// Columns to chart as absolute sheet letters (see chartDataFromNamedColumns).
+    columns?: readonly string[] | undefined
+    /// Absolute 0-based column of source[0][0] when `columns` is given (default 0).
+    dataStartColumn?: number | undefined
   },
 ): ParsedChartData | null {
+  if (options?.columns !== undefined) {
+    return chartDataFromNamedColumns(source, options.columns, options.dataStartColumn ?? 0)
+  }
   const sourceFirstRow = source[0]
   if (!sourceFirstRow || sourceFirstRow.length === 0) return null
   const byRow = sourceFirstRow.length > 1 && source.length <= sourceFirstRow.length
@@ -754,6 +835,8 @@ export interface BuildChartVisualInput {
   readonly dataRange: string
   readonly title?: string | undefined
   readonly anchorCell?: string | undefined
+  /// Columns of dataRange to chart (absolute sheet letters).
+  readonly columns?: string[] | undefined
   readonly values: readonly (readonly ChartGridValue[])[]
 }
 
@@ -773,13 +856,17 @@ const CHART_KIND_TO_TYPES: Record<BuildChartVisualInput['chartType'], string[]> 
 
 /// Shared AI add_chart assembly (demo adapter + lazy visual pipeline): header
 /// and category column are detected from the data, matching the ribbon's
-/// Insert Chart. The default anchor sits two columns right of the data.
+/// Insert Chart, unless `columns` names the columns to chart. The default
+/// anchor sits two columns right of the data.
 export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
   const bounds = parseRange(input.dataRange)
   if (rangeCellCount(bounds) > 2000) {
     throw new Error('add_chart dataRange covers more than 2000 cells.')
   }
-  const parsed = chartDataFromValues(input.values)
+  const parsed = chartDataFromValues(input.values, {
+    columns: input.columns,
+    dataStartColumn: bounds.startColumn,
+  })
   if (!parsed) throw new Error('The chart dataRange needs at least one numeric column.')
   const anchorBase = input.anchorCell === undefined ? null : parseAddress(input.anchorCell)
   const anchor: SheetVisualAnchor =
@@ -860,7 +947,7 @@ export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
                 ? {
                     categoriesRef: a1RangeRef(
                       input.sheetName,
-                      bounds.startColumn,
+                      (parsed.categoryColumnOffset ?? 0) + bounds.startColumn,
                       dataStartRow,
                       bounds.endRow,
                     ),

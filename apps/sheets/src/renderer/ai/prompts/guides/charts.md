@@ -2,10 +2,10 @@
 
 ## Creating a chart
 
-`{op:"add_chart", sheetId, chartType:"column"|"bar"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar"|"combo", dataRange:"A1:C10", title?, anchorCell?}`
+`{op:"add_chart", sheetId, chartType:"column"|"bar"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar"|"combo", dataRange:"A1:C10", columns?, title?, anchorCell?}`
 
 - Works for both imported xlsx files and the demo workbook. In xlsx files, saving (⌘S) writes the chart into the file as a brand-new chart part; demo-workbook charts live in memory (undoable with ⌘Z) and cannot be saved to a file yet.
-- dataRange is the chart's data source (max 2000 cells): if the first row contains text it is treated as series-name headers, and if the first column contains text it is treated as the category axis. **read_range the data first to confirm its shape before proposing** — unloaded cells read back as empty.
+- dataRange is the chart's data source (max 2000 cells): if the first row contains text it is treated as series-name headers, and if the first column contains text it is treated as the category axis. **read_range the data first to confirm its shape before proposing** — unloaded cells read back as empty. Use `columns:["A","D"]` to chart named columns of dataRange (first the labels, then one series each — non-adjacent and reversed orders work): the first row is the header, the first named column is the labels, and each named value column must hold at least one number. Omit it to keep Excel-default orientation/header detection.
 - At least one numeric column is required, otherwise the operation is rejected. In the demo workbook, formula cells have no cached values (they read back empty) — do not point dataRange at a region of pure formula results.
 - anchorCell is the anchor cell for the chart frame's top-left corner; by default the chart is placed two columns to the right of the data range.
 - title default: the series name for a single series, "Chart Title" for multiple series.

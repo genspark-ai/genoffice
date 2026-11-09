@@ -35,6 +35,37 @@ function createChartAdapter(): InMemoryWorkbookAdapter {
   return new InMemoryWorkbookAdapter(snapshot)
 }
 
+function createSalesAdapter(): InMemoryWorkbookAdapter {
+  const snapshot: WorkbookSnapshot = {
+    revision: 0,
+    sheets: [
+      {
+        id: 'sheet-1',
+        name: 'Sheet1',
+        cells: {
+          A1: { value: 'Item' },
+          B1: { value: 'Units' },
+          C1: { value: 'Price' },
+          D1: { value: 'Revenue' },
+          A2: { value: 'Widget' },
+          B2: { value: 10 },
+          C2: { value: 5 },
+          D2: { value: 50 },
+          A3: { value: 'Gadget' },
+          B3: { value: 3 },
+          C3: { value: 20 },
+          D3: { value: 60 },
+          A4: { value: 'Cable' },
+          B4: { value: 7 },
+          C4: { value: 2 },
+          D4: { value: 14 },
+        },
+      },
+    ],
+  }
+  return new InMemoryWorkbookAdapter(snapshot)
+}
+
 describe('InMemoryWorkbookAdapter', () => {
   it('keeps dry-run planning side-effect free', () => {
     const adapter = createAdapter()
@@ -700,6 +731,105 @@ describe('InMemoryWorkbookAdapter', () => {
         ],
       }),
     ).toThrow(/2000 cells/)
+  })
+
+  it('charts named columns of add_chart: non-adjacent labels + series', () => {
+    const adapter = createSalesAdapter()
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-columns',
+        baseRevision: 0,
+        summary: 'Chart Revenue against Item',
+        operations: [
+          {
+            op: 'add_chart',
+            sheetId: 'sheet-1',
+            chartType: 'column',
+            dataRange: 'A1:D4',
+            columns: ['A', 'D'],
+            title: 'Revenue by Item',
+          },
+        ],
+      }),
+    )
+    const visual = adapter.getSnapshot().sheets[0]?.visuals?.[0]
+    expect(visual?.chart.title).toBe('Revenue by Item')
+    expect(visual?.chart.series).toHaveLength(1)
+    expect(visual?.chart.series[0]).toMatchObject({
+      name: 'Revenue',
+      categories: ['Widget', 'Gadget', 'Cable'],
+      values: [50, 60, 14],
+      valuesRef: "'Sheet1'!$D$2:$D$4",
+      categoriesRef: "'Sheet1'!$A$2:$A$4",
+    })
+  })
+
+  it('charts named columns in caller order and keeps small tables column-wise', () => {
+    const adapter = createSalesAdapter()
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-columns-order',
+        baseRevision: 0,
+        summary: 'Chart two series reversed',
+        operations: [
+          {
+            op: 'add_chart',
+            sheetId: 'sheet-1',
+            chartType: 'line',
+            dataRange: 'A1:D4',
+            columns: ['A', 'D', 'B'],
+          },
+        ],
+      }),
+    )
+    const chart = adapter.getSnapshot().sheets[0]?.visuals?.[0]?.chart
+    expect(chart?.series.map((s) => s.name)).toEqual(['Revenue', 'Units'])
+    expect(chart?.series[0]?.valuesRef).toBe("'Sheet1'!$D$2:$D$4")
+    expect(chart?.series[1]?.valuesRef).toBe("'Sheet1'!$B$2:$B$4")
+    expect(chart?.series[0]?.categoriesRef).toBe("'Sheet1'!$A$2:$A$4")
+  })
+
+  it('refuses a named add_chart column with no numbers', () => {
+    const adapter = createSalesAdapter()
+    // Name the label column (D, Revenue) as the label and the Item column (A)
+    // as a value: Items hold no numbers, so the parser must refuse rather
+    // than chart the labels as values.
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-columns-text',
+        baseRevision: 0,
+        summary: 'Chart text as values',
+        operations: [
+          {
+            op: 'add_chart',
+            sheetId: 'sheet-1',
+            chartType: 'column',
+            dataRange: 'A1:D4',
+            columns: ['D', 'A'],
+          },
+        ],
+      }),
+    ).toThrow(/numeric column/)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-columns-outside',
+        baseRevision: 0,
+        summary: 'Chart outside dataRange',
+        operations: [
+          {
+            op: 'add_chart',
+            sheetId: 'sheet-1',
+            chartType: 'column',
+            dataRange: 'A1:D4',
+            columns: ['A', 'F'],
+          },
+        ],
+      }),
+    ).toThrow(/inside dataRange/)
   })
 
   it('rejects a batch mixing structural and cell-content operations', () => {

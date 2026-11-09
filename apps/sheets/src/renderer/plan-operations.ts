@@ -307,7 +307,24 @@ export function proposeOperations(
             const values = targetSheet.getRange(operation.dataRange).getRawValues() as (
               string | number | boolean | null | undefined
             )[][]
-            if (rangeLoaded && !writtenThisBatch && !chartDataFromValues(values)) {
+            let chartOk = false
+            try {
+              chartOk = Boolean(
+                chartDataFromValues(values, {
+                  columns: operation.columns,
+                  dataStartColumn: bounds.startColumn,
+                }),
+              )
+            } catch (error) {
+              if (rangeLoaded && !writtenThisBatch) {
+                return {
+                  ok: false,
+                  error: error instanceof Error ? error.message : String(error),
+                }
+              }
+              chartOk = true
+            }
+            if (rangeLoaded && !writtenThisBatch && !chartOk) {
               return {
                 ok: false,
                 error:
