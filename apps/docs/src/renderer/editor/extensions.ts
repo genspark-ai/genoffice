@@ -22,6 +22,7 @@ import {
   NodeSelection,
   Plugin,
   PluginKey,
+  Selection,
   TextSelection,
   type EditorState,
   type Transaction,
@@ -3027,8 +3028,10 @@ export function shouldBlockCellSelection(
 ): boolean {
   if (!activeCell || !hasDomSelection) return false
   if (startCell !== activeCell) return false
-  // Crossing into another cell is a genuine table selection; a page-gap widget
-  // or a bare text node on the way (endCell === null) is not.
+  // Crossing into another cell is a genuine table selection. A null endCell
+  // means the range ended on a page-gap widget or a bare text node inside the
+  // starting cell, NOT that the drag left the table: prosemirror-tables already
+  // returns early when cellUnderMouse is null, so that case is harmless here.
   if (endCell && endCell !== activeCell) return false
   return true
 }
@@ -5269,6 +5272,34 @@ function wireProtectedInteractionMode(
   const restoreDraggable = () => {
     dom.draggable = draggableFor(dom.classList.contains('doc-content-editing'))
   }
+  /** The node view ignores DOM mutations, so a text drag inside the atom leaves
+   *  ProseMirror holding the selection from before the gesture — commonly a
+   *  NodeSelection of the whole object. Its copy handler would serialise the
+   *  object and Delete would remove it, even though the reader highlighted only
+   *  a few characters. Park a collapsed selection just past the atom instead. */
+  const clearSelectionForTextDrag = () => {
+    // A collapsed editor selection already lets the browser's own copy/delete
+    // act on the highlighted characters; no dispatch (and no DOM rewrite) then.
+    if (view.state.selection.empty) return
+    const pos = getPos()
+    if (typeof pos !== 'number') return
+    const { state } = view
+    const after = Math.min(pos + (state.doc.nodeAt(pos)?.nodeSize ?? 1), state.doc.content.size)
+    // findFrom(..., true) only returns a text selection; near() would fall back
+    // to a NodeSelection when the atom is the last block in the document.
+    const $after = state.doc.resolve(after)
+    const caret = Selection.findFrom($after, 1, true) ?? Selection.findFrom($after, -1, true)
+    if (!caret?.empty) return
+    // The dispatch runs selectionToDOM, which would overwrite the visible
+    // character range. Save it and put it back once ProseMirror has updated.
+    const sel = typeof window === 'undefined' ? null : window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+    view.dispatch(state.tr.setSelection(caret))
+    if (range && sel) {
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }
   const setEditing = (editing: boolean) => {
     if (!contentEditor) editing = false
     if (editing === dom.classList.contains('doc-content-editing')) {
@@ -5320,10 +5351,14 @@ function wireProtectedInteractionMode(
     if (!textPress) return
     textPress = false
     restoreDraggable()
-    // A drag that selected text keeps the reader's partial selection; a plain
-    // click (no characters selected) still selects the whole object.
-    if (hasTextSelection()) return
-    selectObject()
+    // A plain click (no characters selected) still selects the whole object.
+    // A drag keeps the reader's character selection, but the editor state must
+    // be told about it or copy/delete would still act on the whole object.
+    if (!hasTextSelection()) {
+      selectObject()
+      return
+    }
+    clearSelectionForTextDrag()
   }
   const onDragStart = (event: DragEvent) => {
     if (textPress) event.preventDefault()

@@ -49,13 +49,25 @@ function makeEditor() {
 const mouse = (type: string, init: MouseEventInit = {}) =>
   new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init })
 
-/** a fake non-collapsed browser selection, or an empty one */
+/** a fake non-collapsed browser selection, or an empty one. ProseMirror's
+ *  selectionToDOM uses these methods after a dispatch, so provide real no-ops. */
 function mockSelection(text: string) {
-  return vi.spyOn(window, 'getSelection').mockReturnValue({
+  const range = document.createRange()
+  range.selectNodeContents(document.body)
+  const addRange = vi.fn()
+  const removeAllRanges = vi.fn()
+  const spy = vi.spyOn(window, 'getSelection').mockReturnValue({
     isCollapsed: text.length === 0,
     toString: () => text,
     rangeCount: text.length === 0 ? 0 : 1,
+    getRangeAt: () => range,
+    addRange,
+    removeAllRanges,
+    collapse: vi.fn(),
+    extend: vi.fn(),
+    setBaseAndExtent: vi.fn(),
   } as unknown as Selection)
+  return Object.assign(spy, { addRange, removeAllRanges })
 }
 
 describe('hasTextSelection', () => {
@@ -96,6 +108,36 @@ describe('selecting text inside an embedded object', () => {
       expect(dom).toBeTruthy()
     },
   )
+
+  it('a text drag after a prior click on the object clears the editor selection', () => {
+    const editor = makeEditor()
+    const label = editor.view.dom.querySelector('.doc-protected-label') as HTMLElement
+    const owner = label.closest('.doc-protected') as HTMLElement
+    let pos = -1
+    editor.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === 'docProtected' && node.attrs.blockType === 'passthrough') {
+        pos = nodePos
+      }
+    })
+    expect(pos).toBeGreaterThan(-1)
+    // The common flow: click the frame (NodeSelection), then drag a few chars.
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    expect(editor.state.selection).toBeInstanceOf(NodeSelection)
+
+    const drag = mockSelection('Excel workshee')
+    label.dispatchEvent(mouse('mousedown'))
+    document.dispatchEvent(mouse('mouseup'))
+
+    // Copy and Delete must act on the dragged characters, not on the atom.
+    expect(editor.state.selection.empty).toBe(true)
+    expect(editor.state.selection instanceof NodeSelection).toBe(false)
+    // The dispatch's selectionToDOM must not wipe the visible character range.
+    expect(drag.removeAllRanges).toHaveBeenCalled()
+    expect(drag.addRange).toHaveBeenCalled()
+    expect(owner.draggable).toBe(true)
+    drag.mockRestore()
+    editor.destroy()
+  })
 
   it('a plain click with no characters still selects the whole object', () => {
     const editor = makeEditor()
