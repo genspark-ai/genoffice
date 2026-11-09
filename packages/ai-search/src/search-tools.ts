@@ -26,8 +26,7 @@ export function searchOptionsFromSettings(settings: AiSettings): SearchOptions {
   if (provider === 'exa') return { useGsk: false, exaKey: key, prefer: 'exa' }
   if (provider === 'firecrawl') return { useGsk: false, firecrawlKey: key, prefer: 'firecrawl' }
   if (provider === 'keenable') return { useGsk: false, keenableKey: key, prefer: 'keenable' }
-  if (provider === 'specstream')
-    return { useGsk: false, specstreamKey: key, prefer: 'specstream' }
+  if (provider === 'specstream') return { useGsk: false, specstreamKey: key, prefer: 'specstream' }
   return provider === 'tavily'
     ? { useGsk: false, tavilyKey: key, prefer: 'tavily' }
     : { useGsk: false, serperKey: key }
