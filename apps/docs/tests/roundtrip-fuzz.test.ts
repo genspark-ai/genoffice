@@ -11,7 +11,17 @@
  *     byte-identical and every untouched block's original XML slice intact.
  *
  *  CI runs the default 24 seeds; `scripts/roundtrip-sweep.mjs N` sweeps N
- *  seeds locally. A failing seed reproduces exactly via buildFuzzDocx(seed). */
+ *  seeds locally. A failing seed reproduces exactly via buildFuzzDocx(seed).
+ *
+ *  Knob families: body features (rich runs, CJK, hyperlinks, tables with
+ *  gridSpan/vMerge, nested tables, images, math, tracked changes, simple
+ *  fields, block content controls), section rolls (portrait/landscape, cols,
+ *  titlePg, mid-document breaks), rich headers/footers (multi-paragraph,
+ *  PAGE/NUMPAGES fields, formatted runs, logo images with their own rels
+ *  parts) and comments (anchored ranges, comments.xml with paraIds, an
+ *  inline picture via comments.xml.rels + a media part, commentsExtended
+ *  replies/resolution). Header/footer and comment parts have no editor
+ *  model: fidelity here is exact byte preservation through a body edit. */
 import { Editor } from '@tiptap/core'
 import JSZip from 'jszip'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
@@ -50,6 +60,29 @@ async function saveThroughEditor(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 describe('seeded docx round-trip fuzz', () => {
+  // no dead knobs: over the CI seed range every part family the generator
+  // knows how to build must actually appear at least once
+  it('the hf/comment knob families fire across the seed range', async () => {
+    let headerImage = 0
+    let footerImage = 0
+    let comments = 0
+    let commentImage = 0
+    let commentsExtended = 0
+    for (let seed = 1; seed <= Math.max(SEEDS, 24); seed++) {
+      const zip = await JSZip.loadAsync(await buildFuzzDocx(seed))
+      if (zip.file('word/_rels/header1.xml.rels')) headerImage++
+      if (zip.file('word/_rels/footer1.xml.rels')) footerImage++
+      if (zip.file('word/comments.xml')) comments++
+      if (zip.file('word/_rels/comments.xml.rels')) commentImage++
+      if (zip.file('word/commentsExtended.xml')) commentsExtended++
+    }
+    expect(headerImage, 'header logo images').toBeGreaterThan(0)
+    expect(footerImage, 'footer logo images').toBeGreaterThan(0)
+    expect(comments, 'comments').toBeGreaterThan(0)
+    expect(commentImage, 'comment pictures').toBeGreaterThan(0)
+    expect(commentsExtended, 'commentsExtended parts').toBeGreaterThan(0)
+  })
+
   for (let seed = 1; seed <= SEEDS; seed++) {
     it(`seed ${seed}: untouched save is a byte-identical fixed point`, async () => {
       const bytes = await buildFuzzDocx(seed)

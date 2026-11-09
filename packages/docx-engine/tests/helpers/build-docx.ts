@@ -33,6 +33,12 @@ export interface BuildDocxOptions {
   headerXml?: string
   /** inner XML of word/footer1.xml, wired the same way as headerXml */
   footerXml?: string
+  /** inner XML of word/_rels/header1.xml.rels (a Relationships wrapper is added
+   *  automatically); only meaningful together with headerXml — a header image
+   *  wires its media relationship through this */
+  headerRelsXml?: string
+  /** inner XML of word/_rels/footer1.xml.rels, wired the same way as headerRelsXml */
+  footerRelsXml?: string
   /** extra attributes on the <w:document> root (e.g. xml:space="preserve") */
   docRootExtraAttrs?: string
 }
@@ -87,12 +93,15 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     withNumbering
       ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
       : '',
-    ...(options.extraParts ?? []).map(
-      (p) => `<Override PartName="/${p.path}" ContentType="${p.contentType}"/>`,
-    ),
-    ...(options.binaryParts ?? []).map(
-      (p) => `<Default Extension="${p.extension}" ContentType="${p.contentType}"/>`,
-    ),
+    ...(options.extraParts ?? [])
+      // a .rels part (e.g. word/_rels/comments.xml.rels) is covered by the
+      // Default "rels" extension; an Override on it would be invalid
+      .filter((p) => !p.path.endsWith('.rels'))
+      .map((p) => `<Override PartName="/${p.path}" ContentType="${p.contentType}"/>`),
+    ...(options.binaryParts ?? [])
+      // withImage already adds the png Default; never emit a duplicate
+      .filter((p) => !(options.withImage && p.extension === 'png'))
+      .map((p) => `<Default Extension="${p.extension}" ContentType="${p.contentType}"/>`),
   ].join('')
   zip.file(
     '[Content_Types].xml',
@@ -136,6 +145,16 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     zip.file('word/header1.xml', `${XML_DECL}<w:hdr ${DOC_NS}>${options.headerXml}</w:hdr>`)
   if (options.footerXml !== undefined)
     zip.file('word/footer1.xml', `${XML_DECL}<w:ftr ${DOC_NS}>${options.footerXml}</w:ftr>`)
+  if (options.headerRelsXml !== undefined)
+    zip.file(
+      'word/_rels/header1.xml.rels',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.headerRelsXml}</Relationships>`,
+    )
+  if (options.footerRelsXml !== undefined)
+    zip.file(
+      'word/_rels/footer1.xml.rels',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.footerRelsXml}</Relationships>`,
+    )
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)
   for (const part of options.binaryParts ?? []) zip.file(part.path, part.base64, { base64: true })
