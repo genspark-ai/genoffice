@@ -87,6 +87,9 @@ const homeApi: HomeApi = {
   async newMarkdown(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newMarkdown, opts)
   },
+  async newFile(ext, opts) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newFile, ext, opts)
+  },
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
   },

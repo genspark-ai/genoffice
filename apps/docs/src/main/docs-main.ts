@@ -2851,7 +2851,10 @@ export function registerDocsIpc(): void {
   ipcMain.handle('docs:open', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgOpenDoc'),
-      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+      filters: [
+        { name: tm('filterWord'), extensions: ['docx'] },
+        { name: 'All Files (*.*)', extensions: ['*'] },
+      ],
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
@@ -2964,7 +2967,10 @@ export function registerDocsIpc(): void {
     const result = await saveDialog(event, {
       title: tm('dlgSaveAs'),
       defaultPath: defaultName,
-      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+      filters: [
+        { name: tm('filterWord'), extensions: ['docx'] },
+        { name: 'All Files (*.*)', extensions: ['*'] },
+      ],
     })
     if (result.canceled || !result.filePath) return { ok: false }
     // the tab may have been closed while the dialog was open; checked before the

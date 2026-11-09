@@ -418,20 +418,31 @@ async function resolveSaveTarget(
       .trim()
     if (base) {
       const dir = configuredDefaultSaveDir(app)
-      let target = join(dir, `${base}.md`)
-      for (let n = 1; existsSync(target); n++) target = join(dir, `${base}-${n}.md`)
+      const ext = extname(suggestedName) || '.md'
+      let target = join(dir, `${base}${ext.startsWith('.') ? '' : '.'}${ext}`)
+      for (let n = 1; existsSync(target); n++) target = join(dir, `${base}-${n}${ext.startsWith('.') ? '' : '.'}${ext}`)
       return target
     }
   }
   const win =
     BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
+  const defaultExt = current ? (extname(current) || '.md') : '.md'
   const defaultPath = current
     ? join(dirname(current), basename(current))
-    : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}.md`)
+    : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}${defaultExt}`)
   const picked = await showSaveDialogWithMemory(dialog, win, {
     title: tm('dlgSaveTitle'),
     defaultPath,
-    filters: [{ name: tm('filterMarkdown'), extensions: ['md', 'markdown'] }],
+    filters: [
+      { name: 'All Files (*.*)', extensions: ['*'] },
+      { name: 'Markdown (*.md, *.markdown)', extensions: ['md', 'markdown'] },
+      { name: 'Text (*.txt)', extensions: ['txt'] },
+      { name: 'JSON (*.json)', extensions: ['json'] },
+      { name: 'YAML (*.yaml, *.yml)', extensions: ['yaml', 'yml'] },
+      { name: 'XML (*.xml)', extensions: ['xml'] },
+      { name: 'SQL (*.sql)', extensions: ['sql'] },
+      { name: 'HTML (*.html, *.htm)', extensions: ['html', 'htm'] },
+    ],
   })
   if (picked.canceled || !picked.filePath) return 'canceled'
   return picked.filePath

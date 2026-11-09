@@ -1386,10 +1386,10 @@ const pendingNewFileProject = new Map<string, string>()
 function applyPendingProject(filePath: string): void {
   const ext = extname(filePath).slice(1).toLowerCase()
   let key: string | undefined
-  if (ext === 'docx') key = 'doc'
-  else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') key = 'sheet'
-  else if (ext === 'pptx') key = 'slide'
-  else if (ext === 'md' || ext === 'markdown') key = 'markdown'
+  if (ext === 'docx' || ext === 'doc') key = 'doc'
+  else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || ext === 'tsv') key = 'sheet'
+  else if (ext === 'pptx' || ext === 'ppt') key = 'slide'
+  else key = 'markdown'
   if (!key) return
   const projectId = pendingNewFileProject.get(key)
   if (!projectId) return
@@ -1621,7 +1621,7 @@ const DOCX_RE = /\.docx$/i
 const XLSX_RE = /\.(xlsx|xls|csv|tsv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
-const MD_RE = /\.(md|markdown|txt|json|yaml|yml|xml|sql)$/i
+const MD_RE = /\.(md|markdown|txt|json|yaml|yml|xml|sql|html|htm)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
 const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
@@ -1649,6 +1649,8 @@ const OPEN_DIALOG_EXTENSIONS = [
   'yaml',
   'yml',
   'sql',
+  'html',
+  'htm',
 ]
 
 function supportedFileIn(argv: string[]): string | null {
@@ -1785,6 +1787,75 @@ function newSlideTab(): void {
 function newMarkdownTab(): void {
   try {
     tabManager?.openMarkdownTab()
+  } catch (err) {
+    surfaceNewTabError(err)
+  }
+}
+
+async function createAndOpenFile(ext: string, opts?: { projectId?: string }): Promise<void> {
+  const cleanExt = ext.replace(/^\./, '').toLowerCase()
+  if (cleanExt === 'docx' || cleanExt === 'doc') {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('doc', opts.projectId)
+    }
+    newDocTab()
+    return
+  }
+  if (cleanExt === 'pptx' || cleanExt === 'ppt') {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('slide', opts.projectId)
+    }
+    newSlideTab()
+    return
+  }
+  if (cleanExt === 'xlsx' || cleanExt === 'xls') {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('sheet', opts.projectId)
+    }
+    void newSheetTab()
+    return
+  }
+  if (cleanExt === 'md' || cleanExt === 'markdown') {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('markdown', opts.projectId)
+    }
+    newMarkdownTab()
+    return
+  }
+
+  let initialContent = ''
+  let defaultPrefix = tm('untitledDoc')
+
+  if (cleanExt === 'csv') {
+    defaultPrefix = tm('untitledSheet')
+    initialContent = 'Column 1,Column 2,Column 3\n'
+  } else if (cleanExt === 'tsv') {
+    defaultPrefix = tm('untitledSheet')
+    initialContent = 'Column 1\tColumn 2\tColumn 3\n'
+  } else if (cleanExt === 'json') {
+    initialContent = '{\n  \n}\n'
+  } else if (cleanExt === 'xml') {
+    initialContent = '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  \n</root>\n'
+  } else if (cleanExt === 'yaml' || cleanExt === 'yml') {
+    initialContent = '# YAML Document\n'
+  } else if (cleanExt === 'sql') {
+    initialContent = '-- SQL Query\n'
+  } else if (cleanExt === 'html' || cleanExt === 'htm') {
+    initialContent = '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Document</title>\n</head>\n<body>\n  \n</body>\n</html>\n'
+  } else if (cleanExt === 'txt') {
+    initialContent = ''
+  }
+
+  try {
+    const filePath = uniquePathIn(defaultSaveDir(), `${defaultPrefix}.${cleanExt}`)
+    writeFileSync(filePath, initialContent, 'utf8')
+    if (cleanExt === 'csv' || cleanExt === 'tsv') {
+      markSheetsUntitledPath(filePath)
+    }
+    if (opts?.projectId && opts.projectId !== 'default') {
+      applyPendingProject(filePath)
+    }
+    openDocumentPath(filePath)
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1942,6 +2013,13 @@ function registerHomeIpc(): void {
     newMarkdownTab()
   })
 
+  ipcMain.handle(
+    HOME_CHANNELS.newFile,
+    (_event, ext: string, opts?: { projectId?: string }) => {
+      void createAndOpenFile(ext, opts)
+    },
+  )
+
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
     removeRecentFiles(stringPaths(paths))
   })
@@ -2013,7 +2091,11 @@ function registerHomeIpc(): void {
     if (process.platform === 'darwin') {
       void shell.openPath(join(app.getPath('home'), '.Trash'))
     } else if (process.platform === 'win32') {
-      spawn('explorer.exe', ['shell:RecycleBin'], { detached: true }).unref()
+      try {
+        spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref()
+      } catch {
+        void shell.openExternal('shell:RecycleBinFolder')
+      }
     } else {
       void shell.openPath(join(app.getPath('home'), '.local', 'share', 'Trash', 'files'))
     }

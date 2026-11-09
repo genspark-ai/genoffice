@@ -1690,6 +1690,13 @@ export function Home() {
     )
   }
 
+  const handleNewFormat = (ext: string) => {
+    void window.aiOffice.newFile?.(
+      ext,
+      selectedProjectId ? { projectId: selectedProjectId } : undefined,
+    )
+  }
+
   // ── keyboard: list shortcuts (read live state through a ref so one listener serves every render) ──
   const keyRef = useRef({
     list: [] as RecentEntry[],
@@ -1829,6 +1836,22 @@ export function Home() {
   const NEW_ITEMS = [
     { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
     { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
+    { ext: 'csv', title: t('newCsv'), sub: '.csv', action: () => handleNewFormat('csv') },
+    { ext: 'tsv', title: t('newTsv'), sub: '.tsv', action: () => handleNewFormat('tsv') },
+    { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
+    { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
+    { ext: 'txt', title: t('newTxt'), sub: '.txt', action: () => handleNewFormat('txt') },
+    { ext: 'json', title: t('newJson'), sub: '.json', action: () => handleNewFormat('json') },
+    { ext: 'xml', title: t('newXml'), sub: '.xml', action: () => handleNewFormat('xml') },
+    { ext: 'yaml', title: t('newYaml'), sub: '.yaml', action: () => handleNewFormat('yaml') },
+    { ext: 'sql', title: t('newSql'), sub: '.sql', action: () => handleNewFormat('sql') },
+    { ext: 'html', title: t('newHtml'), sub: '.html', action: () => handleNewFormat('html') },
+  ]
+
+  const QUICK_CARDS = [
+    { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
+    { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
+    { ext: 'csv', title: t('newCsv'), sub: '.csv', action: () => handleNewFormat('csv') },
     { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
     { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
   ]
@@ -1836,7 +1859,7 @@ export function Home() {
   function renderQuickCards() {
     return (
       <div className="quick-cards">
-        {NEW_ITEMS.map((item) => (
+        {QUICK_CARDS.map((item) => (
           <button key={item.ext} className="quick-card" onClick={() => void item.action()}>
             <FileBadge ext={item.ext} size={30} />
             <span className="quick-text">
@@ -1861,7 +1884,7 @@ export function Home() {
             <span className="quick-title-row">
               <span className="quick-title">{t('openLocal')}</span>
             </span>
-            <span className="quick-sub">.docx / .xlsx / .xls / .csv / .pptx / .pdf / .md</span>
+            <span className="quick-sub">.docx / .xlsx / .csv / .pptx / .pdf / .md / .json…</span>
           </span>
         </button>
       </div>
@@ -2537,7 +2560,14 @@ export function Home() {
                     void window.aiOffice.browse()
                   }}
                 >
-                  <span className="new-menu-folder" aria-hidden="true" />
+                  <img
+                    src={iconFolder}
+                    width={18}
+                    height={18}
+                    alt=""
+                    aria-hidden="true"
+                    style={{ objectFit: 'contain' }}
+                  />
                   <span>{t('openLocal')}</span>
                 </button>
               </div>

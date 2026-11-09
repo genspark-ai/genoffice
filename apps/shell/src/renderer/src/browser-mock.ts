@@ -146,6 +146,9 @@ if (typeof window !== 'undefined') {
     async newMarkdown() {
       openTab('markdown', 'Untitled Note.md')
     },
+    async newFile(ext) {
+      openTab('markdown', `Untitled.${ext}`)
+    },
     async removeRecent(paths) {
       mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
     },

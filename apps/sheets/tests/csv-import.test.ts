@@ -9,6 +9,7 @@ import {
   isNumericCell,
   parseCsv,
   sniffDelimiter,
+  xlsxToCsv,
 } from '../src/gateway/csv-import'
 
 describe('decodeCsvBuffer', () => {
@@ -145,5 +146,23 @@ describe('blankXlsxBuffer', () => {
     expect(await zip.file('xl/workbook.xml')?.async('text')).toContain('<sheet name="Sheet1"')
     const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
     expect(sheet).toContain('<dimension ref="A1:A1"/><sheetData></sheetData>')
+  })
+})
+
+describe('xlsxToCsv', () => {
+  it('converts an xlsx buffer back to csv text', async () => {
+    const input = 'Item,Qty\n"A, large",007\nB,42'
+    const xlsx = await csvToXlsxBuffer(input)
+    const csv = await xlsxToCsv(xlsx, ',')
+    expect(csv).toContain('Item,Qty')
+    expect(csv).toContain('"A, large",007')
+    expect(csv).toContain('B,42')
+  })
+
+  it('supports tab delimiter for tsv export', async () => {
+    const input = 'Col1\tCol2\nVal1\tVal2'
+    const xlsx = await csvToXlsxBuffer(input)
+    const tsv = await xlsxToCsv(xlsx, '\t')
+    expect(tsv).toBe('Col1\tCol2\nVal1\tVal2')
   })
 })

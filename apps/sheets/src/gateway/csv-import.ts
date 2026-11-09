@@ -203,6 +203,97 @@ export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Pr
   return xlsxBufferFromRows(rows, sheetName)
 }
 
+/** Converts an xlsx buffer back into delimited text (CSV or TSV) */
+export async function xlsxToCsv(
+  xlsxBytes: Buffer | Uint8Array,
+  delimiter = ',',
+): Promise<string> {
+  const zip = await JSZip.loadAsync(xlsxBytes)
+  const sharedStrings: string[] = []
+  const sstFile = zip.file('xl/sharedStrings.xml')
+  if (sstFile) {
+    const sstXml = await sstFile.async('text')
+    const siList = sstXml.match(/<si>[\s\S]*?<\/si>/g) ?? []
+    for (const si of siList) {
+      const texts = [...si.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1])
+      sharedStrings.push(texts.join(''))
+    }
+  }
+
+  let sheetFile = zip.file('xl/worksheets/sheet1.xml') ?? null
+  if (!sheetFile) {
+    const sheetFiles = zip.file(/xl\/worksheets\/sheet\d+\.xml/)
+    if (sheetFiles.length > 0 && sheetFiles[0]) sheetFile = sheetFiles[0]
+  }
+  if (!sheetFile) return ''
+
+  const sheetXml = await sheetFile.async('text')
+  const rowMatches = sheetXml.match(/<row[^>]*>[\s\S]*?<\/row>/g) ?? []
+  const table: string[][] = []
+
+  for (const rowXml of rowMatches) {
+    const cellMatches = [
+      ...rowXml.matchAll(
+        /<c\s+r="([A-Za-z]+)(\d+)"(?:\s+[^>]*)?(?:\s+t="([^"]*)")?[^>]*>(?:<v>([\s\S]*?)<\/v>|<is><t[^>]*>([\s\S]*?)<\/t><\/is>)?<\/c>/g,
+      ),
+    ]
+    const rowObj: { col: number; val: string }[] = []
+    for (const m of cellMatches) {
+      if (!m[1]) continue
+      const colLetters = m[1].toUpperCase()
+      let colIdx = 0
+      for (let i = 0; i < colLetters.length; i++) {
+        colIdx = colIdx * 26 + (colLetters.charCodeAt(i) - 64)
+      }
+      colIdx -= 1
+
+      const type = m[3]
+      const rawVal = m[4] ?? m[5] ?? ''
+      let textVal = rawVal
+      if (type === 's') {
+        const sIndex = parseInt(rawVal, 10)
+        textVal = sharedStrings[sIndex] ?? ''
+      }
+      textVal = textVal
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'")
+      rowObj.push({ col: colIdx, val: textVal })
+    }
+
+    if (rowObj.length > 0) {
+      const maxCol = Math.max(...rowObj.map((c) => c.col))
+      const rowArr: string[] = Array(maxCol + 1).fill('')
+      for (const item of rowObj) {
+        rowArr[item.col] = item.val
+      }
+      table.push(rowArr)
+    } else {
+      table.push([])
+    }
+  }
+
+  return table
+    .map((row) =>
+      row
+        .map((cell) => {
+          if (
+            cell.includes(delimiter) ||
+            cell.includes('"') ||
+            cell.includes('\n') ||
+            cell.includes('\r')
+          ) {
+            return `"${cell.replaceAll('"', '""')}"`
+          }
+          return cell
+        })
+        .join(delimiter),
+    )
+    .join('\n')
+}
+
 /** minimal empty workbook: the backing file for a "new blank spreadsheet" tab */
 export async function blankXlsxBuffer(sheetName = 'Sheet1'): Promise<Buffer> {
   return xlsxBufferFromRows([], sheetName)

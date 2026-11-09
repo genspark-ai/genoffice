@@ -3502,7 +3502,10 @@ export function registerSlidesIpc(): void {
     const parent = dialogParent()
     const options = {
       defaultPath: defaultName,
-      filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+      filters: [
+        { name: 'PowerPoint (*.pptx)', extensions: ['pptx'] },
+        { name: 'All Files (*.*)', extensions: ['*'] },
+      ],
     }
     const r = await showSaveDialogWithMemory(dialog, parent, options, getDraftsDir())
     if (r.canceled || !r.filePath) return { ok: false }

@@ -80,6 +80,8 @@ export interface HomeApi {
   newSlide(opts?: { projectId?: string }): Promise<void>
   /** open a blank markdown editor tab */
   newMarkdown(opts?: { projectId?: string }): Promise<void>
+  /** create and open a new file of any supported extension */
+  newFile(ext: string, opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -240,6 +242,7 @@ export const HOME_CHANNELS = {
   newSheet: 'home:new-sheet',
   newSlide: 'home:new-slide',
   newMarkdown: 'home:new-markdown',
+  newFile: 'home:new-file',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

@@ -9,7 +9,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
@@ -64,7 +64,7 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
-import { csvToXlsxBuffer, decodeCsvBuffer } from '../gateway/csv-import'
+import { csvToXlsxBuffer, decodeCsvBuffer, xlsxToCsv } from '../gateway/csv-import'
 import {
   ensureGenofficeLogin,
   gskApiKey,
@@ -1923,23 +1923,37 @@ export function registerSheetsIpc(): void {
     if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
       const selection = await saveFileDialog(event, {
         defaultPath: session.suggestSaveAs ?? session.path,
-        filters: [{ name: tm('filterXlsx'), extensions: ['xlsx'] }],
-        // CSV import: explain why the save goes through .xlsx (CSV keeps values only)
+        filters: [
+          { name: 'Excel Workbook (*.xlsx)', extensions: ['xlsx'] },
+          { name: 'CSV (Comma delimited) (*.csv)', extensions: ['csv'] },
+          { name: 'TSV (Tab delimited) (*.tsv)', extensions: ['tsv'] },
+          { name: 'All Files (*.*)', extensions: ['*'] },
+        ],
         ...(session.csvImport
           ? { title: tm('csvSaveAsNotice'), message: tm('csvSaveAsNotice') }
           : {}),
       })
       if (selection.canceled || !selection.filePath) return { canceled: true }
-      targetPath = selection.filePath.endsWith('.xlsx')
-        ? selection.filePath
-        : `${selection.filePath}.xlsx`
+      targetPath = selection.filePath
     }
 
     if ((await sha256File(session.path)) !== session.sha256) {
       throw new Error(tm('errDiskChanged'))
     }
 
-    const mutation = await writeWorkbookTo(client, session, request, targetPath)
+    const isDelimited = /\.(csv|tsv)$/i.test(targetPath)
+    const writeTarget = isDelimited
+      ? join(app.getPath('temp'), `genoffice-temp-${randomUUID()}.xlsx`)
+      : targetPath
+
+    const mutation = await writeWorkbookTo(client, session, request, writeTarget)
+
+    if (isDelimited) {
+      const delimiter = targetPath.toLowerCase().endsWith('.tsv') ? '\t' : ','
+      const csvStr = await xlsxToCsv(await readFile(writeTarget), delimiter)
+      await writeFile(targetPath, csvStr, 'utf8')
+      await unlink(writeTarget).catch(() => undefined)
+    }
 
     // The sidecar session still streams the pre-save bytes; swap it for a
     // fresh session over the saved file so future reads match the disk state.
@@ -2706,7 +2720,7 @@ async function prepareWorkbookForOpen(
   }
   return {
     openPath,
-    suggestSaveAs: path.replace(/\.[^.]+$/, '.xlsx'),
+    suggestSaveAs: path,
     ...(extension === 'csv' || extension === 'tsv' ? { csvImport: true } : {}),
   }
 }

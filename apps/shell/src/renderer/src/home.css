@@ -1962,6 +1962,10 @@ body.vib {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  scrollbar-width: thin;
 }
 
 .new-menu-sub {
