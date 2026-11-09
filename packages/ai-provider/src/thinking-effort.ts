@@ -128,18 +128,21 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
   // answered 200 live-probed (2026-11-08, deepseek-flash): `none` included,
   // returning zero reasoning like the separate thinking.type disabled toggle,
   // so the ladder maps straight onto reasoning_effort with no toggle riding
-  // along. The GenOffice-facing alias spells it "deep-seek" (DEEPSEEK_V41_FLASH);
-  // legacy and wire ids spell it "deepseek".
+  // along. The guide's clamp table folds medium -> high and xhigh -> high
+  // server-side, so the six UI rungs really are four outcomes (none / low /
+  // high / max). The GenOffice-facing alias spells it "deep-seek"
+  // (DEEPSEEK_V41_FLASH); legacy and wire ids spell it "deepseek".
   if (/(^|\/)deep-?seek/.test(id)) {
     return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
   }
-  // MiniMax takes the OpenAI effort field on its M3/M3.1 lineup
-  // (platform.minimax.io text-generation guide): low..max, and no `none` —
-  // effort none and thinking.type disabled both 400 because the models
-  // "require adaptive thinking", so the vendor default (omitted field) is
-  // the only off. The vendor's own coding client offers exactly these rungs
-  // (default/low/medium/high/xhigh/max) on M3 and M3.1-Flash alike.
-  if (/(^|\/)minimax-/.test(id)) {
+  // MiniMax M3.1 takes the OpenAI effort field (platform.minimax.io
+  // text-generation guide, M3.1-Flash): low..max, and no `none` — effort
+  // none and thinking.type disabled both 400 because the model "requires
+  // adaptive thinking", so the vendor default (omitted field) is the only
+  // off. The plain M3 stays knobless until the vendor documents it: the
+  // guide names only M3.1-Flash, and the family rule below is that a row
+  // needs a documented (or live-probed) surface.
+  if (/(^|\/)minimax-m3\.1/.test(id)) {
     return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
   }
   // Doc-only families (GLM, Doubao, Kimi, Hunyuan, Mistral) deliberately

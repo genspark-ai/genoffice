@@ -100,12 +100,15 @@ describe('thinkingShapeFor', () => {
     }
   })
 
-  it('minimax takes the effort rungs its own client offers, without an off', () => {
-    expect(thinkingShapeFor('MiniMax-M3')).toEqual({
+  it('minimax m3.1 takes the documented effort rungs, without an off; plain m3 stays knobless', () => {
+    // the vendor guide documents reasoning_effort for M3.1-Flash only; the
+    // plain M3 has no documented surface, so per the module rule it waits
+    expect(thinkingShapeFor('MiniMax-M3')).toEqual({ kind: 'openai-effort', levels: [] })
+    expect(thinkingShapeFor('minimax-m3.1-flash')).toEqual({
       kind: 'openai-effort',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
-    expect(thinkingShapeFor('minimax-m3.1-flash')).toEqual({
+    expect(thinkingShapeFor('MiniMax-M3.1')).toEqual({
       kind: 'openai-effort',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
