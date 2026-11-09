@@ -12,6 +12,7 @@ import {
   isNumericCell,
   parseCsv,
 } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { CSV_IMPORT_DEFAULT_LIMIT_MB } from '@genoffice/xlsx-gateway/gateway/csv-limits'
 import type { AdvancedFilterColumn, AdvancedFilterCriteria } from './AdvancedFilterDialog'
 import {
   buildLabelMatrix,
@@ -77,8 +78,11 @@ export function handleImportCsv(ctx: DataToolsContext): void {
     void (async () => {
       // the same ceiling the open path uses (the user's setting): one limit
       // for every way a delimited file comes in
-      const limitMb = await window.desktopApi.getCsvImportLimit().catch(() => 0)
-      if (limitMb > 0 && file.size > limitMb * 1024 * 1024) {
+      // a failed settings IPC falls back to the default, never to no limit
+      const limitMb = await window.desktopApi
+        .getCsvImportLimit()
+        .catch(() => CSV_IMPORT_DEFAULT_LIMIT_MB)
+      if (file.size > limitMb * 1024 * 1024) {
         ctx.setMessage(t('appCsvTooLarge'))
         return
       }

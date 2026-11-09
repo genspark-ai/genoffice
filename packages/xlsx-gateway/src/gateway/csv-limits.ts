@@ -9,8 +9,15 @@
  * starts where the streaming import can afford it.
  */
 
-/** the steps the setting offers, in MB */
-export const CSV_IMPORT_LIMIT_CHOICES_MB = [64, 128, 256, 512, 1024] as const
+/**
+ * The steps the setting offers, in MB. The ladder tops out at 256 on
+ * purpose: the open path still decodes the whole file into one JS string
+ * (sheets-main's prepareWorkbookForOpen), and a string caps at
+ * 0x1fffffe8 = 536,870,888 characters — a 512 MB ASCII file is already
+ * 536,870,912, so a bigger ceiling would admit files that fail inside
+ * TextDecoder.decode with a raw RangeError instead of converting.
+ */
+export const CSV_IMPORT_LIMIT_CHOICES_MB = [64, 128, 256] as const
 
 /** the ceiling a delimited import starts at, in MB */
 export const CSV_IMPORT_DEFAULT_LIMIT_MB = 256
