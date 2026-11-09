@@ -8,6 +8,12 @@
  * release builds; CI provides it as a repository secret. For local release
  * builds put it in apps/shell/electron-builder.env (gitignored) — the
  * electron-builder CLI loads that file automatically.
+ * GENOFFICE_UPDATE_MIRROR_URL — optional regional mirror of the same feed
+ * (e.g. a China node for genoffice#2336). Ships as extraMetadata so the
+ * packaged app can retry a failed primary check against it at runtime.
+ * Optional for now: until the release pipeline provisions a mirror and
+ * exports the secret, nothing is baked and the app uses the primary feed
+ * exactly as before.
  *
  * When the variable is unset (forks, PR smoke builds, plain local packaging)
  * the publish config is omitted: electron-builder then bakes no
@@ -47,6 +53,10 @@ function normalizeHttpsBaseUrl(name, value) {
 }
 
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
+const updateMirrorUrl = normalizeHttpsBaseUrl(
+  'GENOFFICE_UPDATE_MIRROR_URL',
+  process.env.GENOFFICE_UPDATE_MIRROR_URL,
+)
 const ga4MeasurementId = process.env.GENOFFICE_GA4_MEASUREMENT_ID
 const ga4ApiSecret = process.env.GENOFFICE_GA4_API_SECRET
 const fontCdnUrl = normalizeHttpsBaseUrl(
@@ -944,6 +954,9 @@ if (ga4MeasurementId && ga4ApiSecret) {
   }
 }
 if (fontCdnUrl) extraMetadata.genofficeFontCdn = { baseUrl: fontCdnUrl }
+// regional mirror of the update feed (genoffice#2336); presence here is what
+// lets the packaged app fail over when the primary feed is unreachable
+if (updateMirrorUrl) extraMetadata.genofficeUpdateMirror = { baseUrl: updateMirrorUrl }
 if (Object.keys(extraMetadata).length) config.extraMetadata = extraMetadata
 
 module.exports = config

@@ -4,7 +4,7 @@ import { app, dialog, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { autoUpdater, CancellationToken } from 'electron-updater'
 import { installResumeDownload } from './update-resume'
-import type { UpdateInfo } from 'electron-updater'
+import type { UpdateCheckResult, UpdateInfo } from 'electron-updater'
 import { createI18n, getUiLang, htmlLang } from '@genoffice/i18n'
 import type {
   UpdateChannel,
@@ -449,6 +449,35 @@ function updateFeedBaseUrl(): string | null {
   }
 }
 
+/// Regional mirror of the primary update feed (genoffice#2336): the same
+/// channel files and installers served from a second base, injected at build
+/// time via GENOFFICE_UPDATE_MIRROR_URL into extraMetadata.genofficeUpdateMirror
+/// (see electron-builder.cjs). Returns null when no mirror is configured —
+/// source builds, forks, and regions where the primary feed is reachable —
+/// in which case checks use the baked primary feed exactly as before.
+function updateMirrorBaseUrl(): string | null {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'),
+    ) as Record<string, unknown>
+    const raw = pkg['genofficeUpdateMirror']
+    if (!raw || typeof raw !== 'object') return null
+    const base = (raw as Record<string, unknown>).baseUrl
+    if (typeof base !== 'string' || !base.trim()) return null
+    const url = new URL(base.trim())
+    if (url.protocol !== 'https:' || url.username || url.password) return null
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/`
+    url.search = ''
+    url.hash = ''
+    const candidate = url.toString()
+    // a mirror identical to the primary feed cannot fail over anywhere
+    if (candidate === updateFeedBaseUrl()) return null
+    return candidate
+  } catch {
+    return null
+  }
+}
+
 /// Picks the manual-install artifact for this platform/arch from the update
 /// feed's file list: macOS wants the dmg matching process.arch (the zip is
 /// Squirrel-only), Windows the NSIS exe matching process.arch (the arm64 one
@@ -482,8 +511,31 @@ function manualDownloadUrlFor(info: UpdateInfo): string | null {
     chosen = pick((name) => name.endsWith('.AppImage'))
   }
   if (chosen === null) return null
-  const base = updateFeedBaseUrl()
+  const base = activeFeedBaseUrl ?? updateFeedBaseUrl()
   return base === null ? null : new URL(encodeURIComponent(chosen), base).toString()
+}
+
+/// Ask the configured feed whether there is an update. When the primary feed
+/// is unreachable — the situation reported in genoffice#2336, where the
+/// primary CDN is not routable in China and every check failed with a network
+/// error while routing via VPN worked — and a regional mirror is baked in,
+/// switch the provider to the mirror and retry once. All check paths (the
+/// background timer, a channel switch, and the manual Help check) go through
+/// here, so mirror users fail over without user interaction; the final outcome
+/// (update found, up to date, or both feeds unreachable) is returned exactly
+/// as the plain check would return it.
+async function checkWithMirrorFallback(): Promise<UpdateCheckResult | null> {
+  try {
+    return await autoUpdater.checkForUpdates()
+  } catch (err) {
+    const mirror = usingMirrorFeed ? null : updateMirrorBaseUrl()
+    if (!mirror) throw err
+    log('update feed unreachable; retrying via mirror', mirror)
+    autoUpdater.setFeedURL(mirror)
+    usingMirrorFeed = true
+    activeFeedBaseUrl = mirror
+    return autoUpdater.checkForUpdates()
+  }
 }
 
 let started = false
@@ -493,6 +545,12 @@ let dismissedVersion: string | null = null
 // exercisable in dev runs too
 let fakeShowAgain: (() => void) | null = null
 let manualCheckInFlight = false
+// true once the provider has failed over to the regional mirror (genoffice#2336),
+// so a later failed check does not keep re-switching feeds
+let usingMirrorFeed = false
+// base of the feed that last answered (primary or mirror); manual-installer
+// links are rebuilt against it so a mirror user gets a mirror installer
+let activeFeedBaseUrl: string | null = null
 // set by initAutoUpdater; drops the download state of the channel being left
 let resetDownloadFlow: (() => void) | null = null
 
@@ -553,7 +611,7 @@ export function applyUpdateChannel(channel: UpdateChannel): void {
   // back off since a beta user switching to stable must not downgrade
   autoUpdater.allowDowngrade = false
   log('channel switched:', channel)
-  autoUpdater.checkForUpdates().catch((err) => log('check failed:', err?.message ?? err))
+  checkWithMirrorFallback().catch((err) => log('check failed:', err?.message ?? err))
 }
 
 /** User-triggered check (Help > Check for Updates… / the About dialog button).
@@ -589,18 +647,22 @@ export async function checkForUpdatesNow(): Promise<void> {
     quietCheck = false
     let result
     try {
-      result = await autoUpdater.checkForUpdates()
+      result = await checkWithMirrorFallback()
       if (result === null) throw new Error('Update check was skipped')
     } catch (err) {
       log('manual check failed:', (err as Error)?.message ?? err)
-      await dialog.showMessageBox({
+      // a dead-end dialog leaves users with no way to update at all (e.g.
+      // regions where neither feed is reachable, genoffice#2336): offer the
+      // download page so the installer is still one click away
+      const { response } = await dialog.showMessageBox({
         type: 'warning',
         title: tUpd(lang, 'updTitle'),
         message: tUpd(lang, 'updCheckFailed'),
-        buttons: ['OK'],
+        buttons: ['OK', tUpd(lang, 'updOpenDownload')],
         defaultId: 0,
         cancelId: 0,
       })
+      if (response === 1) void shell.openExternal(DOWNLOAD_PAGE_URL)
       return
     }
     // an available update already opened the update window via the
@@ -815,7 +877,7 @@ export function initAutoUpdater(
     // a background check is quiet: the package downloads in the background and
     // the app installs it when it quits (genoffice#2389)
     quietCheck = true
-    autoUpdater.checkForUpdates().catch((err) => log('check failed:', err?.message ?? err))
+    checkWithMirrorFallback().catch((err) => log('check failed:', err?.message ?? err))
   }
   setTimeout(check, FIRST_CHECK_DELAY_MS)
   setInterval(check, RECHECK_INTERVAL_MS)

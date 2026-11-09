@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
       return appState.isPackaged
     },
     getVersion: () => '0.1.0',
+    getAppPath: () => '/app',
   },
   shell: {
     openExternal: (url: string) => openExternal(url),
@@ -45,6 +46,7 @@ const updaterState = {
   allowDowngrade: false,
 }
 const checkForUpdates = vi.fn(() => Promise.resolve(null))
+const setFeedURL = vi.fn()
 const downloadUpdate = vi.fn<(token?: FakeCancellationToken) => Promise<unknown>>(() =>
   Promise.resolve([]),
 )
@@ -63,6 +65,7 @@ vi.mock('electron-updater', () => ({
       updaterState.listeners.set(event, listener)
     },
     checkForUpdates: () => checkForUpdates(),
+    setFeedURL: (url: string) => setFeedURL(url),
     downloadUpdate: (token?: FakeCancellationToken) => downloadUpdate(token),
     quitAndInstall: (...args: unknown[]) => quitAndInstall(...(args as [boolean, boolean])),
     set autoDownload(v: boolean) {
@@ -155,6 +158,7 @@ beforeEach(() => {
   updaterState.channel = null
   updaterState.allowDowngrade = false
   checkForUpdates.mockClear()
+  setFeedURL.mockClear()
   downloadUpdate.mockReset()
   downloadUpdate.mockImplementation(() => Promise.resolve([]))
   quitAndInstall.mockClear()
@@ -957,5 +961,132 @@ describe('checkForUpdatesNow (r148 manual check)', () => {
     expect(showUpdateWindow).toHaveBeenCalledTimes(1)
     expect(lastShownState().version).toBe('9.9.9')
     expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('opens the download page from the failure dialog when the user picks it', async () => {
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    checkForUpdates.mockImplementation(() => Promise.reject(new Error('offline')))
+    showMessageBox.mockImplementation(() => Promise.resolve({ response: 1 }))
+
+    await checkForUpdatesNow()
+
+    expect(lastDialogOpts().buttons.length).toBe(2)
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://github.com/genspark-ai/genoffice/releases/latest',
+    )
+  })
+})
+
+describe('update mirror failover (genoffice#2336)', () => {
+  const FEED_YML = 'url: https://cdn.example.com/mac\n'
+  const MIRROR_PKG = JSON.stringify({
+    genofficeUpdateMirror: { baseUrl: 'https://mirror.example.com/releases' },
+  })
+
+  /** Serve app-update.yml (primary feed) and package.json (mirror metadata). */
+  function mockPackagedFiles(feedYml: string | null, pkgJson: string | null): void {
+    readFileSyncMock.mockImplementation((path: unknown) => {
+      const p = String(path)
+      if (p.endsWith('app-update.yml')) {
+        if (feedYml === null) throw new Error('no app-update.yml')
+        return feedYml
+      }
+      if (p.endsWith('package.json')) {
+        if (pkgJson === null) throw new Error('no package.json')
+        return pkgJson
+      }
+      throw new Error(`unexpected read: ${p}`)
+    })
+  }
+
+  it('retries a failed manual check against the mirror and reports up-to-date', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockPackagedFiles(FEED_YML, MIRROR_PKG)
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    checkForUpdates
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce({ isUpdateAvailable: false } as never)
+
+    await checkForUpdatesNow()
+
+    expect(setFeedURL).toHaveBeenCalledWith('https://mirror.example.com/releases/')
+    expect(checkForUpdates).toHaveBeenCalledTimes(2)
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    expect((showMessageBox.mock.calls.at(-1)![0] as { type: string }).type).toBe('info')
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('fails over silently on a background check', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockPackagedFiles(FEED_YML, MIRROR_PKG)
+    const { initAutoUpdater } = await loadUpdater()
+    checkForUpdates.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(null)
+    initAutoUpdater(() => null)
+
+    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
+    await flushAsync()
+
+    expect(setFeedURL).toHaveBeenCalledWith('https://mirror.example.com/releases/')
+    expect(checkForUpdates).toHaveBeenCalledTimes(2)
+    // no dialog, no window: a failed background check stays invisible
+    expect(showMessageBox).not.toHaveBeenCalled()
+    expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('ignores malformed mirror metadata and fails exactly like before', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockPackagedFiles(
+      FEED_YML,
+      JSON.stringify({ genofficeUpdateMirror: { baseUrl: 'http://mirror.example.com/releases' } }),
+    )
+    const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+    initAutoUpdater(() => null)
+    checkForUpdates.mockImplementation(() => Promise.reject(new Error('offline')))
+
+    await checkForUpdatesNow()
+
+    expect(setFeedURL).not.toHaveBeenCalled()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    expect((showMessageBox.mock.calls.at(-1)![0] as { type: string }).type).toBe('warning')
+  })
+
+  it('points the manual download at the mirror installer after a failover', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockPackagedFiles(FEED_YML, MIRROR_PKG)
+    const original = Object.getOwnPropertyDescriptor(process, 'arch')!
+    Object.defineProperty(process, 'arch', { value: 'arm64' })
+    try {
+      const { initAutoUpdater, checkForUpdatesNow } = await loadUpdater()
+      initAutoUpdater(() => null)
+      checkForUpdates.mockRejectedValueOnce(new Error('ETIMEDOUT')).mockImplementationOnce(() => {
+        updaterState.listeners.get('update-available')!({
+          version: '0.2.0',
+          files: [{ url: 'GenOffice-0.2.0-arm64.zip' }, { url: 'GenOffice-0.2.0-arm64.dmg' }],
+        })
+        return Promise.resolve({ isUpdateAvailable: true } as never)
+      })
+
+      await checkForUpdatesNow()
+
+      expect(setFeedURL).toHaveBeenCalledWith('https://mirror.example.com/releases/')
+      expect(showUpdateWindow).toHaveBeenCalledTimes(1)
+
+      downloadUpdate.mockImplementation(() => Promise.reject(new Error('offline')))
+      const actions = lastShownActions()
+      actions.onDownload()
+      await flushAsync()
+      actions.onDownload()
+      await flushAsync()
+      expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'manual' })
+
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://mirror.example.com/releases/GenOffice-0.2.0-arm64.dmg',
+      )
+    } finally {
+      Object.defineProperty(process, 'arch', original)
+    }
   })
 })
