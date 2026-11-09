@@ -95,7 +95,10 @@ it('keeps an inherited default header and does not create extra parts on removal
   const bytes = await fixture(true)
   const out = await JSZip.loadAsync(await engineSave(bytes, { watermark: null }))
   const original = await JSZip.loadAsync(bytes)
-  expect(Object.keys(out.files)).toEqual(Object.keys(original.files))
+  // the save writes no folder entries (Word does not, genoffice#2554), so the
+  // comparison is over the part entries only
+  const partNames = (zip: JSZip) => Object.keys(zip.files).filter((name) => !zip.files[name]!.dir)
+  expect(partNames(out)).toEqual(partNames(original))
   expect(await out.file('word/document.xml')!.async('string')).toBe(
     await original.file('word/document.xml')!.async('string'),
   )
