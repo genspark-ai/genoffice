@@ -297,6 +297,8 @@ export interface Props {
   onNameWithAi: () => void
   /** Export as PDF (hidden slides skipped) */
   onExportPdf: () => void
+  /** Export as MP4 video (hidden slides skipped; needs ffmpeg) */
+  onExportVideo: () => void
   onPrint: () => void
   /** Export as images (one PNG per page, hidden slides skipped) */
   onExportImages: () => void

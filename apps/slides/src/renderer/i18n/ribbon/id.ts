@@ -53,6 +53,7 @@ export const id = {
   ribbonFileSaveAs: 'Simpan Sebagai…',
   aiNameFile: 'Beri nama dengan AI…',
   ribbonFileExportPdf: 'Ekspor sebagai PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Cetak…',
   ribbonFileExportImages: 'Ekspor sebagai PNG…',
   ribbonFileExportImagesJpg: 'Ekspor sebagai JPG…',

@@ -50,6 +50,7 @@ export const hi = {
   ribbonFileSaveAs: 'इस रूप में सहेजें…',
   aiNameFile: 'AI से नाम दें…',
   ribbonFileExportPdf: 'PDF के रूप में निर्यात करें…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'प्रिंट करें…',
   ribbonFileExportImages: 'PNG के रूप में निर्यात करें…',
   ribbonFileExportImagesJpg: 'JPG के रूप में निर्यात करें…',

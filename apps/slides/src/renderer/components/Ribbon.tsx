@@ -1081,6 +1081,7 @@ export function Ribbon({
   onSaveAs,
   onNameWithAi,
   onExportPdf,
+  onExportVideo,
   onPrint,
   onExportImages,
   onExportImagesJpg,
@@ -1772,6 +1773,15 @@ export function Ribbon({
                   }}
                 >
                   {t('ribbonFileExportPdf')}
+                </button>
+                <button
+                  disabled={!hasDoc}
+                  onClick={() => {
+                    setFileOpen(false)
+                    onExportVideo()
+                  }}
+                >
+                  {t('ribbonFileExportVideo')}
                 </button>
                 <button
                   disabled={!hasDoc}

@@ -28,6 +28,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { cleanupExpiredGeneratedPages } from './generated-page-temp'
 import { buildExportImagePaths } from './export-images'
 import { exportSlidesPdf } from './pdf-export'
+import { exportSlidesVideo } from './video-export'
 import { printSlidesHtml } from './print-window'
 import { loadPrintHtml } from '@genoffice/electron-utils/print-window'
 import { printOutcome, printJobOptions } from '@genoffice/electron-utils/print-job'
@@ -230,6 +231,8 @@ import type {
   SavePictureResult,
   ExportPdfOp,
   ExportPdfResult,
+  ExportVideoOp,
+  ExportVideoResult,
   OpenResult,
   PasteElementsOp,
   DuplicateElementsOp,
@@ -4791,6 +4794,23 @@ export function registerSlidesIpc(): void {
     })
   })
 
+  ipcMain.handle('slides:pick-export-video-path', async (_e, defaultName: string) => {
+    const parent = dialogParent()
+    const options = {
+      title: tm('dlgExportVideo'),
+      defaultPath: defaultName,
+      filters: [{ name: 'MP4', extensions: ['mp4'] }],
+    }
+    const r = await showSaveDialogWithMemory(dialog, parent, options, getDraftsDir())
+    return r.canceled || !r.filePath ? null : r.filePath
+  })
+
+  ipcMain.handle('slides:export-video', async (_e, op: ExportVideoOp): Promise<ExportVideoResult> => {
+    const result = await exportSlidesVideo(op)
+    if (result.ok && result.path) openExportedPdf(result.path)
+    return result
+  })
+
   // The driver option groups one queue advertises, for the print dialog's
   // dropdowns (same surface the PDF dialog exposes; genoffice#2347's chain).
   ipcMain.handle('slides:printer-options', async (_e, queue: unknown) => {
@@ -5259,6 +5279,7 @@ export function buildSlidesMenu(): Menu {
         // The ribbon's File tab is Windows-only, so without these macOS had no way
         // to export or print at all
         { label: tm('menuExportPdf'), click: () => send('export-pdf') },
+        { label: tm('menuExportVideo'), click: () => send('export-video') },
         { label: tm('menuExportImages'), click: () => send('export-images') },
         { label: tm('menuExportImagesJpg'), click: () => send('export-images-jpg') },
         { label: tm('menuPrint'), accelerator: 'CmdOrCtrl+P', click: () => send('print') },

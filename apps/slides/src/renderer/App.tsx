@@ -1044,6 +1044,7 @@ export function App() {
     [],
   )
   const exportPdf = useCallback(() => void fileActions.exportPdf(ctxRef.current), [])
+  const exportVideo = useCallback(() => void fileActions.exportVideo(ctxRef.current), [])
 
   // Headless export mode (--headless-export): this renderer lives in a hidden
   // window whose only job is to run the File menu's PDF export against a path
@@ -2352,6 +2353,7 @@ export function App() {
       else if (cmd === 'name-with-ai') void nameWithAi()
       // macOS has no File ribbon tab, so these only exist in the menu
       else if (cmd === 'export-pdf') void exportPdf()
+      else if (cmd === 'export-video') void exportVideo()
       else if (cmd === 'export-images') void exportImages('png')
       else if (cmd === 'export-images-jpg') void exportImages('jpg')
       else if (cmd === 'print') setPrintDlgOpen(true)
@@ -2380,6 +2382,7 @@ export function App() {
     saveAs,
     nameWithAi,
     exportPdf,
+    exportVideo,
     exportImages,
     undo,
     redo,
@@ -3314,6 +3317,7 @@ export function App() {
         onSaveAs={() => void saveAs()}
         onNameWithAi={() => void nameWithAi()}
         onExportPdf={() => void exportPdf()}
+        onExportVideo={() => void exportVideo()}
         onPrint={() => setPrintDlgOpen(true)}
         onExportImages={() => void exportImages('png')}
         onExportImagesJpg={() => void exportImages('jpg')}

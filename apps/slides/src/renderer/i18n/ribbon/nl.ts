@@ -51,6 +51,7 @@ export const nl = {
   ribbonFileSaveAs: 'Opslaan als…',
   aiNameFile: 'Naam geven met AI…',
   ribbonFileExportPdf: 'Exporteren als PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Afdrukken…',
   ribbonFileExportImages: 'Exporteren als PNG…',
   ribbonFileExportImagesJpg: 'Exporteren als JPG…',

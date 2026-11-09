@@ -53,6 +53,7 @@ export const fr = {
   ribbonFileSaveAs: 'Enregistrer sous…',
   aiNameFile: "Nommer avec l'IA…",
   ribbonFileExportPdf: 'Exporter au format PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Imprimer…',
   ribbonFileExportImages: 'Exporter en PNG…',
   ribbonFileExportImagesJpg: 'Exporter en JPG…',

@@ -1282,6 +1282,26 @@ export interface ExportPdfResult {
   error?: string
 }
 
+/** Export as MP4: the renderer renders visible slides to PNG frames; the main
+ *  process muxes them with ffmpeg into a 1080p H.264 video (3s per slide by
+ *  default; rehearsed timings win where present). */
+export interface ExportVideoOp {
+  /** Target mp4 absolute path (chosen via pickExportVideoPath) */
+  filePath: string
+  /** base64 PNG per visible slide (without the data: prefix), in slide order */
+  pngsBase64: string[]
+  /** Per-slide durations in seconds, same order as pngsBase64 (missing entries use the default) */
+  durationsSec?: number[]
+  /** Fallback per-slide duration in seconds */
+  slideDurationSec?: number
+}
+
+export interface ExportVideoResult {
+  ok: boolean
+  path?: string
+  error?: string
+}
+
 /** Print: same page assembly as ExportPdfOp, using the system print dialog. */
 export interface PrintSlidesOp {
   pngsBase64: string[]
@@ -1336,6 +1356,7 @@ export type MenuCommand =
   | 'save-as'
   | 'name-with-ai'
   | 'export-pdf'
+  | 'export-video'
   | 'export-images'
   | 'export-images-jpg'
   | 'print'
@@ -1745,6 +1766,10 @@ export interface SlidesApi {
   savePicture: (op: SavePictureOp) => Promise<SavePictureResult>
   /** Main process printToPDF via a hidden window, written to disk */
   exportPdf: (op: ExportPdfOp) => Promise<ExportPdfResult>
+  /** Export as MP4: shows the save dialog for the target path, cancel returns null */
+  pickExportVideoPath: (defaultName: string) => Promise<string | null>
+  /** Main process ffmpeg mux of the rendered PNG frames into an MP4 */
+  exportVideo: (op: ExportVideoOp) => Promise<ExportVideoResult>
   /** Print: with job = silent (macOS named printers spool through lp); without = system dialog */
   printSlides: (op: PrintSlidesOp) => Promise<{ ok: boolean; error?: string }>
   /** installed printers for the in-app print dialog */

@@ -10,7 +10,7 @@ import { modelSaveAsName } from './file-naming'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
-import { renderSlidesToImageBase64 } from './export-render'
+import { renderSlidesToImageBase64, renderSlidesToPngBase64 } from './export-render'
 import { t } from './i18n/locale'
 import { showToast } from './components/toast-bus'
 
@@ -264,6 +264,54 @@ export async function exportPdf(ctx: ActionCtx, outPath?: string): Promise<boole
     return r.ok
   } catch (err) {
     ctx.setStatus(t('appExportPdfFailed', { error: String(err) }))
+    return false
+  }
+}
+
+/**
+ * Export as MP4 video (genoffice#2508): visible slides are rendered to PNG
+ * frames, then muxed by the main process into a 1080p MP4 via local ffmpeg.
+ * Each slide holds for 3s unless a rehearsed advance time (getShowTiming) says
+ * otherwise. Transitions, shape animations and narration are not rendered —
+ * the video is a still-slides slideshow. Resolves true only when a file was written.
+ */
+export async function exportVideo(ctx: ActionCtx, outPath?: string): Promise<boolean> {
+  const visible = ctx.slides.filter((s) => !s.hidden)
+  if (visible.length === 0) {
+    ctx.setStatus(t('appExportNoSlides'))
+    return false
+  }
+  const target = outPath ?? (await window.slidesApi.pickExportVideoPath(`${exportBaseName(ctx)}.mp4`))
+  if (!target) return false
+  ctx.setStatus(t('appExportVideoProgress'))
+  try {
+    const modelIndexes = ctx.slides.flatMap((s, i) => (s.hidden ? [] : [i]))
+    let durationsSec: number[] | undefined
+    try {
+      const timings = await Promise.all(modelIndexes.map((mi) => window.slidesApi.getShowTiming(mi)))
+      // only send the array when at least one rehearsed timing exists
+      if (timings.some((t) => t.advanceMs != null)) {
+        durationsSec = timings.map((t) =>
+          t.advanceMs != null ? Math.max(0.5, Math.min(30, t.advanceMs / 1000)) : 3,
+        )
+      }
+    } catch {
+      durationsSec = undefined
+    }
+    const pngsBase64 = await renderSlidesToPngBase64(visible, ctx.images)
+    const r = await window.slidesApi.exportVideo({
+      filePath: target,
+      pngsBase64,
+      ...(durationsSec ? { durationsSec } : {}),
+    })
+    ctx.setStatus(
+      r.ok
+        ? t('appExportVideoDone', { path: r.path ?? '' })
+        : t('appExportVideoFailed', { error: r.error ?? t('appUnknownError') }),
+    )
+    return r.ok
+  } catch (err) {
+    ctx.setStatus(t('appExportVideoFailed', { error: String(err) }))
     return false
   }
 }

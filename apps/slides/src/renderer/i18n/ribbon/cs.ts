@@ -51,6 +51,7 @@ export const cs = {
   ribbonFileSaveAs: 'Uložit jako…',
   aiNameFile: 'Pojmenovat pomocí AI…',
   ribbonFileExportPdf: 'Exportovat do PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Tisk…',
   ribbonFileExportImages: 'Exportovat jako PNG…',
   ribbonFileExportImagesJpg: 'Exportovat jako JPG…',

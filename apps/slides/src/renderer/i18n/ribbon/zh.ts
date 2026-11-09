@@ -51,6 +51,7 @@ export const zh = {
   ribbonFileSaveAs: '另存为…',
   aiNameFile: '用 AI 命名…',
   ribbonFileExportPdf: '导出为 PDF…',
+  ribbonFileExportVideo: '导出为视频 (MP4)…',
   ribbonFilePrint: '打印…',
   ribbonFileExportImages: '导出为 PNG…',
   ribbonFileExportImagesJpg: '导出为 JPG…',

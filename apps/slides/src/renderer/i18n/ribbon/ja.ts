@@ -52,6 +52,7 @@ export const ja = {
   ribbonFileSaveAs: '名前を付けて保存…',
   aiNameFile: 'AI で名前を変更…',
   ribbonFileExportPdf: 'PDF としてエクスポート…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: '印刷…',
   ribbonFileExportImages: 'PNG としてエクスポート…',
   ribbonFileExportImagesJpg: 'JPG としてエクスポート…',

@@ -52,6 +52,7 @@ export const ru = {
   ribbonFileSaveAs: 'Сохранить как…',
   aiNameFile: 'Назвать с помощью ИИ…',
   ribbonFileExportPdf: 'Экспорт в PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Печать…',
   ribbonFileExportImages: 'Экспорт в PNG…',
   ribbonFileExportImagesJpg: 'Экспорт в JPG…',

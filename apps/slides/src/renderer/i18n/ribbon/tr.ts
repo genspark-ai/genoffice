@@ -51,6 +51,7 @@ export const tr = {
   ribbonFileSaveAs: 'Farklı Kaydet…',
   aiNameFile: 'AI ile adlandır',
   ribbonFileExportPdf: 'PDF Olarak Dışa Aktar…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Yazdır…',
   ribbonFileExportImages: 'PNG Olarak Dışa Aktar…',
   ribbonFileExportImagesJpg: 'JPG Olarak Dışa Aktar…',

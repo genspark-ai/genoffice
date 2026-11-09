@@ -50,6 +50,7 @@ export const he = {
   ribbonFileSaveAs: 'שמירה בשם…',
   aiNameFile: 'מתן שם באמצעות AI…',
   ribbonFileExportPdf: 'ייצוא כ-PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'הדפסה…',
   ribbonFileExportImages: 'ייצוא כ-PNG…',
   ribbonFileExportImagesJpg: 'ייצוא כ-JPG…',

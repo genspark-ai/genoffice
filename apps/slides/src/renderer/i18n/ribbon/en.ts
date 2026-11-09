@@ -51,6 +51,7 @@ export const en = {
   ribbonFileSaveAs: 'Save As…',
   aiNameFile: 'Name with AI…',
   ribbonFileExportPdf: 'Export as PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Print…',
   ribbonFileExportImages: 'Export as PNG…',
   ribbonFileExportImagesJpg: 'Export as JPG…',

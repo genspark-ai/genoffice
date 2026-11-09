@@ -93,6 +93,7 @@ import type {
   ExportImagesOp,
   SavePictureOp,
   ExportPdfOp,
+  ExportVideoOp,
   PrintSlidesOp,
   PrinterInfo,
   PrinterOption,
@@ -351,6 +352,9 @@ const api: SlidesApi = {
     ipcRenderer.invoke('slides:pick-export-pdf-path', defaultName),
   savePicture: (op: SavePictureOp) => ipcRenderer.invoke('slides:save-picture', op),
   exportPdf: (op: ExportPdfOp) => ipcRenderer.invoke('slides:export-pdf', op),
+  pickExportVideoPath: (defaultName: string) =>
+    ipcRenderer.invoke('slides:pick-export-video-path', defaultName),
+  exportVideo: (op: ExportVideoOp) => ipcRenderer.invoke('slides:export-video', op),
   printSlides: (op: PrintSlidesOp) => ipcRenderer.invoke('slides:print', op),
   listPrinters: async () => {
     const result: unknown = await ipcRenderer.invoke('slides:printers')

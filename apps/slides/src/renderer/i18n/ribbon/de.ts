@@ -53,6 +53,7 @@ export const de = {
   ribbonFileSaveAs: 'Speichern unter…',
   aiNameFile: 'Mit KI benennen…',
   ribbonFileExportPdf: 'Als PDF exportieren…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Drucken…',
   ribbonFileExportImages: 'Als PNG exportieren…',
   ribbonFileExportImagesJpg: 'Als JPG exportieren…',

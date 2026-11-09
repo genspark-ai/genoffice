@@ -52,6 +52,7 @@ export const th = {
   ribbonFileSaveAs: 'บันทึกเป็น…',
   aiNameFile: 'ตั้งชื่อด้วย AI…',
   ribbonFileExportPdf: 'ส่งออกเป็น PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'พิมพ์…',
   ribbonFileExportImages: 'ส่งออกเป็น PNG…',
   ribbonFileExportImagesJpg: 'ส่งออกเป็น JPG…',

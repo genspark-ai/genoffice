@@ -51,6 +51,7 @@ export const ms = {
   ribbonFileSaveAs: 'Simpan Sebagai…',
   aiNameFile: 'Namakan dengan AI…',
   ribbonFileExportPdf: 'Eksport sebagai PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'Cetak…',
   ribbonFileExportImages: 'Eksport sebagai PNG…',
   ribbonFileExportImagesJpg: 'Eksport sebagai JPG…',

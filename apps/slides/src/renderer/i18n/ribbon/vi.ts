@@ -51,6 +51,7 @@ export const vi = {
   ribbonFileSaveAs: 'Lưu dưới dạng…',
   aiNameFile: 'Đặt tên bằng AI…',
   ribbonFileExportPdf: 'Xuất dưới dạng PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'In…',
   ribbonFileExportImages: 'Xuất dưới dạng PNG…',
   ribbonFileExportImagesJpg: 'Xuất dưới dạng JPG…',

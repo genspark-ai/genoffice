@@ -52,6 +52,7 @@ export const ko = {
   ribbonFileSaveAs: '다른 이름으로 저장…',
   aiNameFile: 'AI로 이름 지정…',
   ribbonFileExportPdf: 'PDF로 내보내기…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: '인쇄…',
   ribbonFileExportImages: 'PNG로 내보내기…',
   ribbonFileExportImagesJpg: 'JPG로 내보내기…',

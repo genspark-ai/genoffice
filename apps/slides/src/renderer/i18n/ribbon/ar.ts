@@ -52,6 +52,7 @@ export const ar = {
   ribbonFileSaveAs: 'حفظ باسم…',
   aiNameFile: 'التسمية بالذكاء الاصطناعي…',
   ribbonFileExportPdf: 'تصدير كملف PDF…',
+  ribbonFileExportVideo: 'Export as Video (MP4)…',
   ribbonFilePrint: 'طباعة…',
   ribbonFileExportImages: 'تصدير كصور PNG…',
   ribbonFileExportImagesJpg: 'تصدير كصور JPG…',
