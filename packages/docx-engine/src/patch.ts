@@ -2267,10 +2267,11 @@ export async function saveDocx(
 
   const out = new JSZip()
   for (const [name, entry] of Object.entries(zip.files)) {
-    if (entry.dir) {
-      out.file(name, '', { dir: true, date: entry.date })
-      continue
-    }
+    // source folder entries are not copied over: Word does not write them and
+    // they carry no content (genoffice#2554). JSZip still auto-creates folder
+    // entries for every nested out.file() below — those are stripped right
+    // before the generate at the end.
+    if (entry.dir) continue
     const hfPart = hfParts.find((p) => p.path === name)
     if (name === docPath) {
       out.file(name, newDocumentXml, { date: entry.date })
@@ -2397,6 +2398,10 @@ export async function saveDocx(
   if (options.removeParts) await applyRemoveParts(out, options.removeParts)
   // the property write comes last: what the caller asked for wins over the scrub
   if (options.properties) await applyPropertyChanges(out, options.properties)
+  // Word does not write folder entries and they carry no content: JSZip
+  // auto-creates one per nested part, so drop them from the flat files map
+  // before the single generate pass (genoffice#2554)
+  for (const [name, entry] of Object.entries(out.files)) if (entry.dir) delete out.files[name]
   return out.generateAsync({
     type: 'uint8array',
     compression: 'DEFLATE',

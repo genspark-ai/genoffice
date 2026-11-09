@@ -233,14 +233,11 @@ describe('remove_parts package scrub', () => {
     ]) {
       expect(after.has(name), name).toBe(false)
     }
-    // the removed families' folder entries are gone; folders with remaining parts stay
+    // the save writes no folder entries at all (Word does not write them;
+    // genoffice#2554), removed families or not
     const zip = await JSZip.loadAsync(saved)
     const folders = Object.keys(zip.files).filter((name) => name.endsWith('/'))
-    expect(folders).not.toContain('customXml/')
-    expect(folders).not.toContain('customXml/_rels/')
-    expect(folders).not.toContain('word/webextensions/')
-    expect(folders).not.toContain('word/webextensions/_rels/')
-    expect(folders).toContain('word/')
+    expect(folders).toEqual([])
     // untouched parts keep their exact bytes
     for (const name of ['word/styles.xml', 'docProps/core.xml', '_rels/.rels']) {
       expect(Buffer.from(after.get(name)!)).toEqual(Buffer.from(before.get(name)!))
@@ -311,18 +308,20 @@ describe('remove_parts package scrub', () => {
     expect(await saveFixture(saved, options)).toEqual(saved)
   })
 
-  it('keeps folder entries on the source date so unchanged saves stay byte-identical', async () => {
+  it('writes no folder entries and keeps every part entry on the source date', async () => {
     const bytes = await fixtureDocx()
-    // a real removal sends the save through the writer, which must carry the
-    // source date over to the surviving folder entries instead of stamping
-    // them with the current time (that made two saves differ whenever they
-    // straddled a 2-second DOS-time tick)
+    // the fixture carries folder entries (the test builds them) but Word does
+    // not write folder entries, so the save drops them and keeps each part
+    // entry's source date — that date carry-over is what made two saves
+    // byte-identical even when they straddled a 2-second DOS-time tick
+    // (genoffice#2343/#2443); genoffice#2554 adds the folder-entry drop
     const saved = await saveFixture(bytes, { kinds: ['customXml'] })
     const zip = await JSZip.loadAsync(saved)
-    const folder = zip.files['word/webextensions/']
-    expect(folder).toBeTruthy()
-    expect(folder!.dir).toBe(true)
-    expect(folder!.date.getTime()).toBe(Date.UTC(2026, 0, 1))
+    const folders = Object.keys(zip.files).filter((name) => zip.files[name]!.dir)
+    expect(folders).toEqual([])
+    const part = zip.files['word/document.xml']!
+    expect(part.dir).toBe(false)
+    expect(part.date.getTime()).toBe(Date.UTC(2026, 0, 1))
     const resaved = await saveFixture(saved, { kinds: ['customXml'] })
     expect(Buffer.from(resaved).equals(Buffer.from(saved))).toBe(true)
   })
