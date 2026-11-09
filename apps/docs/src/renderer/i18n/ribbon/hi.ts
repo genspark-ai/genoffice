@@ -798,6 +798,8 @@ export const hi = {
   ribbonOutlineView: 'रूपरेखा',
   ribbonOutlineViewTip:
     'रूपरेखा दृश्य: केवल शीर्षकों का पदानुक्रम दिखाएँ; शीर्षक संपादन योग्य रहते हैं',
+  ribbonStoryView: 'Story View',
+  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'पठन मोड',
   ribbonReadModeTip: 'पठन मोड: एकाग्र पढ़ने के लिए रिबन छिपाएँ, बाहर निकलने के लिए Esc दबाएँ',
   ribbonPagePreview: 'पृष्ठ पूर्वावलोकन',

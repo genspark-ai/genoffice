@@ -12770,6 +12770,172 @@ body.docs-crop-active
   display: none;
 }
 
+/* ---- Story view: plain column, document formatting hidden, structure kept ----
+   Follows the InDesign Story Editor model (issue #2277): one typeface, a
+   centered column at a fixed line length, heading markers hanging in the
+   margin. Display only — no document state changes, so hidden formatting
+   round-trips through save untouched. Bold/italic/underline/strikethrough,
+   links and list markers still show; fonts, sizes, colors, highlights,
+   indents and spacing are hidden. */
+.view-story {
+  width: 100%;
+}
+
+.view-story .doc-page {
+  width: min(720px, 92%);
+  min-height: 0;
+  box-shadow: none;
+  column-count: auto;
+  column-gap: 0;
+  padding: 48px 56px 120px;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--docs-paper-ink);
+  background: var(--page-bg, var(--docs-paper));
+  letter-spacing: normal;
+}
+
+.view-story .doc-page .page-gap,
+.view-story .doc-page .page-gap-inline,
+.view-story .doc-page .page-gap-cell,
+.view-story .doc-page .page-gap-table,
+.view-story .doc-page .page-hf,
+.view-story .doc-page .doc-hf-wrap-float,
+.view-story .doc-page .page-first-floats,
+.view-story .doc-page .doc-sect-break-mark {
+  display: none;
+}
+
+/* hide the document's own fonts, sizes, colors, highlights, indents and
+   spacing (inline styles need !important to beat); keep emphasis */
+.view-story .doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li, span, a, td, th) {
+  font-family: inherit !important;
+  color: inherit !important;
+  background: transparent !important;
+  text-align: left !important;
+  letter-spacing: normal !important;
+  text-indent: 0 !important;
+  text-transform: none !important;
+  white-space: normal;
+}
+
+.view-story .doc-page :is(p, span) {
+  font-size: inherit !important;
+  line-height: 1.7 !important;
+}
+
+.view-story .doc-page p {
+  margin: 0 0 12px !important;
+  padding-left: 56px;
+  position: relative;
+}
+
+/* quote paragraphs (Quote / IntenseQuote paragraph styles) */
+.view-story .doc-page p[data-style*='Quote' i] {
+  padding-left: 56px;
+}
+
+.view-story .doc-page p[data-style*='Quote' i]::before {
+  content: '>';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  text-align: right;
+  color: var(--docs-paper-ink-faint);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* all headings share one look; markers hang in the margin */
+.view-story .doc-page h1,
+.view-story .doc-page h2,
+.view-story .doc-page h3,
+.view-story .doc-page h4,
+.view-story .doc-page h5,
+.view-story .doc-page h6 {
+  font-size: 18px !important;
+  line-height: 1.4 !important;
+  font-weight: 700 !important;
+  font-style: normal !important;
+  margin: 28px 0 10px !important;
+  padding-left: 56px;
+  position: relative;
+}
+
+.view-story .doc-page h1::before,
+.view-story .doc-page h2::before,
+.view-story .doc-page h3::before,
+.view-story .doc-page h4::before,
+.view-story .doc-page h5::before,
+.view-story .doc-page h6::before {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  text-align: right;
+  font-weight: 400;
+  color: var(--docs-paper-ink-faint);
+  pointer-events: none;
+  user-select: none;
+}
+
+.view-story .doc-page h1::before {
+  content: '#';
+}
+.view-story .doc-page h2::before {
+  content: '##';
+}
+.view-story .doc-page h3::before {
+  content: '###';
+}
+.view-story .doc-page h4::before,
+.view-story .doc-page h5::before,
+.view-story .doc-page h6::before {
+  content: '####';
+}
+
+/* list items: plain dash in the margin for bullets; numbered items keep
+   their computed markers (hidden formatting still hidden) */
+.view-story .doc-page .doc-li {
+  margin: 0 0 8px !important;
+  padding-left: 56px !important;
+  font-size: inherit !important;
+  line-height: 1.7 !important;
+}
+
+.view-story .doc-page .doc-li:not(.doc-li-ordered):not([data-marker])::before {
+  content: '-';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  text-align: right;
+  color: var(--docs-paper-ink-faint);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* tables stay tables with plain text in the cells */
+.view-story .doc-table {
+  width: 100%;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.view-story .doc-table td,
+.view-story .doc-table th {
+  border: 1px solid var(--border);
+  padding: 6px 8px !important;
+  font-size: inherit !important;
+}
+
+/* links keep their affordance; bold/italic/underline/strike pass through */
+.view-story .doc-page .doc-link {
+  text-decoration: underline;
+}
+
 /* ---- Gridlines: alignment grid inside the text area (content-box = inside margins) ---- */
 
 .show-grid .doc-page {

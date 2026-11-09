@@ -800,6 +800,8 @@ export const zh = {
   ribbonWebLayoutTip: 'Web 版式:文档撑满窗口宽度,不分页',
   ribbonOutlineView: '大纲',
   ribbonOutlineViewTip: '大纲视图:只显示标题层级,可直接编辑标题',
+  ribbonStoryView: '故事视图',
+  ribbonStoryViewTip: '故事视图:隐藏格式,单列纯文本写作;内容不变,照常编辑',
   ribbonReadMode: '阅读视图',
   ribbonReadModeTip: '阅读视图:隐藏功能区专注阅读,按 Esc 退出',
   ribbonPagePreview: '分页预览',

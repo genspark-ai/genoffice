@@ -800,6 +800,8 @@ export const pt = {
   ribbonOutlineView: 'Estrutura de Tópicos',
   ribbonOutlineViewTip:
     'Estrutura de tópicos: mostrar apenas a hierarquia de títulos; os títulos continuam editáveis',
+  ribbonStoryView: 'Story View',
+  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Modo de Leitura',
   ribbonReadModeTip:
     'Modo de leitura: ocultar a faixa de opções para leitura focada; pressione Esc para sair',

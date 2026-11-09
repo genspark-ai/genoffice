@@ -1461,6 +1461,16 @@ export function IconWebLayout(props: IconProps) {
   )
 }
 
+export function IconStoryView(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* centered narrow column: plain lines between two margins */}
+      <path d="M 6.08 3.76 v 8.47 M 9.93 3.76 v 8.47" strokeWidth="1" />
+      <path d="M 6.85 5.69 h 2.31 M 6.85 7.62 h 2.31 M 6.85 9.54 h 2.31" strokeWidth="1" />
+    </Svg>
+  )
+}
+
 export function IconGridlines(props: IconProps) {
   return (
     <Svg {...props}>

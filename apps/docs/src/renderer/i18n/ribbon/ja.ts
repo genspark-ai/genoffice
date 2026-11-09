@@ -813,6 +813,8 @@ export const ja = {
   ribbonWebLayoutTip: 'Web レイアウト:ページ区切りなしでウィンドウ幅いっぱいに表示',
   ribbonOutlineView: 'アウトライン',
   ribbonOutlineViewTip: 'アウトライン表示:見出しの階層のみを表示し、見出しを直接編集可能',
+  ribbonStoryView: 'Story View',
+  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: '閲覧モード',
   ribbonReadModeTip: '閲覧モード:リボンを非表示にして読書に集中。Esc キーで終了',
   ribbonPagePreview: 'ページ プレビュー',

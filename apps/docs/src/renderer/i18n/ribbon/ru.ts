@@ -799,6 +799,8 @@ export const ru = {
   ribbonOutlineView: 'Структура',
   ribbonOutlineViewTip:
     'Режим структуры: показывать только иерархию заголовков; заголовки можно редактировать',
+  ribbonStoryView: 'Story View',
+  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Режим чтения',
   ribbonReadModeTip:
     'Режим чтения: скрыть ленту для сосредоточенного чтения, для выхода нажмите Esc',

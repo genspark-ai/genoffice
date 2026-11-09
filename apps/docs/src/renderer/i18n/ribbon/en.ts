@@ -795,6 +795,8 @@ export const en = {
   ribbonWebLayoutTip: 'Web Layout: fill the window width, without page breaks',
   ribbonOutlineView: 'Outline',
   ribbonOutlineViewTip: 'Outline view: show only the heading hierarchy; headings stay editable',
+  ribbonStoryView: 'Story View',
+  ribbonStoryViewTip: 'Story view: hide formatting for plain single-column writing; document unchanged, typing works normally',
   ribbonReadMode: 'Read Mode',
   ribbonReadModeTip: 'Read Mode: hide the ribbon for focused reading, press Esc to exit',
   ribbonPagePreview: 'Page Preview',

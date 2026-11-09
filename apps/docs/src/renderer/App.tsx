@@ -354,6 +354,7 @@ import {
   IconReadMode,
   IconRedo,
   IconSave,
+  IconStoryView,
   IconUndo,
   IconWebLayout,
 } from './components/icons'
@@ -8818,6 +8819,14 @@ export function App() {
                     onClick={() => setViewMode('outline')}
                   >
                     <IconOutlineView size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
+                    data-tip={t('ribbonStoryView')}
+                    aria-label={t('ribbonStoryView')}
+                    onClick={() => setViewMode(viewMode === 'story' ? 'print' : 'story')}
+                  >
+                    <IconStoryView size={14} />
                   </button>
                   <button
                     className={`status-view-btn${readMode ? ' on' : ''}`}
