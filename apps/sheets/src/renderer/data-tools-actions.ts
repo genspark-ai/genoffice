@@ -8,6 +8,7 @@ import { ILayoutService } from '@univerjs/preset-sheets-core'
 
 import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
 import {
+  DEFAULT_CSV_IMPORT_MAX_BYTES,
   decodeCsvBuffer,
   isNumericCell,
   parseCsv,
@@ -74,7 +75,7 @@ export function handleImportCsv(ctx: DataToolsContext): void {
   input.onchange = () => {
     const file = input.files?.[0]
     if (!file) return
-    if (file.size > 32 * 1024 * 1024) {
+    if (file.size > DEFAULT_CSV_IMPORT_MAX_BYTES) {
       ctx.setMessage(t('appCsvTooLarge'))
       return
     }

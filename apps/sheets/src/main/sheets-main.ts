@@ -79,6 +79,8 @@ import {
   configuredAuthorName,
   readLegacyImportSkip,
   writeLegacyImportSkip,
+  readCsvImportMaxBytes,
+  formatCsvImportBytes,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import { fetchRemoteTable } from '@genoffice/electron-utils/remote-table'
@@ -247,6 +249,7 @@ const tMain = createI18n({
     errImageTooLarge: '图片超过 5MB 上限',
     errUnreadable: '无法读取',
     errFileTooLarge: '文件超过大小上限',
+    errCsvTooLarge: '此 CSV 文件为 {size}，超过 {limit} 的导入上限。可在 app-settings.json 中设置 csvImportMaxBytes 提高上限，或将文件拆成更小的部分。',
     errParseFailed: '文件解析失败',
     errImageNoText: '图片附件不提供文本,已作为图像随用户消息发送,直接看图即可',
     errNotImage: '不是支持的图片类型',
@@ -311,6 +314,7 @@ const tMain = createI18n({
     errImageTooLarge: 'image exceeds the 5MB limit',
     errUnreadable: 'cannot be read',
     errFileTooLarge: 'File exceeds the size limit',
+    errCsvTooLarge: 'This CSV file is {size}, over the {limit} import limit. Raise it via csvImportMaxBytes in app-settings.json, or split the file into smaller parts.',
     errParseFailed: 'Failed to parse file',
     errImageNoText: 'Image attachments have no text; the image is sent along with the user message',
     errNotImage: 'not a supported image type',
@@ -380,6 +384,7 @@ const tMain = createI18n({
     errImageTooLarge: 'hình ảnh vượt quá giới hạn 5MB',
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
+    errCsvTooLarge: 'Tệp CSV này có kích thước {size}, vượt quá giới hạn nhập {limit}. Hãy tăng giới hạn bằng cách đặt csvImportMaxBytes trong app-settings.json, hoặc chia tệp thành các phần nhỏ hơn.',
     errParseFailed: 'Không thể phân tích tệp',
     errImageNoText:
       'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
@@ -451,6 +456,7 @@ const tMain = createI18n({
     errImageTooLarge: 'görsel 5MB sınırını aşıyor',
     errUnreadable: 'okunamıyor',
     errFileTooLarge: 'Dosya boyut sınırını aşıyor',
+    errCsvTooLarge: 'Bu CSV dosyası {size} boyutunda ve {limit} içe aktarma sınırını aşıyor. Sınırı app-settings.json içinde csvImportMaxBytes ile artırabilir veya dosyayı daha küçük parçalara bölebilirsiniz.',
     errParseFailed: 'Dosya ayrıştırılamadı',
     errImageNoText: 'Görsel eklerin metni yoktur; görsel kullanıcı mesajıyla birlikte gönderilir',
     errNotImage: 'desteklenen bir görsel türü değil',
@@ -522,6 +528,7 @@ const tMain = createI18n({
     errImageTooLarge: '画像が 5MB の上限を超えています',
     errUnreadable: '読み取れません',
     errFileTooLarge: 'ファイルがサイズ上限を超えています',
+    errCsvTooLarge: 'この CSV ファイルは {size} で、{limit} の読み込み上限を超えています。app-settings.json の csvImportMaxBytes で上限を引き上げるか、ファイルを小さく分割してください。',
     errParseFailed: 'ファイルの解析に失敗しました',
     errImageNoText:
       '画像添付にはテキストがありません。画像はユーザー メッセージと一緒に送信されるため、そのまま画像をご確認ください',
@@ -594,6 +601,7 @@ const tMain = createI18n({
     errImageTooLarge: '이미지가 5MB 제한을 초과했습니다',
     errUnreadable: '읽을 수 없습니다',
     errFileTooLarge: '파일이 크기 제한을 초과했습니다',
+    errCsvTooLarge: '이 CSV 파일은 {size}으로 {limit} 가져오기 제한을 초과합니다. app-settings.json에서 csvImportMaxBytes를 올려 제한을 높이거나, 파일을 더 작은 부분으로 나누세요.',
     errParseFailed: '파일을 구문 분석하지 못했습니다',
     errImageNoText:
       '이미지 첨부에는 텍스트가 없습니다. 이미지는 사용자 메시지와 함께 전송되므로 이미지를 직접 확인하세요',
@@ -666,6 +674,7 @@ const tMain = createI18n({
     errImageTooLarge: "l'image dépasse la limite de 5 Mo",
     errUnreadable: 'illisible',
     errFileTooLarge: 'Le fichier dépasse la taille limite',
+    errCsvTooLarge: 'Ce fichier CSV fait {size} et dépasse la limite d’import de {limit}. Augmentez la limite via csvImportMaxBytes dans app-settings.json, ou découpez le fichier en plus petites parties.',
     errParseFailed: "Échec de l'analyse du fichier",
     errImageNoText:
       "Les images jointes n'ont pas de texte ; l'image est envoyée avec le message de l'utilisateur",
@@ -739,6 +748,7 @@ const tMain = createI18n({
     errImageTooLarge: 'Bild überschreitet das Limit von 5 MB',
     errUnreadable: 'kann nicht gelesen werden',
     errFileTooLarge: 'Datei überschreitet die Größenbeschränkung',
+    errCsvTooLarge: 'Diese CSV-Datei ist {size} groß und überschreitet das Importlimit von {limit}. Erhöhen Sie das Limit über csvImportMaxBytes in app-settings.json oder teilen Sie die Datei in kleinere Teile.',
     errParseFailed: 'Datei konnte nicht analysiert werden',
     errImageNoText:
       'Bildanlagen enthalten keinen Text; das Bild wird zusammen mit der Benutzernachricht gesendet',
@@ -811,6 +821,7 @@ const tMain = createI18n({
     errImageTooLarge: 'la imagen supera el límite de 5 MB',
     errUnreadable: 'no se puede leer',
     errFileTooLarge: 'El archivo supera el límite de tamaño',
+    errCsvTooLarge: 'Este archivo CSV pesa {size} y supera el límite de importación de {limit}. Aumente el límite con csvImportMaxBytes en app-settings.json o divida el archivo en partes más pequeñas.',
     errParseFailed: 'No se pudo analizar el archivo',
     errImageNoText:
       'Las imágenes adjuntas no tienen texto; la imagen se envía junto con el mensaje del usuario',
@@ -883,6 +894,7 @@ const tMain = createI18n({
     errImageTooLarge: 'รูปภาพเกินขีดจำกัด 5MB',
     errUnreadable: 'อ่านไม่ได้',
     errFileTooLarge: 'ไฟล์มีขนาดเกินขีดจำกัด',
+    errCsvTooLarge: 'ไฟล์ CSV นี้มีขนาด {size} เกินขีดจำกัดการนำเข้า {limit} เพิ่มขีดจำกัดได้โดยตั้งค่า csvImportMaxBytes ใน app-settings.json หรือแบ่งไฟล์เป็นส่วนย่อยเล็ก ๆ',
     errParseFailed: 'แยกวิเคราะห์ไฟล์ไม่สำเร็จ',
     errImageNoText:
       'รูปภาพแนบไม่มีข้อความ รูปภาพจะถูกส่งไปพร้อมข้อความของผู้ใช้ ให้ดูที่รูปภาพโดยตรง',
@@ -954,6 +966,7 @@ const tMain = createI18n({
     errImageTooLarge: 'gambar melebihi batas 5MB',
     errUnreadable: 'tidak dapat dibaca',
     errFileTooLarge: 'File melebihi batas ukuran',
+    errCsvTooLarge: 'File CSV ini berukuran {size} dan melebihi batas impor {limit}. Naikkan batasnya lewat csvImportMaxBytes di app-settings.json, atau bagi file menjadi bagian yang lebih kecil.',
     errParseFailed: 'Gagal mengurai file',
     errImageNoText: 'Lampiran gambar tidak memiliki teks; gambar dikirim bersama pesan pengguna',
     errNotImage: 'bukan jenis gambar yang didukung',
@@ -1023,6 +1036,7 @@ const tMain = createI18n({
     errImageTooLarge: 'изображение превышает лимит 5 МБ',
     errUnreadable: 'не удаётся прочитать',
     errFileTooLarge: 'Файл превышает предельный размер',
+    errCsvTooLarge: 'Размер этого CSV-файла — {size}, что превышает лимит импорта {limit}. Увеличьте лимит параметром csvImportMaxBytes в app-settings.json или разбейте файл на более мелкие части.',
     errParseFailed: 'Не удалось разобрать файл',
     errImageNoText:
       'Вложенные изображения не содержат текста; изображение отправляется вместе с сообщением пользователя',
@@ -1094,6 +1108,7 @@ const tMain = createI18n({
     errImageTooLarge: 'الصورة تتجاوز الحد البالغ 5 ميغابايت',
     errUnreadable: 'تعذّرت قراءته',
     errFileTooLarge: 'الملف يتجاوز حد الحجم',
+    errCsvTooLarge: 'حجم ملف CSV هذا {size}، وهو يتجاوز حد الاستيراد {limit}. ارفع الحد عبر csvImportMaxBytes في app-settings.json، أو قسّم الملف إلى أجزاء أصغر.',
     errParseFailed: 'فشل تحليل الملف',
     errImageNoText: 'مرفقات الصور لا تحتوي على نص؛ تُرسل الصورة مع رسالة المستخدم',
     errNotImage: 'نوع صورة غير مدعوم',
@@ -1162,6 +1177,7 @@ const tMain = createI18n({
     errImageTooLarge: 'a imagem excede o limite de 5MB',
     errUnreadable: 'não é possível ler',
     errFileTooLarge: 'O arquivo excede o limite de tamanho',
+    errCsvTooLarge: 'Este arquivo CSV tem {size}, acima do limite de importação de {limit}. Aumente o limite com csvImportMaxBytes no app-settings.json ou divida o arquivo em partes menores.',
     errParseFailed: 'Falha ao analisar o arquivo',
     errImageNoText:
       'Anexos de imagem não têm texto; a imagem é enviada junto com a mensagem do usuário',
@@ -1233,6 +1249,7 @@ const tMain = createI18n({
     errImageTooLarge: "l'immagine supera il limite di 5 MB",
     errUnreadable: 'impossibile leggere',
     errFileTooLarge: 'Il file supera il limite di dimensione',
+    errCsvTooLarge: 'Questo file CSV è di {size} e supera il limite di importazione di {limit}. Aumenta il limite tramite csvImportMaxBytes in app-settings.json oppure dividi il file in parti più piccole.',
     errParseFailed: 'Impossibile analizzare il file',
     errImageNoText:
       "Gli allegati immagine non hanno testo; l'immagine viene inviata insieme al messaggio dell'utente",
@@ -1305,6 +1322,7 @@ const tMain = createI18n({
     errImageTooLarge: 'obraz przekracza limit 5 MB',
     errUnreadable: 'nie można odczytać',
     errFileTooLarge: 'Plik przekracza limit rozmiaru',
+    errCsvTooLarge: 'Ten plik CSV ma {size} i przekracza limit importu {limit}. Zwiększ limit ustawieniem csvImportMaxBytes w app-settings.json albo podziel plik na mniejsze części.',
     errParseFailed: 'Nie udało się przeanalizować pliku',
     errImageNoText:
       'Załączniki graficzne nie zawierają tekstu; obraz jest wysyłany razem z wiadomością użytkownika',
@@ -1376,6 +1394,7 @@ const tMain = createI18n({
     errImageTooLarge: 'obrázek překračuje limit 5 MB',
     errUnreadable: 'nelze přečíst',
     errFileTooLarge: 'Soubor překračuje limit velikosti',
+    errCsvTooLarge: 'Tento soubor CSV má {size} a překračuje limit importu {limit}. Zvyšte limit nastavením csvImportMaxBytes v app-settings.json nebo soubor rozdělte na menší části.',
     errParseFailed: 'Soubor se nepodařilo zpracovat',
     errImageNoText:
       'Obrázkové přílohy neobsahují text; obrázek se odesílá spolu se zprávou uživatele',
@@ -1447,6 +1466,7 @@ const tMain = createI18n({
     errImageTooLarge: 'afbeelding overschrijdt de limiet van 5 MB',
     errUnreadable: 'kan niet worden gelezen',
     errFileTooLarge: 'Bestand overschrijdt de maximale grootte',
+    errCsvTooLarge: 'Dit CSV-bestand is {size} en overschrijdt de importlimiet van {limit}. Verhoog de limiet via csvImportMaxBytes in app-settings.json of splits het bestand in kleinere delen.',
     errParseFailed: 'Kan bestand niet parseren',
     errImageNoText:
       'Afbeeldingsbijlagen bevatten geen tekst; de afbeelding wordt samen met het gebruikersbericht verzonden',
@@ -1519,6 +1539,7 @@ const tMain = createI18n({
     errImageTooLarge: 'imej melebihi had 5MB',
     errUnreadable: 'tidak dapat dibaca',
     errFileTooLarge: 'Fail melebihi had saiz',
+    errCsvTooLarge: 'Fail CSV ini ialah {size} dan melebihi had import {limit}. Naikkan had melalui csvImportMaxBytes dalam app-settings.json, atau bahagi fail kepada bahagian yang lebih kecil.',
     errParseFailed: 'Gagal menghurai fail',
     errImageNoText: 'Lampiran imej tiada teks; imej dihantar bersama mesej pengguna',
     errNotImage: 'bukan jenis imej yang disokong',
@@ -1590,6 +1611,7 @@ const tMain = createI18n({
     errImageTooLarge: 'התמונה חורגת מהמגבלה של 5MB',
     errUnreadable: 'לא ניתן לקרוא',
     errFileTooLarge: 'הקובץ חורג ממגבלת הגודל',
+    errCsvTooLarge: 'גודל קובץ CSV זה הוא {size}, מעל מגבלת הייבוא {limit}. ניתן להעלות את המגבלה באמצעות csvImportMaxBytes ב־app-settings.json, או לפצל את הקובץ לחלקים קטנים יותר.',
     errParseFailed: 'ניתוח הקובץ נכשל',
     errImageNoText: 'קבצים מצורפים מסוג תמונה אינם מכילים טקסט; התמונה נשלחת יחד עם הודעת המשתמש',
     errNotImage: 'סוג תמונה שאינו נתמך',
@@ -1656,6 +1678,7 @@ const tMain = createI18n({
     errImageTooLarge: 'छवि 5MB की सीमा से अधिक है',
     errUnreadable: 'पढ़ा नहीं जा सकता',
     errFileTooLarge: 'फ़ाइल आकार सीमा से अधिक है',
+    errCsvTooLarge: 'यह CSV फ़ाइल {size} है, जो {limit} आयात सीमा से अधिक है। app-settings.json में csvImportMaxBytes से सीमा बढ़ाएँ, या फ़ाइल को छोटे भागों में बाँटें।',
     errParseFailed: 'फ़ाइल पार्स करने में विफल',
     errImageNoText: 'छवि अनुलग्नक में टेक्स्ट नहीं होता; छवि उपयोगकर्ता संदेश के साथ भेजी जाती है',
     errNotImage: 'समर्थित छवि प्रकार नहीं है',
@@ -1727,6 +1750,7 @@ const tMain = createI18n({
     errImageTooLarge: '圖片超過 5MB 上限',
     errUnreadable: '無法讀取',
     errFileTooLarge: '檔案超過大小上限',
+    errCsvTooLarge: '此 CSV 檔案為 {size}，超過 {limit} 的匯入上限。您可以在 app-settings.json 中設定 csvImportMaxBytes 提高上限，或將檔案拆成較小的部分。',
     errParseFailed: '檔案解析失敗',
     errImageNoText: '圖片附件不提供文字,已作為影像隨使用者訊息傳送,直接看圖即可',
     errNotImage: '不是支援的圖片類型',
@@ -1977,8 +2001,12 @@ interface SheetsTabSession {
  * tab (or a closed-then-reopened tab) registered and overwrote the previous closure. */
 /// Same ceiling as local add_image (readLocalImage's 20MB check)
 const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
-/** Max .csv/.tsv bytes converted on open: stops a 500MB text file OOMing main before sidecar limits. */
-const MAX_DELIMITED_IMPORT_BYTES = 32 * 1024 * 1024
+/** Max .csv/.tsv bytes converted on open (genoffice#2505): the cap is read
+ * from `csvImportMaxBytes` in app-settings.json on every open, defaulting to
+ * 128 MiB — without this a 500MB text file would OOM main before sidecar limits. */
+function delimitedImportLimit(): number {
+  return readCsvImportMaxBytes(APP_SETTINGS_PATH())
+}
 
 /**
  * The delimited import (a .csv/.tsv opened as a workbook) that is running for
@@ -5433,7 +5461,14 @@ async function prepareWorkbookForOpen(
   try {
     if (extension === 'csv' || extension === 'tsv') {
       const csvStat = await stat(path)
-      if (csvStat.size > MAX_DELIMITED_IMPORT_BYTES) throw new Error(tm('errFileTooLarge'))
+      const maxCsvBytes = delimitedImportLimit()
+      if (csvStat.size > maxCsvBytes)
+        throw new Error(
+          tm('errCsvTooLarge', {
+            size: formatCsvImportBytes(csvStat.size),
+            limit: formatCsvImportBytes(maxCsvBytes),
+          }),
+        )
       const converted = await csvToXlsxBufferForOpen(
         decodeCsvBuffer(await readFile(path), legacyCsvCharset()),
         'Sheet1',

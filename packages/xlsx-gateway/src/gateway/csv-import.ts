@@ -13,6 +13,12 @@ const DELIMITERS = [',', ';', '\t'] as const
 export const MAX_CSV_ROWS = 1_048_576
 export const MAX_CSV_COLS = 16_384
 
+/// Default byte ceiling for an in-cell CSV import (genoffice#2505): 128 MiB.
+/// Mirrors DEFAULT_CSV_IMPORT_MAX_BYTES in @genoffice/electron-utils (the
+/// main-process open path's configurable cap) — this renderer-side copy is
+/// the default only; the workbook-open path reads the configured value.
+export const DEFAULT_CSV_IMPORT_MAX_BYTES = 128 * 1024 * 1024
+
 // Excel writes CSV in the system's legacy charset, not UTF-8 (GBK on Chinese
 // Windows, Shift_JIS on Japanese), so decoding everything as UTF-8 turns every
 // non-ASCII cell into replacement characters.

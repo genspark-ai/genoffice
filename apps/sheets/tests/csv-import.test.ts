@@ -311,6 +311,23 @@ describe('csvToXlsxBufferForOpen', () => {
   })
 })
 
+describe('csvToXlsxBufferForOpen (large files, genoffice#2505)', () => {
+  it('converts a CSV past the old 32 MiB cap', async () => {
+    // ~70 bytes a row so half a million rows clears 32 MiB
+    const row = '123456,Widget SKU,42.50,Quarterly restock for the eastern warehouse\n'
+    const rowCount = 500_000
+    const text = `id,name,amount,note\n${row.repeat(rowCount)}`
+    expect(text.length).toBeGreaterThan(32 * 1024 * 1024)
+
+    const { buffer, empty } = await csvToXlsxBufferForOpen(text, 'Sheet1', ',')
+    expect(empty).toBe(false)
+    const zip = await JSZip.loadAsync(buffer)
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain(`<dimension ref="A1:D${rowCount + 1}"/>`)
+    expect(sheet).toContain('Quarterly restock for the eastern warehouse')
+  }, 60_000)
+})
+
 describe('blankXlsxBuffer', () => {
   it('produces a one-sheet workbook with an empty grid', async () => {
     const zip = await JSZip.loadAsync(await blankXlsxBuffer())
