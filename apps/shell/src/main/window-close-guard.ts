@@ -1,4 +1,6 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, dialog, type BrowserWindow } from 'electron'
+
+import { format } from '@genoffice/i18n'
 
 import { docsQueryDirty, requestDocsClose } from '../../../docs/src/main/docs-main'
 import { requestSheetsClose, resetSheetsShuttingDown } from '../../../sheets/src/main/sheets-main'
@@ -6,6 +8,7 @@ import { requestSlidesClose } from '../../../slides/src/main/slides-main'
 import { requestPdfClose } from '../../../pdf/src/main/pdf-main'
 import { requestMarkdownClose } from '../../../markdown/src/main/markdown-main'
 import { requestHtmlClose } from '../../../html/src/main/html-main'
+import { MIN_DOCUMENTS_TO_CONFIRM_CLOSE } from './close-confirm'
 import type { TabManager } from './tab-manager'
 
 /**
@@ -15,6 +18,12 @@ import type { TabManager } from './tab-manager'
  * aborts the close. docs dirtiness lives renderer-side, so any live docs tab
  * forces the async path and gets queried there (clean tabs pass through
  * without activation).
+ *
+ * On top of that (genoffice#2490), closing the window with more than one
+ * document tab open is confirmed first with a "Close N documents?" dialog, so
+ * the OS close button cannot toss several clean documents at once. Cancelling
+ * that dialog keeps every tab open — the user can then close just one tab
+ * from the strip. It can be opted out with "Don't ask again and close".
  *
  * Cancelling the close event also cancels an in-flight app.quit(), and on
  * macOS window-all-closed does not quit, so once the prompts have all been
@@ -26,7 +35,8 @@ import type { TabManager } from './tab-manager'
  * Installed separately from index.ts (same helpers as the detached-window
  * guard) so the handler itself stays unit-testable: it takes the window, the
  * tab manager and the quit tracker as arguments and therefore needs no
- * Electron to run.
+ * Electron to run. The multi-document confirmation is injectable so its tests
+ * need no native dialog either.
  */
 export interface QuitTracker {
   /** a quit is in progress: between before-quit and its windows' close events */
@@ -76,10 +86,56 @@ export function shellQuitTracker(): QuitTracker {
   return (shared ??= electronQuitTracker())
 }
 
+/** collaborators for the multi-document confirmation; all optional in production
+ *  (the native dialog, the settings file, the main locale table) */
+export interface ShellCloseGuardOptions {
+  showMessageBox?: (
+    win: BrowserWindow,
+    options: {
+      type: 'question'
+      message: string
+      detail: string
+      buttons: string[]
+      defaultId: number
+      cancelId: number
+    },
+  ) => Promise<{ response: number }>
+  /** read the opt-out on every close; defaults to always asking */
+  isCloseConfirmEnabled?: () => boolean
+  /** persist the opt-out after "Don't ask again and close" */
+  onCloseConfirmDisabled?: () => void
+  /** main-process translator; defaults to the English strings below */
+  t?: (key: string, params?: Record<string, string | number>) => string
+}
+
+const CLOSE_CONFIRM_EN: Record<string, string> = {
+  closeAllTitle: 'Close {count} documents?',
+  closeAllDetail:
+    'All open documents in this window will be closed. Unsaved changes will still be prompted before closing.',
+  closeAllClose: 'Close all',
+  closeAllDontAsk: "Don't ask again and close",
+  btnCancel: 'Cancel',
+}
+
+function defaultCloseConfirmT(key: string, params?: Record<string, string | number>): string {
+  return format(CLOSE_CONFIRM_EN[key] ?? key, params)
+}
+
+/** document tabs sharing the window (Home is not one); the manager's list is the
+ *  source of truth, so a stub without one counts as no documents */
+function openDocumentCount(manager: TabManager): number {
+  try {
+    return manager.list().filter((tab) => tab.closable).length
+  } catch {
+    return 0
+  }
+}
+
 export function installShellCloseGuard(
   win: BrowserWindow,
   manager: TabManager,
   quitTracker: QuitTracker = shellQuitTracker(),
+  options: ShellCloseGuardOptions = {},
 ): void {
   let closeConfirmed = false
   // a second close event while the save prompts are still open (double ⌘Q, an
@@ -95,6 +151,12 @@ export function installShellCloseGuard(
     const dirtyHtml = manager.dirtyHtmlTabs()
     const dirtySlides = manager.dirtySlidesTabs()
     const docsTabs = manager.docsTabs()
+    const openCount = openDocumentCount(manager)
+    // The multi-document confirmation guards every clean document at once, so
+    // it stands on its own: a window with several clean tabs has nothing dirty
+    // yet still needs to be asked before all of them go away.
+    const needsCloseConfirm =
+      openCount >= MIN_DOCUMENTS_TO_CONFIRM_CLOSE && (options.isCloseConfirmEnabled?.() ?? true)
     // Nothing to protect, so let this close event through untouched. Cancelling
     // it and re-issuing win.close() would also cancel an in-flight app.quit();
     // on macOS, where window-all-closed does not quit, ⌘Q with a clean
@@ -106,7 +168,8 @@ export function installShellCloseGuard(
       dirtyMarkdown.length === 0 &&
       dirtyHtml.length === 0 &&
       dirtySlides.length === 0 &&
-      docsTabs.length === 0
+      docsTabs.length === 0 &&
+      !needsCloseConfirm
     ) {
       return
     }
@@ -124,6 +187,30 @@ export function installShellCloseGuard(
     closePromptInFlight = true
     void (async () => {
       try {
+        // Ask about the whole window before any per-document save prompt: a
+        // cancel here keeps everything open and skips the save walk entirely.
+        if (needsCloseConfirm) {
+          const t = options.t ?? defaultCloseConfirmT
+          const showMessageBox =
+            options.showMessageBox ?? ((w, opts) => dialog.showMessageBox(w, opts))
+          const { response } = await showMessageBox(win, {
+            type: 'question',
+            message: t('closeAllTitle', { count: openCount }),
+            detail: t('closeAllDetail'),
+            buttons: [t('closeAllClose'), t('closeAllDontAsk'), t('btnCancel')],
+            defaultId: 0,
+            cancelId: 2,
+          })
+          // "Don't ask again" closes like "Close all" but also persists the
+          // opt-out, so the next close goes straight to the save prompts.
+          if (response === 1) options.onCloseConfirmDisabled?.()
+          // cancelling keeps every tab open, like a denied save prompt
+          if (response !== 0 && response !== 1) {
+            quitTracker.reset()
+            resetSheetsShuttingDown()
+            return
+          }
+        }
         const denied = await (async () => {
           for (const tab of dirtySheets) {
             manager.activateTab(tab.id)

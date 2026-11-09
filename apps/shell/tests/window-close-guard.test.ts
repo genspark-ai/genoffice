@@ -355,3 +355,122 @@ describe('failure in the prompt chain', () => {
     expect(requestSheetsClose).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('multi-document confirmation (genoffice#2490)', () => {
+  /** a manager with N closable document tabs plus Home, and the same dirty stubs */
+  function multiManager(openDocuments: number, dirty: Partial<Record<DirtyKinds, TabStub[]>> = {}) {
+    const base = fakeManager(dirty) as ReturnType<typeof fakeManager> & {
+      list: () => Array<{ id: string; closable: boolean }>
+    }
+    return {
+      ...base,
+      list: () => [
+        { id: 'home', closable: false },
+        ...Array.from({ length: openDocuments }, (_, i) => ({
+          id: `doc-${i}`,
+          closable: true,
+        })),
+      ],
+    }
+  }
+
+  const t = (key: string, params?: Record<string, string | number>): string =>
+    params?.count !== undefined ? `${key}:${params.count}` : key
+
+  function installMulti(
+    win: FakeWindow,
+    manager: unknown,
+    showMessageBox: ReturnType<typeof vi.fn>,
+    extra: Record<string, unknown> = {},
+  ) {
+    install(win as never, manager as never, fakeQuit(), {
+      showMessageBox,
+      t,
+      ...extra,
+    } as never)
+  }
+
+  it('asks before closing several clean documents and keeps the window on cancel', async () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 2 }))
+    const win = new FakeWindow()
+    installMulti(win, multiManager(3), showMessageBox)
+    // the dialog is async, so this first close must be held back
+    expect(win.requestClose()).toBe(true)
+    await flush()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    const opts = showMessageBox.mock.calls[0]![1] as { message: string; buttons: string[] }
+    expect(opts.message).toBe('closeAllTitle:3')
+    expect(opts.buttons).toEqual(['closeAllClose', 'closeAllDontAsk', 'btnCancel'])
+    expect(win.destroyed).toBe(false)
+    expect(win.closeCalls).toBe(0)
+    // no dirty tab was walked: the cancel skipped the save prompts entirely
+    expect(requestSheetsClose).not.toHaveBeenCalled()
+    expect(requestDocsClose).not.toHaveBeenCalled()
+  })
+
+  it('closes once the user confirms all documents', async () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 0 }))
+    const win = new FakeWindow()
+    installMulti(win, multiManager(2), showMessageBox)
+    expect(win.requestClose()).toBe(true)
+    await flush()
+    expect(win.destroyed).toBe(true)
+    expect(win.closeCalls).toBe(1)
+  })
+
+  it('"Don\'t ask again" persists the opt-out and still closes', async () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 1 }))
+    const onCloseConfirmDisabled = vi.fn()
+    const win = new FakeWindow()
+    installMulti(win, multiManager(4), showMessageBox, { onCloseConfirmDisabled })
+    expect(win.requestClose()).toBe(true)
+    await flush()
+    expect(onCloseConfirmDisabled).toHaveBeenCalledTimes(1)
+    expect(win.destroyed).toBe(true)
+  })
+
+  it('leaves a single clean document on the fast path without a dialog', () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 0 }))
+    const win = new FakeWindow()
+    installMulti(win, multiManager(1), showMessageBox)
+    expect(win.requestClose()).toBe(false)
+    expect(win.destroyed).toBe(true)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('never asks after the opt-out', () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 0 }))
+    const win = new FakeWindow()
+    installMulti(win, multiManager(5), showMessageBox, {
+      isCloseConfirmEnabled: () => false,
+    })
+    expect(win.requestClose()).toBe(false)
+    expect(win.destroyed).toBe(true)
+    expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('asks about the whole window before the per-document save prompts', async () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 2 }))
+    const win = new FakeWindow()
+    const tab = { id: 'sheets-1', webContents: { id: 7 } }
+    installMulti(win, multiManager(2, { sheets: [tab] }), showMessageBox)
+    expect(win.requestClose()).toBe(true)
+    await flush()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    // the multi-document cancel aborted the close before any save prompt ran
+    expect(requestSheetsClose).not.toHaveBeenCalled()
+    expect(win.destroyed).toBe(false)
+  })
+
+  it('still walks the save prompts after the multi-document confirmation', async () => {
+    const showMessageBox = vi.fn(() => Promise.resolve({ response: 0 }))
+    const win = new FakeWindow()
+    const tab = { id: 'sheets-1', webContents: { id: 7 } }
+    installMulti(win, multiManager(2, { sheets: [tab] }), showMessageBox)
+    expect(win.requestClose()).toBe(true)
+    await flush()
+    expect(showMessageBox).toHaveBeenCalledTimes(1)
+    expect(requestSheetsClose).toHaveBeenCalledWith(tab.webContents, win)
+    expect(win.destroyed).toBe(true)
+  })
+})

@@ -381,6 +381,7 @@ import {
   SHELL_WINDOW_MIN_HEIGHT,
   SHELL_WINDOW_MIN_WIDTH,
 } from './window-bounds'
+import { CONFIRM_CLOSE_ALL_KEY, closeConfirmEnabled } from './close-confirm'
 import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
@@ -849,6 +850,10 @@ const tMain = createI18n({
     menuTabReopen: '重新打开关闭的标签页',
     menuTabPin: '固定标签页（不休眠）',
     menuTabUnpin: '取消固定标签页',
+    closeAllTitle: '关闭 {count} 个文档？',
+    closeAllDetail: '该窗口中所有打开的文档都将被关闭。有未保存的更改时仍会先提示保存。',
+    closeAllClose: '全部关闭',
+    closeAllDontAsk: '关闭且不再提示',
     dlgAddFolderRoot: '添加文件夹到首页',
     watchdogTitle: '文档占用资源过高',
     watchdogBody:
@@ -970,6 +975,11 @@ const tMain = createI18n({
     menuTabReopen: 'Reopen closed tab',
     menuTabPin: 'Pin tab (keep loaded)',
     menuTabUnpin: 'Unpin tab',
+    closeAllTitle: 'Close {count} documents?',
+    closeAllDetail:
+      'All open documents in this window will be closed. Unsaved changes will still be prompted before closing.',
+    closeAllClose: 'Close all',
+    closeAllDontAsk: "Don't ask again and close",
     dlgAddFolderRoot: 'Add Folder to Home',
     watchdogTitle: 'Document is using too many resources',
     watchdogBody:
@@ -1101,6 +1111,11 @@ const tMain = createI18n({
     menuTabReopen: 'Mở lại thẻ vừa đóng',
     menuTabPin: 'Ghim thẻ (luôn tải)',
     menuTabUnpin: 'Bỏ ghim thẻ',
+    closeAllTitle: 'Đóng {count} tài liệu?',
+    closeAllDetail:
+      'Mọi tài liệu đang mở trong cửa sổ này sẽ bị đóng. Các thay đổi chưa lưu vẫn sẽ được nhắc lưu trước khi đóng.',
+    closeAllClose: 'Đóng tất cả',
+    closeAllDontAsk: 'Đóng và không hỏi lại',
     dlgAddFolderRoot: 'Thêm thư mục vào Trang chủ',
     watchdogTitle: 'Tài liệu đang dùng quá nhiều tài nguyên',
     watchdogBody:
@@ -1232,6 +1247,11 @@ const tMain = createI18n({
     menuTabReopen: 'Kapatılan sekmeyi yeniden aç',
     menuTabPin: 'Sekmeyi sabitle (yüklü tut)',
     menuTabUnpin: 'Sekme sabitlemesini kaldır',
+    closeAllTitle: '{count} belge kapatılsın mı?',
+    closeAllDetail:
+      'Bu pencerede açık olan tüm belgeler kapatılacak. Kaydedilmemiş değişiklikler için kapatmadan önce yine de sorulacak.',
+    closeAllClose: 'Tümünü kapat',
+    closeAllDontAsk: 'Kapat ve bir daha sorma',
     dlgAddFolderRoot: 'Ana Sayfaya Klasör Ekle',
     watchdogTitle: 'Belge çok fazla kaynak kullanıyor',
     watchdogBody:
@@ -1362,6 +1382,11 @@ const tMain = createI18n({
     menuTabReopen: '閉じたタブを再度開く',
     menuTabPin: 'タブをピン留め（スリープしない）',
     menuTabUnpin: 'タブのピン留めを解除',
+    closeAllTitle: '{count} 件のドキュメントを閉じますか？',
+    closeAllDetail:
+      'このウィンドウで開いているすべてのドキュメントが閉じられます。保存されていない変更がある場合は、閉じる前に保存が求められます。',
+    closeAllClose: 'すべて閉じる',
+    closeAllDontAsk: '閉じて次回から確認しない',
     dlgAddFolderRoot: 'フォルダーをホームに追加',
     watchdogTitle: 'ドキュメントのリソース使用量が過大です',
     watchdogBody:
@@ -1493,6 +1518,11 @@ const tMain = createI18n({
     menuTabReopen: '닫힌 탭 다시 열기',
     menuTabPin: '탭 고정(절전 안 함)',
     menuTabUnpin: '탭 고정 해제',
+    closeAllTitle: '{count}개의 문서를 닫을까요?',
+    closeAllDetail:
+      '이 창의 모든 열린 문서가 닫힙니다. 저장하지 않은 변경 사항이 있는 경우에도 닫기 전에 먼저 확인합니다.',
+    closeAllClose: '모두 닫기',
+    closeAllDontAsk: '닫고 다시 묻지 않기',
     dlgAddFolderRoot: '홈에 폴더 추가',
     watchdogTitle: '문서가 리소스를 과도하게 사용하고 있습니다',
     watchdogBody:
@@ -1623,6 +1653,11 @@ const tMain = createI18n({
     menuTabReopen: "Rouvrir l'onglet fermé",
     menuTabPin: 'Épingler l’onglet (garder chargé)',
     menuTabUnpin: 'Désépingler l’onglet',
+    closeAllTitle: 'Fermer {count} documents ?',
+    closeAllDetail:
+      'Tous les documents ouverts dans cette fenêtre seront fermés. Les modifications non enregistrées vous seront quand même demandées avant la fermeture.',
+    closeAllClose: 'Tout fermer',
+    closeAllDontAsk: 'Fermer et ne plus demander',
     dlgAddFolderRoot: "Ajouter un dossier à l'accueil",
     watchdogTitle: 'Le document consomme trop de ressources',
     watchdogBody:
@@ -1755,6 +1790,11 @@ const tMain = createI18n({
     menuTabReopen: 'Geschlossenen Tab wieder öffnen',
     menuTabPin: 'Tab anheften (geladen lassen)',
     menuTabUnpin: 'Tab lösen',
+    closeAllTitle: '{count} Dokumente schließen?',
+    closeAllDetail:
+      'Alle geöffneten Dokumente in diesem Fenster werden geschlossen. Ungespeicherte Änderungen werden vor dem Schließen weiterhin abgefragt.',
+    closeAllClose: 'Alle schließen',
+    closeAllDontAsk: 'Schließen und nicht erneut fragen',
     dlgAddFolderRoot: 'Ordner zur Startseite hinzufügen',
     watchdogTitle: 'Dokument beansprucht zu viele Ressourcen',
     watchdogBody:
@@ -1888,6 +1928,11 @@ const tMain = createI18n({
     menuTabReopen: 'Reabrir pestaña cerrada',
     menuTabPin: 'Fijar pestaña (mantener cargada)',
     menuTabUnpin: 'Desfijar pestaña',
+    closeAllTitle: '¿Cerrar {count} documentos?',
+    closeAllDetail:
+      'Se cerrarán todos los documentos abiertos en esta ventana. Aun así se le pedirá guardar los cambios sin guardar antes de cerrar.',
+    closeAllClose: 'Cerrar todo',
+    closeAllDontAsk: 'Cerrar y no volver a preguntar',
     dlgAddFolderRoot: 'Añadir carpeta al inicio',
     watchdogTitle: 'El documento consume demasiados recursos',
     watchdogBody:
@@ -2020,6 +2065,11 @@ const tMain = createI18n({
     menuTabReopen: 'เปิดแท็บที่ปิดไปอีกครั้ง',
     menuTabPin: 'ปักหมุดแท็บ (ไม่พักการทำงาน)',
     menuTabUnpin: 'เลิกปักหมุดแท็บ',
+    closeAllTitle: 'ปิดเอกสาร {count} ฉบับใช่หรือไม่',
+    closeAllDetail:
+      'เอกสารทั้งหมดที่เปิดอยู่ในหน้าต่างนี้จะถูกปิด แม้มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก การบันทึกจะยังคงถูกถามก่อนปิด',
+    closeAllClose: 'ปิดทั้งหมด',
+    closeAllDontAsk: 'ปิดและไม่ต้องถามอีก',
     dlgAddFolderRoot: 'เพิ่มโฟลเดอร์ไปยังหน้าแรก',
     watchdogTitle: 'เอกสารใช้ทรัพยากรมากเกินไป',
     watchdogBody:
@@ -2148,6 +2198,11 @@ const tMain = createI18n({
     menuTabReopen: 'Buka kembali tab tertutup',
     menuTabPin: 'Sematkan tab (tetap dimuat)',
     menuTabUnpin: 'Lepas sematan tab',
+    closeAllTitle: 'Tutup {count} dokumen?',
+    closeAllDetail:
+      'Semua dokumen yang terbuka di jendela ini akan ditutup. Perubahan yang belum disimpan tetap akan diminta sebelum menutup.',
+    closeAllClose: 'Tutup semua',
+    closeAllDontAsk: 'Tutup dan jangan tanya lagi',
     dlgAddFolderRoot: 'Tambahkan Folder ke Beranda',
     watchdogTitle: 'Dokumen menggunakan terlalu banyak sumber daya',
     watchdogBody:
@@ -2280,6 +2335,11 @@ const tMain = createI18n({
     menuTabReopen: 'Открыть закрытую вкладку',
     menuTabPin: 'Закрепить вкладку (не усыплять)',
     menuTabUnpin: 'Открепить вкладку',
+    closeAllTitle: 'Закрыть {count} документов?',
+    closeAllDetail:
+      'Все открытые документы в этом окне будут закрыты. Несохранённые изменения всё равно спросят перед закрытием.',
+    closeAllClose: 'Закрыть все',
+    closeAllDontAsk: 'Закрыть и больше не спрашивать',
     dlgAddFolderRoot: 'Добавить папку на главную',
     watchdogTitle: 'Документ потребляет слишком много ресурсов',
     watchdogBody:
@@ -2412,6 +2472,11 @@ const tMain = createI18n({
     menuTabReopen: 'إعادة فتح علامة التبويب المغلقة',
     menuTabPin: 'تثبيت علامة التبويب (إبقاؤها محمّلة)',
     menuTabUnpin: 'إلغاء تثبيت علامة التبويب',
+    closeAllTitle: 'إغلاق {count} مستندات؟',
+    closeAllDetail:
+      'سيتم إغلاق جميع المستندات المفتوحة في هذه النافذة. ستظل التغييرات غير المحفوظة تُطلب قبل الإغلاق.',
+    closeAllClose: 'إغلاق الكل',
+    closeAllDontAsk: 'إغلاق وعدم السؤال مرة أخرى',
     dlgAddFolderRoot: 'إضافة مجلد إلى الصفحة الرئيسية',
     watchdogTitle: 'المستند يستهلك موارد كثيرة جدًا',
     watchdogBody:
@@ -2540,6 +2605,11 @@ const tMain = createI18n({
     menuTabReopen: 'Reabrir aba fechada',
     menuTabPin: 'Fixar guia (manter carregado)',
     menuTabUnpin: 'Desafixar guia',
+    closeAllTitle: 'Fechar {count} documentos?',
+    closeAllDetail:
+      'Todos os documentos abertos nesta janela serão fechados. Alterações não salvas ainda serão solicitadas antes de fechar.',
+    closeAllClose: 'Fechar tudo',
+    closeAllDontAsk: 'Fechar e não perguntar novamente',
     dlgAddFolderRoot: 'Adicionar pasta à página inicial',
     watchdogTitle: 'O documento está consumindo muitos recursos',
     watchdogBody:
@@ -2672,6 +2742,11 @@ const tMain = createI18n({
     menuTabReopen: 'Riapri scheda chiusa',
     menuTabPin: 'Fissa scheda (mantieni caricata)',
     menuTabUnpin: 'Sblocca scheda',
+    closeAllTitle: 'Chiudere {count} documenti?',
+    closeAllDetail:
+      'Tutti i documenti aperti in questa finestra verranno chiusi. Le modifiche non salvate verranno comunque richieste prima della chiusura.',
+    closeAllClose: 'Chiudi tutto',
+    closeAllDontAsk: 'Chiudi e non chiedere più',
     dlgAddFolderRoot: 'Aggiungi cartella alla Home',
     watchdogTitle: 'Il documento sta usando troppe risorse',
     watchdogBody:
@@ -2804,6 +2879,11 @@ const tMain = createI18n({
     menuTabReopen: 'Otwórz ponownie zamkniętą kartę',
     menuTabPin: 'Przypnij kartę (nie usypiaj)',
     menuTabUnpin: 'Odepnij kartę',
+    closeAllTitle: 'Zamknąć {count} dokumentów?',
+    closeAllDetail:
+      'Wszystkie otwarte dokumenty w tym oknie zostaną zamknięte. Niezapisane zmiany nadal zostaną zapytane przed zamknięciem.',
+    closeAllClose: 'Zamknij wszystko',
+    closeAllDontAsk: 'Zamknij i nie pytaj ponownie',
     dlgAddFolderRoot: 'Dodaj folder do strony głównej',
     watchdogTitle: 'Dokument zużywa zbyt dużo zasobów',
     watchdogBody:
@@ -2936,6 +3016,11 @@ const tMain = createI18n({
     menuTabReopen: 'Znovu otevřít zavřenou kartu',
     menuTabPin: 'Připnout kartu (neuspávat)',
     menuTabUnpin: 'Odepnout kartu',
+    closeAllTitle: 'Zavřít {count} dokumentů?',
+    closeAllDetail:
+      'Všechny otevřené dokumenty v tomto okně budou zavřeny. Neuložené změny budou před zavřením stále vyžádány.',
+    closeAllClose: 'Zavřít vše',
+    closeAllDontAsk: 'Zavřít a neptát se znovu',
     dlgAddFolderRoot: 'Přidat složku na domovskou stránku',
     watchdogTitle: 'Dokument spotřebovává příliš mnoho prostředků',
     watchdogBody:
@@ -3066,6 +3151,11 @@ const tMain = createI18n({
     menuTabReopen: 'Gesloten tabblad opnieuw openen',
     menuTabPin: 'Tabblad vastmaken (geladen houden)',
     menuTabUnpin: 'Tabblad losmaken',
+    closeAllTitle: '{count} documenten sluiten?',
+    closeAllDetail:
+      'Alle open documenten in dit venster worden gesloten. Niet-opgeslagen wijzigingen worden voor het sluiten alsnog gevraagd.',
+    closeAllClose: 'Alles sluiten',
+    closeAllDontAsk: 'Sluiten en niet opnieuw vragen',
     dlgAddFolderRoot: 'Map toevoegen aan startpagina',
     watchdogTitle: 'Document gebruikt te veel systeembronnen',
     watchdogBody:
@@ -3198,6 +3288,11 @@ const tMain = createI18n({
     menuTabReopen: 'Buka semula tab yang ditutup',
     menuTabPin: 'Semat tab (kekal dimuat)',
     menuTabUnpin: 'Nyahsemat tab',
+    closeAllTitle: 'Tutup {count} dokumen?',
+    closeAllDetail:
+      'Semua dokumen yang terbuka dalam tetingkap ini akan ditutup. Perubahan yang belum disimpan tetap akan diminta sebelum menutup.',
+    closeAllClose: 'Tutup semua',
+    closeAllDontAsk: 'Tutup dan jangan tanya lagi',
     dlgAddFolderRoot: 'Tambah Folder ke Laman Utama',
     watchdogTitle: 'Dokumen menggunakan terlalu banyak sumber',
     watchdogBody:
@@ -3329,6 +3424,11 @@ const tMain = createI18n({
     menuTabReopen: 'פתיחה מחדש של הכרטיסייה שנסגרה',
     menuTabPin: 'הצמד כרטיסייה (השאר טעונה)',
     menuTabUnpin: 'בטל הצמדת כרטיסייה',
+    closeAllTitle: 'לסגור {count} מסמכים?',
+    closeAllDetail:
+      'כל המסמכים הפתוחים בחלון זה ייסגרו. עדיין תתבקש שמירת שינויים שלא נשמרו לפני הסגירה.',
+    closeAllClose: 'סגור הכל',
+    closeAllDontAsk: 'סגור ואל תשאל שוב',
     dlgAddFolderRoot: 'הוספת תיקייה לדף הבית',
     watchdogTitle: 'המסמך צורך יותר מדי משאבים',
     watchdogBody:
@@ -3457,6 +3557,11 @@ const tMain = createI18n({
     menuTabReopen: 'बंद किया गया टैब फिर से खोलें',
     menuTabPin: 'टैब पिन करें (लोड रखें)',
     menuTabUnpin: 'टैब अनपिन करें',
+    closeAllTitle: '{count} दस्तावेज़ बंद करें?',
+    closeAllDetail:
+      'इस विंडो में खुले सभी दस्तावेज़ बंद हो जाएँगे। बिना सहेजे गए परिवर्तन फिर भी बंद करने से पहले पूछे जाएँगे।',
+    closeAllClose: 'सभी बंद करें',
+    closeAllDontAsk: 'बंद करें और दोबारा न पूछें',
     dlgAddFolderRoot: 'होम में फ़ोल्डर जोड़ें',
     watchdogTitle: 'दस्तावेज़ बहुत अधिक संसाधन ले रहा है',
     watchdogBody:
@@ -3589,6 +3694,10 @@ const tMain = createI18n({
     menuTabReopen: '重新開啟已關閉的分頁',
     menuTabPin: '釘選標籤頁（不休眠）',
     menuTabUnpin: '取消釘選標籤頁',
+    closeAllTitle: '關閉 {count} 個文件？',
+    closeAllDetail: '該視窗中所有開啟的文件都會被關閉。有未儲存的變更時仍會先提示儲存。',
+    closeAllClose: '全部關閉',
+    closeAllDontAsk: '關閉且不再提示',
     dlgAddFolderRoot: '將資料夾加入首頁',
     watchdogTitle: '文件佔用資源過高',
     watchdogBody:
@@ -4338,9 +4447,16 @@ function createShellWindow(): void {
   })
 
   // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
-  // the same save/don't-save/cancel prompt; any cancel aborts the close. An
-  // all-clean close is left untouched, so ⌘Q keeps quitting the app.
-  installShellCloseGuard(win, manager)
+  // the same save/don't-save/cancel prompt; any cancel aborts the close. With
+  // more than one document tab open a "Close N documents?" confirmation comes
+  // first (genoffice#2490); a single clean document stays on the fast path, so
+  // ⌘Q keeps quitting the app without a dialog.
+  installShellCloseGuard(win, manager, undefined, {
+    isCloseConfirmEnabled: () => closeConfirmEnabled(readAppSettings(APP_SETTINGS_PATH())),
+    onCloseConfirmDisabled: () =>
+      writeAppSettings(APP_SETTINGS_PATH(), { [CONFIRM_CLOSE_ALL_KEY]: false }),
+    t: (key, params) => tm(key as Parameters<typeof tMain>[1], params),
+  })
 
   win.on('closed', () => {
     if (shellWindow === win) shellWindow = null
