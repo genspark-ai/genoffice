@@ -536,6 +536,7 @@ export const ru = {
   appColumnLabel: 'Столбец {col}',
   appBridgeUnavailable: 'Мост файлов рабочего стола недоступен. Перезапустите приложение Electron.',
   appOpenCanceled: 'Выбор книги отменён.',
+  appImportCanceled: 'Импорт отменён.',
   appOpeningWorkbook: 'Открытие книги…',
   appOpened: '{name} открыт — изменения ячеек сохраняются обратно с помощью ⌘S.',
   appOpenFailed: 'Не удаётся открыть книгу.',

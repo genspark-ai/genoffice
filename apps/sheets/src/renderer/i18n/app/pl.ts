@@ -545,6 +545,7 @@ export const pl = {
   appBridgeUnavailable:
     'Most plików aplikacji desktopowej jest niedostępny. Uruchom ponownie aplikację Electron.',
   appOpenCanceled: 'Anulowano wybór skoroszytu.',
+  appImportCanceled: 'Anulowano import.',
   appOpeningWorkbook: 'Otwieranie skoroszytu…',
   appOpened: 'Otwarto {name} — zmiany w komórkach zapisujesz z powrotem za pomocą ⌘S.',
   appOpenFailed: 'Nie można otworzyć skoroszytu.',

@@ -107,6 +107,23 @@ const desktopApi: DesktopApi = {
     return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
+  onImportProgress(listener) {
+    const wrapped = (_event: unknown, progress: unknown): void => {
+      // null means the import is over: the bar must go with it, or the next
+      // workbook opens showing the last file's percentage.
+      if (progress === null) {
+        listener(null)
+        return
+      }
+      const value = progress as { phase?: unknown; fraction?: unknown } | null
+      if (!value || (value.phase !== 'read' && value.phase !== 'write')) return
+      if (typeof value.fraction !== 'number' || !Number.isFinite(value.fraction)) return
+      listener({ phase: value.phase, fraction: Math.max(0, Math.min(value.fraction, 1)) })
+    }
+    ipcRenderer.on(IPC_CHANNELS.importProgress, wrapped)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.importProgress, wrapped)
+  },
+  cancelImport: () => ipcRenderer.invoke(IPC_CHANNELS.cancelImport),
   onAutoSaveDefaultChanged(handler) {
     const listener = (_event: Electron.IpcRendererEvent, value: AutoSaveDefault) => handler(value)
     ipcRenderer.on('app:auto-save-default-changed', listener)

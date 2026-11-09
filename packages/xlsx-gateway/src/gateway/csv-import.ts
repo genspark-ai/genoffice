@@ -160,16 +160,50 @@ export function sniffDelimiter(input: string): string {
 }
 
 /**
+ * Where an import is: 'read' is the text being parsed, 'write' is the
+ * workbook being written. The two are separate because the write is where
+ * the time goes.
+ */
+export type CsvImportPhase = 'read' | 'write'
+
+export interface CsvImportProgress {
+  readonly phase: CsvImportPhase
+  /** 0..1 within the phase */
+  readonly fraction: number
+}
+
+export interface CsvImportOptions {
+  /** called as the import advances */
+  readonly onProgress?: (progress: CsvImportProgress) => void
+  /** aborts the import; the conversion throws */
+  readonly signal?: AbortSignal
+}
+
+/** how often the scan reports its position, in characters */
+const PROGRESS_INTERVAL = 256 * 1024
+
+/**
  * The grid's rows, one at a time.
  *
  * The import never holds the whole grid: a 40 MB CSV is millions of cells, and
  * a `string[][]` of them costs more than the file itself — the worksheet XML
  * they become costs several times more again. Callers that only need the
  * extent count the rows and drop them; the conversion streams them.
+ *
+ * `onOffset` receives the character offset reached (for progress) and
+ * `signal` aborts the scan.
  */
-export function* csvRows(input: string, delimiter: string): Generator<string[]> {
+export function* csvRows(
+  input: string,
+  delimiter: string,
+  options?: { readonly onOffset?: (chars: number) => void; readonly signal?: AbortSignal },
+): Generator<string[]> {
   const stripped = splitSepDeclaration(input).text
   const text = stripped.startsWith('﻿') ? stripped.slice(1) : stripped
+  // An abort that arrived before the work started must not be ignored: the
+  // scan would otherwise run to the end for a file small enough never to
+  // reach a progress checkpoint.
+  options?.signal?.throwIfAborted()
   const fail = (msg: string): never => {
     throw new Error(`CSV import rejected: ${msg}`)
   }
@@ -185,7 +219,13 @@ export function* csvRows(input: string, delimiter: string): Generator<string[]> 
     field = ''
   }
   let quoted = false
+  let nextReport = PROGRESS_INTERVAL
   for (let index = 0; index < text.length; index += 1) {
+    if (index >= nextReport) {
+      options?.signal?.throwIfAborted()
+      options?.onOffset?.(index)
+      nextReport = index + PROGRESS_INTERVAL
+    }
     const character = text[index]
     if (quoted) {
       if (character === '"') {
@@ -301,13 +341,23 @@ function shapeOfRows(rows: readonly (readonly string[])[]): CsvGridShape {
  * row is written, so the conversion reads the shape first and streams the rows
  * after it.
  */
-export function csvGridShape(input: string, delimiter: string): CsvGridShape {
+export function csvGridShape(
+  input: string,
+  delimiter: string,
+  options?: CsvImportOptions,
+): CsvGridShape {
   let rows = 0
   let columns = 1
-  for (const row of csvRows(input, delimiter)) {
+  const total = Math.max(input.length, 1)
+  const scan = {
+    onOffset: (chars: number) => options?.onProgress?.({ phase: 'read', fraction: chars / total }),
+    ...(options?.signal ? { signal: options.signal } : {}),
+  }
+  for (const row of csvRows(input, delimiter, scan)) {
     rows += 1
     columns = noteColumn(columns, row)
   }
+  options?.onProgress?.({ phase: 'read', fraction: 1 })
   return { rows, columns }
 }
 
@@ -319,6 +369,7 @@ export function csvGridShape(input: string, delimiter: string): CsvGridShape {
 export function* worksheetXmlChunks(
   rows: Iterable<readonly string[]>,
   shape: CsvGridShape,
+  options?: { readonly onRow?: (rowsWritten: number) => void },
 ): Generator<string> {
   yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
   yield '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -339,6 +390,7 @@ export function* worksheetXmlChunks(
     })
     if (cells.length > 0) yield `<row r="${rowIndex + 1}">${cells.join('')}</row>`
     rowIndex += 1
+    options?.onRow?.(rowIndex)
   }
   yield '</sheetData></worksheet>'
 }

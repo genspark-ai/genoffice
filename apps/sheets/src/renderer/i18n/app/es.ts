@@ -560,6 +560,7 @@ export const es = {
   appBridgeUnavailable:
     'El puente de archivos de escritorio no está disponible. Reinicie la aplicación Electron.',
   appOpenCanceled: 'Selección de libro cancelada.',
+  appImportCanceled: 'Importación cancelada.',
   appOpeningWorkbook: 'Abriendo libro…',
   appOpened: 'Se abrió {name} — las ediciones de celdas se vuelven a guardar con ⌘S.',
   appOpenFailed: 'No se puede abrir el libro.',
