@@ -394,7 +394,6 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
     const at = 1 + Math.floor(r() * (blocks.length - 1))
     blocks.splice(at, 0, sectionBreakXml(r))
   }
-  const body = blocks.join('')
   const extraStyles: string[] = []
   const extraParts: Array<{ path: string; xml: string; contentType: string }> = []
   const binaryParts: Array<{
@@ -404,10 +403,6 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
     contentType: string
   }> = []
   const extraRels: string[] = []
-  if (body.includes('rId20'))
-    extraRels.push(
-      '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>',
-    )
 
   // header/footer knob: either, both, or neither; simple or rich (fields,
   // multi-paragraph, formatted runs, tab); a rich part may carry a logo image
@@ -490,6 +485,12 @@ export async function buildFuzzDocx(seed: number): Promise<Uint8Array> {
       '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/></w:style>',
     )
   }
+  // joined after the comment anchors are spliced in, or they never reach the body
+  const body = blocks.join('')
+  if (body.includes('rId20'))
+    extraRels.push(
+      '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>',
+    )
   return buildDocx({
     bodyXml: body,
     withNumbering: body.includes('<w:numPr>'),

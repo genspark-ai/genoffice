@@ -3071,12 +3071,20 @@ export function registerSheetsIpc(): void {
     }
     // A delimited import can take a while on a big file, so the renderer
     // watches its progress and can cancel it.
-    const importController = pendingImports.start(event.sender.id)
+    const owner = event.sender.id
+    // a superseded import may have left its bar standing; this open owns the
+    // tab now, whether or not it will report anything itself
+    const superseded = pendingImports.controllerFor(owner) !== undefined
+    const importController = pendingImports.start(owner)
+    if (superseded && !event.sender.isDestroyed())
+      event.sender.send(IPC_CHANNELS.importProgress, null)
     // only a delimited import reports progress; a plain .xlsx never does,
     // and there is no bar to take down for it
     let reported = false
     const reportProgress = (progress: CsvImportProgress | null): void => {
       if (event.sender.isDestroyed()) return
+      // an import that was replaced no longer owns the bar
+      if (pendingImports.controllerFor(owner) !== importController) return
       if (progress === null) {
         if (!reported) return
         reported = false
@@ -3105,10 +3113,11 @@ export function registerSheetsIpc(): void {
       if (pendingImports.wasCancelled(importController)) return null
       throw error
     } finally {
-      pendingImports.finish(event.sender.id, importController)
-      // the import is over (done, failed or cancelled): the bar belongs to it
-      // and must not stand into the next open
+      // the import is over (done, failed or cancelled): the bar must not
+      // stand into the next open; reportProgress drops this for a
+      // superseded import, so finish comes after
       reportProgress(null)
+      pendingImports.finish(owner, importController)
     }
     // a declined import (an .ods the user chose not to convert) opens nothing
     if (!prepared) return null
