@@ -105,7 +105,7 @@ describe('op catalogs', () => {
     expect((byName.get('setFont') as { signature: string }).signature).not.toContain('"setFont"')
     expect(byName.get('set_header_footer')).toMatchObject({
       group: 'content',
-      signature: '{kind: header|footer, text, view?: default|first|even}',
+      signature: '{kind: header|footer, text, view?: default|first|even, section?: n}',
     })
     expect(byName.get('wrap_content_control')).toMatchObject({ group: 'content-controls' })
     expect(byName.get('unwrap_content_control')).toMatchObject({ group: 'content-controls' })

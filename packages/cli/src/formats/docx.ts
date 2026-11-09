@@ -37,6 +37,7 @@ import {
   type RemovePartsPlan,
   type RevisionXmlFilter,
   type SaveOptions,
+  type SectionInfo,
   type StyleUpsert,
   type PictureWatermarkSpec,
   type WatermarkSpec,
@@ -129,10 +130,25 @@ type Modules = Awaited<ReturnType<typeof docsModules>>
 type HfView = 'default' | 'first' | 'even'
 type HfSlot = `${'header' | 'footer'}${'' | 'First' | 'Even'}`
 
+/** One pending header/footer edit for a section other than the last (see side.hfSection). */
+interface SectionHfEdit {
+  /** docxIndex of the paragraph carrying this section's sectPr; the engine locates the section by it */
+  lastBlockIndex: number
+  kind: 'header' | 'footer'
+  variant: HfView
+  hf: HeaderFooter
+}
+
 /** Header/footer parts, comments and notes live outside the ProseMirror document; edits are kept here until save. */
 interface SideState {
   hf: Partial<Record<HfSlot, HeaderFooter | null>>
   hfDirty: Set<HfSlot>
+  /**
+   * Pending header/footer edits of the non-last sections of a multi-section document,
+   * keyed by sectionHfKey. saveDocument turns them into SaveOptions.sectionHf (the
+   * trailing section keeps using the hf/hfDirty slots above, as the app routes them).
+   */
+  hfSection: Map<string, SectionHfEdit>
   titlePg: boolean
   evenOddHf: boolean
   titlePgDirty: boolean
@@ -200,6 +216,7 @@ function sideStateOf(parsed: Parsed): SideState {
       footerEven: hfFromPart(parsed.footerEven),
     },
     hfDirty: new Set(),
+    hfSection: new Map(),
     titlePg: parsed.titlePg ?? false,
     evenOddHf: parsed.evenAndOddHeaders ?? false,
     titlePgDirty: false,
@@ -245,9 +262,16 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
   const plan = doc.mods.convert.pmDocToSavePlan(doc.editor.getJSON() as never, doc.parsed.blocks)
   const { side } = doc
   const hf = (slot: HfSlot) => (side.hfDirty.has(slot) ? (side.hf[slot] ?? undefined) : undefined)
+  const sectionHf = [...side.hfSection.values()].map((edit) => ({
+    lastBlockIndex: edit.lastBlockIndex,
+    kind: edit.kind,
+    variant: edit.variant,
+    hf: edit.hf,
+  }))
   const sectionEdits = applySectionEdits(doc, plan)
   const options: SaveOptions = {
     ...sectionEdits.options,
+    ...(sectionHf.length > 0 ? { sectionHf } : {}),
     trailingSectPrChange: plan.trailingSectPrChange,
     header: hf('header'),
     footer: hf('footer'),
@@ -944,6 +968,10 @@ export async function applyDocOps(
       const r = setContentControl(doc, op, name)
       if (r.error) failed = rejected(r.error)
       else results.push({ index, op: name, output: r.output! })
+    } else if (name === 'set_header_footer' && op.section !== undefined) {
+      const r = setSectionHeaderFooter(doc, op)
+      if (r.error) failed = rejected(r.error)
+      else results.push({ index, op: name, output: r.output! })
     } else if (name === 'accept_changes' || name === 'reject_changes') {
       const r = await applyRevisionOp(doc, op, name === 'accept_changes' ? 'accept' : 'reject')
       if (r.error) failed = rejected(r.error)
@@ -1430,6 +1458,18 @@ export function listFields(doc: OpenDocument): FieldSummary[] {
 const slotOf = (kind: 'header' | 'footer', view: HfView): HfSlot =>
   view === 'default' ? kind : `${kind}${view === 'first' ? 'First' : 'Even'}`
 
+export interface HeaderFooterSectionState {
+  index: number
+  firstBlock: number
+  lastBlock: number
+  header: string
+  footer: string
+  headerFirst: string | null
+  footerFirst: string | null
+  headerEven: string | null
+  footerEven: string | null
+}
+
 export interface HeaderFooterState {
   header: string
   footer: string
@@ -1440,6 +1480,12 @@ export interface HeaderFooterState {
   titlePg: boolean
   evenOddHf: boolean
   multiSection: boolean
+  /**
+   * Per-section text, indexed the way set_header_footer{section} addresses sections
+   * (0-based, the order `docs read --sections` lists). An edit that targeted one
+   * section is visible here, so read and write agree.
+   */
+  sections: HeaderFooterSectionState[]
   /** the default header's watermark: text, picture, or none; pending set_watermark results included */
   watermark: WatermarkState
 }
@@ -1481,12 +1527,65 @@ function watermarkState(doc: OpenDocument): WatermarkState {
   return { kind: 'none', text: null }
 }
 
+/** Key of a pending per-section header/footer edit: its break paragraph (docxIndex) + kind + variant. */
+function sectionHfKey(lastBlockIndex: number, kind: 'header' | 'footer', variant: HfView): string {
+  return variant === 'default'
+    ? `${lastBlockIndex}:${kind}`
+    : `${lastBlockIndex}:${kind}:${variant}`
+}
+
+/**
+ * The current value of one section's header/footer: that section's pending edit,
+ * the nearest earlier section's part it inherits (Word's "same as previous"), or the
+ * document-level strip of a document without header/footer references.
+ */
+function resolveSectionHf(
+  doc: OpenDocument,
+  sections: SectionInfo[],
+  si: number,
+  kind: 'header' | 'footer',
+  variant: HfView,
+): HeaderFooter | null {
+  const { side, parsed } = doc
+  const section = sections[si]!
+  const own = side.hfSection.get(sectionHfKey(section.lastBlockIndex, kind, variant))
+  if (own) return own.hf
+  // the last section's pending edit lives in the trailing-options slots saveDocument reads
+  if (si === sections.length - 1) {
+    const slot = slotOf(kind, variant)
+    if (side.hfDirty.has(slot)) return side.hf[slot] ?? null
+  }
+  for (let i = si; i >= 0; i--) {
+    const ref = (kind === 'header' ? sections[i]!.headerRefs : sections[i]!.footerRefs)[variant]
+    if (!ref) continue
+    for (let j = i; j >= 0; j--) {
+      const pending = side.hfSection.get(sectionHfKey(sections[j]!.lastBlockIndex, kind, variant))
+      if (pending) return pending.hf
+    }
+    const info = parsed.hfParts?.[ref]
+    return info ? hfFromPart(info) : null
+  }
+  return side.hf[slotOf(kind, variant)] ?? null
+}
+
+function sectionHfText(
+  doc: OpenDocument,
+  sections: SectionInfo[],
+  si: number,
+  kind: 'header' | 'footer',
+  variant: HfView,
+): string {
+  const value = resolveSectionHf(doc, sections, si, kind, variant)
+  return value ? doc.mods.hfText.hfEditText(value) : ''
+}
+
 export function headerFooterState(doc: OpenDocument): HeaderFooterState {
   const { side } = doc
   const textOf = (slot: HfSlot) => {
     const v = side.hf[slot]
     return v ? doc.mods.hfText.hfEditText(v) : ''
   }
+  const sections = readSections(doc.parsed)
   return {
     header: textOf('header'),
     footer: textOf('footer'),
@@ -1496,7 +1595,18 @@ export function headerFooterState(doc: OpenDocument): HeaderFooterState {
     footerEven: side.evenOddHf ? textOf('footerEven') : null,
     titlePg: side.titlePg,
     evenOddHf: side.evenOddHf,
-    multiSection: readSections(doc.parsed).length > 1,
+    multiSection: sections.length > 1,
+    sections: sections.map((section, index) => ({
+      index,
+      firstBlock: section.firstBlockIndex,
+      lastBlock: section.lastBlockIndex,
+      header: sectionHfText(doc, sections, index, 'header', 'default'),
+      footer: sectionHfText(doc, sections, index, 'footer', 'default'),
+      headerFirst: section.titlePg ? sectionHfText(doc, sections, index, 'header', 'first') : null,
+      footerFirst: section.titlePg ? sectionHfText(doc, sections, index, 'footer', 'first') : null,
+      headerEven: side.evenOddHf ? sectionHfText(doc, sections, index, 'header', 'even') : null,
+      footerEven: side.evenOddHf ? sectionHfText(doc, sections, index, 'footer', 'even') : null,
+    })),
     watermark: watermarkState(doc),
   }
 }
@@ -1523,6 +1633,85 @@ function headerFooterAccess(doc: OpenDocument): {
       side.hfDirty.add(slot)
       return null
     },
+  }
+}
+
+/**
+ * set_header_footer with an explicit `section` (0-based, the numbering `docs read
+ * --sections` prints). The edit is routed the way the app routes it: the trailing
+ * section keeps using the save's trailing-options slots, every other section goes
+ * through SaveOptions.sectionHf keyed by its break paragraph.
+ */
+function setSectionHeaderFooter(
+  doc: OpenDocument,
+  op: Record<string, unknown>,
+): { output?: string; error?: string } {
+  const kind = op.kind
+  if (kind !== 'header' && kind !== 'footer') return { error: 'kind must be "header" or "footer"' }
+  const view = op.view === undefined ? 'default' : op.view
+  if (view !== 'default' && view !== 'first' && view !== 'even')
+    return { error: 'view must be "default", "first" or "even"' }
+  if (typeof op.text !== 'string') return { error: 'text must be a string' }
+  // a doubly escaped newline arrives as the two characters backslash-n
+  const text = op.text.includes('\n') ? op.text : op.text.replace(/\\n/g, '\n')
+  if (text.length > 2000)
+    return { error: 'text is too long for a header/footer (2000 characters max)' }
+  const sections = readSections(doc.parsed)
+  if (sections.length === 0) return { error: 'the document has no sections yet' }
+  const section = op.section
+  if (
+    typeof section !== 'number' ||
+    !Number.isInteger(section) ||
+    section < 0 ||
+    section >= sections.length
+  )
+    return {
+      error: `section must be an integer 0-${sections.length - 1} (the document has ${sections.length} section${sections.length === 1 ? '' : 's'})`,
+    }
+  const { side } = doc
+  const pageSetup = pageSetupAccess(doc)
+  // a section break inserted earlier in this same batch exists only in the editor:
+  // the engine's per-section save routing addresses parsed sections, so the indexes
+  // would not line up
+  if (pageSetup.list().length !== sections.length)
+    return {
+      error:
+        'set_header_footer{section} addresses the saved sections; apply the section break in its own `genoffice docs apply` first, then edit the header/footer',
+    }
+  if (view === 'even' && !side.evenOddHf) {
+    side.evenOddHf = true
+    side.evenOddHfDirty = true
+  }
+  const next = doc.mods.hfText.applyHfText(
+    resolveSectionHf(doc, sections, section, kind, view),
+    text,
+  )
+  const slot = slotOf(kind, view)
+  if (section === sections.length - 1) {
+    if (view === 'first' && !side.titlePg) {
+      side.titlePg = true
+      side.titlePgDirty = true
+    }
+    side.hf[slot] = next
+    side.hfDirty.add(slot)
+  } else {
+    if (view === 'first' && !sections[section]!.titlePg) {
+      // a first-page part is only used by a section carrying <w:titlePg/>
+      const current = pageSetup.current(section)
+      if (!current) return { error: `section ${section} does not exist` }
+      const failure = pageSetup.set(section, { settings: current.settings, titlePg: true })
+      if (failure) return { error: failure }
+    }
+    side.hfSection.set(sectionHfKey(sections[section]!.lastBlockIndex, kind, view), {
+      lastBlockIndex: sections[section]!.lastBlockIndex,
+      kind,
+      variant: view,
+      hf: next,
+    })
+  }
+  const where = sections.length > 1 ? ` of section ${section} (0-based)` : ''
+  return {
+    output: `Updated the ${kind}${view !== 'default' ? ` (${view}-page variant)` : ''}${where}.`,
   }
 }
 
@@ -1786,7 +1975,7 @@ const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
   edit_chart:
     'change the data of a chart block (`genoffice docs read` lists blocks with kind "chart"); counts must match the original, null keeps a position',
   set_header_footer:
-    'plain text, \\n between lines, {PAGE} / {NUMPAGES} become page-number fields, "" clears; view first/even switches the different-first-page / odd-even setting on; `genoffice docs read --header-footer` shows the current text',
+    'plain text, \\n between lines, {PAGE} / {NUMPAGES} become page-number fields, "" clears; view first/even switches the different-first-page / odd-even setting on; section picks one section (0-based, `genoffice docs read --sections`; omitted = the trailing section); `genoffice docs read --header-footer` shows the text of every section',
   set_page_setup:
     'paper (A3/A4/A5/B5/Letter/Legal/Tabloid) or width/height, orientation, margins {top,right,bottom,left,header,footer,gutter}, columns {count,spacing}, titlePg, pageNumberStart/pageNumberFormat; lengths as "2.54cm" / "1in" / "72pt" or twips; section or blockIndex picks one section, neither = all; `genoffice docs read --sections` lists them',
   insert_section_break:
@@ -1883,6 +2072,20 @@ function cliToolSchema(schema: JsonSchema): JsonSchema {
   return copy
 }
 
+/** The in-app toolSchema has no section selector; headless, one call can target any section (see setSectionHeaderFooter). */
+function headerFooterSchema(schema: JsonSchema): JsonSchema {
+  const copy = cliToolSchema(schema)
+  copy.properties = {
+    ...copy.properties,
+    section: {
+      type: 'integer',
+      description:
+        'write this section instead of the trailing one: 0-based index from `genoffice docs read --sections`; a section break inserted in the same batch must be saved first',
+    },
+  }
+  return copy
+}
+
 /** The engine signatures read `{ op: "name", fields }  // note`; the catalog keeps the two apart. */
 function splitSignature(signature: string): { signature: string; note?: string } {
   const [sig, note] = signature.split(/\s+\/\/\s+/, 2)
@@ -1914,7 +2117,9 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
             ? insertPictureSchema(tool!.inputSchema as JsonSchema)
             : op === 'set_watermark'
               ? insertPictureSchema(tool!.inputSchema as JsonSchema, 'image')
-              : cliToolSchema(tool!.inputSchema as JsonSchema)
+              : op === 'set_header_footer'
+                ? headerFooterSchema(tool!.inputSchema as JsonSchema)
+                : cliToolSchema(tool!.inputSchema as JsonSchema)
     return {
       op,
       group: 'content',
