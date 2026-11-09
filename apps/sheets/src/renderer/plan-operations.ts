@@ -15,7 +15,11 @@ import {
   rangeCellCount,
   type RangeBounds,
 } from '@genoffice/xlsx-gateway/domain/cell-address'
-import { CHART_EDIT_TYPES, chartDataFromValues } from '@genoffice/xlsx-gateway/domain/chart-visual'
+import {
+  CHART_EDIT_TYPES,
+  chartDataFromColumns,
+  chartDataFromValues,
+} from '@genoffice/xlsx-gateway/domain/chart-visual'
 import type { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import {
   convertToValuesBatchError,
@@ -283,6 +287,20 @@ export function proposeOperations(
             if (rangeCellCount(bounds) > 2000) {
               return { ok: false, error: 'add_chart dataRange covers more than 2000 cells.' }
             }
+            // Named columns are geometry the plan can fully settle without
+            // values: each letter must land inside the range (the schema
+            // already guarantees ≥2 distinct letter shapes).
+            if (operation.columns) {
+              for (const letter of operation.columns) {
+                const column = parseAddress(`${letter.toUpperCase()}1`).column
+                if (column < bounds.startColumn || column > bounds.endColumn) {
+                  return {
+                    ok: false,
+                    error: `add_chart column ${letter.toUpperCase()} lies outside the dataRange.`,
+                  }
+                }
+              }
+            }
             // The grid only holds streamed-in cells, so an empty read is a
             // data problem only when the range is actually loaded; apply
             // reads the real values through the sidecar either way.
@@ -307,13 +325,27 @@ export function proposeOperations(
             const values = targetSheet.getRange(operation.dataRange).getRawValues() as (
               string | number | boolean | null | undefined
             )[][]
-            if (rangeLoaded && !writtenThisBatch && !chartDataFromValues(values)) {
-              return {
-                ok: false,
-                error:
-                  'The chart dataRange needs at least one numeric column. ' +
-                  'set_cell/set_range data lands after charts within a batch — write the data in ' +
-                  'one batch, then add the chart in the next.',
+            if (rangeLoaded && !writtenThisBatch) {
+              if (operation.columns) {
+                // The named-columns probe refuses a named column with no
+                // numbers outright. Geometry errors cannot fire here — the
+                // letters were just checked against the bounds above.
+                try {
+                  chartDataFromColumns(values, operation.columns, bounds)
+                } catch (error: unknown) {
+                  return {
+                    ok: false,
+                    error: error instanceof Error ? error.message : String(error),
+                  }
+                }
+              } else if (!chartDataFromValues(values)) {
+                return {
+                  ok: false,
+                  error:
+                    'The chart dataRange needs at least one numeric column. ' +
+                    'set_cell/set_range data lands after charts within a batch — write the data in ' +
+                    'one batch, then add the chart in the next.',
+                }
               }
             }
           }

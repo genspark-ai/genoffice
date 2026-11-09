@@ -332,7 +332,10 @@ const editChartSchema = z.object({
 
 // Creates a NEW chart from a data range (imported workbooks only). The range
 // may include a header row and a leading category column — both are detected
-// from the data, matching the ribbon's Insert Chart.
+// from the data, matching the ribbon's Insert Chart. `columns` names the
+// columns of the range to chart instead: first the labels, then one series
+// each, so non-adjacent columns chart without copying data around and the
+// header/direction guesses are settled by the caller.
 const addChartSchema = z.object({
   op: z.literal('add_chart'),
   sheetId: z.string().min(1),
@@ -348,6 +351,12 @@ const addChartSchema = z.object({
     'combo',
   ]),
   dataRange: cellRangeSchema,
+  /** a label column plus up to MAX_CHART_SERIES series columns, within the range */
+  columns: z
+    .array(z.string().regex(/^[A-Za-z]{1,3}$/, 'a column letter like "A" or "XFD"'))
+    .min(2)
+    .max(13)
+    .optional(),
   title: z.string().max(255).optional(),
   /** top-left cell of the chart frame; default: two columns right of the data */
   anchorCell: cellAddressSchema.optional(),
