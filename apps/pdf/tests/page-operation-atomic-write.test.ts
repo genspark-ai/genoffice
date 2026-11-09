@@ -118,7 +118,8 @@ describe('in-place PDF page operation writes', () => {
 
     expect(result.ok).toBe(false)
     expect(readFileSync(preserved)).toEqual(original)
-    // The shared writer keeps the finished temp beside the target so the new bytes survive
-    expect(readdirSync(dir).filter((name) => name.endsWith('.tmp'))).toHaveLength(1)
+    // A locked target must not litter the folder with unrecognizable temps:
+    // the failure is reported and nothing survives it (genoffice#2567)
+    expect(readdirSync(dir).filter((name) => name.endsWith('.tmp'))).toHaveLength(0)
   })
 })

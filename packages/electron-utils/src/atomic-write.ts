@@ -87,10 +87,16 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   } catch {
     // fall through to the in-place write
   }
-  // Keep the completed temp until the fallback lands: if that write fails
-  // or the process dies, the new bytes still exist somewhere on disk.
-  await writeFile(filePath, data)
-  await unlink(tmp).catch(() => {})
+  // The in-place fallback is the last chance to land the bytes; if it fails
+  // too the error propagates and the target keeps whatever it had. The temp is
+  // removed either way: a leftover carries a random hex name with no
+  // extension, so a user can neither recognize nor open it, and a persistently
+  // locked target would leave one behind on every retry (genoffice#2567).
+  try {
+    await writeFile(filePath, data)
+  } finally {
+    await unlink(tmp).catch(() => {})
+  }
 }
 
 async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
@@ -121,9 +127,13 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
   } catch {
     // fall through to the in-place write
   }
-  // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(source, filePath)
-  await unlink(tmp).catch(() => {})
+  // Same contract as atomicWriteFile: the temp is removed even when the
+  // in-place fallback fails (genoffice#2567).
+  try {
+    await copyFile(source, filePath)
+  } finally {
+    await unlink(tmp).catch(() => {})
+  }
 }
 
 /**
@@ -153,9 +163,13 @@ export async function atomicWriteVia(
   } catch {
     // fall through to the in-place copy
   }
-  // Keep the completed temp until the fallback lands, as atomicWriteFile does.
-  await copyFile(tmp, filePath)
-  await unlink(tmp).catch(() => {})
+  // Same contract as atomicWriteFile: the temp is removed even when the
+  // in-place fallback fails (genoffice#2567).
+  try {
+    await copyFile(tmp, filePath)
+  } finally {
+    await unlink(tmp).catch(() => {})
+  }
 }
 
 /**
@@ -189,9 +203,14 @@ export function writeJsonAtomic(filePath: string, value: unknown): void {
     }
   } catch (error) {
     if (isRetryableRename(error)) {
-      writeFileSync(filePath, json, 'utf8')
-      removeTemp()
-      return
+      // Same contract as atomicWriteFile: remove the temp even when the
+      // in-place fallback fails (genoffice#2567).
+      try {
+        writeFileSync(filePath, json, 'utf8')
+        return
+      } finally {
+        removeTemp()
+      }
     }
     removeTemp()
     throw error

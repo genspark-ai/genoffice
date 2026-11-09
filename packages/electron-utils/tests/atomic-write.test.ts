@@ -118,7 +118,7 @@ describe('atomicWriteFile', () => {
     expect(readdirSync(dir)).toEqual(['a.docx'])
   })
 
-  it('surfaces the fallback write failure and keeps the completed temp', async () => {
+  it('surfaces the fallback write failure and removes the completed temp', async () => {
     dir = mkdtempSync(join(tmpdir(), 'eu-aw-'))
     const target = join(dir, 'a.docx')
     writeFileSync(target, 'old')
@@ -131,11 +131,10 @@ describe('atomicWriteFile', () => {
     vi.mocked(writeFile).mockRejectedValueOnce(errnoError('EACCES'))
     await expect(atomicWriteFile(target, Buffer.from('new'))).rejects.toThrow('EACCES')
     expect(readFileSync(target, 'utf8')).toBe('old')
-    // the fallback failed, so the completed temp is kept as the rescue copy
-    const leftovers = readdirSync(dir).sort()
-    expect(leftovers).toHaveLength(2)
-    expect(leftovers[0]).toBe('a.docx')
-    expect(leftovers[1]).toMatch(/^a\.docx\..{12}\.tmp$/)
+    // A persistently locked target must not leave an unrecognizable random-name
+    // temp behind on every retry (genoffice#2567): the fallback failure is
+    // reported to the caller and no temp survives it.
+    expect(readdirSync(dir)).toEqual(['a.docx'])
   })
 })
 
@@ -282,7 +281,7 @@ describe('atomicWriteVia', () => {
     expect(readdirSync(dir)).toEqual(['a.pptx'])
   })
 
-  it('surfaces the fallback copy failure and keeps the completed temp', async () => {
+  it('surfaces the fallback copy failure and removes the completed temp', async () => {
     dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
     const target = join(dir, 'a.pptx')
     writeFileSync(target, 'old')
@@ -293,12 +292,8 @@ describe('atomicWriteVia', () => {
       atomicWriteVia(target, (tempPath) => actual.writeFile(tempPath, 'new')),
     ).rejects.toThrow('EACCES')
     expect(readFileSync(target, 'utf8')).toBe('old')
-    // the fallback failed, so the completed temp is kept as the rescue copy
-    const leftovers = readdirSync(dir).sort((a, b) => a.length - b.length)
-    expect(leftovers).toHaveLength(2)
-    expect(leftovers[0]).toBe('a.pptx')
-    expect(leftovers[1]).toMatch(/a\.pptx\..{12}\.tmp$/)
-    expect(readFileSync(join(dir, leftovers[1]!), 'utf8')).toBe('new')
+    // Same no-leftover contract as atomicWriteFile (genoffice#2567)
+    expect(readdirSync(dir)).toEqual(['a.pptx'])
   })
 })
 
@@ -352,6 +347,30 @@ describe('writeJsonAtomic', () => {
     for (let i = 0; i < 5; i += 1) vi.mocked(renameSync).mockImplementationOnce(locked)
     writeJsonAtomic(target, ['fallback'])
     expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual(['fallback'])
+    expect(readdirSync(dir)).toEqual(['recent.json'])
+  })
+
+  // Same no-leftover contract as atomicWriteFile (genoffice#2567): a locked
+  // target whose in-place fallback also fails reports the error and leaves no
+  // unrecognizable temp behind.
+  it('removes the temp when the locked-rename fallback write fails too', () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-json-'))
+    const target = join(dir, 'recent.json')
+    writeJsonAtomic(target, ['old'])
+    const actual = vi.mocked(writeFileSync).getMockImplementation()!
+    // call 1 writes the temp for real, call 2 is the in-place fallback (fails)
+    vi.mocked(writeFileSync).mockImplementationOnce((path, data, options) =>
+      actual(path, data, options),
+    )
+    vi.mocked(writeFileSync).mockImplementationOnce(() => {
+      throw errnoError('EACCES')
+    })
+    const locked = () => {
+      throw errnoError('EPERM')
+    }
+    for (let i = 0; i < 5; i += 1) vi.mocked(renameSync).mockImplementationOnce(locked)
+    expect(() => writeJsonAtomic(target, ['lost'])).toThrow('EACCES')
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual(['old'])
     expect(readdirSync(dir)).toEqual(['recent.json'])
   })
 

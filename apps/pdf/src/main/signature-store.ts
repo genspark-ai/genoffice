@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { writeJsonAtomic } from '@genoffice/electron-utils/atomic-write'
 import type { SavedSignature, SignatureData } from '../shared/ipc'
 
 /** Oldest entries are evicted beyond this; keeps the userData JSON bounded (images are base64 PNGs) */
@@ -90,8 +90,5 @@ export async function loadSignatures(filePath: string): Promise<SavedSignature[]
 
 /** Atomic write (tmp + rename) so a crash mid-write can't corrupt the saved list */
 export async function saveSignatures(filePath: string, list: SavedSignature[]): Promise<void> {
-  await mkdir(dirname(filePath), { recursive: true })
-  const tmp = `${filePath}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(list))
-  await rename(tmp, filePath)
+  writeJsonAtomic(filePath, list)
 }
