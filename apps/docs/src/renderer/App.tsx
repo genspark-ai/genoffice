@@ -419,6 +419,7 @@ import {
 import { installSelectionBar } from './editor/selection-bar'
 import type { CompareEntry } from './editor/compare'
 import { collectHeadings } from './editor/headings'
+import { updateTocField } from './editor/toc-update'
 import { applyTocPageDisplays, backfillTocPageDom } from './editor/toc-refresh'
 import { setSelectionAlign } from './editor/direction'
 
@@ -8922,6 +8923,7 @@ export function App() {
           onAdjustListIndents={() => setListDialog('indents')}
           onChangeListLevel={changeListLevel}
           onUpdateFields={updateFields}
+          onUpdateToc={() => updateTocField(editor, doc.parsed.blocks, headingPages)}
           onEditField={setFieldEdit}
           onOpenLink={(href) => openLink(href, ctxMenu.link?.tocTitle)}
           onRespell={() => requestAnimationFrame(() => setRespellNonce((n) => n + 1))}

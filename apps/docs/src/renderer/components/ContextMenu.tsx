@@ -100,6 +100,8 @@ interface EditorContextMenuProps {
   onChangeListLevel?: (ilvl: number) => void
   /** F9 update fields (shown when the cursor is on an inline field) */
   onUpdateFields?: () => void
+  /** Update Table of Contents (shown when the click landed on a TOC line, Word parity) */
+  onUpdateToc?: () => void
   /** Edit Field…: open the field-code dialog for that field */
   onEditField?: (field: FieldRange) => void
   /** Open Hyperlink: browser for http(s), in-document jump for #bookmark */
@@ -169,6 +171,7 @@ export function EditorContextMenu({
   onAdjustListIndents,
   onChangeListLevel,
   onUpdateFields,
+  onUpdateToc,
   onEditField,
   onOpenLink,
   onRedact,
@@ -466,6 +469,15 @@ export function EditorContextMenu({
           <div className="ctx-sep" />
           {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
           {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
+          {menu.link?.toc && onUpdateToc && (
+            <>
+              <div className="ctx-sep" />
+              {item(t('ribbonTocUpdate'), {
+                disabled: !canEdit,
+                onClick: run(() => onUpdateToc()),
+              })}
+            </>
+          )}
         </>
       )}
       {inTable && !onPicture && (
