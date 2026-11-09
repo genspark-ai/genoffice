@@ -44,9 +44,21 @@ function rng(seed: number): () => number {
 }
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
-const CJK_NAMES = ['季度回顾', '营收明细', '附录 甲', '风险登记']
+const CJK_NAMES = [
+  '\u5b63\u5ea6\u56de\u987e',
+  '\u8425\u6536\u660e\u7ec6',
+  '\u9644\u5f55 \u7532',
+  '\u98ce\u9669\u767b\u8bb0',
+]
 const LATIN_NAMES = ['Summary', 'data 2024', 'Q3', 'notes']
-const TEXTS = ['季度回顾', 'Quarterly review', '风险登记', 'milestone 12', 'draft v2', '附录 甲']
+const TEXTS = [
+  '\u5b63\u5ea6\u56de\u987e',
+  'Quarterly review',
+  '\u98ce\u9669\u767b\u8bb0',
+  'milestone 12',
+  'draft v2',
+  '\u9644\u5f55 \u7532',
+]
 
 /** A seeded generator of varied-but-valid XLSX packages: one to three sheets
  *  with CJK and latin names, cells mixing shared strings, inline strings,
@@ -364,6 +376,8 @@ describe('hostile XLSX import fuzz', () => {
         `seed ${seed} ${mode}: the sidecar refuses cleanly or opens, never hangs or dies`,
         async () => {
           const valid = await buildFuzzXlsx(seed)
+          // a second stream (offset 31, not the generator's 17): the corruption
+          // draws are independent of the document layout for the same seed
           const bytes = await corrupt(valid, rng(seed * 7919 + 31))
           await attemptOpen(bytes)
         },
