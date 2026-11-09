@@ -233,8 +233,10 @@ export async function openDocument(bytes: Uint8Array): Promise<OpenDocument> {
   return { parsed, editor, numIds, mods, side: sideStateOf(parsed) }
 }
 
-export async function blankDocument(): Promise<OpenDocument> {
-  return openDocument(await buildBlankDocx())
+export async function blankDocument(options?: {
+  omitGeneratorFields?: boolean
+}): Promise<OpenDocument> {
+  return openDocument(await buildBlankDocx(options))
 }
 
 export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
@@ -331,7 +333,19 @@ function setContentControl(
     const anyShell = doc.parsed.blocks.some((b) =>
       (b.sdtShells ?? (b.sdtShell ? [b.sdtShell] : [])).some((shell) => shell.tag === tag),
     )
-    if (!anyShell) return { error: `no content control is tagged ${tag}` }
+    if (!anyShell) {
+      // an inline (run-level) control is real and `docs read` lists it under
+      // inlineContentControls, so "no content control" would mislead; unwrap
+      // is a block-level op (genoffice#2554)
+      const inline = doc.parsed.blocks.some((b) =>
+        (b.inlineContentControls ?? []).some((c) => c.tag === tag),
+      )
+      if (inline)
+        return {
+          error: `the content control tagged ${tag} is inline (run-level); inline controls are reported but not unwrapped — unwrap_content_control works on block-level controls`,
+        }
+      return { error: `no content control is tagged ${tag}` }
+    }
     side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
     return { output: `unwrap the content control tagged ${tag}` }
   }

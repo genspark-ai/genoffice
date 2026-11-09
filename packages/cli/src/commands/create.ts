@@ -77,6 +77,11 @@ export const createCommand: CommandDef = {
       description:
         'xlsx --from .csv: the decimal separator the file uses (default "."); with "," a "." is read as a thousands separator',
     },
+    {
+      name: 'no-generator-fields',
+      description:
+        'docx: drop the Application / AppVersion generator fields from docProps/app.xml (the Word-default Template stays)',
+    },
     { name: 'out', value: 'path', description: 'output file (required)' },
     { name: 'force', description: 'overwrite an existing output file' },
     {
@@ -386,17 +391,20 @@ async function createDocx(
     throw new CliError(EXIT.usage, 'docx needs --from <content.md|fragment.html>', undefined, {
       reason: 'missing_argument',
     })
+  const blankOptions = flagBool(args, 'no-generator-fields')
+    ? { omitGeneratorFields: true }
+    : undefined
   const source = resolveInput(from, ctx)
   const text = readFileSync(source, 'utf-8')
   const ext = extname(source).toLowerCase()
   if (ext === '.md' || ext === '.markdown') {
     return {
-      bytes: await markdownToDocx(text, { file: source, ctx }),
+      bytes: await markdownToDocx(text, { file: source, ctx }, blankOptions),
       detail: { source: 'markdown' },
     }
   }
   if (ext === '.html' || ext === '.htm') {
-    const doc = await blankDocument()
+    const doc = await blankDocument(blankOptions)
     try {
       const blocks = fillFromHtml(doc, text)
       return { bytes: await saveDocument(doc), detail: { source: 'html', blocks } }
