@@ -34,7 +34,7 @@ describe('the delimited import progress wiring', () => {
   })
 
   it('registers the import with the registry the cancel reaches', () => {
-    expect(mainSource).toContain('pendingImports.start(event.sender.id)')
+    expect(mainSource).toContain('pendingImports.start(owner)')
     expect(mainSource).toContain('pendingImports.cancel(event.sender.id)')
     // the controller the import runs under is the one the registry hands out
     expect(mainSource).toContain('signal: importController.signal')
