@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
+import { buildSfnt } from './helpers/synthetic-font'
+
 // advanceWidths resolves a face through the system font index, so the index is
 // swapped for a map pointing at the synthetic faces built below. Everything else
 // (readTableDir/readTable/norm/styleScore) stays real, so the whole
@@ -114,22 +116,9 @@ function font(cmap: Buffer): string {
     ['hmtx', hmtx],
     ['head', head],
   ]
-  const dir = Buffer.alloc(16 * tables.length)
-  let cursor = 12 + dir.length
-  const body: Buffer[] = []
-  tables.forEach(([tag, data], i) => {
-    dir.write(tag, 16 * i, 4, 'latin1')
-    dir.writeUInt32BE(0, 16 * i + 4) // checksum: unread
-    dir.writeUInt32BE(cursor, 16 * i + 8)
-    dir.writeUInt32BE(data.length, 16 * i + 12)
-    const pad = Buffer.alloc((4 - (data.length % 4)) % 4)
-    body.push(data, pad)
-    cursor += data.length + pad.length
-  })
-  const header = Buffer.concat([u32(0x00010000), u16(tables.length), u16(0), u16(0), u16(0)])
 
   const path = join(mkdtempSync(join(tmpdir(), 'font-metrics-cmap-')), 'crafted.ttf')
-  writeFileSync(path, Buffer.concat([header, dir, ...body]))
+  writeFileSync(path, buildSfnt(tables))
   index.set('craftedcmapfamily', [{ path, offset: 0, style: 'regular' }])
   return path
 }

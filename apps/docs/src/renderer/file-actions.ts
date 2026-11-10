@@ -91,7 +91,10 @@ import { pruneUnreferencedNumbering } from './numbering-actions'
 import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
+import { loadSystemFontFamilies, resolveFontAliases } from './system-fonts'
 import {
+  isBundledFont,
+  isFontAvailable,
   loadBundledStandIns,
   setAdditiveParagraphSpacing,
   setDocFontTable,
@@ -464,6 +467,17 @@ function focusDocumentStart(editor: Editor): void {
 /** bumped when a document replacement starts; a slower one still parsing must not land */
 let openGeneration = 0
 
+/**
+ * The declared fonts this browser cannot resolve: the installed face behind
+ * them may be known under another spelling (a CJK font declared by its
+ * localized name needs the English one the browser takes). The main process
+ * reads the name tables of the installed faces, so the answer needs no user
+ * activation; it lands over IPC and never blocks the open (genoffice#2449).
+ */
+function requestFontAliases(declared: readonly string[]): void {
+  void resolveFontAliases(declared.filter((name) => !isBundledFont(name) && !isFontAvailable(name)))
+}
+
 export async function loadFile(
   ctx: FileActionContext,
   result: OpenDocxResult,
@@ -500,8 +514,18 @@ export async function loadFile(
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
-    await prefetchFaces(collectDocFonts(parsed))
-    await loadBundledStandIns(collectDocFonts(parsed))
+    // the font picker's family list needs the Local Font Access query, which
+    // wants transient user activation: an open often has none (window boot, a
+    // native open dialog, an AI-created document), so it never blocks the
+    // open and a rejected query is not cached (genoffice#2449)
+    void loadSystemFontFamilies()
+    // the localized-name aliases come from the main process, which reads the
+    // installed faces' name tables: no user activation needed, and the answer
+    // lands over IPC (the document re-styles when it does)
+    const declaredFonts = collectDocFonts(parsed)
+    requestFontAliases(declaredFonts)
+    await prefetchFaces(declaredFonts)
+    await loadBundledStandIns(declaredFonts)
     if (generation !== openGeneration) return 'superseded'
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
@@ -654,8 +678,18 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
-    await prefetchFaces(collectDocFonts(parsed))
-    await loadBundledStandIns(collectDocFonts(parsed))
+    // the font picker's family list needs the Local Font Access query, which
+    // wants transient user activation: an open often has none (window boot, a
+    // native open dialog, an AI-created document), so it never blocks the
+    // open and a rejected query is not cached (genoffice#2449)
+    void loadSystemFontFamilies()
+    // the localized-name aliases come from the main process, which reads the
+    // installed faces' name tables: no user activation needed, and the answer
+    // lands over IPC (the document re-styles when it does)
+    const declaredFonts = collectDocFonts(parsed)
+    requestFontAliases(declaredFonts)
+    await prefetchFaces(declaredFonts)
+    await loadBundledStandIns(declaredFonts)
     if (generation !== openGeneration) return
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
