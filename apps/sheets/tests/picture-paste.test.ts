@@ -46,6 +46,22 @@ describe('pickTransferImage', () => {
     expect(pickTransferImage(data)).toBeNull()
   })
 
+  it('claims a picture copied from an Office app, whose HTML carries the Office namespace', () => {
+    const data = transfer([stringItem('text/html'), imageItem()], {
+      'text/html':
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><body><img src="file:///clip_image001.png"></body></html>',
+    })
+    expect(pickTransferImage(data)).not.toBeNull()
+  })
+
+  it('leaves a table copied from an Office app to the cell paste', () => {
+    const data = transfer([stringItem('text/html'), imageItem()], {
+      'text/html':
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office"><body><table><tr><td>1</td></tr></table></body></html>',
+    })
+    expect(pickTransferImage(data)).toBeNull()
+  })
+
   // The engine pastes the file of every transfer that carries one, unless the
   // HTML comes from Excel. A picture left to the engine is a drawing in its
   // own model, which the save path never sees: it is visible, and it is gone

@@ -62,7 +62,10 @@ export function htmlIsFromExcel(html: string): boolean {
 /// where nothing saves it, and it is gone after the next save.
 export function pickTransferImage(data: TransferLike): File | null {
   if (!transferHasImage(data)) return null
-  if (htmlIsFromExcel(data.getData('text/html'))) return null
+  // The engine's Excel markers include the generic Office namespace, so a
+  // picture copied from Word or PowerPoint matches too; only cells are ceded.
+  const html = data.getData('text/html')
+  if (htmlIsFromExcel(html) && /<(table|tr|td|th)\b/i.test(html)) return null
   for (const item of Array.from(data.items)) {
     if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
     const file = item.getAsFile()
