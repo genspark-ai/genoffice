@@ -69,11 +69,8 @@ type Arrange =
   | 'sameSize'
 
 const PASTE_OFFSET_PTS = 12
-/// Printer option that is not a device name (Electron: '' = OS default printer)
-const PRINT_SYSTEM_DIALOG = '\u0000system-dialog'
 // macOS's print sheet already carries copies/duplex, so it stays the default there
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
-const PRINT_DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 /** Auto-detect stops here so a long scanned form cannot flood the document with fields */
 const DETECT_FIELD_CAP = 300
 
@@ -147,17 +144,12 @@ import {
   remapOutlinePages,
   remapOutlineTree,
 } from './heading-outline'
-import { filterPageParity, maySpoolOriginal, printPdf, type PageParity } from './print'
 import { readFileBytes } from './file-bytes'
-import type {
-  PdfEncryptionInput,
-  PdfPermissions,
-  PrintDuplex,
-  PrinterInfo,
-  PrinterOption,
-} from '../shared/ipc'
+import type { PdfEncryptionInput, PdfPermissions } from '../shared/ipc'
 import { mayChangeProtection } from './protection-gate'
 import { MAX_REDACTION_REGIONS } from '../shared/ipc'
+import { usePrintJob } from './usePrintJob'
+import { PrintDialog } from './PrintDialog'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { LinkDialog, type LinkDraft } from './LinkDialog'
@@ -251,7 +243,6 @@ import {
   SIDEBAR_CHROME,
   clampSidebarW,
   loadSidebarW,
-  DOC_OPTS,
   PAPER_SIZES,
   STROKE_WIDTH,
   NOTE_MARGIN_W,
@@ -1117,7 +1108,6 @@ export default function App() {
   const [searchWholeWord, setSearchWholeWord] = useState(false)
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([])
   const [searchCur, setSearchCur] = useState(0)
-  const [printing, setPrinting] = useState(false)
   const [undoStack, setUndoStack] = useState<EditSnapshot[]>([])
   const [redoStack, setRedoStack] = useState<EditSnapshot[]>([])
   /** The file around each change written to it at once (Replace pages, Page size, Crop, Insert
@@ -1148,24 +1138,6 @@ export default function App() {
   const [replaceInvalid, setReplaceInvalid] = useState(false)
   const [pageSizeDlg, setPageSizeDlg] = useState(false)
   const [splitPagesDlg, setSplitPagesDlg] = useState(false)
-  const [printDlg, setPrintDlg] = useState(false)
-  const [printMode, setPrintMode] = useState<'all' | 'current' | 'custom'>('all')
-  const [printInput, setPrintInput] = useState('')
-  const [printInvalid, setPrintInvalid] = useState(false)
-  const [printParity, setPrintParity] = useState<PageParity>('all')
-  const [printers, setPrinters] = useState<PrinterInfo[]>([])
-  const [printDevice, setPrintDevice] = useState(IS_MAC ? PRINT_SYSTEM_DIALOG : '')
-  const [printCopies, setPrintCopies] = useState(1)
-  const [printCollate, setPrintCollate] = useState(true)
-  const [printDuplex, setPrintDuplex] = useState<PrintDuplex>('simplex')
-  // the chosen printer's driver option groups (quality, color, media type) and
-  // what the user picked from them; empty for the system dialog and on
-  // platforms where the CUPS route does not run
-  const [driverOptions, setDriverOptions] = useState<PrinterOption[]>([])
-  // bumped on every printer switch: a slow printerOptions() answer from an
-  // earlier queue must not overwrite the current queue's groups
-  const driverOptionsRequest = useRef(0)
-  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({})
   /** Page-crop dialog: rendered page bitmap + which page it shows */
   const [pageCropDlg, setPageCropDlg] = useState<{ png: string; origIdx: number } | null>(null)
   const [cropAllPages, setCropAllPages] = useState(false)
@@ -6855,92 +6827,14 @@ export default function App() {
     void cropPagesOnDisk(pages, crop)
   }
 
-  // currentPage only tracks scroll, so it can outlive a page deletion
-  const printCurrentPage = Math.max(1, Math.min(currentPage, pageCount))
-  const openPrintDlg = () => {
-    setPrintMode('all')
-    setPrintInput(String(printCurrentPage))
-    setPrintInvalid(false)
-    setPrintParity('all')
-    setPrintDlg(true)
-    window.pdfApi
-      .listPrinters()
-      .then(setPrinters)
-      .catch(() => undefined)
-  }
-
-  /** Print: save first (markups/forms/page ops all into the file), then reload from the file to render, avoiding a destroyed old doc */
-  // Synchronous re-entry guard: the menu accelerator and the renderer's own ⌘P can both
-  // fire, and the `printing` state only updates after the async flush has started
-  const printBusyRef = useRef(false)
-  // `pages` are 1-based file pages; the flush compacts the file to the visible
-  // order first, so visible page v prints as file page v.
-  const printDoc = async (pages?: number[]) => {
-    if (printBusyRef.current) return
-    printBusyRef.current = true
-    const job =
-      printDevice === PRINT_SYSTEM_DIALOG
-        ? undefined
-        : {
-            deviceName: printDevice,
-            copies: printCopies,
-            collate: printCollate,
-            duplex: printDuplex,
-            driverOptions: driverOptions
-              .filter(
-                (g) =>
-                  driverChoices[g.name] !== undefined && driverChoices[g.name] !== g.defaultValue,
-              )
-              .map((g) => ({ name: g.name, value: driverChoices[g.name]! })),
-          }
-    try {
-      await flushThen(async () => {
-        setPrinting(true)
-        try {
-          if (job && IS_MAC && maySpoolOriginal(diskPasswordRef.current)) {
-            // macOS named printer: lp spools the flushed file itself — the
-            // vector original reaches the driver untouched, instead of a
-            // 150-200 DPI raster pass (genoffice#2347's route, quality half).
-            // An encrypted file stays encrypted on disk, which CUPS' pdftopdf
-            // cannot open, so those fall through to the raster path below.
-            const r = await window.pdfApi.printFile({ ...job, pages, path: filePath })
-            if (!r.ok && r.error) opFailed(r.error)
-            return
-          }
-          const data = await readFileBytes(window.pdfApi, filePath)
-          const pdoc = await getDocument({ data, ...DOC_OPTS }).promise
-          try {
-            await printPdf(pdoc, pages, job)
-          } finally {
-            void pdoc.loadingTask.destroy()
-          }
-        } catch (err) {
-          opFailed(err instanceof Error ? err.message : String(err))
-        } finally {
-          setPrinting(false)
-        }
-      })
-    } finally {
-      printBusyRef.current = false
-    }
-  }
-
-  /** Print dialog confirm: visible page numbers → 1-based file pages */
-  const confirmPrint = () => {
-    const pages =
-      printMode === 'all'
-        ? Array.from({ length: pageCount }, (_x, i) => i + 1)
-        : printMode === 'current'
-          ? [printCurrentPage]
-          : parsePageRanges(printInput, pageCount)
-    const subset = pages ? filterPageParity(pages, printParity) : []
-    if (subset.length === 0) {
-      setPrintInvalid(true)
-      return
-    }
-    setPrintDlg(false)
-    void printDoc(printMode === 'all' && printParity === 'all' ? undefined : subset)
-  }
+  const print = usePrintJob({
+    filePath,
+    pageCount,
+    currentPage,
+    flushThen,
+    opFailed,
+    diskPasswordRef,
+  })
 
   /** Capability surface for AI tools; rebuilt each render (AiPanel mirrors it via refs to get the latest) */
   /** One context line about edits queued but unsaved — the model cannot see them in the file */
@@ -7583,7 +7477,7 @@ export default function App() {
 
   // Shell menu Print → same dialog as the ribbon button / ⌘P
   useEffect(() => {
-    return window.pdfApi.onPrintRequest(openPrintDlg)
+    return window.pdfApi.onPrintRequest(print.openPrintDlg)
   })
 
   // Shortcuts: ⌘S/⌘F/⌘P/⌘±/⌘0 + page navigation (only ⌘ combos kept while an input control is focused)
@@ -7637,7 +7531,7 @@ export default function App() {
           openSearch()
         } else if (k === 'p' && !e.shiftKey) {
           e.preventDefault()
-          openPrintDlg()
+          print.openPrintDlg()
         } else if (e.key === '=' || e.key === '+') {
           e.preventDefault()
           zoomIn()
@@ -8477,13 +8371,13 @@ export default function App() {
                   <button
                     className="rb-big"
                     data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
-                    disabled={printing}
-                    onClick={openPrintDlg}
+                    disabled={print.printing}
+                    onClick={print.openPrintDlg}
                   >
                     <span className="rb-big-icon">
                       <IconPrint />
                     </span>
-                    <span>{printing ? t('printPreparing') : t('print')}</span>
+                    <span>{print.printing ? t('printPreparing') : t('print')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -11738,188 +11632,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {printDlg && (
-              <div className="pdf-modal-mask" onClick={() => setPrintDlg(false)}>
-                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="pdf-modal-title">{t('print')}</div>
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printPrinter')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printDevice}
-                      onChange={(e) => {
-                        const request = ++driverOptionsRequest.current
-                        setPrintDevice(e.target.value)
-                        setDriverChoices({})
-                        setDriverOptions([])
-                        if (e.target.value && IS_MAC)
-                          void window.pdfApi
-                            .printerOptions(e.target.value)
-                            .then((options) => {
-                              if (request === driverOptionsRequest.current)
-                                setDriverOptions(options)
-                            })
-                            .catch(() => {
-                              if (request === driverOptionsRequest.current) setDriverOptions([])
-                            })
-                      }}
-                    >
-                      <option value="">{t('printDefaultPrinter')}</option>
-                      {printers.map((p) => (
-                        <option key={p.name} value={p.name}>
-                          {p.displayName}
-                        </option>
-                      ))}
-                      <option value={PRINT_SYSTEM_DIALOG}>{t('printSystemDialog')}</option>
-                    </select>
-                  </label>
-                  <div className="pdf-modal-row pdf-print-field">
-                    <label className="pdf-print-copies">
-                      <span>{t('printCopies')}</span>
-                      <input
-                        className="pdf-modal-input"
-                        type="number"
-                        min={1}
-                        max={999}
-                        value={printCopies}
-                        disabled={printDevice === PRINT_SYSTEM_DIALOG}
-                        onChange={(e) =>
-                          setPrintCopies(
-                            Math.min(999, Math.max(1, Math.round(Number(e.target.value)) || 1)),
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="pdf-modal-check">
-                      <input
-                        type="checkbox"
-                        checked={printCollate}
-                        disabled={printDevice === PRINT_SYSTEM_DIALOG || printCopies < 2}
-                        onChange={(e) => setPrintCollate(e.target.checked)}
-                      />
-                      {t('printCollate')}
-                    </label>
-                  </div>
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printDuplex')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printDuplex}
-                      disabled={printDevice === PRINT_SYSTEM_DIALOG}
-                      onChange={(e) => setPrintDuplex(e.target.value as PrintDuplex)}
-                    >
-                      {PRINT_DUPLEX_MODES.map((m) => (
-                        <option key={m} value={m}>
-                          {t(
-                            m === 'simplex'
-                              ? 'printDuplexOff'
-                              : m === 'longEdge'
-                                ? 'printDuplexLong'
-                                : 'printDuplexShort',
-                          )}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {driverOptions.map((group) => (
-                    <label key={group.name} className="pdf-modal-row pdf-print-field">
-                      <span>{group.translation}</span>
-                      <select
-                        className="pdf-modal-input"
-                        value={driverChoices[group.name] ?? group.defaultValue ?? group.values[0]}
-                        onChange={(e) =>
-                          setDriverChoices((c) => ({ ...c, [group.name]: e.target.value }))
-                        }
-                      >
-                        {group.values.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                  <div className="pdf-print-divider" />
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'all'}
-                      onChange={() => {
-                        setPrintMode('all')
-                        setPrintInvalid(false)
-                      }}
-                    />
-                    <span>{t('printRangeAll')}</span>
-                  </label>
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'current'}
-                      onChange={() => {
-                        setPrintMode('current')
-                        setPrintInvalid(false)
-                      }}
-                    />
-                    <span>
-                      {t('printRangeCurrent')} ({printCurrentPage})
-                    </span>
-                  </label>
-                  <label className="pdf-modal-row">
-                    <input
-                      type="radio"
-                      name="print-range"
-                      checked={printMode === 'custom'}
-                      onChange={() => setPrintMode('custom')}
-                    />
-                    <span>{t('printRangeCustom')}</span>
-                  </label>
-                  {printMode === 'custom' && (
-                    <input
-                      className={`pdf-modal-input${printInvalid ? ' invalid' : ''}`}
-                      value={printInput}
-                      placeholder={t('printRangeHint')}
-                      autoFocus
-                      onChange={(e) => {
-                        setPrintInput(e.target.value)
-                        setPrintInvalid(false)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') confirmPrint()
-                        else if (e.key === 'Escape') setPrintDlg(false)
-                      }}
-                    />
-                  )}
-                  <label className="pdf-modal-row pdf-print-field">
-                    <span>{t('printSubset')}</span>
-                    <select
-                      className="pdf-modal-input"
-                      value={printParity}
-                      onChange={(e) => {
-                        setPrintParity(e.target.value as PageParity)
-                        setPrintInvalid(false)
-                      }}
-                    >
-                      <option value="all">{t('printSubsetAll')}</option>
-                      <option value="odd">{t('printSubsetOdd')}</option>
-                      <option value="even">{t('printSubsetEven')}</option>
-                    </select>
-                  </label>
-                  {printInvalid && printMode !== 'custom' && (
-                    <div className="pdf-modal-hint pdf-print-empty">{t('printSubsetEmpty')}</div>
-                  )}
-                  <div className="pdf-modal-actions">
-                    <button className="pdf-modal-btn" onClick={() => setPrintDlg(false)}>
-                      {t('cancel')}
-                    </button>
-                    <button className="pdf-modal-btn primary" onClick={confirmPrint}>
-                      {t('print')}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <PrintDialog print={print} printCurrentPage={print.printCurrentPage} />
             {mergePagesDlg && (
               <div className="pdf-modal-mask" onClick={() => setMergePagesDlg(false)}>
                 <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
