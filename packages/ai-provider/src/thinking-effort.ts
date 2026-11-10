@@ -9,8 +9,8 @@
  * sent, i.e. today's behaviour.
  *
  * Only surfaces documented by the vendor's own API are listed. The vendors
- * whose effort field is still documentation-only (GLM, Doubao, MiniMax,
- * DeepSeek, Kimi, Hunyuan, Mistral) stay knobless until a live probe confirms
+ * whose effort field is still documentation-only (GLM, Doubao,
+ * Kimi, Hunyuan, Mistral) stay knobless until a live probe confirms
  * them: a wrong row costs a 400 on every request for that provider.
  *
  * Resolution order mirrors the temperature rule: a user's stored pick wins,
@@ -123,8 +123,30 @@ export function thinkingShapeFor(model: string, protocol?: AiProtocol): Thinking
     const levels = major > 4 || (major === 4 && minor >= 6) ? GROK_XHIGH_LEVELS : GROK_LEVELS
     return { kind: 'openai-effort', levels }
   }
-  // Doc-only families (GLM, Doubao, MiniMax, DeepSeek, Kimi, Hunyuan, Mistral)
-  // deliberately carry no knob until a live probe confirms their surface.
+  // DeepSeek takes the OpenAI effort field on its unified thinking models
+  // (api-docs.deepseek.com/guides/thinking_mode). Every canonical rung
+  // answered 200 live-probed (2026-11-08, deepseek-flash): `none` included,
+  // returning zero reasoning like the separate thinking.type disabled toggle,
+  // so the ladder maps straight onto reasoning_effort with no toggle riding
+  // along. The guide's clamp table folds medium -> high and xhigh -> high
+  // server-side, so the six UI rungs really are four outcomes (none / low /
+  // high / max). The GenOffice-facing alias spells it "deep-seek"
+  // (DEEPSEEK_V41_FLASH); legacy and wire ids spell it "deepseek".
+  if (/(^|\/)deep-?seek/.test(id)) {
+    return { kind: 'openai-effort', levels: OPENAI_SIX_LEVELS }
+  }
+  // MiniMax M3.1 takes the OpenAI effort field (platform.minimax.io
+  // text-generation guide, M3.1-Flash): low..max, and no `none` — effort
+  // none and thinking.type disabled both 400 because the model "requires
+  // adaptive thinking", so the vendor default (omitted field) is the only
+  // off. The plain M3 stays knobless until the vendor documents it: the
+  // guide names only M3.1-Flash, and the family rule below is that a row
+  // needs a documented (or live-probed) surface.
+  if (/(^|\/)minimax-m3\.1/.test(id)) {
+    return { kind: 'openai-effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
+  }
+  // Doc-only families (GLM, Doubao, Kimi, Hunyuan, Mistral) deliberately
+  // carry no knob until a live probe confirms their surface.
   return { kind: 'openai-effort', levels: [] }
 }
 
