@@ -219,7 +219,6 @@ fn render_metafile(
             GetDeviceCaps(hdc_ref, LOGPIXELSY as i32).max(1),
         )
     };
-    unsafe { ReleaseDC(std::ptr::null_mut(), hdc_ref) };
     let frame_w = i64::from(metrics.width_px) * 2540 / i64::from(dpi_x);
     let frame_h = i64::from(metrics.height_px) * 2540 / i64::from(dpi_y);
     let frame = RECT {
@@ -229,6 +228,9 @@ fn render_metafile(
         bottom: frame_h.max(1) as i32,
     };
     let hdc = unsafe { CreateEnhMetaFileW(hdc_ref, std::ptr::null(), &frame, std::ptr::null()) };
+    // the reference DC is only needed at creation time; release it once the
+    // metafile context exists
+    unsafe { ReleaseDC(std::ptr::null_mut(), hdc_ref) };
     if hdc.is_null() {
         return Err("no metafile device context".into());
     }

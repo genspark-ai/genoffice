@@ -137,9 +137,16 @@ export function buildCopyEmfPayload(runtime: UniverRuntime): CopyEmfRequest | nu
 
 /// Fire-and-forget: the helper appends the EMF beside the formats Univer's
 /// copy already wrote, and every failure stays silent by design.
+/** asked once, then cached: building the payload walks the whole selection */
+let copyEmfAvailableCache: boolean | null = null
+
 export function emitCopyEmf(runtime: UniverRuntime): void {
   void (async () => {
     try {
+      if (copyEmfAvailableCache === null) {
+        copyEmfAvailableCache = await window.desktopApi.isCopyEmfAvailable()
+      }
+      if (!copyEmfAvailableCache) return
       const payload = buildCopyEmfPayload(runtime)
       if (!payload) return
       await window.desktopApi.appendCopyEmf(payload)

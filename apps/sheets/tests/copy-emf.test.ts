@@ -76,3 +76,28 @@ describe('clippedCopyEmfMerge', () => {
     expect(clippedCopyEmfMerge(mergeAt(1, 1, 1, 1), 0, 0, 10, 10)).toBeNull()
   })
 })
+
+/** @vitest-environment jsdom */
+describe('emitCopyEmf gating', () => {
+  it('asks for the helper once, then skips the payload build off Windows', async () => {
+    const { emitCopyEmf } = await import('../src/renderer/copy-emf')
+    const { vi } = await import('vitest')
+    const available = vi.fn().mockResolvedValue(false)
+    const append = vi.fn()
+    vi.stubGlobal('window', {
+      desktopApi: { isCopyEmfAvailable: available, appendCopyEmf: append },
+    })
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const runtime = {} as Parameters<typeof emitCopyEmf>[0]
+
+    emitCopyEmf(runtime)
+    await tick()
+    emitCopyEmf(runtime)
+    await tick()
+
+    // one ask across copies; the payload build and the IPC never ran
+    expect(available).toHaveBeenCalledTimes(1)
+    expect(append).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+})

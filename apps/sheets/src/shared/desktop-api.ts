@@ -3625,6 +3625,9 @@ export interface DesktopApi {
   /// silent failure without the helper: the EMF is an extra clipboard format,
   /// never a required one.
   appendCopyEmf(request: CopyEmfRequest): Promise<{ ok: boolean }>
+  /** Whether the copy EMF helper can run here; false everywhere but Windows
+   *  with the sidecar present, so the renderer skips building the payload. */
+  isCopyEmfAvailable(): Promise<boolean>
   /// Reads one chunk of an attachment's extracted text
   readAttachment(path: string, offset: number, maxChars: number): Promise<AttachmentReadResult>
   /// Reads an image attachment as base64 for multimodal input (≤5MB)

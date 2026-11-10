@@ -887,6 +887,9 @@ const desktopApi: DesktopApi = {
       ? { ok: true }
       : { ok: false }
   },
+  async isCopyEmfAvailable() {
+    return (await ipcRenderer.invoke(IPC_CHANNELS.copyEmfAvailable)) === true
+  },
   async readAttachment(path, offset, maxChars) {
     if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
       throw new Error('Invalid attachment path.')

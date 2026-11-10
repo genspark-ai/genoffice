@@ -3943,6 +3943,14 @@ export function registerSheetsIpc(): void {
     appendCopyEmfToClipboard(input),
   )
 
+  // one cheap lookup per call: the renderer caches the answer and only then
+  // builds the O(cells) copy payload (an unanswered call would walk the
+  // selection and ship a multi-MB matrix for nothing off Windows)
+  ipcMain.handle(IPC_CHANNELS.copyEmfAvailable, () => {
+    const helper = resolveClipboardHelperPath()
+    return !!helper && existsSync(helper)
+  })
+
   ipcMain.handle(IPC_CHANNELS.saveWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const client = entry.client
