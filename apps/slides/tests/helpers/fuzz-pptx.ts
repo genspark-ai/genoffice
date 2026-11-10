@@ -20,7 +20,13 @@ export function rng(seed: number): () => number {
 }
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
-const CJK = ['季度回顾', '营收明细', '附录甲', '风险登记', '第三季度业绩']
+const CJK = [
+  '\u5b63\u5ea6\u56de\u987e',
+  '\u8425\u6536\u660e\u7ec6',
+  '\u9644\u5f55\u7532',
+  '\u98ce\u9669\u767b\u8bb0',
+  '\u7b2c\u4e09\u5b63\u5ea6\u4e1a\u7ee9',
+] // CJK strings, escaped; public-hygiene: fixtures stay ASCII
 const LATIN = ['Quarterly review', 'Appendix A', 'risk register', 'milestone 12', 'draft v2']
 const EMOJI = ['🎯', '📈', '✅']
 

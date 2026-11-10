@@ -142,6 +142,8 @@ describe('hostile PPTX import fuzz', () => {
         const valid = await buildFuzzPptx(seed)
         const bytes = await corrupt(valid, rng(seed * 7919 + 31))
         const outcome = await attemptOpen(bytes)
+        // attemptOpen can only resolve to these three; the real property is
+        // "no hang, no escape from the catch", which the 20s timeout enforces
         expect(['refused', 'opened', 'saved']).toContain(outcome)
       }, 20000)
     }
@@ -214,7 +216,7 @@ describe('hostile legacy .ppt import fuzz', () => {
       textSequences: [
         {
           kind: Math.floor(r() * 6),
-          text: i % 2 === 0 ? '季度回顾\nRevenue up' : `Slide ${i} 🎯`,
+          text: i % 2 === 0 ? '\u5b63\u5ea6\u56de\u987e\nRevenue up' : `Slide ${i} 🎯`,
           atom: r() < 0.5 ? ('chars' as const) : ('bytes' as const),
         },
       ],
