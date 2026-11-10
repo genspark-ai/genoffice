@@ -350,6 +350,7 @@ import {
 import { computeFormatState } from './components/ribbon-format-state'
 import {
   IconOutlineView,
+  IconStoryView,
   IconPrintLayout,
   IconReadMode,
   IconRedo,
@@ -2135,6 +2136,20 @@ export function App() {
     if (!editor) return
     editor.commands.setOutlineViewActive(viewMode === 'outline')
   }, [editor, viewMode])
+
+  // story editor view (#2277): the plugin draws the margin markers and strips
+  // the hidden run formatting from typed text while the view is on
+  useEffect(() => {
+    if (!editor) return
+    editor.commands.setStoryViewActive(viewMode === 'story')
+  }, [editor, viewMode])
+
+  // the story gutter shows paragraph style names; ref so the effect can sit
+  // before ribbonStyles' own declaration
+  useEffect(() => {
+    if (!editor) return
+    editor.storage.docsStoryView = { styles: ribbonStylesRef.current }
+  }, [editor, doc])
 
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
@@ -8818,6 +8833,14 @@ export function App() {
                     onClick={() => setViewMode('outline')}
                   >
                     <IconOutlineView size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${viewMode === 'story' ? ' on' : ''}`}
+                    data-tip={t('ribbonStoryView')}
+                    aria-label={t('ribbonStoryView')}
+                    onClick={() => setViewMode('story')}
+                  >
+                    <IconStoryView size={14} />
                   </button>
                   <button
                     className={`status-view-btn${readMode ? ' on' : ''}`}

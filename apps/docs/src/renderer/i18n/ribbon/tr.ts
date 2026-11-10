@@ -802,6 +802,9 @@ export const tr = {
   ribbonOutlineView: 'Ana Hat',
   ribbonOutlineViewTip:
     'Ana hat görünümü: yalnızca başlık hiyerarşisini göster; başlıklar düzenlenebilir kalır',
+  ribbonStoryView: 'Metin Düzenleyici',
+  ribbonStoryViewTip:
+    'Metin Düzenleyici: biçimlendirmeyi gizleyen, koyu, eğik ve bağlantıları koruyan sade bir yazı sütunu',
   ribbonReadMode: 'Okuma Modu',
   ribbonReadModeTip: 'Okuma Modu: odaklanmış okuma için şeridi gizle, çıkmak için Esc tuşuna basın',
   ribbonPagePreview: 'Sayfa Önizleme',

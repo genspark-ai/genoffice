@@ -794,6 +794,9 @@ export const cs = {
   ribbonOutlineView: 'Osnova',
   ribbonOutlineViewTip:
     'Zobrazení osnovy: zobrazit pouze hierarchii nadpisů; nadpisy zůstávají upravitelné',
+  ribbonStoryView: 'Textový editor',
+  ribbonStoryViewTip:
+    'Textový editor: prostý sloupec pro psaní, který skryje formátování a ponechá tučný, kurzívu a odkazy',
   ribbonReadMode: 'Režim čtení',
   ribbonReadModeTip: 'Režim čtení: skrýt pás karet pro soustředěné čtení, ukončíte klávesou Esc',
   ribbonPagePreview: 'Náhled stránky',

@@ -804,6 +804,9 @@ export const de = {
   ribbonOutlineView: 'Gliederung',
   ribbonOutlineViewTip:
     'Gliederungsansicht: nur die Überschriftenhierarchie anzeigen; Überschriften bleiben bearbeitbar',
+  ribbonStoryView: 'Story-Editor',
+  ribbonStoryViewTip:
+    'Story-Editor: eine schlichte Schreibspalte, die Formatierung verbirgt und Fett, Kursiv und Links behält',
   ribbonReadMode: 'Lesemodus',
   ribbonReadModeTip: 'Lesemodus: Menüband für konzentriertes Lesen ausblenden, Beenden mit Esc',
   ribbonPagePreview: 'Seitenvorschau',

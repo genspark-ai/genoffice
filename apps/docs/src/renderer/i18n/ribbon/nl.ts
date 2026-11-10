@@ -803,6 +803,9 @@ export const nl = {
   ribbonOutlineView: 'Overzicht',
   ribbonOutlineViewTip:
     'Overzichtsweergave: alleen de kophiërarchie weergeven; koppen blijven bewerkbaar',
+  ribbonStoryView: 'Story-editor',
+  ribbonStoryViewTip:
+    'Story-editor: een sobere schrijfkolom die opmaak verbergt en vet, cursief en links houdt',
   ribbonReadMode: 'Leesmodus',
   ribbonReadModeTip:
     'Leesmodus: het lint verbergen om geconcentreerd te lezen; druk op Esc om af te sluiten',

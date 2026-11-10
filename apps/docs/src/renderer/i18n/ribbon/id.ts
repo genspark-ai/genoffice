@@ -798,6 +798,9 @@ export const id = {
   ribbonOutlineView: 'Kerangka',
   ribbonOutlineViewTip:
     'Tampilan Kerangka: hanya menampilkan hierarki judul; judul tetap dapat diedit',
+  ribbonStoryView: 'Editor Teks',
+  ribbonStoryViewTip:
+    'Editor Teks: kolom tulis sederhana yang menyembunyikan format dan mempertahankan tebal, miring, dan tautan',
   ribbonReadMode: 'Mode Baca',
   ribbonReadModeTip: 'Mode Baca: sembunyikan ribbon agar fokus membaca, tekan Esc untuk keluar',
   ribbonPagePreview: 'Pratinjau Halaman',

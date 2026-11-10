@@ -806,6 +806,9 @@ export const fr = {
   ribbonOutlineView: 'Plan',
   ribbonOutlineViewTip:
     'Mode Plan : afficher uniquement la hiérarchie des titres ; les titres restent modifiables',
+  ribbonStoryView: 'Éditeur de texte',
+  ribbonStoryViewTip:
+    'Éditeur de texte : une colonne d’écriture épurée qui masque la mise en forme et conserve gras, italique et liens',
   ribbonReadMode: 'Mode Lecture',
   ribbonReadModeTip:
     'Mode Lecture : masquer le ruban pour une lecture concentrée, appuyez sur Échap pour quitter',

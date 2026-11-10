@@ -802,6 +802,9 @@ export const ms = {
   ribbonOutlineView: 'Rangka',
   ribbonOutlineViewTip:
     'Pandangan rangka: paparkan hierarki tajuk sahaja; tajuk kekal boleh diedit',
+  ribbonStoryView: 'Editor Teks',
+  ribbonStoryViewTip:
+    'Editor Teks: lajur penulisan ringkas yang menyembunyikan format dan mengekalkan tebal, condong dan pautan',
   ribbonReadMode: 'Mod Baca',
   ribbonReadModeTip: 'Mod baca: sembunyikan reben untuk pembacaan fokus, tekan Esc untuk keluar',
   ribbonPagePreview: 'Pratonton Halaman',

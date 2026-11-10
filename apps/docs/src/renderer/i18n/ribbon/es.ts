@@ -804,6 +804,9 @@ export const es = {
   ribbonOutlineView: 'Esquema',
   ribbonOutlineViewTip:
     'Vista Esquema: mostrar solo la jerarquía de títulos; los títulos siguen siendo editables',
+  ribbonStoryView: 'Editor de texto',
+  ribbonStoryViewTip:
+    'Editor de texto: una columna de escritura sencilla que oculta el formato y mantiene negrita, cursiva y enlaces',
   ribbonReadMode: 'Modo de lectura',
   ribbonReadModeTip:
     'Modo de lectura: ocultar la cinta para leer sin distracciones; presione Esc para salir',

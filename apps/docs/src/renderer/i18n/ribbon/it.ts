@@ -806,6 +806,9 @@ export const it = {
   ribbonOutlineView: 'Struttura',
   ribbonOutlineViewTip:
     'Visualizzazione struttura: mostra solo la gerarchia dei titoli; i titoli restano modificabili',
+  ribbonStoryView: 'Editor di testo',
+  ribbonStoryViewTip:
+    'Editor di testo: una colonna di scrittura essenziale che nasconde la formattazione e mantiene grassetto, corsivo e collegamenti',
   ribbonReadMode: 'Modalità di lettura',
   ribbonReadModeTip:
     'Modalità di lettura: nascondi la barra multifunzione per una lettura concentrata, premi Esc per uscire',

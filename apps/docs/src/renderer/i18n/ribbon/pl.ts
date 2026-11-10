@@ -800,6 +800,9 @@ export const pl = {
   ribbonOutlineView: 'Konspekt',
   ribbonOutlineViewTip:
     'Widok konspektu: pokaż tylko hierarchię nagłówków; nagłówki pozostają edytowalne',
+  ribbonStoryView: 'Edytor tekstu',
+  ribbonStoryViewTip:
+    'Edytor tekstu: prosta kolumna do pisania, ukrywająca formatowanie i zachowująca pogrubienie, kursywę i linki',
   ribbonReadMode: 'Tryb czytania',
   ribbonReadModeTip:
     'Tryb czytania: ukryj wstążkę, aby skupić się na czytaniu; naciśnij Esc, aby wyjść',

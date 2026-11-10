@@ -16160,3 +16160,126 @@ tr > .page-gap-cut {
   align-items: center;
   gap: 2px;
 }
+
+/* ---- Story editor view (#2277): a plain writing column ----
+   Hides the document's own fonts, sizes, colors, highlights, indents and
+   spacing; keeps the emphasis marks (bold/italic/underline/strike/link) and
+   the list markers. The docTextStyle span renders inline styles, so the
+   neutralization needs !important. Nothing in the document changes. */
+.view-story .doc-page {
+  width: auto;
+  min-height: 0;
+  max-width: 680px;
+  margin: 0 auto;
+  box-shadow: none;
+  padding: 40px 24px 160px;
+}
+
+.view-story .page-gap,
+.view-story .page-gap-paper,
+.view-story .page-gap-inline,
+.view-story .page-gap-cell,
+.view-story .page-gap-table,
+.view-story .page-hf {
+  display: none !important;
+}
+
+.view-story .doc-page > * {
+  position: relative;
+}
+
+/* one look for every heading, another for body paragraphs */
+.view-story .doc-page p {
+  font-size: 12pt !important;
+  line-height: 1.7 !important;
+  margin: 0 0 0.55em !important;
+  padding: 0 !important;
+  text-indent: 0 !important;
+  text-align: start !important;
+}
+
+.view-story .doc-page :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 15pt !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  margin: 1.5em 0 0.45em !important;
+  padding: 0 !important;
+  text-indent: 0 !important;
+  text-align: start !important;
+}
+
+/* run formatting the view hides: the docTextStyle span's inline styles */
+.view-story .doc-page span[data-doc-style] {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  font-style: inherit !important;
+  color: inherit !important;
+  background: none !important;
+  letter-spacing: normal !important;
+  font-kerning: auto !important;
+  font-variant: normal !important;
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+  vertical-align: baseline !important;
+  border: none !important;
+}
+
+/* tables stay tables, plain text in the cells */
+.view-story .doc-page td,
+.view-story .doc-page th {
+  background: none !important;
+}
+
+.view-story .doc-page td span[data-doc-style],
+.view-story .doc-page th span[data-doc-style] {
+  font-size: inherit !important;
+}
+
+/* faded Markdown-style markers hanging in the left margin */
+.story-marker {
+  position: absolute;
+  left: -1.9em;
+  color: var(--text-tertiary);
+  font-size: 0.85em;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* a dot marks paragraphs whose runs carry manual formatting the view hides */
+.view-story .story-override::before {
+  content: '●';
+  position: absolute;
+  left: -1em;
+  font-size: 0.5em;
+  color: var(--text-tertiary);
+  top: 0.55em;
+}
+
+/* paragraph gutter: block index (the CLI/MCP block number) + style name */
+.story-gutter {
+  position: absolute;
+  right: calc(100% + 2.6em);
+  top: 0.1em;
+  display: flex;
+  gap: 0.6em;
+  justify-content: flex-end;
+  width: 9.5em;
+  font-size: 0.78em;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.story-gutter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1080px) {
+  .story-gutter {
+    display: none;
+  }
+}

@@ -788,6 +788,9 @@ export const th = {
   ribbonWebLayoutTip: 'เค้าโครงเว็บ: แสดงเต็มความกว้างหน้าต่างโดยไม่แบ่งหน้า',
   ribbonOutlineView: 'เค้าร่าง',
   ribbonOutlineViewTip: 'มุมมองเค้าร่าง: แสดงเฉพาะลำดับชั้นหัวเรื่อง และแก้ไขหัวเรื่องได้โดยตรง',
+  ribbonStoryView: 'ตัวแก้ไขข้อความ',
+  ribbonStoryViewTip:
+    'ตัวแก้ไขข้อความ: คอลัมน์เขียนแบบเรียบที่ซ่อนการจัดรูปแบบและคงตัวหนา ตัวเอียง และลิงก์',
   ribbonReadMode: 'โหมดการอ่าน',
   ribbonReadModeTip: 'โหมดการอ่าน: ซ่อน Ribbon เพื่ออ่านอย่างมีสมาธิ กด Esc เพื่อออก',
   ribbonPagePreview: 'แสดงตัวอย่างหน้า',
