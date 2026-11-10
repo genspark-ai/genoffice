@@ -19,6 +19,9 @@ export function PrintDialog({
   printCurrentPage: number
 }) {
   const { t } = useI18n()
+  // The mask covers the whole app, so the dialog must mount only when open
+  // (the inline JSX this component replaced was `{printDlg && (...)}`).
+  if (!print.printDlg) return null
   return (
     <div className="pdf-modal-mask" onClick={() => print.setPrintDlg(false)}>
       <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
