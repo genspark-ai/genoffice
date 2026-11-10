@@ -40,4 +40,36 @@ describe('printJobOptions', () => {
       duplexMode: 'simplex',
     })
   })
+
+  // Chromium prints on Letter unless the job states the document's own paper,
+  // and a sheet taller than the paper is split in two (genoffice#2563)
+  it("states the document's paper in the unit Electron takes", () => {
+    const opts = printJobOptions({ deviceName: 'HP', pageSizeIn: { width: 8.27, height: 11.69 } })
+    expect(opts.pageSize).toEqual({
+      width: Math.round(8.27 * 25_400),
+      height: Math.round(11.69 * 25_400),
+    })
+    // A4, not the Letter Chromium prints on by default (8.5in x 11in)
+    expect(opts.pageSize?.width).not.toBe(Math.round(8.5 * 25_400))
+    expect(opts.pageSize?.height).not.toBe(Math.round(11 * 25_400))
+  })
+
+  // the paper is not the system dialog's business: it opens on Letter too
+  it('states the paper on the system-dialog route too', () => {
+    const opts = printJobOptions({ deviceName: null, pageSizeIn: { width: 8.27, height: 11.69 } })
+    expect(opts.pageSize).toEqual({
+      width: Math.round(8.27 * 25_400),
+      height: Math.round(11.69 * 25_400),
+    })
+  })
+
+  it('states no paper when the job carries none', () => {
+    expect(printJobOptions({ deviceName: 'HP' }).pageSize).toBeUndefined()
+    expect(
+      printJobOptions({ deviceName: 'HP', pageSizeIn: { width: 0, height: 11 } }).pageSize,
+    ).toBeUndefined()
+    expect(
+      printJobOptions({ deviceName: 'HP', pageSizeIn: { width: 8, height: 900 } }).pageSize,
+    ).toBeUndefined()
+  })
 })
