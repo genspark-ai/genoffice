@@ -84,7 +84,7 @@ test('zoom 10–500, zoom dialog, page counter, view buttons and track changes',
 
     // ---- status bar view buttons ----
     const views = editor.locator('.status-view-btn')
-    await expect(views).toHaveCount(4)
+    await expect(views).toHaveCount(5)
     await expect(views.nth(0)).toHaveClass(/\bon\b/)
     await views.nth(1).click()
     await expect(editor.locator('.doc-zoom')).toHaveClass(/view-web/)
@@ -94,9 +94,12 @@ test('zoom 10–500, zoom dialog, page counter, view buttons and track changes',
     await views.nth(0).click()
     await expect(editor.locator('.doc-zoom')).toHaveClass(/view-print/)
     await views.nth(3).click()
+    await expect(editor.locator('.doc-zoom')).toHaveClass(/view-story/)
+    await views.nth(0).click()
+    await views.nth(4).click()
     await expect(editor.locator('.app')).toHaveClass(/read-mode/)
     await expect(zoomValue).toHaveText('100%')
-    await views.nth(3).click()
+    await views.nth(4).click()
     await expect(editor.locator('.app')).not.toHaveClass(/read-mode/)
     await expect(zoomValue).toHaveText('37%')
 
