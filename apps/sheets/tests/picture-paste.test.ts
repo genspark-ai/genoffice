@@ -62,6 +62,15 @@ describe('pickTransferImage', () => {
     expect(pickTransferImage(data)).toBeNull()
   })
 
+  it('leaves text copied from an Office app (with its incidental bitmap) to the cell paste', () => {
+    const data = transfer([stringItem('text/plain'), stringItem('text/html'), imageItem()], {
+      'text/plain': 'hello',
+      'text/html':
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office"><body><p class="MsoNormal">hello</p></body></html>',
+    })
+    expect(pickTransferImage(data)).toBeNull()
+  })
+
   // The engine pastes the file of every transfer that carries one, unless the
   // HTML comes from Excel. A picture left to the engine is a drawing in its
   // own model, which the save path never sees: it is visible, and it is gone
