@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName, StandardFonts } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import {
   applyTextEdits,
@@ -8,9 +8,11 @@ import {
   mergeEngineCodepoints,
   textInsertAxes,
   eraseTextRuns,
+  keptStandardFont,
   loadPdfium,
   saveDoc,
   validateTextEdits,
+  winAnsiCovers,
   withDocument,
 } from '../src/main/text-edit'
 import { SYNTHETIC_BOLD_STROKE_EM } from '../src/shared/ipc'
@@ -166,6 +168,51 @@ describe('applyTextEdits translate (block move)', () => {
     expect(result.skipped).toHaveLength(1)
     expect(result.skipped[0]!.reason).toMatch(/moved as one unit/)
     expect(await extractText(result.bytes)).toBe('Alpha beta gamma')
+  })
+})
+
+describe('standard fonts on rebuild', () => {
+  it('covers French text, the euro sign and the oe ligature in WinAnsi, not CJK', () => {
+    expect(winAnsiCovers('Ligne réécrite, ŒUVRE à 5 € — « fin »')).toBe(true)
+    expect(winAnsiCovers('应付')).toBe(false)
+    expect(winAnsiCovers('Ā')).toBe(false)
+  })
+
+  it('keeps a non-embedded standard font only when nothing asks for another face', () => {
+    expect(keptStandardFont('Helvetica', false, {}, 'abc')).toBe('Helvetica')
+    expect(keptStandardFont('Times-Bold', false, {}, 'abc')).toBe('Times-Bold')
+    expect(keptStandardFont('Helvetica', true, {}, 'abc')).toBeNull()
+    expect(keptStandardFont('Helvetica', false, { newFont: 'arial' }, 'abc')).toBeNull()
+    expect(keptStandardFont('Helvetica', false, { newItalic: true }, 'abc')).toBeNull()
+    expect(keptStandardFont('Helvetica', false, {}, '应付')).toBeNull()
+    expect(keptStandardFont('ArialMT', false, {}, 'abc')).toBeNull()
+    expect(keptStandardFont('Symbol', false, {}, 'abc')).toBeNull()
+  })
+
+  for (const face of [StandardFonts.Helvetica, StandardFonts.TimesRoman, StandardFonts.Courier]) {
+    it(`rebuilds a ${face} run with ${face} itself, nothing embedded`, async () => {
+      const f = await makeFixture('Ligne 5 de la page 3', face)
+      const out = await applyAll(f.bytes, [
+        edit(f, 'Ligne 5 de la page 3', 'Ligne 5 de la page 3, ŒUVRE à 5 €\nsuite réécrite'),
+      ])
+      const raw = Buffer.from(out).toString('latin1')
+      expect(raw).not.toMatch(/\/FontFile/)
+      expect(raw).not.toMatch(/Liberation|Arial/)
+      const pdf = await PDFDocument.load(out)
+      const fonts = pdf.context
+        .enumerateIndirectObjects()
+        .map(([, o]) => o)
+        .filter((o) => o instanceof PDFDict && o.get(PDFName.of('Type')) === PDFName.of('Font'))
+        .map((o) => (o as PDFDict).get(PDFName.of('BaseFont'))?.toString())
+      expect(new Set(fonts)).toEqual(new Set([`/${face}`]))
+      expect(await extractText(out)).toBe('Ligne 5 de la page 3, ŒUVRE à 5 €suite réécrite')
+    })
+  }
+
+  it('still embeds a face when the new text leaves WinAnsi', async () => {
+    const f = await makeFixture('Amount due 500')
+    const out = await applyAll(f.bytes, [edit(f, 'Amount due 500', 'Amount due Ā 500\nnext')])
+    expect(Buffer.from(out).toString('latin1')).toMatch(/\/FontFile/)
   })
 })
 
@@ -1475,8 +1522,11 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
     try {
       const content = await (await pdf.getPage(1)).getTextContent()
       const items = content.items
-        .filter((i): i is { str: string; transform: number[] } => 'str' in i && !!i.str.trim())
-        .map((i) => ({ str: i.str, x: i.transform[4]! }))
+        .filter(
+          (i): i is { str: string; transform: number[]; width: number } =>
+            'str' in i && !!i.str.trim(),
+        )
+        .map((i) => ({ str: i.str, x: i.transform[4]!, end: i.transform[4]! + i.width }))
       // 'phone' must be contiguous (one item, no gap where the deleted space sat)
       // and the untouched prefix stays anchored at the original line start. The
       // unchanged words are kept as original objects now, so pdf.js may split
@@ -1486,10 +1536,10 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
       expect(prefix.x).toBeCloseTo(xs[0]!, 1)
       // 'bill' moves left by about the deleted space width (rebuild-font advances
       // for the redrawn middle allow some tolerance, but the gap must be gone)
-      const bill = items.find((i) => i.str.startsWith('bill'))!
+      const billX = Math.max(...items.map((i) => i.end)) - font.widthOfTextAtSize('bill', 14)
       const spaceW = font.widthOfTextAtSize(' ', 14)
-      expect(bill.x).toBeLessThan(xs[6]! - spaceW * 0.5)
-      expect(bill.x).toBeGreaterThan(xs[6]! - spaceW * 2.5)
+      expect(billX).toBeLessThan(xs[6]! - spaceW * 0.5)
+      expect(billX).toBeGreaterThan(xs[6]! - spaceW * 2.5)
     } finally {
       await pdf.loadingTask.destroy()
     }
@@ -1525,13 +1575,16 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
     try {
       const content = await (await pdf.getPage(1)).getTextContent()
       const items = content.items
-        .filter((i): i is { str: string; transform: number[] } => 'str' in i && !!i.str.trim())
-        .map((i) => ({ str: i.str, x: i.transform[4]! }))
+        .filter(
+          (i): i is { str: string; transform: number[]; width: number } =>
+            'str' in i && !!i.str.trim(),
+        )
+        .map((i) => ({ str: i.str, x: i.transform[4]!, end: i.transform[4]! + i.width }))
       // 'bill' moves right by roughly the inserted space width
-      const bill = items.find((i) => i.str.startsWith('bill'))!
+      const billX = Math.max(...items.map((i) => i.end)) - font.widthOfTextAtSize('bill', 14)
       const spaceW = font.widthOfTextAtSize(' ', 14)
-      expect(bill.x).toBeGreaterThan(xs[3]! + spaceW * 0.3)
-      expect(bill.x).toBeLessThan(xs[3]! + spaceW * 2.5)
+      expect(billX).toBeGreaterThan(xs[3]! + spaceW * 0.3)
+      expect(billX).toBeLessThan(xs[3]! + spaceW * 2.5)
     } finally {
       await pdf.loadingTask.destroy()
     }
