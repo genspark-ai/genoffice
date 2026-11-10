@@ -12,6 +12,8 @@ import {
   updateAppearance,
 } from './appearance'
 import type { Contrast, ConversationSteps, ThemeColors, ThemePreset, UiFont } from './appearance'
+import { GlassSelect } from './GlassSelect'
+import type { GlassOption } from './GlassSelect'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
 import type { UiTheme } from '../../shared/home-api'
@@ -88,31 +90,6 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
-  )
-}
-
-function SelectPill({
-  id,
-  value,
-  text,
-  onChange,
-  children,
-}: {
-  id: string
-  value: string
-  text: string
-  onChange: (v: string) => void
-  children: ReactNode
-}) {
-  return (
-    <span className="set-select-wrap ap-pill">
-      <span className="set-select-text" aria-hidden="true">
-        {text}
-      </span>
-      <select id={id} className="set-select" value={value} onChange={(e) => onChange(e.target.value)}>
-        {children}
-      </select>
-    </span>
   )
 }
 
@@ -207,7 +184,11 @@ function ThemeGroup({
   const colors = appearance[kind]
   const presets: readonly ThemePreset[] = kind === 'dark' ? DARK_PRESETS : LIGHT_PRESETS
   const presetId = matchPreset(kind, colors)
-  const presetName = presets.find((p) => p.id === presetId)?.name ?? t('apPresetCustom')
+  const presetOptions: GlassOption[] = [
+    ...presets.map((p) => ({ value: p.id, label: p.name })),
+    // shown only while the colors match no preset; can't be picked
+    ...(presetId === 'custom' ? [{ value: 'custom', label: t('apPresetCustom'), disabled: true }] : []),
+  ]
 
   const set = (patch: Partial<ThemeColors>): void => {
     updateAppearance({ [kind]: { ...colors, ...patch } })
@@ -219,10 +200,11 @@ function ThemeGroup({
   return (
     <Group title={title}>
       <Row label={t('apPreset')}>
-        <SelectPill
+        <GlassSelect
           id={`ap-preset-${kind}`}
+          className="ap-pill"
           value={presetId}
-          text={presetName}
+          options={presetOptions}
           onChange={(id) => {
             const hit = presets.find((p) => p.id === id)
             if (hit)
@@ -230,18 +212,7 @@ function ThemeGroup({
                 [kind]: { background: hit.background, foreground: hit.foreground, accent: hit.accent },
               })
           }}
-        >
-          {presets.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          {presetId === 'custom' && (
-            <option value="custom" disabled>
-              {t('apPresetCustom')}
-            </option>
-          )}
-        </SelectPill>
+        />
       </Row>
       <Row label={t('apBackground')}>
         <ColorField
@@ -370,18 +341,13 @@ export function AppearancePane({
           />
         </Row>
         <Row label={t('appearanceFont')}>
-          <SelectPill
+          <GlassSelect
             id="ap-font"
+            className="ap-pill"
             value={appearance.font}
-            text={fontLabel(FONT_OPTIONS.find((o) => o.value === appearance.font) ?? FONT_OPTIONS[1]!)}
+            options={FONT_OPTIONS.map((o) => ({ value: o.value, label: fontLabel(o) }))}
             onChange={(font) => updateAppearance({ font: font as UiFont })}
-          >
-            {FONT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {fontLabel(o)}
-              </option>
-            ))}
-          </SelectPill>
+          />
         </Row>
       </Group>
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { AppearancePane } from './AppearancePane'
+import { GlassSelect } from './GlassSelect'
 import { ShortcutsPane } from './ShortcutsPane'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
@@ -320,23 +321,12 @@ export function SettingsModal({
                       {t('language')}
                     </label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {LANG_OPTIONS.find((o) => o.value === lang)?.label ?? lang}
-                    </span>
-                    <select
-                      id="set-lang"
-                      className="set-select"
-                      value={lang}
-                      onChange={(e) => setLang(e.target.value as typeof lang)}
-                    >
-                      {LANG_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <GlassSelect
+                    id="set-lang"
+                    value={lang}
+                    options={LANG_OPTIONS}
+                    onChange={(v) => setLang(v as typeof lang)}
+                  />
                 </div>
                 <div className="set-field">
                   <div className="set-field-text">
@@ -344,23 +334,12 @@ export function SettingsModal({
                       {t('theme')}
                     </label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {t(THEME_OPTIONS.find((o) => o.value === theme)?.labelKey ?? 'themeSystem')}
-                    </span>
-                    <select
-                      id="set-theme"
-                      className="set-select"
-                      value={theme}
-                      onChange={(e) => applyTheme(e.target.value as UiTheme)}
-                    >
-                      {THEME_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {t(opt.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <GlassSelect
+                    id="set-theme"
+                    value={theme}
+                    options={THEME_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
+                    onChange={(v) => applyTheme(v as UiTheme)}
+                  />
                 </div>
                 <Field
                   label={t('saveLocation')}
@@ -386,30 +365,16 @@ export function SettingsModal({
                       {t('updateChannel')}
                     </label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {t(
-                        CHANNEL_OPTIONS.find((o) => o.value === channel)?.labelKey ??
-                          'channelStable',
-                      )}
-                    </span>
-                    <select
-                      id="set-channel"
-                      className="set-select"
-                      value={channel}
-                      onChange={(e) => {
-                        const next = e.target.value === 'beta' ? 'beta' : 'stable'
-                        setChannel(next)
-                        void window.aiOffice.setUpdateChannel(next)
-                      }}
-                    >
-                      {CHANNEL_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {t(opt.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <GlassSelect
+                    id="set-channel"
+                    value={channel}
+                    options={CHANNEL_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
+                    onChange={(v) => {
+                      const next = v === 'beta' ? 'beta' : 'stable'
+                      setChannel(next)
+                      void window.aiOffice.setUpdateChannel(next)
+                    }}
+                  />
                 </div>
               </>
             )}
