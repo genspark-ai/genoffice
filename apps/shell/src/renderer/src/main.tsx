@@ -5,7 +5,7 @@ import { htmlLang } from '@genoffice/i18n'
 import { AppFrame } from './AppFrame'
 import { LocaleProvider } from './locale'
 import { ToastProvider } from './toast'
-import { applyAppearance, loadAppearance } from './appearance'
+import { startAppearance } from './appearance'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import './home.css'
@@ -16,7 +16,7 @@ import { installScreenTips } from '@genoffice/ui'
 installScreenTips()
 
 // user appearance choices (accent, font, transparency) before first paint
-applyAppearance(document.documentElement, loadAppearance(window.localStorage))
+startAppearance(document.documentElement)
 
 // macOS shell window is created with vibrancy (Windows 11 with Mica, see
 // windowMaterialActive below); a transparent body lets the sidebar, tab strip

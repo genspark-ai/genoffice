@@ -22,7 +22,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, useConversationSteps } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -2283,6 +2283,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   const { t: tr } = useI18n()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const verbose = useConversationSteps() === 'verbose'
 
   const toggle = useCallback((j: number) => {
     setExpanded((prev) => {
@@ -2294,7 +2295,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   }, [])
 
   const anyRunning = tools.some((tool) => tool.running)
-  const open = userOpen ?? anyRunning
+  const open = userOpen ?? (verbose || anyRunning)
   const label = anyRunning ? tr('aiGroupWorking') : tr('aiWorkedSteps', { n: tools.length })
 
   return (

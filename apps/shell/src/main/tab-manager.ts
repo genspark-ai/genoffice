@@ -30,6 +30,7 @@ import {
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
 import type { TabKind, TabSummary } from '../shared/tabs-api'
+import { forwardShortcuts } from './shortcut-forwarding'
 
 interface TabRecord {
   id: string
@@ -136,6 +137,9 @@ export class TabManager {
 
   openDocsTab(openPath?: string, options?: { newBlank?: boolean }): string {
     const view = createDocsView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     if (options?.newBlank) markDocsNewBlank(view.webContents.id)
     this.shellWindow.contentView.addChildView(view)
@@ -155,6 +159,9 @@ export class TabManager {
   openSheetsTab(openPath?: string, options?: { newBlank?: boolean }): string {
     if (options?.newBlank) setSheetsNewBlank()
     const view = createSheetsView({ includeAiHandlers: false })
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
@@ -172,6 +179,9 @@ export class TabManager {
 
   openSlidesTab(openPath?: string): string {
     const view = createSlidesView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
@@ -189,6 +199,9 @@ export class TabManager {
 
   openPdfTab(openPath: string): string {
     const view = createPdfView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
@@ -200,6 +213,9 @@ export class TabManager {
 
   openMarkdownTab(openPath?: string): string {
     const view = createMarkdownView(openPath)
+    forwardShortcuts(view.webContents, () =>
+      this.shellWindow.isDestroyed() ? null : this.shellWindow.webContents,
+    )
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)

@@ -152,6 +152,8 @@ import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
 import { TabManager } from './tab-manager'
+import { registerTrashHandler } from './trash'
+import { initShortcutForwarding } from './shortcut-forwarding'
 import { winMaterialSupported, winTitleBarOverlay } from './window-material'
 import { tabMenuLabels } from './tab-menu-labels'
 import { CHROME_CHANNELS } from '../shared/chrome-api'
@@ -2087,19 +2089,8 @@ function registerHomeIpc(): void {
     removeRecentFiles(list)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openTrash, () => {
-    if (process.platform === 'darwin') {
-      void shell.openPath(join(app.getPath('home'), '.Trash'))
-    } else if (process.platform === 'win32') {
-      try {
-        spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref()
-      } catch {
-        void shell.openExternal('shell:RecycleBinFolder')
-      }
-    } else {
-      void shell.openPath(join(app.getPath('home'), '.local', 'share', 'Trash', 'files'))
-    }
-  })
+  registerTrashHandler()
+  initShortcutForwarding()
 
   ipcMain.handle(HOME_CHANNELS.getLanguage, (): Lang => currentLang())
 

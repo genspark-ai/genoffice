@@ -2,20 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
-import iconDocx from './assets/file-docx.svg'
-import iconXlsx from './assets/file-xlsx.svg'
-import iconPptx from './assets/file-pptx.svg'
-import iconPdf from './assets/file-pdf.svg'
-import iconMd from './assets/file-md.svg'
-import iconHtml from './assets/file-html.svg'
 import iconFolder from './assets/file-folder.svg'
-import iconJson from './assets/file-json.svg'
-import iconXml from './assets/file-xml.svg'
-import iconYaml from './assets/file-yaml.svg'
-import iconSql from './assets/file-sql.svg'
-import iconCsv from './assets/file-csv.svg'
-import iconTsv from './assets/file-tsv.svg'
-import iconTxt from './assets/file-txt.svg'
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -29,6 +16,12 @@ import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
+import { FileBadge } from './FileBadge'
+import { SearchPalette } from './SearchPalette'
+import type { PaletteMode } from './SearchPalette'
+import { onShortcut } from './shortcuts'
+import type { ShortcutId } from './shortcuts'
+import { useShortcutHint } from './use-shortcut-hint'
 import { useToast } from './toast'
 import { createDeferredDelete } from './deferred-delete'
 import { loadAppearance } from './appearance'
@@ -65,62 +58,6 @@ const GREET_ASK_KEYS = [
   'greetAsk5',
   'greetAsk6',
 ] as const satisfies readonly StringKey[]
-
-const FILE_ICONS: Record<string, string> = {
-  docx: iconDocx,
-  doc: iconDocx,
-  xlsx: iconXlsx,
-  xls: iconXlsx,
-  pptx: iconPptx,
-  ppt: iconPptx,
-  pdf: iconPdf,
-  md: iconMd,
-  markdown: iconMd,
-  html: iconHtml,
-  htm: iconHtml,
-  json: iconJson,
-  xml: iconXml,
-  yaml: iconYaml,
-  yml: iconYaml,
-  sql: iconSql,
-  csv: iconCsv,
-  tsv: iconTsv,
-  txt: iconTxt,
-}
-
-function FileBadge({ ext, size }: { ext: string; size: number }) {
-  const icon = FILE_ICONS[ext]
-  if (icon) {
-    return (
-      <img
-        src={icon}
-        width={size}
-        height={size}
-        alt=""
-        aria-hidden="true"
-        style={{ objectFit: 'contain' }}
-      />
-    )
-  }
-  const label = ext ? ext[0].toUpperCase() : '?'
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7.5" fill="#98a2b3" />
-      <text
-        x="16"
-        y="16.5"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontSize={17}
-        fontWeight="700"
-        fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
-      >
-        {label}
-      </text>
-    </svg>
-  )
-}
 
 function formatModified(mtimeMs: number, i18n: I18n): string {
   const date = new Date(mtimeMs)
@@ -668,6 +605,20 @@ function AccountEntry({
     setSettingsOpen(true)
   }
 
+  // Open Settings shortcut (Ctrl+,): surface Home first — editor tabs cover shell dialogs
+  const openSettingsRef = useRef(handleClick)
+  openSettingsRef.current = handleClick
+  useEffect(
+    () =>
+      onShortcut((id) => {
+        if (id !== 'openSettings') return false
+        void window.aiOfficeTabs.activate('home')
+        openSettingsRef.current()
+        return true
+      }),
+    [],
+  )
+
   return (
     <div className="account-entry" ref={menuRef}>
       {settingsOpen && (
@@ -1148,6 +1099,9 @@ export function Home() {
   const toast = useToast()
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const newMenuRef = useRef<HTMLDivElement>(null)
+  // search palette (rail search button, Ctrl+P / Ctrl+K); null = closed
+  const [palette, setPalette] = useState<PaletteMode | null>(null)
+  const searchHint = useShortcutHint('openFileSearch')
   const [dropActive, setDropActive] = useState(false)
   const selectAnchor = useRef<string | null>(null)
   /** total count under the current view + filter (not just the loaded rows) */
@@ -1690,13 +1644,6 @@ export function Home() {
     )
   }
 
-  const handleNewFormat = (ext: string) => {
-    void window.aiOffice.newFile?.(
-      ext,
-      selectedProjectId ? { projectId: selectedProjectId } : undefined,
-    )
-  }
-
   // ── keyboard: list shortcuts (read live state through a ref so one listener serves every render) ──
   const keyRef = useRef({
     list: [] as RecentEntry[],
@@ -1714,7 +1661,7 @@ export function Home() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // never fire list shortcuts underneath a dialog
-      if (document.querySelector('.set-overlay, .modal-overlay, .onb-overlay')) return
+      if (document.querySelector('.set-overlay, .modal-overlay, .onb-overlay, .pal-overlay')) return
       const ctx = keyRef.current
       const mod = e.ctrlKey || e.metaKey
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
@@ -1769,6 +1716,89 @@ export function Home() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // ── back / forward through the spaces visited on Home (Recent, Starred, Cloud, projects) ──
+  interface NavState {
+    cloud: boolean
+    projectId: string | null
+    view: 'recent' | 'starred'
+  }
+  const navStack = useRef<NavState[]>([{ cloud: false, projectId: null, view: 'recent' }])
+  const navIndex = useRef(0)
+  useEffect(() => {
+    const cur: NavState = { cloud: cloudMode, projectId: selectedProjectId, view }
+    const top = navStack.current[navIndex.current]
+    // landing on the entry we just navigated to (back/forward) must not push a new one
+    if (top && top.cloud === cur.cloud && top.projectId === cur.projectId && top.view === cur.view)
+      return
+    navStack.current = [...navStack.current.slice(0, navIndex.current + 1), cur].slice(-50)
+    navIndex.current = navStack.current.length - 1
+  }, [cloudMode, selectedProjectId, view])
+
+  const goHistory = (delta: -1 | 1): void => {
+    let i = navIndex.current + delta
+    // skip entries whose project was deleted or whose cloud space needs a login
+    while (i >= 0 && i < navStack.current.length) {
+      const target = navStack.current[i]!
+      const projectOk = target.projectId === null || projects.some((p) => p.id === target.projectId)
+      const cloudOk = !target.cloud || loggedIn
+      if (projectOk && cloudOk) {
+        navIndex.current = i
+        setCloudMode(target.cloud)
+        setSelectedProjectId(target.projectId)
+        setView(target.view)
+        setSelected(new Set())
+        setRowMenu(null)
+        return
+      }
+      i += delta
+    }
+  }
+
+  // ── global shortcut actions that belong to Home ──
+  const shortcutRef = useRef<(id: ShortcutId) => boolean>(() => false)
+  shortcutRef.current = (id) => {
+    switch (id) {
+      case 'openConversationPicker':
+      case 'openFileSearch': {
+        const mode: PaletteMode = id === 'openFileSearch' ? 'files' : 'conversations'
+        // the palette is shell DOM: editor tabs paint above it, so surface Home first
+        void window.aiOfficeTabs.activate('home')
+        setNewMenuOpen(false)
+        setPalette((cur) => (cur === mode ? null : mode))
+        return true
+      }
+      case 'newConversation':
+        void window.aiOfficeTabs.activate('home')
+        setPalette(null)
+        setNewMenuOpen((open) => !open)
+        return true
+      case 'goBack':
+        goHistory(-1)
+        return true
+      case 'goForward':
+        goHistory(1)
+        return true
+      case 'openRecycleBin':
+        void openTrash()
+        return true
+      default:
+        return false
+    }
+  }
+  useEffect(() => onShortcut((id) => shortcutRef.current(id)), [])
+
+  /** open the OS Recycle Bin / Trash; surfaces a toast if the system refuses */
+  async function openTrash(): Promise<void> {
+    let ok = false
+    try {
+      ok = (await window.aiOffice.openTrash?.()) !== false
+    } catch {
+      ok = false
+    }
+    if (!ok) toast.show({ message: t('toastTrashFailed') })
+  }
+  const isWindows = navigator.platform.toLowerCase().includes('win')
 
   // ── dropping files on the window opens them ──
   const dropRef = useRef<(files: File[]) => void>(() => undefined)
@@ -1833,6 +1863,13 @@ export function Home() {
     }
   }, [newMenuOpen])
 
+  const handleNewFormat = (ext: string) => {
+    void window.aiOffice.newFile?.(
+      ext,
+      selectedProjectId ? { projectId: selectedProjectId } : undefined,
+    )
+  }
+
   const NEW_ITEMS = [
     { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
     { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
@@ -1884,7 +1921,7 @@ export function Home() {
             <span className="quick-title-row">
               <span className="quick-title">{t('openLocal')}</span>
             </span>
-            <span className="quick-sub">.docx / .xlsx / .csv / .pptx / .pdf / .md / .json…</span>
+            <span className="quick-sub">.docx / .xlsx / .xls / .csv / .pptx / .pdf / .md</span>
           </span>
         </button>
       </div>
@@ -2482,12 +2519,13 @@ export function Home() {
           )}
           <button
             className="rail-btn"
-            title={`${t('searchFiles')} (Ctrl+F)`}
+            title={searchHint ? `${t('searchFiles')} (${searchHint})` : t('searchFiles')}
             aria-label={t('searchFiles')}
+            aria-haspopup="dialog"
+            aria-expanded={palette !== null}
             onClick={() => {
-              setCloudMode(false)
-              setSelectedProjectId(null)
-              window.setTimeout(() => searchRef.current?.focus(), 0)
+              setNewMenuOpen(false)
+              setPalette((cur) => (cur === null ? 'files' : null))
             }}
           >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2503,6 +2541,9 @@ export function Home() {
         </nav>
         <AccountEntry onStatusChange={handleAccountStatus} />
       </div>
+      {palette && (
+        <SearchPalette mode={palette} onModeChange={setPalette} onClose={() => setPalette(null)} />
+      )}
       {dropActive &&
         createPortal(
           <div className="drop-overlay" aria-hidden="true">
@@ -2639,8 +2680,8 @@ export function Home() {
           <div className="sidebar-footer">
             <button
               className="nav-item"
-              title={t('navTrashTip')}
-              onClick={() => void window.aiOffice.openTrash?.()}
+              title={isWindows ? t('navRecycleBinTip') : t('navTrashTip')}
+              onClick={() => void openTrash()}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
@@ -2651,7 +2692,7 @@ export function Home() {
                   strokeLinejoin="round"
                 />
               </svg>
-              <span className="nav-label">{t('navTrash')}</span>
+              <span className="nav-label">{isWindows ? t('navRecycleBin') : t('navTrash')}</span>
               <svg
                 className="nav-external"
                 width="13"

@@ -92,8 +92,8 @@ export interface HomeApi {
   duplicateFile(path: string): Promise<void>
   /** move files to the trash and drop them from the recent list */
   deleteFiles(paths: string[]): Promise<void>
-  /** open the OS trash, where deleted files can be restored */
-  openTrash(): Promise<void>
+  /** open the OS Recycle Bin / Trash, where deleted files can be restored; false when the system could not open it */
+  openTrash(): Promise<boolean>
   /** current UI language (persisted in userData/app-settings.json) */
   getLanguage(): Promise<UiLanguage>
   /** switch + persist the UI language; main rebuilds its menus to match */

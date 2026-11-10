@@ -17,6 +17,8 @@ import type {
 import { HOME_CHANNELS, PROJECT_CHANNELS } from '../shared/home-api'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
+import { SHORTCUT_CHANNELS } from '../shared/shortcuts-api'
+import type { ShortcutId, ShortcutsApi } from '../shared/shortcuts-api'
 
 const UI_LANGUAGES: readonly UiLanguage[] = [
   'zh',
@@ -110,7 +112,9 @@ const homeApi: HomeApi = {
     await ipcRenderer.invoke(HOME_CHANNELS.deleteFiles, paths)
   },
   async openTrash() {
-    await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
+    // older main handlers resolve with nothing: only an explicit false means failure
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
+    return result !== false
   },
   async getLanguage() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getLanguage)
@@ -319,3 +323,18 @@ const chromeApi: ChromeApi = {
 }
 
 contextBridge.exposeInMainWorld('aiOfficeChrome', chromeApi)
+
+const shortcutsApi: ShortcutsApi = {
+  onInvoke(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, id: unknown) => {
+      if (typeof id === 'string') handler(id as ShortcutId)
+    }
+    ipcRenderer.on(SHORTCUT_CHANNELS.invoke, listener)
+    return () => ipcRenderer.removeListener(SHORTCUT_CHANNELS.invoke, listener)
+  },
+  syncBindings(map) {
+    ipcRenderer.send(SHORTCUT_CHANNELS.sync, map)
+  },
+}
+
+contextBridge.exposeInMainWorld('aiOfficeShortcuts', shortcutsApi)

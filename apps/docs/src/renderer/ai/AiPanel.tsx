@@ -13,7 +13,7 @@ import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, useConversationSteps } from '@genoffice/ui'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -1330,6 +1330,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   const { t: tr } = useI18n()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const verbose = useConversationSteps() === 'verbose'
 
   const toggle = (j: number) => {
     setExpanded((prev) => {
@@ -1341,7 +1342,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   }
 
   const anyRunning = tools.some((tool) => tool.running)
-  const open = userOpen ?? anyRunning
+  const open = userOpen ?? (verbose || anyRunning)
   const label = anyRunning ? tr('aiGroupWorking') : tr('aiWorkedSteps', { n: tools.length })
 
   return (

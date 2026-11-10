@@ -3,6 +3,10 @@ import type { CSSProperties, ReactElement } from 'react'
 import type { TabsApi, TabSummary } from '../../shared/tabs-api'
 import type { ChromeApi } from '../../shared/chrome-api'
 import { useI18n } from './locale'
+import { useToast } from './toast'
+import { onShortcut } from './shortcuts'
+import type { ShortcutId } from './shortcuts'
+import { useShortcutHint } from './use-shortcut-hint'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
@@ -239,10 +243,19 @@ function WindowMenus() {
   )
 }
 
+/** most recent closed tabs kept for Reopen Closed Tab */
+const CLOSED_HISTORY = 20
+
 export function TabBar() {
   const { t } = useI18n()
+  const toast = useToast()
+  const newTabHint = useShortcutHint('newTab')
   const [tabs, setTabs] = useState<TabSummary[]>([])
   const stripRef = useRef<HTMLDivElement>(null)
+  const newBtnRef = useRef<HTMLButtonElement>(null)
+  const tabsRef = useRef<TabSummary[]>([])
+  tabsRef.current = tabs
+  const closedRef = useRef<Pick<TabSummary, 'kind' | 'title'>[]>([])
 
   // Chrome-style drag-to-reorder: the grabbed tab tracks the pointer 1:1 while
   // its neighbours slide aside live; the final order is committed on release.
@@ -297,9 +310,77 @@ export function TabBar() {
   }
 
   useEffect(() => {
-    void window.aiOfficeTabs.list().then(setTabs)
-    return window.aiOfficeTabs.onChanged(setTabs)
+    let prev: TabSummary[] = []
+    // remember tabs that disappeared between two snapshots so they can be reopened
+    const apply = (next: TabSummary[]): void => {
+      for (const tab of prev) {
+        if (tab.kind !== 'home' && !next.some((n) => n.id === tab.id)) {
+          closedRef.current = [...closedRef.current, { kind: tab.kind, title: tab.title }].slice(
+            -CLOSED_HISTORY,
+          )
+        }
+      }
+      prev = next
+      setTabs(next)
+    }
+    void window.aiOfficeTabs.list().then(apply)
+    return window.aiOfficeTabs.onChanged(apply)
   }, [])
+
+  // ── shortcuts owned by the tab strip: new tab, reopen closed tab, previous / next tab ──
+  const reopenClosed = async (): Promise<void> => {
+    const entry = closedRef.current.pop()
+    if (!entry) {
+      toast.show({ message: t('toastNoClosedTab') })
+      return
+    }
+    try {
+      // saved files are found again by name in the recents; the tab title is the file name
+      const title = entry.title.toLowerCase()
+      const page = await window.aiOffice.recents({ query: entry.title, limit: 25 })
+      const hit = page.entries.find((e) => {
+        const name = e.name.toLowerCase()
+        return name === title || name.replace(/\.[^.]+$/, '') === title
+      })
+      if (hit) {
+        await window.aiOffice.openPath(hit.path)
+        return
+      }
+      // an unsaved/untitled tab has no file to return to: start a fresh one of the same kind
+      if (entry.kind === 'docs') await window.aiOffice.newDoc()
+      else if (entry.kind === 'sheets') await window.aiOffice.newSheet()
+      else if (entry.kind === 'slides') await window.aiOffice.newSlide()
+      else if (entry.kind === 'markdown') await window.aiOffice.newMarkdown()
+      else toast.show({ message: t('toastReopenFailed', { name: entry.title }) })
+    } catch {
+      toast.show({ message: t('toastReopenFailed', { name: entry.title }) })
+    }
+  }
+  const tabShortcutRef = useRef<(id: ShortcutId) => boolean>(() => false)
+  tabShortcutRef.current = (id) => {
+    if (id === 'newTab') {
+      const rect = newBtnRef.current?.getBoundingClientRect()
+      void window.aiOfficeTabs.showNewMenu(Math.round(rect?.left ?? 120), Math.round(rect?.bottom ?? 40))
+      return true
+    }
+    if (id === 'reopenClosedTab') {
+      void reopenClosed()
+      return true
+    }
+    if (id === 'previousTab' || id === 'nextTab') {
+      const list = tabsRef.current
+      if (list.length < 2) return true
+      const at = Math.max(
+        0,
+        list.findIndex((tab) => tab.active),
+      )
+      const to = (at + (id === 'nextTab' ? 1 : -1) + list.length) % list.length
+      void window.aiOfficeTabs.activate(list[to]!.id)
+      return true
+    }
+    return false
+  }
+  useEffect(() => onShortcut((id) => tabShortcutRef.current(id)), [])
 
   // document tabs are sibling WebContentsViews: they see neither this press
   // nor a focus change, so relay it for them to dismiss open popovers
@@ -479,8 +560,9 @@ export function TabBar() {
           )
         })}
         <button
+          ref={newBtnRef}
           className="tab-new-btn"
-          title={t('newTab')}
+          title={newTabHint ? `${t('newTab')} (${newTabHint})` : t('newTab')}
           aria-label={t('newTab')}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect()

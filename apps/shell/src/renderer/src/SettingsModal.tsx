@@ -1,15 +1,8 @@
-import {
-  DEFAULT_APPEARANCE,
-  applyAppearance,
-  contrastRatio,
-  loadAppearance,
-  parseHex,
-  saveAppearance,
-} from './appearance'
-import type { Appearance, UiFont } from './appearance'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { AppearancePane } from './AppearancePane'
+import { ShortcutsPane } from './ShortcutsPane'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
 import type { AccountStatus, UiTheme } from '../../shared/home-api'
@@ -42,16 +35,6 @@ const LANG_OPTIONS = [
   { value: 'zh', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
 ] as const
-
-// GenMail's option order: follow-system first, then the manual picks
-const ACCENT_PRESETS = ['#339cff', '#12b5a6', '#3dd68c', '#f5a623', '#8a8a8a'] as const
-
-const FONT_OPTIONS: readonly { value: UiFont; labelKey: StringKey }[] = [
-  { value: 'system', labelKey: 'fontSystem' },
-  { value: 'sans', labelKey: 'fontSans' },
-  { value: 'serif', labelKey: 'fontSerif' },
-  { value: 'mono', labelKey: 'fontMono' },
-]
 
 const THEME_OPTIONS = [
   { value: 'system', labelKey: 'themeSystem' },
@@ -200,10 +183,6 @@ export function SettingsModal({
   const [saveDir, setSaveDir] = useState('')
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
-  const [appearance, setAppearance] = useState<Appearance>(() =>
-    loadAppearance(window.localStorage),
-  )
-  const [hexText, setHexText] = useState(appearance.accent ?? '')
 
   useEffect(() => {
     let alive = true
@@ -238,28 +217,6 @@ export function SettingsModal({
     if (next === 'system') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.setAttribute('data-theme', next)
   }
-
-  const updateAppearance = (patch: Partial<Appearance>) => {
-    const next = { ...appearance, ...patch }
-    setAppearance(next)
-    saveAppearance(window.localStorage, next)
-    applyAppearance(document.documentElement, next)
-  }
-
-  const resetAppearance = () => {
-    setHexText('')
-    updateAppearance({ ...DEFAULT_APPEARANCE })
-  }
-
-  const surfaceHex = parseHex(
-    getComputedStyle(document.documentElement).getPropertyValue('--surface'),
-  )
-  const accentLowContrast =
-    appearance.accent !== null &&
-    surfaceHex !== null &&
-    contrastRatio(appearance.accent, surfaceHex) < 3
-  const hexInvalid = hexText.trim() !== '' && parseHex(hexText) === null
-  const modKey = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl'
 
   const changeSaveDir = () => {
     void window.aiOffice.pickDefaultSaveDir?.().then((dir) => {
@@ -417,171 +374,8 @@ export function SettingsModal({
                 />
               </>
             )}
-            {section === 'appearance' && (
-              <>
-                <h3 className="set-pane-title">{t('setSecAppearance')}</h3>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <div className="set-field-label">{t('appearanceMode')}</div>
-                  </div>
-                  <div className="set-mode-row" role="radiogroup" aria-label={t('appearanceMode')}>
-                    {THEME_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        role="radio"
-                        aria-checked={theme === opt.value}
-                        className={`set-mode-card${theme === opt.value ? ' active' : ''}`}
-                        onClick={() => applyTheme(opt.value)}
-                      >
-                        {t(opt.labelKey)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="set-field set-field-col">
-                  <div className="set-field-text">
-                    <div className="set-field-label">{t('appearanceAccent')}</div>
-                  </div>
-                  <div className="set-accent-row">
-                    <button
-                      className={`set-swatch default${appearance.accent === null ? ' active' : ''}`}
-                      aria-label={t('appearanceAccentDefault')}
-                      aria-pressed={appearance.accent === null}
-                      title={t('appearanceAccentDefault')}
-                      onClick={() => {
-                        setHexText('')
-                        updateAppearance({ accent: null })
-                      }}
-                    />
-                    {ACCENT_PRESETS.map((hex) => (
-                      <button
-                        key={hex}
-                        className={`set-swatch${appearance.accent === hex ? ' active' : ''}`}
-                        style={{ '--swatch': hex } as CSSProperties}
-                        aria-label={hex}
-                        aria-pressed={appearance.accent === hex}
-                        title={hex}
-                        onClick={() => {
-                          setHexText(hex)
-                          updateAppearance({ accent: hex })
-                        }}
-                      />
-                    ))}
-                    <input
-                      className="set-hex"
-                      value={hexText}
-                      placeholder="#339CFF"
-                      spellCheck={false}
-                      maxLength={7}
-                      aria-label={t('appearanceAccentHex')}
-                      aria-invalid={hexInvalid}
-                      onChange={(e) => {
-                        setHexText(e.target.value)
-                        const parsed = parseHex(e.target.value)
-                        if (parsed) updateAppearance({ accent: parsed })
-                      }}
-                    />
-                  </div>
-                  {hexInvalid && <div className="set-warn">{t('appearanceAccentInvalid')}</div>}
-                  {!hexInvalid && accentLowContrast && (
-                    <div className="set-warn">{t('appearanceAccentLow')}</div>
-                  )}
-                </div>
-                <div className="set-field">
-                  <div className="set-field-text">
-                    <label className="set-field-label" htmlFor="set-font">
-                      {t('appearanceFont')}
-                    </label>
-                  </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {t(
-                        FONT_OPTIONS.find((o) => o.value === appearance.font)?.labelKey ??
-                          'fontSystem',
-                      )}
-                    </span>
-                    <select
-                      id="set-font"
-                      className="set-select"
-                      value={appearance.font}
-                      onChange={(e) => updateAppearance({ font: e.target.value as UiFont })}
-                    >
-                      {FONT_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {t(opt.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </div>
-                <label className="set-field set-switch-row">
-                  <div className="set-field-text">
-                    <div className="set-field-label">{t('appearanceTransparency')}</div>
-                    <div className="set-field-value">{t('appearanceTransparencyHint')}</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    className="set-switch"
-                    checked={appearance.transparency}
-                    onChange={(e) => updateAppearance({ transparency: e.target.checked })}
-                  />
-                </label>
-                <label className="set-field set-switch-row">
-                  <div className="set-field-text">
-                    <div className="set-field-label">{t('appearanceConfirmDelete')}</div>
-                    <div className="set-field-value">{t('appearanceConfirmDeleteHint')}</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    className="set-switch"
-                    checked={appearance.confirmDelete}
-                    onChange={(e) => updateAppearance({ confirmDelete: e.target.checked })}
-                  />
-                </label>
-                <div className="set-field set-reset-row">
-                  <div className="set-field-text">
-                    <div className="set-field-value">{t('appearanceScope')}</div>
-                  </div>
-                  <button className="set-btn" onClick={resetAppearance}>
-                    {t('appearanceReset')}
-                  </button>
-                </div>
-              </>
-            )}
-            {section === 'shortcuts' && (
-              <>
-                <h3 className="set-pane-title">{t('setSecShortcuts')}</h3>
-                {(
-                  [
-                    ['scOpen', ['Enter']],
-                    ['scNavigate', ['↑', '↓']],
-                    ['scRename', ['F2']],
-                    ['scDelete', ['Delete']],
-                    ['scSelectAll', [modKey, 'A']],
-                    ['searchFiles', [modKey, 'F']],
-                    ['scRange', ['Shift', 'Click']],
-                    ['scMenu', ['Right-click']],
-                    ['scEscape', ['Esc']],
-                  ] as const
-                ).map(([labelKey, keys]) => (
-                  <div className="set-field set-shortcut" key={labelKey}>
-                    <div className="set-field-text">
-                      <div className="set-field-label">{t(labelKey)}</div>
-                    </div>
-                    <span className="set-keys">
-                      {keys.map((k) => (
-                        <kbd key={k}>{k}</kbd>
-                      ))}
-                    </span>
-                  </div>
-                ))}
-                <div className="set-field">
-                  <div className="set-field-value">{t('shortcutsNote')}</div>
-                </div>
-              </>
-            )}
+            {section === 'appearance' && <AppearancePane theme={theme} onTheme={applyTheme} />}
+            {section === 'shortcuts' && <ShortcutsPane />}
             {section === 'about' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAbout')}</h3>

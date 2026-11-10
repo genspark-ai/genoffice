@@ -2,6 +2,7 @@ import type {
   HomeApi,
   ProjectHomeApi,
   RecentEntry,
+  TimelineEntryItem,
   UiLanguage,
   UiTheme,
 } from '../../shared/home-api'
@@ -171,7 +172,9 @@ if (typeof window !== 'undefined') {
     async deleteFiles(paths) {
       mockRecents = mockRecents.filter((r) => !paths.includes(r.path))
     },
-    async openTrash() {},
+    async openTrash() {
+      return true
+    },
     async getLanguage() {
       return currentLang
     },
@@ -282,8 +285,31 @@ if (typeof window !== 'undefined') {
     async renameProject() {},
     async deleteProject() {},
     async moveFile() {},
-    async getTimeline() {
-      return []
+    async getTimeline(projectId) {
+      // a few recorded chats so the conversation picker has something to show in the browser preview
+      const day = 86_400_000
+      const rows = (
+        path: string,
+        chatId: string,
+        daysAgo: number,
+        ask: string,
+      ): TimelineEntryItem[] => {
+        const name = path.split('/').pop() ?? path
+        const ts = new Date(Date.now() - daysAgo * day).toISOString()
+        return [
+          { filePath: path, fileName: name, chatId, ts, role: 'user', preview: ask, seq: 1 },
+          { filePath: path, fileName: name, chatId, ts, role: 'assistant', preview: 'Done.', seq: 2 },
+        ]
+      }
+      return projectId === 'proj-q4'
+        ? [
+            ...rows(mockRecents[2].path, 'c-keynote', 4, 'Tighten the Q4 keynote storyline into 8 slides'),
+            ...rows(mockRecents[3].path, 'c-spec', 16, 'Summarise the design system spec for engineers'),
+          ]
+        : [
+            ...rows(mockRecents[0].path, 'c-exec', 2, 'Draft an executive summary of 2026 results'),
+            ...rows(mockRecents[1].path, 'c-model', 7, 'Add a sensitivity table to the financial model'),
+          ]
     },
   }
 

@@ -4,7 +4,7 @@ import { AgentLoop } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, useConversationSteps } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -467,6 +467,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   const { t: tr } = useI18n()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const verbose = useConversationSteps() === 'verbose'
 
   const toggle = (j: number) => {
     setExpanded((prev) => {
@@ -477,7 +478,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
     })
   }
 
-  const open = userOpen ?? false
+  const open = userOpen ?? verbose
   const label = tr('aiWorkedSteps', { n: tools.length })
 
   return (

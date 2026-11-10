@@ -4,7 +4,7 @@ import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, useConversationSteps } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -846,6 +846,7 @@ function ToolChipList({ tools }: { tools: readonly AiToolChip[] }): React.JSX.El
   const { t: tr } = useI18n()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const verbose = useConversationSteps() === 'verbose'
 
   const toggle = (j: number) => {
     setExpanded((prev) => {
@@ -857,7 +858,7 @@ function ToolChipList({ tools }: { tools: readonly AiToolChip[] }): React.JSX.El
   }
 
   const anyRunning = tools.some((tool) => tool.running)
-  const open = userOpen ?? anyRunning
+  const open = userOpen ?? (verbose || anyRunning)
   const label = anyRunning ? tr('aiGroupWorking') : tr('aiWorkedSteps', { n: tools.length })
 
   return (

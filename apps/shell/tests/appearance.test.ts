@@ -47,22 +47,18 @@ describe('contrast', () => {
 describe('persistence', () => {
   it('round-trips a custom appearance', () => {
     const storage = memoryStorage()
-    saveAppearance(storage, {
+    const custom = {
       ...DEFAULT_APPEARANCE,
-      accent: '#339cff',
-      font: 'mono',
+      font: 'mono' as const,
       transparency: false,
-    })
-    expect(loadAppearance(storage)).toEqual({
-      accent: '#339cff',
-      font: 'mono',
-      transparency: false,
-      confirmDelete: false,
-    })
+      dark: { ...DEFAULT_APPEARANCE.dark, accent: '#339cff' },
+    }
+    saveAppearance(storage, custom)
+    expect(loadAppearance(storage)).toEqual(custom)
   })
   it('stores nothing for the defaults', () => {
     const storage = memoryStorage()
-    saveAppearance(storage, { ...DEFAULT_APPEARANCE, accent: '#339cff' })
+    saveAppearance(storage, { ...DEFAULT_APPEARANCE, font: 'mono' })
     saveAppearance(storage, { ...DEFAULT_APPEARANCE })
     expect(storage.data.size).toBe(0)
   })
@@ -71,7 +67,7 @@ describe('persistence', () => {
     const loaded = loadAppearance(
       memoryStorage(JSON.stringify({ accent: 'url(x)', font: '__proto__' })),
     )
-    expect(loaded.accent).toBeNull()
+    expect(loaded.dark).toEqual(DEFAULT_APPEARANCE.dark)
     expect(loaded.font).toBe('system')
     expect(loadAppearance(undefined)).toEqual(DEFAULT_APPEARANCE)
   })

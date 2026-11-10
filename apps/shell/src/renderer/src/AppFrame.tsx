@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Home } from './Home'
 import { Onboarding } from './Onboarding'
 import { TabBar } from './TabBar'
+import { useGlobalShortcuts } from './use-global-shortcuts'
 
 interface AppFrameProps {
   /** resolved before first paint (main.tsx) so home never flashes under the overlay */
@@ -11,6 +12,7 @@ interface AppFrameProps {
 export function AppFrame({ initialOnboardingSeen }: AppFrameProps) {
   const [homeActive, setHomeActive] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(!initialOnboardingSeen)
+  useGlobalShortcuts()
 
   useEffect(() => {
     const applyTabs = (tabs: Awaited<ReturnType<typeof window.aiOfficeTabs.list>>) => {

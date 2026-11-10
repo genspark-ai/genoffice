@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
+import { AiComposer, AiTypingIndicator, Markdown, useConversationSteps } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -700,6 +700,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   const { t: tr } = useI18n()
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const verbose = useConversationSteps() === 'verbose'
 
   const toggle = (j: number) => {
     setExpanded((prev) => {
@@ -711,7 +712,7 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
   }
 
   const anyRunning = tools.some((tool) => tool.running)
-  const open = userOpen ?? anyRunning
+  const open = userOpen ?? (verbose || anyRunning)
   const label = anyRunning ? tr('aiGroupWorking') : tr('aiWorkedSteps', { n: tools.length })
 
   return (
